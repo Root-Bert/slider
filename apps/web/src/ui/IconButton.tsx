@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from 'react';
+import type { ButtonHTMLAttributes, Ref } from 'react';
 import { cn } from './cn';
 import { Icon, type IconName } from './Icon';
 
@@ -10,6 +10,7 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
   active?: boolean;
   size?: 'sm' | 'md';
   iconSize?: number;
+  ref?: Ref<HTMLButtonElement>;
 }
 
 export function IconButton({

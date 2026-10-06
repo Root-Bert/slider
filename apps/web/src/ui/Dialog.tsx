@@ -38,6 +38,7 @@ export function Dialog({ open, onClose, title, description, children, footer, cl
       }}
       className={cn(
         'glass-elevated m-auto w-[min(480px,calc(100vw-32px))] rounded-panel p-0 text-fg',
+        'max-h-[calc(100dvh-32px)] overflow-y-auto overscroll-contain',
         'backdrop:bg-black/60 backdrop:backdrop-blur-sm open:animate-pop-in',
         className,
       )}

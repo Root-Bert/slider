@@ -79,7 +79,7 @@ export function AvatarStack({ authors, max = 4, size = 24, className }: AvatarSt
           key={author.id}
           author={author}
           size={size}
-          className={cn(index > 0 && 'ring-2 ring-canvas', index > 0 && '-ml-2')}
+          className={cn(index > 0 && '-ml-2 rounded-full ring-2 ring-canvas')}
         />
       ))}
       {overflow > 0 && (
