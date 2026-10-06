@@ -4,7 +4,9 @@ import { routes } from './routes';
 
 export function RouteError() {
   const error = useRouteError();
-  const message = isRouteErrorResponse(error) ? error.statusText : 'Ein unerwarteter Fehler ist aufgetreten.';
+  const message = isRouteErrorResponse(error)
+    ? error.statusText
+    : 'Ein unerwarteter Fehler ist aufgetreten.';
 
   return (
     <CenteredMessage title="Das hat nicht geklappt" message={message}>

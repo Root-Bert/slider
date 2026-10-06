@@ -8,6 +8,8 @@ import { RouteError } from './RouteError';
 export const router = createBrowserRouter([
   {
     errorElement: <RouteError />,
+    // Shown while the first lazy route module loads.
+    hydrateFallbackElement: <div className="dot-grid min-h-full" aria-busy />,
     children: [
       { index: true, lazy: () => import('@/features/reviews/ReviewsPage') },
       { path: 'neu', lazy: () => import('@/features/onboarding/NewReviewPage') },

@@ -30,14 +30,21 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
   body?: JsonBody | FormData;
 }
 
-export async function apiRequest<T>(path: string, { body, headers, ...init }: RequestOptions = {}): Promise<T> {
+export async function apiRequest<T>(
+  path: string,
+  { body, headers, ...init }: RequestOptions = {},
+): Promise<T> {
   const isJson = body !== undefined && !(body instanceof FormData);
   let response: Response;
   try {
     response = await fetch(`${API_PREFIX}${path}`, {
       credentials: 'same-origin',
       ...init,
-      headers: { Accept: 'application/json', ...(isJson && { 'Content-Type': 'application/json' }), ...headers },
+      headers: {
+        Accept: 'application/json',
+        ...(isJson && { 'Content-Type': 'application/json' }),
+        ...headers,
+      },
       body: isJson ? JSON.stringify(body) : body,
     });
   } catch {
@@ -51,7 +58,8 @@ export async function apiRequest<T>(path: string, { body, headers, ...init }: Re
 
 export const api = {
   get: <T>(path: string) => apiRequest<T>(path),
-  post: <T>(path: string, body?: JsonBody | FormData) => apiRequest<T>(path, { method: 'POST', body }),
+  post: <T>(path: string, body?: JsonBody | FormData) =>
+    apiRequest<T>(path, { method: 'POST', body }),
   patch: <T>(path: string, body: JsonBody) => apiRequest<T>(path, { method: 'PATCH', body }),
   delete: (path: string) => apiRequest<void>(path, { method: 'DELETE' }),
 };

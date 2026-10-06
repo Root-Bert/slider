@@ -11,7 +11,14 @@ interface ToggleProps {
 }
 
 /** UI kit "Toggle": switch with a label row, as used in the share dialog (C1). */
-export function Toggle({ checked, onChange, label, description, disabled, className }: ToggleProps) {
+export function Toggle({
+  checked,
+  onChange,
+  label,
+  description,
+  disabled,
+  className,
+}: ToggleProps) {
   const id = useId();
   return (
     <div className={cn('flex items-center justify-between gap-4', className)}>

@@ -52,7 +52,13 @@ interface FilterChipProps {
 }
 
 /** UI kit "Chip / Filter": 32px chip with optional count. Selected = white 90 % fill. */
-export function FilterChip({ selected, count, onClick, children, role = 'checkbox' }: FilterChipProps) {
+export function FilterChip({
+  selected,
+  count,
+  onClick,
+  children,
+  role = 'checkbox',
+}: FilterChipProps) {
   return (
     <button
       type="button"

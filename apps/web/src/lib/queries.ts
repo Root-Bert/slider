@@ -32,7 +32,11 @@ const isImporting = (deck: Deck | undefined) =>
 // ── Session ─────────────────────────────────────────────────────────────────
 
 export const useMe = () =>
-  useQuery({ queryKey: queryKeys.me, queryFn: () => api.get<MeResponse>('/me'), staleTime: Infinity });
+  useQuery({
+    queryKey: queryKeys.me,
+    queryFn: () => api.get<MeResponse>('/me'),
+    staleTime: Infinity,
+  });
 
 // ── Decks ───────────────────────────────────────────────────────────────────
 
@@ -106,9 +110,13 @@ export function useCreateComment(deckId: string) {
   const queryClient = useQueryClient();
   const invalidate = useInvalidateDeckFeedback(deckId);
   return useMutation({
-    mutationFn: (input: CreateCommentInput) => api.post<Comment>(`/decks/${deckId}/comments`, input),
+    mutationFn: (input: CreateCommentInput) =>
+      api.post<Comment>(`/decks/${deckId}/comments`, input),
     onSuccess: (comment) => {
-      queryClient.setQueryData<Comment[]>(queryKeys.comments(deckId), (current = []) => [...current, comment]);
+      queryClient.setQueryData<Comment[]>(queryKeys.comments(deckId), (current = []) => [
+        ...current,
+        comment,
+      ]);
       void invalidate();
     },
   });
@@ -157,7 +165,8 @@ export const useReviewLinks = (deckId: string, enabled = true) =>
 export function useCreateReviewLink(deckId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateReviewLinkInput) => api.post<ReviewLink>(`/decks/${deckId}/review-links`, input),
+    mutationFn: (input: CreateReviewLinkInput) =>
+      api.post<ReviewLink>(`/decks/${deckId}/review-links`, input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.reviewLinks(deckId) }),
   });
 }
@@ -171,7 +180,11 @@ export function useRevokeReviewLink(deckId: string) {
 }
 
 export const useInvite = (token: string) =>
-  useQuery({ queryKey: queryKeys.invite(token), queryFn: () => api.get<InviteInfo>(`/invites/${token}`), retry: false });
+  useQuery({
+    queryKey: queryKeys.invite(token),
+    queryFn: () => api.get<InviteInfo>(`/invites/${token}`),
+    retry: false,
+  });
 
 export function useJoinInvite(token: string) {
   const queryClient = useQueryClient();

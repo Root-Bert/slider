@@ -73,7 +73,10 @@ export function AvatarStack({ authors, max = 4, size = 24, className }: AvatarSt
   if (authors.length === 0) return null;
 
   return (
-    <span className={cn('flex items-center', className)} aria-label={authors.map((a) => a.name).join(', ')}>
+    <span
+      className={cn('flex items-center', className)}
+      aria-label={authors.map((a) => a.name).join(', ')}
+    >
       {visible.map((author, index) => (
         <Avatar
           key={author.id}

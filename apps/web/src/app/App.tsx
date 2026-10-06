@@ -9,7 +9,8 @@ const queryClient = new QueryClient({
       staleTime: 10_000,
       // Client errors (403/404/…) are final; only retry network and server hiccups.
       retry: (failureCount, error) =>
-        failureCount < 2 && !(error instanceof ApiError && error.status >= 400 && error.status < 500),
+        failureCount < 2 &&
+        !(error instanceof ApiError && error.status >= 400 && error.status < 500),
     },
   },
 });

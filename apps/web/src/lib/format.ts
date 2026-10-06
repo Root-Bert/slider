@@ -5,7 +5,11 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
 const shortDate = new Intl.DateTimeFormat('de-DE', { day: 'numeric', month: 'short' });
-const longDate = new Intl.DateTimeFormat('de-DE', { day: 'numeric', month: 'short', year: 'numeric' });
+const longDate = new Intl.DateTimeFormat('de-DE', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+});
 const dateTime = new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
 
 export function formatRelativeTime(iso: string, now: Date = new Date()): string {

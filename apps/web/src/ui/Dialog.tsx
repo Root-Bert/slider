@@ -16,7 +16,15 @@ interface DialogProps {
  * UI kit "Modal". Built on the native <dialog> element, so focus trapping,
  * Escape-to-close and the top layer come from the browser.
  */
-export function Dialog({ open, onClose, title, description, children, footer, className }: DialogProps) {
+export function Dialog({
+  open,
+  onClose,
+  title,
+  description,
+  children,
+  footer,
+  className,
+}: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
 
@@ -51,7 +59,13 @@ export function Dialog({ open, onClose, title, description, children, footer, cl
             </h2>
             {description && <div className="text-[13px] text-fg-subtle">{description}</div>}
           </div>
-          <IconButton icon="close" label="Schließen" size="sm" onClick={onClose} className="-mt-1 -mr-2" />
+          <IconButton
+            icon="close"
+            label="Schließen"
+            size="sm"
+            onClick={onClose}
+            className="-mt-1 -mr-2"
+          />
         </header>
         {children}
         {footer && <footer className="flex items-center justify-end gap-2">{footer}</footer>}

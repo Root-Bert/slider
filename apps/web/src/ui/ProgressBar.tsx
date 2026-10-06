@@ -19,7 +19,10 @@ export function ProgressBar({ value, label, className }: ProgressBarProps) {
       className={cn('h-1 overflow-hidden rounded-full bg-white/10', className)}
     >
       <div
-        className={cn('h-full rounded-full bg-fg transition-[width] duration-300', percent === null && 'skeleton w-full')}
+        className={cn(
+          'h-full rounded-full bg-fg transition-[width] duration-300',
+          percent === null && 'skeleton w-full',
+        )}
         style={percent === null ? undefined : { width: `${percent}%` }}
       />
     </div>
