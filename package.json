@@ -2,7 +2,6 @@
   "name": "slider",
   "private": true,
   "description": "Review PowerPoint decks precisely: mark, comment, version.",
-  "license": "AGPL-3.0-only",
   "type": "module",
   "workspaces": [
     "packages/*",
