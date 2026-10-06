@@ -234,7 +234,7 @@ async function copyAsset(storage: BlobStorage, fileName: string): Promise<string
   return key;
 }
 
-/** `npm run seed`: wipes the local database and files, then seeds fresh demo data. */
+/** `bun run seed`: wipes the local database and files, then seeds fresh demo data. */
 async function main(): Promise<void> {
   const config = loadConfig();
   const { dbDir, blobsDir } = dataPaths(config);

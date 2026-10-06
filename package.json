@@ -3,32 +3,33 @@
   "private": true,
   "description": "Review PowerPoint decks precisely: mark, comment, version.",
   "type": "module",
+  "packageManager": "bun@1.3.13",
   "workspaces": [
     "packages/*",
     "apps/*"
   ],
   "engines": {
+    "bun": ">=1.3",
     "node": ">=22"
   },
   "scripts": {
-    "dev": "concurrently -k -n api,web -c blue,magenta \"npm:dev -w @slider/api\" \"npm:dev -w @slider/web\"",
-    "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev": "bun run --filter @slider/api --filter @slider/web dev",
+    "build": "bun run --filter '*' build",
+    "typecheck": "bun run --filter '*' typecheck",
     "test": "vitest run",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "seed": "npm run seed -w @slider/api"
+    "seed": "bun run --filter @slider/api seed",
+    "sample": "bun run --filter @slider/pptx sample"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.6.4",
-    "concurrently": "^10.0.5",
     "eslint": "^10.12.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.7",
     "globals": "^17.13.0",
     "prettier": "^3.9.9",
-    "tsx": "^4.23.15",
     "typescript": "~6.0",
     "typescript-eslint": "^8.71.1",
     "vitest": "^5.0.3"

@@ -1,6 +1,8 @@
-import { deflateSync } from 'node:zlib';
-
-/** Minimal PNG encoder (8-bit RGB, no filtering) for generating test and demo images. */
+/**
+ * Minimal PNG encoder (8-bit RGB, no filtering) for generating test and demo images.
+ * Pixel data is stored uncompressed: the output is then identical on every runtime
+ * (Bun's and Node's zlib produce different, equally valid, deflate streams).
+ */
 
 type Rgb = readonly [number, number, number];
 
@@ -23,7 +25,7 @@ export function createPng(width: number, height: number, pixel: (x: number, y: n
   return concat([
     new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk('IHDR', header),
-    chunk('IDAT', new Uint8Array(deflateSync(raw))),
+    chunk('IDAT', zlibStored(raw)),
     chunk('IEND', new Uint8Array(0)),
   ]);
 }
@@ -39,7 +41,40 @@ function chunk(type: string, data: Uint8Array): Uint8Array {
   return result;
 }
 
-const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
+/** Max payload of one stored (uncompressed) deflate block. */
+const STORED_BLOCK_SIZE = 0xffff;
+
+/** Wraps bytes in a zlib stream made of stored deflate blocks (RFC 1950 / RFC 1951 §3.2.4). */
+function zlibStored(data: Uint8Array): Uint8Array {
+  const blockCount = Math.max(1, Math.ceil(data.length / STORED_BLOCK_SIZE));
+  const result = new Uint8Array(2 + blockCount * 5 + data.length + 4);
+  const view = new DataView(result.buffer);
+  result.set([0x78, 0x01], 0); // CMF/FLG: deflate, 32K window, no preset dictionary
+  let offset = 2;
+  for (let block = 0; block < blockCount; block++) {
+    const start = block * STORED_BLOCK_SIZE;
+    const length = Math.min(STORED_BLOCK_SIZE, data.length - start);
+    result[offset] = block === blockCount - 1 ? 1 : 0; // BFINAL, BTYPE = 00 (stored)
+    view.setUint16(offset + 1, length, true);
+    view.setUint16(offset + 3, ~length & 0xffff, true);
+    result.set(data.subarray(start, start + length), offset + 5);
+    offset += 5 + length;
+  }
+  view.setUint32(offset, adler32(data));
+  return result;
+}
+
+function adler32(bytes: Uint8Array): number {
+  let a = 1;
+  let b = 0;
+  for (const byte of bytes) {
+    a = (a + byte) % 65521;
+    b = (b + a) % 65521;
+  }
+  return ((b << 16) | a) >>> 0;
+}
+
+const CRC_TABLE =Array.from({ length: 256 }, (_, n) => {
   let c = n;
   for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
   return c >>> 0;

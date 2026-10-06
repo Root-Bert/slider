@@ -13,37 +13,41 @@ and collect feedback pinned to the exact spot on the slide. The original file is
 
 ## Quick start
 
-Requirements: Node.js ≥ 22. Nothing else – the database is embedded.
+Requirements: [Bun](https://bun.com) ≥ 1.3 and Node.js ≥ 22 (Vite and Vitest run on Node).
+Nothing else – the database is embedded.
 
 ```bash
-npm install
-npm run dev          # API on :8787, web app on http://localhost:5173
+bun install
+bun run dev          # API on :8787, web app on http://localhost:5173
 ```
 
 The first start creates a local database in `apps/api/.data` and seeds a demo workspace
-("Q4 Strategie" with feedback from four reviewers). Reset it any time with `npm run seed`.
+("Q4 Strategie" with feedback from four reviewers). Reset it any time with `bun run seed`.
 
 Try the upload flow with the generated sample deck:
 
 ```bash
-npm run sample -w @slider/pptx   # writes packages/pptx/samples/slider-demo.pptx
+bun run sample       # writes packages/pptx/samples/slider-demo.pptx
 ```
 
 | Command             | What it does                                   |
 | ------------------- | ---------------------------------------------- |
-| `npm run dev`       | API + web with hot reload                      |
-| `npm test`          | All unit and API tests (Vitest)                |
-| `npm run lint`      | ESLint (TypeScript, React hooks)               |
-| `npm run typecheck` | `tsc` for every workspace                      |
-| `npm run build`     | Production build (`apps/web/dist` is static)   |
-| `npm run seed`      | Reset the local database to the demo workspace |
+| `bun run dev`       | API + web with hot reload                      |
+| `bun run test`      | All unit and API tests (Vitest)                |
+| `bun run lint`      | ESLint (TypeScript, React hooks)               |
+| `bun run typecheck` | `tsc` for every workspace                      |
+| `bun run build`     | Production build (`apps/web/dist` is static)   |
+| `bun run seed`      | Reset the local database to the demo workspace |
+
+> Use `bun run test`, not `bun test`: the suite runs on Vitest, while `bun test` would start
+> Bun's own test runner.
 
 ## Architecture
 
 ```
 apps/
   web/       Vite + React 19 + Tailwind 4 – static SPA (no SSR), talks to the API via /api
-  api/       Hono on Node – REST API, import pipeline, file serving
+  api/       Hono on Bun – REST API, import pipeline, file serving (Node-compatible)
 packages/
   shared/    Domain model + API contract (zod schemas → TypeScript types), geometry, link parsing
   pptx/      OOXML parser (slides, shapes, sections, modern + legacy comments) and SVG preview renderer
@@ -99,5 +103,5 @@ Tracked in Linear (project _Slider_). This prototype covers:
 
 ## Contributing
 
-Conventional commits, small PRs, `npm run lint && npm run typecheck && npm test` before pushing.
+Conventional commits, small PRs, `bun run lint && bun run typecheck && bun run test` before pushing.
 The license is not decided yet (BER-122; AGPL-3.0 is the current recommendation).

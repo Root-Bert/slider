@@ -6,7 +6,7 @@ import { migrate } from 'drizzle-orm/pglite/migrator';
 import * as schema from './schema';
 
 /**
- * PGlite is real Postgres compiled to WASM: zero setup for `npm run dev`, and the same
+ * PGlite is real Postgres compiled to WASM: zero setup for `bun run dev`, and the same
  * Drizzle pg schema and migrations move to a Postgres server later.
  */
 export type Database = PgliteDatabase<typeof schema>;

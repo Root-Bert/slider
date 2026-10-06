@@ -155,8 +155,9 @@ class PptxWriter {
   }
 
   private addPart(partName: string, content: string | Uint8Array, contentType?: string): void {
-    // A fixed entry date keeps generated packages byte-identical between runs.
-    this.zip.file(partName, content, { date: new Date(DEFAULT_DATE) });
+    // A fixed entry date and no implicit folder entries (which would carry the current time)
+    // keep generated packages byte-identical between runs and runtimes.
+    this.zip.file(partName, content, { date: new Date(DEFAULT_DATE), createFolders: false });
     if (contentType) this.overrides.push({ partName, contentType });
   }
 
