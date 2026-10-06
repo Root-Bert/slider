@@ -54,6 +54,8 @@ export interface ParsedShape {
   fill: string | null;
   /** Placeholder type (`title`, `body`, `ctrTitle`, …), if this is a placeholder. */
   placeholder: string | null;
+  /** Tables only: cell texts row by row (`text` holds the same, tab/newline separated). */
+  tableRows?: string[][];
 }
 
 export interface ParsedParagraph {
@@ -72,9 +74,7 @@ export interface ParsedRun {
 }
 
 export type ParsedCommentAnchor =
-  | { type: 'slide' }
-  | { type: 'point'; point: Point }
-  | { type: 'shape'; shapeId: string };
+  { type: 'slide' } | { type: 'point'; point: Point } | { type: 'shape'; shapeId: string };
 
 export interface ParsedComment {
   /** Stable id for idempotent import: modern → comment GUID, legacy → `authorId:idx`. */
