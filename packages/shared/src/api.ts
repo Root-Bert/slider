@@ -52,6 +52,7 @@ export const ERROR_CODES = [
   'file_too_large',
   'link_revoked',
   'link_expired',
+  'rate_limited',
   'internal',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
