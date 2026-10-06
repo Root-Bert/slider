@@ -11,7 +11,8 @@ export interface ParsedShareLink {
   host: string;
 }
 
-const isSharePointHost = (host: string) => host === 'sharepoint.com' || host.endsWith('.sharepoint.com');
+const isSharePointHost = (host: string) =>
+  host === 'sharepoint.com' || host.endsWith('.sharepoint.com');
 
 export function parseShareLink(input: string): ParsedShareLink | null {
   let url: URL;

@@ -14,7 +14,12 @@ describe('rectFromPoints', () => {
   });
 
   it('clamps points dragged outside the slide', () => {
-    expect(rectFromPoints({ x: -0.2, y: 0.5 }, { x: 1.4, y: 0.7 })).toEqual({ x: 0, y: 0.5, w: 1, h: expect.closeTo(0.2) });
+    expect(rectFromPoints({ x: -0.2, y: 0.5 }, { x: 1.4, y: 0.7 })).toEqual({
+      x: 0,
+      y: 0.5,
+      w: 1,
+      h: expect.closeTo(0.2),
+    });
   });
 });
 
@@ -46,7 +51,12 @@ describe('offsetInRect / pointInRect', () => {
 describe('shape hit-testing', () => {
   const shapes: Shape[] = [
     { id: '4', name: 'Bild', bbox: { x: 0, y: 0, w: 1, h: 0.7 }, text: '' },
-    { id: '2', name: 'Titel', bbox: { x: 0.05, y: 0.5, w: 0.4, h: 0.1 }, text: 'Presentation title' },
+    {
+      id: '2',
+      name: 'Titel',
+      bbox: { x: 0.05, y: 0.5, w: 0.4, h: 0.1 },
+      text: 'Presentation title',
+    },
   ];
 
   it('prefers the smallest shape under the point', () => {
@@ -58,7 +68,10 @@ describe('shape hit-testing', () => {
   it('resolves a shape reference back to slide coordinates', () => {
     const ref = shapeRefAt(shapes, { x: 0.25, y: 0.55 });
     expect(ref?.shapeId).toBe('2');
-    expect(resolveShapeRef(shapes, ref!)).toEqual({ x: expect.closeTo(0.25), y: expect.closeTo(0.55) });
+    expect(resolveShapeRef(shapes, ref!)).toEqual({
+      x: expect.closeTo(0.25),
+      y: expect.closeTo(0.55),
+    });
     expect(resolveShapeRef([], ref!)).toBeNull();
   });
 });

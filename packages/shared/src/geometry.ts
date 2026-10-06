@@ -31,12 +31,18 @@ export function rectFromPoints(a: Point, b: Point): Rect {
   };
 }
 
-export const rectCenter = (rect: Rect): Point => ({ x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 });
+export const rectCenter = (rect: Rect): Point => ({
+  x: rect.x + rect.w / 2,
+  y: rect.y + rect.h / 2,
+});
 
 export const rectArea = (rect: Rect): number => rect.w * rect.h;
 
 export const rectContains = (rect: Rect, point: Point): boolean =>
-  point.x >= rect.x && point.x <= rect.x + rect.w && point.y >= rect.y && point.y <= rect.y + rect.h;
+  point.x >= rect.x &&
+  point.x <= rect.x + rect.w &&
+  point.y >= rect.y &&
+  point.y <= rect.y + rect.h;
 
 /** Position of `point` relative to `rect`, where (0,0) is the rect's top-left and (1,1) its bottom-right. */
 export const offsetInRect = (rect: Rect, point: Point): Point => ({
