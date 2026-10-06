@@ -1,0 +1,4 @@
+# The test suite runs on Vitest (`bun run test`). Bun's own runner (`bun test`) can't resolve
+# the Vite aliases and would report misleading failures, so it is blocked with a hint.
+[test]
+preload = ["./scripts/use-vitest.ts"]

@@ -13,8 +13,8 @@ and collect feedback pinned to the exact spot on the slide. The original file is
 
 ## Quick start
 
-Requirements: [Bun](https://bun.com) ≥ 1.3 and Node.js ≥ 22 (Vite and Vitest run on Node).
-Nothing else – the database is embedded.
+Requirements: [Bun](https://bun.com) ≥ 1.3 (package manager and API runtime) and Node.js ≥ 22
+(Vite and Vitest run on Node). Nothing else – the database is embedded.
 
 ```bash
 bun install
@@ -39,15 +39,15 @@ bun run sample       # writes packages/pptx/samples/slider-demo.pptx
 | `bun run build`     | Production build (`apps/web/dist` is static)   |
 | `bun run seed`      | Reset the local database to the demo workspace |
 
-> Use `bun run test`, not `bun test`: the suite runs on Vitest, while `bun test` would start
-> Bun's own test runner.
+> Use `bun run test`, not `bun test`: the suite runs on Vitest. `bun test` would start Bun's own
+> test runner, so it is blocked with a hint (`bunfig.toml`).
 
 ## Architecture
 
 ```
 apps/
   web/       Vite + React 19 + Tailwind 4 – static SPA (no SSR), talks to the API via /api
-  api/       Hono on Bun – REST API, import pipeline, file serving (Node-compatible)
+  api/       Hono on Bun – REST API, import pipeline, file serving
 packages/
   shared/    Domain model + API contract (zod schemas → TypeScript types), geometry, link parsing
   pptx/      OOXML parser (slides, shapes, sections, modern + legacy comments) and SVG preview renderer
