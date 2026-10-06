@@ -1,0 +1,147 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+
+/*
+ * Design tokens – mirror the Figma UI kit "UI-Kit · Slider" (node 87:394).
+ * Dark-only by design: slides are the only bright surface on screen.
+ */
+@theme {
+  --font-sans: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  /* Surfaces */
+  --color-canvas: #000000;
+  --color-glass: rgb(77 77 77 / 0.3);
+  --color-glass-solid: #141414;
+  --color-hairline: rgb(255 255 255 / 0.08);
+  --color-hairline-strong: rgb(255 255 255 / 0.16);
+  --color-placeholder: #1a1a1a;
+
+  /* Foreground (white at fixed opacities, as in the design) */
+  --color-fg: rgb(255 255 255 / 0.9);
+  --color-fg-muted: rgb(255 255 255 / 0.7);
+  --color-fg-subtle: rgb(255 255 255 / 0.5);
+  --color-fg-faint: rgb(255 255 255 / 0.3);
+  --color-on-primary: #000000;
+  --color-primary: rgb(255 255 255 / 0.9);
+
+  /* Status */
+  --color-success: #2ecc71;
+  --color-warning: #f5a623;
+  --color-info: #4d9fff;
+  --color-danger: #ff3b30;
+  --color-powerpoint: #d35230;
+  --color-mention: #5c8aff;
+
+  /* Reviewer accents – pins, connector lines, drawings (BER-99) */
+  --color-accent-red: #ff0000;
+  --color-accent-blue: #0048ff;
+  --color-accent-violet: #8b5cf6;
+  --color-accent-yellow: #ffd000;
+
+  /* Avatar rings (presence colours) */
+  --color-ring-red: #ffd4b8;
+  --color-ring-blue: #c8f1ff;
+  --color-ring-violet: #dad0fc;
+  --color-ring-yellow: #fff7b8;
+
+  --radius-thumb: 4px;
+  --radius-control: 12px;
+  --radius-panel: 16px;
+
+  --shadow-float: 0 8px 32px rgb(0 0 0 / 0.5);
+
+  --animate-fade-in: fade-in 160ms ease-out;
+  --animate-pop-in: pop-in 180ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  --animate-shimmer: shimmer 1.6s linear infinite;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px) scale(0.98);
+    }
+  }
+  @keyframes shimmer {
+    from {
+      background-position: -400px 0;
+    }
+    to {
+      background-position: 400px 0;
+    }
+  }
+}
+
+/* Frosted glass surface (Figma "GLASS" effect: #4D4D4D @ 30 %, background blur). */
+@utility glass {
+  background-color: var(--color-glass);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  box-shadow: inset 0 0 0 1px var(--color-hairline);
+}
+
+/* Opaque variant for overlays that sit above busy content (dialogs, popovers, panels). */
+@utility glass-elevated {
+  background-color: rgb(20 20 20 / 0.86);
+  backdrop-filter: blur(32px) saturate(140%);
+  -webkit-backdrop-filter: blur(32px) saturate(140%);
+  box-shadow:
+    inset 0 0 0 1px var(--color-hairline-strong),
+    var(--shadow-float);
+}
+
+/* Dot grid used behind the review canvas and on the start screens. */
+@utility dot-grid {
+  background-color: var(--color-canvas);
+  background-image: radial-gradient(rgb(255 255 255 / 0.14) 1px, transparent 1.2px);
+  background-size: 22px 22px;
+}
+
+/* Loading placeholder for slides that are still rendering. */
+@utility skeleton {
+  background: linear-gradient(90deg, #161616 0%, #222 50%, #161616 100%);
+  background-size: 800px 100%;
+  animation: var(--animate-shimmer);
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-canvas font-sans text-fg antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-mention);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
