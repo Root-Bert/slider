@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Runs in browser and Node; only Web-standard globals (URL, …) are used.
+    "lib": ["ES2023", "DOM"]
+  },
+  "include": ["src", "test"]
+}
