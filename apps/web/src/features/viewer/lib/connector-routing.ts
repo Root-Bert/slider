@@ -541,27 +541,25 @@ export interface FadeStop {
   opacity: number;
 }
 
+/** Lines fade out over this distance above the band and back in below it. */
+const FADE_ABOVE_FROM = 28;
+const FADE_ABOVE_TO = 10;
+const FADE_BELOW = 12;
+
 /**
- * Vertical opacity profile shared by all lines (Figma B1 gradient): lines fade out above the
- * minimap, stay hidden across it, glint once in the gap, hide behind the control row and come
- * back below it. `null` bands are skipped. Stops are ascending in y.
+ * Vertical opacity profile shared by all lines: they fade out just above the band between the
+ * slides and the comments (minimap, controls row and split handle), stay hidden through the
+ * whole band – no stubs between its rows – and fade back in below it. `null` (nothing measured)
+ * hides nothing. Stops are ascending in y.
  */
-export function fadeStops(minimap: Band | null, controls: Band | null): FadeStop[] {
-  const stops: FadeStop[] = [];
-  if (minimap) {
-    stops.push({ y: minimap.top - 28, opacity: 1 }, { y: minimap.top - 10, opacity: 0 });
-    stops.push({ y: minimap.bottom + 10, opacity: 0 });
-    if (controls && controls.top > minimap.bottom + 14)
-      stops.push({ y: (minimap.bottom + 10 + controls.top) / 2, opacity: 0.85 });
-  }
-  if (controls) {
-    if (!minimap) stops.push({ y: controls.top - 18, opacity: 1 });
-    stops.push({ y: controls.top, opacity: 0 }, { y: controls.bottom + 2, opacity: 0 });
-    stops.push({ y: controls.bottom + 14, opacity: 1 });
-  } else if (minimap) {
-    stops.push({ y: minimap.bottom + 22, opacity: 1 });
-  }
-  // Overlapping bands: keep the stops monotonic.
-  for (let i = 1; i < stops.length; i++) stops[i]!.y = Math.max(stops[i]!.y, stops[i - 1]!.y);
-  return stops;
+export function fadeStops(band: Band | null): FadeStop[] {
+  if (!band) return [];
+  const top = band.top - FADE_ABOVE_TO;
+  const bottom = Math.max(top, band.bottom);
+  return [
+    { y: Math.min(top, band.top - FADE_ABOVE_FROM), opacity: 1 },
+    { y: top, opacity: 0 },
+    { y: bottom, opacity: 0 },
+    { y: bottom + FADE_BELOW, opacity: 1 },
+  ];
 }

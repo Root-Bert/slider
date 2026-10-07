@@ -3,8 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   createInitialState,
   viewerReducer,
-  ZOOM_MAX,
-  ZOOM_MIN,
   type ViewerAction,
   type ViewerState,
 } from './viewer-state';
@@ -95,15 +93,18 @@ describe('viewerReducer', () => {
     expect(state.tool).toBeNull();
   });
 
-  it('clamps zoom to 0..1', () => {
-    expect(run({ type: 'zoomChanged', zoom: 10 }).zoom).toBe(ZOOM_MAX);
-    expect(run({ type: 'zoomChanged', zoom: -3 }).zoom).toBe(ZOOM_MIN);
+  it('clamps the split to 0..1 and resets it with null', () => {
+    expect(run({ type: 'splitChanged', split: 10 }).split).toBe(1);
+    expect(run({ type: 'splitChanged', split: -3 }).split).toBe(0);
+    const moved = run({ type: 'splitChanged', split: 0.3 });
+    expect(viewerReducer(moved, { type: 'splitChanged', split: null }).split).toBeNull();
+    expect(viewerReducer(moved, { type: 'splitChanged', split: 0.3 })).toBe(moved);
   });
 
-  it('starts at Desktop-1 (max zoom) unless a stored zoom is passed in', () => {
-    expect(initial.zoom).toBe(1);
-    const restored = createInitialState({ activeSlideId: 's1', color: 'red', zoom: 0.6 });
-    expect(restored.zoom).toBe(0.6);
+  it('starts at the default split unless a stored split is passed in', () => {
+    expect(initial.split).toBeNull();
+    const restored = createInitialState({ activeSlideId: 's1', color: 'red', split: 0.6 });
+    expect(restored.split).toBe(0.6);
   });
 
   it('tracks the hovered slide and keeps the state when nothing changes', () => {

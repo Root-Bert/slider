@@ -17,13 +17,14 @@ const COLOR_NAMES: Record<AccentColor, string> = {
   yellow: 'Gelb',
 };
 
-/** Tool options pill above the tool bar (B2): shape/pen variant, colour, undo/redo. */
+/** Tool options pill next to the tool bar (B2): shape/pen variant, colour, undo/redo. */
 export function ToolOptions() {
   const { tool, color, draft } = useViewerState();
   const dispatch = useViewerDispatch();
 
   return (
-    <GlassPanel className="flex animate-pop-in items-center gap-1 px-2 py-1.5">
+    // Phones: narrower than the pill – it scrolls sideways instead of overflowing the screen.
+    <GlassPanel className="scrollbar-none flex max-w-full animate-pop-in items-center gap-1 overflow-x-auto px-2 py-1.5 *:shrink-0">
       <div role="radiogroup" aria-label="Werkzeug" className="flex items-center gap-1">
         {TOOL_OPTIONS.map((option) => {
           const selected = option.tool === tool;

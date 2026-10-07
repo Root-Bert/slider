@@ -11,16 +11,17 @@ import { cn } from '@/ui';
 import { ConnectorLines } from '../comments/ConnectorLines';
 import { useIsNarrow } from '../hooks/useMediaQuery';
 import { useTimelineMetrics } from '../hooks/useTimelineMetrics';
-import { useTimelineZoom } from '../hooks/useTimelineZoom';
+import { useTimelineWheel } from '../hooks/useTimelineWheel';
 import {
   anchoredScrollLeft,
   revealScrollLeft,
   computeTrackGeometry,
   layoutTrack,
   slideHeightAt,
+  splitForWidth,
+  TRACK_PAD_TOP,
   TRACK_PAD_X,
   visibleRange,
-  zoomForWidth,
   type TrackLayout,
 } from '../lib/timeline-layout';
 import { useStageRegistry } from '../state/stage-registry';
@@ -28,10 +29,11 @@ import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
 import { CommentColumns } from './CommentColumns';
 import { Minimap } from './Minimap';
-import { TimelineContext, type ZoomAnchor } from './timeline-context';
+import { SplitHandle } from './SplitHandle';
+import { TimelineContext, type SizeAnchor } from './timeline-context';
 import { Track } from './Track';
 
-/** The active slide is zoomed to at least this width when a drawing tool is picked. */
+/** The active slide grows to at least this width when a drawing tool is picked. */
 const DRAW_MIN_W = 640;
 /** On phones the slide nearest to the snap point becomes active once scrolling settles. */
 const SETTLE_MS = 120;
@@ -41,20 +43,22 @@ const sameRange = (a: Range, b: Range) => a.first === b.first && a.last === b.la
 
 /**
  * The deck as a timeline: a track with every slide side by side on top, the minimap (thumbnails
- * of the whole deck) and the controls row below it, and below that every slide's comments in a column exactly under its slide. One scroller
- * moves track and columns together horizontally; vertically only the comments scroll, under a
- * sticky header of fixed height – so zooming never moves the comment area.
+ * of the whole deck), the controls row and the split handle below it, and below that every
+ * slide's comments in a column exactly under its slide. One scroller moves track and columns
+ * together horizontally; vertically only the comments scroll, under a sticky header. The split
+ * handle sets the slide height – the track is always exactly as tall as the slides, and the
+ * minimap, controls row and comment area move with it.
  */
 export function Timeline({ controls }: { controls: ReactNode }) {
   const { slides, slideIndex } = useViewerData();
-  const { zoom, activeSlideId, tool } = useViewerState();
+  const { split, activeSlideId, tool } = useViewerState();
   const dispatch = useViewerDispatch();
   const registry = useStageRegistry();
   const narrow = useIsNarrow();
   const wrapperRef = useRef<HTMLElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
-  const anchorRef = useRef<ZoomAnchor | null>(null);
+  const anchorRef = useRef<SizeAnchor | null>(null);
   const [initialSlideId] = useState(activeSlideId);
 
   const metrics = useTimelineMetrics(wrapperRef, scrollerRef, controlsRef);
@@ -71,13 +75,14 @@ export function Timeline({ controls }: { controls: ReactNode }) {
       }),
     [aspectRatios, metrics, narrow],
   );
-  const t = narrow ? 1 : zoom;
+  // Whole pixels: the track, the header and the comment area stay on crisp edges.
+  const slideH = geometry && Math.round(slideHeightAt(narrow ? null : split, geometry));
   const layout = useMemo(
-    () => geometry && layoutTrack(aspectRatios, slideHeightAt(t, geometry)),
-    [aspectRatios, geometry, t],
+    () => (slideH ? layoutTrack(aspectRatios, slideH) : null),
+    [aspectRatios, slideH],
   );
 
-  useTimelineZoom({ scrollerRef, geometry, anchorRef, enabled: !narrow });
+  useTimelineWheel({ scrollerRef, geometry, anchorRef, enabled: !narrow });
 
   useLayoutEffect(() => {
     registry.setScroller(scrollerRef.current);
@@ -102,11 +107,11 @@ export function Timeline({ controls }: { controls: ReactNode }) {
   });
 
   /**
-   * Where zooming without a pointer (buttons, slider, resize) keeps things: the active slide's
-   * centre if it is in view – and then the whole slide stays in view – else the middle.
+   * Where resizing without a pointer (split handle, keys, window) keeps things: the active
+   * slide's centre if it is in view – and then the whole slide stays in view – else the middle.
    */
   const defaultAnchor = useEffectEvent(
-    (prev: TrackLayout, scrollLeft: number, width: number): ZoomAnchor => {
+    (prev: TrackLayout, scrollLeft: number, width: number): SizeAnchor => {
       const index = activeSlideId ? slideIndex.get(activeSlideId) : undefined;
       const box = index === undefined ? undefined : prev.slides[index];
       if (index !== undefined && box) {
@@ -118,7 +123,7 @@ export function Timeline({ controls }: { controls: ReactNode }) {
     },
   );
 
-  // Zoom anchoring before paint: the anchor keeps its slide fraction under the same viewport x.
+  // Anchoring before paint: the anchor keeps its slide fraction under the same viewport x.
   useLayoutEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller || !layout) return;
@@ -130,7 +135,7 @@ export function Timeline({ controls }: { controls: ReactNode }) {
       if (initialSlideId)
         registry.revealSlide(initialSlideId, { behavior: 'instant', align: 'center' });
     } else if (prev.h !== layout.h) {
-      const anchor: ZoomAnchor =
+      const anchor: SizeAnchor =
         anchorRef.current ?? defaultAnchor(prev, scrollLeftRef.current, width);
       anchorRef.current = null;
       const left = anchoredScrollLeft(prev, layout, anchor.contentX, anchor.viewportX, width);
@@ -177,8 +182,8 @@ export function Timeline({ controls }: { controls: ReactNode }) {
     };
   }, [narrow, registry, slides, dispatch]);
 
-  // Picking a drawing tool zooms a small active slide up to a comfortable drawing size.
-  const zoomForDrawing = useEffectEvent(() => {
+  // Picking a drawing tool grows a small active slide to a comfortable drawing size.
+  const growForDrawing = useEffectEvent(() => {
     if (narrow || !geometry || !layout || !activeSlideId) return;
     const index = slideIndex.get(activeSlideId);
     const box = index === undefined ? undefined : layout.slides[index];
@@ -188,25 +193,24 @@ export function Timeline({ controls }: { controls: ReactNode }) {
       registry.revealSlide(activeSlideId, { align: 'nearest' });
       return;
     }
-    const target = zoomForWidth(DRAW_MIN_W, slide.aspectRatio, geometry);
-    if (target <= zoom) return;
+    const target = splitForWidth(DRAW_MIN_W, slide.aspectRatio, geometry);
+    if (slideHeightAt(target, geometry) <= layout.h + 0.5) return;
     const scroller = scrollerRef.current;
     if (scroller) {
       const contentX = box.x + box.w / 2;
       const viewportX = Math.min(Math.max(contentX - scroller.scrollLeft, 0), scroller.clientWidth);
       anchorRef.current = { contentX, viewportX, keep: index };
     }
-    dispatch({ type: 'zoomChanged', zoom: target });
+    dispatch({ type: 'splitChanged', split: target });
   });
   useEffect(() => {
-    if (tool) zoomForDrawing();
+    if (tool) growForDrawing();
   }, [tool]);
 
   const context = useMemo(
     () => geometry && layout && { geometry, layout, anchorRef, scrollerRef },
     [geometry, layout],
   );
-  const trackH = geometry?.trackH ?? 0;
 
   return (
     <main ref={wrapperRef} className="relative min-h-0 flex-1 overflow-hidden">
@@ -219,23 +223,37 @@ export function Timeline({ controls }: { controls: ReactNode }) {
         )}
       >
         <div className="relative min-w-full" style={{ width: layout?.contentW }}>
-          {/* Sticky header of fixed height: the comment area always starts at the same y. */}
-          <div data-timeline-header className="sticky top-0 z-20 bg-canvas">
+          {/* Sticky header: the comment area starts where the split handle puts it. */}
+          <div
+            data-timeline-header
+            className="sticky top-0 z-20 bg-canvas"
+            style={{ paddingTop: TRACK_PAD_TOP }}
+          >
             {layout && context ? (
               <TimelineContext value={context}>
-                <Track layout={layout} range={range} height={trackH} snap={narrow} />
+                <Track layout={layout} range={range} snap={narrow} />
               </TimelineContext>
             ) : (
-              <div style={{ height: trackH }} />
+              <div style={{ height: slideH ?? 0 }} />
             )}
-            {/* Minimap and controls: fixed height (part of where the comment area starts). */}
-            <div ref={controlsRef} className="sticky left-0 w-[100cqw] pt-1 pb-2 md:pt-2">
+            {/* Minimap, controls row and split handle: one band of fixed height right under the
+                track, part of where the comment area starts. Connector lines hide behind all of it. */}
+            <div
+              ref={controlsRef}
+              data-connector-occluder
+              className="sticky left-0 w-[100cqw] pt-2 max-md:pb-2"
+            >
               {/* Thumbnails line up with the big track's slides (TRACK_PAD_X minus MINIMAP_PAD). */}
               <div className="px-3">
                 <Minimap layout={layout} scrollerRef={scrollerRef} narrow={narrow} />
               </div>
               {/* Figma D1: ~28px from the thumbnails to the controls row. */}
               <div className="px-4 pt-2 md:px-[clamp(16px,3vw,32px)] md:pt-5">{controls}</div>
+              {geometry && slideH && !narrow && (
+                <div className="pt-1">
+                  <SplitHandle geometry={geometry} slideH={slideH} />
+                </div>
+              )}
             </div>
           </div>
           {layout && context && (
@@ -246,15 +264,11 @@ export function Timeline({ controls }: { controls: ReactNode }) {
         </div>
       </div>
       <ConnectorLines wrapperRef={wrapperRef} />
-      {/* The floating tool dock and session controls sit on a scrim, not on top of card text:
+      {/* The floating avatar dock and session controls sit on a scrim, not on top of card text:
           cards scrolling under them fade out (the comment area has room to scroll them clear). */}
       <div
         aria-hidden
-        className={cn(
-          'pointer-events-none absolute inset-x-0 bottom-0 z-[28] bg-linear-to-b from-transparent via-canvas/85 via-40% to-canvas transition-[height] duration-200',
-          // Taller while a tool is picked: the tool options pill stacks above the tool bar.
-          tool ? 'h-44' : 'h-28',
-        )}
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-[28] h-28 bg-linear-to-b from-transparent via-canvas/85 via-40% to-canvas"
       />
     </main>
   );

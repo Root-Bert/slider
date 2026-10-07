@@ -28,7 +28,7 @@ function draftTargetBox(draft: Draft, registry: ReturnType<typeof useStageRegist
   }
 }
 
-/** Keeps the composer popover next to its draft while the stage scrolls, zooms or resizes. */
+/** Keeps the composer popover next to its draft while the stage scrolls or resizes. */
 export function useComposerPosition(
   draft: Draft | null,
   popoverRef: RefObject<HTMLElement | null>,

@@ -418,24 +418,19 @@ describe('roundedPath', () => {
 });
 
 describe('fadeStops', () => {
-  it('matches the Figma B1 gradient', () => {
-    expect(fadeStops({ top: 350, bottom: 414 }, { top: 442, bottom: 482 })).toEqual([
+  it('hides the lines through the whole band, without a glint between its rows', () => {
+    expect(fadeStops({ top: 350, bottom: 496 })).toEqual([
       { y: 322, opacity: 1 },
       { y: 340, opacity: 0 },
-      { y: 424, opacity: 0 },
-      { y: 433, opacity: 0.85 },
-      { y: 442, opacity: 0 },
-      { y: 484, opacity: 0 },
-      { y: 496, opacity: 1 },
+      { y: 496, opacity: 0 },
+      { y: 508, opacity: 1 },
     ]);
   });
 
-  it('only hides the control row without a minimap', () => {
-    expect(fadeStops(null, { top: 442, bottom: 482 })).toEqual([
-      { y: 424, opacity: 1 },
-      { y: 442, opacity: 0 },
-      { y: 484, opacity: 0 },
-      { y: 496, opacity: 1 },
-    ]);
+  it('keeps the stops ascending for a degenerate band and hides nothing without one', () => {
+    const stops = fadeStops({ top: 100, bottom: 80 });
+    for (let i = 1; i < stops.length; i++)
+      expect(stops[i]!.y).toBeGreaterThanOrEqual(stops[i - 1]!.y);
+    expect(fadeStops(null)).toEqual([]);
   });
 });

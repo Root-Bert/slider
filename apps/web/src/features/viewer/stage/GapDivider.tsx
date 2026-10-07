@@ -37,7 +37,7 @@ export const GapDivider = memo(function GapDivider({
   const dispatch = useViewerDispatch();
   const openThreads = threads?.filter((thread) => thread.root.status === 'open') ?? [];
   const first = threads?.[0];
-  // Narrow gaps (zoomed out) get a smaller ⊕.
+  // Narrow gaps (small slides) get a smaller ⊕.
   const tight = width < 32;
 
   return (

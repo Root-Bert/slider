@@ -7,24 +7,21 @@ import { SlideFrame } from '../stage/SlideFrame';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerState } from '../state/viewer-state';
 
-const DIVIDER_MIN_H = 64;
-
 interface TrackProps {
   layout: TrackLayout;
   /** Rendered slide indices (windowing) – the rest of the deck only reserves its width. */
   range: { first: number; last: number };
-  height: number;
   /** Phones snap slide by slide: every slide needs a snap target, rendered or not. */
   snap: boolean;
 }
 
 /**
- * The deck as a horizontal track: every slide side by side at the zoomed size, centred in
- * a track of fixed height, with a ⊕ divider after each slide. Slide items are
+ * The deck as a horizontal track: every slide side by side, filling the track's height (set by
+ * the split handle), with a ⊕ divider after each slide. Slide items are
  * memoised and only get the props that concern them, so hovering or scrolling a 100+ slide
  * deck doesn't re-render it.
  */
-export function Track({ layout, range, height, snap }: TrackProps) {
+export function Track({ layout, range, snap }: TrackProps) {
   const { slides, gapThreads, canComment } = useViewerData();
   const { activeSlideId, tool, color, draft, focusedThreadId, hoveredThreadId } = useViewerState();
   const { bySlide } = useCommentThreads();
@@ -33,13 +30,9 @@ export function Track({ layout, range, height, snap }: TrackProps) {
     draft?.anchor.type === 'gap'
       ? gapKey(draft.anchor.afterSlideId, draft.anchor.beforeSlideId)
       : null;
-  // Slides are centred in the track, like a slide in PowerPoint's editing pane: at max zoom they
-  // fill it (16px above and below, Figma D1), zoomed out the free height is split evenly instead
-  // of piling up as one empty band above or below them.
-  const top = Math.max(0, Math.round((height - layout.h) / 2));
-  // The divider line spans the slides (never shorter than the ⊕ with its pauses), centred on them.
-  const dividerH = Math.min(height, Math.max(layout.h, DIVIDER_MIN_H));
-  const dividerTop = Math.min(Math.max(0, top + (layout.h - dividerH) / 2), height - dividerH);
+  // The track is exactly as tall as the slides – no empty band above or below them – and the
+  // divider lines span its full height.
+  const height = layout.h;
 
   const items = [];
   for (let index = range.first; index <= range.last; index++) {
@@ -58,7 +51,7 @@ export function Track({ layout, range, height, snap }: TrackProps) {
           index={index}
           total={slides.length}
           x={box.x}
-          top={top}
+          top={0}
           w={box.w}
           h={layout.h}
           isActive={slide.id === activeSlideId}
@@ -71,9 +64,9 @@ export function Track({ layout, range, height, snap }: TrackProps) {
         <GapDivider
           gapKey={key}
           x={gap.x}
-          top={dividerTop}
+          top={0}
           width={gap.w}
-          height={dividerH}
+          height={height}
           afterSlideId={slide.id}
           beforeSlideId={next?.id ?? null}
           threads={gapThreads.get(key)}

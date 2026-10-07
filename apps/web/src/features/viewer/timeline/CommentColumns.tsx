@@ -17,7 +17,7 @@ import {
   busRoom,
   cardMode,
   slideHeightAt,
-  zoomForWidth,
+  splitForWidth,
   type TrackLayout,
 } from '../lib/timeline-layout';
 import { useStageRegistry } from '../state/stage-registry';
@@ -28,8 +28,8 @@ import { CommentCard, type CardEmphasis } from '../comments/CommentCard';
 import { CompactCard } from '../comments/CompactCard';
 import { useTimeline } from './timeline-context';
 
-/** Bubbles zoom in until the column is this wide (full cards). */
-const BUBBLE_ZOOM_TARGET_W = 300;
+/** Clicking a bubble grows the slides until the column is this wide (full cards). */
+const BUBBLE_TARGET_W = 300;
 /** More lines than this share the bus room by squeezing the rows. */
 const BUS_ROOM_MAX_LINES = 8;
 /** Top padding of the columns on phones (no connector lines there). */
@@ -53,7 +53,7 @@ export function CommentColumns({ layout, range, narrow }: CommentColumnsProps) {
   const { bySlide, byGap } = useCommentThreads();
   const { threadPanelOpen, focusedThreadId } = useViewerState();
 
-  // Same bus room for every column and zoom: cards don't jump when lines appear or zoom changes.
+  // Same bus room for every column and slide size: cards don't jump when lines appear or the split moves.
   const padTop = useMemo(() => {
     if (narrow) return NARROW_PAD;
     let lines = 1;
@@ -173,7 +173,7 @@ const SlideColumn = memo(function SlideColumn({
   );
 });
 
-/** Bubble mode: clicking activates the slide and zooms in until its cards fit. */
+/** Bubble mode: clicking activates the slide and grows the slides until its cards fit. */
 function SlideBubble({
   slide,
   index,
@@ -195,16 +195,16 @@ function SlideBubble({
     const scroller = scrollerRef.current;
     const box = layout.slides[index];
     if (!scroller || !box) return;
-    const target = zoomForWidth(BUBBLE_ZOOM_TARGET_W, slide.aspectRatio, geometry);
+    const target = splitForWidth(BUBBLE_TARGET_W, slide.aspectRatio, geometry);
     if (slideHeightAt(target, geometry) <= layout.h + 0.5) {
       registry.revealSlide(slide.id);
       return;
     }
-    // Zoom around the bubble, then pull the whole (now larger) slide into view – at the deck's
+    // Grow around the bubble, then pull the whole (now larger) slide into view – at the deck's
     // start that means scrollLeft 0, not the bubble's old x.
     const contentX = box.x + box.w / 2;
     anchorRef.current = { contentX, viewportX: contentX - scroller.scrollLeft, keep: index };
-    dispatch({ type: 'zoomChanged', zoom: target });
+    dispatch({ type: 'splitChanged', split: target });
   };
 
   return (

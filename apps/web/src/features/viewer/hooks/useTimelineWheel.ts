@@ -1,9 +1,9 @@
 import { useEffect, useEffectEvent, type RefObject } from 'react';
 import { rafThrottle } from '../lib/dom';
 import type { TrackGeometry } from '../lib/timeline-layout';
-import { pinchZoom, wheelZoom } from '../lib/zoom';
+import { pinchSplit, wheelSplit } from '../lib/split';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
-import type { ZoomAnchor } from '../timeline/timeline-context';
+import type { SizeAnchor } from '../timeline/timeline-context';
 
 /** Safari's non-standard pinch event (trackpad and touch). */
 interface GestureEvent extends UIEvent {
@@ -13,13 +13,13 @@ interface GestureEvent extends UIEvent {
 
 /**
  * Wheel and pinch on the timeline (BER-96):
- * - Pinch and Ctrl/⌘ + wheel zoom the track like a video timeline, anchored at the pointer.
- *   Chrome, Firefox and Edge report trackpad pinch as a wheel event with `ctrlKey`; Safari
- *   sends `gesture*` events.
+ * - Pinch and Ctrl/⌘ + wheel move the split handle – bigger or smaller slides, like zooming a
+ *   video timeline – anchored horizontally at the pointer. Chrome, Firefox and Edge report
+ *   trackpad pinch as a wheel event with `ctrlKey`; Safari sends `gesture*` events.
  * - A plain vertical wheel over the track and the controls scrolls the timeline sideways (as long
  *   as it can still move that way); over the comments it scrolls them as usual.
  */
-export function useTimelineZoom({
+export function useTimelineWheel({
   scrollerRef,
   geometry,
   anchorRef,
@@ -27,13 +27,13 @@ export function useTimelineZoom({
 }: {
   scrollerRef: RefObject<HTMLElement | null>;
   geometry: TrackGeometry | null;
-  anchorRef: RefObject<ZoomAnchor | null>;
-  /** Off on phones: slides always fill the width there. */
+  anchorRef: RefObject<SizeAnchor | null>;
+  /** Off on phones: slides always fill the width there (no split handle). */
   enabled: boolean;
 }) {
-  const { zoom } = useViewerState();
+  const { split } = useViewerState();
   const dispatch = useViewerDispatch();
-  const current = useEffectEvent(() => ({ zoom, geometry }));
+  const current = useEffectEvent(() => ({ split, geometry }));
 
   useEffect(() => {
     const scroller = scrollerRef.current;
@@ -43,9 +43,9 @@ export function useTimelineZoom({
     let pending: number | null = null;
     const flush = rafThrottle(() => {
       if (pending === null) return;
-      // Nothing changes (already at an end): drop the anchor so it can't leak into a later zoom.
-      if (pending === current().zoom) anchorRef.current = null;
-      else dispatch({ type: 'zoomChanged', zoom: pending });
+      // Nothing changes (already at an end): drop the anchor so it can't leak into a later change.
+      if (pending === current().split) anchorRef.current = null;
+      else dispatch({ type: 'splitChanged', split: pending });
       pending = null;
     });
     const anchorAt = (clientX: number) => {
@@ -59,10 +59,10 @@ export function useTimelineZoom({
       if (event.ctrlKey || event.metaKey) {
         // Otherwise the browser zooms the whole page.
         event.preventDefault();
-        const { zoom: base, geometry: geo } = current();
+        const { split: base, geometry: geo } = current();
         if (!geo) return;
         anchorAt(event.clientX);
-        pending = wheelZoom(pending ?? base, event.deltaY, event.deltaMode, geo);
+        pending = wheelSplit(pending ?? base, event.deltaY, event.deltaMode, geo);
         flush.schedule();
         return;
       }
@@ -77,10 +77,10 @@ export function useTimelineZoom({
       scroller.scrollBy({ left: delta });
     };
 
-    let gestureStartZoom = 0;
+    let gestureStart: number | null = null;
     const onGestureStart = (event: Event) => {
       event.preventDefault();
-      gestureStartZoom = current().zoom;
+      gestureStart = current().split;
     };
     const onGestureChange = (event: Event) => {
       event.preventDefault();
@@ -88,7 +88,7 @@ export function useTimelineZoom({
       if (!geo) return;
       const gesture = event as GestureEvent;
       anchorAt(gesture.clientX);
-      pending = pinchZoom(gestureStartZoom, gesture.scale, geo);
+      pending = pinchSplit(gestureStart, gesture.scale, geo);
       flush.schedule();
     };
     const preventDefault = (event: Event) => event.preventDefault();

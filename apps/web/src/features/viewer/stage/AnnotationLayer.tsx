@@ -27,7 +27,7 @@ interface Mark {
 
 /**
  * Renders the marks of all visible comments on a slide (BER-98): pins, frames and drawings.
- * Everything is positioned in normalised slide coordinates, so marks stay exact at every zoom.
+ * Everything is positioned in normalised slide coordinates, so marks stay exact at every slide size.
  * Strokes live in one SVG with `viewBox="0 0 1 1"`; pins and frames are HTML for crisp borders.
  * Only point comments without a drawing get a dot (B1): frames and drawings are themselves the
  * click target, and their connector line leaves the shape.

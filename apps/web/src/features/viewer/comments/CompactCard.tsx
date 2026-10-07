@@ -6,7 +6,7 @@ import { useViewerDispatch } from '../state/viewer-state';
 import type { CardEmphasis } from './CommentCard';
 
 /**
- * Compact B1 card for narrow comment columns (zoomed-out timeline): avatar, author and two
+ * Compact B1 card for narrow comment columns (small slides): avatar, author and two
  * lines of the comment. Clicking opens the thread panel (B4), where replying works as usual.
  */
 export const CompactCard = memo(function CompactCard({

@@ -49,9 +49,9 @@ interface MinimapProps {
  * Thumbnail row of the whole deck under the big track (Figma D1, 87:327) – PowerPoint's
  * thumbnail pane turned sideways. Thumbnails fit the width so the whole deck shows at once
  * (a long deck scrolls), the active one is framed white, and a bracket marks the part of the
- * deck in view above; it follows scrolling and zooming live and can be dragged to scroll the
- * track. Clicking a thumbnail activates its slide and reveals it. The row has a fixed height, so
- * it never moves the comment area.
+ * deck in view above; it follows scrolling and resizing live and can be dragged to scroll the
+ * track. Clicking a thumbnail activates its slide and reveals it. The row has a fixed height and
+ * moves with the split handle, right under the track.
  */
 export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
   const { slides, gapThreads } = useViewerData();
@@ -101,7 +101,7 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
     });
   const updateBracket = useEffectEvent(placeBracket);
 
-  // Zoom, resize, first paint: before paint, so the bracket never lags a frame behind.
+  // Slide size, resize, first paint: before paint, so the bracket never lags a frame behind.
   useLayoutEffect(() => {
     updateBracket(true);
   }, [layout, miniTrack]);
@@ -270,8 +270,7 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
   const activeIndex = activeSlideId ? slides.findIndex((slide) => slide.id === activeSlideId) : -1;
 
   return (
-    // Connector lines fade out behind the thumbnails.
-    <nav aria-label="Folienübersicht" data-minimap data-connector-occluder="minimap">
+    <nav aria-label="Folienübersicht" data-minimap>
       <div
         ref={listRef}
         className={cn(

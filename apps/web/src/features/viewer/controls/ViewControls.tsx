@@ -6,7 +6,7 @@ interface ViewControlsProps {
   fullscreenSupported: boolean;
 }
 
-/** Fullscreen (`cropFree`), right of the zoom pill (Figma 87:369). */
+/** Fullscreen (`cropFree`) at the right end of the controls row (Figma 87:369). */
 export function ViewControls({
   isFullscreen,
   onToggleFullscreen,

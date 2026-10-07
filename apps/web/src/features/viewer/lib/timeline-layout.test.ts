@@ -3,57 +3,69 @@ import {
   anchoredScrollLeft,
   busRoom,
   cardMode,
+  COMMENT_MIN_H,
   computeTrackGeometry,
+  DEFAULT_SLIDE_H_MAX,
   gapWidth,
   layoutTrack,
+  MIN_SLIDE_H,
+  resolvedSplit,
   revealScrollLeft,
   slideHeightAt,
+  splitForHeight,
+  splitForWidth,
+  TRACK_PAD_TOP,
   unitAt,
   visibleRange,
   xAt,
-  zoomForHeight,
-  zoomForWidth,
 } from './timeline-layout';
 
 const Q4 = Array.from({ length: 12 }, () => 16 / 9);
+/** Minimap, controls row and split handle as measured at desktop sizes. */
+const BAND = 150;
 
-const desktop = (viewportW: number, viewportH: number, controlsH = 64) =>
+const desktop = (viewportW: number, viewportH: number, controlsH = BAND) =>
   computeTrackGeometry({ aspectRatios: Q4, viewportW, viewportH, controlsH, narrow: false });
 
+/** Height of everything above the comment area for slides of height `h`. */
+const headerH = (h: number, controlsH = BAND) => TRACK_PAD_TOP + h + controlsH;
+
 describe('track geometry', () => {
-  it('keeps 40 % for comments at 1440×1024 and floors the slides at 120px', () => {
+  it('keeps 40 % for comments by default at 1440×1024 and allows 25 % at the bottom', () => {
     const geo = desktop(1440, 1024);
-    expect(geo.hMax).toBe(518);
-    expect(geo.trackH).toBe(550);
-    expect(geo.trackH + 64).toBeLessThanOrEqual(0.6 * 1024);
-    // 12 slides only fit 1440px at 93px – narrower than the floor, so the track scrolls.
-    expect(geo.hMin * (16 / 9)).toBeCloseTo(120, 6);
-    expect(layoutTrack(Q4, geo.hMin).contentW).toBeGreaterThan(1440);
+    expect(geo.hDefault).toBe(448);
+    expect(1024 - headerH(geo.hDefault)).toBeGreaterThanOrEqual(0.4 * 1024 - 1);
+    expect(geo.hMax).toBe(602);
+    expect(1024 - headerH(geo.hMax)).toBe(256);
+    expect(geo.hMin).toBe(MIN_SLIDE_H);
   });
 
-  it('fits a short deck into the viewport at min zoom', () => {
-    const short = Q4.slice(0, 6);
-    const geo = computeTrackGeometry({
-      aspectRatios: short,
-      viewportW: 1440,
-      viewportH: 1024,
-      controlsH: 64,
-      narrow: false,
-    });
-    const layout = layoutTrack(short, geo.hMin);
-    expect(layout.slides[0]!.w).toBeGreaterThan(120);
-    expect(layout.contentW).toBeLessThanOrEqual(1440 + 1e-6);
-    expect(layout.contentW).toBeGreaterThan(1430);
+  it('keeps at least 160px for comments on short windows', () => {
+    const geo = desktop(1280, 500);
+    expect(500 - headerH(geo.hMax)).toBe(COMMENT_MIN_H);
+    expect(geo.hDefault).toBeLessThanOrEqual(geo.hMax);
+    expect(geo.hDefault).toBeGreaterThanOrEqual(geo.hMin);
   });
 
-  it('floors the slide width at 1280×800', () => {
-    const geo = desktop(1280, 800);
-    expect(geo.hMax).toBe(384);
-    expect(geo.trackH).toBe(416);
-    expect(geo.hMin * (16 / 9)).toBeCloseTo(120, 6);
+  it('never makes the default taller than Desktop-1, but the handle may', () => {
+    const geo = desktop(2560, 1440);
+    expect(geo.hDefault).toBe(DEFAULT_SLIDE_H_MAX);
+    expect(geo.hMax).toBeGreaterThan(DEFAULT_SLIDE_H_MAX);
   });
 
-  it('fills the width on phones and never zooms', () => {
+  it('keeps the widest slide narrow enough for its divider and a peek of the next one', () => {
+    const geo = desktop(900, 2000);
+    expect(geo.hMax * (16 / 9) + gapWidth(geo.hMax) + 48).toBeLessThanOrEqual(900 - 32);
+  });
+
+  it('collapses to one size when the window is too small for the limits', () => {
+    const geo = desktop(1280, 380);
+    expect(geo.hMin).toBe(geo.hMax);
+    expect(geo.hDefault).toBe(geo.hMax);
+    expect(geo.hMax).toBeGreaterThanOrEqual(40);
+  });
+
+  it('fills the width on phones and has no split', () => {
     const geo = computeTrackGeometry({
       aspectRatios: Q4,
       viewportW: 375,
@@ -63,33 +75,42 @@ describe('track geometry', () => {
     });
     expect(geo.hMax * (16 / 9)).toBeCloseTo(343, 0);
     expect(geo.hMin).toBe(geo.hMax);
-  });
-
-  it('keeps the track height independent of the zoom', () => {
-    const geo = desktop(1440, 1024);
-    for (const t of [0, 0.5, 1]) expect(slideHeightAt(t, geo)).toBeLessThanOrEqual(geo.hMax);
-    expect(geo.trackH).toBe(550);
+    expect(geo.hDefault).toBe(geo.hMax);
   });
 });
 
-describe('zoom scale', () => {
+describe('split scale', () => {
   const geo = desktop(1440, 1024);
 
-  it('maps 0 and 1 to the ends and the middle to the geometric mean', () => {
-    expect(slideHeightAt(0, geo)).toBeCloseTo(geo.hMin, 9);
-    expect(slideHeightAt(1, geo)).toBeCloseTo(518, 9);
-    expect(slideHeightAt(0.5, geo)).toBeCloseTo(Math.sqrt(geo.hMin * 518), 9);
+  it('maps 0 and 1 to the ends linearly and null to the default', () => {
+    expect(slideHeightAt(0, geo)).toBe(geo.hMin);
+    expect(slideHeightAt(1, geo)).toBe(geo.hMax);
+    expect(slideHeightAt(0.5, geo)).toBeCloseTo((geo.hMin + geo.hMax) / 2, 9);
+    expect(slideHeightAt(null, geo)).toBe(geo.hDefault);
+    expect(slideHeightAt(-2, geo)).toBe(geo.hMin);
+    expect(slideHeightAt(7, geo)).toBe(geo.hMax);
   });
 
-  it('round-trips between height and zoom, clamped', () => {
+  it('moves the comment area by exactly as much as the slides grow', () => {
+    const a = slideHeightAt(0.2, geo);
+    const b = slideHeightAt(0.7, geo);
+    expect(1024 - headerH(a) - (1024 - headerH(b))).toBeCloseTo(b - a, 9);
+  });
+
+  it('round-trips between height and split, clamped', () => {
     for (const t of [0, 0.2, 0.5, 0.93, 1])
-      expect(zoomForHeight(slideHeightAt(t, geo), geo)).toBeCloseTo(t, 9);
-    expect(zoomForHeight(10_000, geo)).toBe(1);
-    expect(zoomForHeight(1, geo)).toBe(0);
+      expect(splitForHeight(slideHeightAt(t, geo), geo)).toBeCloseTo(t, 9);
+    expect(splitForHeight(10_000, geo)).toBe(1);
+    expect(splitForHeight(1, geo)).toBe(0);
   });
 
-  it('finds the zoom for a minimum column width', () => {
-    const t = zoomForWidth(300, 16 / 9, geo);
+  it('resolves the default split for this geometry', () => {
+    expect(slideHeightAt(resolvedSplit(null, geo), geo)).toBeCloseTo(geo.hDefault, 9);
+    expect(resolvedSplit(0.3, geo)).toBe(0.3);
+  });
+
+  it('finds the split for a minimum column width', () => {
+    const t = splitForWidth(300, 16 / 9, geo);
     expect(slideHeightAt(t, geo) * (16 / 9)).toBeCloseTo(300, 6);
   });
 });
@@ -112,7 +133,7 @@ describe('track layout', () => {
     }
   });
 
-  it('keeps the pointer over the same slide fraction while zooming', () => {
+  it('keeps the pointer over the same slide fraction while the slides resize', () => {
     const before = layoutTrack(Q4, 165);
     const after = layoutTrack(Q4, 300);
     const slide = before.slides[2]!;

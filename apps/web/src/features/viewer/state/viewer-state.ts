@@ -2,9 +2,7 @@ import type { AccentColor, Anchor, Stroke, StrokeTool } from '@slider/shared';
 import { createContext, useContext, type Dispatch } from 'react';
 import type { StatusFilter } from '../lib/comment-selectors';
 import { strokesBounds } from '../lib/stroke-path';
-import { clampZoom, DEFAULT_ZOOM } from '../lib/zoom';
-
-export { ZOOM_MAX, ZOOM_MIN } from '../lib/zoom';
+import { clampSplit } from '../lib/split';
 
 /** `mark` places pins (click) and frames (drag); the stroke tools draw (BER-98, BER-99). */
 export type Tool = 'mark' | StrokeTool;
@@ -35,8 +33,8 @@ export interface ViewerState {
   threadPanelOpen: boolean;
   statusFilter: StatusFilter;
   pptxOnly: boolean;
-  /** Timeline zoom `t` ∈ [0, 1], see `lib/zoom`. */
-  zoom: number;
+  /** Split handle position `t` ∈ [0, 1] (slide size vs comment area), `null` = default; see `lib/split`. */
+  split: number | null;
 }
 
 export type ViewerAction =
@@ -58,13 +56,14 @@ export type ViewerAction =
   | { type: 'threadUnfocused'; threadId: string }
   | { type: 'statusFilterChanged'; filter: StatusFilter }
   | { type: 'pptxOnlyToggled' }
-  | { type: 'zoomChanged'; zoom: number };
+  /** `null` resets the split to the default. */
+  | { type: 'splitChanged'; split: number | null };
 
 export function createInitialState(options: {
   activeSlideId: string | null;
   color: AccentColor;
-  /** Restored zoom; defaults to `DEFAULT_ZOOM` (Desktop-1). */
-  zoom?: number;
+  /** Restored split; `null` / missing is the default (Desktop-1 proportions). */
+  split?: number | null;
 }): ViewerState {
   return {
     activeSlideId: options.activeSlideId,
@@ -79,7 +78,7 @@ export function createInitialState(options: {
     // BER-101: done comments are hidden by default.
     statusFilter: 'open',
     pptxOnly: false,
-    zoom: clampZoom(options.zoom ?? DEFAULT_ZOOM),
+    split: options.split == null ? null : clampSplit(options.split),
   };
 }
 
@@ -198,9 +197,9 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
       return { ...next, statusFilter: action.filter };
     case 'pptxOnlyToggled':
       return { ...next, pptxOnly: !next.pptxOnly };
-    case 'zoomChanged': {
-      const zoom = clampZoom(action.zoom);
-      return zoom === next.zoom ? next : { ...next, zoom };
+    case 'splitChanged': {
+      const split = action.split === null ? null : clampSplit(action.split);
+      return split === next.split ? next : { ...next, split };
     }
     default:
       return next;

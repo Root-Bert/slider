@@ -1,45 +1,54 @@
 /**
  * Geometry of the deck timeline: every slide side by side in one horizontal track, each slide's
- * comments in a column of exactly its width below it. Zoom (`t` ∈ [0, 1], log scale) only
- * changes the slide height inside a track of fixed height, so the comment area never moves.
+ * comments in a column of exactly its width below it. The split handle between the slide area
+ * and the comment area sets the slide height (`split` ∈ [0, 1], linear between the smallest and
+ * the largest slide); the track is always exactly as tall as the slides, so dragging the handle
+ * down makes the slides bigger and the comment area smaller, and up the other way round.
  * Pure functions; the DOM is measured in `useTimelineMetrics`.
  */
 
 /** Content padding left and right of the timeline. */
 export const TRACK_PAD_X = 16;
-/** Room above and below the slides at max zoom. */
-export const TRACK_PAD_Y = 16;
-/** Desktop-1 slide height (982px wide at 16:9). */
-export const MAX_SLIDE_H = 552;
-/**
- * Narrowest slide. Min zoom fits the whole deck into the viewport when that keeps slides at least
- * this wide; a longer deck scrolls instead of shrinking further.
- */
-export const MIN_SLIDE_W = 120;
-/** The comment area keeps at least this share of the viewport height. */
-export const COMMENT_MIN_SHARE = 0.4;
+/** Room above the slides; the track itself is exactly as tall as its slides. */
+export const TRACK_PAD_TOP = 16;
+/** Desktop-1 slide height (982px wide at 16:9): the default split never makes slides taller. */
+export const DEFAULT_SLIDE_H_MAX = 552;
+/** Smallest slide height the split handle allows. */
+export const MIN_SLIDE_H = 90;
+/** The comment area keeps at least this height … */
+export const COMMENT_MIN_H = 160;
+/** … and at least this share of the viewer height, however far the handle is dragged down. */
+export const COMMENT_MIN_SHARE = 0.25;
+/** At the default split the comment area keeps this share (Figma D1). */
+export const COMMENT_DEFAULT_SHARE = 0.4;
 /**
  * Column widths for full cards and compact cards; narrower columns show one bubble. Compact cards
- * start a bit above the slide-width floor so the overview at min zoom shows one bubble per slide.
+ * start a bit above the slide-width floor so small slides show one bubble per slide.
  */
 export const CARD_FULL_MIN = 260;
 export const CARD_COMPACT_MIN = 140;
-/** Visible peek of the next slide at max zoom. */
+/** Visible peek of the next slide at the largest split. */
 const PEEK_PX = 48;
 const GAP_MIN = 24;
 const GAP_MAX = 88;
 const GAP_RATIO = 0.16;
+/** Floor for degenerate viewports (smaller than the split limits allow). */
+const ABSOLUTE_MIN_H = 40;
 
 /** Width of the ⊕ divider after a slide of height `h`. */
 export const gapWidth = (h: number) =>
   Math.min(GAP_MAX, Math.max(GAP_MIN, Math.round(GAP_RATIO * h)));
 
 export interface TrackGeometry {
-  /** Fixed height of the track – independent of zoom. */
-  trackH: number;
+  /** Slide height with the handle at the top (`split` 0) … */
   hMin: number;
+  /** … and at the bottom (`split` 1). */
   hMax: number;
+  /** Slide height until the handle is first moved (and after a double click on it). */
+  hDefault: number;
 }
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 export function computeTrackGeometry({
   aspectRatios,
@@ -52,57 +61,47 @@ export function computeTrackGeometry({
   /** Usable timeline width (root width without scrollbar, not shrunk by the thread panel). */
   viewportW: number;
   viewportH: number;
+  /** Height of the band between track and comments: minimap, controls row and split handle. */
   controlsH: number;
   narrow: boolean;
 }): TrackGeometry {
   const ars = aspectRatios.length > 0 ? aspectRatios : [16 / 9];
   const arMax = Math.max(...ars);
-  const arMin = Math.min(...ars);
-  const n = ars.length;
-  const sumAr = ars.reduce((sum, ar) => sum + ar, 0);
   const inner = viewportW - 2 * TRACK_PAD_X;
+  const chrome = TRACK_PAD_TOP + controlsH;
 
-  const heightLimit = Math.floor((1 - COMMENT_MIN_SHARE) * viewportH) - controlsH - 2 * TRACK_PAD_Y;
-  const widthLimit = narrow
-    ? inner / arMax
-    : Math.floor((inner - gapWidth(MAX_SLIDE_H) - PEEK_PX) / arMax);
-  const hMax = Math.max(
-    40,
-    narrow ? Math.min(MAX_SLIDE_H, widthLimit) : Math.min(MAX_SLIDE_H, heightLimit, widthLimit),
-  );
-  const trackH = Math.round(hMax + 2 * TRACK_PAD_Y);
-  if (narrow) return { trackH, hMin: hMax, hMax };
-
-  // Largest h whose whole deck fits the viewport (content width is monotonic in h).
-  let lo = 0;
-  let hi = MAX_SLIDE_H;
-  for (let i = 0; i < 40; i++) {
-    const mid = (lo + hi) / 2;
-    if (contentWidth(sumAr, n, mid) <= viewportW) lo = mid;
-    else hi = mid;
+  // Phones: one slide fills the width, no handle.
+  if (narrow) {
+    const h = Math.max(ABSOLUTE_MIN_H, Math.min(DEFAULT_SLIDE_H_MAX, inner / arMax));
+    return { hMin: h, hMax: h, hDefault: h };
   }
-  const hFit = lo;
-  const hMin = Math.min(hMax, Math.max(hFit, MIN_SLIDE_W / arMin));
-  return { trackH, hMin, hMax };
+
+  // The widest slide leaves room for its divider and a peek of the next slide.
+  const widthLimit = Math.floor((inner - GAP_MAX - PEEK_PX) / arMax);
+  const commentMin = Math.max(COMMENT_MIN_H, Math.ceil(COMMENT_MIN_SHARE * viewportH));
+  const largest = Math.max(ABSOLUTE_MIN_H, Math.min(widthLimit, viewportH - commentMin - chrome));
+  const hMin = Math.min(MIN_SLIDE_H, largest);
+  const hMax = Math.max(hMin, largest);
+  const defaultLimit = Math.floor((1 - COMMENT_DEFAULT_SHARE) * viewportH) - chrome;
+  const hDefault = clamp(Math.min(DEFAULT_SLIDE_H_MAX, defaultLimit, widthLimit), hMin, hMax);
+  return { hMin, hMax, hDefault };
 }
 
-/** Exact continuous content width; layoutTrack rounds the gaps the same way. */
-const contentWidth = (sumAr: number, n: number, h: number) =>
-  2 * TRACK_PAD_X + sumAr * h + n * gapWidth(h);
-
-/** Slide height at zoom `t` (0 = whole deck, 1 = Desktop-1). */
-export function slideHeightAt(t: number, geo: TrackGeometry): number {
-  if (geo.hMax <= geo.hMin) return geo.hMax;
-  const clamped = Math.min(1, Math.max(0, t));
-  return geo.hMin * (geo.hMax / geo.hMin) ** clamped;
+/** Slide height at `split` (0 = handle at the top, 1 = at the bottom, `null` = default). */
+export function slideHeightAt(split: number | null, geo: TrackGeometry): number {
+  if (split === null) return geo.hDefault;
+  return geo.hMin + clamp(split, 0, 1) * (geo.hMax - geo.hMin);
 }
 
-/** Zoom that gives slide height `h`, clamped to 0..1. */
-export function zoomForHeight(h: number, geo: TrackGeometry): number {
+/** Split that gives slide height `h`, clamped to 0..1. */
+export function splitForHeight(h: number, geo: TrackGeometry): number {
   if (geo.hMax <= geo.hMin) return 1;
-  const t = Math.log(h / geo.hMin) / Math.log(geo.hMax / geo.hMin);
-  return Math.min(1, Math.max(0, t));
+  return clamp((h - geo.hMin) / (geo.hMax - geo.hMin), 0, 1);
 }
+
+/** The split as a number – the default resolved for this geometry. */
+export const resolvedSplit = (split: number | null, geo: TrackGeometry) =>
+  split ?? splitForHeight(geo.hDefault, geo);
 
 export interface TrackLayout {
   h: number;
@@ -131,7 +130,7 @@ const SLIDE_SHARE = 0.85;
 
 /**
  * Position in "slide units": slot i spans [i, i + 1) – the slide maps linearly onto the first
- * 85 %, its gap onto the rest – so a point keeps its fraction across the slide at every zoom.
+ * 85 %, its gap onto the rest – so a point keeps its fraction across the slide at every slide size.
  * Before the first slide the value is negative, past the last gap it exceeds n.
  */
 export function unitAt(layout: TrackLayout, x: number): number {
@@ -207,9 +206,9 @@ export type CardMode = 'full' | 'compact' | 'bubble';
 export const cardMode = (columnWidth: number): CardMode =>
   columnWidth >= CARD_FULL_MIN ? 'full' : columnWidth >= CARD_COMPACT_MIN ? 'compact' : 'bubble';
 
-/** Smallest zoom at which a column is at least `width` wide (for a slide of aspect `ar`). */
-export const zoomForWidth = (width: number, ar: number, geo: TrackGeometry) =>
-  zoomForHeight(Math.min(geo.hMax, width / ar), geo);
+/** Smallest split at which a column is at least `width` wide (for a slide of aspect `ar`). */
+export const splitForWidth = (width: number, ar: number, geo: TrackGeometry) =>
+  splitForHeight(width / ar, geo);
 
 /**
  * Index range of slides (with their gap) intersecting [scrollLeft - overscan, scrollLeft +

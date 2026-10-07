@@ -60,7 +60,7 @@ export type Cutout =
 
 export interface ConnectorLayout {
   lines: MeasuredConnector[];
-  /** Opacity profile along y that hides the lines behind the minimap and the controls row. */
+  /** Opacity profile along y that hides the lines behind the minimap, controls row and handle. */
   fade: FadeStop[];
   cutouts: Cutout[];
   panelLink: PanelLink | null;
@@ -71,8 +71,8 @@ const EMPTY: ConnectorLayout = { lines: [], fade: [], cutouts: [], panelLink: nu
 /** Lines enter the card next to its avatar. */
 const CARD_ENTRY_X = 26;
 const COMPACT_ENTRY_X = 18;
-/** Bus rows start this far below the control pills and end this far above the cards. */
-const BUS_BELOW_CONTROLS = 18;
+/** Bus rows start this far below the header (past the lines' fade-in) and end this far above the cards. */
+const BUS_BELOW_HEADER = 14;
 const BUS_ABOVE_CARDS = 20;
 /** The panel link leaves the blob / card at the middle of its first 96px (Figma blob +49). */
 const PANEL_LINK_Y = 48;
@@ -137,18 +137,16 @@ export function useConnectorLayout({
       }
       const origin = wrapper.getBoundingClientRect();
       const stage = relative(scroller.getBoundingClientRect(), origin);
-      const controlsElement = wrapper.querySelector('[data-connector-occluder="controls"]');
-      const controls = controlsElement
-        ? relative(controlsElement.getBoundingClientRect(), origin)
-        : null;
-      const minimapElement = wrapper.querySelector('[data-connector-occluder="minimap"]');
-      const minimap = minimapElement
-        ? relative(minimapElement.getBoundingClientRect(), origin)
-        : null;
       const header = wrapper.querySelector('[data-timeline-header]');
       // Top of the visible comment area: everything above it is the sticky header.
       const commentTop = header ? header.getBoundingClientRect().bottom - origin.top : 0;
-      const busTop = (controls?.bottom ?? commentTop) + BUS_BELOW_CONTROLS;
+      // The band the lines hide behind: from the minimap (or the controls row) down to the
+      // comment area, split handle included.
+      const occluder = wrapper.querySelector('[data-connector-occluder]');
+      const band = occluder
+        ? { top: occluder.getBoundingClientRect().top - origin.top, bottom: commentTop }
+        : null;
+      const busTop = commentTop + BUS_BELOW_HEADER;
       const visible = (box: Box) => box.bottom > commentTop && box.top < stage.bottom;
       const clipped = (box: Box): Box => ({ ...box, top: Math.max(box.top, commentTop) });
 
@@ -348,7 +346,7 @@ export function useConnectorLayout({
         }
       }
 
-      setLayout({ lines, fade: fadeStops(minimap, controls), cutouts, panelLink });
+      setLayout({ lines, fade: fadeStops(band), cutouts, panelLink });
     };
 
     const throttled = rafThrottle(measure);
@@ -363,7 +361,7 @@ export function useConnectorLayout({
     observe(wrapper?.querySelector('[data-comment-area]'));
     const panelElement = panel();
     observe(panelElement);
-    // Slides, columns and cards move without resizing when zoom or the brick layout change:
+    // Slides, columns and cards move without resizing when the split or the brick layout change:
     // watch their inline styles and the rendered window too.
     const mutationObserver = new MutationObserver(throttled.schedule);
     if (scroller)

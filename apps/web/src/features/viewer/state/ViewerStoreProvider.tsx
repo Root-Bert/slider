@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useState, type ReactNode } from 'react';
-import { loadStoredZoom, storeZoom } from '../lib/zoom';
+import { loadStoredSplit, storeSplit } from '../lib/split';
 import { createStageRegistry, StageRegistryContext } from './stage-registry';
 import { ViewerDataContext, type ViewerData } from './viewer-data';
 import {
@@ -25,14 +25,14 @@ export function ViewerStoreProvider({ data, initialSlideId, children }: ViewerSt
           ? initialSlideId
           : (data.slides[0]?.id ?? null),
       color: data.viewer.author.color,
-      zoom: loadStoredZoom(),
+      split: loadStoredSplit(),
     },
     createInitialState,
   );
   const [registry] = useState(createStageRegistry);
 
-  // Zoom is a per-browser preference, not per deck.
-  useEffect(() => storeZoom(state.zoom), [state.zoom]);
+  // The split is a per-browser preference, not per deck.
+  useEffect(() => storeSplit(state.split), [state.split]);
 
   return (
     <ViewerDataContext value={data}>
