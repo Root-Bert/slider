@@ -63,7 +63,7 @@ export type ViewerAction =
 export function createInitialState(options: {
   activeSlideId: string | null;
   color: AccentColor;
-  /** Restored zoom; defaults to the middle of the range. */
+  /** Restored zoom; defaults to `DEFAULT_ZOOM` (Desktop-1). */
   zoom?: number;
 }): ViewerState {
   return {

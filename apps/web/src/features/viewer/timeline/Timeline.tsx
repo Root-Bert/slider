@@ -27,6 +27,7 @@ import { useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
 import { CommentColumns } from './CommentColumns';
+import { Minimap } from './Minimap';
 import { TimelineContext, type ZoomAnchor } from './timeline-context';
 import { Track } from './Track';
 
@@ -39,8 +40,8 @@ type Range = { first: number; last: number };
 const sameRange = (a: Range, b: Range) => a.first === b.first && a.last === b.last;
 
 /**
- * The deck as a timeline: a track with every slide side by side on top, the controls row below
- * it, and below that every slide's comments in a column exactly under its slide. One scroller
+ * The deck as a timeline: a track with every slide side by side on top, the minimap (thumbnails
+ * of the whole deck) and the controls row below it, and below that every slide's comments in a column exactly under its slide. One scroller
  * moves track and columns together horizontally; vertically only the comments scroll, under a
  * sticky header of fixed height – so zooming never moves the comment area.
  */
@@ -222,16 +223,19 @@ export function Timeline({ controls }: { controls: ReactNode }) {
           <div data-timeline-header className="sticky top-0 z-20 bg-canvas">
             {layout && context ? (
               <TimelineContext value={context}>
-                <Track layout={layout} range={range} height={trackH} />
+                <Track layout={layout} range={range} height={trackH} snap={narrow} />
               </TimelineContext>
             ) : (
               <div style={{ height: trackH }} />
             )}
-            <div
-              ref={controlsRef}
-              className="sticky left-0 w-[100cqw] px-4 pt-4 pb-2 md:px-[clamp(16px,3vw,32px)]"
-            >
-              {controls}
+            {/* Minimap and controls: fixed height (part of where the comment area starts). */}
+            <div ref={controlsRef} className="sticky left-0 w-[100cqw] pt-1 pb-2 md:pt-2">
+              {/* Thumbnails line up with the big track's slides (TRACK_PAD_X minus MINIMAP_PAD). */}
+              <div className="px-3">
+                <Minimap layout={layout} scrollerRef={scrollerRef} narrow={narrow} />
+              </div>
+              {/* Figma D1: ~28px from the thumbnails to the controls row. */}
+              <div className="px-4 pt-2 md:px-[clamp(16px,3vw,32px)] md:pt-5">{controls}</div>
             </div>
           </div>
           {layout && context && (

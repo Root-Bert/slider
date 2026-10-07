@@ -8,7 +8,7 @@ export interface TimelineMetrics {
   clientW: number;
   /** Full viewer height (h-dvh, fullscreen-aware). */
   viewportH: number;
-  /** Height of the controls row between track and comments. */
+  /** Height of the minimap and controls rows between track and comments. */
   controlsH: number;
 }
 

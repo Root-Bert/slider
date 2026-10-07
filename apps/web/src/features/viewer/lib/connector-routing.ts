@@ -543,23 +543,23 @@ export interface FadeStop {
 
 /**
  * Vertical opacity profile shared by all lines (Figma B1 gradient): lines fade out above the
- * filmstrip, stay hidden across it, glint once in the gap, hide behind the control row and come
+ * minimap, stay hidden across it, glint once in the gap, hide behind the control row and come
  * back below it. `null` bands are skipped. Stops are ascending in y.
  */
-export function fadeStops(filmstrip: Band | null, controls: Band | null): FadeStop[] {
+export function fadeStops(minimap: Band | null, controls: Band | null): FadeStop[] {
   const stops: FadeStop[] = [];
-  if (filmstrip) {
-    stops.push({ y: filmstrip.top - 28, opacity: 1 }, { y: filmstrip.top - 10, opacity: 0 });
-    stops.push({ y: filmstrip.bottom + 10, opacity: 0 });
-    if (controls && controls.top > filmstrip.bottom + 14)
-      stops.push({ y: (filmstrip.bottom + 10 + controls.top) / 2, opacity: 0.85 });
+  if (minimap) {
+    stops.push({ y: minimap.top - 28, opacity: 1 }, { y: minimap.top - 10, opacity: 0 });
+    stops.push({ y: minimap.bottom + 10, opacity: 0 });
+    if (controls && controls.top > minimap.bottom + 14)
+      stops.push({ y: (minimap.bottom + 10 + controls.top) / 2, opacity: 0.85 });
   }
   if (controls) {
-    if (!filmstrip) stops.push({ y: controls.top - 18, opacity: 1 });
+    if (!minimap) stops.push({ y: controls.top - 18, opacity: 1 });
     stops.push({ y: controls.top, opacity: 0 }, { y: controls.bottom + 2, opacity: 0 });
     stops.push({ y: controls.bottom + 14, opacity: 1 });
-  } else if (filmstrip) {
-    stops.push({ y: filmstrip.bottom + 22, opacity: 1 });
+  } else if (minimap) {
+    stops.push({ y: minimap.bottom + 22, opacity: 1 });
   }
   // Overlapping bands: keep the stops monotonic.
   for (let i = 1; i < stops.length; i++) stops[i]!.y = Math.max(stops[i]!.y, stops[i - 1]!.y);

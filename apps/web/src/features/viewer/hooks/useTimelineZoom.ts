@@ -54,6 +54,8 @@ export function useTimelineZoom({
     };
 
     const onWheel = (event: WheelEvent) => {
+      // Already taken (the minimap scrolls its own overflowing row).
+      if (event.defaultPrevented) return;
       if (event.ctrlKey || event.metaKey) {
         // Otherwise the browser zooms the whole page.
         event.preventDefault();

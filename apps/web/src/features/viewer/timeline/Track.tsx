@@ -14,15 +14,17 @@ interface TrackProps {
   /** Rendered slide indices (windowing) – the rest of the deck only reserves its width. */
   range: { first: number; last: number };
   height: number;
+  /** Phones snap slide by slide: every slide needs a snap target, rendered or not. */
+  snap: boolean;
 }
 
 /**
- * The deck as a horizontal track: every slide side by side at the zoomed size, vertically
- * centred in a track of fixed height, with a ⊕ divider after each slide. Slide items are
+ * The deck as a horizontal track: every slide side by side at the zoomed size, centred in
+ * a track of fixed height, with a ⊕ divider after each slide. Slide items are
  * memoised and only get the props that concern them, so hovering or scrolling a 100+ slide
  * deck doesn't re-render it.
  */
-export function Track({ layout, range, height }: TrackProps) {
+export function Track({ layout, range, height, snap }: TrackProps) {
   const { slides, gapThreads, canComment } = useViewerData();
   const { activeSlideId, tool, color, draft, focusedThreadId, hoveredThreadId } = useViewerState();
   const { bySlide } = useCommentThreads();
@@ -31,10 +33,13 @@ export function Track({ layout, range, height }: TrackProps) {
     draft?.anchor.type === 'gap'
       ? gapKey(draft.anchor.afterSlideId, draft.anchor.beforeSlideId)
       : null;
-  const top = (height - layout.h) / 2;
-  // The divider line spans the slides (never shorter than the ⊕ with its pauses).
+  // Slides are centred in the track, like a slide in PowerPoint's editing pane: at max zoom they
+  // fill it (16px above and below, Figma D1), zoomed out the free height is split evenly instead
+  // of piling up as one empty band above or below them.
+  const top = Math.max(0, Math.round((height - layout.h) / 2));
+  // The divider line spans the slides (never shorter than the ⊕ with its pauses), centred on them.
   const dividerH = Math.min(height, Math.max(layout.h, DIVIDER_MIN_H));
-  const dividerTop = (height - dividerH) / 2;
+  const dividerTop = Math.min(Math.max(0, top + (layout.h - dividerH) / 2), height - dividerH);
 
   const items = [];
   for (let index = range.first; index <= range.last; index++) {
@@ -79,6 +84,21 @@ export function Track({ layout, range, height }: TrackProps) {
     );
   }
 
+  // Without a snap target the browser would snap a reveal of an unrendered slide (minimap tap,
+  // ←/→) back to the nearest rendered one.
+  const snapTargets = snap
+    ? layout.slides.map((box, index) =>
+        index >= range.first && index <= range.last ? null : (
+          <div
+            key={index}
+            aria-hidden
+            className="pointer-events-none absolute top-0 h-px snap-start"
+            style={{ left: box.x, width: box.w }}
+          />
+        ),
+      )
+    : null;
+
   return (
     <div
       data-track
@@ -88,6 +108,7 @@ export function Track({ layout, range, height }: TrackProps) {
       className="relative"
       style={{ width: layout.contentW, height }}
     >
+      {snapTargets}
       {items}
     </div>
   );

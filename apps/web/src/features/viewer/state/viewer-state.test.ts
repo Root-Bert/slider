@@ -100,8 +100,8 @@ describe('viewerReducer', () => {
     expect(run({ type: 'zoomChanged', zoom: -3 }).zoom).toBe(ZOOM_MIN);
   });
 
-  it('starts in the middle of the zoom range unless a stored zoom is passed in', () => {
-    expect(initial.zoom).toBe(0.5);
+  it('starts at Desktop-1 (max zoom) unless a stored zoom is passed in', () => {
+    expect(initial.zoom).toBe(1);
     const restored = createInitialState({ activeSlideId: 's1', color: 'red', zoom: 0.6 });
     expect(restored.zoom).toBe(0.6);
   });

@@ -60,7 +60,7 @@ export type Cutout =
 
 export interface ConnectorLayout {
   lines: MeasuredConnector[];
-  /** Opacity profile along y that hides the lines behind the controls row. */
+  /** Opacity profile along y that hides the lines behind the minimap and the controls row. */
   fade: FadeStop[];
   cutouts: Cutout[];
   panelLink: PanelLink | null;
@@ -140,6 +140,10 @@ export function useConnectorLayout({
       const controlsElement = wrapper.querySelector('[data-connector-occluder="controls"]');
       const controls = controlsElement
         ? relative(controlsElement.getBoundingClientRect(), origin)
+        : null;
+      const minimapElement = wrapper.querySelector('[data-connector-occluder="minimap"]');
+      const minimap = minimapElement
+        ? relative(minimapElement.getBoundingClientRect(), origin)
         : null;
       const header = wrapper.querySelector('[data-timeline-header]');
       // Top of the visible comment area: everything above it is the sticky header.
@@ -344,7 +348,7 @@ export function useConnectorLayout({
         }
       }
 
-      setLayout({ lines, fade: fadeStops(null, controls), cutouts, panelLink });
+      setLayout({ lines, fade: fadeStops(minimap, controls), cutouts, panelLink });
     };
 
     const throttled = rafThrottle(measure);

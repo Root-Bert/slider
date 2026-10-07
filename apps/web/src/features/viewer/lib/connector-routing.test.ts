@@ -430,7 +430,7 @@ describe('fadeStops', () => {
     ]);
   });
 
-  it('only hides the control row when the filmstrip is closed', () => {
+  it('only hides the control row without a minimap', () => {
     expect(fadeStops(null, { top: 442, bottom: 482 })).toEqual([
       { y: 424, opacity: 1 },
       { y: 442, opacity: 0 },

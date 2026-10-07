@@ -26,8 +26,8 @@ interface ConnectorLinesProps {
  * One SVG overlay with the lines between marks and their cards (B1), or the thread blob and the
  * thread panel (B4). Lines are drawn for the active slide, the hovered slide and the slide of the
  * hovered or focused thread – the other slides only show their marks, so the timeline stays
- * readable. Lines take the author's accent, fade out behind the control row and pass behind
- * cards and marks. Hidden on narrow screens.
+ * readable. Lines take the author's accent, fade out behind the minimap and the control row,
+ * and pass behind cards and marks. Hidden on narrow screens.
  */
 export function ConnectorLines({ wrapperRef }: ConnectorLinesProps) {
   const { slides, slideIndex, threadById } = useViewerData();

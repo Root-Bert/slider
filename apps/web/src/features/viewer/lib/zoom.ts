@@ -7,10 +7,14 @@ import { slideHeightAt, zoomForHeight, type TrackGeometry } from './timeline-lay
  */
 export const ZOOM_MIN = 0;
 export const ZOOM_MAX = 1;
-export const DEFAULT_ZOOM = 0.5;
+/**
+ * First visit: Desktop-1 – the slides fill the track like Figma D1, the minimap below gives the
+ * overview of the whole deck.
+ */
+export const DEFAULT_ZOOM = 1;
 /** One click on ›‹ / ‹›: four clicks go from one end to the other. */
 export const ZOOM_STEP = 0.25;
-export const ZOOM_STORAGE_KEY = 'slider.viewer.timelineZoom.v1';
+export const ZOOM_STORAGE_KEY = 'slider.viewer.timelineZoom.v2';
 
 /** Wheel pixels per e-fold of slide height; a single wheel notch is capped so mice don't jump. */
 const WHEEL_SENSITIVITY = 0.005;
@@ -44,7 +48,7 @@ export function wheelZoom(
 export const pinchZoom = (startZoom: number, scale: number, geo: TrackGeometry) =>
   zoomForHeight(slideHeightAt(startZoom, geo) * scale, geo);
 
-/** Persisted zoom of this browser; anything unreadable falls back to the middle. */
+/** Persisted zoom of this browser; anything unreadable falls back to the default. */
 export function loadStoredZoom(): number {
   try {
     const raw = localStorage.getItem(ZOOM_STORAGE_KEY);
