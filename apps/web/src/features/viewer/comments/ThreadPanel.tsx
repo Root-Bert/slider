@@ -35,11 +35,17 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
   const canManage = (comment: Thread['root']) =>
     comment.source === 'app' && comment.author.id === viewer.author.id;
 
-  // Focus moves into the panel and the thread's slide comes into view.
+  // Focus moves into the panel; the thread's slide becomes active and comes into view (gap
+  // threads: the slide before the gap).
+  const homeSlideId =
+    root.slideId ??
+    (root.anchor.type === 'gap' ? (root.anchor.afterSlideId ?? root.anchor.beforeSlideId) : null);
   useEffect(() => {
     panelRef.current?.focus({ preventScroll: true });
-    if (root.slideId) registry.scrollToSlide(root.slideId);
-  }, [registry, root.slideId]);
+    if (!homeSlideId) return;
+    dispatch({ type: 'activeSlideChanged', slideId: homeSlideId });
+    registry.revealSlide(homeSlideId, { align: 'nearest' });
+  }, [registry, dispatch, homeSlideId]);
 
   // A new reply (own or polled) scrolls into view at the bottom of the history.
   const replyCount = replies.length;

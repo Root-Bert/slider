@@ -1,9 +1,10 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useState, type RefObject } from 'react';
+import { useEffect, useId, useMemo, useState, type RefObject } from 'react';
 import { accentColor } from '@/lib/accent';
 import { threadsOf, useCommentThreads } from '../hooks/useCommentThreads';
 import {
   useConnectorLayout,
   type ConnectorItem,
+  type ConnectorRoute,
   type PanelLink,
 } from '../hooks/useConnectorLayout';
 import { useIsNarrow } from '../hooks/useMediaQuery';
@@ -17,85 +18,103 @@ import { useViewerData } from '../state/viewer-data';
 import { useViewerState } from '../state/viewer-state';
 
 interface ConnectorLinesProps {
-  containerRef: RefObject<HTMLElement | null>;
-  boardRef: RefObject<HTMLElement | null>;
+  /** The timeline wrapper: the overlay covers it and all coordinates are relative to it. */
+  wrapperRef: RefObject<HTMLElement | null>;
 }
 
-/** Room above the cards for the bus rows: 18px below the controls, 10px per line, 20px above the cards. */
-const busRoom = (lines: number) => Math.max(48, 18 + 10 * Math.max(0, lines - 1) + 20);
-
 /**
- * One SVG overlay with all lines between marks on the active slide and their cards (B1), or the
- * thread blob and the thread panel (B4). Lines take the author's accent and fade out behind the
- * filmstrip and the control row (Figma gradient), so they never paint over thumbnails or pills.
- * Hidden on narrow screens and in "Alle Folien".
+ * One SVG overlay with the lines between marks and their cards (B1), or the thread blob and the
+ * thread panel (B4). Lines are drawn for the active slide, the hovered slide and the slide of the
+ * hovered or focused thread – the other slides only show their marks, so the timeline stays
+ * readable. Lines take the author's accent, fade out behind the control row and pass behind
+ * cards and marks. Hidden on narrow screens.
  */
-export function ConnectorLines({ containerRef, boardRef }: ConnectorLinesProps) {
-  const { slides } = useViewerData();
-  const { activeSlideId, focusedThreadId, hoveredThreadId, draft, threadPanelOpen, scope } =
-    useViewerState();
-  const { bySlide } = useCommentThreads();
+export function ConnectorLines({ wrapperRef }: ConnectorLinesProps) {
+  const { slides, slideIndex, threadById } = useViewerData();
+  const {
+    activeSlideId,
+    hoveredSlideId,
+    focusedThreadId,
+    hoveredThreadId,
+    draft,
+    threadPanelOpen,
+  } = useViewerState();
+  const { bySlide, byGap } = useCommentThreads();
   const narrow = useIsNarrow();
   const maskId = `connector-fade-${useId().replace(/[^\w-]/g, '')}`;
-  const enabled = !narrow && scope === 'slide';
+  const enabled = !narrow;
 
-  const slideIndex = slides.findIndex((candidate) => candidate.id === activeSlideId);
-  const slide = slides[slideIndex];
-  const nextSlideGapKey = slide ? gapKey(slide.id, slides[slideIndex + 1]?.id ?? null) : null;
-  const threads = threadsOf(bySlide, activeSlideId);
+  const ownerOf = (threadId: string | null) => {
+    const root = threadId ? threadById.get(threadId)?.root : undefined;
+    if (!root) return null;
+    if (root.anchor.type !== 'gap') return root.slideId;
+    return root.anchor.afterSlideId ?? root.anchor.beforeSlideId;
+  };
+  const hoveredOwner = ownerOf(hoveredThreadId);
+  const focusedOwner = ownerOf(focusedThreadId);
 
-  const { items, threadById } = useMemo(() => {
+  const routed = useMemo(
+    () =>
+      [...new Set([activeSlideId, hoveredSlideId, hoveredOwner, focusedOwner])].filter(
+        (id): id is string => id !== null && slideIndex.has(id),
+      ),
+    [activeSlideId, hoveredSlideId, hoveredOwner, focusedOwner, slideIndex],
+  );
+
+  const { routes, threadMap } = useMemo(() => {
     const byId = new Map<string, Thread>();
-    const result: ConnectorItem[] = [];
-    if (!slide) return { items: result, threadById: byId };
-    for (const thread of sortThreadsClockwise(threads, slide.shapes)) {
-      const { anchor } = thread.root;
-      const color = accentColor(thread.root.author.color);
-      const mark = connectorAnchor(thread.root, slide.shapes);
-      byId.set(thread.id, thread);
-      if (mark) {
-        result.push({ threadId: thread.id, color, source: { kind: 'mark', anchor: mark } });
-      } else if (
-        anchor.type === 'gap' &&
-        gapKey(anchor.afterSlideId, anchor.beforeSlideId) === nextSlideGapKey
-      ) {
-        result.push({
-          threadId: thread.id,
-          color,
-          source: { kind: 'gap', gapKey: nextSlideGapKey },
+    const result: ConnectorRoute[] = [];
+    for (const slideId of routed) {
+      const index = slideIndex.get(slideId)!;
+      const slide = slides[index]!;
+      const nextGapKey = gapKey(slide.id, slides[index + 1]?.id ?? null);
+      const prev = slides[index - 1];
+      const items: ConnectorItem[] = [];
+      for (const thread of sortThreadsClockwise(threadsOf(bySlide, slide.id), slide.shapes)) {
+        const mark = connectorAnchor(thread.root, slide.shapes);
+        byId.set(thread.id, thread);
+        if (mark)
+          items.push({
+            threadId: thread.id,
+            color: accentColor(thread.root.author.color),
+            source: { kind: 'mark', anchor: mark },
+          });
+      }
+      const gap = byGap.get(nextGapKey);
+      const first = gap?.[0];
+      if (first) {
+        for (const thread of gap) byId.set(thread.id, thread);
+        items.push({
+          threadId: first.id,
+          color: accentColor(first.root.author.color),
+          source: { kind: 'gap', gapKey: nextGapKey },
         });
       }
+      result.push({
+        slideId,
+        prevGapKey: prev ? gapKey(prev.id, slide.id) : null,
+        nextGapKey,
+        items,
+      });
     }
-    return { items: result, threadById: byId };
-  }, [slide, threads, nextSlideGapKey]);
+    return { routes: result, threadMap: byId };
+  }, [routed, slides, slideIndex, bySlide, byGap]);
 
   const panelThreadId = threadPanelOpen ? focusedThreadId : null;
   const { lines, fade, cutouts, panelLink } = useConnectorLayout({
-    containerRef,
-    boardRef,
-    slideId: activeSlideId,
-    nextSlideGapKey,
-    items,
+    wrapperRef,
+    routes,
     enabled,
     panelThreadId,
   });
 
-  // The board's top padding holds one bus row per line.
-  const room = enabled ? busRoom(items.length) : null;
-  useLayoutEffect(() => {
-    const board = boardRef.current;
-    if (!board) return;
-    if (room === null) board.style.removeProperty('--connector-room');
-    else board.style.setProperty('--connector-room', `${room}px`);
-  }, [boardRef, room]);
-
-  const keyboardThreadId = useFocusedCard(boardRef);
+  const keyboardThreadId = useFocusedCard(wrapperRef);
 
   if (!enabled || lines.length === 0) return null;
 
   const emphasisId = focusedThreadId ?? hoveredThreadId ?? keyboardThreadId;
   const opacityOf = (threadId: string) => {
-    const base = threadById.get(threadId)?.root.status === 'done' ? 0.5 : 1;
+    const base = threadMap.get(threadId)?.root.status === 'done' ? 0.5 : 1;
     if (draft) return 0.3;
     // B4: the open thread stays, the others step back half-way.
     if (panelThreadId) return threadId === panelThreadId ? base : Math.min(base, 0.5);
@@ -113,7 +132,7 @@ export function ConnectorLines({ containerRef, boardRef }: ConnectorLinesProps) 
       <svg
         aria-hidden
         data-connectors
-        className="pointer-events-none absolute inset-0 z-20 size-full overflow-visible"
+        className="pointer-events-none absolute inset-0 z-[25] size-full overflow-hidden"
       >
         {first && (
           <defs>
@@ -143,6 +162,16 @@ export function ConnectorLines({ containerRef, boardRef }: ConnectorLinesProps) 
             {cutouts.map((cutout, index) =>
               cutout.kind === 'circle' ? (
                 <circle key={index} cx={cutout.cx} cy={cutout.cy} r={cutout.r} fill="black" />
+              ) : cutout.kind === 'fill' ? (
+                <rect
+                  key={index}
+                  x={cutout.box.left}
+                  y={cutout.box.top}
+                  width={cutout.box.right - cutout.box.left}
+                  height={cutout.box.bottom - cutout.box.top}
+                  rx={12}
+                  fill="black"
+                />
               ) : cutout.kind === 'rect' ? (
                 <rect
                   key={index}
@@ -185,19 +214,20 @@ export function ConnectorLines({ containerRef, boardRef }: ConnectorLinesProps) 
               style={{ stroke: line.color, opacity: opacityOf(line.threadId) }}
             />
           ))}
+          {panelLink && (
+            <path
+              data-connector-panel={panelLink.threadId}
+              d={panelLink.d}
+              fill="none"
+              strokeWidth={3}
+              strokeLinejoin="round"
+              style={{
+                stroke: panelLink.color,
+                filter: `drop-shadow(0 0 6px ${panelLink.color})`,
+              }}
+            />
+          )}
         </g>
-        {panelLink && (
-          <path
-            data-connector-panel={panelLink.threadId}
-            d={`M${panelLink.from.x} ${panelLink.from.y}H${panelLink.toX}`}
-            fill="none"
-            strokeWidth={3}
-            style={{
-              stroke: panelLink.color,
-              filter: `drop-shadow(0 0 6px ${panelLink.color})`,
-            }}
-          />
-        )}
       </svg>
       {panelLink && <PanelDock link={panelLink} />}
     </>
@@ -231,10 +261,10 @@ function PanelDock({ link }: { link: PanelLink }) {
 }
 
 /** Thread id of the card holding keyboard focus (B3: focus highlights its line like hover). */
-function useFocusedCard(boardRef: RefObject<HTMLElement | null>): string | null {
+function useFocusedCard(areaRef: RefObject<HTMLElement | null>): string | null {
   const [threadId, setThreadId] = useState<string | null>(null);
   useEffect(() => {
-    const board = boardRef.current;
+    const board = areaRef.current;
     if (!board) return;
     const update = () => {
       const active = document.activeElement;
@@ -252,6 +282,6 @@ function useFocusedCard(boardRef: RefObject<HTMLElement | null>): string | null 
       board.removeEventListener('focusin', update);
       board.removeEventListener('focusout', deferred);
     };
-  }, [boardRef]);
+  }, [areaRef]);
   return threadId;
 }

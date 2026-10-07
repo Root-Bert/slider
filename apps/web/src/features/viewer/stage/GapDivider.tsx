@@ -3,10 +3,14 @@ import { cn, Icon } from '@/ui';
 import { accentColor } from '@/lib/accent';
 import type { Thread } from '../lib/comment-selectors';
 import { useViewerDispatch } from '../state/viewer-state';
-import { GAP_DIVIDER_PX } from './stage-layout';
 
 interface GapDividerProps {
   gapKey: string;
+  /** Position and size in the track (px). */
+  x: number;
+  top: number;
+  width: number;
+  height: number;
   afterSlideId: string | null;
   beforeSlideId: string | null;
   threads: Thread[] | undefined;
@@ -20,6 +24,10 @@ interface GapDividerProps {
  */
 export const GapDivider = memo(function GapDivider({
   gapKey,
+  x,
+  top,
+  width,
+  height,
   afterSlideId,
   beforeSlideId,
   threads,
@@ -29,12 +37,14 @@ export const GapDivider = memo(function GapDivider({
   const dispatch = useViewerDispatch();
   const openThreads = threads?.filter((thread) => thread.root.status === 'open') ?? [];
   const first = threads?.[0];
+  // Narrow gaps (zoomed out) get a smaller ⊕.
+  const tight = width < 32;
 
   return (
     <div
       data-gap-key={gapKey}
-      className="relative flex shrink-0 justify-center self-stretch"
-      style={{ width: GAP_DIVIDER_PX }}
+      className="absolute flex justify-center"
+      style={{ left: x, top, width, height }}
     >
       {/* Figma: the hairline pauses 16px above and below the ⊕. */}
       <span
@@ -54,11 +64,12 @@ export const GapDivider = memo(function GapDivider({
             title="Hier fehlt eine Folie"
             onClick={() => dispatch({ type: 'gapDraftStarted', afterSlideId, beforeSlideId })}
             className={cn(
-              'flex size-7 items-center justify-center rounded-full bg-canvas transition-colors',
+              'flex items-center justify-center rounded-full bg-canvas transition-colors',
+              tight ? 'size-6' : 'size-7',
               isDrafting ? 'text-fg' : 'text-fg-muted hover:text-fg',
             )}
           >
-            <Icon name="addCircle" size={24} />
+            <Icon name="addCircle" size={tight ? 20 : 24} />
           </button>
         )}
         {first && (

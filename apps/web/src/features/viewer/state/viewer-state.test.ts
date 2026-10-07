@@ -9,7 +9,7 @@ import {
   type ViewerState,
 } from './viewer-state';
 
-const initial = createInitialState({ activeSlideId: 's1', color: 'red', compact: false });
+const initial = createInitialState({ activeSlideId: 's1', color: 'red' });
 const run = (...actions: ViewerAction[]) => actions.reduce<ViewerState>(viewerReducer, initial);
 
 const stroke = (x: number): Stroke => ({
@@ -95,26 +95,21 @@ describe('viewerReducer', () => {
     expect(state.tool).toBeNull();
   });
 
-  it('clamps zoom to the Desktop-1 / Desktop-7 range', () => {
+  it('clamps zoom to 0..1', () => {
     expect(run({ type: 'zoomChanged', zoom: 10 }).zoom).toBe(ZOOM_MAX);
-    expect(run({ type: 'zoomChanged', zoom: 0 }).zoom).toBe(ZOOM_MIN);
+    expect(run({ type: 'zoomChanged', zoom: -3 }).zoom).toBe(ZOOM_MIN);
   });
 
-  it('starts at Desktop-1 zoom unless a stored zoom is passed in', () => {
-    expect(initial.zoom).toBe(ZOOM_MAX);
-    const restored = createInitialState({
-      activeSlideId: 's1',
-      color: 'red',
-      compact: false,
-      zoom: 0.6,
-    });
+  it('starts in the middle of the zoom range unless a stored zoom is passed in', () => {
+    expect(initial.zoom).toBe(0.5);
+    const restored = createInitialState({ activeSlideId: 's1', color: 'red', zoom: 0.6 });
     expect(restored.zoom).toBe(0.6);
   });
 
-  it('tracks zoom gestures without touching the zoom', () => {
-    const state = run({ type: 'zoomGestureChanged', active: true });
-    expect(state.zoomGesture).toBe(true);
-    expect(state.zoom).toBe(initial.zoom);
-    expect(viewerReducer(state, { type: 'zoomGestureChanged', active: true })).toBe(state);
+  it('tracks the hovered slide and keeps the state when nothing changes', () => {
+    const state = run({ type: 'slideHovered', slideId: 's2' });
+    expect(state.hoveredSlideId).toBe('s2');
+    expect(viewerReducer(state, { type: 'slideHovered', slideId: 's2' })).toBe(state);
+    expect(viewerReducer(state, { type: 'slideHovered', slideId: null }).hoveredSlideId).toBeNull();
   });
 });

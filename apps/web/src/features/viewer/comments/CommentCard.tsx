@@ -209,7 +209,7 @@ export const CommentCard = memo(function CommentCard({
 function ThreadBranch({ children }: { children: ReactNode }) {
   // SVG rather than CSS borders: a 1.5px border snaps to 1px on standard-density screens.
   return (
-    <li className="group/branch relative w-64 scroll-mb-6 animate-fade-in">
+    <li className="group/branch relative w-64 max-w-full scroll-mb-6 animate-fade-in">
       <svg
         aria-hidden
         width="18"

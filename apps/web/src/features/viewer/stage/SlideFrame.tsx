@@ -4,15 +4,22 @@ import { Badge, cn, Icon } from '@/ui';
 import type { Thread } from '../lib/comment-selectors';
 import { slideLabel } from '../lib/labels';
 import { useStageRegistry } from '../state/stage-registry';
-import type { Draft, Tool } from '../state/viewer-state';
+import { useViewerDispatch, type Draft, type Tool } from '../state/viewer-state';
 import { AnnotationLayer } from './AnnotationLayer';
 import { DrawingSurface } from './DrawingSurface';
-import { slideWidthCss } from './stage-layout';
+
+/** Below this width the slide shows its thumbnail image and small corners. */
+const THUMB_MAX_W = 320;
 
 interface SlideFrameProps {
   slide: Slide;
   index: number;
   total: number;
+  /** Position in the track (px) – the box is absolutely positioned. */
+  x: number;
+  top: number;
+  w: number;
+  h: number;
   isActive: boolean;
   /** Threads of this slide that pass the filter. */
   threads: Thread[];
@@ -25,11 +32,18 @@ interface SlideFrameProps {
   color: AccentColor;
 }
 
-/** One slide on the stage: image, annotation overlay and – while a tool is active – the drawing surface. */
+/**
+ * One slide in the timeline track: image, annotation overlay and – on the active slide while a
+ * tool is selected – the drawing surface. Clicking a slide makes it the active one.
+ */
 export const SlideFrame = memo(function SlideFrame({
   slide,
   index,
   total,
+  x,
+  top,
+  w,
+  h,
   isActive,
   threads,
   emphasisId,
@@ -39,8 +53,16 @@ export const SlideFrame = memo(function SlideFrame({
 }: SlideFrameProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const registry = useStageRegistry();
+  const dispatch = useViewerDispatch();
   const [loaded, setLoaded] = useState(false);
   const label = slideLabel(index);
+  const small = w < THUMB_MAX_W;
+  const drawing = isActive && tool !== null;
+
+  const activate = () => {
+    dispatch({ type: 'activeSlideChanged', slideId: slide.id });
+    registry.revealSlide(slide.id, { align: 'nearest' });
+  };
 
   return (
     <div
@@ -49,24 +71,32 @@ export const SlideFrame = memo(function SlideFrame({
       aria-roledescription="Folie"
       aria-label={`${label} von ${total}${slide.title ? `: ${slide.title}` : ''}`}
       aria-current={isActive || undefined}
-      className="shrink-0 snap-start"
+      className={cn(
+        'absolute snap-start transition-shadow',
+        small ? 'rounded-thumb' : 'rounded-2xl',
+        // Filmstrip style: 2px white frame outside the image, a thin black line inside.
+        isActive && 'shadow-[0_0_0_2px_white]',
+      )}
+      style={{ left: x, top, width: w, height: h }}
+      onPointerEnter={() => dispatch({ type: 'slideHovered', slideId: slide.id })}
+      onPointerLeave={() => dispatch({ type: 'slideHovered', slideId: null })}
     >
       <div
         ref={boxRef}
         data-slide-box={slide.id}
-        className={cn('relative', !isActive && !tool && 'cursor-pointer')}
-        style={{ width: slideWidthCss(slide.aspectRatio), aspectRatio: slide.aspectRatio }}
-        // Clicking the peeking next slide brings it to the front.
-        onClick={isActive || tool ? undefined : () => registry.scrollToSlide(slide.id)}
+        className={cn('relative size-full', !drawing && !isActive && 'cursor-pointer')}
+        onClick={drawing ? undefined : activate}
       >
         <div
           className={cn(
-            'absolute inset-0 overflow-hidden rounded-2xl bg-placeholder',
+            'absolute inset-0 overflow-hidden bg-placeholder transition-shadow',
+            small ? 'rounded-thumb' : 'rounded-2xl',
             !loaded && 'skeleton',
+            !isActive && 'hover:shadow-[0_0_0_2px_rgb(255_255_255/0.3)]',
           )}
         >
           <img
-            src={slide.imageUrl}
+            src={small ? slide.thumbnailUrl : slide.imageUrl}
             alt={slide.title ?? label}
             loading="lazy"
             decoding="async"
@@ -78,15 +108,21 @@ export const SlideFrame = memo(function SlideFrame({
               slide.hidden && 'opacity-40',
             )}
           />
+          {isActive && (
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_0_0_1px_black]"
+            />
+          )}
         </div>
-        {slide.hidden && (
+        {slide.hidden && w >= 200 && (
           <Badge className="absolute top-3 left-3 bg-black/60! backdrop-blur">
             <Icon name="visibilityOff" size={14} />
             Ausgeblendet
           </Badge>
         )}
         <AnnotationLayer slide={slide} threads={threads} emphasisId={emphasisId} draft={draft} />
-        {tool && <DrawingSurface slide={slide} boxRef={boxRef} tool={tool} color={color} />}
+        {drawing && <DrawingSurface slide={slide} boxRef={boxRef} tool={tool} color={color} />}
       </div>
     </div>
   );

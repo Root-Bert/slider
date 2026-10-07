@@ -17,7 +17,9 @@ export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen:
 
   const goTo = (index: number) => {
     const slide = slides[Math.max(0, Math.min(slides.length - 1, index))];
-    if (slide) registry.scrollToSlide(slide.id);
+    if (!slide) return;
+    dispatch({ type: 'activeSlideChanged', slideId: slide.id });
+    registry.revealSlide(slide.id, { align: 'nearest', behavior: 'smooth' });
   };
 
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
@@ -48,9 +50,8 @@ export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen:
     }
     if (mod || event.altKey) return;
 
-    // Repeated presses go on from where the stage is heading, not where it is mid-scroll.
-    const currentId = registry.getScrollTarget() ?? activeSlideId;
-    const current = currentId ? (slideIndex.get(currentId) ?? 0) : 0;
+    // The active slide is explicit, so repeated presses go on from it even mid-scroll.
+    const current = activeSlideId ? (slideIndex.get(activeSlideId) ?? 0) : 0;
     switch (event.key) {
       case 'ArrowLeft':
         goTo(current - 1);

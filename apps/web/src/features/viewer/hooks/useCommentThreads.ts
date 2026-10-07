@@ -11,18 +11,24 @@ import { useViewerState } from '../state/viewer-state';
 
 export interface VisibleThreads {
   filter: ThreadFilter;
-  /** Threads per home slide that pass the current filter. Arrays are stable until data or filter change. */
+  /**
+   * Threads per slide column that pass the filter: comments on the slide itself plus gap
+   * comments in front of the first slide (there is no divider before it). Arrays are stable
+   * until data or filter change.
+   */
   bySlide: ReadonlyMap<string, Thread[]>;
-  /** Counts for the active slide (or the whole deck in "Alle Folien" scope). */
+  /** Gap threads that pass the filter, keyed by `gapKey` – they live under their ⊕ divider. */
+  byGap: ReadonlyMap<string, Thread[]>;
+  /** Counts for the whole deck. */
   counts: StatusCounts;
 }
 
 const EMPTY: Thread[] = [];
 
-/** Applies the comment filter bar (status, "aus PowerPoint", scope) to the deck's threads. */
+/** Applies the comment filter bar (status, "aus PowerPoint") to the deck's threads. */
 export function useCommentThreads(): VisibleThreads {
-  const { threads, threadsBySlide } = useViewerData();
-  const { statusFilter, pptxOnly, scope, activeSlideId } = useViewerState();
+  const { threads, threadsBySlide, gapThreads } = useViewerData();
+  const { statusFilter, pptxOnly } = useViewerState();
 
   const filter = useMemo<ThreadFilter>(
     () => ({ status: statusFilter, pptxOnly }),
@@ -31,22 +37,34 @@ export function useCommentThreads(): VisibleThreads {
 
   const bySlide = useMemo(
     () =>
-      new Map([...threadsBySlide].map(([slideId, list]) => [slideId, filterThreads(list, filter)])),
+      new Map(
+        [...threadsBySlide].map(([slideId, list]) => [
+          slideId,
+          filterThreads(
+            list.filter(
+              ({ root: { anchor } }) => anchor.type !== 'gap' || anchor.afterSlideId === null,
+            ),
+            filter,
+          ),
+        ]),
+      ),
     [threadsBySlide, filter],
   );
 
-  const counts = useMemo(() => {
-    const pool =
-      scope === 'deck'
-        ? threads
-        : ((activeSlideId ? threadsBySlide.get(activeSlideId) : undefined) ?? EMPTY);
-    return countByStatus(pool, pptxOnly);
-  }, [scope, threads, threadsBySlide, activeSlideId, pptxOnly]);
+  const byGap = useMemo(() => {
+    const result = new Map<string, Thread[]>();
+    for (const [key, list] of gapThreads) {
+      if (key.startsWith('start→')) continue;
+      const visible = filterThreads(list, filter);
+      if (visible.length > 0) result.set(key, visible);
+    }
+    return result;
+  }, [gapThreads, filter]);
 
-  return { filter, bySlide, counts };
+  const counts = useMemo(() => countByStatus(threads, pptxOnly), [threads, pptxOnly]);
+
+  return { filter, bySlide, byGap, counts };
 }
 
-export const threadsOf = (
-  bySlide: ReadonlyMap<string, Thread[]>,
-  slideId: string | null,
-): Thread[] => (slideId ? bySlide.get(slideId) : undefined) ?? EMPTY;
+export const threadsOf = (bySlide: ReadonlyMap<string, Thread[]>, key: string | null): Thread[] =>
+  (key ? bySlide.get(key) : undefined) ?? EMPTY;

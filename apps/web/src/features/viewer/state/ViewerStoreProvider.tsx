@@ -15,8 +15,6 @@ interface ViewerStoreProviderProps {
   children: ReactNode;
 }
 
-const COMPACT_QUERY = '(max-width: 767px)';
-
 /** Provides server data, UI state and the stage registry as three separate contexts. */
 export function ViewerStoreProvider({ data, initialSlideId, children }: ViewerStoreProviderProps) {
   const [state, dispatch] = useReducer(
@@ -27,7 +25,6 @@ export function ViewerStoreProvider({ data, initialSlideId, children }: ViewerSt
           ? initialSlideId
           : (data.slides[0]?.id ?? null),
       color: data.viewer.author.color,
-      compact: window.matchMedia(COMPACT_QUERY).matches,
       zoom: loadStoredZoom(),
     },
     createInitialState,

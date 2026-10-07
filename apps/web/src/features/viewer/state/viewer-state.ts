@@ -2,13 +2,12 @@ import type { AccentColor, Anchor, Stroke, StrokeTool } from '@slider/shared';
 import { createContext, useContext, type Dispatch } from 'react';
 import type { StatusFilter } from '../lib/comment-selectors';
 import { strokesBounds } from '../lib/stroke-path';
-import { clampZoom, ZOOM_MAX } from '../lib/zoom';
+import { clampZoom, DEFAULT_ZOOM } from '../lib/zoom';
 
 export { ZOOM_MAX, ZOOM_MIN } from '../lib/zoom';
 
 /** `mark` places pins (click) and frames (drag); the stroke tools draw (BER-98, BER-99). */
 export type Tool = 'mark' | StrokeTool;
-export type CommentScope = 'slide' | 'deck';
 
 /** An unsent comment: where it points and what has been drawn so far. */
 export interface Draft {
@@ -31,18 +30,13 @@ export interface ViewerState {
   draft: Draft | null;
   focusedThreadId: string | null;
   hoveredThreadId: string | null;
+  /** Slide (or its comment column) under the pointer – its connector lines are drawn too. */
+  hoveredSlideId: string | null;
   threadPanelOpen: boolean;
   statusFilter: StatusFilter;
   pptxOnly: boolean;
-  scope: CommentScope;
-  /** Slide height relative to Desktop-1, see `lib/zoom`. */
+  /** Timeline zoom `t` ∈ [0, 1], see `lib/zoom`. */
   zoom: number;
-  /**
-   * A zoom gesture (slider drag, pinch, ⌘ + wheel) is running – the stage keeps its height
-   * meanwhile, so the controls don't move away under the pointer.
-   */
-  zoomGesture: boolean;
-  filmstripOpen: boolean;
 }
 
 export type ViewerAction =
@@ -57,22 +51,19 @@ export type ViewerAction =
   | { type: 'draftCancelled' }
   | { type: 'draftSubmitted' }
   | { type: 'threadHovered'; threadId: string | null }
+  | { type: 'slideHovered'; slideId: string | null }
   | { type: 'threadFocused'; threadId: string; openPanel: boolean }
   | { type: 'threadPanelClosed' }
   /** Inline thread collapsed: drops the focus unless the panel shows that thread. */
   | { type: 'threadUnfocused'; threadId: string }
   | { type: 'statusFilterChanged'; filter: StatusFilter }
   | { type: 'pptxOnlyToggled' }
-  | { type: 'scopeChanged'; scope: CommentScope }
-  | { type: 'zoomChanged'; zoom: number }
-  | { type: 'zoomGestureChanged'; active: boolean }
-  | { type: 'filmstripToggled' };
+  | { type: 'zoomChanged'; zoom: number };
 
 export function createInitialState(options: {
   activeSlideId: string | null;
   color: AccentColor;
-  compact: boolean;
-  /** Restored zoom; defaults to the Desktop-1 look. */
+  /** Restored zoom; defaults to the middle of the range. */
   zoom?: number;
 }): ViewerState {
   return {
@@ -83,14 +74,12 @@ export function createInitialState(options: {
     draft: null,
     focusedThreadId: null,
     hoveredThreadId: null,
+    hoveredSlideId: null,
     threadPanelOpen: false,
     // BER-101: done comments are hidden by default.
     statusFilter: 'open',
     pptxOnly: false,
-    scope: 'slide',
-    zoom: clampZoom(options.zoom ?? ZOOM_MAX),
-    zoomGesture: false,
-    filmstripOpen: !options.compact,
+    zoom: clampZoom(options.zoom ?? DEFAULT_ZOOM),
   };
 }
 
@@ -189,6 +178,10 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
       return next.hoveredThreadId === action.threadId
         ? next
         : { ...next, hoveredThreadId: action.threadId };
+    case 'slideHovered':
+      return next.hoveredSlideId === action.slideId
+        ? next
+        : { ...next, hoveredSlideId: action.slideId };
     case 'threadFocused':
       return {
         ...next,
@@ -205,16 +198,10 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
       return { ...next, statusFilter: action.filter };
     case 'pptxOnlyToggled':
       return { ...next, pptxOnly: !next.pptxOnly };
-    case 'scopeChanged':
-      return { ...next, scope: action.scope };
     case 'zoomChanged': {
       const zoom = clampZoom(action.zoom);
       return zoom === next.zoom ? next : { ...next, zoom };
     }
-    case 'zoomGestureChanged':
-      return next.zoomGesture === action.active ? next : { ...next, zoomGesture: action.active };
-    case 'filmstripToggled':
-      return { ...next, filmstripOpen: !next.filmstripOpen };
     default:
       return next;
   }
