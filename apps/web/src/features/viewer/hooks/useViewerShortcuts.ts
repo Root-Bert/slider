@@ -48,7 +48,9 @@ export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen:
     }
     if (mod || event.altKey) return;
 
-    const current = activeSlideId ? (slideIndex.get(activeSlideId) ?? 0) : 0;
+    // Repeated presses go on from where the stage is heading, not where it is mid-scroll.
+    const currentId = registry.getScrollTarget() ?? activeSlideId;
+    const current = currentId ? (slideIndex.get(currentId) ?? 0) : 0;
     switch (event.key) {
       case 'ArrowLeft':
         goTo(current - 1);

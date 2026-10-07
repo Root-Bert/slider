@@ -2,6 +2,7 @@ import type { Comment, Point } from '@slider/shared';
 import { cn } from '@/ui';
 import { accentColor } from '@/lib/accent';
 import { POWERPOINT_COLOR } from '../lib/colors';
+import { markLabel } from '../lib/labels';
 
 export type MarkState = 'normal' | 'emphasized' | 'dimmed';
 
@@ -13,19 +14,19 @@ interface PinProps {
   onHover: (hovering: boolean) => void;
 }
 
-const excerpt = (body: string) => (body.length > 60 ? `${body.slice(0, 57)}…` : body);
-
 /**
  * Interactive marker of a comment on the slide: an accent dot with a white ring, or the orange
  * "P" square for comments imported from PowerPoint (F1). Positioned in percent of the slide box.
  */
 export function Pin({ comment, at, state, onActivate, onHover }: PinProps) {
   const fromPowerPoint = comment.source === 'pptx';
-  const label = `Kommentar von ${comment.author.name}${comment.body ? `: ${excerpt(comment.body)}` : ''}`;
+  const label = markLabel(comment);
 
   return (
     <button
       type="button"
+      // Connector lines pass behind the dot (its first child).
+      data-mark="pin"
       aria-label={label}
       title={label}
       onClick={(event) => {
@@ -39,7 +40,8 @@ export function Pin({ comment, at, state, onActivate, onHover }: PinProps) {
       className={cn(
         'pointer-events-auto absolute flex size-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center transition-[opacity,transform] duration-200',
         state === 'dimmed' && 'opacity-30',
-        state === 'emphasized' && 'z-10 scale-125',
+        // Above the frames' click areas.
+        state === 'emphasized' ? 'z-10 scale-125' : 'z-[1]',
       )}
       style={{ left: `${at.x * 100}%`, top: `${at.y * 100}%` }}
     >

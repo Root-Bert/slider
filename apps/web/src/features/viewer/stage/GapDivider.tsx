@@ -36,9 +36,15 @@ export const GapDivider = memo(function GapDivider({
       className="relative flex shrink-0 justify-center self-stretch"
       style={{ width: GAP_DIVIDER_PX }}
     >
+      {/* Figma: the hairline pauses 16px above and below the ⊕. */}
       <span
         aria-hidden
-        className={cn('h-full w-px transition-colors', isDrafting ? 'bg-fg' : 'bg-white/50')}
+        className={cn(
+          'h-full w-px transition-colors',
+          isDrafting ? 'bg-fg' : 'bg-white/50',
+          canComment &&
+            '[mask-image:linear-gradient(#000_calc(50%-28px),transparent_calc(50%-28px),transparent_calc(50%+28px),#000_calc(50%+28px))]',
+        )}
       />
       <div className="absolute top-1/2 left-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2">
         {canComment && (
@@ -58,6 +64,8 @@ export const GapDivider = memo(function GapDivider({
         {first && (
           <button
             type="button"
+            // The connector line to the gap comment's card starts below this marker.
+            data-gap-marker
             onClick={() => dispatch({ type: 'threadFocused', threadId: first.id, openPanel: true })}
             onPointerEnter={() => dispatch({ type: 'threadHovered', threadId: first.id })}
             onPointerLeave={() => dispatch({ type: 'threadHovered', threadId: null })}

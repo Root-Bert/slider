@@ -37,3 +37,8 @@ export function rafThrottle(callback: () => void): { schedule: () => void; cance
     cancel: () => cancelAnimationFrame(frame),
   };
 }
+
+/** Which edges of a horizontal scroller hide content (1px tolerance for fractional layouts). */
+export function overflowEdges(scrollLeft: number, scrollWidth: number, clientWidth: number) {
+  return { start: scrollLeft > 1, end: scrollLeft < scrollWidth - clientWidth - 1 };
+}

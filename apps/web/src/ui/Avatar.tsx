@@ -2,7 +2,7 @@ import type { Author } from '@slider/shared';
 import { ringColor } from '@/lib/accent';
 import { cn } from './cn';
 
-type AvatarSize = 16 | 20 | 24 | 32;
+type AvatarSize = 16 | 18 | 20 | 24 | 32;
 
 interface AvatarProps {
   author: Pick<Author, 'name' | 'color' | 'avatarUrl' | 'type'>;

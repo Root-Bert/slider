@@ -1,8 +1,10 @@
-import { useEffect, useId, useRef } from 'react';
+import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
+import { accentColor } from '@/lib/accent';
 import { formatRelativeTime, pluralize } from '@/lib/format';
-import { AvatarStack, IconButton } from '@/ui';
+import { AvatarStack, Icon, IconButton } from '@/ui';
 import type { Thread } from '../lib/comment-selectors';
 import { locationLabel } from '../lib/labels';
+import { collapseReplies } from '../lib/replies';
 import { useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
@@ -24,8 +26,11 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
   const dispatch = useViewerDispatch();
   const registry = useStageRegistry();
   const panelRef = useRef<HTMLElement>(null);
+  const historyRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const [showAll, setShowAll] = useState(false);
   const { root, replies } = thread;
+  const { hidden, visible } = collapseReplies(replies, showAll);
   const location = locationLabel(root.anchor, root.slideId, (id) => slideIndex.get(id));
   const canManage = (comment: Thread['root']) =>
     comment.source === 'app' && comment.author.id === viewer.author.id;
@@ -36,13 +41,25 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
     if (root.slideId) registry.scrollToSlide(root.slideId);
   }, [registry, root.slideId]);
 
+  // A new reply (own or polled) scrolls into view at the bottom of the history.
+  const replyCount = replies.length;
+  const previousCount = useRef(replyCount);
+  useEffect(() => {
+    if (replyCount > previousCount.current)
+      historyRef.current?.scrollTo({ top: historyRef.current.scrollHeight, behavior: 'smooth' });
+    previousCount.current = replyCount;
+  }, [replyCount]);
+
   const close = () => dispatch({ type: 'threadPanelClosed' });
 
   return (
     <aside
       ref={panelRef}
+      // Target of the connector line from the focused thread (B4).
+      data-thread-panel
       tabIndex={-1}
       aria-labelledby={titleId}
+      style={{ '--card-accent': accentColor(root.author.color) } as CSSProperties}
       className={[
         'glass-elevated fixed z-40 flex flex-col outline-none',
         'transition-transform duration-300 ease-out',
@@ -52,7 +69,7 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
         'md:inset-y-0 md:right-0 md:left-auto md:max-h-none md:w-[400px] md:rounded-none md:starting:translate-x-full md:starting:translate-y-0',
       ].join(' ')}
     >
-      <header className="flex flex-col gap-2 border-b border-hairline px-5 pt-4 pb-3">
+      <header className="flex flex-col gap-2.5 border-b border-hairline px-5 pt-[18px] pb-3.5">
         <div className="flex items-center gap-2">
           <h2 id={titleId} className="min-w-0 flex-1 truncate text-base font-semibold text-fg">
             Thread · {location}
@@ -61,7 +78,7 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
           <IconButton icon="close" label="Thread schließen (Esc)" size="sm" onClick={close} />
         </div>
         <p className="flex items-center gap-2 text-xs text-fg-subtle">
-          <AvatarStack authors={thread.participants} size={16} max={5} />
+          <AvatarStack authors={thread.participants} size={18} max={5} />
           <span>
             {pluralize(replies.length, 'Antwort', 'Antworten')} ·{' '}
             {pluralize(thread.participants.length, 'Person', 'Personen')} · zuletzt{' '}
@@ -70,7 +87,12 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
         </p>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain p-4">
+      <div
+        ref={historyRef}
+        // The connector rail (B4) ends at the root message, or at this edge once it scrolled away.
+        data-thread-history
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-5 pt-3.5 pb-4"
+      >
         <ThreadMessage
           comment={root}
           deckId={deck.id}
@@ -78,12 +100,27 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
           canManage={canManage(root)}
           onDeleted={close}
         />
-        {replies.length > 0 && (
-          <ol
-            aria-label="Antworten"
-            className="ml-3 flex flex-col gap-2 border-l border-white/15 pl-3"
-          >
-            {replies.map((reply) => (
+        {hidden > 0 && (
+          <div className="mt-2.5 flex items-center gap-1.5 pl-[26px]">
+            <button
+              type="button"
+              onClick={() => setShowAll(true)}
+              className="-ml-1 inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-xs font-medium text-fg-muted hover:bg-white/10 hover:text-fg"
+            >
+              <Icon name="expandMore" size={16} />
+              {hidden === 1 ? '1 frühere Antwort anzeigen' : `${hidden} frühere Antworten anzeigen`}
+            </button>
+            <span className="ml-auto text-[11px] text-white/40">Älteste zuerst</span>
+          </div>
+        )}
+        {visible.length > 0 && (
+          // Figma 112:623: 2px thread rail at x=25, replies start at x=39.
+          <ol aria-label="Antworten" className="relative mt-2.5 flex flex-col gap-2 pl-[39px]">
+            <span
+              aria-hidden
+              className="absolute inset-y-0 left-[25px] w-0.5 rounded-[1px] bg-white/12"
+            />
+            {visible.map((reply) => (
               <li key={reply.id}>
                 <ThreadMessage
                   comment={reply}
@@ -96,7 +133,7 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
           </ol>
         )}
         {root.source === 'pptx' && (
-          <p className="text-[11px] text-fg-faint">
+          <p className="mt-3 text-[11px] text-fg-faint">
             Antworten bleiben in Slider – die PowerPoint-Datei wird nicht verändert.
           </p>
         )}

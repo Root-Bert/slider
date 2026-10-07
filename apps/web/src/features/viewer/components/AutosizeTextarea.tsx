@@ -1,9 +1,16 @@
-import { useLayoutEffect, useRef, type TextareaHTMLAttributes } from 'react';
+import {
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  type Ref,
+  type TextareaHTMLAttributes,
+} from 'react';
 import { cn } from '@/ui';
 
 interface AutosizeTextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   value: string;
   maxHeight?: number;
+  ref?: Ref<HTMLTextAreaElement>;
 }
 
 /**
@@ -15,9 +22,11 @@ export function AutosizeTextarea({
   maxHeight = 200,
   className,
   rows = 1,
+  ref: forwardedRef,
   ...props
 }: AutosizeTextareaProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  useImperativeHandle(forwardedRef, () => ref.current!, []);
 
   useLayoutEffect(() => {
     const element = ref.current;

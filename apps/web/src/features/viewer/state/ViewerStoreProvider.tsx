@@ -1,4 +1,5 @@
-import { useReducer, useState, type ReactNode } from 'react';
+import { useEffect, useReducer, useState, type ReactNode } from 'react';
+import { loadStoredZoom, storeZoom } from '../lib/zoom';
 import { createStageRegistry, StageRegistryContext } from './stage-registry';
 import { ViewerDataContext, type ViewerData } from './viewer-data';
 import {
@@ -27,10 +28,14 @@ export function ViewerStoreProvider({ data, initialSlideId, children }: ViewerSt
           : (data.slides[0]?.id ?? null),
       color: data.viewer.author.color,
       compact: window.matchMedia(COMPACT_QUERY).matches,
+      zoom: loadStoredZoom(),
     },
     createInitialState,
   );
   const [registry] = useState(createStageRegistry);
+
+  // Zoom is a per-browser preference, not per deck.
+  useEffect(() => storeZoom(state.zoom), [state.zoom]);
 
   return (
     <ViewerDataContext value={data}>

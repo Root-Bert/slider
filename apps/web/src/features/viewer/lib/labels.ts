@@ -1,4 +1,4 @@
-import type { Anchor } from '@slider/shared';
+import type { Anchor, Comment } from '@slider/shared';
 
 /** German copy for where a comment lives ("Folie 3", "Zwischen Folie 3 und 4"). */
 
@@ -35,3 +35,9 @@ export function locationLabel(
   const index = slideId ? indexOf(slideId) : undefined;
   return index === undefined ? 'Folie' : slideLabel(index);
 }
+
+const excerpt = (body: string) => (body.length > 60 ? `${body.slice(0, 57)}…` : body);
+
+/** Accessible name of a comment's mark on the slide. */
+export const markLabel = (comment: Pick<Comment, 'author' | 'body'>) =>
+  `Kommentar von ${comment.author.name}${comment.body ? `: ${excerpt(comment.body)}` : ''}`;

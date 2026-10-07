@@ -1,4 +1,13 @@
-import { Fragment, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import {
+  Fragment,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import { useActiveSlide } from '../hooks/useActiveSlide';
 import { threadsOf, useCommentThreads } from '../hooks/useCommentThreads';
 import { gapKey } from '../lib/comment-selectors';
@@ -7,12 +16,14 @@ import { useViewerData } from '../state/viewer-data';
 import { useViewerState } from '../state/viewer-state';
 import { GapDivider } from './GapDivider';
 import { SlideFrame } from './SlideFrame';
-import { GAP_DIVIDER_PX, slideWidthCss, STAGE_GAP_PX } from './stage-layout';
+import { GAP_DIVIDER_PX, slideWidthCss, STAGE_GAP } from './stage-layout';
 
 /**
  * Horizontal, scroll-snapping row of slides (BER-95). The active slide sits at the left, the
- * next one peeks in from the right. Slide items are memoised and only receive the props that
- * concern them, so scrolling or hovering doesn't re-render a 100+ slide deck.
+ * next one peeks in from the right. Zoom works like a timeline (BER-96): it only scales the
+ * slides – zoomed out, more of the following slides fit beside the active one, which stays put.
+ * Slide items are memoised and only receive the props that concern them, so scrolling or
+ * hovering doesn't re-render a 100+ slide deck.
  */
 export function SlideStage() {
   const { slides, gapThreads, canComment } = useViewerData();
@@ -33,6 +44,35 @@ export function SlideStage() {
     return () => registry.setScroller(null);
   }, [registry, initialSlideId]);
 
+  // Keep the active slide anchored at the left edge while zooming – before paint, so neither
+  // the user nor the active-slide observer ever sees an intermediate scroll position. If a
+  // thumbnail click or ←/→ is still scrolling there, anchor its target instead: the active slide
+  // is somewhere in between, and the instant scroll ends that animation. The observer only
+  // reports the jump a frame later, so until the active slide changes, further zoom steps (slider
+  // drag, wheel burst) keep the slide anchored before.
+  const anchoredSlideId = useRef<string | null>(null);
+  useEffect(() => {
+    anchoredSlideId.current = null;
+  }, [activeSlideId]);
+  const anchorActiveSlide = useEffectEvent(() => {
+    const slideId = registry.getScrollTarget() ?? anchoredSlideId.current ?? activeSlideId;
+    if (!slideId) return null;
+    registry.scrollToSlide(slideId, 'instant');
+    anchoredSlideId.current = slideId;
+    return slideId;
+  });
+  const anchoredZoom = useRef(zoom);
+  useLayoutEffect(() => {
+    if (anchoredZoom.current === zoom) return;
+    anchoredZoom.current = zoom;
+    const slideId = anchorActiveSlide();
+    if (!slideId) return;
+    // Chrome still applies the last frame of an aborted smooth scroll after the jump, leaving
+    // the row a few dozen pixels off the snap point – put it back once that frame is through.
+    const frame = requestAnimationFrame(() => registry.scrollToSlide(slideId, 'instant'));
+    return () => cancelAnimationFrame(frame);
+  }, [zoom, registry]);
+
   const emphasisId = focusedThreadId ?? hoveredThreadId;
   const draftGapKey =
     draft?.anchor.type === 'gap'
@@ -50,7 +90,7 @@ export function SlideStage() {
       style={
         {
           '--slide-h': `calc(min(552px, 56dvh) * ${zoom})`,
-          gap: STAGE_GAP_PX,
+          gap: STAGE_GAP,
         } as CSSProperties
       }
     >
@@ -89,7 +129,7 @@ export function SlideStage() {
           aria-hidden
           className="shrink-0"
           style={{
-            width: `max(0px, calc(100cqw - 2 * var(--stage-pad) - ${slideWidthCss(lastSlide.aspectRatio)} - ${2 * STAGE_GAP_PX + GAP_DIVIDER_PX}px))`,
+            width: `max(0px, calc(100cqw - ${slideWidthCss(lastSlide.aspectRatio)} - 2 * ${STAGE_GAP} - ${GAP_DIVIDER_PX}px))`,
           }}
         />
       )}

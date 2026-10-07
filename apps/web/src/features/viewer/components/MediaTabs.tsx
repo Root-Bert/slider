@@ -1,39 +1,30 @@
-import { cn, Icon, type IconName } from '@/ui';
+import { cn, Icon } from '@/ui';
+import { MEDIA_KINDS, MEDIA_SOON } from '../lib/media-kinds';
 
-const TABS: { id: string; label: string; icon: IconName; enabled: boolean }[] = [
-  { id: 'text', label: 'Text', icon: 'notes', enabled: true },
-  { id: 'audio', label: 'Audio', icon: 'mic', enabled: false },
-  { id: 'video', label: 'Video', icon: 'cameraVideo', enabled: false },
-  { id: 'image', label: 'Bild', icon: 'image', enabled: false },
-];
-
-/**
- * Text / Audio / Video / Bild switch of the composers (B2, B4). Only text exists so far;
- * the others are visible but disabled until BER-116.
- */
+/** Text / Audio / Video / Bild switch of the composers (Figma B2, B4 "Tabs"). */
 export function MediaTabs({ className }: { className?: string }) {
   return (
     <div
       role="tablist"
       aria-label="Kommentarart"
-      className={cn('flex items-center gap-1 rounded-[10px] bg-white/5 p-0.5', className)}
+      className={cn('flex w-fit items-center gap-1 rounded-[12px] bg-white/5 p-1', className)}
     >
-      {TABS.map((tab) => (
+      {MEDIA_KINDS.map((kind) => (
         <button
-          key={tab.id}
+          key={kind.id}
           type="button"
           role="tab"
-          aria-selected={tab.enabled}
-          aria-disabled={!tab.enabled || undefined}
-          tabIndex={tab.enabled ? 0 : -1}
-          title={tab.enabled ? undefined : 'Folgt bald'}
+          aria-selected={kind.enabled}
+          aria-disabled={!kind.enabled || undefined}
+          tabIndex={kind.enabled ? 0 : -1}
+          title={kind.enabled ? undefined : MEDIA_SOON}
           className={cn(
-            'flex h-7 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 text-xs',
-            tab.enabled ? 'bg-white/10 font-medium text-fg' : 'cursor-not-allowed text-fg-faint',
+            'flex items-center gap-1.5 rounded-lg py-1.5 pr-3 pl-2.5 text-xs font-medium',
+            kind.enabled ? 'bg-white/12 text-fg' : 'cursor-not-allowed text-fg-subtle',
           )}
         >
-          <Icon name={tab.icon} size={14} />
-          {tab.label}
+          <Icon name={kind.icon} size={16} />
+          {kind.label}
         </button>
       ))}
     </div>

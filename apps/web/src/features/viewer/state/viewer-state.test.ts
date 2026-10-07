@@ -4,6 +4,7 @@ import {
   createInitialState,
   viewerReducer,
   ZOOM_MAX,
+  ZOOM_MIN,
   type ViewerAction,
   type ViewerState,
 } from './viewer-state';
@@ -73,6 +74,17 @@ describe('viewerReducer', () => {
     expect(state.focusedThreadId).toBeNull();
   });
 
+  it('drops an inline focus on collapse, but not a thread shown in the panel', () => {
+    const inline = run({ type: 'threadFocused', threadId: 't1', openPanel: false });
+    expect(viewerReducer(inline, { type: 'threadUnfocused', threadId: 't1' }).focusedThreadId).toBe(
+      null,
+    );
+    expect(viewerReducer(inline, { type: 'threadUnfocused', threadId: 't2' })).toBe(inline);
+
+    const panel = run({ type: 'threadFocused', threadId: 't1', openPanel: true });
+    expect(viewerReducer(panel, { type: 'threadUnfocused', threadId: 't1' })).toBe(panel);
+  });
+
   it('clears the draft and the tool after sending', () => {
     const state = run(
       { type: 'toolSelected', tool: 'mark' },
@@ -83,7 +95,26 @@ describe('viewerReducer', () => {
     expect(state.tool).toBeNull();
   });
 
-  it('clamps zoom', () => {
+  it('clamps zoom to the Desktop-1 / Desktop-7 range', () => {
     expect(run({ type: 'zoomChanged', zoom: 10 }).zoom).toBe(ZOOM_MAX);
+    expect(run({ type: 'zoomChanged', zoom: 0 }).zoom).toBe(ZOOM_MIN);
+  });
+
+  it('starts at Desktop-1 zoom unless a stored zoom is passed in', () => {
+    expect(initial.zoom).toBe(ZOOM_MAX);
+    const restored = createInitialState({
+      activeSlideId: 's1',
+      color: 'red',
+      compact: false,
+      zoom: 0.6,
+    });
+    expect(restored.zoom).toBe(0.6);
+  });
+
+  it('tracks zoom gestures without touching the zoom', () => {
+    const state = run({ type: 'zoomGestureChanged', active: true });
+    expect(state.zoomGesture).toBe(true);
+    expect(state.zoom).toBe(initial.zoom);
+    expect(viewerReducer(state, { type: 'zoomGestureChanged', active: true })).toBe(state);
   });
 });

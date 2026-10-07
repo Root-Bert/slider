@@ -2,6 +2,9 @@ import type { AccentColor, Anchor, Stroke, StrokeTool } from '@slider/shared';
 import { createContext, useContext, type Dispatch } from 'react';
 import type { StatusFilter } from '../lib/comment-selectors';
 import { strokesBounds } from '../lib/stroke-path';
+import { clampZoom, ZOOM_MAX } from '../lib/zoom';
+
+export { ZOOM_MAX, ZOOM_MIN } from '../lib/zoom';
 
 /** `mark` places pins (click) and frames (drag); the stroke tools draw (BER-98, BER-99). */
 export type Tool = 'mark' | StrokeTool;
@@ -32,12 +35,15 @@ export interface ViewerState {
   statusFilter: StatusFilter;
   pptxOnly: boolean;
   scope: CommentScope;
+  /** Slide height relative to Desktop-1, see `lib/zoom`. */
   zoom: number;
+  /**
+   * A zoom gesture (slider drag, pinch, ⌘ + wheel) is running – the stage keeps its height
+   * meanwhile, so the controls don't move away under the pointer.
+   */
+  zoomGesture: boolean;
   filmstripOpen: boolean;
 }
-
-export const ZOOM_MIN = 0.5;
-export const ZOOM_MAX = 1.6;
 
 export type ViewerAction =
   | { type: 'activeSlideChanged'; slideId: string }
@@ -53,16 +59,21 @@ export type ViewerAction =
   | { type: 'threadHovered'; threadId: string | null }
   | { type: 'threadFocused'; threadId: string; openPanel: boolean }
   | { type: 'threadPanelClosed' }
+  /** Inline thread collapsed: drops the focus unless the panel shows that thread. */
+  | { type: 'threadUnfocused'; threadId: string }
   | { type: 'statusFilterChanged'; filter: StatusFilter }
   | { type: 'pptxOnlyToggled' }
   | { type: 'scopeChanged'; scope: CommentScope }
   | { type: 'zoomChanged'; zoom: number }
+  | { type: 'zoomGestureChanged'; active: boolean }
   | { type: 'filmstripToggled' };
 
 export function createInitialState(options: {
   activeSlideId: string | null;
   color: AccentColor;
   compact: boolean;
+  /** Restored zoom; defaults to the Desktop-1 look. */
+  zoom?: number;
 }): ViewerState {
   return {
     activeSlideId: options.activeSlideId,
@@ -77,7 +88,8 @@ export function createInitialState(options: {
     statusFilter: 'open',
     pptxOnly: false,
     scope: 'slide',
-    zoom: 1,
+    zoom: clampZoom(options.zoom ?? ZOOM_MAX),
+    zoomGesture: false,
     filmstripOpen: !options.compact,
   };
 }
@@ -185,14 +197,22 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
       };
     case 'threadPanelClosed':
       return { ...next, threadPanelOpen: false, focusedThreadId: null };
+    case 'threadUnfocused':
+      return next.focusedThreadId === action.threadId && !next.threadPanelOpen
+        ? { ...next, focusedThreadId: null }
+        : next;
     case 'statusFilterChanged':
       return { ...next, statusFilter: action.filter };
     case 'pptxOnlyToggled':
       return { ...next, pptxOnly: !next.pptxOnly };
     case 'scopeChanged':
       return { ...next, scope: action.scope };
-    case 'zoomChanged':
-      return { ...next, zoom: Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, action.zoom)) };
+    case 'zoomChanged': {
+      const zoom = clampZoom(action.zoom);
+      return zoom === next.zoom ? next : { ...next, zoom };
+    }
+    case 'zoomGestureChanged':
+      return next.zoomGesture === action.active ? next : { ...next, zoomGesture: action.active };
     case 'filmstripToggled':
       return { ...next, filmstripOpen: !next.filmstripOpen };
     default:

@@ -1,4 +1,5 @@
 import {
+  type Author,
   type Comment,
   type CreateCommentInput,
   type CreateReviewLinkInput,
@@ -13,6 +14,7 @@ import {
 } from '@slider/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api-client';
+import { confirmComment, pendingReply } from './comment-cache';
 
 /** Central query keys, so invalidation stays consistent across features. */
 export const queryKeys = {
@@ -119,6 +121,39 @@ export function useCreateComment(deckId: string) {
       ]);
       void invalidate();
     },
+  });
+}
+
+/**
+ * Posts a reply with an optimistic placeholder, so it shows in the thread immediately. Errors
+ * remove only the placeholder (polling may have changed the list meanwhile).
+ */
+export function useCreateReply(deckId: string, author: Author) {
+  const queryClient = useQueryClient();
+  const invalidate = useInvalidateDeckFeedback(deckId);
+  const key = queryKeys.comments(deckId);
+  const drop = (id: string) =>
+    queryClient.setQueryData<Comment[]>(key, (current = []) =>
+      current.filter((comment) => comment.id !== id),
+    );
+  return useMutation({
+    mutationFn: ({ input }: { input: CreateCommentInput; root: Comment }) =>
+      api.post<Comment>(`/decks/${deckId}/comments`, input),
+    onMutate: async ({ input, root }) => {
+      await queryClient.cancelQueries({ queryKey: key });
+      const pending = pendingReply(input, root, author);
+      queryClient.setQueryData<Comment[]>(key, (current = []) => [...current, pending]);
+      return { tempId: pending.id };
+    },
+    onSuccess: (saved, _variables, context) => {
+      queryClient.setQueryData<Comment[]>(key, (current = []) =>
+        confirmComment(current, context.tempId, saved),
+      );
+    },
+    onError: (_error, _variables, context) => {
+      if (context) drop(context.tempId);
+    },
+    onSettled: invalidate,
   });
 }
 

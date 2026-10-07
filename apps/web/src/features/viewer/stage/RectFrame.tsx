@@ -7,6 +7,8 @@ interface RectFrameProps {
   color: string;
   emphasized?: boolean;
   dashed?: boolean;
+  /** A comment's mark: connector lines pass behind it. */
+  isMark?: boolean;
   className?: string;
   children?: ReactNode;
 }
@@ -17,11 +19,13 @@ export function RectFrame({
   color,
   emphasized = false,
   dashed = false,
+  isMark = false,
   className,
   children,
 }: RectFrameProps) {
   return (
     <div
+      data-mark={isMark ? 'frame' : undefined}
       className={cn('absolute rounded-[4px] border-2', dashed && 'border-dashed', className)}
       style={{
         left: `${rect.x * 100}%`,

@@ -1,5 +1,6 @@
 import type { Comment } from '@slider/shared';
 import { useState } from 'react';
+import { isPendingComment } from '@/lib/comment-cache';
 import { useDeleteComment, useUpdateComment } from '@/lib/queries';
 import { Button, cn, Dialog, Menu } from '@/ui';
 import { AutosizeTextarea } from '../components/AutosizeTextarea';
@@ -16,7 +17,10 @@ interface ThreadMessageProps {
   onDeleted?: () => void;
 }
 
-/** One message in the thread panel (B4): root highlighted, own messages with a ⋯ menu. */
+/**
+ * One message in the thread panel (B4): the root spans the panel in the thread's accent
+ * (`--card-accent`), replies hug their content. Own messages get a ⋯ menu.
+ */
 export function ThreadMessage({
   comment,
   deckId,
@@ -27,20 +31,25 @@ export function ThreadMessage({
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const remove = useDeleteComment(deckId);
+  // Not saved yet: shown dimmed and without actions until the server confirms it.
+  const pending = isPendingComment(comment);
 
   return (
     <article
+      aria-busy={pending || undefined}
       className={cn(
-        'flex flex-col gap-2 rounded-2xl px-3.5 py-3',
+        'flex flex-col gap-2 rounded-2xl px-3.5 py-3 transition-opacity',
         isRoot
-          ? 'bg-white/[0.06] shadow-[inset_0_0_0_1px_var(--color-accent-blue),0_0_24px_-6px_var(--color-accent-blue)]'
-          : 'glass',
+          ? 'bg-white/[0.06] shadow-[inset_0_0_0_1px_var(--card-accent),0_0_20px_-4px_color-mix(in_srgb,var(--card-accent)_50%,transparent)]'
+          : cn('glass max-w-80', editing ? 'w-full' : 'w-fit min-w-48'),
+        pending && 'opacity-60',
       )}
     >
       <AuthorLine
         comment={comment}
         trailing={
           canManage &&
+          !pending &&
           !editing && (
             <Menu
               label="Aktionen für diesen Kommentar"

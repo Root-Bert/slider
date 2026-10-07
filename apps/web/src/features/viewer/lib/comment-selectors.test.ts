@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   anchorRect,
   buildThreads,
+  connectorAnchor,
   countByStatus,
   filterThreads,
   gapKey,
@@ -9,6 +10,7 @@ import {
   groupThreadsBySlide,
   isStrokeOnly,
   sortThreadsByAnchor,
+  sortThreadsClockwise,
 } from './comment-selectors';
 import { author, comment, slide } from './test-fixtures';
 
@@ -145,4 +147,76 @@ it('detects drawing-only comments', () => {
   ];
   expect(isStrokeOnly(comment({ body: '  ', strokes }))).toBe(true);
   expect(isStrokeOnly(comment({ body: 'Hi', strokes }))).toBe(false);
+});
+
+describe('connectorAnchor', () => {
+  it('starts at the edge of a pin, wider for PowerPoint pins', () => {
+    const pin = comment({ anchor: { type: 'point', point: { x: 0.9, y: 0.1 }, shapeRef: null } });
+    expect(connectorAnchor(pin, [])).toEqual({
+      left: 0.9,
+      right: 0.9,
+      start: { left: { x: 0.9, y: 0.1 }, right: { x: 0.9, y: 0.1 } },
+      inset: { left: 7, right: 7 },
+    });
+    expect(connectorAnchor({ ...pin, source: 'pptx' }, [])!.inset).toEqual({ left: 12, right: 12 });
+  });
+
+  it('starts in the middle of a frame edge', () => {
+    const frame = comment({
+      anchor: { type: 'rect', rect: { x: 0.25, y: 0.25, w: 0.5, h: 0.5 }, shapeRef: null },
+    });
+    expect(connectorAnchor(frame, [])!.start).toEqual({
+      left: { x: 0.25, y: 0.5 },
+      right: { x: 0.75, y: 0.5 },
+    });
+  });
+
+  it('starts at the outermost point of a drawing, outside its stroke', () => {
+    const drawing = comment({
+      anchor: { type: 'slide' },
+      strokes: [
+        {
+          tool: 'arrow',
+          color: 'blue',
+          points: [
+            { x: 0.1, y: 0.5 },
+            { x: 0.3, y: 0.2 },
+          ],
+        },
+      ],
+    });
+    expect(connectorAnchor(drawing, [])).toEqual({
+      left: 0.1,
+      right: 0.3,
+      start: { left: { x: 0.1, y: 0.5 }, right: { x: 0.3, y: 0.2 } },
+      inset: { left: 1.5, right: 1.5 },
+    });
+  });
+
+  it('has no line for slide-level and gap comments', () => {
+    expect(connectorAnchor(comment({ anchor: { type: 'slide' } }), [])).toBeNull();
+    const gap = comment({ anchor: { type: 'gap', afterSlideId: 's1', beforeSlideId: 's2' } });
+    expect(connectorAnchor(gap, [])).toBeNull();
+  });
+});
+
+it('orders threads clockwise around the slide, lineless last', () => {
+  const point = (x: number, y: number) =>
+    comment({ anchor: { type: 'point', point: { x, y }, shapeRef: null } });
+  const leftLow = point(0.1, 0.8);
+  const leftHigh = point(0.2, 0.1);
+  const rightLow = point(0.9, 0.9);
+  const rightHigh = point(0.8, 0.2);
+  const slideLevel = comment({ anchor: { type: 'slide' } });
+  const sorted = sortThreadsClockwise(
+    buildThreads([slideLevel, rightHigh, leftLow, rightLow, leftHigh]),
+    [],
+  );
+  expect(sorted.map((t) => t.id)).toEqual([
+    leftHigh.id,
+    leftLow.id,
+    rightLow.id,
+    rightHigh.id,
+    slideLevel.id,
+  ]);
 });

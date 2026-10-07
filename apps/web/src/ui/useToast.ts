@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 export type ToastTone = 'neutral' | 'danger';
 
@@ -20,8 +20,11 @@ export function useToast() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
-  const show = (text: string, tone: ToastTone = 'neutral') =>
-    setToast({ id: Date.now(), text, tone });
+  // Stable, so it can sit in a context without re-rendering consumers.
+  const show = useCallback(
+    (text: string, tone: ToastTone = 'neutral') => setToast({ id: Date.now(), text, tone }),
+    [],
+  );
 
   return [toast, show] as const;
 }

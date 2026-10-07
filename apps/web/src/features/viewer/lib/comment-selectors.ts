@@ -3,11 +3,12 @@ import {
   type Anchor,
   type Author,
   type Comment,
+  type Point,
   type Rect,
   type Shape,
   type Slide,
 } from '@slider/shared';
-import { strokesBounds } from './stroke-path';
+import { STROKE_STYLE, strokesBounds } from './stroke-path';
 
 /** A root comment together with its replies – the unit shown as a card and in the thread panel. */
 export interface Thread {
@@ -174,6 +175,101 @@ export function sortThreadsByAnchor(
     .sort((a, b) => a.key - b.key)
     .map(({ thread }) => thread);
 }
+
+/** Where a connector line leaves its mark – normalised slide coordinates (B1). */
+export interface ConnectorAnchor {
+  /** Horizontal extent of the mark; the line exits towards the nearer slide edge. */
+  left: number;
+  right: number;
+  /** Start point per exit side. */
+  start: { left: Point; right: Point };
+  /** Extra screen pixels outwards from the start: the pin's radius, half a stroke width. */
+  inset: { left: number; right: number };
+}
+
+/** Radius of an accent pin and half the PowerPoint "P" square (incl. its ring), in px. */
+const PIN_RADIUS = 7;
+const POWERPOINT_PIN_RADIUS = 12;
+
+/**
+ * Start of the connector line for a comment: the edge of its pin, the middle of its frame's
+ * left / right edge, or – for drawings – the drawing's outermost point (an arrow's tail, a
+ * circle's side). `null` for gap comments and slide-level comments without a drawing.
+ */
+export function connectorAnchor(
+  comment: Pick<Comment, 'anchor' | 'strokes' | 'source'>,
+  shapes: readonly Shape[],
+): ConnectorAnchor | null {
+  const { anchor, strokes } = comment;
+  if (anchor.type === 'rect') {
+    const { x, y, w, h } = anchor.rect;
+    const mid = y + h / 2;
+    return {
+      left: x,
+      right: x + w,
+      start: { left: { x, y: mid }, right: { x: x + w, y: mid } },
+      inset: { left: 0, right: 0 },
+    };
+  }
+  if (strokes.length > 0) {
+    let left: { point: Point; pad: number } | null = null;
+    let right: { point: Point; pad: number } | null = null;
+    for (const stroke of strokes) {
+      const pad = STROKE_STYLE[stroke.tool].width / 2;
+      for (const point of stroke.points) {
+        if (!left || point.x < left.point.x) left = { point, pad };
+        if (!right || point.x > right.point.x) right = { point, pad };
+      }
+    }
+    if (left && right)
+      return {
+        left: left.point.x,
+        right: right.point.x,
+        start: { left: left.point, right: right.point },
+        inset: { left: left.pad, right: right.pad },
+      };
+  }
+  if (anchor.type !== 'point') return null;
+  const rect = anchorRect(comment, shapes)!;
+  const point = { x: rect.x, y: rect.y };
+  const radius = comment.source === 'pptx' ? POWERPOINT_PIN_RADIUS : PIN_RADIUS;
+  return {
+    left: point.x,
+    right: point.x,
+    start: { left: point, right: point },
+    inset: { left: radius, right: radius },
+  };
+}
+
+/** Exit side of a connector: the nearer vertical slide edge, ties go left. */
+export const connectorSide = (anchor: Pick<ConnectorAnchor, 'left' | 'right'>) =>
+  anchor.left <= 1 - anchor.right ? ('left' as const) : ('right' as const);
+
+/**
+ * Card order for the active slide (B1): clockwise around the slide – lines leaving to the left
+ * from top to bottom, then lines leaving to the right from bottom to top, then comments without
+ * a line. Lanes and cards then follow the same order and the lines don't cross.
+ */
+export function sortThreadsClockwise(
+  threads: readonly Thread[],
+  shapes: readonly Shape[],
+): Thread[] {
+  const keyed = threads.map((thread, index) => {
+    const anchor = connectorAnchor(thread.root, shapes);
+    if (!anchor) return { thread, group: 2, key: index };
+    const side = connectorSide(anchor);
+    const y = anchor.start[side].y;
+    return side === 'left' ? { thread, group: 0, key: y } : { thread, group: 1, key: -y };
+  });
+  return keyed.sort((a, b) => a.group - b.group || a.key - b.key).map(({ thread }) => thread);
+}
+
+/** Number of threads whose line leaves the slide to the left – the head of the clockwise order. */
+export const countLeftExits = (threads: readonly Thread[], shapes: readonly Shape[]) =>
+  threads.filter((thread) => {
+    const anchor = connectorAnchor(thread.root, shapes);
+    return anchor !== null && connectorSide(anchor) === 'left';
+  }).length;
 
 /** True when the body only consists of a drawing (shown as "✏️ Markierung"). */
 export const isStrokeOnly = (comment: Comment) =>
