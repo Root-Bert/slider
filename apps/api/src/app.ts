@@ -5,6 +5,7 @@ import { secureHeaders } from 'hono/secure-headers';
 import { API_PREFIX } from '@slider/shared';
 import type { AppDeps } from './deps';
 import { errorHandler, notFoundHandler } from './http/errors';
+import { authRoutes } from './routes/auth';
 import { commentsRoutes } from './routes/comments';
 import { decksRoutes } from './routes/decks';
 import { filesRoutes } from './routes/files';
@@ -25,7 +26,8 @@ export function createApp(deps: AppDeps) {
     .route('/', decksRoutes(deps))
     .route('/', commentsRoutes(deps))
     .route('/', reviewLinksRoutes(deps))
-    .route('/', invitesRoutes(deps));
+    .route('/', invitesRoutes(deps))
+    .route('/', authRoutes(deps));
 
   app.route(API_PREFIX, api);
   app.route('/files', filesRoutes(deps));

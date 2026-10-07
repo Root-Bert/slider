@@ -140,6 +140,10 @@ export interface NewDeckFile {
   fileName: string;
   bytes: Uint8Array;
   source: DeckSource;
+  /** For link imports: the pasted link, the provider reference and its change token (BER-92). */
+  sourceUrl?: string;
+  sourceRef?: string;
+  changeToken?: string | null;
 }
 
 /** Stores the original, creates deck + revision 1 and queues the import. Returns at once. */
@@ -161,13 +165,20 @@ export async function createDeckFromFile(
       title: titleFromFileName(file.fileName),
       fileName: file.fileName,
       source: file.source,
+      sourceUrl: file.sourceUrl ?? null,
+      sourceRef: file.sourceRef ?? null,
       createdAt: now,
       updatedAt: now,
       importState: { status: 'queued' },
     });
-    await tx
-      .insert(revisions)
-      .values({ id: revisionId, deckId, number: 1, createdAt: now, pptxKey });
+    await tx.insert(revisions).values({
+      id: revisionId,
+      deckId,
+      number: 1,
+      createdAt: now,
+      pptxKey,
+      sourceChangeToken: file.changeToken ?? null,
+    });
     const [deck] = await tx
       .update(decks)
       .set({ currentRevisionId: revisionId })

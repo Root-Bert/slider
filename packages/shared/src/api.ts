@@ -35,6 +35,8 @@ import {
  * | GET    | /invites/:token                        |                            | InviteInfo            |
  * | POST   | /invites/:token/join                   | JoinInviteInput            | MeResponse (sets cookie) |
  * | POST   | /session/leave                         |                            | 204 (clears guest cookie) |
+ * | GET    | /auth/microsoft/login?returnTo=        |                            | 302 to Microsoft      |
+ * | GET    | /auth/microsoft/callback               |                            | 302 back to the web app |
  *
  * Binary files (slide images, thumbnails, avatars) are served from `/files/*`.
  */
@@ -48,6 +50,11 @@ export const ERROR_CODES = [
   'unauthorized',
   'unsupported_link',
   'microsoft_login_required',
+  'microsoft_not_configured',
+  'microsoft_consent_required',
+  'source_forbidden',
+  'source_not_found',
+  'source_unreachable',
   'not_a_powerpoint',
   'file_too_large',
   'link_revoked',
@@ -58,7 +65,12 @@ export const ERROR_CODES = [
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
 export interface ApiError {
-  error: { code: ErrorCode; message: string };
+  error: {
+    code: ErrorCode;
+    message: string;
+    /** With `microsoft_login_required`: where to send the browser to sign in (relative to the web origin). */
+    loginUrl?: string;
+  };
 }
 
 /** Upload limit from BER-91. */

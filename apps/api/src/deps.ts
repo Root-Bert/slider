@@ -1,3 +1,4 @@
+import type { MicrosoftTokens } from './auth/microsoft';
 import type { Clock } from './clock';
 import type { Config } from './config';
 import type { Database } from './db/client';
@@ -13,6 +14,8 @@ export interface AppDeps {
   storage: BlobStorage;
   queue: JobQueue<ImportJob>;
   sources: SourceAdapters;
+  /** Microsoft sign-in tokens per user (BER-92). */
+  microsoft: MicrosoftTokens;
   clock: Clock;
   log: Logger;
   /** The `users.id` of the dev owner (see {@link Config.devOwner}). */

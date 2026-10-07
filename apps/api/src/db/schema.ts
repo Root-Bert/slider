@@ -39,6 +39,10 @@ export const users = pgTable('users', {
   email: text('email').notNull().unique(),
   color: text('color').$type<AccentColor>().notNull(),
   avatarKey: text('avatar_key'),
+  /** Microsoft refresh token for OneDrive/SharePoint links, AES-GCM encrypted (`auth/token-crypto`). */
+  msRefreshToken: text('ms_refresh_token'),
+  /** The Microsoft account it belongs to (mail or UPN), for display. */
+  msAccount: text('ms_account'),
   createdAt: createdAt(),
 });
 
@@ -52,6 +56,10 @@ export const decks = pgTable(
     title: text('title').notNull(),
     fileName: text('file_name').notNull(),
     source: text('source').$type<DeckSource>().notNull(),
+    /** The link the deck was imported from (`null` for uploads). */
+    sourceUrl: text('source_url'),
+    /** Provider reference for re-sync: Graph `drives/{d}/items/{i}` or the final file URL. */
+    sourceRef: text('source_ref'),
     createdAt: createdAt(),
     updatedAt: timestamptz('updated_at').notNull().defaultNow(),
     archivedAt: timestamptz('archived_at'),
@@ -76,6 +84,8 @@ export const revisions = pgTable(
     pptxKey: text('pptx_key'),
     slideWidthEmu: integer('slide_width_emu'),
     slideHeightEmu: integer('slide_height_emu'),
+    /** Graph cTag/eTag or HTTP ETag of the source file this revision was made from (BER-107). */
+    sourceChangeToken: text('source_change_token'),
   },
   (t) => [unique('revisions_deck_number_unique').on(t.deckId, t.number)],
 );

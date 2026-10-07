@@ -6,18 +6,23 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: ErrorCode,
     message: string,
+    /** With `microsoft_login_required`: where to send the browser to sign in. */
+    readonly loginUrl?: string,
   ) {
     super(message);
     this.name = 'ApiError';
   }
 }
 
+const fromBody = (status: number, error: ApiErrorBody['error']) =>
+  new ApiError(status, error.code, error.message, error.loginUrl);
+
 const FALLBACK_MESSAGE = 'Etwas ist schiefgelaufen. Bitte versuche es erneut.';
 
 async function toApiError(response: Response): Promise<ApiError> {
   try {
     const body = (await response.json()) as Partial<ApiErrorBody>;
-    if (body.error) return new ApiError(response.status, body.error.code, body.error.message);
+    if (body.error) return fromBody(response.status, body.error);
   } catch {
     // Non-JSON error (proxy down, HTML error page) – fall through.
   }
@@ -86,7 +91,7 @@ export function uploadWithProgress<T>(
       const body = xhr.response as Partial<ApiErrorBody> | null;
       reject(
         body?.error
-          ? new ApiError(xhr.status, body.error.code, body.error.message)
+          ? fromBody(xhr.status, body.error)
           : new ApiError(xhr.status, 'internal', FALLBACK_MESSAGE),
       );
     };

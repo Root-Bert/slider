@@ -8,6 +8,10 @@ describe('parseShareLink (BER-92 link types)', () => {
     ['https://contoso.sharepoint.com/:p:/s/strategie/EaB3kQxyz', 'sharepoint'],
     ['https://contoso-my.sharepoint.com/:p:/g/personal/robert/EaB3kQ', 'sharepoint'],
     ['https://contoso.sharepoint.com/sites/x/_layouts/15/Doc.aspx?sourcedoc={guid}', 'sharepoint'],
+    ['https://contoso.sharepoint.com/sites/x/Shared%20Documents/Q4.pptx', 'sharepoint'],
+    ['https://example.com/files/deck.pptx', 'url'],
+    ['https://cdn.example.com/Decks/Q4%20Strategie.PPTX?v=2', 'url'],
+    ['https://raw.githubusercontent.com/org/repo/main/test.pptx', 'url'],
   ])('recognises %s as %s', (url, kind) => {
     expect(parseShareLink(url)?.kind).toBe(kind);
   });
@@ -19,6 +23,11 @@ describe('parseShareLink (BER-92 link types)', () => {
     'https://evil.com/?q=sharepoint.com/:p:/',
     'https://sharepoint.com.evil.com/:p:/x',
     'https://docs.google.com/presentation/d/abc',
+    'http://example.com/deck.pptx', // no TLS
+    'https://example.com/page.html',
+    'https://example.com/deck.ppt',
+    'https://example.com/?file=deck.pptx', // the file name must be the path
+    'https://contoso.sharepoint.com/sites/x/Shared%20Documents/Notes.docx',
   ])('rejects %s', (url) => {
     expect(parseShareLink(url)).toBeNull();
   });

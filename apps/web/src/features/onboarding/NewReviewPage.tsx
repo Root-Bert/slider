@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import type { Deck } from '@slider/shared';
 import { AppHeader } from '@/app/AppHeader';
 import { routes } from '@/app/routes';
+import { cn } from '@/ui';
 import { LinkImportForm } from './components/LinkImportForm';
 import { NoAccessCard } from './components/NoAccessCard';
 import { RecentDecks } from './components/RecentDecks';
@@ -35,8 +36,19 @@ export function Component() {
       <title>Neuer Review · Slider</title>
       <AppHeader />
 
-      <main className="flex flex-1 justify-center px-4 pt-[clamp(8px,6vh,64px)] pb-16">
-        <div className="flex w-full max-w-[456px] flex-col gap-6">
+      <main
+        className={cn(
+          'flex flex-1 justify-center px-4 pb-16',
+          // A3 drops the heading; the field moves down to where the card reads centred (Figma 92:2472).
+          link.noAccess ? 'pt-[clamp(8px,19vh,190px)]' : 'pt-[clamp(8px,6vh,64px)]',
+        )}
+      >
+        <div
+          className={cn(
+            'flex w-full flex-col gap-6',
+            link.noAccess ? 'max-w-[560px]' : 'max-w-[456px]',
+          )}
+        >
           {!link.noAccess && (
             <hgroup className="flex flex-col items-center gap-2 text-center">
               <h1 className="text-[28px] leading-tight font-semibold tracking-tight text-fg">

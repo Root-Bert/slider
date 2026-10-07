@@ -16,10 +16,24 @@ export interface Config {
   devOwner: { name: string; email: string };
   /** Requests per minute and IP on `/api/invites/*`. */
   inviteRateLimit: number;
+  /** Entra app for OneDrive/SharePoint links (BER-92); `null` until MS_CLIENT_ID and MS_CLIENT_SECRET are set. */
+  microsoft: MicrosoftConfig | null;
+}
+
+export interface MicrosoftConfig {
+  clientId: string;
+  clientSecret: string;
+  /** `common` = any work/school directory plus personal accounts. */
+  tenant: string;
+  /** Must match a redirect URI of the app registration exactly. */
+  redirectUri: string;
 }
 
 const DEV_SECRET = 'slider-dev-secret-do-not-use-in-production';
 const DEFAULT_DATA_DIR = fileURLToPath(new URL('../.data', import.meta.url));
+/** `.env` lives in the repo root, so relative paths in it are meant from there – not from `apps/api`. */
+const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url));
+const MICROSOFT_CALLBACK_PATH = '/api/auth/microsoft/callback';
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -34,13 +48,17 @@ const envSchema = z.object({
   DEV_OWNER_NAME: z.string().min(1).default('Robert Hofmann'),
   DEV_OWNER_EMAIL: z.email().default('robert@q4-team.de'),
   INVITE_RATE_LIMIT: z.coerce.number().int().positive().default(30),
+  MS_CLIENT_ID: z.string().optional(),
+  MS_CLIENT_SECRET: z.string().optional(),
+  MS_TENANT: z.string().optional(),
+  MS_REDIRECT_URI: z.url().optional(),
 });
 
 export function loadConfig(
   env: NodeJS.ProcessEnv = process.env,
   warn: (msg: string) => void = console.warn,
 ): Config {
-  const parsed = envSchema.parse(env);
+  const parsed = envSchema.parse(stripEmpty(env));
   if (!parsed.SLIDER_SECRET) {
     if (parsed.NODE_ENV === 'production')
       throw new Error('SLIDER_SECRET must be set in production.');
@@ -49,13 +67,29 @@ export function loadConfig(
   return {
     env: parsed.NODE_ENV,
     port: parsed.PORT,
-    dataDir: parsed.DATA_DIR,
+    dataDir: path.resolve(REPO_ROOT, parsed.DATA_DIR),
     secret: parsed.SLIDER_SECRET ?? DEV_SECRET,
     webOrigin: parsed.WEB_ORIGIN,
     maxUploadBytes: parsed.MAX_UPLOAD_BYTES,
     devOwner: { name: parsed.DEV_OWNER_NAME, email: parsed.DEV_OWNER_EMAIL },
     inviteRateLimit: parsed.INVITE_RATE_LIMIT,
+    microsoft:
+      parsed.MS_CLIENT_ID && parsed.MS_CLIENT_SECRET
+        ? {
+            clientId: parsed.MS_CLIENT_ID,
+            clientSecret: parsed.MS_CLIENT_SECRET,
+            tenant: parsed.MS_TENANT ?? 'common',
+            redirectUri:
+              parsed.MS_REDIRECT_URI ??
+              new URL(MICROSOFT_CALLBACK_PATH, parsed.WEB_ORIGIN).toString(),
+          }
+        : null,
   };
+}
+
+/** `KEY=` lines in `.env` arrive as empty strings; treat them like unset keys so defaults apply. */
+function stripEmpty(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(env).filter(([, value]) => value !== ''));
 }
 
 export const dataPaths = (config: Pick<Config, 'dataDir'>) => ({

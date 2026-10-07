@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { deckSchema, slideSchema, viewerSchema, type Deck } from '@slider/shared';
 import { z } from 'zod';
-import { createReadyDeck, createTestContext, pinComment, type TestContext } from './helpers';
+import { decks, revisions } from '../src/db/schema';
+import {
+  createReadyDeck,
+  createTestContext,
+  MICROSOFT_TEST_CONFIG,
+  pinComment,
+  type TestContext,
+} from './helpers';
 
 let ctx: TestContext;
 beforeEach(async () => {
@@ -166,21 +174,81 @@ describe('POST /api/decks/upload', () => {
 });
 
 describe('POST /api/decks/link', () => {
-  it('rejects links that are not OneDrive or SharePoint', async () => {
+  it('rejects links that are neither OneDrive, SharePoint nor a .pptx file', async () => {
     const res = await ctx.request('/api/decks/link', {
       method: 'POST',
-      json: { url: 'https://example.com/deck.pptx' },
+      json: { url: 'https://example.com/page.html' },
     });
     expect(res.status).toBe(400);
     expect(await res.json()).toMatchObject({ error: { code: 'unsupported_link' } });
   });
 
-  it('asks for a Microsoft login for valid share links', async () => {
+  it('says how to set up the Microsoft login when it is not configured', async () => {
     const res = await ctx.request('/api/decks/link', {
       method: 'POST',
-      json: { url: 'https://contoso.sharepoint.com/:p:/s/team/EabcDEF' },
+      json: { url: 'https://1drv.ms/p/c/abc123/EXAMPLE' },
     });
     expect(res.status).toBe(401);
-    expect(await res.json()).toMatchObject({ error: { code: 'microsoft_login_required' } });
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('microsoft_not_configured');
+    expect(body.error.message).toContain('MS_CLIENT_ID');
+  });
+
+  it('imports a direct .pptx URL without any login', async () => {
+    await ctx.cleanup();
+    const bytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3]);
+    ctx = await createTestContext({
+      fetch: async () =>
+        new Response(bytes, {
+          headers: {
+            'content-type':
+              'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            etag: '"v1"',
+          },
+        }),
+    });
+    const res = await ctx.request('/api/decks/link', {
+      method: 'POST',
+      json: { url: 'https://example.com/files/Q4%20Strategie.pptx' },
+    });
+    expect(res.status).toBe(201);
+    const deck = deckSchema.parse(await res.json());
+    expect(deck).toMatchObject({
+      source: 'url',
+      title: 'Q4 Strategie',
+      fileName: 'Q4 Strategie.pptx',
+    });
+
+    const [row] = await ctx.deps.db.select().from(decks).where(eq(decks.id, deck.id));
+    expect(row).toMatchObject({
+      sourceUrl: 'https://example.com/files/Q4%20Strategie.pptx',
+      sourceRef: 'https://example.com/files/Q4%20Strategie.pptx',
+    });
+    const [revision] = await ctx.deps.db
+      .select()
+      .from(revisions)
+      .where(eq(revisions.deckId, deck.id));
+    expect(revision?.sourceChangeToken).toBe('"v1"');
+  });
+
+  it('asks for a Microsoft login (with a login URL) when configured but not signed in', async () => {
+    await ctx.cleanup();
+    ctx = await createTestContext({
+      config: { microsoft: MICROSOFT_TEST_CONFIG },
+      // The anonymous attempt lands on the Microsoft login page.
+      fetch: async () =>
+        new Response('<html>Sign in</html>', { headers: { 'content-type': 'text/html' } }),
+    });
+    const link = 'https://contoso.sharepoint.com/:p:/s/team/EabcDEF';
+    const res = await ctx.request('/api/decks/link', { method: 'POST', json: { url: link } });
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { code: string; loginUrl: string } };
+    expect(body.error.code).toBe('microsoft_login_required');
+    expect(body.error.loginUrl).toBe(
+      `/api/auth/microsoft/login?returnTo=${encodeURIComponent(`/neu?link=${encodeURIComponent(link)}`)}`,
+    );
+    expect(
+      body.error.loginUrl.startsWith('/api/auth/microsoft/login?returnTo=%2Fneu%3Flink%3D'),
+    ).toBe(true);
   });
 });

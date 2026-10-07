@@ -1,6 +1,7 @@
 import { serve } from '@hono/node-server';
 import { openPptx } from '@slider/pptx';
 import { createApp } from './app';
+import { MicrosoftTokens } from './auth/microsoft';
 import { systemClock } from './clock';
 import { dataPaths, loadConfig } from './config';
 import { openDatabase } from './db/client';
@@ -35,12 +36,26 @@ async function main(): Promise<void> {
     queue.enqueue(job);
   }
 
+  const microsoft = new MicrosoftTokens({
+    config: config.microsoft,
+    secret: config.secret,
+    db,
+    clock,
+    log,
+  });
+  if (!config.microsoft) {
+    log.info(
+      'Microsoft login is not configured (MS_CLIENT_ID/MS_CLIENT_SECRET) – OneDrive/SharePoint links need it.',
+    );
+  }
+
   const app = createApp({
     config,
     db,
     storage,
     queue,
-    sources: createSourceAdapters(),
+    sources: createSourceAdapters({ config, tokens: microsoft }),
+    microsoft,
     clock,
     log,
     ownerId: owner.id,

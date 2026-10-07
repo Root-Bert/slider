@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import type { CreateCommentInput, Shape } from '@slider/shared';
 import type { ParsedPresentation, ParsedSlide } from '@slider/pptx';
 import { createApp } from '../src/app';
+import { MicrosoftTokens } from '../src/auth/microsoft';
 import type { Clock } from '../src/clock';
 import type { Config } from '../src/config';
 import { openDatabase } from '../src/db/client';
@@ -15,6 +16,7 @@ import type { OpenPptx } from '../src/import/pptx';
 import { InProcessQueue, type ImportJob } from '../src/import/queue';
 import { silentLogger } from '../src/logger';
 import { upsertUser } from '../src/services/users';
+import type { FetchLike, LookupAll } from '../src/sources/safe-fetch';
 import { createSourceAdapters } from '../src/sources/source-adapter';
 import { blobKeys } from '../src/storage/blob-storage';
 import { FsBlobStorage } from '../src/storage/fs-blob-storage';
@@ -38,6 +40,7 @@ export const testConfig = (overrides: Partial<Config> = {}): Config => ({
   maxUploadBytes: 1024 * 1024,
   devOwner: { name: 'Robert Hofmann', email: 'robert@q4-team.de' },
   inviteRateLimit: 1000,
+  microsoft: null,
   ...overrides,
 });
 
@@ -96,8 +99,28 @@ export interface TestContext {
   cleanup(): Promise<void>;
 }
 
+export const MICROSOFT_TEST_CONFIG = {
+  clientId: 'client-id',
+  clientSecret: 'client-secret',
+  tenant: 'common',
+  redirectUri: 'http://localhost:5173/api/auth/microsoft/callback',
+};
+
+/** Outgoing requests in tests must be mocked: this one fails loudly instead of hitting the network. */
+export const offlineFetch: FetchLike = async (input) => {
+  throw new Error(`Unexpected network request in test: ${String(input)}`);
+};
+
+/** Every host resolves to a public documentation address (TEST-NET-3 is not private). */
+export const publicLookup: LookupAll = async () => [{ address: '203.0.113.10' }];
+
 export async function createTestContext(
-  options: { openPptx?: OpenPptx; config?: Partial<Config> } = {},
+  options: {
+    openPptx?: OpenPptx;
+    config?: Partial<Config>;
+    fetch?: FetchLike;
+    lookup?: LookupAll;
+  } = {},
 ): Promise<TestContext> {
   const { db, close } = await openDatabase();
   const blobsDir = await mkdtemp(path.join(tmpdir(), 'slider-api-test-'));
@@ -113,12 +136,28 @@ export async function createTestContext(
     (job) => importDeck({ db, storage, openPptx, clock, log: silentLogger }, job),
     silentLogger,
   );
+  const config = testConfig(options.config);
+  const fetch = options.fetch ?? offlineFetch;
+  const microsoft = new MicrosoftTokens({
+    config: config.microsoft,
+    secret: config.secret,
+    db,
+    clock,
+    log: silentLogger,
+    fetch,
+  });
   const deps: AppDeps = {
-    config: testConfig(options.config),
+    config,
     db,
     storage,
     queue,
-    sources: createSourceAdapters(),
+    sources: createSourceAdapters({
+      config,
+      tokens: microsoft,
+      fetch,
+      lookup: options.lookup ?? publicLookup,
+    }),
+    microsoft,
     clock,
     log: silentLogger,
     ownerId: owner.id,

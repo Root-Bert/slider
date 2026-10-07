@@ -33,7 +33,7 @@ export type Author = z.infer<typeof authorSchema>;
 
 // ── Decks, revisions, slides ────────────────────────────────────────────────
 
-export const deckSourceSchema = z.enum(['onedrive', 'sharepoint', 'upload']);
+export const deckSourceSchema = z.enum(['onedrive', 'sharepoint', 'url', 'upload']);
 export type DeckSource = z.infer<typeof deckSourceSchema>;
 
 /** Import pipeline steps, in order (BER-97). */

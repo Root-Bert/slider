@@ -4,6 +4,7 @@ import { pluralize } from '@/lib/format';
 const SOURCE_LABELS: Record<DeckSource, string> = {
   onedrive: 'OneDrive',
   sharepoint: 'SharePoint',
+  url: 'Link',
   upload: 'Upload',
 };
 

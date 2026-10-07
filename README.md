@@ -8,8 +8,9 @@ and collect feedback pinned to the exact spot on the slide. The original file is
 
 > **Status: first prototype (milestones M1 + M2).** Upload, parsing, preview rendering, the review
 > viewer with pins/frames/freehand, threads, done-status, filters, PowerPoint comment import and
-> guest links work end to end on your machine. Microsoft Graph links, versions/sync and media
-> comments are next – see [Roadmap](#roadmap).
+> guest links work end to end on your machine, and so does importing by link (direct `.pptx`
+> URLs out of the box, OneDrive/SharePoint after a one-time Microsoft app registration – see
+> [Link import](#link-import)). Versions/sync and media comments are next – see [Roadmap](#roadmap).
 
 ## Quick start
 
@@ -68,15 +69,53 @@ Design decisions worth knowing:
 - **Normalised geometry.** Every anchor, frame and stroke is stored in 0–1 slide coordinates, so
   marks stay pixel-exact at any zoom level and screen size. Anchors also remember the shape they
   sit on (`cNvPr/@id`), so they can follow objects across revisions later.
+- **Timeline zoom.** The zoom pill (and ⌘/Ctrl + wheel or pinch) only scales the horizontal
+  slide row, from one big slide (Desktop-1) to several small ones side by side (Desktop-7). The
+  active slide stays anchored at the left, and the comments simply start below the filmstrip.
+  The zoom is remembered per browser.
 - **Stable slide identity.** Slides get a Slider UUID and keep PowerPoint's `sldId`; URLs use the
   stable id (`/d/:deck?slide=:id`), never the slide number.
 - **Real Postgres, zero setup.** Locally the API runs [PGlite](https://pglite.dev) (Postgres in
   WASM) through Drizzle. The same schema and migrations run on a hosted Postgres in production.
 - **Adapters at the edges.** Blob storage, the job queue, the slide renderer and link sources are
   interfaces with a local implementation today (filesystem, in-process queue, SVG preview,
-  stub Graph adapter) and S3 / pg-boss / LibreOffice / Microsoft Graph tomorrow.
+  Microsoft Graph + plain HTTPS link sources) and S3 / pg-boss / LibreOffice tomorrow.
 - **The original stays untouched.** Slider only ever reads the PPTX. Guests see rendered slide
   images, never the file.
+
+## Link import
+
+Paste a link on the start page (`/neu`). Three kinds are recognised (`packages/shared/src/link.ts`):
+
+| Link                                                                      | How Slider reads it                                                                                 | Login     |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | --------- |
+| Any `https://…/deck.pptx` URL                                             | Downloads the file directly                                                                         | none      |
+| SharePoint / OneDrive for Business (`*.sharepoint.com/:p:/…`, `Doc.aspx`) | Anonymous download first (`download=1`, works for "Anyone with the link"), else Graph `/shares/u!…` | if needed |
+| OneDrive personal (`1drv.ms`, `onedrive.live.com`)                        | Follows the redirects to the `resid`, then Graph `/drives/{drive}/items/{resid}`                    | always    |
+
+All downloads run server-side through `apps/api/src/sources/safe-fetch.ts`: https only, public IP
+addresses only (re-checked on every redirect, max. 5), 60 s timeout, size limit while streaming,
+and the file must start with the ZIP header `PK\x03\x04`.
+
+**Microsoft login (one-time setup).** OneDrive and org-only SharePoint links need a delegated
+Microsoft Graph token. Without one, the start page explains what is missing.
+
+1. Entra admin center → _App registrations_ → _New registration_ "Slider", supported account
+   types: _Accounts in any organizational directory and personal Microsoft accounts_.
+2. _Authentication_ → _Add a platform_ → _Web_, redirect URI
+   `http://localhost:5173/api/auth/microsoft/callback` (dev, through the Vite proxy) or
+   `https://<your host>/api/auth/microsoft/callback`.
+3. _Certificates & secrets_ → new client secret.
+4. _API permissions_ → Microsoft Graph, delegated: `Files.Read.All`, `offline_access`, `User.Read`.
+5. Copy `.env.example` to `.env` in the repo root, fill in `MS_CLIENT_ID`, `MS_CLIENT_SECRET`
+   (optionally `MS_TENANT`, `MS_REDIRECT_URI`) and restart `bun run dev` – `.env` is only read at
+   start-up.
+
+The flow: the API answers `401 microsoft_login_required` with a `loginUrl` → "Mit Microsoft
+anmelden" → Microsoft (authorization code + PKCE) → `/api/auth/microsoft/callback` stores the
+refresh token AES-GCM-encrypted (key derived from `SLIDER_SECRET`) → back to `/neu?link=…`, which
+retries the import automatically. If an organisation requires admin approval (AADSTS65001/90094),
+the page says so; an admin grants consent once for the tenant.
 
 ## Roadmap
 
@@ -97,7 +136,7 @@ Tracked in Linear (project _Slider_). This prototype covers:
 | BER-103         | "A slide is missing here" gap comments                        | ✅                                                    |
 | BER-112/113/115 | PowerPoint comments (modern + legacy) imported and labelled   | ✅                                                    |
 | BER-121         | Owner overview "Meine Reviews"                                | ✅ (login via Microsoft/magic link pending)           |
-| BER-88/92       | Microsoft Graph share links                                   | ⏳ link detection + adapter seam in place             |
+| BER-88/92       | Import by link: OneDrive, SharePoint, direct `.pptx` URL      | ✅ (PDF render via Graph pending)                     |
 | BER-107–111     | Change detection, slide matching, versions                    | ⏳ schema prepared (revisions, slide versions)        |
 | BER-116         | Voice and video comments                                      | ⏳                                                    |
 

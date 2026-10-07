@@ -7,7 +7,7 @@ import { requireDeckAccess, requireOwner } from '../auth/access';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import { decks } from '../db/schema';
 import type { AppDeps } from '../deps';
-import { ApiError, badRequest } from '../http/errors';
+import { ApiError, badRequest, fileTooLarge, notAPowerPoint } from '../http/errors';
 import { readJson } from '../http/validate';
 import { createDeckFromFile, deleteDeck, listOwnerDecks, toDeckDto } from '../services/decks';
 import { listSlides } from '../services/slides';
@@ -17,20 +17,12 @@ const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
 
 const linkBodySchema = z.object({ url: z.string().max(4096) });
 
-const notAPowerPoint = () =>
-  new ApiError(400, 'not_a_powerpoint', 'Die Datei ist keine PowerPoint (.pptx).');
 const unsupportedLink = () =>
-  new ApiError(400, 'unsupported_link', 'Das ist kein gültiger OneDrive- oder SharePoint-Link.');
+  new ApiError(400, 'unsupported_link', 'Kein gültiger OneDrive-, SharePoint- oder PPTX-Link.');
 
 export function decksRoutes(deps: AppDeps) {
   const viewer = viewerMiddleware(deps);
   const maxBytes = deps.config.maxUploadBytes;
-  const fileTooLarge = () =>
-    new ApiError(
-      413,
-      'file_too_large',
-      `Die Datei ist zu groß (maximal ${Math.floor(maxBytes / 1024 / 1024)} MB).`,
-    );
 
   return new Hono<ViewerEnv>()
     .get('/decks', viewer, async (c) => {
@@ -43,7 +35,7 @@ export function decksRoutes(deps: AppDeps) {
       viewer,
       bodyLimit({
         maxSize: maxBytes + MULTIPART_OVERHEAD_BYTES,
-        onError: (c) => c.json(fileTooLarge().toBody(), 413),
+        onError: (c) => c.json(fileTooLarge(maxBytes).toBody(), 413),
       }),
       async (c) => {
         const { viewer } = c.var;
@@ -54,7 +46,7 @@ export function decksRoutes(deps: AppDeps) {
         const file = body['file'];
         if (!(file instanceof File)) throw badRequest('Bitte eine Datei im Feld „file“ mitsenden.');
         if (!file.name.toLowerCase().endsWith('.pptx')) throw notAPowerPoint();
-        if (file.size > maxBytes) throw fileTooLarge();
+        if (file.size > maxBytes) throw fileTooLarge(maxBytes);
         if (file.size === 0) throw badRequest('Die Datei ist leer.');
 
         const deck = await createDeckFromFile(deps, viewer.author.id, {
@@ -74,13 +66,17 @@ export function decksRoutes(deps: AppDeps) {
       if (!link) throw unsupportedLink();
 
       const adapter = deps.sources[link.kind];
-      const remote = await adapter.resolve(link);
+      const context = { userId: viewer.author.id };
+      const remote = await adapter.resolve(link, context);
       if (!remote.fileName.toLowerCase().endsWith('.pptx')) throw notAPowerPoint();
-      if (remote.sizeBytes > maxBytes) throw fileTooLarge();
+      if (remote.sizeBytes > maxBytes) throw fileTooLarge(maxBytes);
       const deck = await createDeckFromFile(deps, viewer.author.id, {
         fileName: remote.fileName,
-        bytes: await adapter.download(remote),
+        bytes: await adapter.download(remote, context),
         source: link.kind,
+        sourceUrl: link.url.href,
+        sourceRef: remote.ref,
+        changeToken: remote.changeToken,
       });
       return c.json(deck, 201);
     })
