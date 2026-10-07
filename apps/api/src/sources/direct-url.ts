@@ -65,9 +65,14 @@ export class DirectUrlAdapter implements SourceAdapter {
     return file.bytes ?? (await downloadPptx(new URL(file.ref), this.http)).bytes;
   }
 
+  /**
+   * ETag or Last-Modified from a HEAD request. `''` when the server offers neither or does not
+   * support HEAD – then the caller compares the file content instead (BER-107).
+   */
   async getChangeToken(file: RemoteFile): Promise<string> {
     const { response } = await safeFetch(new URL(file.ref), this.http, { method: 'HEAD' });
     await response.body?.cancel();
+    if (response.status === 405 || response.status === 501) return '';
     if (!response.ok) throw statusError(response.status);
     return changeTokenOf(response) ?? '';
   }

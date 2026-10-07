@@ -6,6 +6,7 @@ import type { ImportJob, JobQueue } from './import/queue';
 import type { Logger } from './logger';
 import type { SourceAdapters } from './sources/source-adapter';
 import type { BlobStorage } from './storage/blob-storage';
+import type { SyncService } from './sync/sync-service';
 
 /** Everything the HTTP layer depends on; injected so tests can build an app in memory. */
 export interface AppDeps {
@@ -18,6 +19,8 @@ export interface AppDeps {
   microsoft: MicrosoftTokens;
   clock: Clock;
   log: Logger;
+  /** Automatic updates of link-imported decks (BER-107). */
+  sync: SyncService;
   /** The `users.id` of the dev owner (see {@link Config.devOwner}). */
   ownerId: string;
 }

@@ -1,11 +1,13 @@
-import { and, eq, inArray, notExists } from 'drizzle-orm';
-import { clamp01, type ImportState, type Rect, type Shape } from '@slider/shared';
-import { PptxError, type ParsedShape } from '@slider/pptx';
+import { and, eq, inArray } from 'drizzle-orm';
+import type { ImportState } from '@slider/shared';
+import { PptxError } from '@slider/pptx';
 import type { Clock } from '../clock';
 import type { Database, Executor } from '../db/client';
 import { decks, revisions, slides, slideVersions } from '../db/schema';
 import type { Logger } from '../logger';
 import { blobKeys, type BlobStorage } from '../storage/blob-storage';
+import { importSyncRevision } from '../sync/sync-import';
+import { deleteOrphanSlides, sha256Hex, toShape } from './common';
 import type { OpenPptx } from './pptx';
 import { upsertPptxComments, type ImportedSlide } from './pptx-comments';
 import type { ImportJob } from './queue';
@@ -33,6 +35,10 @@ class DeckGoneError extends Error {}
  * Never throws: every outcome ends in `ready` or `failed` on the deck.
  */
 export async function importDeck(deps: ImportDeps, job: ImportJob): Promise<void> {
+  if (job.kind === 'sync') {
+    await importSyncRevision(deps, job);
+    return;
+  }
   try {
     await runImport(deps, job);
   } catch (error) {
@@ -72,6 +78,7 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
   const planned = presentation.slides.map((parsed) => ({
     parsed,
     slideId: crypto.randomUUID(),
+    versionId: crypto.randomUUID(),
     // TODO: render a smaller raster thumbnail; the full SVG is good enough for now.
     imageKey: blobKeys.slideRender(deckId, revisionId, 'svg'),
     shapes: parsed.shapes.map(toShape),
@@ -86,8 +93,8 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
     if (planned.length === 0) return;
     await tx.insert(slides).values(planned.map(({ slideId }) => ({ id: slideId, deckId })));
     await tx.insert(slideVersions).values(
-      planned.map(({ parsed, slideId, imageKey, shapes }, position) => ({
-        id: crypto.randomUUID(),
+      planned.map(({ parsed, slideId, versionId, imageKey, shapes }, position) => ({
+        id: versionId,
         slideId,
         revisionId,
         position,
@@ -110,6 +117,10 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
     await running({ status: 'running', step: 'rendering', progress: { done, total } });
     const svg = await document.renderSlideSvg(slide.parsed);
     await storage.put(slide.imageKey, new TextEncoder().encode(svg));
+    await db
+      .update(slideVersions)
+      .set({ renderHash: sha256Hex(svg) })
+      .where(eq(slideVersions.id, slide.versionId));
   }
 
   await running({ status: 'running', step: 'comments', progress: null });
@@ -123,18 +134,17 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
   await setImportState(deps, deckId, { status: 'ready' }, { touch: true });
 }
 
-/** Makes a retried import start from scratch instead of duplicating slides. */
+/**
+ * Makes a retried import start from scratch instead of duplicating slides. Slides with comments
+ * are kept (deleting them would cascade to the comments).
+ */
 async function clearRevisionSlides(
   db: Executor,
   deckId: string,
   revisionId: string,
 ): Promise<void> {
   await db.delete(slideVersions).where(eq(slideVersions.revisionId, revisionId));
-  const orphaned = db
-    .select({ id: slideVersions.id })
-    .from(slideVersions)
-    .where(eq(slideVersions.slideId, slides.id));
-  await db.delete(slides).where(and(eq(slides.deckId, deckId), notExists(orphaned)));
+  await deleteOrphanSlides(db, deckId);
 }
 
 async function setImportState(
@@ -181,21 +191,13 @@ export async function findInterruptedImports(db: Database): Promise<ImportJob[]>
         ),
       );
   }
-  return jobs.map(({ deckId, revisionId }) => ({ deckId, revisionId }));
-}
-
-function toShape(shape: ParsedShape): Shape {
-  return { id: shape.id, name: shape.name, bbox: clampRect(shape.bbox), text: shape.text };
-}
-
-/** Shapes may hang off the slide; anchors only live on it. */
-function clampRect(rect: Rect): Rect {
-  const x = clamp01(rect.x);
-  const y = clamp01(rect.y);
-  return {
-    x,
-    y,
-    w: Math.max(0, Math.min(rect.w - (x - rect.x), 1 - x)),
-    h: Math.max(0, Math.min(rect.h - (y - rect.y), 1 - y)),
-  };
+  // Sync imports (BER-107) run beside a usable deck; they only need to be queued again.
+  const pending = await db
+    .select({ deckId: revisions.deckId, revisionId: revisions.id })
+    .from(revisions)
+    .where(eq(revisions.status, 'pending'));
+  return [
+    ...jobs.map(({ deckId, revisionId }) => ({ deckId, revisionId, kind: 'initial' as const })),
+    ...pending.map(({ deckId, revisionId }) => ({ deckId, revisionId, kind: 'sync' as const })),
+  ];
 }

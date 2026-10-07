@@ -467,3 +467,82 @@ describe('DirectUrlAdapter', () => {
     expect(fetch).toHaveBeenCalledTimes(6);
   });
 });
+
+describe('re-sync of stored references (BER-107)', () => {
+  const sharingUrl = 'https://contoso.sharepoint.com/:p:/s/team/EabcDEF?e=x1';
+  const stored = { ref: sharingUrl, fileName: 'Team.pptx', sizeBytes: 0, changeToken: null };
+
+  it('downloads an anonymous SharePoint ref again with download=1, not through Graph', async () => {
+    const { fetch, calls } = mockFetch({
+      'https://contoso.sharepoint.com/': (init) =>
+        init?.method === 'HEAD'
+          ? new Response(null, { headers: { etag: '"e2"' } })
+          : new Response(PPTX, { headers: { etag: '"e2"' } }),
+    });
+    const { sources, getAccessToken } = adapters({ fetch });
+    expect(await sources.sharepoint.download(stored, context)).toEqual(PPTX);
+    expect(await sources.sharepoint.getChangeToken(stored, context)).toBe('"e2"');
+    expect(calls.every((call) => new URL(call.url).searchParams.get('download') === '1')).toBe(
+      true,
+    );
+    expect(calls.some((call) => call.url.includes('graph.microsoft.com'))).toBe(false);
+    expect(getAccessToken).not.toHaveBeenCalled();
+  });
+
+  it('falls back to Graph when the SharePoint link is no longer public', async () => {
+    const { fetch } = mockFetch({
+      'https://contoso.sharepoint.com/:p:/': () => new Response(null, { status: 403 }),
+      'https://graph.microsoft.com/v1.0/shares/': () =>
+        json({
+          id: '01ITEM',
+          name: 'Team.pptx',
+          cTag: 'ctag-7',
+          file: {},
+          parentReference: { driveId: 'b!drive' },
+          '@microsoft.graph.downloadUrl':
+            'https://contoso.sharepoint.com/_layouts/15/download.aspx',
+        }),
+      'https://contoso.sharepoint.com/_layouts/': () => new Response(PPTX),
+    });
+    const { sources } = adapters({ fetch });
+    expect(await sources.sharepoint.getChangeToken(stored, context)).toBe('ctag-7');
+    expect(await sources.sharepoint.download(stored, context)).toEqual(PPTX);
+  });
+
+  it('returns an empty token when a direct URL does not support HEAD', async () => {
+    const { fetch } = mockFetch({
+      'https://example.com/': (init) =>
+        init?.method === 'HEAD' ? new Response(null, { status: 405 }) : new Response(PPTX),
+    });
+    const { sources } = adapters({ fetch });
+    const file = {
+      ref: 'https://example.com/deck.pptx',
+      fileName: 'deck.pptx',
+      sizeBytes: 0,
+      changeToken: null,
+    };
+    expect(await sources.url.getChangeToken(file, context)).toBe('');
+  });
+
+  it('asks Graph for a fresh download URL of a OneDrive item', async () => {
+    const { fetch, calls } = mockFetch({
+      'https://graph.microsoft.com/v1.0/drives/': () =>
+        json({
+          id: 'i1',
+          name: 'Q4.pptx',
+          file: {},
+          '@microsoft.graph.downloadUrl': 'https://dl.example.com/f',
+        }),
+      'https://dl.example.com/': () => new Response(PPTX),
+    });
+    const { sources } = adapters({ fetch });
+    const file = {
+      ref: 'drives/d1/items/i1',
+      fileName: 'Q4.pptx',
+      sizeBytes: 0,
+      changeToken: null,
+    };
+    expect(await sources.onedrive.download(file, context)).toEqual(PPTX);
+    expect(calls[0]?.url).toBe('https://graph.microsoft.com/v1.0/drives/d1/items/i1');
+  });
+});

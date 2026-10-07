@@ -184,8 +184,20 @@ describe('upsertPptxComments', () => {
     const slides = new Map([[7, { slideId: slideIds[0] ?? '', shapes: [] }]]);
     const now = new Date();
 
-    expect(await upsertPptxComments(ctx.deps.db, deckId, parsed('Erst'), slides, now)).toBe(3);
-    expect(await upsertPptxComments(ctx.deps.db, deckId, parsed('Dann'), slides, now)).toBe(3);
+    expect(await upsertPptxComments(ctx.deps.db, deckId, parsed('Erst'), slides, now)).toEqual({
+      inserted: 3,
+      updated: 0,
+      removed: 0,
+      restored: 0,
+      total: 3,
+    });
+    expect(await upsertPptxComments(ctx.deps.db, deckId, parsed('Dann'), slides, now)).toEqual({
+      inserted: 0,
+      updated: 1,
+      removed: 0,
+      restored: 0,
+      total: 3,
+    });
 
     const rows = await ctx.deps.db.select().from(comments).where(eq(comments.deckId, deckId));
     expect(rows).toHaveLength(3);

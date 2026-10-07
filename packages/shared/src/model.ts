@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { deckSyncSchema, slideChangeSchema } from './sync';
 
 /**
  * Domain model shared by API and web (BER-90).
@@ -68,6 +69,10 @@ export const deckSchema = z.object({
   thumbnailUrl: z.string().nullable(),
   participants: z.array(authorSchema),
   import: importStateSchema,
+  /** The revision the slides belong to (BER-107). Optional for older API versions. */
+  currentRevisionId: z.string().nullable().optional(),
+  /** Automatic update state of link imports (BER-107). */
+  sync: deckSyncSchema.optional(),
 });
 export type Deck = z.infer<typeof deckSchema>;
 
@@ -93,6 +98,8 @@ export const slideSchema = z.object({
   thumbnailUrl: z.string(),
   shapes: z.array(shapeSchema),
   openCommentCount: z.number().int(),
+  /** How the slide changed against the previous revision (BER-108); `null` in revision 1. */
+  change: slideChangeSchema.nullable().optional(),
 });
 export type Slide = z.infer<typeof slideSchema>;
 
@@ -131,6 +138,10 @@ export type CommentStatus = z.infer<typeof commentStatusSchema>;
 export const commentSourceSchema = z.enum(['app', 'pptx']);
 export type CommentSource = z.infer<typeof commentSourceSchema>;
 
+/** `removed_in_pptx`: an imported PowerPoint comment that was deleted in the file (BER-114). */
+export const commentSourceStatusSchema = z.enum(['present', 'removed_in_pptx']);
+export type CommentSourceStatus = z.infer<typeof commentSourceStatusSchema>;
+
 export const commentSchema = z.object({
   id: z.string(),
   deckId: z.string(),
@@ -145,6 +156,8 @@ export const commentSchema = z.object({
   resolvedBy: z.string().nullable(),
   resolvedAt: z.iso.datetime().nullable(),
   source: commentSourceSchema,
+  /** Whether the comment still exists in the PowerPoint file; always `present` for app comments. */
+  sourceStatus: commentSourceStatusSchema.optional(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });

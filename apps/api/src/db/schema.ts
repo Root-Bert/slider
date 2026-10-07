@@ -19,8 +19,13 @@ import type {
   DeckSource,
   ImportState,
   ReviewLinkRole,
+  RevisionStatus,
+  RevisionTrigger,
   Shape,
+  SlideDiffStatus,
   Stroke,
+  SyncErrorCode,
+  SyncSummary,
 } from '@slider/shared';
 
 /**
@@ -28,6 +33,37 @@ import type {
  * a `slide` is Slider's stable identity across revisions, a `slide_version` is
  * how that slide looks in one revision of the PPTX.
  */
+
+/** Automatic update bookkeeping per deck (BER-107); `{}` until the first check. ISO timestamps. */
+export interface DeckSyncStateRow {
+  lastCheckedAt?: string;
+  nextCheckAt?: string;
+  lastSyncAt?: string;
+  lastSyncError?: { code: SyncErrorCode; message: string; at: string } | null;
+  consecutiveFailures?: number;
+  /** A changed token waiting for PowerPoint to stop autosaving (debounce). */
+  pending?: { token: string; firstSeenAt: string; lastChangedAt: string } | null;
+  importingRevisionId?: string | null;
+  /** Token of a file that failed to import; not downloaded again until the token changes. */
+  failedToken?: string | null;
+  /** Last check through the content hash (sources without ETag/cTag). */
+  lastContentCheckAt?: string;
+}
+
+/** Slide diff of a revision against the one before (BER-108). */
+export interface RevisionDiffRecord {
+  previousRevisionId: string;
+  slides: {
+    slideId: string;
+    status: SlideDiffStatus;
+    moved: boolean;
+    confidence: number;
+    matchedBy: 'sldId' | 'content' | null;
+    position: number;
+    previousPosition: number | null;
+  }[];
+  deleted: { slideId: string; previousPosition: number; confidence: number }[];
+}
 
 const timestamptz = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 const createdAt = () => timestamptz('created_at').notNull().defaultNow();
@@ -67,6 +103,10 @@ export const decks = pgTable(
     currentRevisionId: text('current_revision_id').references((): AnyPgColumn => revisions.id, {
       onDelete: 'set null',
     }),
+    /** Polling, debounce and error state of the automatic update (BER-107). */
+    syncState: jsonb('sync_state').$type<DeckSyncStateRow>().notNull().default({}),
+    /** Last time someone opened the deck; only decks active in the last 7 days are polled. */
+    lastViewedAt: timestamptz('last_viewed_at'),
   },
   (t) => [index('decks_owner_updated_idx').on(t.ownerId, t.updatedAt)],
 );
@@ -86,8 +126,20 @@ export const revisions = pgTable(
     slideHeightEmu: integer('slide_height_emu'),
     /** Graph cTag/eTag or HTTP ETag of the source file this revision was made from (BER-107). */
     sourceChangeToken: text('source_change_token'),
+    /** `pending` while a sync import runs; the deck keeps showing its current revision. */
+    status: text('status').$type<RevisionStatus>().notNull().default('ready'),
+    /** What created the revision; `null` for revisions from before BER-107. */
+    trigger: text('trigger').$type<RevisionTrigger>(),
+    /** SHA-256 (hex) of the original file, to skip re-imports of identical bytes. */
+    contentSha256: text('content_sha256'),
+    /** Slide diff against the previous revision; `null` for revision 1. */
+    diff: jsonb('diff').$type<RevisionDiffRecord>(),
+    summary: jsonb('summary').$type<SyncSummary>(),
   },
-  (t) => [unique('revisions_deck_number_unique').on(t.deckId, t.number)],
+  (t) => [
+    unique('revisions_deck_number_unique').on(t.deckId, t.number),
+    index('revisions_deck_status_idx').on(t.deckId, t.status),
+  ],
 );
 
 export const slides = pgTable(
@@ -122,6 +174,8 @@ export const slideVersions = pgTable(
     thumbnailKey: text('thumbnail_key').notNull(),
     aspectRatio: doublePrecision('aspect_ratio').notNull(),
     shapes: jsonb('shapes').$type<Shape[]>().notNull().default([]),
+    /** SHA-256 of the rendered image, for slide matching (BER-108); filled lazily for old rows. */
+    renderHash: text('render_hash'),
   },
   (t) => [
     unique('slide_versions_revision_slide_unique').on(t.revisionId, t.slideId),
@@ -150,6 +204,10 @@ export const comments = pgTable(
     source: text('source').$type<CommentSource>().notNull(),
     /** Id in the source file, so re-importing PowerPoint comments is idempotent (BER-114). */
     externalId: text('external_id'),
+    /** PowerPoint comments: the status last seen in the file, to tell PPT changes from Slider ones. */
+    externalStatus: text('external_status').$type<CommentStatus>(),
+    /** PowerPoint comments deleted in the file are kept and flagged, never deleted (BER-114). */
+    removedInSourceAt: timestamptz('removed_in_source_at'),
     createdAt: createdAt(),
     updatedAt: timestamptz('updated_at').notNull().defaultNow(),
   },

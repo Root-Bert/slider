@@ -30,4 +30,14 @@ describe('loadConfig', () => {
       redirectUri: 'https://slider.example/api/auth/microsoft/callback',
     });
   });
+
+  it('polls linked decks every 2 minutes with a 1 minute debounce by default', () => {
+    expect(loadConfig({}, quiet).sync).toEqual({ pollIntervalMs: 120_000, debounceMs: 60_000 });
+    expect(
+      loadConfig({ SYNC_POLL_INTERVAL_MS: '0', SYNC_DEBOUNCE_MS: '5000' }, quiet).sync,
+    ).toEqual({ pollIntervalMs: 0, debounceMs: 5_000 });
+    expect(() => loadConfig({ SYNC_POLL_INTERVAL_MS: '5000' }, quiet)).toThrow(
+      /SYNC_POLL_INTERVAL_MS/,
+    );
+  });
 });

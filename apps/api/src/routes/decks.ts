@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { parseShareLink, updateDeckInputSchema } from '@slider/shared';
 import { requireDeckAccess, requireOwner } from '../auth/access';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
-import { decks } from '../db/schema';
+import { decks, type DeckRow } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { ApiError, badRequest, fileTooLarge, notAPowerPoint } from '../http/errors';
 import { readJson } from '../http/validate';
@@ -16,6 +16,17 @@ import { listSlides } from '../services/slides';
 const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
 
 const linkBodySchema = z.object({ url: z.string().max(4096) });
+
+/** Opening a deck keeps it in the automatic update rotation (BER-107); written at most hourly. */
+const LAST_VIEWED_THROTTLE_MS = 60 * 60 * 1000;
+
+async function touchLastViewed(deps: AppDeps, deck: DeckRow): Promise<void> {
+  const now = deps.clock.now();
+  if (deck.lastViewedAt && now.getTime() - deck.lastViewedAt.getTime() < LAST_VIEWED_THROTTLE_MS) {
+    return;
+  }
+  await deps.db.update(decks).set({ lastViewedAt: now }).where(eq(decks.id, deck.id));
+}
 
 const unsupportedLink = () =>
   new ApiError(400, 'unsupported_link', 'Kein gültiger OneDrive-, SharePoint- oder PPTX-Link.');
@@ -83,7 +94,8 @@ export function decksRoutes(deps: AppDeps) {
 
     .get('/decks/:deckId', viewer, async (c) => {
       const deck = await requireDeckAccess(deps.db, c.var.viewer, c.req.param('deckId'), 'view');
-      return c.json(await toDeckDto(deps.db, deck));
+      await touchLastViewed(deps, deck);
+      return c.json(await toDeckDto(deps.db, deck, { forGuest: c.var.viewer.kind === 'guest' }));
     })
 
     .patch('/decks/:deckId', viewer, async (c) => {

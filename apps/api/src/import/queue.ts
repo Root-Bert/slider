@@ -3,6 +3,8 @@ import type { Logger } from '../logger';
 /** Background work. In-process for the prototype; pg-boss later, behind the same interface. */
 export interface JobQueue<Job> {
   enqueue(job: Job): void;
+  /** Like {@link enqueue}, but resolves once this job has run (it never rejects). */
+  run(job: Job): Promise<void>;
   /** Resolves once the queue has run dry, including jobs enqueued while waiting. */
   idle(): Promise<void>;
 }
@@ -19,11 +21,17 @@ export class InProcessQueue<Job> implements JobQueue<Job> {
   ) {}
 
   enqueue(job: Job): void {
-    this.tail = this.tail.then(() =>
+    void this.run(job);
+  }
+
+  run(job: Job): Promise<void> {
+    const done = this.tail.then(() =>
       this.handler(job).catch((error: unknown) =>
         this.log.error('Background job failed', job, error),
       ),
     );
+    this.tail = done;
+    return done;
   }
 
   async idle(): Promise<void> {
@@ -38,4 +46,9 @@ export class InProcessQueue<Job> implements JobQueue<Job> {
 export interface ImportJob {
   deckId: string;
   revisionId: string;
+  /**
+   * `initial` (default): first import, drives the deck's import overlay.
+   * `sync`: a new revision of a deck that stays usable meanwhile (BER-107).
+   */
+  kind?: 'initial' | 'sync';
 }

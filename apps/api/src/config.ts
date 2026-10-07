@@ -18,7 +18,20 @@ export interface Config {
   inviteRateLimit: number;
   /** Entra app for OneDrive/SharePoint links (BER-92); `null` until MS_CLIENT_ID and MS_CLIENT_SECRET are set. */
   microsoft: MicrosoftConfig | null;
+  /** Automatic updates of link-imported decks (BER-107). */
+  sync: SyncConfig;
 }
+
+export interface SyncConfig {
+  /** How often link decks are checked for changes; `0` turns polling off (manual sync still works). */
+  pollIntervalMs: number;
+  /** Quiet time after the last change before a new revision is imported (PowerPoint autosaves). */
+  debounceMs: number;
+}
+
+export const DEFAULT_SYNC_POLL_INTERVAL_MS = 120_000;
+export const DEFAULT_SYNC_DEBOUNCE_MS = 60_000;
+export const MIN_SYNC_POLL_INTERVAL_MS = 10_000;
 
 export interface MicrosoftConfig {
   clientId: string;
@@ -52,6 +65,15 @@ const envSchema = z.object({
   MS_CLIENT_SECRET: z.string().optional(),
   MS_TENANT: z.string().optional(),
   MS_REDIRECT_URI: z.url().optional(),
+  SYNC_POLL_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .refine((ms) => ms === 0 || ms >= MIN_SYNC_POLL_INTERVAL_MS, {
+      message: `SYNC_POLL_INTERVAL_MS muss 0 (aus) oder mindestens ${MIN_SYNC_POLL_INTERVAL_MS} sein.`,
+    })
+    .default(DEFAULT_SYNC_POLL_INTERVAL_MS),
+  SYNC_DEBOUNCE_MS: z.coerce.number().int().min(0).default(DEFAULT_SYNC_DEBOUNCE_MS),
 });
 
 export function loadConfig(
@@ -84,6 +106,7 @@ export function loadConfig(
               new URL(MICROSOFT_CALLBACK_PATH, parsed.WEB_ORIGIN).toString(),
           }
         : null,
+    sync: { pollIntervalMs: parsed.SYNC_POLL_INTERVAL_MS, debounceMs: parsed.SYNC_DEBOUNCE_MS },
   };
 }
 

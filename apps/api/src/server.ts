@@ -12,6 +12,8 @@ import { consoleLogger as log } from './logger';
 import { upsertUser } from './services/users';
 import { createSourceAdapters } from './sources/source-adapter';
 import { FsBlobStorage } from './storage/fs-blob-storage';
+import { SyncScheduler } from './sync/scheduler';
+import { SyncService } from './sync/sync-service';
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -32,7 +34,7 @@ async function main(): Promise<void> {
     log,
   );
   for (const job of await findInterruptedImports(db)) {
-    log.info(`Resuming interrupted import of deck ${job.deckId}`);
+    log.info(`Resuming interrupted ${job.kind ?? 'initial'} import of deck ${job.deckId}`);
     queue.enqueue(job);
   }
 
@@ -49,17 +51,23 @@ async function main(): Promise<void> {
     );
   }
 
+  const sources = createSourceAdapters({ config, tokens: microsoft });
+  const sync = new SyncService({ db, storage, sources, queue, clock, log, config });
   const app = createApp({
     config,
     db,
     storage,
     queue,
-    sources: createSourceAdapters({ config, tokens: microsoft }),
+    sources,
     microsoft,
     clock,
     log,
+    sync,
     ownerId: owner.id,
   });
+  const scheduler = new SyncScheduler({ db, clock, log, sync, config });
+  if (config.sync.pollIntervalMs > 0) scheduler.start();
+  else log.info('Automatic updates of linked decks are off (SYNC_POLL_INTERVAL_MS=0).');
   const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
     log.info(`Slider API listening on http://localhost:${info.port} (data: ${config.dataDir})`);
   });
@@ -69,6 +77,7 @@ async function main(): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     log.info(`${signal} received, shutting down…`);
+    scheduler.stop();
     server.close(async () => {
       // Interrupted imports are picked up again on the next start.
       await database.close();

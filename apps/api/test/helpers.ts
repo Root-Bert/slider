@@ -17,9 +17,10 @@ import { InProcessQueue, type ImportJob } from '../src/import/queue';
 import { silentLogger } from '../src/logger';
 import { upsertUser } from '../src/services/users';
 import type { FetchLike, LookupAll } from '../src/sources/safe-fetch';
-import { createSourceAdapters } from '../src/sources/source-adapter';
+import { createSourceAdapters, type SourceAdapters } from '../src/sources/source-adapter';
 import { blobKeys } from '../src/storage/blob-storage';
 import { FsBlobStorage } from '../src/storage/fs-blob-storage';
+import { SyncService } from '../src/sync/sync-service';
 
 export class TestClock implements Clock {
   private offsetMs = 0;
@@ -41,6 +42,8 @@ export const testConfig = (overrides: Partial<Config> = {}): Config => ({
   devOwner: { name: 'Robert Hofmann', email: 'robert@q4-team.de' },
   inviteRateLimit: 1000,
   microsoft: null,
+  // Polling is driven by hand in tests (`SyncScheduler.tick`); the debounce default applies.
+  sync: { pollIntervalMs: 0, debounceMs: 60_000 },
   ...overrides,
 });
 
@@ -120,6 +123,8 @@ export async function createTestContext(
     config?: Partial<Config>;
     fetch?: FetchLike;
     lookup?: LookupAll;
+    /** Replaces individual source adapters, e.g. with a fake OneDrive (no network). */
+    sources?: Partial<SourceAdapters>;
   } = {},
 ): Promise<TestContext> {
   const { db, close } = await openDatabase();
@@ -146,20 +151,26 @@ export async function createTestContext(
     log: silentLogger,
     fetch,
   });
-  const deps: AppDeps = {
-    config,
-    db,
-    storage,
-    queue,
-    sources: createSourceAdapters({
+  const sources: SourceAdapters = {
+    ...createSourceAdapters({
       config,
       tokens: microsoft,
       fetch,
       lookup: options.lookup ?? publicLookup,
     }),
+    ...options.sources,
+  };
+  const sync = new SyncService({ db, storage, sources, queue, clock, log: silentLogger, config });
+  const deps: AppDeps = {
+    config,
+    db,
+    storage,
+    queue,
+    sources,
     microsoft,
     clock,
     log: silentLogger,
+    sync,
     ownerId: owner.id,
   };
   const app = createApp(deps);

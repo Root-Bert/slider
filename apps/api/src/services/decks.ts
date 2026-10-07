@@ -1,26 +1,37 @@
-import { and, asc, count, desc, eq, inArray, isNull, max } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, max, min } from 'drizzle-orm';
 import type { Author, Deck, DeckSource } from '@slider/shared';
 import { ownerAuthor } from '../authors';
 import type { Executor } from '../db/client';
 import { comments, decks, revisions, slideVersions, users, type DeckRow } from '../db/schema';
 import type { AppDeps } from '../deps';
+import { sha256Hex } from '../import/common';
 import { blobKeys, fileUrl } from '../storage/blob-storage';
+import { toDeckSync } from './deck-sync';
 
 const MAX_PARTICIPANTS = 5;
 
+export interface DeckDtoOptions {
+  /** Guests get no owner-only details (the Microsoft login link of a sync error). */
+  forGuest?: boolean;
+}
+
 /** Builds the `Deck` DTOs with their aggregates in a fixed number of queries, however many decks. */
-export async function toDeckDtos(db: Executor, rows: readonly DeckRow[]): Promise<Deck[]> {
+export async function toDeckDtos(
+  db: Executor,
+  rows: readonly DeckRow[],
+  options: DeckDtoOptions = {},
+): Promise<Deck[]> {
   if (rows.length === 0) return [];
   const deckIds = rows.map((row) => row.id);
   const revisionIds = rows.flatMap((row) => (row.currentRevisionId ? [row.currentRevisionId] : []));
   const ownerIds = [...new Set(rows.map((row) => row.ownerId))];
 
-  const [owners, revisionNumbers, slideCounts, thumbnails, openCounts, authors] = await Promise.all(
-    [
+  const [owners, revisionNumbers, slideCounts, thumbnails, openCounts, authors, pendingRevisions] =
+    await Promise.all([
       db.select().from(users).where(inArray(users.id, ownerIds)),
       revisionIds.length
         ? db
-            .select({ id: revisions.id, number: revisions.number })
+            .select({ id: revisions.id, number: revisions.number, summary: revisions.summary })
             .from(revisions)
             .where(inArray(revisions.id, revisionIds))
         : [],
@@ -51,6 +62,7 @@ export async function toDeckDtos(db: Executor, rows: readonly DeckRow[]): Promis
             inArray(comments.deckId, deckIds),
             isNull(comments.parentId),
             eq(comments.status, 'open'),
+            isNull(comments.removedInSourceAt),
           ),
         )
         .groupBy(comments.deckId),
@@ -64,11 +76,17 @@ export async function toDeckDtos(db: Executor, rows: readonly DeckRow[]): Promis
         .where(inArray(comments.deckId, deckIds))
         .groupBy(comments.deckId, comments.author)
         .orderBy(desc(max(comments.createdAt))),
-    ],
-  );
+      db
+        .select({ deckId: revisions.deckId, since: min(revisions.createdAt) })
+        .from(revisions)
+        .where(and(inArray(revisions.deckId, deckIds), eq(revisions.status, 'pending')))
+        .groupBy(revisions.deckId),
+    ]);
 
   const ownerById = new Map(owners.map((owner) => [owner.id, ownerAuthor(owner)]));
   const numberByRevision = new Map(revisionNumbers.map((row) => [row.id, row.number]));
+  const summaryByRevision = new Map(revisionNumbers.map((row) => [row.id, row.summary]));
+  const pendingByDeck = new Map(pendingRevisions.map((row) => [row.deckId, row.since]));
   const slideCountByRevision = new Map(slideCounts.map((row) => [row.revisionId, row.count]));
   const thumbnailByRevision = new Map(thumbnails.map((row) => [row.revisionId, fileUrl(row.key)]));
   const openCountByDeck = new Map(openCounts.map((row) => [row.deckId, row.count]));
@@ -93,6 +111,12 @@ export async function toDeckDtos(db: Executor, rows: readonly DeckRow[]): Promis
       thumbnailUrl: thumbnailByRevision.get(revisionId) ?? null,
       participants: participantsByDeck.get(row.id) ?? [],
       import: row.importState,
+      currentRevisionId: row.currentRevisionId,
+      sync: toDeckSync(row, {
+        pendingRevisionAt: pendingByDeck.get(row.id) ?? null,
+        summary: summaryByRevision.get(revisionId) ?? null,
+        forGuest: options.forGuest ?? false,
+      }),
     };
   });
 }
@@ -116,8 +140,12 @@ function groupParticipants(
   return byDeck;
 }
 
-export async function toDeckDto(db: Executor, row: DeckRow): Promise<Deck> {
-  const [deck] = await toDeckDtos(db, [row]);
+export async function toDeckDto(
+  db: Executor,
+  row: DeckRow,
+  options: DeckDtoOptions = {},
+): Promise<Deck> {
+  const [deck] = await toDeckDtos(db, [row], options);
   if (!deck) throw new Error(`Deck ${row.id} could not be mapped`);
   return deck;
 }
@@ -178,6 +206,8 @@ export async function createDeckFromFile(
       createdAt: now,
       pptxKey,
       sourceChangeToken: file.changeToken ?? null,
+      trigger: 'initial',
+      contentSha256: sha256Hex(file.bytes),
     });
     const [deck] = await tx
       .update(decks)

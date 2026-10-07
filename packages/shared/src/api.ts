@@ -25,6 +25,12 @@ import {
  * | PATCH  | /decks/:deckId                         | UpdateDeckInput            | Deck                  |
  * | DELETE | /decks/:deckId                         |                            | 204                   |
  * | GET    | /decks/:deckId/slides                  |                            | Slide[]               |
+ * | GET    | /decks/:deckId/status                  |                            | DeckStatus (poll)     |
+ * | POST   | /decks/:deckId/sync                    |                            | SyncResult            |
+ * | GET    | /decks/:deckId/revisions               |                            | Revision[] (newest first) |
+ * | POST   | /decks/:deckId/revisions (multipart `file`, uploads only) |         | SyncResult            |
+ * | GET    | /decks/:deckId/revisions/:revisionId/diff (`latest` ok) |           | RevisionDiff          |
+ * | GET    | /decks/:deckId/deleted-slides          |                            | DeletedSlide[]        |
  * | GET    | /decks/:deckId/comments                |                            | Comment[] (flat)      |
  * | POST   | /decks/:deckId/comments                | CreateCommentInput         | Comment (201)         |
  * | PATCH  | /comments/:commentId                   | UpdateCommentInput         | Comment               |

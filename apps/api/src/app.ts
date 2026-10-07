@@ -12,6 +12,7 @@ import { filesRoutes } from './routes/files';
 import { invitesRoutes } from './routes/invites';
 import { meRoutes } from './routes/me';
 import { reviewLinksRoutes } from './routes/review-links';
+import { syncRoutes } from './routes/sync';
 
 export function createApp(deps: AppDeps) {
   const app = new Hono();
@@ -24,6 +25,7 @@ export function createApp(deps: AppDeps) {
   const api = new Hono()
     .route('/', meRoutes(deps))
     .route('/', decksRoutes(deps))
+    .route('/', syncRoutes(deps))
     .route('/', commentsRoutes(deps))
     .route('/', reviewLinksRoutes(deps))
     .route('/', invitesRoutes(deps))

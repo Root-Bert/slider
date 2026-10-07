@@ -10,7 +10,8 @@ and collect feedback pinned to the exact spot on the slide. The original file is
 > viewer with pins/frames/freehand, threads, done-status, filters, PowerPoint comment import and
 > guest links work end to end on your machine, and so does importing by link (direct `.pptx`
 > URLs out of the box, OneDrive/SharePoint after a one-time Microsoft app registration – see
-> [Link import](#link-import)). Versions/sync and media comments are next – see [Roadmap](#roadmap).
+> [Link import](#link-import)). Linked decks update themselves when the PowerPoint changes – see
+> [Automatic updates](#automatic-updates). Media comments are next – see [Roadmap](#roadmap).
 
 ## Quick start
 
@@ -117,6 +118,42 @@ refresh token AES-GCM-encrypted (key derived from `SLIDER_SECRET`) → back to `
 retries the import automatically. If an organisation requires admin approval (AADSTS65001/90094),
 the page says so; an admin grants consent once for the tenant.
 
+## Automatic updates
+
+Decks imported from a link follow their source (BER-107/108/114). Uploaded decks stay as they
+are; a new version can be uploaded with `POST /api/decks/:id/revisions`.
+
+- **Polling.** Every `SYNC_POLL_INTERVAL_MS` (default 2 min, `0` = off) the API process checks
+  linked decks that someone opened or changed in the last 7 days. It asks only for the change
+  token – Graph `cTag`/`eTag` for OneDrive/SharePoint, `ETag`/`Last-Modified` via `HEAD` for
+  direct URLs; sources without either are downloaded and hashed at most every 5 intervals.
+  An unchanged token never creates a revision, and a new token with identical bytes only
+  records the token.
+- **Debounce.** PowerPoint Online autosaves constantly, so a change is imported only after
+  `SYNC_DEBOUNCE_MS` (default 1 min) without a further change – at the latest after 10 × that.
+  The owner can skip the wait with "Jetzt aktualisieren" (`POST /api/decks/:id/sync`).
+- **Slide matching.** The new revision is matched to the previous one (`@slider/pptx`
+  `matchSlides`): same PowerPoint `sldId` first – even when the slide was completely rewritten –
+  unless most ids disagree with the content (deck rebuilt/renumbered), then text, title, layout,
+  neighbours and position with an optimal assignment. A slide deleted earlier that comes back
+  with the same content is recognised and gets its old identity (and comments) back. Matched slides keep
+  their Slider id, so comments simply stay on them; every slide gets `unchanged`, `moved`,
+  `modified` or `new` with a confidence, stored as the revision's diff. Deleted slides keep
+  their last image and all their comments – no comment ever disappears. With duplicated slides
+  the original keeps its comments (including PowerPoint ones); the copy is new.
+- **PowerPoint comments** are re-imported idempotently: edited text and statuses changed in
+  PowerPoint are taken over, comments deleted in PowerPoint are flagged
+  (`sourceStatus: "removed_in_pptx"`), never deleted, and replies written in Slider stay.
+- **Errors** (expired Microsoft login, access revoked, file deleted, broken file, …) never touch
+  the current revision; the deck's `sync.lastSyncError` carries a German banner text (and a
+  login link). Unreachable sources show up only after three failures in a row; checks back off.
+
+For the web app: `GET /api/decks/:id/status` is a cheap poll (`revisionNumber`, `sync`),
+`GET /api/decks/:id/revisions` lists versions with a summary ("3 Folien geändert, 1 neu,
+1 gelöscht, 5 neue Kommentare aus PowerPoint"), `GET /api/decks/:id/revisions/latest/diff`
+returns per-slide changes plus deleted slides with their comments, and every slide carries
+`change`.
+
 ## Roadmap
 
 Tracked in Linear (project _Slider_). This prototype covers:
@@ -137,7 +174,8 @@ Tracked in Linear (project _Slider_). This prototype covers:
 | BER-112/113/115 | PowerPoint comments (modern + legacy) imported and labelled   | ✅                                                    |
 | BER-121         | Owner overview "Meine Reviews"                                | ✅ (login via Microsoft/magic link pending)           |
 | BER-88/92       | Import by link: OneDrive, SharePoint, direct `.pptx` URL      | ✅ (PDF render via Graph pending)                     |
-| BER-107–111     | Change detection, slide matching, versions                    | ⏳ schema prepared (revisions, slide versions)        |
+| BER-107/108/114 | Change detection, slide matching, PPT comment re-import       | ✅ API (polling, debounce, diff, manual sync)         |
+| BER-109–111     | Version UI: change badges, deleted slides, version history    | ⏳ API ready, UI pending                              |
 | BER-116         | Voice and video comments                                      | ⏳                                                    |
 
 ## Contributing

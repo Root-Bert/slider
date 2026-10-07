@@ -107,6 +107,11 @@ export interface GraphClientDeps {
 export class GraphClient {
   constructor(private readonly deps: GraphClientDeps) {}
 
+  /** Whether a Microsoft app is set up at all. */
+  get configured(): boolean {
+    return this.deps.microsoft !== null;
+  }
+
   /**
    * The person's access token, or the right "please sign in" error. `resumeLink` is the pasted
    * link the web app retries after the login.
@@ -251,6 +256,8 @@ const ANONYMOUS_FALLBACK_CODES = new Set([
   'source_unreachable',
 ]);
 
+const isGraphRef = (ref: string) => ref.startsWith('drives/') || ref.startsWith('items/');
+
 const anonymousDownloadUrl = (sharingUrl: string) => {
   const url = new URL(sharingUrl);
   url.searchParams.set('download', '1');
@@ -286,13 +293,40 @@ export class SharePointAdapter implements SourceAdapter {
     }
   }
 
-  download(file: RemoteFile, context: SourceContext): Promise<Uint8Array> {
-    return this.graph.download(file, context);
+  /**
+   * Anonymous imports keep the sharing link as `ref`: download it with `download=1` again, and
+   * fall back to Graph `/shares` when the link is no longer public. Graph-resolved imports keep
+   * a drive item path.
+   */
+  async download(file: RemoteFile, context: SourceContext): Promise<Uint8Array> {
+    if (file.bytes || isGraphRef(file.ref)) return this.graph.download(file, context);
+    try {
+      return (await downloadPptx(anonymousDownloadUrl(file.ref), this.http)).bytes;
+    } catch (error) {
+      if (!(error instanceof ApiError) || !ANONYMOUS_FALLBACK_CODES.has(error.code)) throw error;
+      const remote = this.graph.toRemoteFile(await this.graph.getShare(file.ref, context));
+      return this.graph.download(remote, context);
+    }
   }
 
-  getChangeToken(file: RemoteFile, context: SourceContext): Promise<string> {
-    // Anonymous imports keep the sharing link as ref; Graph-resolved ones a drive item path.
-    if (file.ref.startsWith('drives/')) return this.graph.getChangeToken(file, context);
-    return this.direct.getChangeToken({ ...file, ref: anonymousDownloadUrl(file.ref).href });
+  async getChangeToken(file: RemoteFile, context: SourceContext): Promise<string> {
+    if (isGraphRef(file.ref)) return this.graph.getChangeToken(file, context);
+    try {
+      return await this.direct.getChangeToken({
+        ...file,
+        ref: anonymousDownloadUrl(file.ref).href,
+      });
+    } catch (error) {
+      // No longer "Anyone with the link"? Ask Graph, if a Microsoft login can be used.
+      if (
+        !(error instanceof ApiError) ||
+        error.code !== 'source_forbidden' ||
+        !this.graph.configured
+      ) {
+        throw error;
+      }
+      const item = await this.graph.getShare(file.ref, context);
+      return item.cTag ?? item.eTag ?? '';
+    }
   }
 }

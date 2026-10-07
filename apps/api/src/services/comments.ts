@@ -25,6 +25,7 @@ export function toCommentDto(row: CommentRow): Comment {
     resolvedBy: row.resolvedBy,
     resolvedAt: row.resolvedAt?.toISOString() ?? null,
     source: row.source,
+    sourceStatus: row.removedInSourceAt ? 'removed_in_pptx' : 'present',
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
