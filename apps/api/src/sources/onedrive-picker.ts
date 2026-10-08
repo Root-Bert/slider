@@ -19,6 +19,11 @@ import type { SourceContext } from './source-adapter';
 
 const CONSUMER_PICKER_URL = 'https://onedrive.live.com/picker';
 const CONSUMER_SCOPE = 'OneDrive.ReadOnly';
+/**
+ * `OneDrive.ReadOnly` exists only for personal accounts: asked at `common`, Microsoft resolves
+ * it against Graph and answers AADSTS70011 ("not configured for this tenant").
+ */
+const CONSUMER_TENANT = 'consumers';
 const GRAPH_RESOURCE = 'https://graph.microsoft.com';
 const SHAREPOINT_SUFFIX = '.sharepoint.com';
 
@@ -29,7 +34,11 @@ export const PICKER_CONSENT_MESSAGE =
   'Für die OneDrive-Auswahl braucht Slider zusätzlich die SharePoint-Berechtigungen „MyFiles.Read“ und „AllSites.Read“. Eine Administratorin oder ein Administrator muss sie in der App-Registrierung ergänzen und freigeben. Bis dahin kannst du den Link der Datei einfügen.';
 
 interface PickerTokens {
-  getScopedToken(userId: string, scope: string): Promise<string | null>;
+  getScopedToken(
+    userId: string,
+    scope: string,
+    options?: { tenant?: string },
+  ): Promise<string | null>;
 }
 
 function parseUrl(value: string | undefined): URL | null {
@@ -82,7 +91,9 @@ export class OneDriveFilePicker {
    */
   async token(context: SourceContext, resource: string): Promise<string> {
     const session = await this.session(context);
-    if (session.account === 'personal') return this.personalToken(context);
+    if (session.account === 'personal') {
+      return this.scoped(context, CONSUMER_SCOPE, CONSUMER_TENANT);
+    }
 
     const url = parseUrl(resource);
     if (url?.origin === GRAPH_RESOURCE) {
@@ -95,33 +106,15 @@ export class OneDriveFilePicker {
     return this.scoped(context, `${url.origin}/.default`);
   }
 
-  /**
-   * Microsoft documents `OneDrive.ReadOnly` for the consumer picker. Where the identity platform
-   * refuses that scope for this app (`invalid_scope`), the Graph read token is the fallback.
-   */
-  private async personalToken(context: SourceContext): Promise<string> {
-    try {
-      return await this.scoped(context, CONSUMER_SCOPE, { rethrowInvalidScope: true });
-    } catch (error) {
-      if (!(error instanceof MicrosoftAuthError) || error.error !== 'invalid_scope') throw error;
-      return withPickerLogin(() => this.graph.requireToken(context, ''));
-    }
-  }
-
-  private async scoped(
-    context: SourceContext,
-    scope: string,
-    { rethrowInvalidScope = false } = {},
-  ): Promise<string> {
+  private async scoped(context: SourceContext, scope: string, tenant?: string): Promise<string> {
     let token: string | null;
     try {
-      token = await this.tokens.getScopedToken(context.userId, scope);
+      token = await this.tokens.getScopedToken(context.userId, scope, { tenant });
     } catch (error) {
       if (!(error instanceof MicrosoftAuthError)) throw error;
       this.log.warn(
         `OneDrive picker: Microsoft refused scope "${scope}" for user ${context.userId}: ${error.message}`,
       );
-      if (rethrowInvalidScope && error.error === 'invalid_scope') throw error;
       if (error.kind === 'admin_consent') {
         throw new ApiError(403, 'microsoft_consent_required', PICKER_CONSENT_MESSAGE);
       }

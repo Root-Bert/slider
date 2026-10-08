@@ -2,9 +2,10 @@ import type { FilePickerSession } from '@slider/shared';
 
 /**
  * Microsoft's OneDrive File Picker v8 (https://aka.ms/OneDrive/file-picker): a page Microsoft
- * hosts, opened here in a popup. The page is loaded by POSTing a form with the configuration;
- * afterwards it talks to Slider over a MessagePort – it asks for tokens (`authenticate`), hands
- * back the picked file (`pick`) or gives up (`close`). Tokens come from the API.
+ * hosts, embedded here in an iframe. The page is loaded by POSTing a form with the configuration
+ * and a first token into the frame; afterwards it talks to Slider over a MessagePort – it asks
+ * for tokens (`authenticate`), hands back the picked file (`pick`) or gives up (`close`).
+ * Tokens come from the API.
  */
 
 export interface PickedDriveItem {
@@ -12,28 +13,12 @@ export interface PickedDriveItem {
   itemId: string;
 }
 
-/** Recommended maximum size of the picker window. */
-const WIDTH = 1080;
-const HEIGHT = 680;
-const CLOSED_POLL_MS = 500;
-
-/** Opens the (still empty) popup. Must run inside the click handler, or browsers block it. */
-export function openPickerWindow(): Window | null {
-  const left = Math.max(0, window.screenX + (window.outerWidth - WIDTH) / 2);
-  const top = Math.max(0, window.screenY + (window.outerHeight - HEIGHT) / 2);
-  return window.open(
-    '',
-    'slider-onedrive-picker',
-    `popup,width=${WIDTH},height=${HEIGHT},left=${Math.round(left)},top=${Math.round(top)}`,
-  );
-}
-
 function pickerOptions(channelId: string) {
   return {
     sdk: '8.0',
     // Start in "Geteilt": files others shared – the reason this picker exists in Slider.
     entry: { oneDrive: { sharedWithMe: {} } },
-    // Present (even empty) → the host answers `authenticate` and gets full item data.
+    // Present (even empty) → the host answers `authenticate`; required for an iframe.
     authentication: {},
     messaging: { origin: window.location.origin, channelId },
     typesAndSources: {
@@ -47,16 +32,23 @@ function pickerOptions(channelId: string) {
   };
 }
 
-/** Posts the configuration to Microsoft's picker page inside `popup`. */
-function loadPicker(popup: Window, session: FilePickerSession, channelId: string, token: string) {
+/** Posts the configuration and the first token to Microsoft's picker page inside `frame`. */
+function loadPicker(
+  frame: HTMLIFrameElement,
+  session: FilePickerSession,
+  channelId: string,
+  token: string,
+) {
   const query = new URLSearchParams({
     filePicker: JSON.stringify(pickerOptions(channelId)),
     locale: 'de-de',
   });
-  const doc = popup.document;
+  const doc = frame.ownerDocument;
   const form = doc.createElement('form');
   form.setAttribute('action', `${session.pickerUrl}?${query.toString()}`);
   form.setAttribute('method', 'POST');
+  form.setAttribute('target', frame.name);
+  form.hidden = true;
   const input = doc.createElement('input');
   input.setAttribute('type', 'hidden');
   input.setAttribute('name', 'access_token');
@@ -64,6 +56,7 @@ function loadPicker(popup: Window, session: FilePickerSession, channelId: string
   form.appendChild(input);
   doc.body.append(form);
   form.submit();
+  form.remove();
 }
 
 interface PickerCommand {
@@ -75,20 +68,34 @@ interface PickerCommand {
 interface PickerMessage {
   type: string;
   id?: string;
-  data?: PickerCommand;
+  data?: PickerCommand & { notification?: string };
+}
+
+export interface RunPickerOptions {
+  frame: HTMLIFrameElement;
+  session: FilePickerSession;
+  getToken: (resource: string) => Promise<string>;
+  /** Aborting (e.g. closing the dialog) ends the picker with `null`. */
+  signal: AbortSignal;
+  /** The picker page is loaded and can be used. */
+  onReady?: () => void;
 }
 
 /**
- * Runs the picker in `popup` until the person picks a file (→ its ids) or closes it (→ `null`).
- * `getToken` answers the picker's token requests; the first token loads the page.
+ * Runs the picker in `frame` until the person picks a file (→ its ids), cancels (→ `null`) or
+ * `signal` aborts (→ `null`). `getToken` answers the picker's token requests.
  */
-export async function runPicker(
-  popup: Window,
-  session: FilePickerSession,
-  getToken: (resource: string) => Promise<string>,
-): Promise<PickedDriveItem | null> {
+export async function runPicker({
+  frame,
+  session,
+  getToken,
+  signal,
+  onReady,
+}: RunPickerOptions): Promise<PickedDriveItem | null> {
   const channelId = crypto.randomUUID();
-  loadPicker(popup, session, channelId, await getToken(session.baseUrl));
+  const firstToken = await getToken(session.baseUrl);
+  if (signal.aborted) return null;
+  loadPicker(frame, session, channelId, firstToken);
 
   return new Promise((resolve) => {
     let port: MessagePort | null = null;
@@ -98,11 +105,11 @@ export async function runPicker(
       if (done) return;
       done = true;
       window.removeEventListener('message', onWindowMessage);
-      window.clearInterval(closedPoll);
+      signal.removeEventListener('abort', onAbort);
       port?.close();
-      if (!popup.closed) popup.close();
       resolve(result);
     };
+    const onAbort = () => finish(null);
 
     const reply = (id: string | undefined, data: Record<string, unknown>) =>
       port?.postMessage({ type: 'result', id, data });
@@ -149,22 +156,23 @@ export async function runPicker(
 
     // The picker announces itself on the window, then talks over the port it hands over.
     function onWindowMessage(event: MessageEvent) {
-      if (event.source !== popup) return;
+      if (!frame.contentWindow || event.source !== frame.contentWindow) return;
       const message = event.data as { type?: string; channelId?: string };
       if (message.type !== 'initialize' || message.channelId !== channelId) return;
       port = event.ports[0] ?? null;
       if (!port) return;
       port.addEventListener('message', (portEvent: MessageEvent<PickerMessage>) => {
-        if (portEvent.data.type === 'command') void onCommand(portEvent.data);
+        const data = portEvent.data;
+        if (data.type === 'command') void onCommand(data);
+        else if (data.type === 'notification' && data.data?.notification === 'page-loaded') {
+          onReady?.();
+        }
       });
       port.start();
       port.postMessage({ type: 'activate' });
     }
 
     window.addEventListener('message', onWindowMessage);
-    // Closing the window with the browser's own button sends no `close` command.
-    const closedPoll = window.setInterval(() => {
-      if (popup.closed) finish(null);
-    }, CLOSED_POLL_MS);
+    signal.addEventListener('abort', onAbort);
   });
 }

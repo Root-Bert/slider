@@ -10,6 +10,7 @@ import { cn } from '@/ui';
 import { LinkImportForm } from './components/LinkImportForm';
 import { NoAccessCard } from './components/NoAccessCard';
 import { OneDrivePickerButton } from './components/OneDrivePickerButton';
+import { OneDrivePickerDialog } from './components/OneDrivePickerDialog';
 import { RecentDecks } from './components/RecentDecks';
 import { UploadDropzone } from './components/UploadDropzone';
 import { UploadProgressCard } from './components/UploadProgressCard';
@@ -87,11 +88,14 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
           />
 
           {!link.noAccess && oneDriveAvailable && (
-            <OneDrivePickerButton
-              onOpen={picker.open}
-              pending={picker.pending}
-              error={picker.error}
-            />
+            <>
+              <OneDrivePickerButton
+                onOpen={picker.open}
+                pending={picker.pending}
+                error={picker.error}
+              />
+              <OneDrivePickerDialog {...picker.dialog} onClose={picker.close} />
+            </>
           )}
 
           {link.noAccess ? (

@@ -33,8 +33,9 @@ const EXPIRY_SKEW_MS = 60_000;
 
 type Fetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
-export const authority = (config: MicrosoftConfig) =>
-  `https://login.microsoftonline.com/${encodeURIComponent(config.tenant)}/oauth2/v2.0`;
+/** `tenant` overrides the configured one, e.g. `consumers` for personal-account-only scopes. */
+export const authority = (config: MicrosoftConfig, tenant = config.tenant) =>
+  `https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0`;
 
 /** What went wrong at Microsoft, as far as the web app needs to know (`?msError=`). */
 export type MicrosoftErrorKind = 'admin_consent' | 'denied' | 'failed';
@@ -125,8 +126,9 @@ async function requestToken(
   fetch: Fetch,
   grant: Record<string, string>,
   scope: string = MICROSOFT_SCOPES,
+  tenant?: string,
 ): Promise<TokenResponse> {
-  const response = await fetch(`${authority(config)}/token`, {
+  const response = await fetch(`${authority(config, tenant)}/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
     body: new URLSearchParams({
@@ -187,8 +189,15 @@ export const refreshForScope = (
   fetch: Fetch,
   refreshToken: string,
   scope: string,
+  tenant?: string,
 ) =>
-  requestToken(config, fetch, { grant_type: 'refresh_token', refresh_token: refreshToken }, scope);
+  requestToken(
+    config,
+    fetch,
+    { grant_type: 'refresh_token', refresh_token: refreshToken },
+    scope,
+    tenant,
+  );
 
 export interface MicrosoftTokensDeps {
   /** `null` when no app registration is configured – then nobody has tokens. */
@@ -304,8 +313,12 @@ export class MicrosoftTokens {
    * without a sign-in; a refusal (e.g. the app registration lacks the SharePoint permissions)
    * throws {@link MicrosoftAuthError} and leaves the sign-in alone.
    */
-  getScopedToken(userId: string, scope: string): Promise<string | null> {
-    return this.refreshed(userId, `${userId}:${scope}`, scope, false);
+  getScopedToken(
+    userId: string,
+    scope: string,
+    { tenant }: { tenant?: string } = {},
+  ): Promise<string | null> {
+    return this.refreshed(userId, `${userId}:${tenant ?? ''}:${scope}`, scope, false, tenant);
   }
 
   /** Cached access token for `scope`, else one traded for the stored refresh token. */
@@ -314,6 +327,7 @@ export class MicrosoftTokens {
     cacheKey: string,
     scope: string,
     forceRefresh: boolean,
+    tenant?: string,
   ): Promise<string | null> {
     const config = this.deps.config;
     if (!config) return null;
@@ -337,7 +351,7 @@ export class MicrosoftTokens {
       return null;
     }
 
-    const tokens = await refreshForScope(config, this.fetch, refreshToken, scope);
+    const tokens = await refreshForScope(config, this.fetch, refreshToken, scope, tenant);
     if (tokens.refresh_token && tokens.refresh_token !== refreshToken) {
       await this.deps.db
         .update(users)

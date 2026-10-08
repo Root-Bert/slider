@@ -138,7 +138,7 @@ the page says so; an admin grants consent once for the tenant.
 
 "Aus OneDrive auswählen" on the start page opens Microsoft's own
 [OneDrive File Picker v8](https://learn.microsoft.com/onedrive/developer/controls/file-pickers/)
-in a popup, starting in "Geteilt" (files others shared with you) and showing only `.pptx`. It
+embedded in a dialog, starting in "Geteilt" (files others shared with you) and showing only `.pptx`. It
 replaces a list of our own: Graph's `/me/drive/sharedWithMe` stops returning data in November
 2026, and the Search API has no personal accounts.
 
@@ -146,15 +146,17 @@ replaces a list of our own: Graph's `/me/drive/sharedWithMe` stops returning dat
   accounts get `https://onedrive.live.com/picker`, work and school accounts
   `https://{tenant}-my.sharepoint.com/_layouts/15/FilePicker.aspx`.
 - **Tokens.** The picker does not take Graph tokens. It asks the page for SharePoint tokens
-  (`https://{host}/.default`) or, for personal accounts, `OneDrive.ReadOnly`; the page gets them
+  (`https://{host}/.default`) or, for personal accounts, `OneDrive.ReadOnly` – asked at the
+  `consumers` authority, since `common` resolves it against Graph (AADSTS70011); the page gets them
   from `POST /api/microsoft/file-picker/token`, which trades the stored refresh token. Only the
   account's own SharePoint tenant and Graph are served. Without the SharePoint permissions in the
   app registration this answers `microsoft_consent_required` with a hint for the admin.
 - **Import.** The picked file comes back as drive and item id; `POST /api/decks/drive-item`
   reads it through Graph like any OneDrive/SharePoint link, so automatic updates and inserting
   slides work the same.
-- **Popup.** The API sends `Cross-Origin-Opener-Policy: same-origin-allow-popups`, otherwise the
-  picker could not talk back to the page.
+- **Embedding.** The picker page is POSTed into an iframe (`target`) and talks to Slider over a
+  MessagePort. The API also sends `Cross-Origin-Opener-Policy: same-origin-allow-popups`, should
+  it ever be opened as a popup again.
 
 ## Automatic updates
 

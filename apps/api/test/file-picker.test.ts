@@ -8,7 +8,8 @@ import type { FetchLike } from '../src/sources/safe-fetch';
 import { createTestContext, MICROSOFT_TEST_CONFIG, type TestContext } from './helpers';
 
 const SECRET = 'test-secret-test-secret-test-secret!';
-const TOKEN_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
+const TOKEN_URL =
+  /^https:\/\/login\.microsoftonline\.com\/(common|consumers)\/oauth2\/v2\.0\/token$/;
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 const PPTX = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00]);
 
@@ -41,11 +42,15 @@ async function pickerContext({
   graph?: Record<string, () => Response>;
 } = {}) {
   const scopes: string[] = [];
+  /** `tenant scope` of every token request. */
+  const requests: string[] = [];
   const fetch: FetchLike = async (input, init) => {
     const url = String(input);
-    if (url === TOKEN_URL) {
+    const tokenMatch = TOKEN_URL.exec(url);
+    if (tokenMatch) {
       const scope = new URLSearchParams(String(init?.body)).get('scope') ?? '';
       scopes.push(scope);
+      requests.push(`${tokenMatch[1]} ${scope}`);
       if (refuse && scope === refuse.scope) {
         return Response.json(
           { error: refuse.error, error_description: refuse.description },
@@ -70,7 +75,7 @@ async function pickerContext({
       .where(eq(users.id, context.ownerId));
   }
   ctx = context;
-  return { ctx: context, scopes };
+  return { ctx: context, scopes, requests };
 }
 
 const errorOf = async (res: Response) =>
@@ -146,13 +151,14 @@ describe('POST /api/microsoft/file-picker/token', () => {
     },
   );
 
-  it('uses OneDrive.ReadOnly for personal accounts, whatever the resource', async () => {
-    const { ctx } = await pickerContext({ drive: PERSONAL });
+  it('asks the consumers authority for OneDrive.ReadOnly on personal accounts', async () => {
+    const { ctx, requests } = await pickerContext({ drive: PERSONAL });
     const res = await tokenFor(ctx, 'https://my.microsoftpersonalcontent.com');
     expect(await res.json()).toEqual({ token: 'token for OneDrive.ReadOnly' });
+    expect(requests).toContain('consumers OneDrive.ReadOnly');
   });
 
-  it('falls back to the Graph read token when OneDrive.ReadOnly is an invalid scope', async () => {
+  it('does not hand the picker a Graph token when Microsoft refuses the consumer scope', async () => {
     const { ctx } = await pickerContext({
       drive: PERSONAL,
       refuse: {
@@ -162,8 +168,8 @@ describe('POST /api/microsoft/file-picker/token', () => {
       },
     });
     const res = await tokenFor(ctx, 'https://onedrive.live.com/picker');
-    expect(res.status).toBe(200);
-    expect(((await res.json()) as { token: string }).token).toMatch(/Files\.Read\.All/);
+    expect(res.status).toBe(502);
+    expect((await errorOf(res)).message).toContain('invalid_scope');
   });
 
   it('explains missing SharePoint permissions and keeps the sign-in', async () => {
