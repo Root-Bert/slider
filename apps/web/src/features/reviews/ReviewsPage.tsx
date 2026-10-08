@@ -100,7 +100,7 @@ export function Component() {
         {mayCreate && decksFull && (
           <p
             id={limitNoticeId}
-            className="max-w-[720px] rounded-control bg-warning/10 px-3 py-2.5 text-[13px] leading-5 text-fg"
+            className="max-w-[720px] text-[13px] leading-5 text-fg"
           >
             {deckLimitMessage(workspace)}
           </p>
