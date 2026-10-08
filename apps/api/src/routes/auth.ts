@@ -80,7 +80,8 @@ export function authRoutes(deps: AppDeps) {
           maxAge: COOKIE_MAX_AGE,
         },
       );
-      return c.redirect(buildAuthorizeUrl(microsoft, pkce), 302);
+      const access = c.req.query('access') === 'write' ? 'write' : 'read';
+      return c.redirect(buildAuthorizeUrl(microsoft, pkce, access), 302);
     })
 
     .get('/auth/microsoft/callback', viewer, async (c) => {

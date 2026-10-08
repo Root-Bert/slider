@@ -11,7 +11,8 @@ import type { ParsedShareLink } from '@slider/shared';
 import { comments, decks, revisions } from '../src/db/schema';
 import type { OpenPptx } from '../src/import/pptx';
 import { createDeckFromFile } from '../src/services/decks';
-import type { RemoteFile, SourceAdapter } from '../src/sources/source-adapter';
+import { SourceChangedError } from '../src/sources/errors';
+import type { EditableFile, RemoteFile, SourceAdapter } from '../src/sources/source-adapter';
 import type { TestContext } from './helpers';
 
 const HEADER = [0x50, 0x4b, 0x03, 0x04];
@@ -135,6 +136,28 @@ export class FakeSource implements SourceAdapter {
   readonly download = vi.fn(async (): Promise<Uint8Array> => {
     if (this.error) throw this.error;
     return this.bytes;
+  });
+
+  eTag = 'e1';
+  /** Saves by someone else that the next uploads run into (Graph answers 412). */
+  conflicts = 0;
+
+  readonly openForEdit = vi.fn(async (): Promise<EditableFile> => {
+    if (this.error) throw this.error;
+    return { ref: 'drives/d1/items/i1', eTag: this.eTag, bytes: this.bytes };
+  });
+
+  readonly replace = vi.fn(async (file: EditableFile, bytes: Uint8Array): Promise<string> => {
+    if (this.error) throw this.error;
+    if (this.conflicts > 0) {
+      this.conflicts--;
+      this.eTag = `${this.eTag}'`;
+    }
+    if (file.eTag !== this.eTag) throw new SourceChangedError();
+    this.bytes = bytes;
+    this.eTag = `${this.eTag}'`;
+    this.token = `${this.token}'`;
+    return this.token;
   });
 }
 

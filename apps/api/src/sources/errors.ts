@@ -14,6 +14,15 @@ export const microsoftLoginRequired = (link: string) =>
     loginUrl: microsoftLoginUrl(link),
   });
 
+export const WRITE_LOGIN_REQUIRED_MESSAGE =
+  'Damit Slider die PowerPoint ändern darf, bestätige einmal den Schreibzugriff mit deinem Microsoft-Konto.';
+
+/** Sign-in with write scopes (BER-128); comes back to `returnTo`, usually the deck. */
+export const microsoftWriteLoginRequired = (returnTo: string) =>
+  new ApiError(401, 'microsoft_login_required', WRITE_LOGIN_REQUIRED_MESSAGE, {
+    loginUrl: `/api/auth/microsoft/login?access=write&returnTo=${encodeURIComponent(returnTo)}`,
+  });
+
 export const microsoftNotConfigured = () =>
   new ApiError(
     401,
@@ -45,3 +54,18 @@ export const sourceUnreachable = (
 
 export const LINK_NOT_A_POWERPOINT_MESSAGE =
   'Unter diesem Link liegt keine PowerPoint-Datei (.pptx).';
+
+/** The file was saved by someone else since it was read: Graph refused the `If-Match` upload. */
+export class SourceChangedError extends Error {
+  constructor() {
+    super('The file changed since it was read.');
+    this.name = 'SourceChangedError';
+  }
+}
+
+export const sourceLocked = () =>
+  new ApiError(
+    409,
+    'conflict',
+    'Die PowerPoint ist gerade gesperrt (z. B. ausgecheckt oder in einer App geöffnet). Versuche es gleich noch einmal.',
+  );

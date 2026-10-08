@@ -65,6 +65,7 @@ export const ERROR_CODES = [
   'source_unreachable',
   'not_a_powerpoint',
   'file_too_large',
+  'conflict',
   'link_revoked',
   'link_expired',
   'rate_limited',

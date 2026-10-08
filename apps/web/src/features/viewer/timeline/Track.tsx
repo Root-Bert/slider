@@ -19,12 +19,12 @@ interface TrackProps {
 
 /**
  * The deck as a horizontal track: every slide side by side, filling the track's height (set by
- * the split handle), with a ⊕ divider after each slide. Slide items are
+ * the split handle), with a ⊕ divider after each slide (shown on hover). Slide items are
  * memoised and only get the props that concern them, so hovering or scrolling a 100+ slide
  * deck doesn't re-render it.
  */
 export function Track({ layout, range, snap }: TrackProps) {
-  const { slides, gapThreads, canComment } = useViewerData();
+  const { slides, gapThreads, canComment, canInsertSlides } = useViewerData();
   const { activeSlideId, tool, color, draft, focusedThreadId, hoveredThreadId, showChanges } =
     useViewerState();
   const { badges, deletedSlides, deletedThreads, revisionNumber } = useRevisionData();
@@ -78,6 +78,7 @@ export function Track({ layout, range, snap }: TrackProps) {
           threads={gapThreads.get(key)}
           isDrafting={draftGapKey === key}
           canComment={canComment}
+          canInsert={canInsertSlides}
         />
       </Fragment>,
     );

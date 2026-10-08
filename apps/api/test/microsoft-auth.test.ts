@@ -205,4 +205,43 @@ describe('Microsoft login routes', () => {
     const [forgotten] = await ctx.deps.db.select().from(users).where(eq(users.id, ctx.ownerId));
     expect(forgotten?.msRefreshToken).toBeNull();
   });
+
+  it('asks Microsoft for write scopes only on a write login (BER-128)', async () => {
+    ctx = await configured();
+    const res = await ctx.request(
+      `/api/auth/microsoft/login?access=write&returnTo=${encodeURIComponent('/d/deck-1')}`,
+    );
+    const location = new URL(res.headers.get('location') ?? '');
+    expect(location.searchParams.get('scope')).toBe('Files.ReadWrite.All offline_access User.Read');
+  });
+
+  it('without write consent yet, a write token is null but the sign-in stays (BER-128)', async () => {
+    const scopes: string[] = [];
+    ctx = await configured(async (input, init) => {
+      const body = new URLSearchParams(String(init?.body));
+      if (String(input).endsWith('/token')) {
+        scopes.push(body.get('scope') ?? '');
+        return body.get('scope')?.includes('ReadWrite')
+          ? Response.json(
+              { error: 'invalid_grant', error_description: 'AADSTS65001: no consent' },
+              { status: 400 },
+            )
+          : Response.json({ access_token: 'at-read', expires_in: 3600 });
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+    await ctx.deps.db
+      .update(users)
+      .set({ msRefreshToken: await encryptToken(SECRET, 'rt-1') })
+      .where(eq(users.id, ctx.ownerId));
+
+    expect(await ctx.deps.microsoft.getAccessToken(ctx.ownerId, { access: 'write' })).toBeNull();
+    expect(await ctx.deps.microsoft.getAccessToken(ctx.ownerId)).toBe('at-read');
+    expect(scopes).toEqual([
+      'Files.ReadWrite.All offline_access User.Read',
+      'Files.Read.All offline_access User.Read',
+    ]);
+    const [owner] = await ctx.deps.db.select().from(users).where(eq(users.id, ctx.ownerId));
+    expect(owner?.msRefreshToken).not.toBeNull();
+  });
 });

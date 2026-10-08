@@ -1,8 +1,13 @@
 import { memo } from 'react';
-import { cn, Icon } from '@/ui';
+import { cn, Icon, Spinner } from '@/ui';
 import { accentColor } from '@/lib/accent';
+import { ApiError } from '@/lib/api-client';
+import { useInsertSlide } from '@/lib/queries';
 import type { Thread } from '../lib/comment-selectors';
+import { useStageRegistry } from '../state/stage-registry';
+import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch } from '../state/viewer-state';
+import { useViewerToast } from '../state/viewer-toast';
 
 interface GapDividerProps {
   gapKey: string;
@@ -16,11 +21,22 @@ interface GapDividerProps {
   threads: Thread[] | undefined;
   isDrafting: boolean;
   canComment: boolean;
+  /** The ⊕ inserts a slide into the PowerPoint instead of starting a gap comment (BER-128). */
+  canInsert: boolean;
 }
 
+/** Figma: the hairline pauses 16px above and below the ⊕ – while the ⊕ shows. Literal for Tailwind. */
+const HAIRLINE_GAP =
+  '[mask-image:linear-gradient(#000_calc(50%-28px),transparent_calc(50%-28px),transparent_calc(50%+28px),#000_calc(50%+28px))]';
+const HAIRLINE_GAP_ON_HOVER =
+  'group-hover:[mask-image:linear-gradient(#000_calc(50%-28px),transparent_calc(50%-28px),transparent_calc(50%+28px),#000_calc(50%+28px))] ' +
+  'group-focus-within:[mask-image:linear-gradient(#000_calc(50%-28px),transparent_calc(50%-28px),transparent_calc(50%+28px),#000_calc(50%+28px))]';
+
 /**
- * Hairline between two slides with a ⊕ button: "hier fehlt eine Folie" (BER-103).
- * Existing gap comments show as a marker below the button.
+ * Hairline between two slides with a ⊕ that appears on hover. For the owner of a deck linked
+ * from OneDrive/SharePoint it inserts an empty slide there (BER-128); for everyone else who may
+ * comment it starts a "hier fehlt eine Folie" comment (BER-103). Existing gap comments show as
+ * a marker below the button.
  */
 export const GapDivider = memo(function GapDivider({
   gapKey,
@@ -33,43 +49,62 @@ export const GapDivider = memo(function GapDivider({
   threads,
   isDrafting,
   canComment,
+  canInsert,
 }: GapDividerProps) {
   const dispatch = useViewerDispatch();
+  const insert = useInsertSlideHere(afterSlideId);
   const openThreads = threads?.filter((thread) => thread.root.status === 'open') ?? [];
   const first = threads?.[0];
   // Narrow gaps (small slides) get a smaller ⊕.
   const tight = width < 32;
+  const mode = canInsert && afterSlideId ? 'insert' : canComment ? 'comment' : null;
+  const pinned = isDrafting || insert.isPending;
 
   return (
     <div
       data-gap-key={gapKey}
-      className="absolute flex justify-center"
+      className="group absolute flex justify-center"
       style={{ left: x, top, width, height }}
     >
-      {/* Figma: the hairline pauses 16px above and below the ⊕. */}
       <span
         aria-hidden
         className={cn(
           'h-full w-px transition-colors',
           isDrafting ? 'bg-fg' : 'bg-white/50',
-          canComment &&
-            '[mask-image:linear-gradient(#000_calc(50%-28px),transparent_calc(50%-28px),transparent_calc(50%+28px),#000_calc(50%+28px))]',
+          mode && (pinned ? HAIRLINE_GAP : HAIRLINE_GAP_ON_HOVER),
         )}
       />
       <div className="absolute top-1/2 left-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2">
-        {canComment && (
+        {mode && (
           <button
             type="button"
-            aria-label="Kommentar zwischen den Folien – hier fehlt etwas"
-            title="Hier fehlt eine Folie"
-            onClick={() => dispatch({ type: 'gapDraftStarted', afterSlideId, beforeSlideId })}
+            aria-label={
+              mode === 'insert'
+                ? 'Neue Folie hier einfügen'
+                : 'Kommentar zwischen den Folien – hier fehlt etwas'
+            }
+            title={mode === 'insert' ? 'Folie einfügen' : 'Hier fehlt eine Folie'}
+            aria-busy={insert.isPending || undefined}
+            disabled={insert.isPending}
+            onClick={() =>
+              mode === 'insert'
+                ? insert.run()
+                : dispatch({ type: 'gapDraftStarted', afterSlideId, beforeSlideId })
+            }
             className={cn(
-              'flex items-center justify-center rounded-full bg-canvas transition-colors',
+              'flex items-center justify-center rounded-full bg-canvas transition-[color,opacity] disabled:cursor-progress',
               tight ? 'size-6' : 'size-7',
               isDrafting ? 'text-fg' : 'text-fg-muted hover:text-fg',
+              pinned
+                ? 'opacity-100'
+                : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
             )}
           >
-            <Icon name="addCircle" size={tight ? 20 : 24} />
+            {insert.isPending ? (
+              <Spinner size={tight ? 16 : 20} className="text-fg-muted" />
+            ) : (
+              <Icon name="addCircle" size={tight ? 20 : 24} />
+            )}
           </button>
         )}
         {first && (
@@ -94,3 +129,52 @@ export const GapDivider = memo(function GapDivider({
     </div>
   );
 });
+
+/**
+ * Inserts a slide after `afterSlideId` and jumps to it once the new revision is loaded. Without
+ * write consent yet the browser goes to Microsoft and comes back to the deck.
+ */
+function useInsertSlideHere(afterSlideId: string | null) {
+  const { deck } = useViewerData();
+  const mutation = useInsertSlide(deck.id);
+  const dispatch = useViewerDispatch();
+  const registry = useStageRegistry();
+  const showToast = useViewerToast();
+
+  const run = () => {
+    if (!afterSlideId) return;
+    mutation.mutate(
+      { afterSlideId },
+      {
+        onSuccess: ({ result, slideId }) => {
+          if (result.status === 'error') {
+            showToast(
+              result.error?.message ?? 'Die Folie konnte nicht eingefügt werden.',
+              'danger',
+            );
+            return;
+          }
+          if (slideId) {
+            dispatch({ type: 'activeSlideChanged', slideId });
+            registry.revealSlide(slideId, { align: 'nearest', behavior: 'smooth' });
+          }
+          showToast(
+            slideId
+              ? 'Folie eingefügt und in der PowerPoint gespeichert'
+              : 'Folie in der PowerPoint gespeichert – die Vorschau folgt gleich',
+            'neutral',
+          );
+        },
+        onError: (error) => {
+          if (error instanceof ApiError && error.loginUrl) {
+            window.location.assign(error.loginUrl);
+            return;
+          }
+          showToast(error.message, 'danger');
+        },
+      },
+    );
+  };
+
+  return { run, isPending: mutation.isPending };
+}

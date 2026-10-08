@@ -14,6 +14,16 @@ import { decryptToken, encryptToken, toBase64Url } from './token-crypto';
  */
 
 export const MICROSOFT_SCOPES = 'Files.Read.All offline_access User.Read';
+/**
+ * Asked for only when the owner first edits a linked PowerPoint (BER-128): reading never needs
+ * more, and a write consent is a bigger ask (in companies often one for an admin).
+ */
+export const MICROSOFT_WRITE_SCOPES = 'Files.ReadWrite.All offline_access User.Read';
+
+/** `read` for importing and syncing, `write` for changing the PowerPoint itself. */
+export type MicrosoftAccess = 'read' | 'write';
+const scopesFor = (access: MicrosoftAccess) =>
+  access === 'write' ? MICROSOFT_WRITE_SCOPES : MICROSOFT_SCOPES;
 const GRAPH_ME_URL = 'https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName';
 /** Refresh a little early so a token never expires between check and use. */
 const EXPIRY_SKEW_MS = 60_000;
@@ -72,14 +82,18 @@ export async function createPkce(): Promise<Pkce> {
   return { state: randomToken(), verifier, challenge: toBase64Url(new Uint8Array(digest)) };
 }
 
-export function buildAuthorizeUrl(config: MicrosoftConfig, pkce: Pkce): string {
+export function buildAuthorizeUrl(
+  config: MicrosoftConfig,
+  pkce: Pkce,
+  access: MicrosoftAccess = 'read',
+): string {
   const url = new URL(`${authority(config)}/authorize`);
   url.search = new URLSearchParams({
     client_id: config.clientId,
     response_type: 'code',
     redirect_uri: config.redirectUri,
     response_mode: 'query',
-    scope: MICROSOFT_SCOPES,
+    scope: scopesFor(access),
     state: pkce.state,
     code_challenge: pkce.challenge,
     code_challenge_method: 'S256',
@@ -98,6 +112,7 @@ async function requestToken(
   config: MicrosoftConfig,
   fetch: Fetch,
   grant: Record<string, string>,
+  access: MicrosoftAccess = 'read',
 ): Promise<TokenResponse> {
   const response = await fetch(`${authority(config)}/token`, {
     method: 'POST',
@@ -105,7 +120,7 @@ async function requestToken(
     body: new URLSearchParams({
       client_id: config.clientId,
       client_secret: config.clientSecret,
-      scope: MICROSOFT_SCOPES,
+      scope: scopesFor(access),
       ...grant,
     }),
     signal: AbortSignal.timeout(30_000),
@@ -146,8 +161,13 @@ export const exchangeCode = (
     code_verifier: verifier,
   });
 
-export const refreshAccessToken = (config: MicrosoftConfig, fetch: Fetch, refreshToken: string) =>
-  requestToken(config, fetch, { grant_type: 'refresh_token', refresh_token: refreshToken });
+export const refreshAccessToken = (
+  config: MicrosoftConfig,
+  fetch: Fetch,
+  refreshToken: string,
+  access: MicrosoftAccess = 'read',
+) =>
+  requestToken(config, fetch, { grant_type: 'refresh_token', refresh_token: refreshToken }, access);
 
 export interface MicrosoftTokensDeps {
   /** `null` when no app registration is configured – then nobody has tokens. */
@@ -191,17 +211,28 @@ export class MicrosoftTokens {
         msAccount: account,
       })
       .where(eq(users.id, userId));
-    this.remember(userId, tokens);
+    this.remember(`${userId}:read`, tokens);
   }
 
   /**
    * A valid access token for `userId`, refreshed when needed; `null` when the person has never
    * signed in (or their sign-in was revoked). `forceRefresh` after Graph answered 401.
+   *
+   * `access: 'write'` trades the same refresh token for a token with write scopes. Without that
+   * consent yet it returns `null` (the caller asks for a write login) and keeps the sign-in, so
+   * reading goes on working.
    */
-  async getAccessToken(userId: string, { forceRefresh = false } = {}): Promise<string | null> {
+  async getAccessToken(
+    userId: string,
+    {
+      forceRefresh = false,
+      access = 'read',
+    }: { forceRefresh?: boolean; access?: MicrosoftAccess } = {},
+  ): Promise<string | null> {
     const config = this.deps.config;
     if (!config) return null;
-    const cached = this.cache.get(userId);
+    const cacheKey = `${userId}:${access}`;
+    const cached = this.cache.get(cacheKey);
     if (cached && !forceRefresh && cached.expiresAt > this.deps.clock.now().getTime()) {
       return cached.accessToken;
     }
@@ -222,16 +253,21 @@ export class MicrosoftTokens {
     }
 
     try {
-      const tokens = await refreshAccessToken(config, this.fetch, refreshToken);
+      const tokens = await refreshAccessToken(config, this.fetch, refreshToken, access);
       if (tokens.refresh_token && tokens.refresh_token !== refreshToken) {
         await this.deps.db
           .update(users)
           .set({ msRefreshToken: await encryptToken(this.deps.secret, tokens.refresh_token) })
           .where(eq(users.id, userId));
       }
-      return this.remember(userId, tokens);
+      return this.remember(cacheKey, tokens);
     } catch (error) {
       if (!(error instanceof MicrosoftAuthError)) throw error;
+      if (access === 'write') {
+        // Most likely no write consent yet (AADSTS65001): a write login fixes it.
+        this.deps.log.warn(`Microsoft write token refused for user ${userId}: ${error.message}`);
+        return null;
+      }
       if (error.kind === 'admin_consent') throw microsoftConsentRequired();
       this.deps.log.warn(`Microsoft token refresh failed for user ${userId}: ${error.message}`);
       // invalid_grant (revoked, expired, password changed) and friends: sign in again.
@@ -241,15 +277,16 @@ export class MicrosoftTokens {
   }
 
   async forget(userId: string): Promise<void> {
-    this.cache.delete(userId);
+    this.cache.delete(`${userId}:read`);
+    this.cache.delete(`${userId}:write`);
     await this.deps.db
       .update(users)
       .set({ msRefreshToken: null, msAccount: null })
       .where(eq(users.id, userId));
   }
 
-  private remember(userId: string, tokens: TokenResponse): string {
-    this.cache.set(userId, {
+  private remember(cacheKey: string, tokens: TokenResponse): string {
+    this.cache.set(cacheKey, {
       accessToken: tokens.access_token,
       expiresAt: this.deps.clock.now().getTime() + tokens.expires_in * 1000 - EXPIRY_SKEW_MS,
     });

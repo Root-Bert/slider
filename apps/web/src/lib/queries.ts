@@ -6,6 +6,8 @@ import {
   type Deck,
   type DeckStatus,
   type DeletedSlide,
+  type InsertSlideInput,
+  type InsertSlideResult,
   type InviteInfo,
   type JoinInviteInput,
   type MeResponse,
@@ -304,6 +306,19 @@ export function useSyncDeck(deckId: string) {
   const invalidate = useInvalidateRevision(deckId);
   return useMutation({
     mutationFn: () => api.post<SyncResult>(`/decks/${deckId}/sync`),
+    onSettled: invalidate,
+  });
+}
+
+/**
+ * ⊕ between slides: an empty slide, written straight into the linked PowerPoint (owner only,
+ * BER-128). The new revision is loaded before `mutate`'s own callbacks run.
+ */
+export function useInsertSlide(deckId: string) {
+  const invalidate = useInvalidateRevision(deckId);
+  return useMutation({
+    mutationFn: (input: InsertSlideInput) =>
+      api.post<InsertSlideResult>(`/decks/${deckId}/slides`, input),
     onSettled: invalidate,
   });
 }
