@@ -61,13 +61,15 @@ export function AccountMenu() {
               <PasskeyMark size={18} className="mt-0.5 text-fg-muted" />
               <button
                 type="button"
-                className="flex min-w-0 flex-1 flex-col text-left"
+                className="group/hint flex min-w-0 flex-1 flex-col text-left"
                 onClick={() => {
                   close();
                   void navigate(routes.account());
                 }}
               >
-                <span className="text-[13px] font-medium text-fg">Schneller anmelden</span>
+                <span className="text-[13px] font-medium text-fg group-hover/hint:underline">
+                  Schneller anmelden
+                </span>
                 <span className="text-xs text-fg-subtle">Passkey hinzufügen</span>
               </button>
               <IconButton

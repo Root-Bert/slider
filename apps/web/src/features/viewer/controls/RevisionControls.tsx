@@ -111,7 +111,7 @@ function ReloadButton() {
       aria-busy={busy || pending || undefined}
       disabled={busy}
       onClick={() => syncDeck.mutate(undefined, toast)}
-      className="inline-flex size-8 shrink-0 items-center justify-center rounded-control text-fg-muted transition-colors hover:bg-white/10 hover:text-fg disabled:cursor-progress"
+      className="inline-flex size-8 shrink-0 items-center justify-center rounded-control text-fg-muted transition-colors hover:bg-white/10 hover:text-fg disabled:cursor-progress disabled:hover:bg-transparent disabled:hover:text-fg-muted"
     >
       {busy || pending ? (
         <Spinner size={18} className="text-fg-muted" />

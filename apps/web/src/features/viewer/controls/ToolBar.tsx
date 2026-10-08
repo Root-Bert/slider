@@ -96,7 +96,7 @@ function GuestViewOnly({ deckId, className }: { deckId: string; className?: stri
         type="button"
         disabled={leaving}
         onClick={signIn}
-        className="h-8 rounded-control-sm px-2.5 text-[13px] font-medium whitespace-nowrap text-fg hover:bg-white/10 disabled:opacity-50"
+        className="h-8 rounded-control-sm px-2.5 text-[13px] font-medium whitespace-nowrap text-fg hover:bg-white/10 disabled:opacity-50 disabled:hover:bg-transparent"
       >
         <span className="max-sm:hidden">Zum Kommentieren anmelden</span>
         <span className="sm:hidden">Anmelden</span>

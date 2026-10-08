@@ -26,7 +26,11 @@ export function CenteredMessage({
 }) {
   return (
     <main className="dot-grid flex min-h-full flex-col items-center justify-center gap-6 p-6 text-center">
-      <Link to={routes.reviews()} aria-label="Zur Übersicht">
+      <Link
+        to={routes.reviews()}
+        aria-label="Zur Übersicht"
+        className="transition-opacity hover:opacity-80"
+      >
         <Logo />
       </Link>
       <div className="flex max-w-sm flex-col gap-2">

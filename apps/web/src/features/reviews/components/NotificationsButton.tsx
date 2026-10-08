@@ -141,7 +141,7 @@ function NotificationsPopover({
               notifications.filter((item) => item.unread).map((item) => item.deck.id),
             )
           }
-          className="text-[13px] text-fg-muted hover:text-fg disabled:opacity-40"
+          className="text-[13px] text-fg-muted hover:text-fg disabled:opacity-40 disabled:hover:text-fg-muted"
         >
           Alle als gelesen markieren
         </button>

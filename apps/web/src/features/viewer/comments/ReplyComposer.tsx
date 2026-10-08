@@ -105,7 +105,7 @@ export function ReplyComposer({
           aria-label="Antwort senden"
           title="Senden (Enter)"
           disabled={!canSend}
-          className="flex size-10 shrink-0 items-center justify-center rounded-control bg-primary text-on-primary transition-opacity disabled:opacity-40"
+          className="flex size-10 shrink-0 items-center justify-center rounded-control bg-primary text-on-primary transition-[opacity,background-color] hover:bg-primary/85 disabled:pointer-events-none disabled:opacity-40"
         >
           <Icon name="arrowUpward" size={20} />
         </button>

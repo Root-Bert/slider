@@ -18,7 +18,11 @@ export function Component() {
     <div className="dot-grid flex min-h-full flex-col">
       <title>Einladung · Slider</title>
       <header className="flex h-[88px] shrink-0 items-center justify-between px-6 md:px-14">
-        <Link to={routes.reviews()} aria-label="Slider">
+        <Link
+          to={routes.reviews()}
+          aria-label="Slider"
+          className="transition-opacity hover:opacity-80"
+        >
           <Logo />
         </Link>
         {signedIn && <AccountMenu />}

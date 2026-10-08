@@ -11,6 +11,8 @@
   /* Surfaces */
   --color-canvas: #000000;
   --color-glass: rgb(77 77 77 / 0.3);
+  /* Hover on clickable glass cards: same frost, a touch lighter. */
+  --color-glass-hover: rgb(110 110 110 / 0.38);
   --color-glass-solid: #141414;
   --color-hairline: rgb(255 255 255 / 0.08);
   --color-hairline-strong: rgb(255 255 255 / 0.16);
@@ -163,6 +165,19 @@
   :focus-visible {
     outline: 2px solid var(--color-mention);
     outline-offset: 2px;
+  }
+
+  /* Tailwind v4 leaves buttons on the arrow cursor – every clickable control shows the hand. */
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  [role='menuitem']:not([aria-disabled='true']),
+  [role='menuitemradio']:not([aria-disabled='true']),
+  [role='option']:not([aria-disabled='true']),
+  [role='tab'],
+  select:not(:disabled),
+  summary,
+  label:has(> input[type='checkbox'], > input[type='radio'], > input[type='file']) {
+    cursor: pointer;
   }
 
   @media (prefers-reduced-motion: reduce) {

@@ -31,7 +31,10 @@ export function NotAuthorized({ status }: { status: SetupStatus }) {
     return (
       <Notice>
         Nur der Admin dieser Slider-Instanz kann die Einrichtung ändern.{' '}
-        <Link to={routes.login('/einrichtung')} className="text-fg underline underline-offset-2">
+        <Link
+          to={routes.login('/einrichtung')}
+          className="text-fg underline underline-offset-2 transition-opacity hover:opacity-80"
+        >
           Als Admin anmelden
         </Link>
       </Notice>
@@ -360,7 +363,10 @@ function Saved({ status, manual }: { status: SetupStatus; manual: boolean }) {
       {!status.hasAccount && status.loginConfigured && (
         <>
           Melde dich jetzt mit deiner Admin-Adresse an:{' '}
-          <a href={routes.login()} className="font-medium text-fg underline underline-offset-2">
+          <a
+            href={routes.login()}
+            className="font-medium text-fg underline underline-offset-2 transition-opacity hover:opacity-80"
+          >
             Zur Anmeldung
           </a>
         </>

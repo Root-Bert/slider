@@ -18,7 +18,7 @@ export function GuestCommentHint({ deckId, className }: { deckId: string; classN
           type="button"
           disabled={leaving}
           onClick={signIn}
-          className="font-medium text-fg underline underline-offset-4 hover:text-white disabled:opacity-50"
+          className="font-medium text-fg underline underline-offset-4 hover:text-white disabled:opacity-50 disabled:hover:text-fg"
         >
           Anmelden
         </button>

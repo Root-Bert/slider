@@ -141,7 +141,7 @@ function ErrorBanner({ error }: { error: SyncError }) {
           type="button"
           aria-expanded={expanded}
           onClick={() => setExpanded((open) => !open)}
-          className="flex min-w-0 items-center gap-1 text-left text-[13px] leading-4 font-medium text-fg sm:hidden"
+          className="flex min-w-0 items-center gap-1 text-left text-[13px] leading-4 font-medium text-fg hover:underline sm:hidden"
         >
           <span className={cn(!expanded && 'line-clamp-2')}>{title}</span>
           <Icon

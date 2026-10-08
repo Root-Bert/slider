@@ -96,7 +96,7 @@ export const CommentCard = memo(function CommentCard({
       )}
       <div
         className={cn(
-          'glass relative flex flex-col gap-2 rounded-panel px-3.5 py-3 transition-shadow duration-200',
+          'glass relative flex flex-col gap-2 rounded-panel px-3.5 py-3 transition-[background-color,box-shadow] duration-200 hover:bg-glass-hover',
           highlighted &&
             'shadow-[inset_0_0_0_1px_var(--card-accent),0_0_20px_color-mix(in_srgb,var(--card-accent)_50%,transparent)]!',
         )}

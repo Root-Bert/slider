@@ -69,7 +69,7 @@ export function ColorPicker() {
                   disabled={updateMe.isPending}
                   onClick={() => pick(color)}
                   className={cn(
-                    'flex size-7 items-center justify-center rounded-full outline-offset-2 transition-transform hover:scale-110 disabled:cursor-wait',
+                    'flex size-7 items-center justify-center rounded-full outline-offset-2 transition-transform hover:scale-110 disabled:cursor-wait disabled:hover:scale-100',
                     selected && 'ring-2 ring-white/90 ring-offset-2 ring-offset-glass-solid',
                   )}
                   style={{ backgroundColor: accentColor(color) }}

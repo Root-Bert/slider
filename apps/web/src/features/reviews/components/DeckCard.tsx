@@ -60,7 +60,7 @@ export function DeckCard({ deck, unseen, onNotify }: DeckItemProps) {
             <Link
               to={routes.deck(deck.id)}
               onClick={() => markDeckVisited(deck.id)}
-              className="outline-none after:absolute after:inset-0 after:content-['']"
+              className="outline-none group-hover:underline group-hover:underline-offset-2 after:absolute after:inset-0 after:content-['']"
             >
               {deck.title}
             </Link>
@@ -101,7 +101,7 @@ export function DeckRow({ deck, unseen, onNotify }: DeckItemProps) {
             <Link
               to={routes.deck(deck.id)}
               onClick={() => markDeckVisited(deck.id)}
-              className="outline-none after:absolute after:inset-0 after:content-['']"
+              className="outline-none group-hover:underline group-hover:underline-offset-2 after:absolute after:inset-0 after:content-['']"
             >
               {deck.title}
             </Link>
