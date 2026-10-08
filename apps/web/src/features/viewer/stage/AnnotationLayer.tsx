@@ -1,8 +1,8 @@
-import { isPathStroke, type Rect, type Slide } from '@slider/shared';
+import { isPathStroke, type Comment, type Point, type Rect, type Slide } from '@slider/shared';
 import { memo, useMemo } from 'react';
 import { cn } from '@/ui';
 import { anchorRect, isImplicitFrame, textAnnotation, type Thread } from '../lib/comment-selectors';
-import { markColor } from '../lib/colors';
+import { accentColor } from '@/lib/accent';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, type Draft } from '../state/viewer-state';
 import { markLabel } from '../lib/labels';
@@ -30,8 +30,9 @@ interface Mark {
  * Renders the marks of all visible comments on a slide (BER-98): pins, frames and drawings.
  * Everything is positioned in normalised slide coordinates, so marks stay exact at every slide size.
  * Strokes live in one SVG with `viewBox="0 0 1 1"`; pins and frames are HTML for crisp borders.
- * Only point comments without a drawing get a dot (B1): frames and drawings are themselves the
- * click target, and their connector line leaves the shape. Text on the slide ("Text auf Folie")
+ * Every comment carries its badge – the "P" square for PowerPoint comments, else the author's dot:
+ * on its point, at a frame's top-left corner, or where a drawing starts. Frames, drawings and badge
+ * share the author's colour, like the connector line. Text on the slide ("Text auf Folie")
  * is HTML in container units (`container-type: size`) and follows the same visibility as drawings.
  */
 export const AnnotationLayer = memo(function AnnotationLayer({
@@ -117,7 +118,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
             {root.anchor.type === 'rect' && !isImplicitFrame(root) && (
               <RectFrame
                 rect={mark.rect}
-                color={markColor(root)}
+                color={accentColor(root.author.color)}
                 className={cn(
                   'transition-opacity duration-200',
                   mark.state === 'dimmed' && 'opacity-30',
@@ -138,20 +139,20 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                 onActivate={() => activate(mark)}
                 onHover={(hovering) => hover(mark, hovering)}
               />
-            ) : root.anchor.type === 'point' && root.strokes.length === 0 ? (
-              <Pin
-                comment={root}
-                at={mark.rect}
-                state={mark.state}
-                onActivate={() => activate(mark)}
-                onHover={(hovering) => hover(mark, hovering)}
-              />
-            ) : (
-              // Frame: the whole area is the target. Drawing: only reachable by keyboard here,
-              // the pointer hits the stroke itself (above).
+            ) : null}
+            <Pin
+              comment={root}
+              at={badgePoint(root, area)}
+              state={mark.state}
+              onActivate={() => activate(mark)}
+              onHover={(hovering) => hover(mark, hovering)}
+            />
+            {root.anchor.type === 'rect' && !text && (
+              // The whole frame is a pointer target; keyboard users reach it through the badge.
               <button
                 type="button"
-                aria-label={markLabel(root)}
+                tabIndex={-1}
+                aria-hidden
                 title={markLabel(root)}
                 onClick={(event) => {
                   event.stopPropagation();
@@ -159,13 +160,9 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                 }}
                 onPointerEnter={() => hover(mark, true)}
                 onPointerLeave={() => hover(mark, false)}
-                onFocus={() => hover(mark, true)}
-                onBlur={() => hover(mark, false)}
                 className={cn(
-                  'absolute rounded-thumb outline-offset-2',
-                  root.anchor.type === 'rect' && !composing
-                    ? 'pointer-events-auto cursor-pointer'
-                    : 'pointer-events-none',
+                  'absolute rounded-thumb',
+                  composing ? 'pointer-events-none' : 'pointer-events-auto cursor-pointer',
                 )}
                 style={{
                   left: `${area.x * 100}%`,
@@ -183,3 +180,10 @@ export const AnnotationLayer = memo(function AnnotationLayer({
     </div>
   );
 });
+
+/** Where a comment's badge sits: its point, the start of its drawing, or the area's corner. */
+function badgePoint(comment: Comment, area: Rect): Point {
+  const drawing = comment.strokes.find(isPathStroke);
+  if (drawing?.points[0]) return drawing.points[0];
+  return { x: area.x, y: area.y };
+}
