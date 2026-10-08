@@ -244,6 +244,15 @@ export function TextBoxEditor({ box }: TextBoxEditorProps) {
               event.preventDefault();
               document.querySelector<HTMLFormElement>('form[data-composer]')?.requestSubmit();
             }
+            // Tab jumps to the composer's comment field (Shift+Tab there comes back).
+            if (event.key === 'Tab' && !event.shiftKey) {
+              const comment = document.querySelector<HTMLTextAreaElement>(
+                'form[data-composer] textarea[aria-label="Kommentar"]',
+              );
+              if (!comment) return;
+              event.preventDefault();
+              comment.focus();
+            }
           }}
           className={cn(
             TEXT_CLASS,

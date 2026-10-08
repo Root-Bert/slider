@@ -138,6 +138,15 @@ function ComposerPopover({ draft }: { draft: Draft }) {
           onChange={(event) => setBody(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit();
+            // Shift+Tab goes back to the text on the slide.
+            if (event.key === 'Tab' && event.shiftKey && onSlideText) {
+              const slideText = document.querySelector<HTMLTextAreaElement>(
+                '[data-text-editor] textarea',
+              );
+              if (!slideText) return;
+              event.preventDefault();
+              slideText.focus();
+            }
           }}
           className="text-[13px] leading-5 text-fg"
         />
