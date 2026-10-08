@@ -49,19 +49,19 @@ export function Component() {
   const decks = decksQuery.data ?? NO_DECKS;
   const allDecksQuery = useAllDecks();
   const shared = sharedWith(allDecksQuery.data ?? NO_DECKS, user.id);
-  const { isUnseen } = useLastVisits();
+  const { isUnseen, openedAt } = useLastVisits();
   const [toast, showToast] = useToast();
 
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState<ReviewTab>('all');
-  const [sort, setSort] = useStoredChoice('slider.reviews.sort', DECK_SORTS, 'updated');
+  const [sort, setSort] = useStoredChoice('slider.reviews.sort', DECK_SORTS, 'opened');
   const [view, setView] = useStoredChoice('slider.reviews.view', DECK_VIEWS, 'grid');
 
   const totals = activeTotals(decks);
   const sharedTab = tab === 'shared';
   const listQuery = sharedTab ? allDecksQuery : decksQuery;
   const listed = sharedTab ? shared : decks;
-  const visible = selectDecks(listed, { tab, query, sort });
+  const visible = selectDecks(listed, { tab, query, sort, openedAt });
   const goToNew =
     mayCreate && !decksFull ? () => void navigate(routes.newReview(workspace.id)) : undefined;
 

@@ -30,6 +30,15 @@ describe('selectDecks', () => {
     ]);
   });
 
+  it('sorts by last opened, never-opened decks after by last update', () => {
+    const opened: Record<string, number> = { a: 2, c: 1 };
+    expect(
+      ids(
+        selectDecks(decks, { tab: 'all', query: '', sort: 'opened', openedAt: (id) => opened[id] }),
+      ),
+    ).toEqual(['a', 'c', 'b']);
+  });
+
   it('"Offen" keeps decks with open comments only', () => {
     expect(ids(selectDecks(decks, { tab: 'open', query: '', sort: 'comments' }))).toEqual([
       'c',

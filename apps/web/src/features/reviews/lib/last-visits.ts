@@ -11,6 +11,8 @@ import type { Deck } from '@slider/shared';
 interface VisitState {
   baseline: number;
   decks: Readonly<Record<string, number>>;
+  /** When the viewer last showed each deck – unlike `decks`, not bumped by rename or "alle gelesen". */
+  opened?: Readonly<Record<string, number>>;
 }
 
 const STORAGE_KEY = 'slider.lastVisits.v1';
@@ -81,6 +83,12 @@ export function markDecksVisited(deckIds: readonly string[], at: number = Date.n
 
 export const markDeckVisited = (deckId: string) => markDecksVisited([deckId]);
 
+/** Feeds the sort "Zuletzt geöffnet"; called by the viewer once the deck has loaded. */
+export function markDeckOpened(deckId: string, at: number = Date.now()) {
+  const current = getSnapshot();
+  setState({ ...current, opened: { ...current.opened, [deckId]: at } });
+}
+
 const lastVisitOf = (visits: VisitState, deckId: string) => visits.decks[deckId] ?? visits.baseline;
 
 /** True when the deck changed after the user last opened it. */
@@ -93,5 +101,6 @@ export function useLastVisits() {
   const visits = useSyncExternalStore(subscribe, getSnapshot);
   return {
     isUnseen: (deck: Pick<Deck, 'id' | 'updatedAt'>) => hasUnseenChanges(visits, deck),
+    openedAt: (deckId: string): number | undefined => visits.opened?.[deckId],
   };
 }

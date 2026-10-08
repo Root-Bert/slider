@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useLocation, useParams, useSearchParams } from 'react-router';
 import { routes } from '@/app/routes';
 import { isSignedOutError } from '@/features/auth/lib/gate';
 import { ImportProgress } from '@/features/onboarding/ImportProgress';
+import { markDeckOpened } from '@/features/reviews/lib/last-visits';
 import { useComments, useDeck, useMe, useSlides } from '@/lib/queries';
 import { DeckError, DeckLoading, SessionEnded } from './DeckStates';
 import { useDocumentTitle, useLeaveReview } from './hooks/usePageSession';
@@ -27,6 +28,12 @@ export function Component() {
   const comments = useComments(deckId, ready);
 
   useDocumentTitle(deck.data?.title);
+
+  // Sort "Zuletzt geöffnet" in Meine Reviews – also for direct links, not just card clicks.
+  const loaded = deck.isSuccess;
+  useEffect(() => {
+    if (loaded) markDeckOpened(deckId);
+  }, [loaded, deckId]);
 
   const data = useMemo(
     () =>
