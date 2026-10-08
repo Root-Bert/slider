@@ -30,9 +30,15 @@ export function Dialog({
 
   useEffect(() => {
     const dialog = ref.current;
-    if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
+    if (!dialog || !open) return;
+    // Most dialogs close by unmounting, where the browser never restores focus by itself.
+    const returnFocus =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!dialog.open) dialog.showModal();
+    return () => {
+      if (dialog.open) dialog.close();
+      if (returnFocus?.isConnected) returnFocus.focus();
+    };
   }, [open]);
 
   return (

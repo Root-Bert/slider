@@ -7,7 +7,7 @@ import {
   type EmuRect,
   type Transform,
 } from './transform';
-import { attr, child, descendants, findByLocalName, path, type XmlElement } from './xml';
+import { attr, boolAttr, child, descendants, findByLocalName, path, type XmlElement } from './xml';
 
 /** Placeholder reference of a shape (`p:nvPr/p:ph`). */
 export interface PlaceholderRef {
@@ -36,6 +36,8 @@ export function* walkShapeTree(
   transform: Transform = IDENTITY,
 ): Generator<ShapeNode> {
   for (const element of tree?.children ?? []) {
+    // Hidden in PowerPoint's selection pane (often animation helpers): not drawn, not a target.
+    if (isHidden(element)) continue;
     switch (element.name) {
       case 'p:grpSp':
         yield* walkShapeTree(
@@ -60,6 +62,11 @@ export function* walkShapeTree(
         break;
     }
   }
+}
+
+function isHidden(element: XmlElement): boolean {
+  const nonVisual = element.children.find((candidate) => candidate.name.startsWith('p:nv'));
+  return boolAttr(child(nonVisual, 'p:cNvPr'), 'hidden') === true;
 }
 
 function toShapeNode(element: XmlElement, transform: Transform): ShapeNode {

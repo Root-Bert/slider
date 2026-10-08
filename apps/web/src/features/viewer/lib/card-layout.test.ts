@@ -16,9 +16,9 @@ describe('brickLayout', () => {
       1032 + 48,
     ]);
     // Below the taller of the two first-row cards they overlap: card 3 sits under card 2 and 4.
-    expect(cards[1]!.top).toBe(114);
-    expect(cards[3]!.top).toBe(114);
-    expect(height).toBe(114 + 160);
+    expect(cards[1]!.top).toBe(138);
+    expect(cards[3]!.top).toBe(138);
+    expect(height).toBe(138 + 160);
   });
 
   it('narrows the gutters before the cards', () => {
@@ -41,7 +41,7 @@ describe('brickLayout', () => {
   it('continues in a new band when a row is full', () => {
     const { cards } = brickLayout([100, 100, 100, 100, 100], 600);
     // 600px fit two 220px+ cards per row: band 1 = cards 0–2, band 2 starts below.
-    expect(cards.map((card) => card.top)).toEqual([0, 124, 0, 256, 380]);
+    expect(cards.map((card) => card.top)).toEqual([0, 148, 0, 296, 444]);
     expect(cards[3]!.left).toBe(0);
   });
 
@@ -49,7 +49,7 @@ describe('brickLayout', () => {
     const { cards } = brickLayout([50, 50], 240);
     expect(cards.map((card) => [card.left, card.top, card.width])).toEqual([
       [0, 0, 240],
-      [0, 82, 240],
+      [0, 98, 240],
     ]);
   });
 });
@@ -59,7 +59,7 @@ describe('planBands', () => {
     expect(planBands(7, 3, bandCapacity(1408))).toEqual({
       order: [0, 1, 2, 3, 4, 5, 6],
       margin: [null, null, null, null, null, null, null],
-      bandGap: 32,
+      bandGap: 48,
     });
   });
 

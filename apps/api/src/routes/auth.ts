@@ -71,9 +71,17 @@ const oauthStateSchema = z.object({
 });
 type OAuthState = z.infer<typeof oauthStateSchema>;
 
-/** Only same-origin paths – `//evil.com` or absolute URLs would make this an open redirect. */
+/**
+ * Only same-origin paths – `//evil.com` or absolute URLs would make this an open redirect. URL
+ * parsing drops tabs and newlines (`/\t/evil.com` → `//evil.com`), so control characters are out.
+ */
 export const safeReturnTo = (value: string | undefined, fallback = DEFAULT_RETURN_TO): string =>
-  value && value.startsWith('/') && !value.startsWith('//') && !value.includes('\\')
+  value &&
+  value.startsWith('/') &&
+  !value.startsWith('//') &&
+  !value.includes('\\') &&
+  // eslint-disable-next-line no-control-regex
+  !/[\u0000-\u001f\u007f]/.test(value)
     ? value
     : fallback;
 
@@ -119,8 +127,12 @@ export function authRoutes(deps: AppDeps) {
   const codeLimit = rateLimit({ limit: 30, windowMs: 15 * 60_000, clock: deps.clock });
 
   /** 303 after a POST, so the browser follows with a GET. */
-  const toWeb = (c: Context, path: string, status: 302 | 303 = 302) =>
-    c.redirect(new URL(path, config.webOrigin).toString(), status);
+  const toWeb = (c: Context, path: string, status: 302 | 303 = 302) => {
+    const url = new URL(path, config.webOrigin);
+    // Belt and braces against open redirects: never leave the web app's origin.
+    const target = url.origin === new URL(config.webOrigin).origin ? url : new URL('/', url.origin);
+    return c.redirect(target.toString(), status);
+  };
 
   /**
    * Back to the start page with the link prefilled and the reason, so A3 can explain it. A write

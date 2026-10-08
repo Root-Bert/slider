@@ -102,6 +102,16 @@ function useReloadMe() {
   return () => queryClient.invalidateQueries({ queryKey: queryKeys.me });
 }
 
+/** Joining or leaving a workspace changes the workspaces and the decks one can see ("Geteilt"). */
+function useReloadMembership() {
+  const queryClient = useQueryClient();
+  return () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.me }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.deckLists }),
+    ]);
+}
+
 export function useCreateWorkspace() {
   const reloadMe = useReloadMe();
   return useMutation({
@@ -119,7 +129,7 @@ export function useRenameWorkspace(workspaceId: string) {
 }
 
 export function useDeleteWorkspace(workspaceId: string) {
-  const reloadMe = useReloadMe();
+  const reloadMe = useReloadMembership();
   return useMutation({
     mutationFn: () => api.delete(`/workspaces/${workspaceId}`),
     onSuccess: () => reloadMe(),
@@ -151,12 +161,13 @@ export function useUpdateMemberRole(workspaceId: string) {
 /** Removes a member – or, with the caller's own id, leaves the workspace. */
 export function useRemoveMember(workspaceId: string) {
   const queryClient = useQueryClient();
-  const reloadMe = useReloadMe();
+  const reloadMembership = useReloadMembership();
   return useMutation({
     mutationFn: (userId: string) => api.delete(`/workspaces/${workspaceId}/members/${userId}`),
+    // Awaited: after leaving, the start page must not pick the workspace just left.
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: workspaceKeys.members(workspaceId) });
-      void reloadMe();
+      return reloadMembership();
     },
   });
 }
@@ -199,7 +210,7 @@ export function useRevokeWorkspaceInvite(workspaceId: string) {
 
 /** Accepts an e-mail invitation listed in `me.pendingInvites`. */
 export function useAcceptInvite() {
-  const reloadMe = useReloadMe();
+  const reloadMe = useReloadMembership();
   return useMutation({
     mutationFn: (inviteId: string) => api.post<JoinResult>(`/workspace-invites/${inviteId}/accept`),
     onSuccess: () => reloadMe(),
@@ -214,7 +225,7 @@ export const useJoinPreview = (token: string) =>
   });
 
 export function useJoinWorkspace(token: string) {
-  const reloadMe = useReloadMe();
+  const reloadMe = useReloadMembership();
   return useMutation({
     mutationFn: () => api.post<JoinResult>(`/join/${token}`),
     onSuccess: () => reloadMe(),

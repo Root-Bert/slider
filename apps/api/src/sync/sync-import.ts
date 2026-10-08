@@ -286,9 +286,13 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
         message: parseFailedMessage(error),
         at: now.toISOString(),
       },
+      // Only a file that cannot be parsed is skipped until it changes; anything else (storage,
+      // database) is transient and the next check tries the same file again.
       failedToken:
-        revision.sourceChangeToken ??
-        (revision.contentSha256 ? `sha256:${revision.contentSha256}` : null),
+        error instanceof PptxError
+          ? (revision.sourceChangeToken ??
+            (revision.contentSha256 ? `sha256:${revision.contentSha256}` : null))
+          : null,
       importingRevisionId: null,
       pending: null,
     }).catch(() => {});

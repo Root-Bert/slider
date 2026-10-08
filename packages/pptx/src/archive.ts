@@ -5,6 +5,14 @@ import { attr, children, parseXml, XmlSyntaxError, type XmlElement } from './xml
 /** Compound File Binary signature – Office stores password-protected OOXML files this way. */
 const OLE_SIGNATURE = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 
+/** Inflated size caps – a small upload must not unpack into gigabytes (zip bomb). */
+const MAX_TOTAL_UNCOMPRESSED = 2 * 1024 ** 3;
+const MAX_XML_PART = 100 * 1024 ** 2;
+
+/** Size the zip's central directory declares for an entry (JSZip keeps it internally). */
+const declaredSize = (entry: JSZip.JSZipObject): number =>
+  (entry as unknown as { _data?: { uncompressedSize?: number } })._data?.uncompressedSize ?? 0;
+
 /** Relationship type URIs used by the parser. */
 export const REL = {
   slide: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide',
@@ -49,6 +57,13 @@ export class Archive {
     } catch {
       throw new PptxError('not_pptx', 'The file is not a PowerPoint (.pptx) package.');
     }
+    let total = 0;
+    zip.forEach((_, entry) => {
+      total += declaredSize(entry);
+    });
+    if (total > MAX_TOTAL_UNCOMPRESSED) {
+      throw new PptxError('corrupt', 'The file unpacks to more data than Slider accepts.');
+    }
     return new Archive(zip);
   }
 
@@ -67,6 +82,9 @@ export class Archive {
     const entry = this.zip.file(path);
     let element: XmlElement | null = null;
     if (entry) {
+      if (declaredSize(entry) > MAX_XML_PART) {
+        throw new PptxError('corrupt', `${path} is too large.`);
+      }
       const source = (await entry.async('string')).replace(/^\uFEFF/, '');
       try {
         element = parseXml(source);

@@ -37,8 +37,13 @@ const GUTTER = 96;
 const MIN_GUTTER = 80;
 /** Connector entry x inside a card (next to the avatar). */
 const ENTRY_X = 26;
-const ROW_GAP = 24;
-const BAND_GAP = 32;
+/**
+ * Room below a card for its reply bar (shown on hover, 6px below, 36px tall): a bar reaching into
+ * the card below would catch the clicks meant for that card.
+ */
+const REPLY_BAR_ROOM = 48;
+const ROW_GAP = REPLY_BAR_ROOM;
+const BAND_GAP = REPLY_BAR_ROOM;
 /** Room above a band for lines turning in from the margin: 12px drop, 10px per extra line. */
 const JOG_DROP = 12;
 const JOG_PITCH = 10;

@@ -99,9 +99,10 @@ export function OneDrivePickerDialog({
 
     if (dialog.open) {
       const finish = () => {
+        // Show the button again first, so the dialog can hand focus back to it.
+        if (anchor) setStandIn(anchor, false);
         dialog.close();
         stop();
-        if (anchor) setStandIn(anchor, false);
         setMounted(false);
       };
       if (!motion) return finish();

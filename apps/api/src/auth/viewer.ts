@@ -44,14 +44,23 @@ export function optionalViewerMiddleware(deps: AppDeps) {
 
 export async function resolveViewer(c: Context, deps: AppDeps): Promise<Viewer | null> {
   const sessionId = await getSignedCookie(c, deps.config.secret, GUEST_COOKIE);
+  let linkError: ApiError | null = null;
   if (sessionId) {
-    const guest = await loadGuestViewer(deps, sessionId);
-    if (guest) return guest;
-    // Unknown session (e.g. after a reseed): drop the stale cookie.
+    try {
+      const guest = await loadGuestViewer(deps, sessionId);
+      if (guest) return guest;
+    } catch (error) {
+      if (!(error instanceof ApiError)) throw error;
+      linkError = error;
+    }
+    // Unknown, revoked or expired session: drop the stale cookie – a signed-in account behind
+    // it must not be locked out by a review link it once opened.
     clearGuestCookie(c);
   }
   const user = await loadSessionUser(c, deps);
   if (user) return userViewer(user);
+  // Only a pure guest learns why the link stopped working.
+  if (linkError) throw linkError;
   if (deps.config.auth.devLogin && deps.ownerId) return loadOwnerViewer(deps, deps.ownerId);
   return null;
 }

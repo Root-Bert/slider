@@ -159,6 +159,7 @@ export async function runPicker({
       if (!frame.contentWindow || event.source !== frame.contentWindow) return;
       const message = event.data as { type?: string; channelId?: string };
       if (message.type !== 'initialize' || message.channelId !== channelId) return;
+      port?.close();
       port = event.ports[0] ?? null;
       if (!port) return;
       port.addEventListener('message', (portEvent: MessageEvent<PickerMessage>) => {

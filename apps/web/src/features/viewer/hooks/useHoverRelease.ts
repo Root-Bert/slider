@@ -51,7 +51,10 @@ export function useHoverRelease() {
       if (!event.relatedTarget) dispatch({ type: 'threadHovered', threadId: null });
     };
 
-    const observer = new MutationObserver(schedule);
+    // Only removals can take the hovered element away from under the pointer.
+    const observer = new MutationObserver((records) => {
+      if (records.some((record) => record.removedNodes.length > 0)) schedule();
+    });
     observer.observe(document.body, { childList: true, subtree: true });
     document.addEventListener('pointerout', leave);
     return () => {
