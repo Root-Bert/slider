@@ -108,6 +108,7 @@ export const GapDivider = memo(function GapDivider({
             type="button"
             // The connector line to the gap comment's card starts below this marker.
             data-gap-marker
+            data-hover-thread={first.id}
             onClick={() => dispatch({ type: 'threadFocused', threadId: first.id, openPanel: true })}
             onPointerEnter={() => dispatch({ type: 'threadHovered', threadId: first.id })}
             onPointerLeave={() => dispatch({ type: 'threadHovered', threadId: null })}

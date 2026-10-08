@@ -340,6 +340,7 @@ const GapColumn = memo(function GapColumn({
       <button
         type="button"
         data-gap-bubble={key}
+        data-hover-thread={first.id}
         onClick={() => dispatch({ type: 'threadFocused', threadId: first.id, openPanel: true })}
         onPointerEnter={() => dispatch({ type: 'threadHovered', threadId: first.id })}
         onPointerLeave={() => dispatch({ type: 'threadHovered', threadId: null })}

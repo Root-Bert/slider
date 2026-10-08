@@ -136,7 +136,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
       >
         {marks.map((mark) =>
           mark.thread.root.strokes.filter(isPathStroke).map((stroke, index) => (
-            <g key={`${mark.thread.id}-${index}`}>
+            <g key={`${mark.thread.id}-${index}`} data-hover-thread={mark.thread.id}>
               <StrokePath
                 // Drawings always take the author's colour, like the connector line.
                 stroke={{ ...stroke, color: mark.thread.root.author.color }}
@@ -173,7 +173,11 @@ export const AnnotationLayer = memo(function AnnotationLayer({
         const area = (root.strokes.length > 0 && strokesBounds(root.strokes)) || mark.rect;
         const text = textAnnotation(root);
         return (
-          <div key={mark.thread.id} className={cn(composing && 'opacity-30')}>
+          <div
+            key={mark.thread.id}
+            data-hover-thread={mark.thread.id}
+            className={cn(composing && 'opacity-30')}
+          >
             {root.anchor.type === 'rect' && !isImplicitFrame(root) && (
               <RectFrame
                 rect={mark.rect}

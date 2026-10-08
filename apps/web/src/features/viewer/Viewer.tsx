@@ -9,6 +9,7 @@ import { SessionControls } from './controls/SessionControls';
 import { SlideCounter } from './controls/SlideCounter';
 import { ToolBar } from './controls/ToolBar';
 import { useFullscreen } from './hooks/useFullscreen';
+import { useHoverRelease } from './hooks/useHoverRelease';
 import { useSlideUrlSync } from './hooks/useSlideUrlSync';
 import { useViewerShortcuts } from './hooks/useViewerShortcuts';
 import { DeletedSlidesPanel } from './revisions/DeletedSlidesPanel';
@@ -39,6 +40,7 @@ export function Viewer({ onLeave }: { onLeave: () => void }) {
   // No button any more – F still toggles fullscreen (the hook is all it costs).
   useViewerShortcuts({ onToggleFullscreen: toggleFullscreen });
   useSlideUrlSync(activeSlideId);
+  useHoverRelease();
 
   return (
     <ViewerToastContext value={showToast}>

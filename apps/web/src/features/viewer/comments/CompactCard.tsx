@@ -33,6 +33,7 @@ export const CompactCard = memo(function CompactCard({
   return (
     <article
       data-comment-card={thread.id}
+      data-hover-thread={thread.id}
       onPointerEnter={() => dispatch({ type: 'threadHovered', threadId: thread.id })}
       onPointerLeave={() => dispatch({ type: 'threadHovered', threadId: null })}
       className={cn(
