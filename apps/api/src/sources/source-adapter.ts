@@ -1,6 +1,7 @@
 import type { ParsedShareLink, ShareLinkKind } from '@slider/shared';
 import type { Config } from '../config';
 import type { MicrosoftTokens } from '../auth/microsoft';
+import type { Logger } from '../logger';
 import { DirectUrlAdapter } from './direct-url';
 import {
   GraphClient,
@@ -70,6 +71,7 @@ export interface SourceAdapterDeps {
   config: Pick<Config, 'maxUploadBytes' | 'microsoft'>;
   tokens: Pick<MicrosoftTokens, 'getAccessToken'> &
     Partial<Pick<MicrosoftTokens, 'getScopedToken'>>;
+  log?: Logger;
   /** Injected for tests; defaults to the global `fetch` and DNS. */
   fetch?: FetchLike;
   lookup?: LookupAll;
@@ -80,6 +82,7 @@ export function createSourceAdapters({
   tokens,
   fetch = globalThis.fetch,
   lookup = dnsLookup,
+  log,
 }: SourceAdapterDeps): SourceAdapters {
   const http: SafeFetchOptions = { fetch, lookup, maxBytes: config.maxUploadBytes };
   const graph = new GraphClient({ http, tokens, microsoft: config.microsoft });
@@ -90,9 +93,11 @@ export function createSourceAdapters({
     url: direct,
     ...(tokens.getScopedToken
       ? {
-          picker: new OneDriveFilePicker(graph, {
-            getScopedToken: tokens.getScopedToken.bind(tokens),
-          }),
+          picker: new OneDriveFilePicker(
+            graph,
+            { getScopedToken: tokens.getScopedToken.bind(tokens) },
+            log,
+          ),
         }
       : {}),
   };

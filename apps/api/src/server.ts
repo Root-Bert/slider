@@ -71,7 +71,7 @@ async function main(): Promise<void> {
     );
   }
 
-  const sources = createSourceAdapters({ config, tokens: microsoft });
+  const sources = createSourceAdapters({ config, tokens: microsoft, log });
   // Slide images as PowerPoint draws them (BER-94): Office for linked decks, LibreOffice for
   // uploads and as fallback; without either, the in-house SVG preview.
   const officePdf = config.microsoft ? createOfficePdf(sources, log) : undefined;

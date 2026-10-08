@@ -1,6 +1,7 @@
 import type { FilePickerSession } from '@slider/shared';
 import { MicrosoftAuthError } from '../auth/microsoft';
 import { ApiError, badRequest } from '../http/errors';
+import { silentLogger, type Logger } from '../logger';
 import { microsoftLoginRequiredAt, sourceUnreachable } from './errors';
 import type { GraphClient } from './microsoft-graph';
 import type { SourceContext } from './source-adapter';
@@ -52,6 +53,7 @@ export class OneDriveFilePicker {
   constructor(
     private readonly graph: GraphClient,
     private readonly tokens: PickerTokens,
+    private readonly log: Logger = silentLogger,
   ) {}
 
   /** Which picker fits the signed-in Microsoft account, and where it lives. */
@@ -80,7 +82,7 @@ export class OneDriveFilePicker {
    */
   async token(context: SourceContext, resource: string): Promise<string> {
     const session = await this.session(context);
-    if (session.account === 'personal') return this.scoped(context, CONSUMER_SCOPE);
+    if (session.account === 'personal') return this.personalToken(context);
 
     const url = parseUrl(resource);
     if (url?.origin === GRAPH_RESOURCE) {
@@ -93,12 +95,33 @@ export class OneDriveFilePicker {
     return this.scoped(context, `${url.origin}/.default`);
   }
 
-  private async scoped(context: SourceContext, scope: string): Promise<string> {
+  /**
+   * Microsoft documents `OneDrive.ReadOnly` for the consumer picker. Where the identity platform
+   * refuses that scope for this app (`invalid_scope`), the Graph read token is the fallback.
+   */
+  private async personalToken(context: SourceContext): Promise<string> {
+    try {
+      return await this.scoped(context, CONSUMER_SCOPE, { rethrowInvalidScope: true });
+    } catch (error) {
+      if (!(error instanceof MicrosoftAuthError) || error.error !== 'invalid_scope') throw error;
+      return withPickerLogin(() => this.graph.requireToken(context, ''));
+    }
+  }
+
+  private async scoped(
+    context: SourceContext,
+    scope: string,
+    { rethrowInvalidScope = false } = {},
+  ): Promise<string> {
     let token: string | null;
     try {
       token = await this.tokens.getScopedToken(context.userId, scope);
     } catch (error) {
       if (!(error instanceof MicrosoftAuthError)) throw error;
+      this.log.warn(
+        `OneDrive picker: Microsoft refused scope "${scope}" for user ${context.userId}: ${error.message}`,
+      );
+      if (rethrowInvalidScope && error.error === 'invalid_scope') throw error;
       if (error.kind === 'admin_consent') {
         throw new ApiError(403, 'microsoft_consent_required', PICKER_CONSENT_MESSAGE);
       }

@@ -152,6 +152,20 @@ describe('POST /api/microsoft/file-picker/token', () => {
     expect(await res.json()).toEqual({ token: 'token for OneDrive.ReadOnly' });
   });
 
+  it('falls back to the Graph read token when OneDrive.ReadOnly is an invalid scope', async () => {
+    const { ctx } = await pickerContext({
+      drive: PERSONAL,
+      refuse: {
+        scope: 'OneDrive.ReadOnly',
+        error: 'invalid_scope',
+        description: 'AADSTS70011: The provided value for the input parameter scope is not valid.',
+      },
+    });
+    const res = await tokenFor(ctx, 'https://onedrive.live.com/picker');
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { token: string }).token).toMatch(/Files\.Read\.All/);
+  });
+
   it('explains missing SharePoint permissions and keeps the sign-in', async () => {
     const { ctx } = await pickerContext({
       refuse: {
