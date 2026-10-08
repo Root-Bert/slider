@@ -238,7 +238,7 @@ export type CreateWorkspaceInviteInput = z.input<typeof createWorkspaceInviteInp
 /** `POST /workspaces/:id/invites` – the only time the plain link is visible. */
 export const createdWorkspaceInviteSchema = z.object({
   invite: workspaceInviteSchema,
-  /** `${WEB_ORIGIN}/join/<token>` */
+  /** `${SLIDER_URL}/join/<token>` */
   url: z.string(),
   /** An e-mail went out (only for e-mail invites with SMTP configured). */
   emailSent: z.boolean(),
