@@ -1,0 +1,20 @@
+# Slider behind the shared Caddy of deploy/proxy instead of its own (several apps per server).
+# Enable it in deploy/.env, then `docker compose up -d` picks both files:
+#
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.shared-proxy.yml
+#
+# Switching an existing install: `docker compose rm -sf caddy` first, so port 80/443 are free.
+
+services:
+  # The built-in Caddy only starts with this profile, i.e. never.
+  caddy:
+    profiles: ['builtin-caddy']
+
+  slider:
+    # "web": reachable for the shared Caddy as slider:8787; Postgres stays on the private network.
+    networks: [default, web]
+
+networks:
+  web:
+    name: web
+    external: true

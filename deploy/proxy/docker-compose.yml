@@ -1,0 +1,38 @@
+# One Caddy for several apps on the same server (optional; Slider alone needs none of this).
+# Every app joins the shared network "web"; each gets a file in sites/ that maps its domain.
+#
+#   cd deploy/proxy
+#   cp .env.example .env              # TRUSTED_PROXIES behind Cloudflare, else leave as is
+#   cp examples/slider.caddy sites/   # set the domain in it
+#   docker compose up -d
+#   # Slider: COMPOSE_FILE=docker-compose.yml:docker-compose.shared-proxy.yml in deploy/.env
+#
+# New site or changed file in sites/: docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+# Guide: docs/self-hosting.md → "Mehrere Apps auf einem Server".
+
+name: proxy
+
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./sites:/etc/caddy/sites:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  caddy-data:
+  caddy-config:
+
+networks:
+  default:
+    # Fixed name: the apps' compose files join it as an external network.
+    name: web

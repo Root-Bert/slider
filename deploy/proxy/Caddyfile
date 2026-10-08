@@ -1,0 +1,14 @@
+{
+	servers {
+		# Behind Cloudflare (orange cloud) every request arrives from a Cloudflare edge address.
+		# Trusting those ranges lets {client_ip} be the visitor (CF-Connecting-IP) instead, so the
+		# apps' rate limits work per person. Without Cloudflare, TRUSTED_PROXIES stays empty and
+		# only private ranges are trusted. See docs/self-hosting.md, "Cloudflare".
+		trusted_proxies static private_ranges {$TRUSTED_PROXIES}
+		client_ip_headers CF-Connecting-IP X-Forwarded-For
+	}
+}
+
+# One file per app, e.g. sites/slider.caddy (templates in examples/). Automatic HTTPS for every
+# domain in them: DNS must point at this server and ports 80 + 443 must be open.
+import /etc/caddy/sites/*.caddy

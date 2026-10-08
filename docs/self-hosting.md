@@ -352,6 +352,50 @@ PowerPoints bis 200 MB. Mit orange Wolke deshalb in `deploy/.env` `MAX_UPLOAD_BY
 (90 MB) und `MAX_MEDIA_BYTES=94371840` setzen, damit Slider zu große Dateien selbst mit einer
 klaren Meldung ablehnt statt eines Cloudflare-Fehlers.
 
+## Mehrere Apps auf einem Server
+
+Normalerweise bringt `deploy/docker-compose.yml` einen eigenen Caddy mit, der nur Slider
+ausliefert. Sollen auf demselben Server weitere Apps laufen, übernimmt ein **gemeinsamer Caddy**
+aus `deploy/proxy/` die Ports 80/443 für alle; jede App hängt sich an das Docker-Netz `web` und
+bekommt eine Datei in `deploy/proxy/sites/`.
+
+```
+Internet ──443──▶ Caddy (deploy/proxy)  ── Netz „web“ ──▶ slider:8787
+                                                       ├─▶ app2:3000
+                                                       └─▶ authentik-server:9000
+```
+
+1. **Proxy starten:**
+   ```bash
+   cd deploy/proxy
+   cp .env.example .env              # hinter Cloudflare: TRUSTED_PROXIES einkommentieren
+   cp examples/slider.caddy sites/   # Domain darin eintragen
+   docker compose up -d
+   ```
+2. **Slider umhängen:** in `deploy/.env` ergänzen
+   `COMPOSE_FILE=docker-compose.yml:docker-compose.shared-proxy.yml`. Damit startet der eigene
+   Caddy nicht mehr, und Slider hängt zusätzlich im Netz `web` (Postgres bleibt privat). Bei einer
+   bestehenden Installation zuerst den alten Caddy entfernen, damit die Ports frei werden:
+   ```bash
+   cd deploy
+   docker compose rm -sf caddy
+   docker compose up -d
+   ```
+   Caddy holt die Zertifikate dabei einmal neu.
+3. **Weitere App:** deren `docker-compose.yml` hängt den Dienst ins Netz `web`
+   (Vorlage: `deploy/proxy/examples/app.caddy`), dann `examples/app.caddy` nach `sites/` kopieren,
+   Domain und `dienst:port` eintragen und neu laden:
+   ```bash
+   docker compose -f deploy/proxy/docker-compose.yml exec caddy caddy reload --config /etc/caddy/Caddyfile
+   ```
+   Der Dienstname muss im Netz `web` eindeutig sein (also nicht `app`, `web` oder `db`). Datenbanken
+   der Apps gehören nicht ins Netz `web`.
+4. **Authentik** (falls genutzt): in `deploy/authentik/.env` `PROXY_NETWORK=web` setzen, die Domain
+   in `authentik.caddy` eintragen und die Datei nach `deploy/proxy/sites/` kopieren.
+
+Tipp: Mit mehreren Apps lohnt ein RAM-Limit für Slider (LibreOffice braucht beim Umwandeln kurz
+einige hundert MB), z. B. in `docker-compose.shared-proxy.yml` unter `slider:` `mem_limit: 1g`.
+
 ## Backups
 
 Wichtig sind **zwei** Dinge: die Datenbank und das Volume `/data`.

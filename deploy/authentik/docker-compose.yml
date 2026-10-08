@@ -5,6 +5,8 @@
 #   cp .env.example .env    # fill in
 #   docker compose up -d    # after deploy/docker-compose.yml is up (shared network "slider")
 #   cp authentik.caddy ../sites/ && (cd .. && docker compose restart caddy)
+# With the shared Caddy (deploy/proxy): PROXY_NETWORK=web in .env, the domain written into
+# authentik.caddy, copied to ../proxy/sites/ instead.
 #
 # Setup guide: docs/self-hosting.md → "Authentik".
 
@@ -63,5 +65,6 @@ volumes:
 
 networks:
   default:
-    name: slider
+    # Slider's own network; with the shared Caddy of deploy/proxy set PROXY_NETWORK=web in .env.
+    name: ${PROXY_NETWORK:-slider}
     external: true
