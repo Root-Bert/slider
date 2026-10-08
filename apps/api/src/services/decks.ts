@@ -226,6 +226,7 @@ export async function createDeckFromFile(
 export async function deleteDeck(deps: AppDeps, deckId: string): Promise<void> {
   await deps.db.delete(decks).where(eq(decks.id, deckId));
   await deps.storage.deletePrefix(blobKeys.deckPrefix(deckId));
+  await deps.media.deletePrefix(blobKeys.deckPrefix(deckId));
 }
 
 export function titleFromFileName(fileName: string): string {

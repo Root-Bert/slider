@@ -32,6 +32,7 @@ export function pendingReply(
     body: input.body,
     anchor: input.anchor,
     strokes: [],
+    media: null,
     status: 'open',
     resolvedBy: null,
     resolvedAt: null,

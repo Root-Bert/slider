@@ -1,12 +1,7 @@
 import { memo, type CSSProperties } from 'react';
 import { accentColor } from '@/lib/accent';
 import { Avatar, cn, Icon } from '@/ui';
-import {
-  isRemovedInPowerPoint,
-  isStrokeOnly,
-  strokeOnlyLabel,
-  type Thread,
-} from '../lib/comment-selectors';
+import { commentPreview, isRemovedInPowerPoint, type Thread } from '../lib/comment-selectors';
 import { useViewerDispatch } from '../state/viewer-state';
 import type { CardEmphasis } from './CommentCard';
 
@@ -27,7 +22,7 @@ export const CompactCard = memo(function CompactCard({
   const dispatch = useViewerDispatch();
   const { root, replies } = thread;
   const highlighted = emphasis === 'focused' || emphasis === 'hovered';
-  const text = isStrokeOnly(root) ? strokeOnlyLabel(root) : root.body;
+  const text = commentPreview(root);
   const removed = isRemovedInPowerPoint(root);
   const flagged = changedSince && root.status === 'open';
   const notes = [
@@ -51,7 +46,7 @@ export const CompactCard = memo(function CompactCard({
         type="button"
         onClick={() => dispatch({ type: 'threadFocused', threadId: thread.id, openPanel: true })}
         aria-label={`Thread von ${root.author.name} öffnen`}
-        title={[root.body, ...notes].filter(Boolean).join(' · ') || undefined}
+        title={[text, ...notes].filter(Boolean).join(' · ') || undefined}
         className={cn(
           'glass flex w-full flex-col gap-1 rounded-panel p-2 text-left transition-shadow duration-200',
           highlighted &&

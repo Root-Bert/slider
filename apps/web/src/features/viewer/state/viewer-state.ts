@@ -1,4 +1,4 @@
-import type { AccentColor, Anchor, PathStrokeTool, Rect, Stroke } from '@slider/shared';
+import type { AccentColor, Anchor, MediaKind, PathStrokeTool, Rect, Stroke } from '@slider/shared';
 import { createContext, useContext, type Dispatch } from 'react';
 import type { StatusFilter } from '../lib/comment-selectors';
 import { strokesBounds } from '../lib/stroke-path';
@@ -43,6 +43,8 @@ export interface Draft {
   undone: Stroke[];
   /** Text written on the slide; while present, its box is the anchor. */
   textBox: TextBoxDraft | null;
+  /** Started from the tool bar's mic or camera: the composer opens recording (BER-116). */
+  recordKind?: MediaKind;
 }
 
 export interface ViewerState {
@@ -78,6 +80,8 @@ export type ViewerAction =
   | { type: 'anchorPlaced'; slideId: string; anchor: Anchor }
   | { type: 'strokeAdded'; slideId: string; stroke: Stroke }
   | { type: 'gapDraftStarted'; afterSlideId: string | null; beforeSlideId: string | null }
+  /** Mic or camera in the tool bar: a voice/video comment on the slide (BER-116). */
+  | { type: 'mediaDraftStarted'; slideId: string; kind: MediaKind }
   /** A text box was clicked or dragged open on a slide; on the same slide it keeps its text. */
   | {
       type: 'textBoxPlaced';
@@ -233,6 +237,21 @@ function draftReducer(draft: Draft | null, action: ViewerAction): Draft | null {
         undone: [],
         textBox: null,
       };
+    case 'mediaDraftStarted': {
+      // A mark or drawing already on that slide stays; otherwise the comment is about the slide.
+      const base: Draft =
+        draft?.slideId === action.slideId
+          ? draft
+          : {
+              slideId: action.slideId,
+              anchor: { type: 'slide' },
+              anchorFromStrokes: false,
+              strokes: [],
+              undone: [],
+              textBox: null,
+            };
+      return { ...base, recordKind: action.kind };
+    }
     case 'undo': {
       const last = draft?.strokes.at(-1);
       if (!draft || !last) return draft;
@@ -279,6 +298,7 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
     case 'strokeAdded':
     case 'gapDraftStarted':
     case 'textBoxPlaced':
+    case 'mediaDraftStarted':
       // Composing a new comment takes over the focus.
       return { ...next, focusedThreadId: null, threadPanelOpen: false };
     case 'draftSubmitted':

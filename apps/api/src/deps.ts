@@ -13,6 +13,8 @@ export interface AppDeps {
   config: Config;
   db: Database;
   storage: BlobStorage;
+  /** Voice and video recordings (BER-116), a store of their own (`MEDIA_DIR`, later R2). */
+  media: BlobStorage;
   queue: JobQueue<ImportJob>;
   sources: SourceAdapters;
   /** Microsoft sign-in tokens per user (BER-92). */

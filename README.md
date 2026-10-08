@@ -13,7 +13,8 @@ the owner of a linked deck, add a slide with the ⊕ between two slides.
 > guest links work end to end on your machine, and so does importing by link (direct `.pptx`
 > URLs out of the box, OneDrive/SharePoint after a one-time Microsoft app registration – see
 > [Link import](#link-import)). Linked decks update themselves when the PowerPoint changes – see
-> [Automatic updates](#automatic-updates). Media comments are next – see [Roadmap](#roadmap).
+> [Automatic updates](#automatic-updates). Voice and video comments are recorded, compressed and
+> transcribed on the device – see [Voice and video comments](#voice-and-video-comments).
 
 ## Quick start
 
@@ -178,6 +179,32 @@ For the web app: `GET /api/decks/:id/status` is a cheap poll (`revisionNumber`, 
 returns per-slide changes plus deleted slides with their comments, and every slide carries
 `change`.
 
+## Voice and video comments
+
+Mic and camera in the tool bar (or the Audio/Video tabs of a new comment, or the icons beside any
+reply field) record a comment of up to five minutes (BER-116).
+
+- **Compressed on the device.** `MediaRecorder` records Opus at 24 kbit/s for voice (~180 KB per
+  minute) and VP9 480p at 450 kbit/s for video (~3.5 MB per minute); Safari records MP4. The API
+  stores the bytes as they are – no transcoding on the server.
+- **Transcribed on the device.** After sending, the recording browser runs Whisper
+  (`onnx-community/whisper-small`, ~250 MB, downloaded once from Hugging Face and then cached)
+  in a Web Worker – WebGPU where available, else WebAssembly – detects the spoken language and
+  sends only the text (`PUT /api/media/:id/transcript`). The audio never goes to a speech
+  service. If the tab was closed before it finished, the author sees "Transkript erstellen".
+  Another model can be set with `VITE_WHISPER_MODEL` in `apps/web/.env` (e.g.
+  `onnx-community/whisper-base`, ~80 MB, weaker in German).
+- **Stored in a folder of its own.** `MEDIA_DIR` (default `apps/api/.data/media`) can point at
+  any folder, e.g. a synced one; keys are `decks/<deckId>/media/<uuid>.<webm|mp4|ogg>`, so
+  deleting a comment or deck deletes its recordings. The store is the same `BlobStorage`
+  interface as the slide files – Cloudflare R2 needs only another adapter.
+- **5 GB per account.** `MEDIA_QUOTA_BYTES` (default 5 GB) counts every recording in a deck
+  owner's decks, guests' recordings included, so a guest link cannot be used to fill the disk;
+  `MAX_MEDIA_BYTES` (default 100 MB) limits one recording. The recorder shows the usage.
+- **Served with a permission check.** `GET /api/media/:id` checks access to the deck on every
+  request and supports `Range` (Safari needs it to play at all). The type is taken from the
+  file's signature (WebM/MP4/Ogg), never from the upload.
+
 ## Roadmap
 
 Tracked in Linear (project _Slider_). This prototype covers:
@@ -201,7 +228,7 @@ Tracked in Linear (project _Slider_). This prototype covers:
 | BER-88/92       | Import by link: OneDrive, SharePoint, direct `.pptx` URL      | ✅ (PDF render via Graph pending)                     |
 | BER-107/108/114 | Change detection, slide matching, PPT comment re-import       | ✅ API (polling, debounce, diff, manual sync)         |
 | BER-109–111     | Version UI: change badges, deleted slides, version history    | ⏳ API ready, UI pending                              |
-| BER-116         | Voice and video comments                                      | ⏳                                                    |
+| BER-116         | Voice and video comments, on-device transcription             | ✅                                                    |
 
 ## Contributing
 

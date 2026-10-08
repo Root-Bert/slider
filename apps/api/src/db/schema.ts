@@ -18,6 +18,7 @@ import type {
   CommentStatus,
   DeckSource,
   ImportState,
+  MediaKind,
   ReviewLinkRole,
   RevisionStatus,
   RevisionTrigger,
@@ -26,6 +27,7 @@ import type {
   Stroke,
   SyncErrorCode,
   SyncSummary,
+  TranscriptStatus,
 } from '@slider/shared';
 
 /**
@@ -218,6 +220,39 @@ export const comments = pgTable(
   ],
 );
 
+/** A voice or video recording attached to a comment (BER-116). The bytes live in the media store. */
+export const media = pgTable(
+  'media',
+  {
+    id: text('id').primaryKey(),
+    deckId: text('deck_id')
+      .notNull()
+      .references(() => decks.id, { onDelete: 'cascade' }),
+    commentId: text('comment_id')
+      .notNull()
+      .unique()
+      .references(() => comments.id, { onDelete: 'cascade' }),
+    /** The deck owner at upload time – the storage quota is counted per owner. */
+    ownerId: text('owner_id').notNull(),
+    /** `Author.id` of whoever recorded it; only they may set the transcript. */
+    uploaderId: text('uploader_id').notNull(),
+    kind: text('kind').$type<MediaKind>().notNull(),
+    mimeType: text('mime_type').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    durationMs: integer('duration_ms').notNull(),
+    peaks: jsonb('peaks').$type<number[]>().notNull().default([]),
+    storageKey: text('storage_key').notNull(),
+    sha256: text('sha256').notNull(),
+    transcript: text('transcript'),
+    transcriptStatus: text('transcript_status')
+      .$type<TranscriptStatus>()
+      .notNull()
+      .default('pending'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('media_owner_idx').on(t.ownerId), index('media_deck_idx').on(t.deckId)],
+);
+
 export const reviewLinks = pgTable(
   'review_links',
   {
@@ -255,5 +290,6 @@ export type RevisionRow = typeof revisions.$inferSelect;
 export type SlideVersionRow = typeof slideVersions.$inferSelect;
 export type CommentRow = typeof comments.$inferSelect;
 export type NewCommentRow = typeof comments.$inferInsert;
+export type MediaRow = typeof media.$inferSelect;
 export type ReviewLinkRow = typeof reviewLinks.$inferSelect;
 export type GuestSessionRow = typeof guestSessions.$inferSelect;

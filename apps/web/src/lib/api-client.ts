@@ -66,6 +66,7 @@ export const api = {
   post: <T>(path: string, body?: JsonBody | FormData) =>
     apiRequest<T>(path, { method: 'POST', body }),
   patch: <T>(path: string, body: JsonBody) => apiRequest<T>(path, { method: 'PATCH', body }),
+  put: <T>(path: string, body: JsonBody) => apiRequest<T>(path, { method: 'PUT', body }),
   delete: (path: string) => apiRequest<void>(path, { method: 'DELETE' }),
 };
 

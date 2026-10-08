@@ -45,6 +45,7 @@ export const testConfig = (overrides: Partial<Config> = {}): Config => ({
   microsoft: null,
   // Polling is driven by hand in tests (`SyncScheduler.tick`); the debounce default applies.
   sync: { pollIntervalMs: 0, debounceMs: 60_000 },
+  media: { dir: '/unused', quotaBytes: 5 * 1024 ** 3, maxBytes: 1024 * 1024 },
   ...overrides,
 });
 
@@ -135,6 +136,7 @@ export async function createTestContext(
   const { db, close } = await openDatabase();
   const blobsDir = await mkdtemp(path.join(tmpdir(), 'slider-api-test-'));
   const storage = new FsBlobStorage(blobsDir);
+  const media = new FsBlobStorage(path.join(blobsDir, 'media-store'));
   const clock = new TestClock();
   const owner = await upsertUser(db, {
     name: 'Robert Hofmann',
@@ -183,6 +185,7 @@ export async function createTestContext(
     config,
     db,
     storage,
+    media,
     queue,
     sources,
     microsoft,

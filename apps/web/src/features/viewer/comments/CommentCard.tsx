@@ -12,18 +12,13 @@ import { accentColor } from '@/lib/accent';
 import { isPendingComment } from '@/lib/comment-cache';
 import { pluralize } from '@/lib/format';
 import { AvatarStack, cn, Icon } from '@/ui';
-import {
-  isRemovedInPowerPoint,
-  isStrokeOnly,
-  strokeOnlyLabel,
-  type Thread,
-} from '../lib/comment-selectors';
+import { isRemovedInPowerPoint, type Thread } from '../lib/comment-selectors';
 import { AutosizeTextarea } from '../components/AutosizeTextarea';
-import { MediaSoonButtons } from '../components/MediaTabs';
+import { MediaReplyButtons } from '../components/MediaTabs';
 import { useReplyDraft } from '../hooks/useReplyDraft';
 import { useViewerDispatch } from '../state/viewer-state';
 import { AuthorLine } from './AuthorLine';
-import { CommentBody } from './CommentBody';
+import { CommentContent } from './CommentContent';
 import { ResolveButton } from './ResolveButton';
 import { ChangedSinceCommentNote, RemovedInPowerPointNote } from './RevisionNotes';
 
@@ -135,14 +130,10 @@ export const CommentCard = memo(function CommentCard({
         />
         {location && <p className="text-[11px] font-medium text-fg-subtle">{location}</p>}
         {removed && <RemovedInPowerPointNote />}
-        {isStrokeOnly(root) ? (
-          <p className="text-[13px] text-fg-muted">{strokeOnlyLabel(root)}</p>
-        ) : (
-          <CommentBody
-            body={root.body}
-            className={cn(removed && 'text-fg-subtle line-through decoration-white/30')}
-          />
-        )}
+        <CommentContent
+          comment={root}
+          bodyClassName={cn(removed && 'text-fg-subtle line-through decoration-white/30')}
+        />
         {changedSince && !done && (
           <ChangedSinceCommentNote comment={root} deckId={deckId} canResolve={canResolve} />
         )}
@@ -236,11 +227,7 @@ function InlineReply({ reply }: { reply: Comment }) {
       )}
     >
       <AuthorLine comment={reply} />
-      {isStrokeOnly(reply) ? (
-        <p className="text-[13px] text-fg-muted">{strokeOnlyLabel(reply)}</p>
-      ) : (
-        <CommentBody body={reply.body} className="text-fg-muted" />
-      )}
+      <CommentContent comment={reply} bodyClassName="text-fg-muted" />
     </article>
   );
 }
@@ -248,7 +235,7 @@ function InlineReply({ reply }: { reply: Comment }) {
 /**
  * "Antworten mit …" field under a hovered or focused card (Figma B1 105:277): typing is the text
  * reply and expands the thread inline (B3), so sent replies show up between card and field.
- * Audio/video/image follow with BER-116, ✓ resolves. It overlays the cards below instead of
+ * Mic and camera record a voice or video reply (BER-116), ✓ resolves. It overlays the cards below instead of
  * pushing them, so the layout and the connector lines stay put; a transparent bridge keeps the
  * hover alive across the gap. A draft keeps it open.
  */
@@ -326,7 +313,7 @@ function ReplyBar({
           <Icon name="arrowUpward" size={18} />
         </button>
       )}
-      <MediaSoonButtons />
+      <MediaReplyButtons root={root} deckId={deckId} />
       <span aria-hidden className="mx-0.5 mb-1.5 h-4 w-px shrink-0 bg-white/15" />
       <ResolveButton comment={root} deckId={deckId} />
     </form>

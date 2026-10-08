@@ -4,7 +4,7 @@ import type { Executor } from '../db/client';
 import { comments, revisions, slideVersions, type DeckRow } from '../db/schema';
 import { notFound } from '../http/errors';
 import { fileUrl } from '../storage/blob-storage';
-import { toCommentDto } from './comments';
+import { withMedia } from './comments';
 import { toDeckSync } from './deck-sync';
 
 /** Revisions of a deck, newest first (BER-107). Pending ones are being imported right now. */
@@ -140,6 +140,7 @@ async function loadDeletedSlides(
   for (const version of versions) {
     if (!lastVersion.has(version.slideId)) lastVersion.set(version.slideId, version);
   }
+  const commentDtos = await withMedia(db, commentRows);
   const result: DeletedSlide[] = [];
   for (const [slideId, entry] of entries) {
     const version = lastVersion.get(slideId);
@@ -153,7 +154,7 @@ async function loadDeletedSlides(
       aspectRatio: version.aspectRatio,
       lastRevisionNumber: version.revisionNumber,
       confidence: entry?.confidence ?? 1,
-      comments: commentRows.filter((row) => row.slideId === slideId).map(toCommentDto),
+      comments: commentDtos.filter((comment) => comment.slideId === slideId),
     });
   }
   return result.sort((a, b) => a.previousPosition - b.previousPosition);

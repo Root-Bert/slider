@@ -4,6 +4,8 @@ import {
   anchorSchema,
   commentStatusSchema,
   reviewLinkRoleSchema,
+  MAX_MEDIA_PEAKS,
+  mediaKindSchema,
   strokeSchema,
   type Comment,
   type Deck,
@@ -37,6 +39,10 @@ import {
  * | POST   | /decks/:deckId/comments                | CreateCommentInput         | Comment (201)         |
  * | PATCH  | /comments/:commentId                   | UpdateCommentInput         | Comment               |
  * | DELETE | /comments/:commentId                   |                            | 204                   |
+ * | POST   | /decks/:deckId/media-comments (multipart `file` + `comment` JSON) | CreateMediaCommentInput | Comment (201) |
+ * | GET    | /decks/:deckId/media-usage             |                            | MediaUsage            |
+ * | GET    | /media/:mediaId                        | (Range supported)          | audio/video bytes     |
+ * | PUT    | /media/:mediaId/transcript             | UpdateTranscriptInput      | Comment               |
  * | GET    | /decks/:deckId/review-links            |                            | ReviewLink[]          |
  * | POST   | /decks/:deckId/review-links            | CreateReviewLinkInput      | ReviewLink (201)      |
  * | DELETE | /review-links/:linkId                  |                            | 204 (revokes)         |
@@ -66,6 +72,8 @@ export const ERROR_CODES = [
   'not_a_powerpoint',
   'file_too_large',
   'conflict',
+  'quota_exceeded',
+  'unsupported_media',
   'link_revoked',
   'link_expired',
   'rate_limited',
@@ -109,6 +117,53 @@ export const createCommentInputSchema = z.object({
   strokes: z.array(strokeSchema).max(50).default([]),
 });
 export type CreateCommentInput = z.input<typeof createCommentInputSchema>;
+
+// ── Voice and video comments (BER-116) ─────────────────────────────────────
+
+/** Recordings stop by themselves after five minutes. */
+export const MAX_MEDIA_DURATION_MS = 5 * 60_000;
+/** Per recording. Five minutes of the recorder's video settings are ~20 MB; this leaves room. */
+export const MAX_MEDIA_BYTES = 100 * 1024 * 1024;
+/** Storage per account (the deck owner – guests' recordings count towards the deck's owner). */
+export const DEFAULT_MEDIA_QUOTA_BYTES = 5 * 1024 ** 3;
+
+/** What browsers' MediaRecorder produces: WebM/Opus (Chrome, Firefox), MP4/AAC (Safari), Ogg. */
+export const MEDIA_MIME_TYPES = {
+  audio: ['audio/webm', 'audio/ogg', 'audio/mp4'],
+  video: ['video/webm', 'video/mp4'],
+} as const;
+
+/** `audio/webm;codecs=opus` → `audio/webm`. */
+export const baseMimeType = (mimeType: string) => mimeType.split(';')[0]!.trim().toLowerCase();
+
+export const isAllowedMediaMimeType = (kind: 'audio' | 'video', mimeType: string) =>
+  (MEDIA_MIME_TYPES[kind] as readonly string[]).includes(baseMimeType(mimeType));
+
+/** The `comment` field of the multipart upload; the recording itself goes in `file`. */
+export const createMediaCommentInputSchema = createCommentInputSchema.extend({
+  media: z.object({
+    kind: mediaKindSchema,
+    // A little slack: the recorder stops on a timer, the container may report a few ms more.
+    durationMs: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_MEDIA_DURATION_MS + 5_000),
+    peaks: z.array(z.number().min(0).max(1)).max(MAX_MEDIA_PEAKS).default([]),
+  }),
+});
+export type CreateMediaCommentInput = z.input<typeof createMediaCommentInputSchema>;
+
+export const updateTranscriptInputSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('done'), transcript: z.string().trim().max(50_000) }),
+  z.object({ status: z.literal('failed') }),
+]);
+export type UpdateTranscriptInput = z.infer<typeof updateTranscriptInputSchema>;
+
+export interface MediaUsage {
+  usedBytes: number;
+  limitBytes: number;
+}
 
 export const updateCommentInputSchema = z
   .object({ body: z.string().trim().min(1).max(10_000), status: commentStatusSchema })

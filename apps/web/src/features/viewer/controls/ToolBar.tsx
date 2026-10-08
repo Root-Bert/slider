@@ -1,10 +1,10 @@
+import type { MediaKind } from '@slider/shared';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { cn, GlassPanel, Icon, IconButton } from '@/ui';
 import { useViewerData } from '../state/viewer-data';
 import { isPenTool, useViewerDispatch, useViewerState } from '../state/viewer-state';
 import { ToolOptions } from './ToolOptions';
 
-const COMING_SOON = 'Sprach- und Videokommentare folgen bald';
 /** Room the tool options pill needs next to the tool bar (its height plus the gap). */
 const OPTIONS_ROOM = 48;
 
@@ -75,9 +75,12 @@ export function ToolBar({ className }: { className?: string }) {
 }
 
 function ToolButtons() {
-  const { tool, lastPenTool } = useViewerState();
+  const { tool, lastPenTool, activeSlideId, draft } = useViewerState();
   const dispatch = useViewerDispatch();
   const drawing = isPenTool(tool);
+  const record = (kind: MediaKind) => {
+    if (activeSlideId) dispatch({ type: 'mediaDraftStarted', slideId: activeSlideId, kind });
+  };
 
   return (
     <GlassPanel role="toolbar" aria-label="Werkzeuge" className="flex items-center gap-1 p-1">
@@ -90,10 +93,10 @@ function ToolButtons() {
       />
       <IconButton
         icon="mic"
-        label={COMING_SOON}
+        label="Sprachkommentar"
         size="sm"
-        aria-disabled
-        className="cursor-not-allowed opacity-40"
+        active={draft?.recordKind === 'audio'}
+        onClick={() => record('audio')}
       />
       <IconButton
         icon="formatShapes"
@@ -104,10 +107,10 @@ function ToolButtons() {
       />
       <IconButton
         icon="cameraVideo"
-        label={COMING_SOON}
+        label="Videokommentar"
         size="sm"
-        aria-disabled
-        className="cursor-not-allowed opacity-40"
+        active={draft?.recordKind === 'video'}
+        onClick={() => record('video')}
       />
     </GlassPanel>
   );

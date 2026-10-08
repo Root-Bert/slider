@@ -323,6 +323,30 @@ export const strokeOnlyLabel = (comment: Pick<Comment, 'strokes'>) => {
   return text ? `„${text.text}“` : '✏️ Markierung';
 };
 
+const MEDIA_ICONS = { audio: '🎙', video: '🎬' } as const;
+const MEDIA_NOUNS = { audio: 'Sprachkommentar', video: 'Videokommentar' } as const;
+
+const formatClock = (ms: number) => {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+};
+
+/**
+ * One line of text for a comment in tight spots (compact cards, tooltips): the body, else the
+ * transcript or "🎙 Sprachkommentar · 0:42" for recordings, else the drawing label.
+ */
+export function commentPreview(comment: Comment): string {
+  if (comment.body.trim()) return comment.body;
+  const { media } = comment;
+  if (media) {
+    const icon = MEDIA_ICONS[media.kind];
+    return media.transcript
+      ? `${icon} ${media.transcript}`
+      : `${icon} ${MEDIA_NOUNS[media.kind]} · ${formatClock(media.durationMs)}`;
+  }
+  return isStrokeOnly(comment) ? strokeOnlyLabel(comment) : comment.body;
+}
+
 /** An imported PowerPoint comment that was deleted in the file – kept, but shown muted (BER-114). */
 export const isRemovedInPowerPoint = (comment: Pick<Comment, 'sourceStatus'>) =>
   comment.sourceStatus === 'removed_in_pptx';

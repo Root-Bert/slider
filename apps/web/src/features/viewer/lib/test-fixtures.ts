@@ -25,6 +25,7 @@ export function comment(overrides: Partial<Comment> = {}): Comment {
     body: 'Text',
     anchor: { type: 'point', point: { x: 0.5, y: 0.5 }, shapeRef: null },
     strokes: [],
+    media: null,
     status: 'open',
     resolvedBy: null,
     resolvedAt: null,

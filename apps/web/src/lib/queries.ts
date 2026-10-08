@@ -129,7 +129,7 @@ export const useComments = (deckId: string, enabled = true) =>
     refetchInterval: 15_000,
   });
 
-function useInvalidateDeckFeedback(deckId: string) {
+export function useInvalidateDeckFeedback(deckId: string) {
   const queryClient = useQueryClient();
   return () =>
     Promise.all([

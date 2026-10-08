@@ -235,6 +235,8 @@ async function main(): Promise<void> {
   const { dbDir, blobsDir } = dataPaths(config);
   await rm(dbDir, { recursive: true, force: true });
   await rm(blobsDir, { recursive: true, force: true });
+  // Only Slider's own subfolder – MEDIA_DIR may be a folder with other things in it.
+  await rm(path.join(config.media.dir, 'decks'), { recursive: true, force: true });
 
   const { db, close } = await openDatabase(dbDir);
   try {

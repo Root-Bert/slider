@@ -22,6 +22,8 @@ async function main(): Promise<void> {
   const database = await openDatabase(dbDir);
   const { db } = database;
   const storage = new FsBlobStorage(blobsDir);
+  // Recordings (BER-116) in their own folder – `MEDIA_DIR` may point at any linked folder.
+  const media = new FsBlobStorage(config.media.dir);
 
   const owner = await upsertUser(db, config.devOwner);
 
@@ -54,6 +56,7 @@ async function main(): Promise<void> {
     config,
     db,
     storage,
+    media,
     queue,
     sources,
     microsoft,
@@ -66,7 +69,9 @@ async function main(): Promise<void> {
   if (config.sync.pollIntervalMs > 0) scheduler.start();
   else log.info('Automatic updates of linked decks are off (SYNC_POLL_INTERVAL_MS=0).');
   const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
-    log.info(`Slider API listening on http://localhost:${info.port} (data: ${config.dataDir})`);
+    log.info(
+      `Slider API listening on http://localhost:${info.port} (data: ${config.dataDir}, media: ${config.media.dir})`,
+    );
   });
 
   let shuttingDown = false;

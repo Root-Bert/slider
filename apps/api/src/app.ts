@@ -10,6 +10,7 @@ import { commentsRoutes } from './routes/comments';
 import { decksRoutes } from './routes/decks';
 import { filesRoutes } from './routes/files';
 import { invitesRoutes } from './routes/invites';
+import { mediaRoutes } from './routes/media';
 import { meRoutes } from './routes/me';
 import { reviewLinksRoutes } from './routes/review-links';
 import { syncRoutes } from './routes/sync';
@@ -27,6 +28,7 @@ export function createApp(deps: AppDeps) {
     .route('/', decksRoutes(deps))
     .route('/', syncRoutes(deps))
     .route('/', commentsRoutes(deps))
+    .route('/', mediaRoutes(deps))
     .route('/', reviewLinksRoutes(deps))
     .route('/', invitesRoutes(deps))
     .route('/', authRoutes(deps));

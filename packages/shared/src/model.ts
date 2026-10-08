@@ -182,6 +182,36 @@ export type CommentSource = z.infer<typeof commentSourceSchema>;
 export const commentSourceStatusSchema = z.enum(['present', 'removed_in_pptx']);
 export type CommentSourceStatus = z.infer<typeof commentSourceStatusSchema>;
 
+// ── Voice and video (BER-116) ───────────────────────────────────────────────
+
+export const MEDIA_KINDS = ['audio', 'video'] as const;
+export const mediaKindSchema = z.enum(MEDIA_KINDS);
+export type MediaKind = z.infer<typeof mediaKindSchema>;
+
+/** Bars of the audio waveform stored with a recording (0–1, drawn as the player's scrubber). */
+export const MAX_MEDIA_PEAKS = 64;
+
+/**
+ * Transcripts are made on the recording device (Whisper in the browser) and arrive after the
+ * comment: `pending` until then, `failed` if the device could not transcribe.
+ */
+export const transcriptStatusSchema = z.enum(['pending', 'done', 'failed']);
+export type TranscriptStatus = z.infer<typeof transcriptStatusSchema>;
+
+export const commentMediaSchema = z.object({
+  id: z.string(),
+  kind: mediaKindSchema,
+  /** Streams through the API with a permission check (`/api/media/:id`), supports Range. */
+  url: z.string(),
+  mimeType: z.string(),
+  sizeBytes: z.number().int(),
+  durationMs: z.number().int(),
+  peaks: z.array(z.number().min(0).max(1)).max(MAX_MEDIA_PEAKS),
+  transcript: z.string().nullable(),
+  transcriptStatus: transcriptStatusSchema,
+});
+export type CommentMedia = z.infer<typeof commentMediaSchema>;
+
 export const commentSchema = z.object({
   id: z.string(),
   deckId: z.string(),
@@ -192,6 +222,8 @@ export const commentSchema = z.object({
   body: z.string(),
   anchor: anchorSchema,
   strokes: z.array(strokeSchema),
+  /** A voice or video recording (BER-116); `null` for text comments. */
+  media: commentMediaSchema.nullable(),
   status: commentStatusSchema,
   resolvedBy: z.string().nullable(),
   resolvedAt: z.iso.datetime().nullable(),

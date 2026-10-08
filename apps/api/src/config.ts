@@ -1,7 +1,8 @@
+import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
-import { MAX_UPLOAD_BYTES } from '@slider/shared';
+import { DEFAULT_MEDIA_QUOTA_BYTES, MAX_MEDIA_BYTES, MAX_UPLOAD_BYTES } from '@slider/shared';
 
 export interface Config {
   env: 'development' | 'production' | 'test';
@@ -20,6 +21,20 @@ export interface Config {
   microsoft: MicrosoftConfig | null;
   /** Automatic updates of link-imported decks (BER-107). */
   sync: SyncConfig;
+  /** Voice and video comments (BER-116). */
+  media: MediaConfig;
+}
+
+export interface MediaConfig {
+  /**
+   * Folder for recordings, separate from the deck blobs so it can live anywhere – a synced or
+   * mounted folder, later an R2 bucket. Defaults to `<dataDir>/media`.
+   */
+  dir: string;
+  /** Storage per deck owner; recordings by guests count towards the owner of the deck. */
+  quotaBytes: number;
+  /** Per recording. */
+  maxBytes: number;
 }
 
 export interface SyncConfig {
@@ -74,6 +89,9 @@ const envSchema = z.object({
     })
     .default(DEFAULT_SYNC_POLL_INTERVAL_MS),
   SYNC_DEBOUNCE_MS: z.coerce.number().int().min(0).default(DEFAULT_SYNC_DEBOUNCE_MS),
+  MEDIA_DIR: z.string().min(1).optional(),
+  MEDIA_QUOTA_BYTES: z.coerce.number().int().positive().default(DEFAULT_MEDIA_QUOTA_BYTES),
+  MAX_MEDIA_BYTES: z.coerce.number().int().positive().default(MAX_MEDIA_BYTES),
 });
 
 export function loadConfig(
@@ -86,10 +104,11 @@ export function loadConfig(
       throw new Error('SLIDER_SECRET must be set in production.');
     warn('SLIDER_SECRET is not set – using an insecure development secret.');
   }
+  const dataDir = path.resolve(REPO_ROOT, parsed.DATA_DIR);
   return {
     env: parsed.NODE_ENV,
     port: parsed.PORT,
-    dataDir: path.resolve(REPO_ROOT, parsed.DATA_DIR),
+    dataDir,
     secret: parsed.SLIDER_SECRET ?? DEV_SECRET,
     webOrigin: parsed.WEB_ORIGIN,
     maxUploadBytes: parsed.MAX_UPLOAD_BYTES,
@@ -107,7 +126,19 @@ export function loadConfig(
           }
         : null,
     sync: { pollIntervalMs: parsed.SYNC_POLL_INTERVAL_MS, debounceMs: parsed.SYNC_DEBOUNCE_MS },
+    media: {
+      dir: parsed.MEDIA_DIR
+        ? path.resolve(REPO_ROOT, expandHome(parsed.MEDIA_DIR))
+        : path.join(dataDir, 'media'),
+      quotaBytes: parsed.MEDIA_QUOTA_BYTES,
+      maxBytes: parsed.MAX_MEDIA_BYTES,
+    },
   };
+}
+
+/** `~/Dropbox/slider-media` → the home directory; `.env` does no shell expansion. */
+function expandHome(dir: string): string {
+  return dir === '~' || dir.startsWith('~/') ? path.join(homedir(), dir.slice(1)) : dir;
 }
 
 /** `KEY=` lines in `.env` arrive as empty strings; treat them like unset keys so defaults apply. */

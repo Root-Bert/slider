@@ -1,7 +1,7 @@
 import type { Comment } from '@slider/shared';
 import { Avatar, cn, Icon } from '@/ui';
 import { AutosizeTextarea } from '../components/AutosizeTextarea';
-import { MediaSoonButtons } from '../components/MediaTabs';
+import { MediaReplyButtons } from '../components/MediaTabs';
 import { useReplyDraft } from '../hooks/useReplyDraft';
 
 interface ReplyComposerProps {
@@ -98,7 +98,7 @@ export function ReplyComposer({
       <div className="flex items-end gap-2">
         <div className="flex min-h-10 min-w-0 flex-1 items-end gap-0.5 rounded-control border border-white/10 bg-white/[0.06] py-[5px] pr-1 pl-3.5 transition-colors focus-within:border-white/35">
           <div className="min-w-0 flex-1 py-[5px]">{textarea}</div>
-          <MediaSoonButtons />
+          <MediaReplyButtons root={root} deckId={deckId} />
         </div>
         <button
           type="submit"

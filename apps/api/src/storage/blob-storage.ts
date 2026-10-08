@@ -40,6 +40,9 @@ const CONTENT_TYPES: Record<string, string> = {
   jpeg: 'image/jpeg',
   webp: 'image/webp',
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  webm: 'video/webm',
+  mp4: 'video/mp4',
+  ogg: 'audio/ogg',
 };
 
 export function contentTypeForKey(key: string): string {
@@ -61,6 +64,9 @@ export const blobKeys = {
     `decks/${deckId}/${revisionId}/slides/`,
   slideRender: (deckId: string, revisionId: string, extension: string) =>
     `decks/${deckId}/${revisionId}/slides/${crypto.randomUUID()}.${extension}`,
+  /** In the media store; same deck prefix, so deleting a deck clears its recordings too. */
+  media: (deckId: string, mediaId: string, extension: string) =>
+    `decks/${deckId}/media/${mediaId}.${extension}`,
   avatar: (extension: string) => `avatars/${crypto.randomUUID()}.${extension}`,
   demoAsset: (fileName: string) => `demo/${crypto.randomUUID()}/${fileName}`,
 };

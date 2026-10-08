@@ -3,6 +3,10 @@ import { useCreateComment } from '@/lib/queries';
 import { Avatar, Button, cn } from '@/ui';
 import { AutosizeTextarea } from '../components/AutosizeTextarea';
 import { MediaTabs } from '../components/MediaTabs';
+import type { MediaKindId } from '../lib/media-kinds';
+import { RecorderPanel } from '../media/RecorderPanel';
+import { useCreateMediaComment } from '../media/useMediaComment';
+import type { Recording } from '../media/useRecorder';
 import { useComposerPosition } from '../hooks/useComposerPosition';
 import { useIsNarrow } from '../hooks/useMediaQuery';
 import { accentAlpha } from '../lib/colors';
@@ -15,15 +19,23 @@ import { useViewerDispatch, useViewerState, type Draft } from '../state/viewer-s
 export function Composer() {
   const { draft } = useViewerState();
   if (!draft) return null;
-  // Remount per slide (or for gaps) so text and errors do not leak between drafts.
-  return <ComposerPopover key={draft.slideId ?? 'gap'} draft={draft} />;
+  // Remount per slide (or for gaps) so text and errors do not leak between drafts; the tool bar's
+  // mic and camera reopen it in their tab.
+  return (
+    <ComposerPopover key={`${draft.slideId ?? 'gap'}:${draft.recordKind ?? ''}`} draft={draft} />
+  );
 }
 
 function ComposerPopover({ draft }: { draft: Draft }) {
   const { deck, viewer, slideIndex } = useViewerData();
   const dispatch = useViewerDispatch();
   const createComment = useCreateComment(deck.id);
+  const createMediaComment = useCreateMediaComment(deck.id);
   const [body, setBody] = useState('');
+  const [tab, setTab] = useState<MediaKindId>(draft.recordKind ?? 'text');
+  // Opened from the tool bar's mic: recording starts right away.
+  const [autoStart, setAutoStart] = useState(draft.recordKind === 'audio');
+  const [recording, setRecording] = useState<Recording | null>(null);
   const popoverRef = useRef<HTMLFormElement>(null);
   const narrow = useIsNarrow();
   const placement = useComposerPosition(narrow ? null : draft, popoverRef);
@@ -32,8 +44,18 @@ function ComposerPopover({ draft }: { draft: Draft }) {
   const { author } = viewer;
   // "Text auf Folie": the text is typed on the slide; the composer adds an optional comment.
   const onSlideText = draft.textBox !== null;
-  const submission = draftSubmission(draft, body, author.color);
+  const recordingTab = tab === 'audio' || tab === 'video';
+  const textSubmission = draftSubmission(draft, body, author.color);
+  // With a recording, text and drawing are optional: the recording is the comment (BER-116).
+  const submission =
+    recordingTab && recording
+      ? (textSubmission ?? { body: body.trim(), anchor: draft.anchor, strokes: draft.strokes })
+      : recordingTab
+        ? null
+        : textSubmission;
   const canSend = submission !== null;
+  const pending = createComment.isPending || createMediaComment.isPending;
+  const error = createComment.error ?? createMediaComment.error;
   const subtitle =
     draft.anchor.type === 'gap'
       ? locationLabel(draft.anchor, null, (id) => slideIndex.get(id))
@@ -41,11 +63,11 @@ function ComposerPopover({ draft }: { draft: Draft }) {
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
-    if (!submission || createComment.isPending) return;
-    createComment.mutate(
-      { slideId: draft.slideId, parentId: null, ...submission },
-      { onSuccess: () => dispatch({ type: 'draftSubmitted' }) },
-    );
+    if (!submission || pending) return;
+    const input = { slideId: draft.slideId, parentId: null, ...submission };
+    const onSuccess = () => dispatch({ type: 'draftSubmitted' });
+    if (recordingTab && recording) createMediaComment.mutate({ input, recording }, { onSuccess });
+    else createComment.mutate(input, { onSuccess });
   };
 
   return (
@@ -78,19 +100,39 @@ function ComposerPopover({ draft }: { draft: Draft }) {
         </div>
       </header>
 
-      <MediaTabs />
+      <MediaTabs
+        value={tab}
+        onChange={(next) => {
+          setTab(next);
+          setRecording(null);
+          setAutoStart(false);
+        }}
+      />
+
+      {recordingTab && (
+        // Remount per kind: switching tabs turns the previous device off.
+        <RecorderPanel
+          key={tab}
+          kind={tab}
+          deckId={deck.id}
+          onChange={setRecording}
+          autoStart={autoStart}
+        />
+      )}
 
       <div className="rounded-control-sm bg-white/5 px-3 py-2 shadow-[inset_0_0_0_1px_var(--color-hairline-strong)] focus-within:shadow-[inset_0_0_0_1px_rgb(255_255_255/0.35)]">
         <AutosizeTextarea
           // While drawing or writing on the slide, keep focus there (⌘Z undoes strokes).
-          autoFocus={draft.strokes.length === 0 && !onSlideText}
+          autoFocus={draft.strokes.length === 0 && !onSlideText && !recordingTab}
           aria-label="Kommentar"
           placeholder={
-            onSlideText
-              ? 'Optional: Kommentar zum Text auf der Folie'
-              : draft.strokes.length > 0
-                ? 'Optional: Was soll sich ändern?'
-                : 'Was fällt dir auf?'
+            recordingTab
+              ? 'Optional: Notiz zur Aufnahme'
+              : onSlideText
+                ? 'Optional: Kommentar zum Text auf der Folie'
+                : draft.strokes.length > 0
+                  ? 'Optional: Was soll sich ändern?'
+                  : 'Was fällt dir auf?'
           }
           value={body}
           onChange={(event) => setBody(event.target.value)}
@@ -101,9 +143,9 @@ function ComposerPopover({ draft }: { draft: Draft }) {
         />
       </div>
 
-      {createComment.isError && (
+      {error && (
         <p role="alert" className="text-xs text-danger">
-          {createComment.error.message}
+          {error.message}
         </p>
       )}
 
@@ -115,8 +157,10 @@ function ComposerPopover({ draft }: { draft: Draft }) {
           <Button variant="ghost" size="sm" onClick={() => dispatch({ type: 'draftCancelled' })}>
             Abbrechen
           </Button>
-          <Button type="submit" size="sm" disabled={!canSend} loading={createComment.isPending}>
-            Senden
+          <Button type="submit" size="sm" disabled={!canSend} loading={pending}>
+            {createMediaComment.isPending && createMediaComment.progress < 1
+              ? `${Math.round(createMediaComment.progress * 100)} %`
+              : 'Senden'}
           </Button>
         </div>
       </footer>
