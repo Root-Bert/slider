@@ -5,6 +5,7 @@ import { useComments, useDeck, useMe, useSlides } from '@/lib/queries';
 import { DeckError, DeckLoading, SessionEnded } from './DeckStates';
 import { useDocumentTitle, useLeaveReview } from './hooks/usePageSession';
 import { SLIDE_PARAM } from './hooks/useSlideUrlSync';
+import { RevisionProvider } from './state/RevisionProvider';
 import { deriveViewerData } from './state/viewer-data';
 import { ViewerStoreProvider } from './state/ViewerStoreProvider';
 import { Viewer } from './Viewer';
@@ -41,7 +42,9 @@ export function Component() {
 
   return (
     <ViewerStoreProvider data={data} initialSlideId={initialSlideId}>
-      <Viewer onLeave={leave} />
+      <RevisionProvider>
+        <Viewer onLeave={leave} />
+      </RevisionProvider>
     </ViewerStoreProvider>
   );
 }

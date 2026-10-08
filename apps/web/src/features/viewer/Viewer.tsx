@@ -3,6 +3,7 @@ import { AvatarStack, cn, GlassPanel, Toast, useToast } from '@/ui';
 import { CommentFilterBar } from './comments/CommentFilterBar';
 import { Composer } from './comments/Composer';
 import { ThreadPanel } from './comments/ThreadPanel';
+import { RevisionControls } from './controls/RevisionControls';
 import { SessionControls } from './controls/SessionControls';
 import { SlideCounter } from './controls/SlideCounter';
 import { ToolBar } from './controls/ToolBar';
@@ -10,6 +11,8 @@ import { ViewControls } from './controls/ViewControls';
 import { useFullscreen } from './hooks/useFullscreen';
 import { useSlideUrlSync } from './hooks/useSlideUrlSync';
 import { useViewerShortcuts } from './hooks/useViewerShortcuts';
+import { DeletedSlidesPanel } from './revisions/DeletedSlidesPanel';
+import { RevisionBanners } from './revisions/RevisionBanners';
 import { useViewerData } from './state/viewer-data';
 import { useViewerState } from './state/viewer-state';
 import { ViewerToastContext } from './state/viewer-toast';
@@ -25,7 +28,9 @@ import { Timeline } from './timeline/Timeline';
 export function Viewer({ onLeave }: { onLeave: () => void }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const { deck } = useViewerData();
-  const { activeSlideId, threadPanelOpen } = useViewerState();
+  const { activeSlideId, threadPanelOpen: threadOpen, deletedPanelOpen } = useViewerState();
+  // Thread panel and deleted slides panel share the right side.
+  const threadPanelOpen = threadOpen || deletedPanelOpen;
   const fullscreen = useFullscreen(rootRef);
   const [toast, showToast] = useToast();
 
@@ -43,6 +48,8 @@ export function Viewer({ onLeave }: { onLeave: () => void }) {
         )}
       >
         <h1 className="sr-only">{deck.title}</h1>
+        {/* In the flow above the track: a banner shortens the track instead of covering it. */}
+        <RevisionBanners />
         <Timeline
           controls={
             // On desktop this row never wraps – its height is part of where the comment area
@@ -53,6 +60,7 @@ export function Viewer({ onLeave }: { onLeave: () => void }) {
               <CommentFilterBar />
               {/* Figma 87:359 / 87:369: right-aligned, 10px apart. */}
               <div className="ml-auto flex shrink-0 items-center gap-2.5">
+                <RevisionControls />
                 <SlideCounter className="md:@max-[740px]:hidden" />
                 <ViewControls
                   isFullscreen={fullscreen.isFullscreen}
@@ -91,6 +99,7 @@ export function Viewer({ onLeave }: { onLeave: () => void }) {
 
         <Composer />
         <ThreadPanel />
+        <DeletedSlidesPanel />
         {/* Above the thread panel (z-40). */}
         <Toast toast={toast} />
       </div>

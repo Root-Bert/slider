@@ -2,8 +2,10 @@ import { Fragment } from 'react';
 import { threadsOf, useCommentThreads } from '../hooks/useCommentThreads';
 import { gapKey } from '../lib/comment-selectors';
 import type { TrackLayout } from '../lib/timeline-layout';
+import { DeletedSlidesEntry } from '../revisions/DeletedSlidesEntry';
 import { GapDivider } from '../stage/GapDivider';
 import { SlideFrame } from '../stage/SlideFrame';
+import { useRevisionData } from '../state/revision-data';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerState } from '../state/viewer-state';
 
@@ -23,7 +25,9 @@ interface TrackProps {
  */
 export function Track({ layout, range, snap }: TrackProps) {
   const { slides, gapThreads, canComment } = useViewerData();
-  const { activeSlideId, tool, color, draft, focusedThreadId, hoveredThreadId } = useViewerState();
+  const { activeSlideId, tool, color, draft, focusedThreadId, hoveredThreadId, showChanges } =
+    useViewerState();
+  const { badges, deletedSlides, deletedThreads, revisionNumber } = useRevisionData();
   const { bySlide } = useCommentThreads();
   const emphasisId = focusedThreadId ?? hoveredThreadId;
   const draftGapKey =
@@ -60,6 +64,8 @@ export function Track({ layout, range, snap }: TrackProps) {
           draft={draft?.slideId === slide.id ? draft : null}
           tool={canComment ? tool : null}
           color={color}
+          badge={showChanges ? (badges.get(slide.id) ?? null) : null}
+          badgeVersion={revisionNumber}
         />
         <GapDivider
           gapKey={key}
@@ -103,6 +109,15 @@ export function Track({ layout, range, snap }: TrackProps) {
     >
       {snapTargets}
       {items}
+      {layout.trailing && deletedSlides.length > 0 && (
+        <DeletedSlidesEntry
+          deletedSlides={deletedSlides}
+          commentCount={[...deletedThreads.values()].reduce((sum, list) => sum + list.length, 0)}
+          x={layout.trailing.x}
+          w={layout.trailing.w}
+          h={layout.h}
+        />
+      )}
     </div>
   );
 }

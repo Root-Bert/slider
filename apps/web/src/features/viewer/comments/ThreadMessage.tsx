@@ -4,9 +4,10 @@ import { isPendingComment } from '@/lib/comment-cache';
 import { useDeleteComment, useUpdateComment } from '@/lib/queries';
 import { Button, cn, Dialog, Menu } from '@/ui';
 import { AutosizeTextarea } from '../components/AutosizeTextarea';
-import { isStrokeOnly } from '../lib/comment-selectors';
+import { isRemovedInPowerPoint, isStrokeOnly } from '../lib/comment-selectors';
 import { AuthorLine } from './AuthorLine';
 import { CommentBody } from './CommentBody';
+import { RemovedInPowerPointNote } from './RevisionNotes';
 
 interface ThreadMessageProps {
   comment: Comment;
@@ -33,6 +34,7 @@ export function ThreadMessage({
   const remove = useDeleteComment(deckId);
   // Not saved yet: shown dimmed and without actions until the server confirms it.
   const pending = isPendingComment(comment);
+  const removed = isRemovedInPowerPoint(comment);
 
   return (
     <article
@@ -69,12 +71,16 @@ export function ThreadMessage({
         className="-my-1"
       />
 
+      {removed && <RemovedInPowerPointNote />}
       {editing ? (
         <EditForm comment={comment} deckId={deckId} onDone={() => setEditing(false)} />
       ) : isStrokeOnly(comment) ? (
         <p className="text-[13px] text-fg-muted">✏️ Markierung</p>
       ) : (
-        <CommentBody body={comment.body} className="text-fg" />
+        <CommentBody
+          body={comment.body}
+          className={cn('text-fg', removed && 'text-fg-subtle line-through decoration-white/30')}
+        />
       )}
 
       <Dialog

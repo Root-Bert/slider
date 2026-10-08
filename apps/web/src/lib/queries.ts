@@ -4,15 +4,20 @@ import {
   type CreateCommentInput,
   type CreateReviewLinkInput,
   type Deck,
+  type DeckStatus,
+  type DeletedSlide,
   type InviteInfo,
   type JoinInviteInput,
   type MeResponse,
+  type Revision,
+  type RevisionDiff,
   type ReviewLink,
   type Slide,
+  type SyncResult,
   type UpdateCommentInput,
   type UpdateDeckInput,
 } from '@slider/shared';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api-client';
 import { confirmComment, pendingReply } from './comment-cache';
 
@@ -24,6 +29,17 @@ export const queryKeys = {
   slides: (deckId: string) => ['decks', deckId, 'slides'] as const,
   comments: (deckId: string) => ['decks', deckId, 'comments'] as const,
   reviewLinks: (deckId: string) => ['decks', deckId, 'review-links'] as const,
+  status: (deckId: string) => ['decks', deckId, 'status'] as const,
+  revisions: (deckId: string) => ['decks', deckId, 'revisions'] as const,
+  /**
+   * One revision's diff – it never changes. Fetched by id (never via `latest`), so an entry can
+   * never hold another revision's diff, and outside the `revisions` list key so reloading the
+   * list doesn't refetch every diff.
+   */
+  revisionDiff: (deckId: string, revisionId: string | null) =>
+    ['decks', deckId, 'revision-diff', revisionId] as const,
+  deletedSlides: (deckId: string, revisionId: string | null) =>
+    ['decks', deckId, 'deleted-slides', revisionId] as const,
   invite: (token: string) => ['invites', token] as const,
 };
 
@@ -185,6 +201,110 @@ export function useDeleteComment(deckId: string) {
   return useMutation({
     mutationFn: (commentId: string) => api.delete(`/comments/${commentId}`),
     onSuccess: invalidate,
+  });
+}
+
+// ── Revisions & automatic updates (BER-107, BER-109) ───────────────────────
+
+/** Status poll every 20 s while the tab is visible; faster while a change is being imported. */
+const STATUS_POLL_MS = 20_000;
+const STATUS_POLL_PENDING_MS = 5_000;
+
+export const useDeckStatus = (deckId: string, enabled = true) =>
+  useQuery({
+    queryKey: queryKeys.status(deckId),
+    queryFn: () => api.get<DeckStatus>(`/decks/${deckId}/status`),
+    enabled,
+    refetchInterval: (query) =>
+      query.state.data?.sync.pending ? STATUS_POLL_PENDING_MS : STATUS_POLL_MS,
+    // Hidden tabs don't poll; coming back (focus / visibility) refetches right away.
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: 'always',
+  });
+
+export const useRevisions = (deckId: string, enabled = true) =>
+  useQuery({
+    queryKey: queryKeys.revisions(deckId),
+    queryFn: () => api.get<Revision[]>(`/decks/${deckId}/revisions`),
+    enabled,
+    staleTime: 60_000,
+  });
+
+/**
+ * What the current revision changed; only fetched from revision 2 on. Asks for the revision by
+ * id rather than `latest`: right after a new revision `latest` already means the new one, and its
+ * diff must not land in the cache entry of the revision before it.
+ */
+export const useLatestDiff = (deckId: string, revisionId: string | null, enabled = true) =>
+  useQuery({
+    queryKey: queryKeys.revisionDiff(deckId, revisionId),
+    queryFn: () => api.get<RevisionDiff>(`/decks/${deckId}/revisions/${revisionId}/diff`),
+    enabled: enabled && revisionId !== null,
+    staleTime: Infinity,
+  });
+
+/** Stable `combine`, so the result only changes when a diff arrives. */
+const diffData = (results: { data?: RevisionDiff }[]) => results.map((result) => result.data);
+
+/**
+ * Diffs of the given (earlier) revisions – a revision's diff never changes. Same cache entry as
+ * {@link useLatestDiff} got for that revision while it was the current one.
+ */
+export const useRevisionDiffs = (deckId: string, revisionIds: readonly string[]) =>
+  useQueries({
+    queries: revisionIds.map((revisionId) => ({
+      queryKey: queryKeys.revisionDiff(deckId, revisionId),
+      queryFn: () => api.get<RevisionDiff>(`/decks/${deckId}/revisions/${revisionId}/diff`),
+      staleTime: Infinity,
+    })),
+    combine: diffData,
+  });
+
+export const useDeletedSlides = (deckId: string, revisionId: string | null, enabled = true) =>
+  useQuery({
+    queryKey: queryKeys.deletedSlides(deckId, revisionId),
+    queryFn: () => api.get<DeletedSlide[]>(`/decks/${deckId}/deleted-slides`),
+    enabled: enabled && revisionId !== null,
+    staleTime: Infinity,
+  });
+
+/**
+ * Everything that belongs to a revision: reloaded when a new one arrives. Diffs and deleted
+ * slides are keyed by revision id – the new deck DTO brings a new id and with it fresh queries,
+ * so they're left alone here (invalidating them would only refetch the old revision's entries).
+ */
+export function useInvalidateRevision(deckId: string) {
+  const queryClient = useQueryClient();
+  return () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.deck(deckId), exact: true }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.slides(deckId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.comments(deckId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.revisions(deckId), exact: true }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.status(deckId), exact: true }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.decks, exact: true }),
+    ]);
+}
+
+/** "Neu laden" for link imports: checks the source now (owner only). */
+export function useSyncDeck(deckId: string) {
+  const invalidate = useInvalidateRevision(deckId);
+  return useMutation({
+    mutationFn: () => api.post<SyncResult>(`/decks/${deckId}/sync`),
+    onSettled: invalidate,
+  });
+}
+
+/** "Neue Version hochladen" for uploaded decks (owner only). */
+export function useUploadRevision(deckId: string) {
+  const invalidate = useInvalidateRevision(deckId);
+  return useMutation({
+    mutationFn: (file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      return api.post<SyncResult>(`/decks/${deckId}/revisions`, form);
+    },
+    onSettled: invalidate,
   });
 }
 

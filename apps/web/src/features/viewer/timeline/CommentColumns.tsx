@@ -20,6 +20,8 @@ import {
   splitForWidth,
   type TrackLayout,
 } from '../lib/timeline-layout';
+import { isChangedSinceComment } from '../lib/revision-changes';
+import { useRevisionData } from '../state/revision-data';
 import { useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
@@ -288,7 +290,11 @@ function BrickCards({
             style={{ left: place.left, top: place.top, width: place.width }}
           >
             {compact ? (
-              <CompactCard thread={thread} emphasis={props.emphasis} />
+              <CompactCard
+                thread={thread}
+                emphasis={props.emphasis}
+                changedSince={props.changedSince}
+              />
             ) : (
               <CommentCard thread={thread} {...props} />
             )}
@@ -447,6 +453,7 @@ const GapColumn = memo(function GapColumn({
 function useCardProps() {
   const { deck, canComment, slideIndex } = useViewerData();
   const { focusedThreadId, hoveredThreadId, draft } = useViewerState();
+  const { modifiedAt } = useRevisionData();
   const indexOf = (slideId: string) => slideIndex.get(slideId);
 
   const emphasisOf = (thread: Thread): CardEmphasis => {
@@ -460,5 +467,6 @@ function useCardProps() {
     emphasis: emphasisOf(thread),
     canResolve: canComment,
     location: thread.root.anchor.type === 'gap' ? gapLabel(thread.root.anchor, indexOf) : undefined,
+    changedSince: isChangedSinceComment(thread.root, modifiedAt),
   });
 }

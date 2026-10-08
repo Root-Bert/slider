@@ -4,6 +4,7 @@ import {
   filterThreads,
   type StatusCounts,
   type Thread,
+  threadsOnCurrentSlides,
   type ThreadFilter,
 } from '../lib/comment-selectors';
 import { useViewerData } from '../state/viewer-data';
@@ -19,7 +20,7 @@ export interface VisibleThreads {
   bySlide: ReadonlyMap<string, Thread[]>;
   /** Gap threads that pass the filter, keyed by `gapKey` – they live under their ⊕ divider. */
   byGap: ReadonlyMap<string, Thread[]>;
-  /** Counts for the whole deck. */
+  /** Counts for the whole deck (current slides only). */
   counts: StatusCounts;
 }
 
@@ -27,7 +28,7 @@ const EMPTY: Thread[] = [];
 
 /** Applies the comment filter bar (status, "aus PowerPoint") to the deck's threads. */
 export function useCommentThreads(): VisibleThreads {
-  const { threads, threadsBySlide, gapThreads } = useViewerData();
+  const { threads, threadsBySlide, gapThreads, slideIndex } = useViewerData();
   const { statusFilter, pptxOnly } = useViewerState();
 
   const filter = useMemo<ThreadFilter>(
@@ -61,7 +62,11 @@ export function useCommentThreads(): VisibleThreads {
     return result;
   }, [gapThreads, filter]);
 
-  const counts = useMemo(() => countByStatus(threads, pptxOnly), [threads, pptxOnly]);
+  // Threads on deleted slides are only reachable through "Gelöschte Folien": not counted here.
+  const counts = useMemo(
+    () => countByStatus(threadsOnCurrentSlides(threads, slideIndex), pptxOnly),
+    [threads, slideIndex, pptxOnly],
+  );
 
   return { filter, bySlide, byGap, counts };
 }

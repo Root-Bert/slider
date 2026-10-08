@@ -1,7 +1,7 @@
 import { memo, type CSSProperties } from 'react';
 import { accentColor } from '@/lib/accent';
-import { Avatar, cn } from '@/ui';
-import { isStrokeOnly, type Thread } from '../lib/comment-selectors';
+import { Avatar, cn, Icon } from '@/ui';
+import { isRemovedInPowerPoint, isStrokeOnly, type Thread } from '../lib/comment-selectors';
 import { useViewerDispatch } from '../state/viewer-state';
 import type { CardEmphasis } from './CommentCard';
 
@@ -12,14 +12,23 @@ import type { CardEmphasis } from './CommentCard';
 export const CompactCard = memo(function CompactCard({
   thread,
   emphasis,
+  changedSince = false,
 }: {
   thread: Thread;
   emphasis: CardEmphasis;
+  /** The slide changed after the thread was started: small warning mark. */
+  changedSince?: boolean;
 }) {
   const dispatch = useViewerDispatch();
   const { root, replies } = thread;
   const highlighted = emphasis === 'focused' || emphasis === 'hovered';
   const text = isStrokeOnly(root) ? '✏️ Markierung' : root.body;
+  const removed = isRemovedInPowerPoint(root);
+  const flagged = changedSince && root.status === 'open';
+  const notes = [
+    removed && 'In PowerPoint entfernt',
+    flagged && 'Folie geändert seit Kommentar',
+  ].filter(Boolean);
 
   return (
     <article
@@ -37,7 +46,7 @@ export const CompactCard = memo(function CompactCard({
         type="button"
         onClick={() => dispatch({ type: 'threadFocused', threadId: thread.id, openPanel: true })}
         aria-label={`Thread von ${root.author.name} öffnen`}
-        title={root.body || undefined}
+        title={[root.body, ...notes].filter(Boolean).join(' · ') || undefined}
         className={cn(
           'glass flex w-full flex-col gap-1 rounded-xl p-2 text-left transition-shadow duration-200',
           highlighted &&
@@ -47,13 +56,36 @@ export const CompactCard = memo(function CompactCard({
         <span className="flex min-w-0 items-center gap-1.5">
           <Avatar author={root.author} size={20} showPowerPointBadge={root.source === 'pptx'} />
           <span className="truncate text-[11px] font-medium text-fg">{root.author.name}</span>
-          {replies.length > 0 && (
-            <span className="ml-auto shrink-0 text-[10px] text-fg-subtle tabular-nums">
-              +{replies.length}
-            </span>
-          )}
+          <span className="ml-auto flex shrink-0 items-center gap-1">
+            {flagged && (
+              <Icon
+                name="history"
+                size={12}
+                className="text-warning"
+                label="Geändert seit Kommentar"
+              />
+            )}
+            {removed && (
+              <Icon
+                name="unfoldLess"
+                size={12}
+                className="text-fg-subtle"
+                label="In PowerPoint entfernt"
+              />
+            )}
+            {replies.length > 0 && (
+              <span className="text-[10px] text-fg-subtle tabular-nums">+{replies.length}</span>
+            )}
+          </span>
         </span>
-        <span className="line-clamp-2 text-xs leading-4 break-words text-fg-muted">{text}</span>
+        <span
+          className={cn(
+            'line-clamp-2 text-xs leading-4 break-words text-fg-muted',
+            removed && 'text-fg-subtle line-through decoration-white/30',
+          )}
+        >
+          {text}
+        </span>
       </button>
     </article>
   );

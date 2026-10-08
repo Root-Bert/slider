@@ -14,6 +14,7 @@ import {
   slideHeightAt,
   splitForHeight,
   splitForWidth,
+  trailingWidth,
   TRACK_PAD_TOP,
   unitAt,
   visibleRange,
@@ -185,5 +186,22 @@ describe('card modes', () => {
   it('reserves bus room for the lines above the cards', () => {
     expect(busRoom(1)).toBe(48);
     expect(busRoom(7)).toBe(98);
+  });
+});
+
+describe('trailing slot (deleted slides)', () => {
+  it('adds a slot after the last divider and widens the content', () => {
+    const plain = layoutTrack([16 / 9, 16 / 9], 200);
+    const withSlot = layoutTrack([16 / 9, 16 / 9], 200, 120);
+    expect(plain.trailing).toBeUndefined();
+    const lastGap = withSlot.gaps[1]!;
+    expect(withSlot.trailing).toEqual({ x: lastGap.x + lastGap.w, w: 120 });
+    expect(withSlot.contentW).toBe(plain.contentW + 120);
+  });
+
+  it('sizes the slot with the slides, within bounds', () => {
+    expect(trailingWidth(90)).toBe(112);
+    expect(trailingWidth(300)).toBe(180);
+    expect(trailingWidth(600)).toBe(260);
   });
 });

@@ -109,9 +109,19 @@ export interface TrackLayout {
   /** The divider after slide i (one per slide, the last one is "after the last slide"). */
   gaps: { x: number; w: number }[];
   contentW: number;
+  /** Extra slot after the last divider – the "Gelöschte Folien" entry (BER-109). */
+  trailing?: { x: number; w: number };
 }
 
-export function layoutTrack(aspectRatios: readonly number[], h: number): TrackLayout {
+/** Width of the "Gelöschte Folien" slot at the end of a track of slide height `h`. */
+export const trailingWidth = (h: number) => Math.round(Math.min(260, Math.max(112, h * 0.6)));
+
+export function layoutTrack(
+  aspectRatios: readonly number[],
+  h: number,
+  /** Width of a slot after the last slide's divider; 0 = none. */
+  trailingW = 0,
+): TrackLayout {
   const g = gapWidth(h);
   const slides: TrackLayout['slides'] = [];
   const gaps: TrackLayout['gaps'] = [];
@@ -122,7 +132,8 @@ export function layoutTrack(aspectRatios: readonly number[], h: number): TrackLa
     gaps.push({ x: x + w, w: g });
     x += w + g;
   }
-  return { h, slides, gaps, contentW: x + TRACK_PAD_X };
+  if (trailingW <= 0) return { h, slides, gaps, contentW: x + TRACK_PAD_X };
+  return { h, slides, gaps, trailing: { x, w: trailingW }, contentW: x + trailingW + TRACK_PAD_X };
 }
 
 /** Share of a slot (slide + gap) in unit space that belongs to the slide. */

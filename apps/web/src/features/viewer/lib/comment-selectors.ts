@@ -96,6 +96,20 @@ export function countByStatus(threads: readonly Thread[], pptxOnly: boolean): St
 }
 
 /**
+ * Threads that are listed on the current slides – i.e. without those on slides a later
+ * revision deleted (they live in "Gelöschte Folien"). Threads without a slide stay.
+ */
+export function threadsOnCurrentSlides(
+  threads: readonly Thread[],
+  slideIds: ReadonlySet<string> | ReadonlyMap<string, unknown>,
+): Thread[] {
+  return threads.filter((thread) => {
+    const slideId = homeSlideId(thread.root, null);
+    return slideId === null || slideIds.has(slideId);
+  });
+}
+
+/**
  * The slide a thread is listed under. Gap comments belong to the slide *before* the gap
  * (or the first slide when the gap is in front of it).
  */
@@ -274,3 +288,7 @@ export const countLeftExits = (threads: readonly Thread[], shapes: readonly Shap
 /** True when the body only consists of a drawing (shown as "✏️ Markierung"). */
 export const isStrokeOnly = (comment: Comment) =>
   comment.body.trim() === '' && comment.strokes.length > 0;
+
+/** An imported PowerPoint comment that was deleted in the file – kept, but shown muted (BER-114). */
+export const isRemovedInPowerPoint = (comment: Pick<Comment, 'sourceStatus'>) =>
+  comment.sourceStatus === 'removed_in_pptx';

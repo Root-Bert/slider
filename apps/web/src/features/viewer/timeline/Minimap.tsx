@@ -12,10 +12,12 @@ import {
   type RefObject,
 } from 'react';
 import { accentColor } from '@/lib/accent';
-import { cn } from '@/ui';
+import { cn, Icon } from '@/ui';
 import { gapKey } from '../lib/comment-selectors';
 import { rafThrottle } from '../lib/dom';
 import { slideLabel } from '../lib/labels';
+import type { SlideBadge } from '../lib/revision-changes';
+import { ChangeBadge } from '../revisions/ChangeBadge';
 import {
   bracketFor,
   edgeScrollSpeed,
@@ -29,6 +31,7 @@ import {
   THUMB_MAX_H_NARROW,
 } from '../lib/minimap';
 import type { TrackLayout } from '../lib/timeline-layout';
+import { useRevisionData } from '../state/revision-data';
 import { useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
@@ -37,6 +40,9 @@ import { useViewerDispatch, useViewerState } from '../state/viewer-state';
 const DRAG_SLOP = 4;
 /** The bracket stands this far out around the thumbnails it frames. */
 const BRACKET_OUTSET = 3;
+/** Width of the "Gelöscht (n)" entry after the last thumbnail (Figma D2). */
+const DELETED_W = 112;
+const DELETED_W_NARROW = 72;
 
 interface MinimapProps {
   /** The big track's layout (null until the timeline has measured itself). */
@@ -55,7 +61,10 @@ interface MinimapProps {
  */
 export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
   const { slides, gapThreads } = useViewerData();
-  const { activeSlideId } = useViewerState();
+  const { activeSlideId, showChanges, deletedPanelOpen } = useViewerState();
+  const { badges, deletedSlides } = useRevisionData();
+  const deletedW = deletedSlides.length > 0 ? (narrow ? DELETED_W_NARROW : DELETED_W) : 0;
+  const deletedRoom = deletedW > 0 ? deletedW + THUMB_GAP : 0;
   const dispatch = useViewerDispatch();
   const registry = useStageRegistry();
   const listRef = useRef<HTMLDivElement>(null);
@@ -75,8 +84,11 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
   const rowH = maxH + 2 * MINIMAP_PAD;
   const aspectRatios = useMemo(() => slides.map((slide) => slide.aspectRatio), [slides]);
   const mini = useMemo(
-    () => (availableW > 0 ? layoutMinimap(aspectRatios, availableW - 2 * MINIMAP_PAD, maxH) : null),
-    [aspectRatios, availableW, maxH],
+    () =>
+      availableW > 0
+        ? layoutMinimap(aspectRatios, availableW - 2 * MINIMAP_PAD - deletedRoom, maxH)
+        : null,
+    [aspectRatios, availableW, maxH, deletedRoom],
   );
   const miniTrack = useMemo(() => mini && minimapAsTrack(mini), [mini]);
 
@@ -288,7 +300,10 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
         }}
       >
         {mini && (
-          <ol className="relative" style={{ width: mini.contentW + 2 * MINIMAP_PAD, height: rowH }}>
+          <ol
+            className="relative"
+            style={{ width: mini.contentW + 2 * MINIMAP_PAD + deletedRoom, height: rowH }}
+          >
             {slides.map((slide, index) => {
               const box = mini.slides[index];
               if (!box) return null;
@@ -306,10 +321,43 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
                   h={mini.h}
                   isActive={index === activeIndex}
                   gapColor={gapColor}
+                  badge={showChanges ? (badges.get(slide.id) ?? null) : null}
                   onSelect={select}
                 />
               );
             })}
+            {deletedW > 0 && (
+              <li
+                className="absolute"
+                style={{
+                  left: MINIMAP_PAD + mini.contentW + THUMB_GAP,
+                  top: (rowH - mini.h) / 2,
+                  width: deletedW,
+                  height: mini.h,
+                }}
+              >
+                <button
+                  type="button"
+                  data-deleted-thumb
+                  aria-expanded={deletedPanelOpen}
+                  aria-label={`Gelöschte Folien (${deletedSlides.length}) anzeigen`}
+                  title={`Gelöschte Folien (${deletedSlides.length})`}
+                  onClick={() => {
+                    if (!suppressClickRef.current)
+                      dispatch({ type: 'deletedPanelSet', open: !deletedPanelOpen });
+                  }}
+                  className={cn(
+                    'flex size-full items-center justify-center gap-1 rounded-thumb border border-dashed border-white/25 text-[11px] font-medium text-fg-muted transition-colors hover:border-white/40 hover:bg-white/5 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-white',
+                    deletedPanelOpen && 'border-white/50 bg-white/8 text-fg',
+                  )}
+                >
+                  <Icon name="delete" size={14} className="shrink-0" />
+                  <span className={cn('whitespace-nowrap', narrow && 'sr-only')}>Gelöscht</span>
+                  <span className="text-fg-subtle tabular-nums">({deletedSlides.length})</span>
+                  {!narrow && <Icon name="chevronRight" size={14} className="-mr-1 shrink-0" />}
+                </button>
+              </li>
+            )}
           </ol>
         )}
         <div
@@ -386,6 +434,8 @@ interface ThumbnailProps {
   isActive: boolean;
   /** Accent of a "missing slide" comment between this slide and the next (BER-103). */
   gapColor: string | null;
+  /** Change of the latest revision while changes are shown (Figma D2). */
+  badge: SlideBadge | null;
   onSelect: (slideId: string) => void;
 }
 
@@ -398,12 +448,13 @@ const Thumbnail = memo(function Thumbnail({
   h,
   isActive,
   gapColor,
+  badge,
   onSelect,
 }: ThumbnailProps) {
   const count = slide.openCommentCount;
   const label = `${slideLabel(index)}${slide.title ? `: ${slide.title}` : ''}${
     count ? ` – ${count} offene${count === 1 ? 'r' : ''} Kommentar${count === 1 ? '' : 'e'}` : ''
-  }`;
+  }${badge ? ` – ${badge.description}` : ''}`;
   return (
     <li data-thumb={slide.id} className="absolute" style={{ left: x, top, width: w, height: h }}>
       <button
@@ -432,6 +483,13 @@ const Thumbnail = memo(function Thumbnail({
           <span
             aria-hidden
             className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_0_0_1px_black]"
+          />
+        )}
+        {badge && (
+          <ChangeBadge
+            badge={badge}
+            size="mini"
+            className="pointer-events-none absolute bottom-0.5 left-0.5 max-w-[calc(100%-20px)]"
           />
         )}
         {count > 0 && (

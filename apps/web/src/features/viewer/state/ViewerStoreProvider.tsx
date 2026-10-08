@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ReactNode } from 'react';
 import { loadStoredSplit, storeSplit } from '../lib/split';
 import { createStageRegistry, StageRegistryContext } from './stage-registry';
 import { ViewerDataContext, type ViewerData } from './viewer-data';
@@ -33,6 +33,24 @@ export function ViewerStoreProvider({ data, initialSlideId, children }: ViewerSt
 
   // The split is a per-browser preference, not per deck.
   useEffect(() => storeSplit(state.split), [state.split]);
+
+  // A new revision keeps the active slide by its stable id. When that slide is gone, the slide
+  // that now stands at its old place takes over (before paint, so nothing points into the void).
+  const lastActiveIndex = useRef(0);
+  const activeIndex = state.activeSlideId ? data.slideIndex.get(state.activeSlideId) : undefined;
+  useEffect(() => {
+    if (activeIndex !== undefined) lastActiveIndex.current = activeIndex;
+  }, [activeIndex]);
+  useLayoutEffect(() => {
+    const { slides } = data;
+    const fallback =
+      slides[Math.min(lastActiveIndex.current, slides.length - 1)]?.id ?? slides[0]?.id ?? null;
+    dispatch({
+      type: 'slidesReplaced',
+      slideIds: slides.map((slide) => slide.id),
+      fallbackSlideId: fallback,
+    });
+  }, [data]);
 
   return (
     <ViewerDataContext value={data}>

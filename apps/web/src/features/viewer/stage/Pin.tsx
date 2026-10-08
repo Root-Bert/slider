@@ -2,6 +2,7 @@ import type { Comment, Point } from '@slider/shared';
 import { cn } from '@/ui';
 import { accentColor } from '@/lib/accent';
 import { POWERPOINT_COLOR } from '../lib/colors';
+import { isRemovedInPowerPoint } from '../lib/comment-selectors';
 import { markLabel } from '../lib/labels';
 
 export type MarkState = 'normal' | 'emphasized' | 'dimmed';
@@ -20,7 +21,8 @@ interface PinProps {
  */
 export function Pin({ comment, at, state, onActivate, onHover }: PinProps) {
   const fromPowerPoint = comment.source === 'pptx';
-  const label = markLabel(comment);
+  const removed = isRemovedInPowerPoint(comment);
+  const label = `${markLabel(comment)}${removed ? ' (in PowerPoint entfernt)' : ''}`;
 
   return (
     <button
@@ -40,6 +42,8 @@ export function Pin({ comment, at, state, onActivate, onHover }: PinProps) {
       className={cn(
         'pointer-events-auto absolute flex size-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center transition-[opacity,transform] duration-200',
         state === 'dimmed' && 'opacity-30',
+        // Deleted in the PowerPoint file: still there, but quieter (F2).
+        removed && state === 'normal' && 'opacity-55 grayscale',
         // Above the frames' click areas.
         state === 'emphasized' ? 'z-10 scale-125' : 'z-[1]',
       )}

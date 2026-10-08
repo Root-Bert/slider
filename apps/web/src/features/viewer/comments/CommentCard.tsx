@@ -12,13 +12,14 @@ import { accentColor } from '@/lib/accent';
 import { isPendingComment } from '@/lib/comment-cache';
 import { pluralize } from '@/lib/format';
 import { AvatarStack, cn, Icon } from '@/ui';
-import { isStrokeOnly, type Thread } from '../lib/comment-selectors';
+import { isRemovedInPowerPoint, isStrokeOnly, type Thread } from '../lib/comment-selectors';
 import { MEDIA_KINDS, MEDIA_SOON } from '../lib/media-kinds';
 import { useViewerDispatch } from '../state/viewer-state';
 import { AuthorLine } from './AuthorLine';
 import { CommentBody } from './CommentBody';
 import { ReplyComposer } from './ReplyComposer';
 import { ResolveButton } from './ResolveButton';
+import { ChangedSinceCommentNote, RemovedInPowerPointNote } from './RevisionNotes';
 
 export type CardEmphasis = 'normal' | 'focused' | 'hovered' | 'dimmed';
 
@@ -30,6 +31,8 @@ interface CommentCardProps {
   canResolve: boolean;
   /** Extra context line, e.g. "Zwischen Folie 2 und 3". */
   location?: string | undefined;
+  /** The slide was modified after this thread was started (BER-108). */
+  changedSince?: boolean;
 }
 
 /**
@@ -43,6 +46,7 @@ export const CommentCard = memo(function CommentCard({
   emphasis,
   canResolve,
   location,
+  changedSince = false,
 }: CommentCardProps) {
   const dispatch = useViewerDispatch();
   const [expanded, setExpanded] = useState(false);
@@ -54,6 +58,7 @@ export const CommentCard = memo(function CommentCard({
   const highlighted = expanded || emphasis === 'focused' || emphasis === 'hovered';
   const stacked = replies.length > 0 && !expanded;
   const canReply = canResolve;
+  const removed = isRemovedInPowerPoint(root);
 
   // Every sent reply pushes the inline reply box down; keep it in view while typing.
   useEffect(() => {
@@ -136,10 +141,17 @@ export const CommentCard = memo(function CommentCard({
           }
         />
         {location && <p className="text-[11px] font-medium text-fg-subtle">{location}</p>}
+        {removed && <RemovedInPowerPointNote />}
         {isStrokeOnly(root) ? (
           <p className="text-[13px] text-fg-muted">✏️ Markierung</p>
         ) : (
-          <CommentBody body={root.body} />
+          <CommentBody
+            body={root.body}
+            className={cn(removed && 'text-fg-subtle line-through decoration-white/30')}
+          />
+        )}
+        {changedSince && !done && (
+          <ChangedSinceCommentNote comment={root} deckId={deckId} canResolve={canResolve} />
         )}
         {stacked && (
           <footer className="flex items-center gap-2 pt-0.5">

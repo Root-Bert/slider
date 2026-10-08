@@ -113,4 +113,45 @@ describe('viewerReducer', () => {
     expect(viewerReducer(state, { type: 'slideHovered', slideId: 's2' })).toBe(state);
     expect(viewerReducer(state, { type: 'slideHovered', slideId: null }).hoveredSlideId).toBeNull();
   });
+
+  describe('revisions (BER-107, BER-109)', () => {
+    it('keeps the active slide when it still exists', () => {
+      const state = run({ type: 'slidesReplaced', slideIds: ['s0', 's1'], fallbackSlideId: 's0' });
+      expect(state).toBe(initial);
+    });
+
+    it('falls back when the active slide was deleted and drops its draft', () => {
+      const state = run(
+        { type: 'anchorPlaced', slideId: 's1', anchor: { type: 'slide' } },
+        { type: 'slideHovered', slideId: 's1' },
+        { type: 'slidesReplaced', slideIds: ['s2', 's3'], fallbackSlideId: 's3' },
+      );
+      expect(state.activeSlideId).toBe('s3');
+      expect(state.hoveredSlideId).toBeNull();
+      expect(state.draft).toBeNull();
+    });
+
+    it('drops a gap draft whose neighbour is gone', () => {
+      const state = run(
+        { type: 'gapDraftStarted', afterSlideId: 's1', beforeSlideId: 's2' },
+        { type: 'slidesReplaced', slideIds: ['s1', 's3'], fallbackSlideId: 's1' },
+      );
+      expect(state.draft).toBeNull();
+    });
+
+    it('shares the right side between thread panel and deleted slides', () => {
+      let state = run(
+        { type: 'threadFocused', threadId: 't1', openPanel: true },
+        { type: 'deletedPanelSet', open: true },
+      );
+      expect(state).toMatchObject({ deletedPanelOpen: true, threadPanelOpen: false });
+      state = viewerReducer(state, { type: 'threadFocused', threadId: 't2', openPanel: true });
+      expect(state).toMatchObject({ deletedPanelOpen: false, threadPanelOpen: true });
+    });
+
+    it('toggles the change markers', () => {
+      expect(initial.showChanges).toBe(false);
+      expect(run({ type: 'showChangesSet', show: true }).showChanges).toBe(true);
+    });
+  });
 });

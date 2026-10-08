@@ -21,9 +21,11 @@ import {
   splitForWidth,
   TRACK_PAD_TOP,
   TRACK_PAD_X,
+  trailingWidth,
   visibleRange,
   type TrackLayout,
 } from '../lib/timeline-layout';
+import { useRevisionData } from '../state/revision-data';
 import { useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
@@ -52,6 +54,8 @@ const sameRange = (a: Range, b: Range) => a.first === b.first && a.last === b.la
 export function Timeline({ controls }: { controls: ReactNode }) {
   const { slides, slideIndex } = useViewerData();
   const { split, activeSlideId, tool } = useViewerState();
+  const { deletedSlides } = useRevisionData();
+  const hasDeleted = deletedSlides.length > 0;
   const dispatch = useViewerDispatch();
   const registry = useStageRegistry();
   const narrow = useIsNarrow();
@@ -78,8 +82,9 @@ export function Timeline({ controls }: { controls: ReactNode }) {
   // Whole pixels: the track, the header and the comment area stay on crisp edges.
   const slideH = geometry && Math.round(slideHeightAt(narrow ? null : split, geometry));
   const layout = useMemo(
-    () => (slideH ? layoutTrack(aspectRatios, slideH) : null),
-    [aspectRatios, slideH],
+    () =>
+      slideH ? layoutTrack(aspectRatios, slideH, hasDeleted ? trailingWidth(slideH) : 0) : null,
+    [aspectRatios, slideH, hasDeleted],
   );
 
   useTimelineWheel({ scrollerRef, geometry, anchorRef, enabled: !narrow });
@@ -181,6 +186,19 @@ export function Timeline({ controls }: { controls: ReactNode }) {
       window.clearTimeout(settle);
     };
   }, [narrow, registry, slides, dispatch]);
+
+  // A new revision reorders the track: the active slide (kept by its id) stays in view.
+  const slideOrder = useMemo(() => slides.map((slide) => slide.id).join(), [slides]);
+  const shownOrder = useRef(slideOrder);
+  const revealActive = useEffectEvent(() => {
+    if (activeSlideId)
+      registry.revealSlide(activeSlideId, { behavior: 'instant', align: 'nearest' });
+  });
+  useLayoutEffect(() => {
+    if (shownOrder.current === slideOrder || !layout) return;
+    shownOrder.current = slideOrder;
+    revealActive();
+  }, [slideOrder, layout]);
 
   // Picking a drawing tool grows a small active slide to a comfortable drawing size.
   const growForDrawing = useEffectEvent(() => {

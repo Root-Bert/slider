@@ -35,6 +35,10 @@ export interface ViewerState {
   pptxOnly: boolean;
   /** Split handle position `t` ∈ [0, 1] (slide size vs comment area), `null` = default; see `lib/split`. */
   split: number | null;
+  /** "Änderungen ansehen": badges of the latest revision on track and minimap (Figma D2). */
+  showChanges: boolean;
+  /** Side panel with the slides deleted in later revisions and their comments (BER-109). */
+  deletedPanelOpen: boolean;
 }
 
 export type ViewerAction =
@@ -57,13 +61,18 @@ export type ViewerAction =
   | { type: 'statusFilterChanged'; filter: StatusFilter }
   | { type: 'pptxOnlyToggled' }
   /** `null` resets the split to the default. */
-  | { type: 'splitChanged'; split: number | null };
+  | { type: 'splitChanged'; split: number | null }
+  | { type: 'showChangesSet'; show: boolean }
+  | { type: 'deletedPanelSet'; open: boolean }
+  /** A new revision arrived: drop what points at slides that are gone (BER-107). */
+  | { type: 'slidesReplaced'; slideIds: readonly string[]; fallbackSlideId: string | null };
 
 export function createInitialState(options: {
   activeSlideId: string | null;
   color: AccentColor;
   /** Restored split; `null` / missing is the default (Desktop-1 proportions). */
   split?: number | null;
+  showChanges?: boolean;
 }): ViewerState {
   return {
     activeSlideId: options.activeSlideId,
@@ -79,6 +88,8 @@ export function createInitialState(options: {
     statusFilter: 'open',
     pptxOnly: false,
     split: options.split == null ? null : clampSplit(options.split),
+    showChanges: options.showChanges ?? false,
+    deletedPanelOpen: false,
   };
 }
 
@@ -145,6 +156,16 @@ function draftReducer(draft: Draft | null, action: ViewerAction): Draft | null {
     case 'draftCancelled':
     case 'draftSubmitted':
       return null;
+    case 'slidesReplaced': {
+      if (!draft) return draft;
+      const ids = new Set(action.slideIds);
+      if (draft.slideId !== null) return ids.has(draft.slideId) ? draft : null;
+      if (draft.anchor.type !== 'gap') return draft;
+      const { afterSlideId, beforeSlideId } = draft.anchor;
+      return (afterSlideId && !ids.has(afterSlideId)) || (beforeSlideId && !ids.has(beforeSlideId))
+        ? null
+        : draft;
+    }
     default:
       return draft;
   }
@@ -181,12 +202,16 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
       return next.hoveredSlideId === action.slideId
         ? next
         : { ...next, hoveredSlideId: action.slideId };
-    case 'threadFocused':
+    case 'threadFocused': {
+      const threadPanelOpen = action.openPanel || next.threadPanelOpen;
       return {
         ...next,
         focusedThreadId: action.threadId,
-        threadPanelOpen: action.openPanel || next.threadPanelOpen,
+        threadPanelOpen,
+        // Both are right side panels: the thread panel takes the deleted slides' place.
+        deletedPanelOpen: threadPanelOpen ? false : next.deletedPanelOpen,
       };
+    }
     case 'threadPanelClosed':
       return { ...next, threadPanelOpen: false, focusedThreadId: null };
     case 'threadUnfocused':
@@ -200,6 +225,23 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
     case 'splitChanged': {
       const split = action.split === null ? null : clampSplit(action.split);
       return split === next.split ? next : { ...next, split };
+    }
+    case 'showChangesSet':
+      return next.showChanges === action.show ? next : { ...next, showChanges: action.show };
+    case 'deletedPanelSet':
+      return action.open
+        ? { ...next, deletedPanelOpen: true, threadPanelOpen: false, focusedThreadId: null }
+        : { ...next, deletedPanelOpen: false };
+    case 'slidesReplaced': {
+      const ids = new Set(action.slideIds);
+      const keepActive = next.activeSlideId !== null && ids.has(next.activeSlideId);
+      const keepHover = next.hoveredSlideId === null || ids.has(next.hoveredSlideId);
+      if (keepActive && keepHover) return next;
+      return {
+        ...next,
+        activeSlideId: keepActive ? next.activeSlideId : action.fallbackSlideId,
+        hoveredSlideId: keepHover ? next.hoveredSlideId : null,
+      };
     }
     default:
       return next;

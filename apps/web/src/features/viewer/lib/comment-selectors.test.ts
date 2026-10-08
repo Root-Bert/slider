@@ -11,6 +11,7 @@ import {
   isStrokeOnly,
   sortThreadsByAnchor,
   sortThreadsClockwise,
+  threadsOnCurrentSlides,
 } from './comment-selectors';
 import { author, comment, slide } from './test-fixtures';
 
@@ -49,6 +50,19 @@ describe('filters and counts', () => {
   it('counts per status, respecting only the PowerPoint filter', () => {
     expect(countByStatus(threads, false)).toEqual({ all: 4, open: 2, done: 2 });
     expect(countByStatus(threads, true)).toEqual({ all: 2, open: 1, done: 1 });
+  });
+});
+
+describe('threadsOnCurrentSlides', () => {
+  it('leaves out threads on deleted slides', () => {
+    const threads = buildThreads([
+      comment({ slideId: 's1' }),
+      comment({ slideId: 'deleted' }),
+      comment({ slideId: null }),
+    ]);
+    const kept = threadsOnCurrentSlides(threads, new Set(['s1', 's2']));
+    expect(kept.map((thread) => thread.root.slideId)).toEqual(['s1', null]);
+    expect(countByStatus(kept, false).all).toBe(2);
   });
 });
 

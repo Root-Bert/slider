@@ -7,11 +7,11 @@ import { useViewerDispatch, useViewerState } from '../state/viewer-state';
 /**
  * Global keyboard shortcuts of the viewer:
  * ←/→ previous/next slide, Home/End first/last, F fullscreen,
- * ⌘Z / ⇧⌘Z undo/redo while drawing, Esc cancels the draft → drops the tool → closes the thread.
+ * ⌘Z / ⇧⌘Z undo/redo while drawing, Esc cancels the draft → drops the tool → closes the thread (or the deleted slides panel).
  */
 export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen: () => void }) {
   const { slides, slideIndex } = useViewerData();
-  const { activeSlideId, draft, tool, threadPanelOpen } = useViewerState();
+  const { activeSlideId, draft, tool, threadPanelOpen, deletedPanelOpen } = useViewerState();
   const dispatch = useViewerDispatch();
   const registry = useStageRegistry();
 
@@ -35,6 +35,7 @@ export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen:
       if (draft) dispatch({ type: 'draftCancelled' });
       else if (tool) dispatch({ type: 'toolSelected', tool: null });
       else if (threadPanelOpen) dispatch({ type: 'threadPanelClosed' });
+      else if (deletedPanelOpen) dispatch({ type: 'deletedPanelSet', open: false });
       else return;
       event.preventDefault();
       return;

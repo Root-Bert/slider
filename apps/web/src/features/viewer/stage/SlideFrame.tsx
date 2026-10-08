@@ -3,6 +3,8 @@ import { memo, useRef, useState } from 'react';
 import { Badge, cn, Icon } from '@/ui';
 import type { Thread } from '../lib/comment-selectors';
 import { slideLabel } from '../lib/labels';
+import type { SlideBadge } from '../lib/revision-changes';
+import { ChangeBadge } from '../revisions/ChangeBadge';
 import { useStageRegistry } from '../state/stage-registry';
 import { useViewerDispatch, type Draft, type Tool } from '../state/viewer-state';
 import { AnnotationLayer } from './AnnotationLayer';
@@ -30,6 +32,10 @@ interface SlideFrameProps {
   /** Active tool, `null` when not drawing or not allowed to comment. */
   tool: Tool | null;
   color: AccentColor;
+  /** Change of the latest revision – only set while changes are shown (Figma D2). */
+  badge: SlideBadge | null;
+  /** The revision the badge belongs to ("Geändert · V4"). */
+  badgeVersion: number;
 }
 
 /**
@@ -50,6 +56,8 @@ export const SlideFrame = memo(function SlideFrame({
   draft,
   tool,
   color,
+  badge,
+  badgeVersion,
 }: SlideFrameProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const registry = useStageRegistry();
@@ -115,11 +123,30 @@ export const SlideFrame = memo(function SlideFrame({
             />
           )}
         </div>
-        {slide.hidden && w >= 200 && (
-          <Badge className="absolute top-3 left-3 bg-black/60! backdrop-blur">
-            <Icon name="visibilityOff" size={14} />
-            Ausgeblendet
-          </Badge>
+        {((slide.hidden && w >= 200) || badge) && (
+          // Top left (Figma D2). No z-index: pins and annotations (rendered after it) stay on top
+          // and clickable – the status banners take their own room above the track.
+          <div
+            className={cn(
+              'pointer-events-none absolute flex max-w-[calc(100%-16px)] items-center gap-1.5',
+              small ? 'top-1.5 left-1.5' : 'top-3 left-3',
+            )}
+          >
+            {slide.hidden && w >= 200 && (
+              <Badge className="shrink-0 bg-black/60! backdrop-blur">
+                <Icon name="visibilityOff" size={14} />
+                Ausgeblendet
+              </Badge>
+            )}
+            {badge && (
+              <ChangeBadge
+                badge={badge}
+                version={badgeVersion}
+                size={w < 160 ? 'mini' : 'track'}
+                className="min-w-0"
+              />
+            )}
+          </div>
         )}
         <AnnotationLayer slide={slide} threads={threads} emphasisId={emphasisId} draft={draft} />
         {drawing && <DrawingSurface slide={slide} boxRef={boxRef} tool={tool} color={color} />}

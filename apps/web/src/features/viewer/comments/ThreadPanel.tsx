@@ -5,11 +5,14 @@ import { AvatarStack, Icon, IconButton } from '@/ui';
 import type { Thread } from '../lib/comment-selectors';
 import { locationLabel } from '../lib/labels';
 import { collapseReplies } from '../lib/replies';
+import { isChangedSinceComment } from '../lib/revision-changes';
+import { useRevisionData } from '../state/revision-data';
 import { useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
 import { ReplyComposer } from './ReplyComposer';
 import { ResolveButton } from './ResolveButton';
+import { ChangedSinceCommentNote } from './RevisionNotes';
 import { ThreadMessage } from './ThreadMessage';
 
 /** Thread side panel (B4) – a bottom sheet on phones. */
@@ -23,6 +26,7 @@ export function ThreadPanel() {
 
 function ThreadPanelView({ thread }: { thread: Thread }) {
   const { deck, viewer, canComment, slideIndex } = useViewerData();
+  const { modifiedAt, deletedSlides } = useRevisionData();
   const dispatch = useViewerDispatch();
   const registry = useStageRegistry();
   const panelRef = useRef<HTMLElement>(null);
@@ -31,7 +35,11 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
   const [showAll, setShowAll] = useState(false);
   const { root, replies } = thread;
   const { hidden, visible } = collapseReplies(replies, showAll);
-  const location = locationLabel(root.anchor, root.slideId, (id) => slideIndex.get(id));
+  const deletedSlide = deletedSlides.find((slide) => slide.slideId === root.slideId);
+  const location = deletedSlide
+    ? `Gelöschte Folie ${deletedSlide.previousPosition + 1}`
+    : locationLabel(root.anchor, root.slideId, (id) => slideIndex.get(id));
+  const changedSince = isChangedSinceComment(root, modifiedAt);
   const canManage = (comment: Thread['root']) =>
     comment.source === 'app' && comment.author.id === viewer.author.id;
 
@@ -40,12 +48,14 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
   const homeSlideId =
     root.slideId ??
     (root.anchor.type === 'gap' ? (root.anchor.afterSlideId ?? root.anchor.beforeSlideId) : null);
+  const homeOnTrack = homeSlideId !== null && slideIndex.has(homeSlideId);
   useEffect(() => {
     panelRef.current?.focus({ preventScroll: true });
-    if (!homeSlideId) return;
+    // A thread of a deleted slide has no slide on the track to show.
+    if (!homeSlideId || !homeOnTrack) return;
     dispatch({ type: 'activeSlideChanged', slideId: homeSlideId });
     registry.revealSlide(homeSlideId, { align: 'nearest' });
-  }, [registry, dispatch, homeSlideId]);
+  }, [registry, dispatch, homeSlideId, homeOnTrack]);
 
   // A new reply (own or polled) scrolls into view at the bottom of the history.
   const replyCount = replies.length;
@@ -91,6 +101,9 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
             {formatRelativeTime(thread.lastActivityAt)}
           </span>
         </p>
+        {changedSince && (
+          <ChangedSinceCommentNote comment={root} deckId={deck.id} canResolve={canComment} />
+        )}
       </header>
 
       <div
