@@ -10,6 +10,7 @@ import { migrate } from 'drizzle-orm/pglite/migrator';
 const MIGRATIONS_DIR = fileURLToPath(new URL('../drizzle', import.meta.url));
 const WORKSPACES_TAG = '0004_workspaces';
 const PLANS_TAG = '0005_plans';
+const PASSKEYS_TAG = '0006_passkeys';
 
 let client: PGlite | null = null;
 let tmp: string | null = null;
@@ -125,5 +126,34 @@ describe('migration 0005_plans', () => {
       `SELECT plan FROM workspaces WHERE id = 'w2'`,
     );
     expect(fresh[0]?.plan).toBe('free');
+  });
+});
+
+describe('migration 0006_passkeys', () => {
+  it('only adds: open login links keep working, without a code', async () => {
+    client = new PGlite();
+    const db = drizzle({ client });
+    await migrate(db, { migrationsFolder: await migrationsBefore(PASSKEYS_TAG) });
+    await client.exec(`
+      INSERT INTO users (id, name, email, color) VALUES ('u-robert', 'Robert', 'robert@q4-team.de', 'red');
+      INSERT INTO user_identities (provider, subject, user_id, email) VALUES ('email', 'robert@q4-team.de', 'u-robert', 'robert@q4-team.de');
+      INSERT INTO login_tokens (id, email, token_hash, return_to, expires_at) VALUES ('t1', 'robert@q4-team.de', 'hash', '/', now() + interval '10 minutes');
+    `);
+
+    await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+
+    const { rows } = await client.query<{ code_hash: string | null; code_attempts: number }>(
+      `SELECT code_hash, code_attempts FROM login_tokens WHERE id = 't1'`,
+    );
+    expect(rows).toEqual([{ code_hash: null, code_attempts: 0 }]);
+    await client.exec(`
+      INSERT INTO passkeys (id, user_id, credential_id, public_key, device_type, name)
+        VALUES ('p1', 'u-robert', 'cred', 'key', 'singleDevice', 'Passkey');
+      DELETE FROM users WHERE id = 'u-robert';
+    `);
+    const { rows: left } = await client.query<{ n: number }>(
+      'SELECT count(*)::int AS n FROM passkeys',
+    );
+    expect(left[0]?.n).toBe(0);
   });
 });

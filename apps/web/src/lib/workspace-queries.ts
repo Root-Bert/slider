@@ -4,12 +4,17 @@ import type {
   CreateWorkspaceInviteInput,
   JoinPreview,
   JoinResult,
+  LoginIdentity,
+  LoginResult,
+  Passkey,
+  VerifyEmailCodeInput,
   Workspace,
   WorkspaceInvite,
   WorkspaceMember,
   WorkspaceRole,
 } from '@slider/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { registerPasskey } from '@/features/auth/lib/passkeys';
 import { api } from './api-client';
 import { queryKeys } from './queries';
 
@@ -22,6 +27,8 @@ export const workspaceKeys = {
   members: (workspaceId: string) => ['workspaces', workspaceId, 'members'] as const,
   invites: (workspaceId: string) => ['workspaces', workspaceId, 'invites'] as const,
   join: (token: string) => ['join', token] as const,
+  passkeys: ['account', 'passkeys'] as const,
+  identities: ['account', 'identities'] as const,
 };
 
 // ── Login ───────────────────────────────────────────────────────────────────
@@ -38,6 +45,52 @@ export const useStartEmailLogin = () =>
     mutationFn: (input: { email: string; returnTo: string }) =>
       api.post<void>('/auth/email/start', input),
   });
+
+/** The 6-digit code from the login mail; the web app then navigates to `redirectTo`. */
+export const useVerifyEmailCode = () =>
+  useMutation({
+    mutationFn: (input: VerifyEmailCodeInput) => api.post<LoginResult>('/auth/email/code', input),
+  });
+
+// ── Account: connected logins and passkeys ──────────────────────────────────
+
+export const useIdentities = () =>
+  useQuery({
+    queryKey: workspaceKeys.identities,
+    queryFn: () => api.get<LoginIdentity[]>('/me/identities'),
+  });
+
+export const usePasskeys = (enabled = true) =>
+  useQuery({
+    queryKey: workspaceKeys.passkeys,
+    queryFn: () => api.get<Passkey[]>('/passkeys'),
+    enabled,
+  });
+
+export function useRegisterPasskey() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => registerPasskey(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: workspaceKeys.passkeys }),
+  });
+}
+
+export function useRenamePasskey() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      api.patch<Passkey>(`/passkeys/${id}`, { name }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: workspaceKeys.passkeys }),
+  });
+}
+
+export function useDeletePasskey() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/passkeys/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: workspaceKeys.passkeys }),
+  });
+}
 
 /** Signs out. The caller then loads the login page fresh, which also drops every cached response. */
 export const useLogout = () => useMutation({ mutationFn: () => api.post<void>('/auth/logout') });

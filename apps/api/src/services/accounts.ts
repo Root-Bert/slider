@@ -18,8 +18,10 @@ import {
  * - the very first login of the instance adopts the dev owner (and its decks) – if
  *   `mayBootstrap` lets this address claim the instance;
  * - a magic link signs into the account with that e-mail – the mail proves the mailbox;
- * - Microsoft/OIDC attach to an existing account by e-mail only while that account has no
- *   login yet (e.g. created before logins existed); otherwise `account_exists`.
+ * - Microsoft/Google/OIDC attach to an existing account by e-mail only while that account has no
+ *   login yet (e.g. created before logins existed); otherwise `account_exists`. Signed in, a
+ *   person can link another provider explicitly ({@link linkIdentity}, "Verbinden" on /konto).
+ * - Passkeys are no identities: they only sign into accounts that exist (`routes/passkeys`).
  */
 
 export interface IdentityInput {
@@ -257,4 +259,44 @@ async function bootstrapAccount(
     .returning();
   if (!row) throw new Error('User insert returned no row');
   return row;
+}
+
+/**
+ * Links a provider identity to the signed-in account ("Google verbinden" on /konto). Refused
+ * when the identity already belongs to someone else – never moves logins between accounts.
+ */
+export async function linkIdentity(
+  deps: AppDeps,
+  userId: string,
+  input: Pick<IdentityInput, 'provider' | 'subject' | 'email'>,
+): Promise<{ ok: true } | { ok: false; error: LoginError }> {
+  const [existing] = await deps.db
+    .select({ userId: userIdentities.userId })
+    .from(userIdentities)
+    .where(
+      and(eq(userIdentities.provider, input.provider), eq(userIdentities.subject, input.subject)),
+    );
+  if (existing)
+    return existing.userId === userId ? { ok: true } : { ok: false, error: 'account_exists' };
+  await deps.db.insert(userIdentities).values({
+    provider: input.provider,
+    subject: input.subject,
+    userId,
+    email: input.email ? normalizeEmail(input.email) : null,
+    createdAt: deps.clock.now(),
+  });
+  return { ok: true };
+}
+
+/** How the account signs in, oldest first (`GET /me/identities`). */
+export function listIdentities(db: Executor, userId: string) {
+  return db
+    .select({
+      provider: userIdentities.provider,
+      email: userIdentities.email,
+      createdAt: userIdentities.createdAt,
+    })
+    .from(userIdentities)
+    .where(eq(userIdentities.userId, userId))
+    .orderBy(userIdentities.createdAt);
 }

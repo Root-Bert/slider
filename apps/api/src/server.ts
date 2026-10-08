@@ -36,7 +36,11 @@ async function main(): Promise<void> {
     log.info(`No login configured – every visitor acts as ${owner.email} (AUTH_DEV_LOGIN).`);
   }
   const oidc = config.auth.oidc ? new OidcClient(config.auth.oidc, clock) : null;
-  const mailer = createMailer(config.smtp, log);
+  const google = config.auth.google ? new OidcClient(config.auth.google, clock) : null;
+  const mailer = createMailer(config.smtp, log, config.env);
+  if (!config.smtp && config.env === 'development') {
+    log.info('No SMTP configured – login mails are logged here and listed at /api/dev/mails.');
+  }
 
   const microsoft = new MicrosoftTokens({
     config: config.microsoft,
@@ -75,6 +79,7 @@ async function main(): Promise<void> {
     log,
     sync,
     oidc,
+    google,
     mailer,
     ownerId: owner?.id ?? null,
   });

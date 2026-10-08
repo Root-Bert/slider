@@ -1,5 +1,6 @@
 import type { MicrosoftTokens } from './auth/microsoft';
 import type { OidcClient } from './auth/oidc';
+import type { WebAuthn } from './auth/passkeys';
 import type { Clock } from './clock';
 import type { Config } from './config';
 import type { Database } from './db/client';
@@ -27,7 +28,11 @@ export interface AppDeps {
   sync: SyncService;
   /** Generic OpenID Connect login (BER-129); `null` when OIDC_ISSUER is not set. */
   oidc: OidcClient | null;
-  /** Magic links and invitation mails; a `NullMailer` without SMTP. */
+  /** "Weiter mit Google" – the OIDC client against accounts.google.com; `null` without GOOGLE_*. */
+  google: OidcClient | null;
+  /** Passkey ceremonies; defaults to `@simplewebauthn/server` (tests inject fakes). */
+  webauthn?: WebAuthn;
+  /** Login and invitation mails; without SMTP a `DevMailer` in development, else a `NullMailer`. */
   mailer: Mailer;
   /**
    * The `users.id` of the dev owner (see {@link Config.devOwner}) – only with `auth.devLogin`,

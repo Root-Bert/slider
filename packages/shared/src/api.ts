@@ -52,10 +52,22 @@ import type { MeLimits, MeUser, PendingInvite, Workspace } from './workspaces';
  * | GET    | /auth/providers                        |                            | AuthProviders         |
  * | GET    | /auth/microsoft/login?returnTo=        | (signed in: connects files) | 302 to Microsoft     |
  * | GET    | /auth/microsoft/callback               |                            | 302 back to the web app |
- * | GET    | /auth/oidc/login?returnTo=             |                            | 302 to the SSO provider |
+ * | GET    | /auth/google/login?returnTo=&intent=   | (`intent=connect`: link to me) | 302 to Google     |
+ * | GET    | /auth/google/callback                  |                            | 302 back to the web app |
+ * | GET    | /auth/oidc/login?returnTo=&intent=     | (`intent=connect`: link to me) | 302 to the SSO provider |
  * | GET    | /auth/oidc/callback                    |                            | 302 back to the web app |
- * | POST   | /auth/email/start                      | StartEmailLoginInput       | 204 (always)          |
- * | GET    | /auth/email/verify?token=              |                            | 302 back to the web app |
+ * | POST   | /auth/email/start                      | StartEmailLoginInput       | 204 (always; mails link + code) |
+ * | GET    | /auth/email/verify?token=              |                            | confirm page → POST → 303 |
+ * | POST   | /auth/email/code                       | VerifyEmailCodeInput       | LoginResult (sets cookie) |
+ * | POST   | /auth/passkey/options                  |                            | WebAuthn request options |
+ * | POST   | /auth/passkey/verify                   | VerifyPasskeyLoginInput    | LoginResult (sets cookie) |
+ * | GET    | /me/identities                         |                            | LoginIdentity[]       |
+ * | GET    | /passkeys                              |                            | Passkey[]             |
+ * | POST   | /passkeys/register/options             |                            | WebAuthn creation options |
+ * | POST   | /passkeys/register/verify              | VerifyPasskeyRegistrationInput | Passkey (201)     |
+ * | PATCH  | /passkeys/:id                          | RenamePasskeyInput         | Passkey               |
+ * | DELETE | /passkeys/:id                          |                            | 204                   |
+ * | GET    | /dev/mails                             | (development only)         | DevMail[] (newest first) |
  * | POST   | /auth/logout                           |                            | 204 (clears session)  |
  * | GET    | /workspaces                            |                            | Workspace[]           |
  * | POST   | /workspaces                            | CreateWorkspaceInput       | Workspace (201)       |

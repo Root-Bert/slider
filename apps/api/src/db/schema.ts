@@ -109,8 +109,9 @@ export const sessions = pgTable(
 );
 
 /**
- * How an account signs in: `microsoft` (`<tid>:<oid>`), `oidc` (`sub` of the configured issuer)
- * or `email` (the lower-case address, magic link). One account may have several.
+ * How an account signs in: `microsoft` (`<tid>:<oid>`), `google` (Google `sub`), `oidc` (`sub` of
+ * the configured issuer) or `email` (the lower-case address, magic link or code). One account may
+ * have several. Passkeys are not identities – they live in `passkeys` and never create accounts.
  */
 export const userIdentities = pgTable(
   'user_identities',
@@ -130,9 +131,12 @@ export const userIdentities = pgTable(
   ],
 );
 
-export type IdentityProvider = 'microsoft' | 'oidc' | 'email';
+export type IdentityProvider = 'microsoft' | 'google' | 'oidc' | 'email';
 
-/** One-time magic-link tokens (hashed, 15 minutes, single use). */
+/**
+ * One-time e-mail logins (hashed, 15 minutes, single use): the link's token and the 6-digit code
+ * from the same mail. Either one uses the row up.
+ */
 export const loginTokens = pgTable(
   'login_tokens',
   {
@@ -143,9 +147,51 @@ export const loginTokens = pgTable(
     createdAt: createdAt(),
     expiresAt: timestamptz('expires_at').notNull(),
     usedAt: timestamptz('used_at'),
+    /** HMAC of the 6-digit code (keyed with SLIDER_SECRET); `null` for rows from before codes. */
+    codeHash: text('code_hash'),
+    /** Wrong codes entered; at the limit the row is burned (`used_at` set). */
+    codeAttempts: integer('code_attempts').notNull().default(0),
   },
   (t) => [index('login_tokens_email_idx').on(t.email)],
 );
+
+/**
+ * WebAuthn passkeys (discoverable credentials). They sign into an existing account only; the
+ * public key and the signature counter are all the server keeps.
+ */
+export const passkeys = pgTable(
+  'passkeys',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Credential id, base64url. */
+    credentialId: text('credential_id').notNull().unique(),
+    /** COSE public key, base64url. */
+    publicKey: text('public_key').notNull(),
+    counter: integer('counter').notNull().default(0),
+    transports: jsonb('transports').$type<string[]>(),
+    /** `singleDevice` or `multiDevice` (synced, e.g. iCloud Keychain, Google Password Manager). */
+    deviceType: text('device_type').notNull(),
+    backedUp: boolean('backed_up').notNull().default(false),
+    name: text('name').notNull(),
+    createdAt: createdAt(),
+    lastUsedAt: timestamptz('last_used_at'),
+  },
+  (t) => [index('passkeys_user_idx').on(t.userId)],
+);
+
+/** Pending WebAuthn challenges (5 minutes, single use); a signed cookie names the row. */
+export const authChallenges = pgTable('auth_challenges', {
+  id: text('id').primaryKey(),
+  purpose: text('purpose').$type<'passkey_register' | 'passkey_login'>().notNull(),
+  /** Registration only: the account the passkey is for. */
+  userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  challenge: text('challenge').notNull(),
+  createdAt: createdAt(),
+  expiresAt: timestamptz('expires_at').notNull(),
+});
 
 /** A team space: decks belong to a workspace, people to workspaces with a role (BER-129). */
 export const workspaces = pgTable('workspaces', {

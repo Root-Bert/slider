@@ -18,6 +18,8 @@ export const routes = {
   /** Workspace invitation link (BER-129). */
   join: (token: string) => `/join/${token}`,
   login: (returnTo?: string | null) => loginPath(returnTo),
+  /** "Konto & Anmeldung": connected logins and passkeys. */
+  account: () => '/konto',
   /** Same page as the login – the first login creates the account (BER-130). */
   register: () => '/registrieren',
 };

@@ -1,13 +1,16 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
+import { and, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { deleteCookie, getSignedCookie, setSignedCookie } from 'hono/cookie';
 import { z } from 'zod';
 import {
   startEmailLoginInputSchema,
+  verifyEmailCodeInputSchema,
   type AuthProviders,
   type LoginError,
   type LoginProvider,
+  type LoginResult,
 } from '@slider/shared';
 import { emailVerifiedFalse, type IdTokenClaims } from '../auth/id-token';
 import {
@@ -21,12 +24,13 @@ import { endSession, hashToken, newSecretToken, startSession } from '../auth/ses
 import { clearGuestCookie, optionalViewerMiddleware, type OptionalViewerEnv } from '../auth/viewer';
 import { loginTokens } from '../db/schema';
 import type { AppDeps } from '../deps';
-import { notFound } from '../http/errors';
+import { badRequest, notFound } from '../http/errors';
 import { clientAddress, fixedWindow, rateLimit } from '../http/rate-limit';
 import { readJson } from '../http/validate';
-import { buttonMail } from '../mail/mailer';
+import { DevMailer, loginMail } from '../mail/mailer';
 import {
   inviteTokenFromPath,
+  linkIdentity,
   mayReceiveLoginLink,
   normalizeEmail,
   signInWithIdentity,
@@ -38,12 +42,14 @@ import { microsoftNotConfigured } from '../sources/errors';
 export const MS_OAUTH_COOKIE = 'slider_ms_oauth';
 const MS_COOKIE_PATH = '/api/auth/microsoft';
 export const OIDC_COOKIE = 'slider_oidc';
-const OIDC_COOKIE_PATH = '/api/auth/oidc';
+export const GOOGLE_COOKIE = 'slider_google';
 const COOKIE_MAX_AGE = 10 * 60;
 /** Where "connect Microsoft for file access" returns to by default: the import page. */
 const DEFAULT_RETURN_TO = '/neu';
 const DEFAULT_LOGIN_RETURN_TO = '/';
 const MAGIC_LINK_TTL_MS = 15 * 60 * 1000;
+/** Wrong codes per mail before it is burned (a 6-digit code: 5 in a million per mail). */
+export const MAX_CODE_ATTEMPTS = 5;
 /** `newSecretToken()`: 32 bytes base64url. Anything else is not looked up (nor echoed). */
 const TOKEN_PATTERN = /^[\w-]{43}$/;
 type LoginTokenRow = typeof loginTokens.$inferSelect;
@@ -93,8 +99,10 @@ function microsoftIdentity(
  * Login (BER-129) and Microsoft file access (BER-92).
  * - Microsoft: `/login` → Microsoft → `/callback`. Signed out it signs in (identity + Graph token
  *   in one go); signed in it only connects file access to the current account.
- * - OIDC: the same for the configured SSO provider, login only.
- * - Magic link: `/email/start` mails a one-time link to `/email/verify`.
+ * - Google and OIDC: the same for Google and the configured SSO provider; signed in with
+ *   `intent=connect` they link the provider to the account instead.
+ * - E-mail: `/email/start` mails a one-time link to `/email/verify` and a 6-digit code for
+ *   `/email/code`.
  * Every login ends in a session cookie and a redirect to `returnTo`; failures go to
  * `/login?error=<LoginError>`.
  */
@@ -104,6 +112,8 @@ export function authRoutes(deps: AppDeps) {
   const emailStartIpLimit = rateLimit({ limit: 10, windowMs: 15 * 60_000, clock: deps.clock });
   const emailStartPerAddress = fixedWindow({ limit: 3, windowMs: 15 * 60_000, clock: deps.clock });
   const verifyLimit = rateLimit({ limit: 30, windowMs: 60_000, clock: deps.clock });
+  /** Codes per IP; the per-mail attempt limit is the real guard. */
+  const codeLimit = rateLimit({ limit: 30, windowMs: 15 * 60_000, clock: deps.clock });
 
   /** 303 after a POST, so the browser follows with a GET. */
   const toWeb = (c: Context, path: string, status: 302 | 303 = 302) =>
@@ -128,16 +138,8 @@ export function authRoutes(deps: AppDeps) {
     return toWeb(c, target.pathname + target.search);
   };
 
-  const loginFailed = (
-    c: Context,
-    error: LoginError,
-    returnTo?: string,
-    status: 302 | 303 = 302,
-  ) => {
-    const target = new URLSearchParams({ error });
-    if (returnTo && returnTo !== DEFAULT_LOGIN_RETURN_TO) target.set('returnTo', returnTo);
-    return toWeb(c, `/login?${target.toString()}`, status);
-  };
+  const loginFailed = (c: Context, error: LoginError, returnTo?: string, status: 302 | 303 = 302) =>
+    toWeb(c, loginErrorPath(error, returnTo), status);
 
   /** Signs the account in on this browser and leaves any guest session. */
   const loggedIn = async (
@@ -149,6 +151,13 @@ export function authRoutes(deps: AppDeps) {
     clearGuestCookie(c);
     await startSession(c, deps, userId);
     return toWeb(c, returnTo, status);
+  };
+
+  /** JSON logins (code, passkey): the session cookie plus where the web app navigates next. */
+  const loggedInJson = async (c: Context, userId: string, returnTo: string) => {
+    clearGuestCookie(c);
+    await startSession(c, deps, userId);
+    return c.json<LoginResult>({ redirectTo: safeReturnTo(returnTo, DEFAULT_LOGIN_RETURN_TO) });
   };
 
   /** A magic-link token that is still usable – without using it up. */
@@ -208,6 +217,102 @@ export function authRoutes(deps: AppDeps) {
     return raw ? parseState(raw) : null;
   };
 
+  const OIDC_PROVIDERS = {
+    google: {
+      client: () => deps.google,
+      cookie: GOOGLE_COOKIE,
+      path: '/api/auth/google',
+      notConfigured: 'Die Anmeldung mit Google ist nicht eingerichtet.',
+    },
+    oidc: {
+      client: () => deps.oidc,
+      cookie: OIDC_COOKIE,
+      path: '/api/auth/oidc',
+      notConfigured: 'Die Anmeldung per SSO ist nicht eingerichtet.',
+    },
+  } satisfies Record<OidcProviderId, unknown>;
+
+  /**
+   * `/login` of an OIDC provider. Signed out it signs in; signed in with `intent=connect` it links
+   * the provider to the current account (/konto).
+   */
+  const oidcLogin = (id: OidcProviderId) => async (c: Context<OptionalViewerEnv>) => {
+    const provider = OIDC_PROVIDERS[id];
+    const client = provider.client();
+    if (!client) throw notFound(provider.notConfigured);
+    const current = c.var.viewer;
+    const connect = c.req.query('intent') === 'connect' && current?.kind === 'owner';
+    const returnTo = safeReturnTo(c.req.query('returnTo'), DEFAULT_LOGIN_RETURN_TO);
+    const pkce = await createPkce();
+    let url: string;
+    try {
+      url = await client.authorizeUrl(pkce);
+    } catch (error) {
+      deps.log.warn(`${id} discovery failed`, error);
+      return connect ? linkFailed(c, returnTo, 'failed') : loginFailed(c, 'failed', returnTo);
+    }
+    await writeState(c, provider.cookie, provider.path, {
+      state: pkce.state,
+      verifier: pkce.verifier,
+      nonce: pkce.nonce,
+      returnTo,
+      mode: connect ? 'connect' : 'login',
+      userId: connect ? current.author.id : undefined,
+    });
+    return c.redirect(url, 302);
+  };
+
+  const oidcCallback = (id: OidcProviderId) => async (c: Context<OptionalViewerEnv>) => {
+    const provider = OIDC_PROVIDERS[id];
+    const client = provider.client();
+    const saved = await readState(c, provider.cookie, provider.path);
+    const query = c.req.query();
+    const returnTo = saved?.returnTo ?? DEFAULT_LOGIN_RETURN_TO;
+    const connect = saved?.mode === 'connect';
+    const fail = (error: LoginError) =>
+      connect ? linkFailed(c, returnTo, error) : loginFailed(c, error, returnTo);
+    if (!client || !saved?.nonce || !query['state'] || query['state'] !== saved.state) {
+      return fail('failed');
+    }
+    if (query['error']) {
+      deps.log.warn(`${id} login failed: ${query['error']} ${query['error_description'] ?? ''}`);
+      return fail(query['error'] === 'access_denied' ? 'denied' : 'failed');
+    }
+    if (!query['code']) return fail('failed');
+
+    let claims: IdTokenClaims;
+    try {
+      claims = await client.exchangeCode(query['code'], saved.verifier, saved.nonce);
+    } catch (error) {
+      deps.log.warn(`${id} token exchange failed`, error);
+      return fail('failed');
+    }
+    const identity = oidcIdentity(id, claims, inviteTokenFromPath(returnTo));
+    if (!identity.ok) return fail(identity.error);
+
+    if (connect) {
+      const current = c.var.viewer;
+      if (current?.kind !== 'owner' || current.author.id !== saved.userId) return fail('failed');
+      const linked = await linkIdentity(deps, current.author.id, identity.value);
+      if (!linked.ok) return fail(linked.error);
+      return toWeb(c, returnTo);
+    }
+    const signIn = await signInWithIdentity(deps, identity.value);
+    if (!signIn.ok) return loginFailed(c, signIn.error, returnTo);
+    return loggedIn(c, signIn.user.id, returnTo);
+  };
+
+  /** Linking from /konto failed: back there with `?linkError=`. */
+  const linkFailed = (c: Context, returnTo: string, error: LoginError) => {
+    const back = new URL(returnTo, config.webOrigin);
+    back.searchParams.set('linkError', error);
+    return toWeb(c, back.pathname + back.search);
+  };
+
+  /** Only in development without SMTP. */
+  const devMailbox = () =>
+    config.env === 'development' && deps.mailer instanceof DevMailer ? deps.mailer : null;
+
   return (
     new Hono<OptionalViewerEnv>()
       .get('/auth/providers', (c) => {
@@ -218,6 +323,14 @@ export function authRoutes(deps: AppDeps) {
             label: 'Weiter mit Microsoft',
             kind: 'redirect',
             loginUrl: '/api/auth/microsoft/login',
+          });
+        }
+        if (deps.google) {
+          providers.push({
+            id: 'google',
+            label: 'Weiter mit Google',
+            kind: 'redirect',
+            loginUrl: '/api/auth/google/login',
           });
         }
         if (deps.oidc) {
@@ -231,6 +344,7 @@ export function authRoutes(deps: AppDeps) {
         return c.json<AuthProviders>({
           providers,
           magicLink: deps.mailer.configured,
+          devMailbox: devMailbox() !== null,
           devLogin: config.auth.devLogin,
           signup: config.auth.signup,
         });
@@ -319,68 +433,11 @@ export function authRoutes(deps: AppDeps) {
         return loggedIn(c, signIn.user.id, returnTo);
       })
 
-      // ── Generic OpenID Connect ───────────────────────────────────────────
-      .get('/auth/oidc/login', async (c) => {
-        if (!deps.oidc) throw notFound('Die Anmeldung per SSO ist nicht eingerichtet.');
-        const returnTo = safeReturnTo(c.req.query('returnTo'), DEFAULT_LOGIN_RETURN_TO);
-        const pkce = await createPkce();
-        let url: string;
-        try {
-          url = await deps.oidc.authorizeUrl(pkce);
-        } catch (error) {
-          deps.log.warn('OIDC discovery failed', error);
-          return loginFailed(c, 'failed', returnTo);
-        }
-        await writeState(c, OIDC_COOKIE, OIDC_COOKIE_PATH, {
-          state: pkce.state,
-          verifier: pkce.verifier,
-          nonce: pkce.nonce,
-          returnTo,
-          mode: 'login',
-        });
-        return c.redirect(url, 302);
-      })
-
-      .get('/auth/oidc/callback', async (c) => {
-        const saved = await readState(c, OIDC_COOKIE, OIDC_COOKIE_PATH);
-        const query = c.req.query();
-        const returnTo = saved?.returnTo ?? DEFAULT_LOGIN_RETURN_TO;
-        if (!deps.oidc || !saved?.nonce || !query['state'] || query['state'] !== saved.state) {
-          return loginFailed(c, 'failed', returnTo);
-        }
-        if (query['error']) {
-          deps.log.warn(`OIDC login failed: ${query['error']} ${query['error_description'] ?? ''}`);
-          return loginFailed(c, query['error'] === 'access_denied' ? 'denied' : 'failed', returnTo);
-        }
-        if (!query['code']) return loginFailed(c, 'failed', returnTo);
-
-        let claims: IdTokenClaims;
-        try {
-          claims = await deps.oidc.exchangeCode(query['code'], saved.verifier, saved.nonce);
-        } catch (error) {
-          deps.log.warn('OIDC token exchange failed', error);
-          return loginFailed(c, 'failed', returnTo);
-        }
-        if (typeof claims.email !== 'string' || !claims.email.includes('@')) {
-          return loginFailed(c, 'no_email', returnTo);
-        }
-        if (emailVerifiedFalse(claims)) return loginFailed(c, 'email_unverified', returnTo);
-        const signIn = await signInWithIdentity(deps, {
-          provider: 'oidc',
-          subject: claims.sub,
-          email: claims.email,
-          emailVerified: true,
-          name:
-            typeof claims.name === 'string'
-              ? claims.name
-              : typeof claims.preferred_username === 'string'
-                ? claims.preferred_username
-                : null,
-          inviteToken: inviteTokenFromPath(returnTo),
-        });
-        if (!signIn.ok) return loginFailed(c, signIn.error, returnTo);
-        return loggedIn(c, signIn.user.id, returnTo);
-      })
+      // ── Google and generic OpenID Connect ────────────────────────────────
+      .get('/auth/google/login', viewer, oidcLogin('google'))
+      .get('/auth/google/callback', viewer, oidcCallback('google'))
+      .get('/auth/oidc/login', viewer, oidcLogin('oidc'))
+      .get('/auth/oidc/callback', viewer, oidcCallback('oidc'))
 
       // ── Magic link ───────────────────────────────────────────────────────
       /** Always 204, whether or not a mail went out – nobody learns which addresses have accounts. */
@@ -400,11 +457,14 @@ export function authRoutes(deps: AppDeps) {
           return c.body(null, 204);
         }
         const token = newSecretToken();
+        const code = newLoginCode();
+        const id = crypto.randomUUID();
         const now = deps.clock.now();
         await deps.db.insert(loginTokens).values({
-          id: crypto.randomUUID(),
+          id,
           email,
           tokenHash: hashToken(token),
+          codeHash: codeHash(config.secret, id, code),
           returnTo,
           createdAt: now,
           expiresAt: new Date(now.getTime() + MAGIC_LINK_TTL_MS),
@@ -412,17 +472,7 @@ export function authRoutes(deps: AppDeps) {
         const url = new URL('/api/auth/email/verify', config.webOrigin);
         url.searchParams.set('token', token);
         try {
-          await deps.mailer.send(
-            buttonMail({
-              to: email,
-              subject: 'Dein Anmeldelink für Slider',
-              intro: 'Klicke auf den Link, um dich bei Slider anzumelden.',
-              button: 'Bei Slider anmelden',
-              url: url.toString(),
-              outro:
-                'Der Link gilt 15 Minuten und nur einmal. Wenn du dich nicht anmelden wolltest, ignoriere diese Mail.',
-            }),
-          );
+          await deps.mailer.send(loginMail({ to: email, code, url: url.toString() }));
         } catch (error) {
           deps.log.warn(`Magic link mail to ${email} failed`, error);
         }
@@ -473,7 +523,142 @@ export function authRoutes(deps: AppDeps) {
           303,
         );
       })
+
+      /**
+       * The 6-digit code from the same mail, typed into the login page. Any open mail of the
+       * address counts; every wrong code counts against all of them, and after
+       * {@link MAX_CODE_ATTEMPTS} they are burned.
+       */
+      .post('/auth/email/code', codeLimit, async (c) => {
+        if (!sameOriginPost(c)) throw badRequest('Ungültige Anfrage.');
+        const input = await readJson(c, verifyEmailCodeInputSchema);
+        const email = normalizeEmail(input.email);
+        const now = deps.clock.now();
+        const open = await deps.db
+          .select()
+          .from(loginTokens)
+          .where(
+            and(
+              eq(loginTokens.email, email),
+              isNull(loginTokens.usedAt),
+              isNotNull(loginTokens.codeHash),
+              gt(loginTokens.expiresAt, now),
+            ),
+          );
+        const match = open.find((row) =>
+          sameHash(row.codeHash ?? '', codeHash(config.secret, row.id, input.code)),
+        );
+        if (!match) {
+          if (open.length > 0) {
+            const ids = open.map((row) => row.id);
+            await deps.db
+              .update(loginTokens)
+              .set({ codeAttempts: sql`${loginTokens.codeAttempts} + 1` })
+              .where(inArray(loginTokens.id, ids));
+            const burned = await deps.db
+              .update(loginTokens)
+              .set({ usedAt: now })
+              .where(
+                and(
+                  inArray(loginTokens.id, ids),
+                  isNull(loginTokens.usedAt),
+                  sql`${loginTokens.codeAttempts} >= ${MAX_CODE_ATTEMPTS}`,
+                ),
+              )
+              .returning({ id: loginTokens.id });
+            if (burned.length === open.length) {
+              deps.log.warn(`Login codes for ${email} burned after too many attempts`);
+              throw badRequest('Zu viele falsche Versuche. Fordere bitte einen neuen Code an.');
+            }
+          }
+          throw badRequest('Der Code stimmt nicht oder ist abgelaufen.');
+        }
+        // Single use, even when the link and the code race.
+        const [claimed] = await deps.db
+          .update(loginTokens)
+          .set({ usedAt: now })
+          .where(and(eq(loginTokens.id, match.id), isNull(loginTokens.usedAt)))
+          .returning({ id: loginTokens.id });
+        if (!claimed) throw badRequest('Der Code stimmt nicht oder ist abgelaufen.');
+
+        const signIn = await signInWithIdentity(deps, {
+          provider: 'email',
+          subject: match.email,
+          email: match.email,
+          emailVerified: true,
+          name: null,
+          inviteToken: inviteTokenFromPath(match.returnTo),
+        });
+        if (!signIn.ok) {
+          return c.json<LoginResult>({ redirectTo: loginErrorPath(signIn.error, match.returnTo) });
+        }
+        return loggedInJson(c, signIn.user.id, match.returnTo);
+      })
+
+      // ── Development mailbox ──────────────────────────────────────────────
+      /** Development without SMTP only: the last mails (links and codes), newest first. */
+      .get('/dev/mails', (c) => {
+        const mailbox = devMailbox();
+        if (!mailbox) throw notFound();
+        c.header('Cache-Control', 'no-store');
+        return c.json(mailbox.list());
+      })
   );
+}
+
+type OidcProviderId = 'google' | 'oidc';
+
+/** `/login?error=…` (with `returnTo` unless it is the default). */
+export function loginErrorPath(error: LoginError, returnTo?: string): string {
+  const target = new URLSearchParams({ error });
+  if (returnTo && returnTo !== DEFAULT_LOGIN_RETURN_TO) target.set('returnTo', returnTo);
+  return `/login?${target.toString()}`;
+}
+
+/** A uniformly random 6-digit code, leading zeros included. */
+const newLoginCode = () => randomInt(0, 1_000_000).toString().padStart(6, '0');
+
+/**
+ * Keyed with SLIDER_SECRET and bound to the row: a leaked database does not give the codes away
+ * (a plain hash of a 6-digit number would be reversed instantly).
+ */
+const codeHash = (secret: string, id: string, code: string) =>
+  createHmac('sha256', secret).update(`login-code:${id}:${code}`).digest('hex');
+
+const sameHash = (a: string, b: string) =>
+  a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+
+/**
+ * The identity of an OIDC login. Google: subject = `sub`, the address must be verified
+ * (`email_verified === true`); the Workspace domain (`hd`) is not required. Generic OIDC: only
+ * an explicit `email_verified: false` is refused, as some providers leave the claim out.
+ */
+function oidcIdentity(
+  id: OidcProviderId,
+  claims: IdTokenClaims,
+  inviteToken: string | null,
+): { ok: true; value: IdentityInput } | { ok: false; error: LoginError } {
+  if (typeof claims.email !== 'string' || !claims.email.includes('@')) {
+    return { ok: false, error: 'no_email' };
+  }
+  const verified = id === 'google' ? claims.email_verified === true : !emailVerifiedFalse(claims);
+  if (!verified) return { ok: false, error: 'email_unverified' };
+  return {
+    ok: true,
+    value: {
+      provider: id,
+      subject: claims.sub,
+      email: claims.email,
+      emailVerified: true,
+      name:
+        typeof claims.name === 'string'
+          ? claims.name
+          : typeof claims.preferred_username === 'string'
+            ? claims.preferred_username
+            : null,
+      inviteToken,
+    },
+  };
 }
 
 const escapeHtml = (value: string) =>

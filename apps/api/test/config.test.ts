@@ -61,12 +61,33 @@ describe('loadConfig', () => {
         signup: 'open',
         signupDomains: [],
         oidc: null,
+        google: null,
         sessionTtlDays: 30,
         bootstrapEmails: [],
       });
       expect(loadConfig(MS, quiet).auth.devLogin).toBe(false);
       expect(loadConfig({ ...MS, AUTH_DEV_LOGIN: 'true' }, quiet).auth.devLogin).toBe(true);
       expect(loadConfig({ AUTH_DEV_LOGIN: 'false' }, quiet).auth.devLogin).toBe(false);
+    });
+
+    it('configures Google with its issuer and the default redirect URI', () => {
+      const google = { GOOGLE_CLIENT_ID: 'g-id', GOOGLE_CLIENT_SECRET: 'g-secret' };
+      const auth = loadConfig(google, quiet).auth;
+      expect(auth.devLogin).toBe(false);
+      expect(auth.google).toMatchObject({
+        issuer: 'https://accounts.google.com',
+        clientId: 'g-id',
+        scopes: 'openid email profile',
+        redirectUri: 'http://localhost:5173/api/auth/google/callback',
+      });
+      expect(
+        loadConfig({ ...google, GOOGLE_REDIRECT_URI: 'https://s.example.com/cb' }, quiet).auth
+          .google?.redirectUri,
+      ).toBe('https://s.example.com/cb');
+      expect(() => loadConfig({ GOOGLE_CLIENT_ID: 'g-id' }, quiet)).toThrow(/GOOGLE_CLIENT_SECRET/);
+      expect(
+        loadConfig({ NODE_ENV: 'production', ...SECRET, ...google }, quiet).auth.google,
+      ).not.toBeNull();
     });
 
     it('refuses to start in production without a login, and never logs in as the dev owner there', () => {

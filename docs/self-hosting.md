@@ -111,9 +111,11 @@ In Compose stehen sie in `deploy/.env` (Vorlage: `deploy/.env.example`). `NODE_E
 | `MS_CLIENT_ID`, `MS_CLIENT_SECRET`                    | eine Login-Art     | Entra-App (Login + OneDrive/SharePoint-Import).                                                                                                                                                                                       |
 | `MS_TENANT`                                           | nein               | `common` (Standard) oder die Tenant-ID, um nur die eigene Firma zuzulassen.                                                                                                                                                           |
 | `MS_REDIRECT_URI`                                     | nein               | Standard `${WEB_ORIGIN}/api/auth/microsoft/callback` – genau so in Entra eintragen.                                                                                                                                                   |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`            | eine Login-Art     | „Weiter mit Google“ – OAuth-Client aus der Google Cloud Console (siehe unten). Nur zusammen.                                                                                                                                          |
+| `GOOGLE_REDIRECT_URI`                                 | nein               | Standard `${WEB_ORIGIN}/api/auth/google/callback` – genau so bei Google eintragen.                                                                                                                                                    |
 | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | eine Login-Art     | z. B. Authentik: `https://auth.firma.de/application/o/slider/`.                                                                                                                                                                       |
 | `OIDC_LABEL`, `OIDC_SCOPES`, `OIDC_REDIRECT_URI`      | nein               | Button-Text, Scopes (`openid profile email`), Redirect (Standard `${WEB_ORIGIN}/api/auth/oidc/callback`).                                                                                                                             |
-| `SMTP_URL`, `MAIL_FROM`                               | eine Login-Art     | Magic Links und Einladungen, z. B. `smtps://user:pass@smtp.anbieter.de:465` und `Slider <slider@firma.de>`. Nur zusammen.                                                                                                             |
+| `SMTP_URL`, `MAIL_FROM`                               | eine Login-Art     | Login-Mails (Link + Code) und Einladungen, z. B. `smtps://user:pass@smtp.anbieter.de:465` und `Slider <slider@firma.de>`. Nur zusammen.                                                                                               |
 | `SESSION_TTL_DAYS`                                    | nein               | Login-Dauer, Standard 30.                                                                                                                                                                                                             |
 | `MAX_UPLOAD_BYTES`                                    | nein               | Max. PPTX-Größe, Standard 200 MB.                                                                                                                                                                                                     |
 | `MEDIA_QUOTA_BYTES`, `MAX_MEDIA_BYTES`                | nein               | Speicher für Sprach-/Video-Kommentare pro Deck-Besitzer (Standard 5 GB) bzw. pro Aufnahme (100 MB).                                                                                                                                   |
@@ -129,6 +131,45 @@ Wie im README unter „Link import“ beschrieben, plus für den Server: Redirec
 `https://<SLIDER_DOMAIN>/api/auth/microsoft/callback` hinzufügen. Wer nur Kolleg:innen der eigenen
 Firma zulassen will, setzt `MS_TENANT=<Tenant-ID>` (dann die App als „nur dieses Verzeichnis“
 registrieren).
+
+### Google
+
+„Weiter mit Google“ erscheint, sobald `GOOGLE_CLIENT_ID` und `GOOGLE_CLIENT_SECRET` gesetzt sind –
+neben Microsoft, SSO und E-Mail (alle gleichzeitig möglich). Es gelten dieselben Regeln wie
+überall: `SIGNUP`, `BOOTSTRAP_EMAIL`, Einladungen. Slider übernimmt nur bestätigte Adressen
+(`email_verified`); private Gmail-Konten funktionieren genauso wie Google-Workspace-Konten.
+
+Einrichtung in der [Google Cloud Console](https://console.cloud.google.com/) (einmalig, ca. 10 Minuten):
+
+1. Oben links **Projekt auswählen → Neues Projekt**, z. B. `Slider`, und es auswählen.
+2. Menü **Google Auth Platform** (früher „OAuth-Zustimmungsbildschirm“) → **Jetzt starten**:
+   - **Branding**: App-Name `Slider`, Support-E-Mail, optional Logo; unter _Autorisierte Domains_
+     die eigene Domain (z. B. `firma.de`) eintragen.
+   - **Zielgruppe** (Audience): **Extern** – sonst können sich nur Konten der eigenen
+     Google-Workspace-Organisation anmelden („Intern“ ist nur dafür sinnvoll).
+   - **Datenzugriff** (Data access): **Bereiche hinzufügen** → `openid`, `…/auth/userinfo.email`,
+     `…/auth/userinfo.profile` (= `openid email profile`). Mehr braucht Slider nicht.
+3. **Clients → Client erstellen**: Anwendungstyp **Webanwendung**, Name `Slider`.
+   Unter **Autorisierte Weiterleitungs-URIs** eintragen:
+   - `http://localhost:5173/api/auth/google/callback` (lokale Entwicklung, über den Vite-Proxy)
+   - `https://<SLIDER_DOMAIN>/api/auth/google/callback` (Produktion)
+
+   „Autorisierte JavaScript-Quellen“ bleiben leer. Nach **Erstellen** Client-ID und
+   Clientschlüssel kopieren (der Schlüssel ist später nur noch neu erzeugbar).
+
+4. In `.env` bzw. `deploy/.env` eintragen und Slider neu starten:
+   ```env
+   GOOGLE_CLIENT_ID=1234567890-abc.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=GOCSPX-…
+   ```
+5. **Zielgruppe → App veröffentlichen** („In Produktion“). Im Status „Testen“ dürfen sich nur
+   eingetragene Testnutzer:innen anmelden, und Logins laufen nach 7 Tagen ab. Mit nur
+   `openid email profile` ist **keine Überprüfung durch Google** nötig – die App ist sofort
+   für alle nutzbar.
+
+Wer ein Konto schon per E-Mail oder Microsoft hat, verbindet Google unter **Konto & Anmeldung**
+(`/konto` → „Verbinden“) – eine Google-Anmeldung mit derselben Adresse legt kein zweites Konto an,
+sondern wird mit `account_exists` abgelehnt, bis Google verbunden ist.
 
 ### Authentik (optional, eigener Identity Provider)
 
@@ -175,15 +216,48 @@ Authentik-Version: gepinnt auf `2026.8.3` (`AUTHENTIK_TAG`). Seit 2025.10 brauch
 Redis mehr. Der Worker hat hier keinen Docker-Socket – Outposts müssen dann manuell betrieben
 werden, für reines OIDC sind keine nötig.
 
-### E-Mail (Magic Links, Einladungen)
+### E-Mail (Link + Code, Einladungen)
 
-Jeder SMTP-Zugang geht: das vorhandene Firmen-Postfach oder ein Versanddienst mit Gratis-Kontingent
-(z. B. Brevo, Mailjet; für ein Team reicht das locker). Absender-Domain mit SPF/DKIM einrichten,
-sonst landen Mails im Spam.
+Die Login-Mail enthält einen Link **und** einen 6-stelligen Code (beide 15 Minuten gültig, nur
+einmal; nach 5 falschen Codes ist die Mail verbrannt). Der Code hilft, wenn die Mail auf dem Handy
+gelesen wird, die Anmeldung aber am Rechner läuft. Der Link öffnet zuerst eine Bestätigungsseite
+mit dem Knopf „Anmelden“; erst der Klick löst ihn ein. So verbrauchen Link-Scanner (z. B. Outlook
+Safe Links), die jeden Link vorab öffnen, ihn nicht.
 
-Der Link in der Mail öffnet zuerst eine Bestätigungsseite mit dem Knopf „Anmelden“; erst der
-Klick löst den Link ein. So verbrauchen Link-Scanner (z. B. Outlook Safe Links), die jeden Link
-vorab öffnen, ihn nicht.
+Jeder SMTP-Zugang geht – das vorhandene Firmen-Postfach oder ein Versanddienst mit
+Gratis-Kontingent. Für ein Team reicht das locker (Stand Oktober 2026):
+
+| Dienst                                           | `SMTP_URL`                                           | Gratis                          | Hinweise                                                                                                                                                                                  |
+| ------------------------------------------------ | ---------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Resend](https://resend.com/docs/send-with-smtp) | `smtps://resend:<API_KEY>@smtp.resend.com:465`       | 3.000 Mails/Monat, max. 100/Tag | Benutzername ist wörtlich `resend`, Passwort ein API-Key. An echte Empfänger:innen erst mit **verifizierter Domain** (DNS-Einträge in Resend), vorher nur an die eigene Adresse.          |
+| [Brevo](https://www.brevo.com/free-smtp-server)  | `smtp://<LOGIN>:<SMTP_KEY>@smtp-relay.brevo.com:587` | 300 Mails/Tag                   | Login und SMTP-Key stehen unter _SMTP & API_ im Brevo-Konto (nicht das Konto-Passwort). Port 587 mit STARTTLS. Absender-Domain authentifizieren (DKIM), sonst ersetzt Brevo den Absender. |
+
+`MAIL_FROM` muss eine Adresse der verifizierten Domain sein, z. B. `Slider <slider@firma.de>`.
+Sonderzeichen in Schlüsseln URL-kodieren (`/` → `%2F`, `+` → `%2B`). Absender-Domain mit SPF/DKIM
+einrichten, sonst landen Mails im Spam.
+
+**Lokal ohne SMTP:** In der Entwicklung (`NODE_ENV=development`, also `bun run dev`) ohne
+`SMTP_URL` werden Mails nicht verschickt, sondern mit Link und Code in der API-Konsole ausgegeben
+und die letzten 20 unter `http://localhost:5173/api/dev/mails` gelistet – die E-Mail-Anmeldung
+lässt sich so sofort ausprobieren. In Produktion gibt es das nie; dort braucht E-Mail-Login SMTP.
+Hinweis: Ist sonst keine Anmeldung eingerichtet, bleibt der Dev-Login aktiv (jede:r ist der
+Dev-Owner) – zum Ausprobieren `AUTH_DEV_LOGIN=false` setzen.
+
+### Passkeys
+
+Passkeys (Fingerabdruck, Gesicht, Geräte-PIN; synchronisiert z. B. über iCloud-Schlüsselbund oder
+Google Passwortmanager) brauchen keine Konfiguration. Jede:r legt sie selbst unter **Konto &
+Anmeldung** (`/konto`) an; danach gibt es auf der Login-Seite „Mit Passkey anmelden“, und gespeicherte
+Passkeys erscheinen auch direkt im Vorschlagsmenü des E-Mail-Felds.
+
+- Ein Passkey meldet nur an ein **bestehendes** Konto an – das Konto entsteht immer über Microsoft,
+  Google, SSO oder E-Mail. `SIGNUP` spielt für Passkeys daher keine Rolle.
+- Die **RP-ID ist der Hostname von `WEB_ORIGIN`** (z. B. `slider.firma.de`), die erlaubte Origin
+  genau `WEB_ORIGIN`. **Ein Domainwechsel macht alle Passkeys ungültig** – danach meldet man sich
+  einmal anders an und legt neue an. Lokal ist die RP-ID `localhost`.
+- Passkeys funktionieren nur über HTTPS (oder `http://localhost`).
+- Gespeichert werden nur öffentlicher Schlüssel und Signaturzähler; ein Datenbank-Leak verrät
+  keine Anmeldedaten. Wird ein Konto gelöscht, verschwinden seine Passkeys mit.
 
 ## Backups
 
@@ -288,5 +362,9 @@ Sprach-/Video-Kommentare. Deshalb:
   (`docker compose logs caddy`).
 - Microsoft „AADSTS50011 redirect URI mismatch“ → Redirect-URI in Entra exakt wie
   `https://<domain>/api/auth/microsoft/callback` eintragen.
+- Google „Error 400: redirect_uri_mismatch“ → Weiterleitungs-URI im Google-Client exakt wie
+  `https://<domain>/api/auth/google/callback` eintragen (ohne Schrägstrich am Ende).
+- Google „Zugriff blockiert: … nur für Testnutzer“ → App unter _Zielgruppe_ veröffentlichen.
+- Passkey-Anmeldung schlägt nach Umzug fehl → neue Domain = neue RP-ID; Passkeys neu anlegen.
 - OIDC „issuer mismatch“ → `OIDC_ISSUER` muss der Issuer aus der Discovery-URL sein
   (bei Authentik mit `/application/o/<slug>/`).

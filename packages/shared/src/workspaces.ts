@@ -13,7 +13,7 @@ export const signupModeSchema = z.enum(SIGNUP_MODES);
 export type SignupMode = z.infer<typeof signupModeSchema>;
 
 export const loginProviderSchema = z.object({
-  id: z.enum(['microsoft', 'oidc']),
+  id: z.enum(['microsoft', 'google', 'oidc']),
   /** Button text, e.g. "Weiter mit Microsoft". */
   label: z.string(),
   /** Both are browser redirects: send the browser to `${loginUrl}?returnTo=<path>`. */
@@ -25,8 +25,13 @@ export type LoginProvider = z.infer<typeof loginProviderSchema>;
 /** `GET /auth/providers` – what the login page offers. */
 export const authProvidersSchema = z.object({
   providers: z.array(loginProviderSchema),
-  /** Magic link by e-mail (`POST /auth/email/start`); only with SMTP configured. */
+  /**
+   * Link + 6-digit code by e-mail (`POST /auth/email/start`); with SMTP configured, or in
+   * development through the dev mailbox.
+   */
   magicLink: z.boolean(),
+  /** Development without SMTP: mails are not sent but listed at `GET /api/dev/mails`. */
+  devMailbox: z.boolean(),
   /** Development only: requests without a session act as the dev owner, no login needed. */
   devLogin: z.boolean(),
   signup: signupModeSchema,
@@ -58,6 +63,67 @@ export const startEmailLoginInputSchema = z.object({
   returnTo: z.string().max(2048).optional(),
 });
 export type StartEmailLoginInput = z.infer<typeof startEmailLoginInputSchema>;
+
+/** The 6-digit code from the login mail, typed into the login page. */
+export const LOGIN_CODE_LENGTH = 6;
+export const verifyEmailCodeInputSchema = z.object({
+  email: z.email().max(320),
+  code: z
+    .string()
+    .trim()
+    .transform((code) => code.replace(/\s+/g, ''))
+    .pipe(z.string().regex(/^\d{6}$/, 'Der Code hat 6 Ziffern.')),
+});
+export type VerifyEmailCodeInput = z.input<typeof verifyEmailCodeInputSchema>;
+
+/**
+ * Answer of the JSON logins (e-mail code, passkey): where the browser goes next – `returnTo`
+ * when signed in (session cookie set), or `/login?error=…` when the account may not sign in.
+ */
+export const loginResultSchema = z.object({ redirectTo: z.string() });
+export type LoginResult = z.infer<typeof loginResultSchema>;
+
+// ── Passkeys ────────────────────────────────────────────────────────────────
+
+export const passkeySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  createdAt: z.iso.datetime(),
+  lastUsedAt: z.iso.datetime().nullable(),
+  /** Synced across devices (iCloud Keychain, Google Password Manager, 1Password, …). */
+  synced: z.boolean(),
+});
+export type Passkey = z.infer<typeof passkeySchema>;
+
+export const passkeyNameSchema = z.string().trim().min(1).max(60);
+
+/** `response` is the JSON of `navigator.credentials.create()` (`@simplewebauthn/browser`). */
+export const verifyPasskeyRegistrationInputSchema = z.object({
+  response: z.record(z.string(), z.unknown()),
+  name: passkeyNameSchema.optional(),
+});
+export type VerifyPasskeyRegistrationInput = z.infer<typeof verifyPasskeyRegistrationInputSchema>;
+
+export const renamePasskeyInputSchema = z.object({ name: passkeyNameSchema });
+export type RenamePasskeyInput = z.infer<typeof renamePasskeyInputSchema>;
+
+/** `response` is the JSON of `navigator.credentials.get()`. */
+export const verifyPasskeyLoginInputSchema = z.object({
+  response: z.record(z.string(), z.unknown()),
+  returnTo: z.string().max(2048).optional(),
+});
+export type VerifyPasskeyLoginInput = z.infer<typeof verifyPasskeyLoginInputSchema>;
+
+// ── Connected logins ────────────────────────────────────────────────────────
+
+/** `GET /me/identities` – how the account signs in (besides passkeys). */
+export const loginIdentitySchema = z.object({
+  provider: z.enum(['microsoft', 'google', 'oidc', 'email']),
+  /** The address the provider reported at the last login. */
+  email: z.string().nullable(),
+  createdAt: z.iso.datetime(),
+});
+export type LoginIdentity = z.infer<typeof loginIdentitySchema>;
 
 // ── Account ─────────────────────────────────────────────────────────────────
 

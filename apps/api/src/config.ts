@@ -66,8 +66,10 @@ export interface AuthConfig {
   signup: SignupMode;
   /** For `signup: 'domains'`: verified e-mail domains that may sign up, lower-case. */
   signupDomains: string[];
-  /** Generic OpenID Connect provider (Authentik, Keycloak, Google, Zitadel, …). */
+  /** Generic OpenID Connect provider (Authentik, Keycloak, Zitadel, …). */
   oidc: OidcConfig | null;
+  /** "Weiter mit Google": built on the OIDC client with Google's issuer; `null` without GOOGLE_*. */
+  google: OidcConfig | null;
   /** Session lifetime; renewed on use (at most once a day). */
   sessionTtlDays: number;
   /**
@@ -87,7 +89,13 @@ export interface OidcConfig {
   label: string;
   scopes: string;
   redirectUri: string;
+  /** Further spellings of the issuer in ID tokens (Google also sends `accounts.google.com`). */
+  issuerAliases?: string[];
+  /** Extra authorize parameters, e.g. `prompt=select_account`. */
+  authorizeParams?: Record<string, string>;
 }
+
+export const GOOGLE_ISSUER = 'https://accounts.google.com';
 
 export interface SmtpConfig {
   /** e.g. `smtps://user:pass@mail.example.com:465` */
@@ -122,6 +130,7 @@ const DEFAULT_DATA_DIR = fileURLToPath(new URL('../.data', import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url));
 const MICROSOFT_CALLBACK_PATH = '/api/auth/microsoft/callback';
 const OIDC_CALLBACK_PATH = '/api/auth/oidc/callback';
+const GOOGLE_CALLBACK_PATH = '/api/auth/google/callback';
 const booleanEnv = z.enum(['true', 'false', '1', '0']).transform((v) => v === 'true' || v === '1');
 
 const envSchema = z.object({
@@ -161,6 +170,9 @@ const envSchema = z.object({
   OIDC_LABEL: z.string().min(1).default('Weiter mit SSO'),
   OIDC_SCOPES: z.string().min(1).default('openid profile email'),
   OIDC_REDIRECT_URI: z.url().optional(),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_REDIRECT_URI: z.url().optional(),
   SMTP_URL: z
     .string()
     .regex(/^smtps?:\/\//, 'SMTP_URL muss mit smtp:// oder smtps:// beginnen.')
@@ -215,16 +227,34 @@ export function loadConfig(
   if (parsed.OIDC_ISSUER && !oidc) {
     throw new Error('OIDC_ISSUER needs OIDC_CLIENT_ID and OIDC_CLIENT_SECRET.');
   }
+  if (Boolean(parsed.GOOGLE_CLIENT_ID) !== Boolean(parsed.GOOGLE_CLIENT_SECRET)) {
+    throw new Error('GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set together.');
+  }
+  const google: OidcConfig | null =
+    parsed.GOOGLE_CLIENT_ID && parsed.GOOGLE_CLIENT_SECRET
+      ? {
+          issuer: GOOGLE_ISSUER,
+          clientId: parsed.GOOGLE_CLIENT_ID,
+          clientSecret: parsed.GOOGLE_CLIENT_SECRET,
+          label: 'Weiter mit Google',
+          scopes: 'openid email profile',
+          redirectUri:
+            parsed.GOOGLE_REDIRECT_URI ??
+            new URL(GOOGLE_CALLBACK_PATH, parsed.WEB_ORIGIN).toString(),
+          issuerAliases: ['accounts.google.com'],
+          authorizeParams: { prompt: 'select_account' },
+        }
+      : null;
   if (Boolean(parsed.SMTP_URL) !== Boolean(parsed.MAIL_FROM)) {
     throw new Error('SMTP_URL and MAIL_FROM must be set together.');
   }
   const smtp =
     parsed.SMTP_URL && parsed.MAIL_FROM ? { url: parsed.SMTP_URL, from: parsed.MAIL_FROM } : null;
-  const hasLoginProvider = Boolean(microsoft || oidc || smtp);
+  const hasLoginProvider = Boolean(microsoft || oidc || google || smtp);
   if (parsed.NODE_ENV === 'production') {
     if (!hasLoginProvider) {
       throw new Error(
-        'No login is configured: set MS_CLIENT_ID/MS_CLIENT_SECRET, OIDC_ISSUER/OIDC_CLIENT_ID/OIDC_CLIENT_SECRET or SMTP_URL/MAIL_FROM.',
+        'No login is configured: set MS_CLIENT_ID/MS_CLIENT_SECRET, GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET, OIDC_ISSUER/OIDC_CLIENT_ID/OIDC_CLIENT_SECRET or SMTP_URL/MAIL_FROM.',
       );
     }
     if (parsed.AUTH_DEV_LOGIN) throw new Error('AUTH_DEV_LOGIN cannot be enabled in production.');
@@ -270,6 +300,7 @@ export function loadConfig(
       signup: parsed.SIGNUP,
       signupDomains,
       oidc,
+      google,
       sessionTtlDays: parsed.SESSION_TTL_DAYS,
       bootstrapEmails,
     },

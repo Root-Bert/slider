@@ -43,6 +43,13 @@
       "when": 1791472550676,
       "tag": "0005_plans",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791474850670,
+      "tag": "0006_passkeys",
+      "breakpoints": true
     }
   ]
 }

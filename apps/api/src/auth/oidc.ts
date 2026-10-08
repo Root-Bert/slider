@@ -3,7 +3,8 @@ import type { OidcConfig } from '../config';
 import { validateIdToken, type IdTokenClaims } from './id-token';
 
 /**
- * Generic OpenID Connect login (BER-129) – Authentik, Keycloak, Google, Zitadel, …
+ * Generic OpenID Connect login (BER-129) – Authentik, Keycloak, Zitadel, … – and the built-in
+ * Google login, which is the same flow against `https://accounts.google.com`.
  * Authorization code flow with PKCE, state and nonce; the endpoints come from discovery.
  */
 
@@ -76,6 +77,7 @@ export class OidcClient {
       nonce: input.nonce,
       code_challenge: input.challenge,
       code_challenge_method: 'S256',
+      ...this.config.authorizeParams,
     })) {
       url.searchParams.set(key, value);
     }
@@ -110,11 +112,16 @@ export class OidcClient {
         `OIDC token exchange failed: ${body.error ?? `HTTP ${response.status}`} ${body.error_description ?? ''}`,
       );
     }
+    const aliases = this.config.issuerAliases ?? [];
     return validateIdToken(body.id_token, {
-      issuer: discovery.issuer,
+      issuer: aliases.length
+        ? (iss) => [discovery.issuer, ...aliases].some((known) => sameIssuer(iss, known))
+        : discovery.issuer,
       clientId: this.config.clientId,
       nonce,
       now: this.clock.now(),
     });
   }
 }
+
+const sameIssuer = (a: string, b: string) => a.replace(/\/+$/, '') === b.replace(/\/+$/, '');

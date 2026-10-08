@@ -7,6 +7,7 @@ import type { ParsedPresentation, ParsedSlide } from '@slider/pptx';
 import { createApp } from '../src/app';
 import { MicrosoftTokens } from '../src/auth/microsoft';
 import { OidcClient } from '../src/auth/oidc';
+import type { WebAuthn } from '../src/auth/passkeys';
 import { hashToken, newSecretToken, SESSION_COOKIE } from '../src/auth/session';
 import type { Clock } from '../src/clock';
 import type { Config } from '../src/config';
@@ -52,6 +53,7 @@ export const testConfig = (overrides: Partial<Config> = {}): Config => ({
     signup: 'invite',
     signupDomains: [],
     oidc: null,
+    google: null,
     sessionTtlDays: 30,
     bootstrapEmails: [],
   },
@@ -150,6 +152,8 @@ export async function createTestContext(
     sources?: Partial<SourceAdapters>;
     /** e.g. a `RecordingMailer` – magic links are only offered with a configured mailer. */
     mailer?: Mailer;
+    /** Fake passkey verification (no real authenticator in tests). */
+    webauthn?: WebAuthn;
     /** Replaces the PPTX edit behind the ⊕, for decks made of fake bytes. */
     insertSlide?: SyncServiceDeps['insertSlide'];
   } = {},
@@ -215,6 +219,8 @@ export async function createTestContext(
     log: silentLogger,
     sync,
     oidc: config.auth.oidc ? new OidcClient(config.auth.oidc, clock, fetch) : null,
+    google: config.auth.google ? new OidcClient(config.auth.google, clock, fetch) : null,
+    webauthn: options.webauthn,
     mailer: options.mailer ?? new NullMailer(),
     ownerId: owner.id,
   };

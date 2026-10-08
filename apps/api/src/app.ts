@@ -14,6 +14,7 @@ import { filesRoutes } from './routes/files';
 import { invitesRoutes } from './routes/invites';
 import { mediaRoutes } from './routes/media';
 import { meRoutes } from './routes/me';
+import { passkeysRoutes } from './routes/passkeys';
 import { reviewLinksRoutes } from './routes/review-links';
 import { syncRoutes } from './routes/sync';
 import { workspacesRoutes } from './routes/workspaces';
@@ -36,7 +37,8 @@ export function createApp(deps: AppDeps) {
     .route('/', reviewLinksRoutes(deps))
     .route('/', invitesRoutes(deps))
     .route('/', workspacesRoutes(deps))
-    .route('/', authRoutes(deps));
+    .route('/', authRoutes(deps))
+    .route('/', passkeysRoutes(deps));
 
   // Self-hosting: health check for Docker and uptime monitors, before any auth middleware.
   app.get(`${API_PREFIX}/health`, healthCheck(deps));

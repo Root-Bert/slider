@@ -197,6 +197,7 @@ describe('GET /api/auth/providers', () => {
         },
       ],
       magicLink: true,
+      devMailbox: false,
       devLogin: false,
       signup: 'domains',
     });
@@ -532,7 +533,7 @@ describe('magic link', () => {
     expect(mailer.sent).toHaveLength(1);
     expect(mailer.sent[0]).toMatchObject({
       to: 'robert@q4-team.de',
-      subject: 'Dein Anmeldelink für Slider',
+      subject: expect.stringMatching(/^\d{3} \d{3} ist dein Anmeldecode für Slider$/),
     });
     const link = linkFrom();
     expect(link.origin + link.pathname).toBe('http://localhost:5173/api/auth/email/verify');
