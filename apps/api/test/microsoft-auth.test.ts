@@ -118,6 +118,20 @@ describe('Microsoft login routes', () => {
     expect(location.searchParams.get('link')).toBe('https://1drv.ms/p/c/x');
   });
 
+  it('sends a failed write login back to its deck, without inserting (BER-128)', async () => {
+    ctx = await configured();
+    const { state, cookie } = await startLogin('/d/deck-1?slide=s1&insertAfter=s1');
+    const res = await ctx.request(
+      `/api/auth/microsoft/callback?state=${state}&error=access_denied`,
+      { cookie },
+    );
+    const location = new URL(res.headers.get('location') ?? '');
+    expect(location.pathname).toBe('/d/deck-1');
+    expect(location.searchParams.get('slide')).toBe('s1');
+    expect(location.searchParams.get('insertAfter')).toBeNull();
+    expect(location.searchParams.get('msError')).toBe('denied');
+  });
+
   it('maps an admin consent error from Microsoft', async () => {
     ctx = await configured();
     const { state, cookie } = await startLogin();

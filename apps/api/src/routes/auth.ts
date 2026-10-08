@@ -43,9 +43,18 @@ export function authRoutes(deps: AppDeps) {
   const toWeb = (c: Context, path: string) =>
     c.redirect(new URL(path, config.webOrigin).toString(), 302);
 
-  /** Back to the start page with the link prefilled and the reason, so A3 can explain it. */
+  /**
+   * Back to the start page with the link prefilled and the reason, so A3 can explain it. A write
+   * login started in a deck (BER-128) goes back to that deck instead – without `insertAfter`, so
+   * nothing is inserted – and the viewer explains it.
+   */
   const failed = (c: Context, returnTo: string, kind: MicrosoftErrorKind) => {
     const back = new URL(returnTo, config.webOrigin);
+    if (back.pathname.startsWith('/d/')) {
+      back.searchParams.delete('insertAfter');
+      back.searchParams.set('msError', kind);
+      return toWeb(c, back.pathname + back.search);
+    }
     const target = new URL(DEFAULT_RETURN_TO, config.webOrigin);
     const link = back.searchParams.get('link');
     if (link) target.searchParams.set('link', link);

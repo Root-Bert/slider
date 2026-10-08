@@ -140,7 +140,9 @@ describe('inserting a slide (POST /decks/:id/slides)', () => {
     const body = (await res.json()) as { error: { code: string; loginUrl: string } };
     expect(body.error.code).toBe('microsoft_login_required');
     expect(body.error.loginUrl).toBe(
-      `/api/auth/microsoft/login?access=write&returnTo=${encodeURIComponent(`/d/${deckId}`)}`,
+      `/api/auth/microsoft/login?access=write&returnTo=${encodeURIComponent(
+        `/d/${deckId}?slide=${agendaId}&insertAfter=${agendaId}`,
+      )}`,
     );
   });
 

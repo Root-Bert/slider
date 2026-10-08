@@ -192,7 +192,7 @@ export class SyncService {
             }
           }
         } catch (error) {
-          throw this.editError(error, deckId);
+          throw this.editError(error, deckId, afterSlideId);
         }
       },
       { join: false },
@@ -207,10 +207,14 @@ export class SyncService {
     return { result, slideId: inserted?.slideId ?? null };
   }
 
-  /** Edit failures as the web app needs them: a login that returns to the deck, plain words. */
-  private editError(error: unknown, deckId: string): unknown {
+  /**
+   * Edit failures as the web app needs them, in plain words. A missing write login comes back to
+   * the deck with `insertAfter`, so the viewer finishes the insert right after consenting.
+   */
+  private editError(error: unknown, deckId: string, afterSlideId: string): unknown {
     if (error instanceof ApiError && error.code === 'microsoft_login_required') {
-      return microsoftWriteLoginRequired(`/d/${deckId}`);
+      const slide = encodeURIComponent(afterSlideId);
+      return microsoftWriteLoginRequired(`/d/${deckId}?slide=${slide}&insertAfter=${slide}`);
     }
     if (error instanceof SourceChangedError) {
       return new ApiError(

@@ -1,13 +1,9 @@
 import { memo } from 'react';
 import { cn, Icon, Spinner } from '@/ui';
 import { accentColor } from '@/lib/accent';
-import { ApiError } from '@/lib/api-client';
-import { useInsertSlide } from '@/lib/queries';
+import { useInsertSlide } from '../hooks/useInsertSlide';
 import type { Thread } from '../lib/comment-selectors';
-import { useStageRegistry } from '../state/stage-registry';
-import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch } from '../state/viewer-state';
-import { useViewerToast } from '../state/viewer-toast';
 
 interface GapDividerProps {
   gapKey: string;
@@ -52,7 +48,7 @@ export const GapDivider = memo(function GapDivider({
   canInsert,
 }: GapDividerProps) {
   const dispatch = useViewerDispatch();
-  const insert = useInsertSlideHere(afterSlideId);
+  const insert = useInsertSlide();
   const openThreads = threads?.filter((thread) => thread.root.status === 'open') ?? [];
   const first = threads?.[0];
   // Narrow gaps (small slides) get a smaller ⊕.
@@ -87,8 +83,8 @@ export const GapDivider = memo(function GapDivider({
             aria-busy={insert.isPending || undefined}
             disabled={insert.isPending}
             onClick={() =>
-              mode === 'insert'
-                ? insert.run()
+              mode === 'insert' && afterSlideId
+                ? insert.run(afterSlideId)
                 : dispatch({ type: 'gapDraftStarted', afterSlideId, beforeSlideId })
             }
             className={cn(
@@ -129,52 +125,3 @@ export const GapDivider = memo(function GapDivider({
     </div>
   );
 });
-
-/**
- * Inserts a slide after `afterSlideId` and jumps to it once the new revision is loaded. Without
- * write consent yet the browser goes to Microsoft and comes back to the deck.
- */
-function useInsertSlideHere(afterSlideId: string | null) {
-  const { deck } = useViewerData();
-  const mutation = useInsertSlide(deck.id);
-  const dispatch = useViewerDispatch();
-  const registry = useStageRegistry();
-  const showToast = useViewerToast();
-
-  const run = () => {
-    if (!afterSlideId) return;
-    mutation.mutate(
-      { afterSlideId },
-      {
-        onSuccess: ({ result, slideId }) => {
-          if (result.status === 'error') {
-            showToast(
-              result.error?.message ?? 'Die Folie konnte nicht eingefügt werden.',
-              'danger',
-            );
-            return;
-          }
-          if (slideId) {
-            dispatch({ type: 'activeSlideChanged', slideId });
-            registry.revealSlide(slideId, { align: 'nearest', behavior: 'smooth' });
-          }
-          showToast(
-            slideId
-              ? 'Folie eingefügt und in der PowerPoint gespeichert'
-              : 'Folie in der PowerPoint gespeichert – die Vorschau folgt gleich',
-            'neutral',
-          );
-        },
-        onError: (error) => {
-          if (error instanceof ApiError && error.loginUrl) {
-            window.location.assign(error.loginUrl);
-            return;
-          }
-          showToast(error.message, 'danger');
-        },
-      },
-    );
-  };
-
-  return { run, isPending: mutation.isPending };
-}

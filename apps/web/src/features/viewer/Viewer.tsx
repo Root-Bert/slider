@@ -12,6 +12,7 @@ import { useFullscreen } from './hooks/useFullscreen';
 import { useSlideUrlSync } from './hooks/useSlideUrlSync';
 import { useViewerShortcuts } from './hooks/useViewerShortcuts';
 import { DeletedSlidesPanel } from './revisions/DeletedSlidesPanel';
+import { ResumeSlideInsert } from './revisions/ResumeSlideInsert';
 import { RevisionBanners } from './revisions/RevisionBanners';
 import { useViewerData } from './state/viewer-data';
 import { useViewerState } from './state/viewer-state';
@@ -50,6 +51,7 @@ export function Viewer({ onLeave }: { onLeave: () => void }) {
         )}
       >
         <h1 className="sr-only">{deck.title}</h1>
+        <ResumeSlideInsert />
         {/* In the flow above the track: a banner shortens the track instead of covering it. */}
         <RevisionBanners />
         <Timeline

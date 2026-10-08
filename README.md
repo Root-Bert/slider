@@ -168,7 +168,9 @@ and plain URLs have nothing Slider could write to.
   `edit`) with Graph's new `cTag`, so the next poll sees no change.
 - **Incremental consent.** Reading needs only `Files.Read.All`. The first insert asks for
   `Files.ReadWrite.All`: without that consent the API answers `microsoft_login_required` with a
-  `loginUrl` (`…/login?access=write&returnTo=/d/:id`) and the web app sends the owner there once.
+  `loginUrl` (`…/login?access=write&returnTo=/d/:id?insertAfter=…`) and the web app sends the owner
+  there once; back in the deck the insert finishes by itself. A refused consent returns to the
+  deck with `msError` and a message instead.
 
 For the web app: `GET /api/decks/:id/status` is a cheap poll (`revisionNumber`, `sync`),
 `GET /api/decks/:id/revisions` lists versions with a summary ("3 Folien geändert, 1 neu,
