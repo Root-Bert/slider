@@ -30,8 +30,9 @@ interface ConnectorLinesProps {
 
 /**
  * The lines between marks and their cards (B1).
- * Lines are drawn for the active slide, the hovered slide and the slide of the hovered or
- * focused thread – the other slides only show their marks, so the timeline stays readable.
+ * Lines are drawn for every slide. Those of the active slide, the hovered slide and the slide of
+ * the hovered or focused thread are full strength; the others step back half-way, like the lines
+ * of the other threads while one is open.
  * Lines take the author's accent, fade out behind the minimap and the control row, and pass
  * behind cards and marks. Hidden on narrow screens.
  *
@@ -39,7 +40,7 @@ interface ConnectorLinesProps {
  * moves them natively.
  */
 export function ConnectorLines({ wrapperRef, layer }: ConnectorLinesProps) {
-  const { slides, slideIndex, threadById } = useViewerData();
+  const { slides, threadById } = useViewerData();
   const {
     activeSlideId,
     hoveredSlideId,
@@ -62,20 +63,16 @@ export function ConnectorLines({ wrapperRef, layer }: ConnectorLinesProps) {
   const hoveredOwner = ownerOf(hoveredThreadId);
   const focusedOwner = ownerOf(focusedThreadId);
 
-  const routed = useMemo(
-    () =>
-      [...new Set([activeSlideId, hoveredSlideId, hoveredOwner, focusedOwner])].filter(
-        (id): id is string => id !== null && slideIndex.has(id),
-      ),
-    [activeSlideId, hoveredSlideId, hoveredOwner, focusedOwner, slideIndex],
+  const emphasized = useMemo(
+    () => new Set([activeSlideId, hoveredSlideId, hoveredOwner, focusedOwner]),
+    [activeSlideId, hoveredSlideId, hoveredOwner, focusedOwner],
   );
 
-  const { routes, threadMap } = useMemo(() => {
+  const { routes, threadMap, slideOf } = useMemo(() => {
     const byId = new Map<string, Thread>();
+    const owner = new Map<string, string>();
     const result: ConnectorRoute[] = [];
-    for (const slideId of routed) {
-      const index = slideIndex.get(slideId)!;
-      const slide = slides[index]!;
+    for (const [index, slide] of slides.entries()) {
       const nextGapKey = gapKey(slide.id, slides[index + 1]?.id ?? null);
       const prev = slides[index - 1];
       const items: ConnectorItem[] = [];
@@ -99,15 +96,17 @@ export function ConnectorLines({ wrapperRef, layer }: ConnectorLinesProps) {
           source: { kind: 'gap', gapKey: nextGapKey },
         });
       }
+      if (items.length === 0) continue;
+      for (const item of items) owner.set(item.threadId, slide.id);
       result.push({
-        slideId,
+        slideId: slide.id,
         prevGapKey: prev ? gapKey(prev.id, slide.id) : null,
         nextGapKey,
         items,
       });
     }
-    return { routes: result, threadMap: byId };
-  }, [routed, slides, slideIndex, bySlide, byGap]);
+    return { routes: result, threadMap: byId, slideOf: owner };
+  }, [slides, bySlide, byGap]);
 
   const panelThreadId = threadPanelOpen ? focusedThreadId : null;
   const layout = useConnectorLayout({
@@ -123,7 +122,10 @@ export function ConnectorLines({ wrapperRef, layer }: ConnectorLinesProps) {
 
   const emphasisId = focusedThreadId ?? hoveredThreadId ?? keyboardThreadId;
   const opacityOf = (threadId: string) => {
-    const base = threadMap.get(threadId)?.root.status === 'done' ? 0.5 : 1;
+    const done = threadMap.get(threadId)?.root.status === 'done';
+    const muted = !emphasized.has(slideOf.get(threadId) ?? null);
+    // Lines of slides out of focus step back half-way, like the other threads' lines in B4.
+    const base = Math.min(done ? 0.5 : 1, muted ? 0.5 : 1);
     if (draft) return 0.3;
     // B4: the open thread stays, the others step back half-way.
     if (panelThreadId) return threadId === panelThreadId ? base : Math.min(base, 0.5);
