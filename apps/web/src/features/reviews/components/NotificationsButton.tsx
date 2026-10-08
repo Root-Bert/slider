@@ -111,8 +111,8 @@ function NotificationsPopover({
           value={filter}
           onChange={setFilter}
           segments={[
-            { value: 'all', label: 'Alle' },
-            { value: 'unread', label: 'Ungelesen', count: unreadCount },
+            { value: 'all', label: 'Alle', icon: 'notifications' },
+            { value: 'unread', label: 'Ungelesen', icon: 'dot', count: unreadCount },
           ]}
         />
       </header>

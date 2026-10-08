@@ -46,7 +46,6 @@ export function ReviewsToolbar({
       <div className="glass rounded-panel p-1">
         <SegmentedControl
           label="Reviews filtern"
-          variant="tool"
           segments={segments}
           value={tab}
           onChange={onTabChange}

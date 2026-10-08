@@ -26,13 +26,17 @@ export function CommentFilterBar() {
         value={statusFilter}
         onChange={(filter) => dispatch({ type: 'statusFilterChanged', filter })}
         segments={[
-          { value: 'all', label: 'Alle', count: counts.all },
-          { value: 'open', label: 'Offen', count: counts.open },
-          { value: 'done', label: 'Erledigt', count: counts.done },
+          { value: 'all', label: 'Alle', icon: 'chatBubble', count: counts.all },
+          { value: 'open', label: 'Offen', icon: 'radioButtonUnchecked', count: counts.open },
+          { value: 'done', label: 'Erledigt', icon: 'checkCircleOutline', count: counts.done },
         ]}
       />
       <span aria-hidden className="h-5 w-px shrink-0 bg-white/15" />
-      <FilterChip selected={pptxOnly} onClick={() => dispatch({ type: 'pptxOnlyToggled' })}>
+      <FilterChip
+        selected={pptxOnly}
+        icon="description"
+        onClick={() => dispatch({ type: 'pptxOnlyToggled' })}
+      >
         aus PowerPoint
       </FilterChip>
     </GlassPanel>
