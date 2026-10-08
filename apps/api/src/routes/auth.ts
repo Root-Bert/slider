@@ -66,6 +66,8 @@ const oauthStateSchema = z.object({
    */
   mode: z.enum(['login', 'connect']).default('connect'),
   userId: z.string().optional(),
+  /** `picker`: the one-time consent to the personal-account file picker (BER-131). */
+  access: z.enum(['read', 'write', 'picker']).optional(),
 });
 type OAuthState = z.infer<typeof oauthStateSchema>;
 
@@ -368,6 +370,10 @@ export function authRoutes(deps: AppDeps) {
         const current = c.var.viewer;
         const signedIn = current?.kind === 'owner' && c.req.query('intent') !== 'login';
         const pkce = await createPkce();
+        const requested = c.req.query('access');
+        // The picker consent only adds to a signed-in account's Microsoft connection.
+        const access =
+          requested === 'write' ? 'write' : requested === 'picker' && signedIn ? 'picker' : 'read';
         await writeState(c, MS_OAUTH_COOKIE, MS_COOKIE_PATH, {
           state: pkce.state,
           verifier: pkce.verifier,
@@ -378,8 +384,8 @@ export function authRoutes(deps: AppDeps) {
           ),
           mode: signedIn ? 'connect' : 'login',
           userId: signedIn ? current.author.id : undefined,
+          access,
         });
-        const access = c.req.query('access') === 'write' ? 'write' : 'read';
         return c.redirect(buildAuthorizeUrl(microsoft, pkce, access), 302);
       })
 
@@ -407,7 +413,11 @@ export function authRoutes(deps: AppDeps) {
             return fail('failed');
           }
           try {
-            await deps.microsoft.completeLogin(current.author.id, code, saved.verifier);
+            if (saved.access === 'picker') {
+              await deps.microsoft.completePickerConsent(current.author.id, code, saved.verifier);
+            } else {
+              await deps.microsoft.completeLogin(current.author.id, code, saved.verifier);
+            }
           } catch (error) {
             deps.log.warn('Microsoft token exchange failed', error);
             return fail(error instanceof MicrosoftAuthError ? error.kind : 'failed');

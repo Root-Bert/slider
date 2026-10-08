@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Deck, FilePickerSession } from '@slider/shared';
 import { api, ApiError } from '@/lib/api-client';
@@ -6,6 +7,8 @@ import { queryKeys, useImportDriveItem } from '@/lib/queries';
 import { runPicker, type PickedDriveItem } from '../lib/onedrive-picker';
 
 const FAILED_MESSAGE = 'Die OneDrive-Auswahl konnte nicht geöffnet werden.';
+/** Set by the API after the one-time Microsoft consent: open the picker again by itself. */
+const REOPEN_PARAM = 'onedrive';
 
 const fetchToken = async (resource: string) =>
   (await api.post<{ token: string }>('/microsoft/file-picker/token', { resource })).token;
@@ -16,7 +19,10 @@ const fetchToken = async (resource: string) =>
  * goes to sign in first and comes back to the start page.
  */
 export function useOneDrivePicker(workspaceId: string, onImported: (deck: Deck) => void) {
-  const [open, setOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Back from the Microsoft consent (`?onedrive=1`) the picker starts open.
+  const [reopen] = useState(() => searchParams.get(REOPEN_PARAM) === '1');
+  const [open, setOpen] = useState(reopen);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -71,6 +77,18 @@ export function useOneDrivePicker(workspaceId: string, onImported: (deck: Deck) 
     // Runs per opening; `importPicked`/`fail` only use stable mutation and query-client handles.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Drop `?onedrive=1` from the URL, so a reload does not open the picker again.
+  useEffect(() => {
+    if (!reopen) return;
+    setSearchParams(
+      (params) => {
+        params.delete(REOPEN_PARAM);
+        return params;
+      },
+      { replace: true },
+    );
+  }, [reopen, setSearchParams]);
 
   return {
     open: () => {

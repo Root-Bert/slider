@@ -151,6 +151,11 @@ replaces a list of our own: Graph's `/me/drive/sharedWithMe` stops returning dat
   from `POST /api/microsoft/file-picker/token`, which trades the stored refresh token. Only the
   account's own SharePoint tenant and Graph are served. Without the SharePoint permissions in the
   app registration this answers `microsoft_consent_required` with a hint for the admin.
+- **One-time consent (personal accounts).** Nobody has granted `OneDrive.ReadOnly` at sign-in,
+  so the first token request fails with AADSTS70000; the API answers `microsoft_login_required`
+  with `…/login?access=picker&returnTo=/neu?onedrive=1`. That login asks `consumers` for just this
+  scope; the new refresh token replaces the stored one only if it still yields Graph tokens, and
+  the start page reopens the picker by itself.
 - **Import.** The picked file comes back as drive and item id; `POST /api/decks/drive-item`
   reads it through Graph like any OneDrive/SharePoint link, so automatic updates and inserting
   slides work the same.

@@ -1,8 +1,12 @@
 import type { FilePickerSession } from '@slider/shared';
-import { MicrosoftAuthError } from '../auth/microsoft';
+import { CONSUMERS_TENANT, MicrosoftAuthError, PICKER_CONSUMER_SCOPE } from '../auth/microsoft';
 import { ApiError, badRequest } from '../http/errors';
 import { silentLogger, type Logger } from '../logger';
-import { microsoftLoginRequiredAt, sourceUnreachable } from './errors';
+import {
+  microsoftLoginRequiredAt,
+  microsoftPickerConsentRequired,
+  sourceUnreachable,
+} from './errors';
 import type { GraphClient } from './microsoft-graph';
 import type { SourceContext } from './source-adapter';
 
@@ -18,17 +22,19 @@ import type { SourceContext } from './source-adapter';
  */
 
 const CONSUMER_PICKER_URL = 'https://onedrive.live.com/picker';
-const CONSUMER_SCOPE = 'OneDrive.ReadOnly';
 /**
  * `OneDrive.ReadOnly` exists only for personal accounts: asked at `common`, Microsoft resolves
  * it against Graph and answers AADSTS70011 ("not configured for this tenant").
  */
-const CONSUMER_TENANT = 'consumers';
+const CONSUMER_SCOPE = PICKER_CONSUMER_SCOPE;
+const CONSUMER_TENANT = CONSUMERS_TENANT;
 const GRAPH_RESOURCE = 'https://graph.microsoft.com';
 const SHAREPOINT_SUFFIX = '.sharepoint.com';
 
 /** Where the picker sends the person when Microsoft wants a new sign-in. */
 const PICKER_RETURN_TO = '/neu';
+/** … and after the one-time consent: the start page opens the picker again by itself. */
+const PICKER_REOPEN = '/neu?onedrive=1';
 
 export const PICKER_CONSENT_MESSAGE =
   'Für die OneDrive-Auswahl braucht Slider zusätzlich die SharePoint-Berechtigungen „MyFiles.Read“ und „AllSites.Read“. Eine Administratorin oder ein Administrator muss sie in der App-Registrierung ergänzen und freigeben. Bis dahin kannst du den Link der Datei einfügen.';
@@ -115,6 +121,10 @@ export class OneDriveFilePicker {
       this.log.warn(
         `OneDrive picker: Microsoft refused scope "${scope}" for user ${context.userId}: ${error.message}`,
       );
+      // AADSTS70000: this personal account never granted `OneDrive.ReadOnly` – ask once.
+      if (tenant === CONSUMER_TENANT && error.error === 'invalid_grant') {
+        throw microsoftPickerConsentRequired(PICKER_REOPEN);
+      }
       if (error.kind === 'admin_consent') {
         throw new ApiError(403, 'microsoft_consent_required', PICKER_CONSENT_MESSAGE);
       }

@@ -23,6 +23,14 @@ export const MICROSOFT_SCOPES = 'openid profile email offline_access User.Read F
 export const MICROSOFT_WRITE_SCOPES =
   'openid profile email offline_access User.Read Files.ReadWrite.All';
 
+/**
+ * The OneDrive file picker for personal accounts takes `OneDrive.ReadOnly` tokens – a scope only
+ * the `consumers` authority knows, and one a person has to grant once (BER-131).
+ */
+export const PICKER_CONSUMER_SCOPE = 'OneDrive.ReadOnly';
+export const CONSUMERS_TENANT = 'consumers';
+const PICKER_CONSENT_SCOPES = `openid offline_access ${PICKER_CONSUMER_SCOPE}`;
+
 /** `read` for importing and syncing, `write` for changing the PowerPoint itself. */
 export type MicrosoftAccess = 'read' | 'write';
 const scopesFor = (access: MicrosoftAccess) =>
@@ -93,18 +101,20 @@ export async function createPkce(): Promise<Pkce> {
   };
 }
 
+/** `picker`: the one-time consent to the personal-account file picker (`consumers`). */
 export function buildAuthorizeUrl(
   config: MicrosoftConfig,
   pkce: Pkce,
-  access: MicrosoftAccess = 'read',
+  access: MicrosoftAccess | 'picker' = 'read',
 ): string {
-  const url = new URL(`${authority(config)}/authorize`);
+  const picker = access === 'picker';
+  const url = new URL(`${authority(config, picker ? CONSUMERS_TENANT : undefined)}/authorize`);
   url.search = new URLSearchParams({
     client_id: config.clientId,
     response_type: 'code',
     redirect_uri: config.redirectUri,
     response_mode: 'query',
-    scope: scopesFor(access),
+    scope: picker ? PICKER_CONSENT_SCOPES : scopesFor(access),
     state: pkce.state,
     nonce: pkce.nonce,
     code_challenge: pkce.challenge,
@@ -168,13 +178,20 @@ export const exchangeCode = (
   fetch: Fetch,
   code: string,
   verifier: string,
+  { scope, tenant }: { scope?: string; tenant?: string } = {},
 ) =>
-  requestToken(config, fetch, {
-    grant_type: 'authorization_code',
-    code,
-    redirect_uri: config.redirectUri,
-    code_verifier: verifier,
-  });
+  requestToken(
+    config,
+    fetch,
+    {
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: config.redirectUri,
+      code_verifier: verifier,
+    },
+    scope,
+    tenant,
+  );
 
 export const refreshAccessToken = (
   config: MicrosoftConfig,
@@ -230,6 +247,38 @@ export class MicrosoftTokens {
   async completeLogin(userId: string, code: string, verifier: string): Promise<void> {
     const tokens = await exchangeCode(this.requireConfig(), this.fetch, code, verifier);
     await this.saveTokens(userId, tokens);
+  }
+
+  /**
+   * After the one-time picker consent (BER-131): the new refresh token carries the grant. It
+   * replaces the stored one only if it still yields Graph tokens; either way the picker token is
+   * cached, so the picker opens right away.
+   */
+  async completePickerConsent(userId: string, code: string, verifier: string): Promise<void> {
+    const config = this.requireConfig();
+    const tokens = await exchangeCode(config, this.fetch, code, verifier, {
+      scope: PICKER_CONSENT_SCOPES,
+      tenant: CONSUMERS_TENANT,
+    });
+    this.remember(`${userId}:${CONSUMERS_TENANT}:${PICKER_CONSUMER_SCOPE}`, tokens);
+    if (!tokens.refresh_token) return;
+    try {
+      const graph = await refreshForScope(
+        config,
+        this.fetch,
+        tokens.refresh_token,
+        MICROSOFT_SCOPES,
+      );
+      await this.deps.db
+        .update(users)
+        .set({ msRefreshToken: await encryptToken(this.deps.secret, tokens.refresh_token) })
+        .where(eq(users.id, userId));
+      this.remember(`${userId}:read`, graph);
+    } catch (error) {
+      this.deps.log.warn(
+        `Picker consent for user ${userId}: new refresh token not usable for Graph, keeping the old one (${String(error)})`,
+      );
+    }
   }
 
   /**

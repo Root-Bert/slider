@@ -23,6 +23,15 @@ export const microsoftLoginRequiredAt = (returnTo: string) =>
     loginUrl: `/api/auth/microsoft/login?returnTo=${encodeURIComponent(returnTo)}`,
   });
 
+export const PICKER_CONSENT_REQUIRED_MESSAGE =
+  'Bestätige einmal bei Microsoft, dass Slider deine OneDrive-Dateien zur Auswahl anzeigen darf.';
+
+/** The one-time consent to the personal-account file picker; comes back to `returnTo`. */
+export const microsoftPickerConsentRequired = (returnTo: string) =>
+  new ApiError(401, 'microsoft_login_required', PICKER_CONSENT_REQUIRED_MESSAGE, {
+    loginUrl: `/api/auth/microsoft/login?access=picker&returnTo=${encodeURIComponent(returnTo)}`,
+  });
+
 export const WRITE_LOGIN_REQUIRED_MESSAGE =
   'Damit Slider die PowerPoint ändern darf, bestätige einmal den Schreibzugriff mit deinem Microsoft-Konto.';
 

@@ -88,15 +88,14 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
           />
 
           {!link.noAccess && oneDriveAvailable && (
-            <>
-              <OneDrivePickerButton
-                onOpen={picker.open}
-                pending={picker.pending}
-                error={picker.error}
-              />
-              <OneDrivePickerDialog {...picker.dialog} onClose={picker.close} />
-            </>
+            <OneDrivePickerButton
+              onOpen={picker.open}
+              pending={picker.pending}
+              error={picker.error}
+            />
           )}
+          {/* Always mounted: back from the Microsoft consent it opens before the rest loads. */}
+          <OneDrivePickerDialog {...picker.dialog} onClose={picker.close} />
 
           {link.noAccess ? (
             <NoAccessCard info={link.noAccess} onUploadInstead={pickFile} />

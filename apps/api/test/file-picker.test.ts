@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import type { Deck } from '@slider/shared';
-import { encryptToken } from '../src/auth/token-crypto';
+import { decryptToken, encryptToken } from '../src/auth/token-crypto';
 import { users } from '../src/db/schema';
 import { PICKER_CONSENT_MESSAGE } from '../src/sources/onedrive-picker';
 import type { FetchLike } from '../src/sources/safe-fetch';
@@ -48,9 +48,17 @@ async function pickerContext({
     const url = String(input);
     const tokenMatch = TOKEN_URL.exec(url);
     if (tokenMatch) {
-      const scope = new URLSearchParams(String(init?.body)).get('scope') ?? '';
+      const body = new URLSearchParams(String(init?.body));
+      const scope = body.get('scope') ?? '';
       scopes.push(scope);
       requests.push(`${tokenMatch[1]} ${scope}`);
+      if (body.get('grant_type') === 'authorization_code') {
+        return Response.json({
+          access_token: 'picker-at',
+          refresh_token: 'rt-2',
+          expires_in: 3600,
+        });
+      }
       if (refuse && scope === refuse.scope) {
         return Response.json(
           { error: refuse.error, error_description: refuse.description },
@@ -188,6 +196,58 @@ describe('POST /api/microsoft/file-picker/token', () => {
     });
     const [owner] = await ctx.deps.db.select().from(users).where(eq(users.id, ctx.ownerId));
     expect(owner?.msRefreshToken).not.toBeNull();
+  });
+});
+
+describe('one-time consent to the personal-account picker', () => {
+  it('sends a personal account without the OneDrive.ReadOnly grant to consent once', async () => {
+    const { ctx } = await pickerContext({
+      drive: PERSONAL,
+      refuse: {
+        scope: 'OneDrive.ReadOnly',
+        error: 'invalid_grant',
+        description:
+          'AADSTS70000: The request was denied because one or more scopes requested are unauthorized or expired.',
+      },
+    });
+    const res = await ctx.request('/api/microsoft/file-picker/token', {
+      method: 'POST',
+      json: { resource: 'https://onedrive.live.com/picker' },
+    });
+    expect(res.status).toBe(401);
+    expect((await errorOf(res)).loginUrl).toBe(
+      '/api/auth/microsoft/login?access=picker&returnTo=%2Fneu%3Fonedrive%3D1',
+    );
+  });
+
+  it('asks the consumers authority for the picker scope and stores the new grant', async () => {
+    const { ctx, requests } = await pickerContext({ drive: PERSONAL });
+    const login = await ctx.request(
+      `/api/auth/microsoft/login?access=picker&returnTo=${encodeURIComponent('/neu?onedrive=1')}`,
+    );
+    const authorize = new URL(login.headers.get('location') ?? '');
+    expect(authorize.origin + authorize.pathname).toBe(
+      'https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize',
+    );
+    expect(authorize.searchParams.get('scope')).toBe('openid offline_access OneDrive.ReadOnly');
+
+    const state = authorize.searchParams.get('state') ?? '';
+    const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
+    const back = await ctx.request(`/api/auth/microsoft/callback?state=${state}&code=c`, {
+      cookie,
+    });
+    expect(back.headers.get('location')).toBe('http://localhost:5173/neu?onedrive=1');
+    expect(requests[0]).toBe('consumers openid offline_access OneDrive.ReadOnly');
+
+    // The new refresh token yields Graph tokens, so it replaces the old one …
+    const [owner] = await ctx.deps.db.select().from(users).where(eq(users.id, ctx.ownerId));
+    expect(await decryptToken(SECRET, owner?.msRefreshToken ?? '')).toBe('rt-2');
+    // … and the picker token from the consent is ready without another request.
+    const token = await ctx.request('/api/microsoft/file-picker/token', {
+      method: 'POST',
+      json: { resource: 'https://onedrive.live.com/picker' },
+    });
+    expect(await token.json()).toEqual({ token: 'picker-at' });
   });
 });
 
