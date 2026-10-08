@@ -57,7 +57,7 @@ const sameRange = (a: Range, b: Range) => a.first === b.first && a.last === b.la
  */
 export function Timeline({ controls }: { controls: ReactNode }) {
   const { slides, slideIndex } = useViewerData();
-  const { split, activeSlideId, tool, threadPanelOpen } = useViewerState();
+  const { split, activeSlideId, tool, threadPanelOpen, deletedPanelOpen } = useViewerState();
   const { deletedSlides } = useRevisionData();
   const hasDeleted = deletedSlides.length > 0;
   const dispatch = useViewerDispatch();
@@ -257,11 +257,16 @@ export function Timeline({ controls }: { controls: ReactNode }) {
               <div style={{ height: slideH ?? 0 }} />
             )}
             {/* Minimap, controls row and split handle: one band of fixed height right under the
-                track, part of where the comment area starts. Connector lines hide behind all of it. */}
+                track, part of where the comment area starts. Connector lines hide behind all of it.
+                Slides and comments run on behind a side panel; this band makes room for it (its
+                own container, so the controls row's container queries see the narrowed width). */}
             <div
               ref={controlsRef}
               data-connector-occluder
-              className="sticky left-0 w-[100cqw] pt-2 max-md:pb-2"
+              className={cn(
+                'sticky left-0 w-[100cqw] pt-2 transition-[padding] duration-300 @container max-md:pb-2',
+                (threadPanelOpen || deletedPanelOpen) && 'md:pr-[412px]',
+              )}
             >
               {/* Thumbnails line up with the big track's slides (TRACK_PAD_X minus MINIMAP_PAD). */}
               <div className="px-3">

@@ -40,6 +40,8 @@ function DeletedSlidesPanelView({ deletedSlides }: { deletedSlides: readonly Del
     <aside
       ref={panelRef}
       data-deleted-panel
+      // Floats over the track's right end (see `revealSlide`).
+      data-side-panel
       tabIndex={-1}
       aria-labelledby={titleId}
       className={[

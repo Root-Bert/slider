@@ -45,10 +45,7 @@ export function Viewer({ onLeave }: { onLeave: () => void }) {
       <div
         ref={rootRef}
         data-viewer-root
-        className={cn(
-          'dot-grid relative flex h-dvh flex-col overflow-hidden text-fg transition-[padding] duration-300',
-          threadPanelOpen && 'md:pr-[412px]',
-        )}
+        className={cn('dot-grid relative flex h-dvh flex-col overflow-hidden text-fg')}
       >
         <h1 className="sr-only">{deck.title}</h1>
         <ResumeSlideInsert />
@@ -57,8 +54,8 @@ export function Viewer({ onLeave }: { onLeave: () => void }) {
         <Timeline
           controls={
             // On desktop this row never wraps – its height is part of where the comment area
-            // starts, which must not move when the thread panel narrows the timeline: the slide
-            // counter gives way (container query on the timeline width), the filter pill scrolls.
+            // starts, which must not move when a side panel narrows the controls band: the slide
+            // counter gives way (container query on the band width), the filter pill scrolls.
             <div className="flex flex-wrap items-center gap-3 md:flex-nowrap">
               <ToolBar />
               <CommentFilterBar />

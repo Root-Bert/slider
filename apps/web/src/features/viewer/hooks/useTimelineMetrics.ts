@@ -1,10 +1,10 @@
 import { useLayoutEffect, useState, type RefObject } from 'react';
 
 export interface TimelineMetrics {
-  /** Width the geometry is computed for: the wrapper minus the scrollbar gutter. Opening the
-   * thread panel doesn't change it (the panel pads the root, not the wrapper's parent width). */
+  /** Width the geometry is computed for: the wrapper minus the scrollbar gutter. Side panels
+   * float over the timeline and don't change it. */
   viewportW: number;
-  /** Visible width of the scroller right now (shrinks while the thread panel is open). */
+  /** Visible width of the scroller right now. */
   clientW: number;
   /** Full viewer height (h-dvh, fullscreen-aware). */
   viewportH: number;
@@ -40,10 +40,8 @@ export function useTimelineMetrics(
       const gutter = scroller.offsetWidth - scroller.clientWidth;
       const style = getComputedStyle(root);
       const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
-      // The thread panel pads the root; the geometry ignores it so the track keeps its height.
-      const panelPad = parseFloat(style.paddingRight) || 0;
       const next: TimelineMetrics = {
-        viewportW: Math.round(root.clientWidth - padding + panelPad - gutter),
+        viewportW: Math.round(root.clientWidth - padding - gutter),
         clientW: scroller.clientWidth,
         viewportH: root.clientHeight,
         controlsH: Math.round(controls.getBoundingClientRect().height),

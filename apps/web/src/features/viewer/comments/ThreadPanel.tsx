@@ -74,6 +74,8 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
       ref={panelRef}
       // Target of the connector line from the focused thread (B4).
       data-thread-panel
+      // Floats over the track's right end (see `revealSlide`).
+      data-side-panel
       tabIndex={-1}
       aria-labelledby={titleId}
       style={{ '--card-accent': accentColor(root.author.color) } as CSSProperties}

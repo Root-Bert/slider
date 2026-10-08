@@ -47,6 +47,9 @@ export interface StageRegistry {
   endProgrammaticScroll: () => void;
 }
 
+/** Room kept between a revealed slide and a side panel floating over the track. */
+const SIDE_PANEL_GAP = 12;
+
 /** Before its first scroll event a smooth scroll counts as in flight this long … */
 const PROGRAMMATIC_START_MS = { smooth: 500, instant: 250 } as const;
 /** … then until this long after its last scroll event (fallback where `scrollend` is missing) … */
@@ -74,6 +77,17 @@ export function createStageRegistry(): StageRegistry {
     else scroller.scrollLeft = left;
   };
 
+  // Side panels float over the track's right end: a reveal only counts the width left of them.
+  // `offsetLeft` ignores the panel's slide-in transform, so a panel still animating in counts.
+  const revealWidth = (element: HTMLElement) => {
+    const panel = element.ownerDocument?.querySelector<HTMLElement>('[data-side-panel]');
+    if (!panel) return element.clientWidth;
+    const left = element.getBoundingClientRect().left;
+    const edge = panel.offsetLeft - SIDE_PANEL_GAP;
+    // A phone's bottom sheet spans the whole width: it doesn't narrow the track.
+    return edge > left ? Math.min(element.clientWidth, edge - left) : element.clientWidth;
+  };
+
   return {
     setScroller: (element) => {
       scroller = element;
@@ -93,7 +107,7 @@ export function createStageRegistry(): StageRegistry {
         published.layout,
         index,
         scroller.scrollLeft,
-        scroller.clientWidth,
+        revealWidth(scroller),
         effective,
       );
       scrollTrackTo(left, behavior);
