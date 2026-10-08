@@ -176,7 +176,8 @@ function circle(cx: number, cy: number, r: number, steps = 32): Point[] {
   });
 }
 
-const pen = (points: Point[], color: AccentColor = 'yellow'): Stroke => ({
+/** Drawn in the author's colour – it matches the comment's connector line. */
+const pen = (points: Point[], color: AccentColor): Stroke => ({
   tool: 'pen',
   color,
   points,
@@ -221,7 +222,10 @@ const Q4_COMMENTS = (now: Date): CommentSeed[] => [
     body: 'Diese beiden Flächen wirken unruhig.',
     ago: 1 * HOUR,
     anchor: frame(0.58, 0.4, 0.36, 0.33),
-    strokes: [pen(roughRect(0.6, 0.43, 0.15, 0.26)), pen(roughRect(0.77, 0.44, 0.15, 0.25))],
+    strokes: [
+      pen(roughRect(0.6, 0.43, 0.15, 0.26), 'blue'),
+      pen(roughRect(0.77, 0.44, 0.15, 0.25), 'blue'),
+    ],
   },
   {
     slide: 1,
@@ -229,7 +233,7 @@ const Q4_COMMENTS = (now: Date): CommentSeed[] => [
     body: 'So eher? Den Steg stärker ins Bild rücken.',
     ago: 20 * MINUTE,
     anchor: pin(0.78, 0.3),
-    strokes: [pen(circle(0.78, 0.3, 0.08))],
+    strokes: [pen(circle(0.78, 0.3, 0.08), 'yellow')],
   },
   {
     slide: 1,

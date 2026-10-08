@@ -78,7 +78,8 @@ export const AnnotationLayer = memo(function AnnotationLayer({
           mark.thread.root.strokes.filter(isPathStroke).map((stroke, index) => (
             <g key={`${mark.thread.id}-${index}`}>
               <StrokePath
-                stroke={stroke}
+                // Drawings always take the author's colour, like the connector line.
+                stroke={{ ...stroke, color: mark.thread.root.author.color }}
                 aspectRatio={slide.aspectRatio}
                 opacity={opacityOf(mark)}
                 emphasized={mark.state === 'emphasized'}
@@ -129,7 +130,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
             {text ? (
               // The text box is the mark and the click target.
               <TextMark
-                stroke={text}
+                stroke={{ ...text, color: root.author.color }}
                 label={markLabel(root)}
                 opacity={mark.state === 'dimmed' ? 0.3 : root.status === 'done' ? 0.5 : 1}
                 emphasized={mark.state === 'emphasized'}

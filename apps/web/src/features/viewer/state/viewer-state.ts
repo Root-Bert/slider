@@ -50,6 +50,7 @@ export interface ViewerState {
   tool: Tool | null;
   /** Remembered so the `draw` button returns to the last pen variant. */
   lastPenTool: PenTool;
+  /** The viewer's own colour – drawings match their comment's connector line. */
   color: AccentColor;
   draft: Draft | null;
   focusedThreadId: string | null;
@@ -74,7 +75,6 @@ export interface ViewerState {
 export type ViewerAction =
   | { type: 'activeSlideChanged'; slideId: string }
   | { type: 'toolSelected'; tool: Tool | null }
-  | { type: 'colorSelected'; color: AccentColor }
   | { type: 'anchorPlaced'; slideId: string; anchor: Anchor }
   | { type: 'strokeAdded'; slideId: string; stroke: Stroke }
   | { type: 'gapDraftStarted'; afterSlideId: string | null; beforeSlideId: string | null }
@@ -275,8 +275,6 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
       const lastPenTool = isPenTool(tool) ? tool : next.lastPenTool;
       return { ...next, tool, lastPenTool };
     }
-    case 'colorSelected':
-      return { ...next, color: action.color };
     case 'anchorPlaced':
     case 'strokeAdded':
     case 'gapDraftStarted':

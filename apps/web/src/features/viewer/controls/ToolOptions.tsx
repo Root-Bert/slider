@@ -1,5 +1,3 @@
-import { ACCENT_COLORS, type AccentColor } from '@slider/shared';
-import { accentColor } from '@/lib/accent';
 import { cn, GlassPanel, Icon, IconButton, type IconName } from '@/ui';
 import { useViewerDispatch, useViewerState, type PenTool } from '../state/viewer-state';
 
@@ -18,16 +16,10 @@ const TOOL_OPTIONS: { tool: PenTool; icon: IconName; label: string; hint: string
   },
 ];
 
-const COLOR_NAMES: Record<AccentColor, string> = {
-  red: 'Rot',
-  blue: 'Blau',
-  violet: 'Violett',
-  yellow: 'Gelb',
-};
-
-/** Pen options pill next to the tool bar (B2): pen/shape variant, colour, undo/redo. */
+/** Pen options pill next to the tool bar (B2): pen/shape variant, undo/redo. Drawings take the
+ * viewer's own colour, so they always match the comment's connector line.. */
 export function ToolOptions() {
-  const { tool, color, draft } = useViewerState();
+  const { tool, draft } = useViewerState();
   const dispatch = useViewerDispatch();
 
   return (
@@ -61,29 +53,6 @@ export function ToolOptions() {
 
       {tool !== 'mark' && (
         <>
-          <span aria-hidden className="mx-1 h-5 w-px bg-white/15" />
-          <div role="radiogroup" aria-label="Farbe" className="flex items-center gap-1">
-            {ACCENT_COLORS.map((option) => (
-              <button
-                key={option}
-                type="button"
-                role="radio"
-                aria-checked={option === color}
-                aria-label={COLOR_NAMES[option]}
-                title={COLOR_NAMES[option]}
-                onClick={() => dispatch({ type: 'colorSelected', color: option })}
-                className="flex size-7 items-center justify-center rounded-full"
-              >
-                <span
-                  className={cn(
-                    'size-3.5 rounded-full transition-shadow',
-                    option === color && 'shadow-[0_0_0_2px_rgb(20_20_20),0_0_0_3.5px_white]',
-                  )}
-                  style={{ backgroundColor: accentColor(option) }}
-                />
-              </button>
-            ))}
-          </div>
           <span aria-hidden className="mx-1 h-5 w-px bg-white/15" />
           <IconButton
             icon="undo"
