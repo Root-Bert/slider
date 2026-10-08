@@ -286,7 +286,7 @@ export const countLeftExits = (threads: readonly Thread[], shapes: readonly Shap
     return anchor !== null && connectorSide(anchor) === 'left';
   }).length;
 
-const rectsMatch = (a: Rect, b: Rect) =>
+export const rectsMatch = (a: Rect, b: Rect) =>
   Math.abs(a.x - b.x) < 1e-6 &&
   Math.abs(a.y - b.y) < 1e-6 &&
   Math.abs(a.w - b.w) < 1e-6 &&

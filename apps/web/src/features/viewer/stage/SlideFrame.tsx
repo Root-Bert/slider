@@ -1,5 +1,6 @@
-import { hitTestShapes, type AccentColor, type Slide } from '@slider/shared';
-import { memo, useRef, useState, type PointerEvent } from 'react';
+import { hitTestShapes, type AccentColor, type Shape, type Slide } from '@slider/shared';
+import { memo, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
+import { accentColor } from '@/lib/accent';
 import { Badge, cn, Icon } from '@/ui';
 import type { Thread } from '../lib/comment-selectors';
 import { toSlidePoint } from '../lib/geometry';
@@ -11,6 +12,7 @@ import { useViewerDispatch, type Draft, type Tool } from '../state/viewer-state'
 import { AnnotationLayer } from './AnnotationLayer';
 import { DrawingSurface } from './DrawingSurface';
 import { GuideLayer } from './GuideLayer';
+import { ShapeOutline } from './ShapeOutline';
 import { TextBoxEditor } from './TextBox';
 
 /** Below this width the slide shows its thumbnail image and small corners. */
@@ -48,6 +50,8 @@ interface SlideFrameProps {
   draft: Draft | null;
   /** Active tool, `null` when not drawing or not allowed to comment. */
   tool: Tool | null;
+  /** Pointer mode (no tool picked, may comment): clicking a PowerPoint box comments on it. */
+  canSelect: boolean;
   color: AccentColor;
   /** Change of the latest revision – only set while changes are shown (Figma D2). */
   badge: SlideBadge | null;
@@ -61,7 +65,8 @@ interface SlideFrameProps {
 
 /**
  * One slide in the timeline track: image, annotation overlay and – on the active slide while a
- * tool is selected – the drawing surface. Clicking a slide makes it the active one.
+ * tool is selected – the drawing surface. Clicking a slide makes it the active one; with the
+ * pointer (the default tool) a click on a PowerPoint box also starts a comment on that box.
  */
 export const SlideFrame = memo(function SlideFrame({
   slide,
@@ -76,6 +81,7 @@ export const SlideFrame = memo(function SlideFrame({
   emphasisId,
   draft,
   tool,
+  canSelect,
   color,
   badge,
   badgeVersion,
@@ -91,19 +97,39 @@ export const SlideFrame = memo(function SlideFrame({
   const drawing = isActive && tool !== null;
   const textBox = draft?.textBox ?? null;
   const shapesShown = showShapes && !small;
-  // With all boxes shown, the one under the pointer gets its name (the mark tool shows its own).
-  const [hoveredShapeId, setHoveredShapeId] = useState<string | null>(null);
-  const trackShapes = shapesShown && !(drawing && tool === 'mark');
+  const selecting = canSelect && !drawing && !small;
+  // The box under the pointer: with the pointer it is what a click comments on, with all boxes
+  // shown it gets its name (the mark tool shows its own).
+  const [hoveredShape, setHoveredShape] = useState<Shape | null>(null);
+  const trackShapes = selecting || (shapesShown && !(drawing && tool === 'mark'));
+  const shapeAt = (event: MouseEvent) =>
+    boxRef.current ? hitTestShapes(slide.shapes, toSlidePoint(event, boxRef.current)) : null;
   const onBoxPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    if (!trackShapes || event.pointerType === 'touch' || !boxRef.current) return;
-    const id = hitTestShapes(slide.shapes, toSlidePoint(event, boxRef.current))?.id ?? null;
-    if (id !== hoveredShapeId) setHoveredShapeId(id);
+    if (!trackShapes || event.pointerType === 'touch') return;
+    const shape = shapeAt(event);
+    if (shape?.id !== hoveredShape?.id) setHoveredShape(shape);
   };
 
-  const activate = () => {
+  const activate = (event: MouseEvent) => {
     dispatch({ type: 'activeSlideChanged', slideId: slide.id });
     registry.revealSlide(slide.id, { align: 'nearest' });
+    const shape = selecting ? shapeAt(event) : null;
+    if (shape)
+      dispatch({
+        type: 'anchorPlaced',
+        slideId: slide.id,
+        anchor: {
+          type: 'rect',
+          rect: shape.bbox,
+          shapeRef: { shapeId: shape.id, offset: { x: 0.5, y: 0.5 } },
+        },
+      });
   };
+  const draftShapeId =
+    draft?.anchor.type === 'rect' || draft?.anchor.type === 'point'
+      ? (draft.anchor.shapeRef?.shapeId ?? null)
+      : null;
+  const pointerTarget = selecting && hoveredShape?.id !== draftShapeId ? hoveredShape : null;
 
   return (
     <div
@@ -125,10 +151,13 @@ export const SlideFrame = memo(function SlideFrame({
       <div
         ref={boxRef}
         data-slide-box={slide.id}
-        className={cn('relative size-full', !drawing && !isActive && 'cursor-pointer')}
+        className={cn(
+          'relative size-full',
+          !drawing && (!isActive || pointerTarget) && 'cursor-pointer',
+        )}
         onClick={drawing ? undefined : activate}
         onPointerMove={onBoxPointerMove}
-        onPointerLeave={() => setHoveredShapeId(null)}
+        onPointerLeave={() => setHoveredShape(null)}
       >
         <div
           className={cn(
@@ -191,8 +220,16 @@ export const SlideFrame = memo(function SlideFrame({
           emphasisId={emphasisId}
           draft={draft}
           showShapes={shapesShown}
-          hoveredShapeId={trackShapes ? hoveredShapeId : null}
+          hoveredShapeId={shapesShown && !selecting ? (hoveredShape?.id ?? null) : null}
         />
+        {pointerTarget && (
+          <ShapeOutline
+            shape={pointerTarget}
+            variant="target"
+            color={accentColor(color)}
+            labelled
+          />
+        )}
         {drawing && (
           <DrawingSurface
             slide={slide}

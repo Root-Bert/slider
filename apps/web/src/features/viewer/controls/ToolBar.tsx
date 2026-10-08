@@ -10,8 +10,8 @@ import { ToolOptions } from './ToolOptions';
 const OPTIONS_ROOM = 48;
 
 /**
- * Tool bar at the left of the controls row (Figma D1): draw, voice, text, video, and the switch
- * for the PowerPoint boxes comments attach to and for the guides – a compact pill
+ * Tool bar at the left of the controls row (Figma D1): pointer (the default), draw, voice, text,
+ * video, and the switch for the PowerPoint boxes comments attach to and for the guides – a compact pill
  * as tall as the filter pill. While the pen is picked, its options (variant, colour, undo/redo)
  * open anchored to it: above, over the minimap, or below when there is no room above.
  * "Text auf Folie" has no options: it writes in the author's colour.
@@ -116,6 +116,14 @@ function ToolButtons() {
 
   return (
     <GlassPanel role="toolbar" aria-label="Werkzeuge" className="flex items-center gap-1 p-1">
+      {/* The default: click a PowerPoint box to comment on it – typed, voice or video. */}
+      <IconButton
+        icon="cursor"
+        label="Zeiger: Box anklicken und kommentieren"
+        size="sm"
+        active={tool === null}
+        onClick={() => dispatch({ type: 'toolSelected', tool: null })}
+      />
       <IconButton
         icon="draw"
         label="Zeichnen"

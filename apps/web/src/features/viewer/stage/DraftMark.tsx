@@ -8,6 +8,8 @@ interface DraftMarkProps {
   draft: Draft;
   author: Pick<Author, 'name' | 'color'>;
   aspectRatio: number;
+  /** Draw the frame of a rect anchor (off when the anchor is a picked PowerPoint box). */
+  frame?: boolean;
 }
 
 const HANDLE_POSITIONS = [
@@ -21,7 +23,7 @@ const HANDLE_POSITIONS = [
  * The unsent comment's mark: frame with corner handles and name tag (B2), pin, or drawing.
  * A text box is its own mark (`TextBoxEditor`, above the drawing surface).
  */
-export function DraftMark({ draft, author, aspectRatio }: DraftMarkProps) {
+export function DraftMark({ draft, author, aspectRatio, frame = true }: DraftMarkProps) {
   const color = accentColor(author.color);
   const { anchor } = draft;
 
@@ -38,7 +40,7 @@ export function DraftMark({ draft, author, aspectRatio }: DraftMarkProps) {
         ))}
       </svg>
 
-      {anchor.type === 'rect' && !draft.anchorFromStrokes && !draft.textBox && (
+      {frame && anchor.type === 'rect' && !draft.anchorFromStrokes && !draft.textBox && (
         <RectFrame rect={anchor.rect} color={color} className="bg-white/5">
           <span
             className="absolute -top-6 left-[-2px] rounded-t-thumb rounded-br-thumb px-1.5 py-0.5 text-[11px] leading-4 font-medium whitespace-nowrap text-white"

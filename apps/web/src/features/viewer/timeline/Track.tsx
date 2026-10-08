@@ -72,6 +72,7 @@ export function Track({ layout, range, snap }: TrackProps) {
           emphasisId={ownsEmphasis ? emphasisId : null}
           draft={draft?.slideId === slide.id ? draft : null}
           tool={canComment ? tool : null}
+          canSelect={canComment && tool === null}
           color={color}
           badge={showChanges ? (badges.get(slide.id) ?? null) : null}
           badgeVersion={revisionNumber}

@@ -10,7 +10,13 @@ import {
 import { memo, useMemo } from 'react';
 import { useUpdateComment } from '@/lib/queries';
 import { cn } from '@/ui';
-import { anchorRect, isImplicitFrame, textAnnotation, type Thread } from '../lib/comment-selectors';
+import {
+  anchorRect,
+  isImplicitFrame,
+  rectsMatch,
+  textAnnotation,
+  type Thread,
+} from '../lib/comment-selectors';
 import { accentColor } from '@/lib/accent';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, type Draft } from '../state/viewer-state';
@@ -235,7 +241,21 @@ export const AnnotationLayer = memo(function AnnotationLayer({
         );
       })}
 
-      {draft && <DraftMark draft={draft} author={viewer.author} aspectRatio={slide.aspectRatio} />}
+      {draft && (
+        <DraftMark
+          draft={draft}
+          author={viewer.author}
+          aspectRatio={slide.aspectRatio}
+          // A box picked with the pointer is outlined (and named) as the shape itself.
+          frame={
+            !(
+              draftShape &&
+              draft.anchor.type === 'rect' &&
+              rectsMatch(draft.anchor.rect, draftShape.bbox)
+            )
+          }
+        />
+      )}
     </div>
   );
 });
