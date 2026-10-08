@@ -1,3 +1,4 @@
+import type { Ref } from 'react';
 import { MicrosoftMark } from '@/features/auth/components/MicrosoftMark';
 import { Button } from '@/ui';
 
@@ -6,14 +7,24 @@ export function OneDrivePickerButton({
   onOpen,
   pending,
   error,
+  ref,
 }: {
   onOpen: () => void;
   pending: boolean;
   error: string | null;
+  /** The picker dialog grows out of this button. */
+  ref?: Ref<HTMLButtonElement>;
 }) {
   return (
     <div className="flex flex-col gap-2">
-      <Button variant="secondary" size="lg" loading={pending} onClick={onOpen} className="w-full">
+      <Button
+        ref={ref}
+        variant="secondary"
+        size="lg"
+        loading={pending}
+        onClick={onOpen}
+        className="w-full"
+      >
         {!pending && <MicrosoftMark size={16} />}
         Aus OneDrive oder SharePoint auswählen
       </Button>

@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react';
 import { cn } from './cn';
 import { Icon, type IconName } from './Icon';
 import { Spinner } from './Spinner';
@@ -12,6 +12,7 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   icon?: IconName;
   loading?: boolean;
   children: ReactNode;
+  ref?: Ref<HTMLButtonElement>;
 }
 
 /** UI kit "Button": Primary = white 90 % / black text, Secondary = glass, Ghost = text only. */

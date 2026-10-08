@@ -25,6 +25,7 @@ import { PPTX_ACCEPT } from './lib/upload-validation';
 export function NewReview({ workspace }: { workspace: Workspace }) {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pickerButtonRef = useRef<HTMLButtonElement>(null);
   const openDeck = (deck: Deck) => void navigate(routes.deck(deck.id));
 
   const link = useLinkImport(workspace.id, openDeck);
@@ -90,6 +91,7 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
                   <span aria-hidden className="h-px flex-1 bg-hairline" />
                 </p>
                 <OneDrivePickerButton
+                  ref={pickerButtonRef}
                   onOpen={picker.open}
                   pending={picker.pending}
                   error={picker.error}
@@ -98,7 +100,11 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
             )}
           </div>
           {/* Always mounted: back from the Microsoft consent it opens before the rest loads. */}
-          <OneDrivePickerDialog {...picker.dialog} onClose={picker.close} />
+          <OneDrivePickerDialog
+            {...picker.dialog}
+            onClose={picker.close}
+            anchorRef={pickerButtonRef}
+          />
 
           {link.noAccess ? (
             <NoAccessCard info={link.noAccess} onUploadInstead={pickFile} />
