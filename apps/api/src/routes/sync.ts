@@ -1,11 +1,12 @@
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
-import { insertSlideInputSchema } from '@slider/shared';
+import { insertSlideInputSchema, type RerenderResult } from '@slider/shared';
 import { requireDeckAccess } from '../auth/access';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import type { AppDeps } from '../deps';
 import { badRequest, fileTooLarge, notAPowerPoint } from '../http/errors';
 import { readJson } from '../http/validate';
+import { hasPdfRenderer } from '../import/office-pages';
 import { isSyncEnabled } from '../services/deck-sync';
 import {
   getDeckStatus,
@@ -30,8 +31,42 @@ export function syncRoutes(deps: AppDeps) {
       .get('/decks/:deckId/status', viewer, async (c) => {
         const deck = await requireDeckAccess(deps.db, c.var.viewer, c.req.param('deckId'), 'view');
         return c.json(
-          await getDeckStatus(deps.db, deck, { forGuest: c.var.viewer.kind === 'guest' }),
+          await getDeckStatus(deps.db, deck, {
+            forGuest: c.var.viewer.kind === 'guest',
+            progress: deps.rendering?.progress,
+          }),
         );
+      })
+
+      /**
+       * "Folienbilder neu erzeugen": draws the current revision's slides again with Office or
+       * LibreOffice, in the background (BER-94). Progress shows in `GET …/status`.
+       */
+      .post('/decks/:deckId/rerender', viewer, async (c) => {
+        const deck = await requireDeckAccess(deps.db, c.var.viewer, c.req.param('deckId'), 'own');
+        if (deck.importState.status !== 'ready' || !deck.currentRevisionId) {
+          throw badRequest('Die Präsentation wird gerade noch importiert.');
+        }
+        const rendering = deps.rendering;
+        if (!rendering || !hasPdfRenderer(rendering.renderers, deck)) {
+          throw badRequest(
+            isSyncEnabled(deck)
+              ? 'Folienbilder von PowerPoint gibt es nur mit Microsoft-Anmeldung oder installiertem LibreOffice.'
+              : 'Für hochgeladene Präsentationen braucht der Server LibreOffice, um die Folienbilder wie in PowerPoint zu erzeugen.',
+          );
+        }
+        const renderedAt = rendering.progress.renderedAt(deck.id);
+        const running = rendering.progress.get(deck.id);
+        if (running) {
+          return c.json({ status: running.status, renderedAt } satisfies RerenderResult, 202);
+        }
+        rendering.progress.queued(deck.id);
+        deps.queue.enqueue({
+          deckId: deck.id,
+          revisionId: deck.currentRevisionId,
+          kind: 'rerender',
+        });
+        return c.json({ status: 'queued', renderedAt } satisfies RerenderResult, 202);
       })
 
       /** "Jetzt aktualisieren": check the source now and import a change without debounce. */

@@ -3,6 +3,7 @@ import type { DeckStatus, DeletedSlide, Revision, RevisionDiff } from '@slider/s
 import type { Executor } from '../db/client';
 import { comments, revisions, slideVersions, type DeckRow } from '../db/schema';
 import { notFound } from '../http/errors';
+import type { RenderProgress } from '../import/render-progress';
 import { fileUrl } from '../storage/blob-storage';
 import { withMedia } from './comments';
 import { toDeckSync } from './deck-sync';
@@ -164,7 +165,7 @@ async function loadDeletedSlides(
 export async function getDeckStatus(
   db: Executor,
   deck: DeckRow,
-  options: { forGuest: boolean },
+  options: { forGuest: boolean; progress?: RenderProgress },
 ): Promise<DeckStatus> {
   const [[current], [pending]] = await Promise.all([
     deck.currentRevisionId
@@ -191,5 +192,7 @@ export async function getDeckStatus(
       summary: current?.summary ?? null,
       forGuest: options.forGuest,
     }),
+    rendering: options.progress?.get(deck.id) ?? null,
+    renderedAt: options.progress?.renderedAt(deck.id) ?? null,
   };
 }

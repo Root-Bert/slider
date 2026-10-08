@@ -42,6 +42,11 @@ export interface Config {
   plans: Record<PlanId, PlanLimits>;
   /** Self-hosting: Postgres server, built SPA, reverse proxy. Absent in tests. */
   hosting?: HostingConfig;
+  /**
+   * `LIBREOFFICE_PATH`: the `soffice` binary that renders slide images of uploads (BER-94).
+   * Unset → looked up on the PATH and in /Applications; not installed → SVG previews.
+   */
+  libreOfficePath?: string | null;
 }
 
 export interface MediaConfig {
@@ -184,6 +189,7 @@ const envSchema = z.object({
   /** `0` = unlimited. */
   PLAN_FREE_MAX_MEMBERS: z.coerce.number().int().min(0).optional(),
   PLAN_FREE_MAX_DECKS: z.coerce.number().int().min(0).optional(),
+  LIBREOFFICE_PATH: z.string().min(1).optional(),
 });
 
 /** Env value → limit: unset keeps the default, `0` means unlimited (`null`). */
@@ -323,6 +329,9 @@ export function loadConfig(
       },
     },
     hosting: loadHostingConfig(env, parsed.NODE_ENV),
+    libreOfficePath: parsed.LIBREOFFICE_PATH
+      ? path.resolve(REPO_ROOT, expandHome(parsed.LIBREOFFICE_PATH))
+      : null,
   };
 }
 

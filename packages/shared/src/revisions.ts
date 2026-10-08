@@ -32,6 +32,23 @@ export const revisionDiffSchema = z.object({
 });
 export type RevisionDiff = z.infer<typeof revisionDiffSchema>;
 
+/** Background re-render of a deck's slide images (BER-94). */
+export const slideRenderingSchema = z.object({
+  status: z.enum(['queued', 'running']),
+  done: z.number().int(),
+  /** `0` while queued. */
+  total: z.number().int(),
+});
+export type SlideRendering = z.infer<typeof slideRenderingSchema>;
+
+/** `POST /decks/:deckId/rerender`. */
+export const rerenderResultSchema = z.object({
+  status: z.enum(['queued', 'running']),
+  /** `renderedAt` of the deck status before this run – it changes once new images are in. */
+  renderedAt: z.iso.datetime().nullable(),
+});
+export type RerenderResult = z.infer<typeof rerenderResultSchema>;
+
 /** `GET /decks/:deckId/status`: cheap to poll; reload slides and comments when `revisionNumber` changes. */
 export const deckStatusSchema = z.object({
   deckId: z.string(),
@@ -40,5 +57,13 @@ export const deckStatusSchema = z.object({
   updatedAt: z.iso.datetime(),
   import: importStateSchema,
   sync: deckSyncSchema,
+  /** "Folienbilder neu erzeugen" queued or running (BER-94); `null` otherwise. */
+  rendering: slideRenderingSchema.nullable().optional(),
+  /**
+   * When the current revision's slide images were last replaced in the background; viewers
+   * reload the slide list when it changes (the old image files are gone). `null` if not since
+   * the API started.
+   */
+  renderedAt: z.iso.datetime().nullable().optional(),
 });
 export type DeckStatus = z.infer<typeof deckStatusSchema>;

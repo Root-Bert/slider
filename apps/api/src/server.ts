@@ -8,7 +8,10 @@ import { dataPaths, loadConfig } from './config';
 import { openDatabase } from './db/client';
 import { findInterruptedImports, importDeck } from './import/import-deck';
 import { createOfficePdf } from './import/office-pages';
+import { createLibreOfficePdf, findSoffice } from './import/libreoffice';
 import { InProcessQueue, type ImportJob } from './import/queue';
+import { RenderProgress } from './import/render-progress';
+import { scheduleRerenderBackfill } from './import/rerender';
 import { consoleLogger as log } from './logger';
 import { createMailer } from './mail/mailer';
 import { upsertUser } from './services/users';
@@ -56,15 +59,42 @@ async function main(): Promise<void> {
   }
 
   const sources = createSourceAdapters({ config, tokens: microsoft });
-  const officePdf = createOfficePdf(sources, log);
+  // Slide images as PowerPoint draws them (BER-94): Office for linked decks, LibreOffice for
+  // uploads and as fallback; without either, the in-house SVG preview.
+  const officePdf = config.microsoft ? createOfficePdf(sources, log) : undefined;
+  const soffice = await findSoffice({ configured: config.libreOfficePath });
+  if (soffice) log.info(`Slide images of uploads are rendered by LibreOffice (${soffice}).`);
+  else if (config.libreOfficePath) {
+    log.warn(
+      `LIBREOFFICE_PATH=${config.libreOfficePath} is not executable – uploads get SVG previews.`,
+    );
+  } else {
+    log.info(
+      'LibreOffice is not installed – uploaded decks get the built-in SVG preview (see docs/self-hosting.md).',
+    );
+  }
+  const libreOfficePdf = soffice ? createLibreOfficePdf({ binary: soffice, log }) : null;
+  const renderProgress = new RenderProgress();
   const queue = new InProcessQueue<ImportJob>(
-    (job) => importDeck({ db, storage, openPptx, clock, log, officePdf }, job),
+    (job) =>
+      importDeck(
+        { db, storage, openPptx, clock, log, officePdf, libreOfficePdf, renderProgress },
+        job,
+      ),
     log,
   );
   for (const job of await findInterruptedImports(db)) {
     log.info(`Resuming interrupted ${job.kind ?? 'initial'} import of deck ${job.deckId}`);
     queue.enqueue(job);
   }
+  // Decks imported before a better renderer was available: once per revision, in the background.
+  scheduleRerenderBackfill({
+    db,
+    queue,
+    renderers: { officePdf, libreOfficePdf },
+    progress: renderProgress,
+    log,
+  });
 
   const sync = new SyncService({ db, storage, sources, queue, clock, log, config });
   const app = createApp({
@@ -78,6 +108,7 @@ async function main(): Promise<void> {
     clock,
     log,
     sync,
+    rendering: { renderers: { officePdf, libreOfficePdf }, progress: renderProgress },
     oidc,
     google,
     mailer,

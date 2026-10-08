@@ -8,9 +8,16 @@ import {
   type SlideFingerprint,
 } from '@slider/pptx';
 import { toSyncSummary, type Shape, type SyncSummary } from '@slider/shared';
-import { decks, revisions, slides, slideVersions, type RevisionDiffRecord } from '../db/schema';
+import {
+  decks,
+  revisions,
+  slides,
+  slideVersions,
+  type RevisionDiffRecord,
+  type SlideRenderer,
+} from '../db/schema';
 import { deleteOrphanSlides, sha256Hex, toShape } from '../import/common';
-import { officeSlidePages, storeSlideRender } from '../import/office-pages';
+import { renderSlidePages, slideRenderer, storeSlideRender } from '../import/office-pages';
 import type { ImportDeps } from '../import/import-deck';
 import { upsertPptxComments, type ImportedSlide } from '../import/pptx-comments';
 import type { ImportJob } from '../import/queue';
@@ -55,24 +62,21 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
       thumbnailKey: string;
       shapes: Shape[];
       renderHash: string;
+      renderer: SlideRenderer | null;
     }[] = [];
-    const pages = await officeSlidePages(deps, deck, revision, presentation.slides);
+    const rendered = await renderSlidePages(deps, deck, revision, bytes, presentation.slides);
     for (const [position, parsed] of presentation.slides.entries()) {
       // The SVG is rendered either way: its hash is what slide matching compares (BER-108).
       const svg = await document.renderSlideSvg(parsed);
-      const keys = await storeSlideRender(
-        storage,
-        deckId,
-        revisionId,
-        svg,
-        pages[position] ?? null,
-      );
+      const page = rendered.pages[position] ?? null;
+      const keys = await storeSlideRender(storage, deckId, revisionId, svg, page);
       planned.push({
         parsed,
         position,
         ...keys,
         shapes: parsed.shapes.map(toShape),
         renderHash: sha256Hex(svg),
+        renderer: slideRenderer(rendered, page),
       });
     }
 
@@ -222,6 +226,7 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
             aspectRatio,
             shapes: slide.shapes,
             renderHash: slide.renderHash,
+            renderer: slide.renderer,
           })),
         );
       }

@@ -3,6 +3,7 @@ import {
   useDeckStatus,
   useDeletedSlides,
   useInvalidateRevision,
+  useInvalidateSlideImages,
   useLatestDiff,
   useRevisionDiffs,
   useRevisions,
@@ -51,6 +52,17 @@ export function RevisionProvider({ children }: { children: ReactNode }) {
     reloadedFor.current = statusRevision;
     void invalidate();
   }, [statusRevision, invalidate]);
+
+  // Slide images re-rendered in the background (BER-94): the old files are gone, reload the list.
+  const renderedAt = status.data?.renderedAt;
+  const renderedSeen = useRef<string | null | undefined>(undefined);
+  const invalidateImages = useInvalidateSlideImages(deckId);
+  useEffect(() => {
+    if (renderedAt === undefined) return;
+    const seen = renderedSeen.current;
+    renderedSeen.current = renderedAt;
+    if (seen !== undefined && renderedAt !== null && renderedAt !== seen) void invalidateImages();
+  }, [renderedAt, invalidateImages]);
 
   // Announce a revision that is new to this browser: on opening the deck and live.
   const [announcement, setAnnouncement] = useState<RevisionAnnouncement | null>(null);

@@ -49,6 +49,7 @@ export interface ImportJob {
   /**
    * `initial` (default): first import, drives the deck's import overlay.
    * `sync`: a new revision of a deck that stays usable meanwhile (BER-107).
+   * `rerender`: new slide images for a finished revision, e.g. by Office or LibreOffice (BER-94).
    */
-  kind?: 'initial' | 'sync';
+  kind?: 'initial' | 'sync' | 'rerender';
 }

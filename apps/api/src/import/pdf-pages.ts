@@ -3,9 +3,13 @@ import { dirname, join } from 'node:path';
 import { createCanvas } from '@napi-rs/canvas';
 import { getDocument, type PDFPageProxy } from 'pdfjs-dist/legacy/build/pdf.mjs';
 
-/** Width of the full slide image and of its thumbnail, in pixels (BER-94). */
+/**
+ * Width of the full slide image and of its thumbnail, in pixels (BER-94). The thumbnail serves
+ * every slide shown up to 320 CSS px wide (filmstrip, minimap, deck cards) – sharp at 2× – the
+ * full image everything larger.
+ */
 export const PAGE_IMAGE_WIDTH = 2400;
-export const PAGE_THUMBNAIL_WIDTH = 240;
+export const PAGE_THUMBNAIL_WIDTH = 640;
 const WEBP_QUALITY = 90;
 
 type RenderParameters = Parameters<PDFPageProxy['render']>[0];
@@ -54,7 +58,10 @@ export async function rasterizePdf(pdf: Uint8Array): Promise<PageImages[]> {
         PAGE_THUMBNAIL_WIDTH,
         Math.max(1, Math.round((canvas.height * PAGE_THUMBNAIL_WIDTH) / canvas.width)),
       );
-      thumbnail.getContext('2d').drawImage(canvas, 0, 0, thumbnail.width, thumbnail.height);
+      const small = thumbnail.getContext('2d');
+      small.imageSmoothingEnabled = true;
+      small.imageSmoothingQuality = 'high';
+      small.drawImage(canvas, 0, 0, thumbnail.width, thumbnail.height);
       pages.push({
         image: new Uint8Array(await canvas.encode('webp', WEBP_QUALITY)),
         thumbnail: new Uint8Array(await thumbnail.encode('webp', WEBP_QUALITY)),

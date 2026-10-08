@@ -11,6 +11,7 @@ import {
   type InviteInfo,
   type JoinInviteInput,
   type MeResponse,
+  type RerenderResult,
   type Revision,
   type RevisionDiff,
   type ReviewLink,
@@ -238,6 +239,8 @@ export function useDeleteComment(deckId: string) {
 /** Status poll every 20 s while the tab is visible; faster while a change is being imported. */
 const STATUS_POLL_MS = 20_000;
 const STATUS_POLL_PENDING_MS = 5_000;
+/** While slide images are re-rendered (BER-94): progress in the ⋯ menu. */
+const STATUS_POLL_RENDERING_MS = 1_500;
 
 export const useDeckStatus = (deckId: string, enabled = true) =>
   useQuery({
@@ -245,7 +248,11 @@ export const useDeckStatus = (deckId: string, enabled = true) =>
     queryFn: () => api.get<DeckStatus>(`/decks/${deckId}/status`),
     enabled,
     refetchInterval: (query) =>
-      query.state.data?.sync.pending ? STATUS_POLL_PENDING_MS : STATUS_POLL_MS,
+      query.state.data?.rendering
+        ? STATUS_POLL_RENDERING_MS
+        : query.state.data?.sync.pending
+          ? STATUS_POLL_PENDING_MS
+          : STATUS_POLL_MS,
     // Hidden tabs don't poll; coming back (focus / visibility) refetches right away.
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: 'always',
@@ -348,6 +355,30 @@ export function useUploadRevision(deckId: string) {
     },
     onSettled: invalidate,
   });
+}
+
+/**
+ * "Folienbilder neu erzeugen" (BER-94): queues new slide images by Office/LibreOffice. Progress
+ * and the end show up in the deck status (`rendering`, `renderedAt`).
+ */
+export function useRerenderDeck(deckId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<RerenderResult>(`/decks/${deckId}/rerender`),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.status(deckId), exact: true }),
+  });
+}
+
+/** New slide images arrived: the slide list and thumbnails point at new files. */
+export function useInvalidateSlideImages(deckId: string) {
+  const queryClient = useQueryClient();
+  return () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.deck(deckId), exact: true }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.slides(deckId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.deckLists }),
+    ]);
 }
 
 // ── Sharing ─────────────────────────────────────────────────────────────────

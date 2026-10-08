@@ -83,8 +83,16 @@ Design decisions worth knowing:
 - **Real Postgres, zero setup.** Locally the API runs [PGlite](https://pglite.dev) (Postgres in
   WASM) through Drizzle. The same schema and migrations run on a hosted Postgres in production.
 - **Adapters at the edges.** Blob storage, the job queue, the slide renderer and link sources are
-  interfaces with a local implementation today (filesystem, in-process queue, SVG preview,
-  Microsoft Graph + plain HTTPS link sources) and S3 / pg-boss / LibreOffice tomorrow.
+  interfaces with a local implementation today (filesystem, in-process queue, Office/LibreOffice/SVG
+  renderers, Microsoft Graph + plain HTTPS link sources) and S3 / pg-boss tomorrow.
+- **Slides look like PowerPoint.** Linked decks are rendered by Office (Graph PDF export), uploads
+  by LibreOffice (`soffice --headless --convert-to pdf`); pdf.js rasterises each page to a 2400 px
+  WebP plus a 640 px thumbnail. Hidden slides, a page-count mismatch or a missing renderer fall
+  back to the built-in SVG preview, whose hash also drives slide matching. `slide_versions.renderer`
+  records which one drew each slide; decks from before a renderer was available are re-rendered
+  in the background after start-up (once per revision), or via the deck's ⋯ menu
+  ("Folienbilder neu erzeugen", `POST /api/decks/:id/rerender`). Locally:
+  `brew install --cask libreoffice` (or set `LIBREOFFICE_PATH`).
 - **The original stays untouched.** Slider only ever reads the PPTX. Guests see rendered slide
   images, never the file.
 
@@ -234,28 +242,28 @@ reply field) record a comment of up to five minutes (BER-116).
 
 Tracked in Linear (project _Slider_). This prototype covers:
 
-| Ticket          | Topic                                                         | State                                                 |
-| --------------- | ------------------------------------------------------------- | ----------------------------------------------------- |
-| BER-89          | Monorepo, stack, one-command dev, CI                          | ✅ (deploy pending, BER-123)                          |
-| BER-90          | Data model: deck, revision, slide, slide version, comment     | ✅                                                    |
-| BER-91          | `.pptx` upload with progress and error states                 | ✅                                                    |
-| BER-93          | PPTX parser: slide ids, order, hidden, sections, shapes, text | ✅                                                    |
-| BER-94          | Rendering                                                     | 🟡 SVG preview renderer; LibreOffice/PDF adapter next |
-| BER-95/96       | Viewer, filmstrip, counter, zoom, fullscreen, deep links      | ✅                                                    |
-| BER-97          | Import status and error states                                | ✅                                                    |
-| BER-98/99       | Pins, frames, freehand, arrow, highlighter                    | ✅                                                    |
-| BER-100/101     | Threads, connector lines, done status, filters                | ✅                                                    |
-| BER-102         | Guest review links (name only, revocable, expiring)           | ✅ view-only since BER-130                            |
-| BER-103         | "A slide is missing here" gap comments                        | ✅                                                    |
-| BER-128         | ⊕ inserts a slide into the linked PowerPoint                  | ✅                                                    |
-| BER-112/113/115 | PowerPoint comments (modern + legacy) imported and labelled   | ✅                                                    |
-| BER-121         | Owner overview "Meine Reviews"                                | ✅ (login via Microsoft/magic link pending)           |
-| BER-88/92       | Import by link: OneDrive, SharePoint, direct `.pptx` URL      | ✅ (PDF render via Graph pending)                     |
-| BER-107/108/114 | Change detection, slide matching, PPT comment re-import       | ✅ API (polling, debounce, diff, manual sync)         |
-| BER-109–111     | Version UI: change badges, deleted slides, version history    | ⏳ API ready, UI pending                              |
-| BER-116         | Voice and video comments, on-device transcription             | ✅                                                    |
-| BER-129         | Login (Microsoft, OIDC, magic link), organisations, invites   | ✅                                                    |
-| BER-130         | Open sign-up, free plan (5 people, 3 decks), view-only links  | ✅                                                    |
+| Ticket          | Topic                                                         | State                                         |
+| --------------- | ------------------------------------------------------------- | --------------------------------------------- |
+| BER-89          | Monorepo, stack, one-command dev, CI                          | ✅ (deploy pending, BER-123)                  |
+| BER-90          | Data model: deck, revision, slide, slide version, comment     | ✅                                            |
+| BER-91          | `.pptx` upload with progress and error states                 | ✅                                            |
+| BER-93          | PPTX parser: slide ids, order, hidden, sections, shapes, text | ✅                                            |
+| BER-94          | Rendering: Office PDF (linked), LibreOffice (uploads), SVG    | ✅                                            |
+| BER-95/96       | Viewer, filmstrip, counter, zoom, fullscreen, deep links      | ✅                                            |
+| BER-97          | Import status and error states                                | ✅                                            |
+| BER-98/99       | Pins, frames, freehand, arrow, highlighter                    | ✅                                            |
+| BER-100/101     | Threads, connector lines, done status, filters                | ✅                                            |
+| BER-102         | Guest review links (name only, revocable, expiring)           | ✅ view-only since BER-130                    |
+| BER-103         | "A slide is missing here" gap comments                        | ✅                                            |
+| BER-128         | ⊕ inserts a slide into the linked PowerPoint                  | ✅                                            |
+| BER-112/113/115 | PowerPoint comments (modern + legacy) imported and labelled   | ✅                                            |
+| BER-121         | Owner overview "Meine Reviews"                                | ✅ (login via Microsoft/magic link pending)   |
+| BER-88/92       | Import by link: OneDrive, SharePoint, direct `.pptx` URL      | ✅                                            |
+| BER-107/108/114 | Change detection, slide matching, PPT comment re-import       | ✅ API (polling, debounce, diff, manual sync) |
+| BER-109–111     | Version UI: change badges, deleted slides, version history    | ⏳ API ready, UI pending                      |
+| BER-116         | Voice and video comments, on-device transcription             | ✅                                            |
+| BER-129         | Login (Microsoft, OIDC, magic link), organisations, invites   | ✅                                            |
+| BER-130         | Open sign-up, free plan (5 people, 3 decks), view-only links  | ✅                                            |
 
 ## Contributing
 

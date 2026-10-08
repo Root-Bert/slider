@@ -15,9 +15,11 @@ import { openDatabase } from '../src/db/client';
 import { decks, revisions, sessions, slides, slideVersions, type UserRow } from '../src/db/schema';
 import type { AppDeps } from '../src/deps';
 import { importDeck } from '../src/import/import-deck';
+import type { PptxToPdf } from '../src/import/libreoffice';
 import type { OfficePdf } from '../src/import/office-pages';
 import type { OpenPptx } from '../src/import/pptx';
 import { InProcessQueue, type ImportJob } from '../src/import/queue';
+import { RenderProgress } from '../src/import/render-progress';
 import { silentLogger } from '../src/logger';
 import { NullMailer, type Mailer } from '../src/mail/mailer';
 import { DEFAULT_PLAN_LIMITS } from '../src/services/plans';
@@ -145,6 +147,8 @@ export async function createTestContext(
     openPptx?: OpenPptx;
     /** Office's PDF of a deck (BER-94); without it every slide gets the SVG preview. */
     officePdf?: OfficePdf;
+    /** LibreOffice's PDF of a PPTX (BER-94); a fake – LibreOffice is not needed for tests. */
+    libreOfficePdf?: PptxToPdf;
     config?: Partial<Config>;
     fetch?: FetchLike;
     lookup?: LookupAll;
@@ -170,10 +174,12 @@ export async function createTestContext(
   });
   const workspaceId = await ensurePersonalWorkspace(db, owner.id);
   const openPptx = options.openPptx ?? stubPptx();
+  const renderers = { officePdf: options.officePdf, libreOfficePdf: options.libreOfficePdf };
+  const renderProgress = new RenderProgress();
   const queue = new InProcessQueue<ImportJob>(
     (job) =>
       importDeck(
-        { db, storage, openPptx, clock, log: silentLogger, officePdf: options.officePdf },
+        { db, storage, openPptx, clock, log: silentLogger, ...renderers, renderProgress },
         job,
       ),
     silentLogger,
@@ -218,6 +224,7 @@ export async function createTestContext(
     clock,
     log: silentLogger,
     sync,
+    rendering: { renderers, progress: renderProgress },
     oidc: config.auth.oidc ? new OidcClient(config.auth.oidc, clock, fetch) : null,
     google: config.auth.google ? new OidcClient(config.auth.google, clock, fetch) : null,
     webauthn: options.webauthn,

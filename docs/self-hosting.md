@@ -122,6 +122,32 @@ In Compose stehen sie in `deploy/.env` (Vorlage: `deploy/.env.example`). `NODE_E
 | `SYNC_POLL_INTERVAL_MS`, `SYNC_DEBOUNCE_MS`           | nein               | Automatische Updates verlinkter Decks (Standard 2 min / 1 min, `0` = aus).                                                                                                                                                            |
 | `PLAN_FREE_MAX_MEMBERS`                               | nein               | Plätze pro Organisation im Free-Plan: Mitglieder plus offene E-Mail-Einladungen. Standard 5, `0` = unbegrenzt.                                                                                                                        |
 | `PLAN_FREE_MAX_DECKS`                                 | nein               | Präsentationen pro Organisation im Free-Plan (archivierte zählen mit). Standard 3, `0` = unbegrenzt.                                                                                                                                  |
+| `LIBREOFFICE_PATH`                                    | nein               | Pfad zu LibreOffices `soffice` für die Folienbilder hochgeladener Decks. Leer = `soffice` im `PATH` (im Docker-Image enthalten), sonst `/Applications/LibreOffice.app/…` (macOS).                                                     |
+
+## Folienbilder
+
+Slider zeigt Folien so, wie PowerPoint sie zeichnet (Master, Theme-Schriften, Verläufe, Formen):
+
+- **Verlinkte Decks (OneDrive/SharePoint):** Office rendert die Datei als PDF (Microsoft Graph,
+  `…/content?format=pdf`) – nur mit Microsoft-Login (`MS_CLIENT_ID`/`MS_CLIENT_SECRET`).
+- **Hochgeladene Decks** – und verlinkte, wenn Office nicht verfügbar ist: **LibreOffice**
+  (`soffice --headless --convert-to pdf`, je Lauf eigenes Profil im Temp-Ordner, Abbruch nach
+  120 s). Im Docker-Image ist LibreOffice Impress samt Office-kompatibler Schriften (Carlito ≙
+  Calibri, Caladea ≙ Cambria, Liberation ≙ Arial/Times New Roman) enthalten; das Image wird
+  dadurch ca. 0,5 GB größer.
+- Jede PDF-Seite wird zu einem WebP mit 2400 px Breite (plus 640-px-Vorschaubild). Ausgeblendete
+  Folien fehlen im PDF und behalten die eingebaute SVG-Vorschau; passt die Seitenzahl nicht zu den
+  sichtbaren Folien, bekommen alle Folien die SVG-Vorschau.
+- **Ohne beides** (kein Microsoft-Login, kein LibreOffice) zeigt Slider die eingebaute
+  SVG-Vorschau – brauchbar, aber nicht pixelgenau. Beim Start steht dann
+  „LibreOffice is not installed …“ im Log.
+- **Bestehende Decks** werden nach dem Start automatisch im Hintergrund neu gerendert (einmal pro
+  Version, nacheinander), sobald ein besserer Renderer verfügbar ist. Von Hand: ⋯-Menü der
+  Präsentation → **Folienbilder neu erzeugen**. Schlägt etwas fehl, bleiben die alten Bilder.
+
+Ohne Docker (z. B. lokal auf dem Mac): `brew install --cask libreoffice`, danach findet Slider
+`soffice` selbst; sonst `LIBREOFFICE_PATH` setzen. Unter Debian/Ubuntu:
+`apt install --no-install-recommends libreoffice-impress fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation fonts-dejavu`.
 
 ## Login einrichten
 
@@ -366,5 +392,9 @@ Sprach-/Video-Kommentare. Deshalb:
   `https://<domain>/api/auth/google/callback` eintragen (ohne Schrägstrich am Ende).
 - Google „Zugriff blockiert: … nur für Testnutzer“ → App unter _Zielgruppe_ veröffentlichen.
 - Passkey-Anmeldung schlägt nach Umzug fehl → neue Domain = neue RP-ID; Passkeys neu anlegen.
+- Folien sehen anders aus als in PowerPoint → im Log nach „Office PDF …“, „PDF (…) of deck …“
+  oder „LibreOffice …“ suchen. Fehlen Firmenschriften, rendert LibreOffice mit Ersatzschriften:
+  Schriftdateien (`.ttf`/`.otf`) in den Container nach `/usr/local/share/fonts/` legen. Danach im
+  ⋯-Menü **Folienbilder neu erzeugen**.
 - OIDC „issuer mismatch“ → `OIDC_ISSUER` muss der Issuer aus der Discovery-URL sein
   (bei Authentik mit `/application/o/<slug>/`).

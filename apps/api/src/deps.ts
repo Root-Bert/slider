@@ -5,6 +5,8 @@ import type { Clock } from './clock';
 import type { Config } from './config';
 import type { Database } from './db/client';
 import type { ImportJob, JobQueue } from './import/queue';
+import type { RenderProgress } from './import/render-progress';
+import type { SlideRenderers } from './import/rerender';
 import type { Logger } from './logger';
 import type { Mailer } from './mail/mailer';
 import type { SourceAdapters } from './sources/source-adapter';
@@ -26,6 +28,11 @@ export interface AppDeps {
   log: Logger;
   /** Automatic updates of link-imported decks (BER-107). */
   sync: SyncService;
+  /**
+   * Slide images by Office / LibreOffice (BER-94): which renderers this server has, and the
+   * progress of background re-renders. Absent → SVG previews only.
+   */
+  rendering?: { renderers: SlideRenderers; progress: RenderProgress };
   /** Generic OpenID Connect login (BER-129); `null` when OIDC_ISSUER is not set. */
   oidc: OidcClient | null;
   /** "Weiter mit Google" – the OIDC client against accounts.google.com; `null` without GOOGLE_*. */

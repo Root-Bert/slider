@@ -5,7 +5,7 @@
 #   docker run -p 8787:8787 -v slider-data:/data -e SLIDER_SECRET=… -e WEB_ORIGIN=… slider
 # See docs/self-hosting.md (docker compose with Postgres and Caddy).
 #
-# Debian slim, not Alpine: @napi-rs/canvas (Office PDF → slide images) ships glibc binaries.
+# Debian slim, not Alpine: @napi-rs/canvas (PDF → slide images) ships glibc binaries.
 
 ARG BUN_VERSION=1.3.13
 ARG NODE_VERSION=22
@@ -41,6 +41,17 @@ WORKDIR /app
 ENV NODE_ENV=production \
     PORT=8787 \
     DATA_DIR=/data
+
+# LibreOffice draws the slide images of uploaded decks like PowerPoint (BER-94; linked decks use
+# Office via Microsoft Graph). Impress only (no Java, no recommends), plus fonts metric-compatible with the
+# Office ones (Carlito ≙ Calibri, Caladea ≙ Cambria, Liberation ≙ Arial/Times/Courier) so text
+# wraps where PowerPoint wraps it. Costs roughly 450–550 MB of image size; without it uploads
+# fall back to the built-in SVG preview. The `soffice` binary is found on the PATH.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      libreoffice-impress \
+      fonts-liberation fonts-crosextra-carlito fonts-crosextra-caladea fonts-dejavu \
+ && rm -rf /var/lib/apt/lists/*
 
 # package.json files and node_modules (workspace symlinks included).
 COPY --from=api-deps /app ./

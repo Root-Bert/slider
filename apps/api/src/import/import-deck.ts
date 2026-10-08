@@ -8,10 +8,13 @@ import type { Logger } from '../logger';
 import { blobKeys, type BlobStorage } from '../storage/blob-storage';
 import { importSyncRevision } from '../sync/sync-import';
 import { deleteOrphanSlides, sha256Hex, toShape } from './common';
-import { officeSlidePages, storeSlideRender, type OfficePdf } from './office-pages';
+import type { PptxToPdf } from './libreoffice';
+import { renderSlidePages, slideRenderer, storeSlideRender, type OfficePdf } from './office-pages';
 import type { OpenPptx } from './pptx';
 import { upsertPptxComments, type ImportedSlide } from './pptx-comments';
 import type { ImportJob } from './queue';
+import type { RenderProgress } from './render-progress';
+import { rerenderJob } from './rerender';
 
 export interface ImportDeps {
   db: Database;
@@ -21,6 +24,10 @@ export interface ImportDeps {
   log: Logger;
   /** Office's rendering of cloud decks (BER-94); without it every slide uses the SVG preview. */
   officePdf?: OfficePdf;
+  /** LibreOffice's rendering of any deck (BER-94); `null`/absent when it is not installed. */
+  libreOfficePdf?: PptxToPdf | null;
+  /** Progress of background re-renders, shown by `GET /decks/:id/status`. */
+  renderProgress?: RenderProgress;
 }
 
 const PPTX_ERROR_MESSAGES: Record<PptxError['code'], string> = {
@@ -40,6 +47,10 @@ class DeckGoneError extends Error {}
 export async function importDeck(deps: ImportDeps, job: ImportJob): Promise<void> {
   if (job.kind === 'sync') {
     await importSyncRevision(deps, job);
+    return;
+  }
+  if (job.kind === 'rerender') {
+    await rerenderJob(deps, job);
     return;
   }
   try {
@@ -119,20 +130,22 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
 
   const total = planned.length;
   await running({ status: 'running', step: 'rendering', progress: { done: 0, total } });
-  const pages = await officeSlidePages(
+  const rendered = await renderSlidePages(
     deps,
     deck,
     revision,
+    bytes,
     planned.map(({ parsed }) => parsed),
   );
   for (const [done, slide] of planned.entries()) {
     await running({ status: 'running', step: 'rendering', progress: { done, total } });
     // The SVG is rendered either way: its hash is what slide matching compares (BER-108).
     const svg = await document.renderSlideSvg(slide.parsed);
-    const keys = await storeSlideRender(storage, deckId, revisionId, svg, pages[done] ?? null);
+    const page = rendered.pages[done] ?? null;
+    const keys = await storeSlideRender(storage, deckId, revisionId, svg, page);
     await db
       .update(slideVersions)
-      .set({ ...keys, renderHash: sha256Hex(svg) })
+      .set({ ...keys, renderHash: sha256Hex(svg), renderer: slideRenderer(rendered, page) })
       .where(eq(slideVersions.id, slide.versionId));
   }
 

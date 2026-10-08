@@ -346,6 +346,14 @@ export const slideVersions = pgTable(
     shapes: jsonb('shapes').$type<Shape[]>().notNull().default([]),
     /** SHA-256 of the rendered image, for slide matching (BER-108); filled lazily for old rows. */
     renderHash: text('render_hash'),
+    /**
+     * What drew `image_key` (BER-94): Office's PDF, LibreOffice's PDF, or the in-house SVG
+     * preview. `svg` means a better renderer was tried and failed; `null` means the SVG preview
+     * and nothing better tried yet (rows from before this column, uploads without LibreOffice) –
+     * those are re-rendered in the background once a better renderer is available.
+     * `render_hash` stays the hash of the SVG preview either way.
+     */
+    renderer: text('renderer').$type<SlideRenderer>(),
   },
   (t) => [
     unique('slide_versions_revision_slide_unique').on(t.revisionId, t.slideId),
@@ -460,6 +468,8 @@ export type WorkspaceInviteRow = typeof workspaceInvites.$inferSelect;
 export type DeckRow = typeof decks.$inferSelect;
 export type RevisionRow = typeof revisions.$inferSelect;
 export type SlideVersionRow = typeof slideVersions.$inferSelect;
+/** Who drew a slide image – see `slide_versions.renderer`. */
+export type SlideRenderer = 'office' | 'libreoffice' | 'svg';
 export type CommentRow = typeof comments.$inferSelect;
 export type NewCommentRow = typeof comments.$inferInsert;
 export type MediaRow = typeof media.$inferSelect;

@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { deckSchema, slideSchema } from '@slider/shared';
 import type { DeckRow, RevisionRow } from '../src/db/schema';
-import { createOfficePdf, officeSlidePages, type OfficePdf } from '../src/import/office-pages';
+import { createOfficePdf, renderSlidePages, type OfficePdf } from '../src/import/office-pages';
+import type { PptxToPdf } from '../src/import/libreoffice';
 import { rasterizePdf } from '../src/import/pdf-pages';
 import { silentLogger } from '../src/logger';
 import type { SourceAdapter, SourceAdapters } from '../src/sources/source-adapter';
@@ -41,37 +42,96 @@ describe('rasterizePdf', () => {
   });
 });
 
-describe('officeSlidePages (BER-94)', () => {
-  const deps = (officePdf?: OfficePdf) => ({ officePdf, log: silentLogger });
+describe('renderSlidePages (BER-94)', () => {
+  const deps = (officePdf?: OfficePdf, libreOfficePdf?: PptxToPdf | null) => ({
+    officePdf,
+    libreOfficePdf,
+    log: silentLogger,
+  });
+  const pptx = new Uint8Array([80, 75, 3, 4]);
+  const upload = deckRow({ source: 'upload', sourceRef: null });
 
   it('maps pages onto the visible slides and leaves hidden ones to the preview', async () => {
-    const pages = await officeSlidePages(
+    const result = await renderSlidePages(
       deps(pdfOf(2)),
       deckRow(),
       revisionRow(),
+      pptx,
       slides([false, true, false]),
     );
-    expect(pages.map((page) => page !== null)).toEqual([true, false, true]);
+    expect(result.renderer).toBe('office');
+    expect(result.pages.map((page) => page !== null)).toEqual([true, false, true]);
   });
 
   it('uses no page at all when the page count does not match the visible slides', async () => {
-    const pages = await officeSlidePages(
+    const result = await renderSlidePages(
       deps(pdfOf(2)),
       deckRow(),
       revisionRow(),
+      pptx,
       slides([false, false, false]),
     );
-    expect(pages).toEqual([null, null, null]);
+    expect(result).toEqual({ renderer: 'svg', pages: [null, null, null] });
   });
 
   it('falls back to the preview without a PDF or with a broken one', async () => {
-    expect(await officeSlidePages(deps(), deckRow(), revisionRow(), slides([false]))).toEqual([
-      null,
-    ]);
-    const broken: OfficePdf = async () => new TextEncoder().encode('%PDF-1.4 nonsense');
-    expect(await officeSlidePages(deps(broken), deckRow(), revisionRow(), slides([false]))).toEqual(
-      [null],
+    expect(await renderSlidePages(deps(), deckRow(), revisionRow(), pptx, slides([false]))).toEqual(
+      { renderer: null, pages: [null] },
     );
+    const broken: OfficePdf = async () => new TextEncoder().encode('%PDF-1.4 nonsense');
+    expect(
+      await renderSlidePages(deps(broken), deckRow(), revisionRow(), pptx, slides([false])),
+    ).toEqual({ renderer: 'svg', pages: [null] });
+  });
+
+  it("renders uploads with LibreOffice, from the revision's own file", async () => {
+    const libreOffice = vi.fn<PptxToPdf>(async () => makePdf(2));
+    const result = await renderSlidePages(
+      deps(pdfOf(5), libreOffice),
+      upload,
+      revisionRow(),
+      pptx,
+      slides([false, false]),
+    );
+    expect(result.renderer).toBe('libreoffice');
+    expect(result.pages.every((page) => page !== null)).toBe(true);
+    expect(libreOffice).toHaveBeenCalledWith(pptx);
+  });
+
+  it('falls back to LibreOffice when Office has no PDF, and to the preview when it fails', async () => {
+    const noOffice: OfficePdf = async () => null;
+    const viaLibreOffice = await renderSlidePages(
+      deps(noOffice, async () => makePdf(1)),
+      deckRow(),
+      revisionRow(),
+      pptx,
+      slides([false]),
+    );
+    expect(viaLibreOffice.renderer).toBe('libreoffice');
+
+    const failing = await renderSlidePages(
+      deps(noOffice, async () => {
+        throw new Error('soffice crashed');
+      }),
+      upload,
+      revisionRow(),
+      pptx,
+      slides([false]),
+    );
+    expect(failing).toEqual({ renderer: 'svg', pages: [null] });
+  });
+
+  it('prefers Office over LibreOffice for linked decks', async () => {
+    const libreOffice = vi.fn<PptxToPdf>(async () => makePdf(1));
+    const result = await renderSlidePages(
+      deps(pdfOf(1), libreOffice),
+      deckRow(),
+      revisionRow(),
+      pptx,
+      slides([false]),
+    );
+    expect(result.renderer).toBe('office');
+    expect(libreOffice).not.toHaveBeenCalled();
   });
 });
 
