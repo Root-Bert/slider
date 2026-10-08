@@ -285,6 +285,31 @@ Passkeys erscheinen auch direkt im Vorschlagsmenü des E-Mail-Felds.
 - Gespeichert werden nur öffentlicher Schlüssel und Signaturzähler; ein Datenbank-Leak verrät
   keine Anmeldedaten. Wird ein Konto gelöscht, verschwinden seine Passkeys mit.
 
+## Cloudflare (DNS und Schutz davor)
+
+Liegt die Domain bei Cloudflare, bleibt Slider trotzdem auf dem eigenen Server – Cloudflare
+übernimmt nur DNS und auf Wunsch den Schutz davor (kostenlos).
+
+1. **DNS:** Cloudflare → Domain → DNS → Record hinzufügen: Typ `A`, Name `slider`, Inhalt = IPv4
+   des Servers (optional `AAAA` mit der IPv6). Zuerst **„Nur DNS“ (graue Wolke)**, bis Caddy beim
+   ersten Start das Zertifikat geholt hat (`docker compose logs caddy`).
+2. **Proxy einschalten (orange Wolke):** danach umstellen. Unter SSL/TLS → Übersicht den Modus
+   **„Vollständig (streng)“** wählen – Caddy hat ein echtes Zertifikat, „Flexibel“ würde
+   Weiterleitungsschleifen erzeugen. Caddy erneuert das Zertifikat auch hinter dem Proxy
+   (HTTP-Challenge über Port 80).
+3. **Echte Besucher-IP:** in `deploy/.env` die Zeile `TRUSTED_PROXIES=…` (Cloudflare-Adressen,
+   Liste unter <https://www.cloudflare.com/ips/>) einkommentieren und `docker compose up -d`.
+   Ohne das sähe Slider nur Cloudflare-Adressen, und alle Besucher teilten sich die Rate-Limits.
+4. **Optional, Server abschotten:** In der Hetzner-Firewall Port 80/443 nur für die
+   Cloudflare-Adressen öffnen; dann ist der Server nur noch über Cloudflare erreichbar.
+5. **Backups nach R2 (optional):** Cloudflare R2 (10 GB gratis) als Ziel für `pg_dump` und das
+   `/data`-Volume, z. B. mit `rclone`.
+
+Hinweis: Cloudflare begrenzt Uploads im Free-Plan auf 100 MB pro Anfrage, Slider erlaubt
+PowerPoints bis 200 MB. Mit orange Wolke deshalb in `deploy/.env` `MAX_UPLOAD_BYTES=94371840`
+(90 MB) und `MAX_MEDIA_BYTES=94371840` setzen, damit Slider zu große Dateien selbst mit einer
+klaren Meldung ablehnt statt eines Cloudflare-Fehlers.
+
 ## Backups
 
 Wichtig sind **zwei** Dinge: die Datenbank und das Volume `/data`.

@@ -1,9 +1,23 @@
+{
+	servers {
+		# Behind Cloudflare (orange cloud) every request arrives from a Cloudflare edge address.
+		# Trusting those ranges lets {client_ip} be the visitor (CF-Connecting-IP) instead, so
+		# Slider's rate limits work per person. Without Cloudflare, TRUSTED_PROXIES stays empty
+		# and only private ranges are trusted. See docs/self-hosting.md, "Cloudflare".
+		trusted_proxies static private_ranges {$TRUSTED_PROXIES}
+		client_ip_headers CF-Connecting-IP X-Forwarded-For
+	}
+}
+
 # Automatic HTTPS (Let's Encrypt) for the Slider domain. DNS A/AAAA records must point at this
 # server and ports 80 + 443 must be open before the first start.
 {$SLIDER_DOMAIN} {
 	encode zstd gzip
 	# Slider sets its own security headers (HSTS, nosniff, …) and serves the web app itself.
-	reverse_proxy slider:8787
+	reverse_proxy slider:8787 {
+		# Slider reads the right-most X-Forwarded-For entry (TRUST_PROXY=1): hand it the visitor.
+		header_up X-Forwarded-For {client_ip}
+	}
 }
 
 # Further sites, e.g. Authentik: copy authentik/authentik.caddy into sites/.

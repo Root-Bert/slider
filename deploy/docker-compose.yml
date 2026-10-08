@@ -54,6 +54,7 @@ services:
     restart: unless-stopped
     environment:
       SLIDER_DOMAIN: ${SLIDER_DOMAIN}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       AUTHENTIK_DOMAIN: ${AUTHENTIK_DOMAIN:-}
     ports:
       - '80:80'
