@@ -20,6 +20,8 @@ export const routes = {
   login: (returnTo?: string | null) => loginPath(returnTo),
   /** "Konto & Anmeldung": connected logins and passkeys. */
   account: () => '/konto',
+  /** Logins, mail and sign-up of a self-hosted instance (instance admin). */
+  setup: () => '/einrichtung',
   /** Same page as the login – the first login creates the account (BER-130). */
   register: () => '/registrieren',
 };

@@ -27,6 +27,7 @@ import type { AppDeps } from '../deps';
 import { badRequest, notFound } from '../http/errors';
 import { clientAddress, fixedWindow, rateLimit } from '../http/rate-limit';
 import { readJson } from '../http/validate';
+import { hasLogin } from '../config';
 import { DevMailer, loginMail } from '../mail/mailer';
 import {
   inviteTokenFromPath,
@@ -347,6 +348,7 @@ export function authRoutes(deps: AppDeps) {
           devMailbox: devMailbox() !== null,
           devLogin: config.auth.devLogin,
           signup: config.auth.signup,
+          needsSetup: !config.auth.devLogin && !hasLogin(config),
         });
       })
 

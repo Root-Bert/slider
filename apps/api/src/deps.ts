@@ -46,4 +46,13 @@ export interface AppDeps {
    * else `null`.
    */
   ownerId: string | null;
+  /** Setup page (`/einrichtung`); absent → no setup page (most tests). */
+  instance?: InstanceControl;
+}
+
+export interface InstanceControl {
+  /** The process environment: it always wins over settings stored on the setup page. */
+  env: NodeJS.ProcessEnv;
+  /** Restarts the server so saved settings take effect; `null` → whoever runs it restarts it. */
+  restart: (() => void) | null;
 }

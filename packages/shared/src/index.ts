@@ -6,3 +6,4 @@ export * from './shapes';
 export * from './sync';
 export * from './revisions';
 export * from './workspaces';
+export * from './setup';

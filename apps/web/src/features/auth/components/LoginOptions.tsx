@@ -39,12 +39,12 @@ export function LoginOptions({ config, returnTo }: { config: AuthProviders; retu
           Anmeldung nicht eingerichtet
         </p>
         <p className="text-[13px] leading-5 text-fg-subtle">
-          Für diese Slider-Instanz ist noch keine Anmeldung konfiguriert. Wer Slider betreibt, muss
-          Microsoft, Google, einen SSO-Anbieter oder E-Mail einrichten – beschrieben in{' '}
+          Für diese Slider-Instanz ist noch keine Anmeldung konfiguriert. Wer Slider betreibt,
+          findet im Server-Log einen Einrichtungslink (
           <code className="rounded-badge bg-white/8 px-1 py-0.5 text-xs text-fg-muted">
-            docs/self-hosting.md
+            /einrichtung#token=…
           </code>
-          , Abschnitt „Login einrichten“.
+          ) und richtet dort E-Mail, Microsoft, Google oder SSO ein.
         </p>
       </div>
     );

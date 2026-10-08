@@ -7,7 +7,9 @@ Stand Oktober 2026 – Preise und Versionen sind Näherungswerte, bitte vor dem 
 > Docker gebaut/getestet** worden (auf der Entwicklungsmaschine gibt es kein Docker). Getestet sind
 > die Teile darunter: API gegen einen echten Postgres-Server inkl. Migrationen, Auslieferung der
 > Web-App durch die API, Health-Check, sauberes Herunterfahren, die Caddyfile (`caddy adapt`) und
-> die gefilterte Produktions-Installation (`bun install --production --filter @slider/api`).
+> die gefilterte Produktions-Installation (`bun install --production --filter @slider/api`),
+> außerdem der Start ohne Secret und Login samt Einrichtungsseite und automatischem Neustart
+> (Supervisor, ohne Docker). Das Image baut erstmals der Workflow `.github/workflows/image.yml`.
 > Beim ersten echten `docker compose up` also genau hinschauen (siehe [Fehlersuche](#fehlersuche)).
 
 ## Aufbau
@@ -26,13 +28,51 @@ Internet ──443──▶ Caddy (HTTPS, Let's Encrypt)
 
 - **Ein Deployable:** Die API liefert im Produktivbetrieb auch die Web-App aus `apps/web/dist`
   (alle Pfade außer `/api` und `/files` fallen auf `index.html` zurück). Gehashte Dateien unter
-  `/assets/` werden ein Jahr gecacht, `index.html` nie. Dadurch gilt: `WEB_ORIGIN` = öffentliche URL.
+  `/assets/` werden ein Jahr gecacht, `index.html` nie. Dadurch gilt: `SLIDER_URL` = öffentliche URL.
 - **Datenbank:** Mit `DATABASE_URL` ein echter Postgres (in Compose: `postgres:17`), sonst
   die eingebettete PGlite-Datenbank in `/data/db`. Migrationen laufen beim Start automatisch.
 - **Dateien** liegen im Volume `/data` (`blobs/`, `media/`).
 - **Health-Check:** `GET /api/health` → `200 {"ok":true}`, wenn die Datenbank antwortet.
 - **Hinter Caddy:** `TRUST_PROXY=1` sorgt dafür, dass Rate-Limits die echte Client-IP aus
   `X-Forwarded-For` nehmen. Sichere Cookies gibt es automatisch mit `NODE_ENV=production`.
+
+## Schnellstart: ein Container
+
+Für alle, die schon einen Server mit Reverse-Proxy (Traefik, nginx, Caddy, Load Balancer) haben:
+
+```bash
+docker run -d --name slider --restart unless-stopped \
+  -p 8787:8787 -v slider-data:/data \
+  -e SLIDER_URL=https://slider.firma.de \
+  ghcr.io/root-bert/slider:edge
+docker logs slider
+```
+
+1. Im Log steht der **Einrichtungslink** `https://slider.firma.de/einrichtung#token=…`. Er gilt,
+   bis das erste Konto existiert – nicht weitergeben.
+2. Auf der Seite **eigene E-Mail-Adresse** (wird Instanz-Admin) und **mindestens einen
+   Anmeldeweg** eintragen: E-Mail per SMTP (am schnellsten), Microsoft, Google oder SSO (OIDC).
+   Die Weiterleitungs-URIs für Microsoft/Google/SSO zeigt die Seite zum Kopieren an.
+3. **Speichern** – Slider startet im Container kurz neu und übernimmt die Einstellungen.
+4. **Anmelden** mit der Admin-Adresse. Später ändert der Admin alles unter Konto →
+   **Einrichtung** (`/einrichtung`).
+
+Was dabei automatisch passiert:
+
+- `SLIDER_SECRET` wird beim ersten Start erzeugt und liegt in `/data/secret` (nur für den Server
+  lesbar). Ein selbst gesetzter `SLIDER_SECRET` hat Vorrang.
+- Ohne `DATABASE_URL` liegt die Datenbank (PGlite) in `/data/db`. Für mehr als ein kleines Team
+  lieber Postgres (`DATABASE_URL`, siehe Compose unten).
+- Die Einstellungen der Seite liegen in der Datenbank (Tabelle `instance_settings`), Secrets und
+  das SMTP-Passwort AES-GCM-verschlüsselt mit `SLIDER_SECRET`. **Umgebungsvariablen haben immer
+  Vorrang** und erscheinen auf der Seite schreibgeschützt – wer lieber alles per `.env` steuert,
+  kann das weiter tun.
+- Hinter dem Proxy `-e TRUST_PROXY=1` setzen, damit Rate-Limits die echte Besucher-IP sehen –
+  aber nur, wenn Port 8787 nicht öffentlich erreichbar ist (`-p 127.0.0.1:8787:8787`).
+- Ein festes Release statt `:edge` (Stand von `main`): `ghcr.io/root-bert/slider:1`, sobald
+  Versionen getaggt sind.
+
+Alle Daten liegen im Volume `slider-data` – das ist das, was gesichert werden muss.
 
 ## Voraussetzungen
 
@@ -64,22 +104,22 @@ Internet ──443──▶ Caddy (HTTPS, Let's Encrypt)
    cd /opt/slider/deploy
    cp .env.example .env
    sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 24)/" .env
-   sed -i "s|^SLIDER_SECRET=.*|SLIDER_SECRET=$(openssl rand -base64 48 | tr -d '\n')|" .env
    chmod 600 .env
-   nano .env   # SLIDER_DOMAIN, BOOTSTRAP_EMAIL, Login (MS_* / OIDC_* / SMTP_*), SIGNUP
+   nano .env   # SLIDER_DOMAIN – alles andere geht auch im Browser
    ```
-   **Wichtig:** `BOOTSTRAP_EMAIL` auf die eigene Adresse setzen. Das erste Konto der Instanz wird
-   Instanz-Admin – ohne diese Variable könnte bei `MS_TENANT=common` (oder `SIGNUP=open`) eine
-   fremde Person schneller sein. `SIGNUP` steht standardmäßig auf `open` (siehe unten) – für eine
-   reine Firmen-Instanz eher `invite` oder `domains` wählen.
-6. **Starten:**
+   Login, `BOOTSTRAP_EMAIL` und `SIGNUP` können hier stehen oder auf der Einrichtungsseite
+   gesetzt werden (Schritt 6). Was in `.env` steht, hat Vorrang. `SIGNUP` steht standardmäßig
+   auf `open` – für eine reine Firmen-Instanz eher `invite` oder `domains` wählen.
+6. **Starten und einrichten:**
    ```bash
-   docker compose up -d --build
-   docker compose logs -f slider        # "Slider API listening on …"
+   docker compose up -d                 # zieht ghcr.io/root-bert/slider:edge
+   docker compose logs slider           # Einrichtungslink …/einrichtung#token=…
    curl -s https://slider.firma.de/api/health   # {"ok":true}
    ```
-   Der erste Build dauert einige Minuten (Abhängigkeiten installieren, Web-App bauen).
-   Danach sofort selbst anmelden – mit der Adresse aus `BOOTSTRAP_EMAIL`. Dieses Konto ist
+   Den Link öffnen, eigene Adresse und einen Anmeldeweg eintragen, speichern – wie im
+   [Schnellstart](#schnellstart-ein-container). Wer das Image aus dem Checkout bauen will:
+   `SLIDER_IMAGE=slider:local docker compose up -d --build` (dauert einige Minuten).
+   Danach sofort selbst anmelden – mit der Admin-Adresse (`BOOTSTRAP_EMAIL`). Dieses Konto ist
    Instanz-Admin; alle Weiteren kommen per Einladung oder über `SIGNUP`. Neue Konten haben noch
    keine Organisation: Nach dem ersten Login gründen sie eine oder treten per Einladungslink bei.
 7. **Microsoft-Login** (falls genutzt): In der Entra-App-Registrierung unter _Authentication_ die
@@ -93,36 +133,38 @@ eine fehlende `.env` ist kein Fehler. Davor einen Reverse-Proxy mit HTTPS setzen
 ## Umgebungsvariablen
 
 In Compose stehen sie in `deploy/.env` (Vorlage: `deploy/.env.example`). `NODE_ENV`, `PORT`,
-`DATA_DIR`, `WEB_ORIGIN`, `DATABASE_URL` und `TRUST_PROXY` setzt `docker-compose.yml` selbst.
+`DATA_DIR`, `SLIDER_URL`, `DATABASE_URL` und `TRUST_PROXY` setzt `docker-compose.yml` selbst.
+Mit „Seite“ markierte Werte lassen sich auch auf der Einrichtungsseite (`/einrichtung`) setzen;
+die Umgebungsvariable hat dann Vorrang.
 
-| Variable                                              | Pflicht            | Bedeutung                                                                                                                                                                                                                             |
-| ----------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SLIDER_DOMAIN`                                       | ja (Compose)       | Öffentlicher Hostname; daraus wird `WEB_ORIGIN=https://<domain>`.                                                                                                                                                                     |
-| `POSTGRES_PASSWORD`                                   | ja (Compose)       | Passwort des Postgres-Users `slider`. Nur Hex (`openssl rand -hex 24`), da es in der URL landet.                                                                                                                                      |
-| `SLIDER_SECRET`                                       | ja                 | ≥ 32 Zeichen, signiert Sessions/Gast-Cookies und verschlüsselt Microsoft-Tokens: `openssl rand -base64 48`. Ändern meldet alle ab und macht gespeicherte Microsoft-Verbindungen ungültig.                                             |
-| `WEB_ORIGIN`                                          | ja (ohne Compose)  | Öffentliche URL, z. B. `https://slider.firma.de` (CORS, Redirect-URIs, Links in Mails).                                                                                                                                               |
-| `DATABASE_URL`                                        | nein               | `postgres://user:pass@host:5432/db`. Leer = PGlite in `DATA_DIR/db`.                                                                                                                                                                  |
-| `DATA_DIR`                                            | nein               | Daten-Ordner (Container: `/data`).                                                                                                                                                                                                    |
-| `WEB_DIST_DIR`                                        | nein               | Gebaute Web-App; Standard in Produktion `apps/web/dist`.                                                                                                                                                                              |
-| `TRUST_PROXY`                                         | nein               | `1` hinter Caddy/Proxy. Nur setzen, wenn die API nicht direkt erreichbar ist.                                                                                                                                                         |
-| `SIGNUP`                                              | nein               | `open` (Standard) = jeder, der sich anmelden kann – das Konto entsteht beim ersten Login · `invite` = nur Eingeladene · `domains` = alle mit E-Mail aus `SIGNUP_DOMAINS`.                                                             |
-| `SIGNUP_DOMAINS`                                      | bei `domains`      | Kommagetrennt, z. B. `firma.de,firma.com`.                                                                                                                                                                                            |
-| `BOOTSTRAP_EMAIL`                                     | dringend empfohlen | Kommagetrennt, z. B. `ich@firma.de`. Nur diese (verifizierte) Adresse darf das erste Konto (Instanz-Admin) anlegen. Leer: in Produktion nur, wen `SIGNUP=open`/`domains` ohnehin zulässt (bei `invite` niemand), plus Warnung im Log. |
-| `MS_CLIENT_ID`, `MS_CLIENT_SECRET`                    | eine Login-Art     | Entra-App (Login + OneDrive/SharePoint-Import).                                                                                                                                                                                       |
-| `MS_TENANT`                                           | nein               | `common` (Standard) oder die Tenant-ID, um nur die eigene Firma zuzulassen.                                                                                                                                                           |
-| `MS_REDIRECT_URI`                                     | nein               | Standard `${WEB_ORIGIN}/api/auth/microsoft/callback` – genau so in Entra eintragen.                                                                                                                                                   |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`            | eine Login-Art     | „Weiter mit Google“ – OAuth-Client aus der Google Cloud Console (siehe unten). Nur zusammen.                                                                                                                                          |
-| `GOOGLE_REDIRECT_URI`                                 | nein               | Standard `${WEB_ORIGIN}/api/auth/google/callback` – genau so bei Google eintragen.                                                                                                                                                    |
-| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | eine Login-Art     | z. B. Authentik: `https://auth.firma.de/application/o/slider/`.                                                                                                                                                                       |
-| `OIDC_LABEL`, `OIDC_SCOPES`, `OIDC_REDIRECT_URI`      | nein               | Button-Text, Scopes (`openid profile email`), Redirect (Standard `${WEB_ORIGIN}/api/auth/oidc/callback`).                                                                                                                             |
-| `SMTP_URL`, `MAIL_FROM`                               | eine Login-Art     | Login-Mails (Link + Code) und Einladungen, z. B. `smtps://user:pass@smtp.anbieter.de:465` und `Slider <slider@firma.de>`. Nur zusammen.                                                                                               |
-| `SESSION_TTL_DAYS`                                    | nein               | Login-Dauer, Standard 30.                                                                                                                                                                                                             |
-| `MAX_UPLOAD_BYTES`                                    | nein               | Max. PPTX-Größe, Standard 200 MB.                                                                                                                                                                                                     |
-| `MEDIA_QUOTA_BYTES`, `MAX_MEDIA_BYTES`                | nein               | Speicher für Sprach-/Video-Kommentare pro Deck-Besitzer (Standard 5 GB) bzw. pro Aufnahme (100 MB).                                                                                                                                   |
-| `SYNC_POLL_INTERVAL_MS`, `SYNC_DEBOUNCE_MS`           | nein               | Automatische Updates verlinkter Decks (Standard 2 min / 1 min, `0` = aus).                                                                                                                                                            |
-| `PLAN_FREE_MAX_MEMBERS`                               | nein               | Plätze pro Organisation im Free-Plan: Mitglieder plus offene E-Mail-Einladungen. Standard 5, `0` = unbegrenzt.                                                                                                                        |
-| `PLAN_FREE_MAX_DECKS`                                 | nein               | Präsentationen pro Organisation im Free-Plan (archivierte zählen mit). Standard 3, `0` = unbegrenzt.                                                                                                                                  |
-| `LIBREOFFICE_PATH`                                    | nein               | Pfad zu LibreOffices `soffice` für die Folienbilder hochgeladener Decks. Leer = `soffice` im `PATH` (im Docker-Image enthalten), sonst `/Applications/LibreOffice.app/…` (macOS).                                                     |
+| Variable                                              | Pflicht                    | Bedeutung                                                                                                                                                                                                                                                                                 |
+| ----------------------------------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SLIDER_DOMAIN`                                       | ja (Compose)               | Öffentlicher Hostname; daraus wird `SLIDER_URL=https://<domain>`.                                                                                                                                                                                                                         |
+| `POSTGRES_PASSWORD`                                   | ja (Compose)               | Passwort des Postgres-Users `slider`. Nur Hex (`openssl rand -hex 24`), da es in der URL landet.                                                                                                                                                                                          |
+| `SLIDER_SECRET`                                       | nein                       | ≥ 32 Zeichen, signiert Sessions/Gast-Cookies, verschlüsselt Microsoft-Tokens und gespeicherte Einstellungen. Leer: beim ersten Start erzeugt und in `DATA_DIR/secret` abgelegt. Ändern meldet alle ab und macht gespeicherte Microsoft-Verbindungen und Einstellungen der Seite ungültig. |
+| `SLIDER_URL`                                          | ja (ohne Compose)          | Öffentliche URL, z. B. `https://slider.firma.de` (CORS, Redirect-URIs, Links in Mails). Früherer Name: `WEB_ORIGIN` (geht weiter).                                                                                                                                                        |
+| `DATABASE_URL`                                        | nein                       | `postgres://user:pass@host:5432/db`. Leer = PGlite in `DATA_DIR/db`.                                                                                                                                                                                                                      |
+| `DATA_DIR`                                            | nein                       | Daten-Ordner (Container: `/data`).                                                                                                                                                                                                                                                        |
+| `WEB_DIST_DIR`                                        | nein                       | Gebaute Web-App; Standard in Produktion `apps/web/dist`.                                                                                                                                                                                                                                  |
+| `TRUST_PROXY`                                         | nein                       | `1` hinter Caddy/Proxy. Nur setzen, wenn die API nicht direkt erreichbar ist.                                                                                                                                                                                                             |
+| `SIGNUP`                                              | nein (Seite)               | `open` (Standard) = jeder, der sich anmelden kann – das Konto entsteht beim ersten Login · `invite` = nur Eingeladene · `domains` = alle mit E-Mail aus `SIGNUP_DOMAINS`.                                                                                                                 |
+| `SIGNUP_DOMAINS`                                      | bei `domains` (Seite)      | Kommagetrennt, z. B. `firma.de,firma.com`.                                                                                                                                                                                                                                                |
+| `BOOTSTRAP_EMAIL`                                     | dringend empfohlen (Seite) | Kommagetrennt, z. B. `ich@firma.de`. Nur diese (verifizierte) Adresse darf das erste Konto (Instanz-Admin) anlegen; die Einrichtungsseite fragt sie in Produktion ab. Leer: nur, wen `SIGNUP=open`/`domains` ohnehin zulässt (bei `invite` niemand), plus Warnung im Log.                 |
+| `MS_CLIENT_ID`, `MS_CLIENT_SECRET`                    | eine Login-Art (Seite)     | Entra-App (Login + OneDrive/SharePoint-Import).                                                                                                                                                                                                                                           |
+| `MS_TENANT`                                           | nein (Seite)               | `common` (Standard) oder die Tenant-ID, um nur die eigene Firma zuzulassen.                                                                                                                                                                                                               |
+| `MS_REDIRECT_URI`                                     | nein                       | Standard `${SLIDER_URL}/api/auth/microsoft/callback` – genau so in Entra eintragen.                                                                                                                                                                                                       |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`            | eine Login-Art (Seite)     | „Weiter mit Google“ – OAuth-Client aus der Google Cloud Console (siehe unten). Nur zusammen.                                                                                                                                                                                              |
+| `GOOGLE_REDIRECT_URI`                                 | nein                       | Standard `${SLIDER_URL}/api/auth/google/callback` – genau so bei Google eintragen.                                                                                                                                                                                                        |
+| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | eine Login-Art (Seite)     | z. B. Authentik: `https://auth.firma.de/application/o/slider/`.                                                                                                                                                                                                                           |
+| `OIDC_LABEL`, `OIDC_SCOPES`, `OIDC_REDIRECT_URI`      | nein                       | Button-Text, Scopes (`openid profile email`), Redirect (Standard `${SLIDER_URL}/api/auth/oidc/callback`).                                                                                                                                                                                 |
+| `SMTP_URL`, `MAIL_FROM`                               | eine Login-Art (Seite)     | Login-Mails (Link + Code) und Einladungen, z. B. `smtps://user:pass@smtp.anbieter.de:465` und `Slider <slider@firma.de>`. Nur zusammen. Die Seite setzt die URL aus Server, Port, Benutzer und Passwort zusammen.                                                                         |
+| `SESSION_TTL_DAYS`                                    | nein                       | Login-Dauer, Standard 30.                                                                                                                                                                                                                                                                 |
+| `MAX_UPLOAD_BYTES`                                    | nein                       | Max. PPTX-Größe, Standard 200 MB.                                                                                                                                                                                                                                                         |
+| `MEDIA_QUOTA_BYTES`, `MAX_MEDIA_BYTES`                | nein                       | Speicher für Sprach-/Video-Kommentare pro Deck-Besitzer (Standard 5 GB) bzw. pro Aufnahme (100 MB).                                                                                                                                                                                       |
+| `SYNC_POLL_INTERVAL_MS`, `SYNC_DEBOUNCE_MS`           | nein                       | Automatische Updates verlinkter Decks (Standard 2 min / 1 min, `0` = aus).                                                                                                                                                                                                                |
+| `PLAN_FREE_MAX_MEMBERS`                               | nein                       | Plätze pro Organisation im Free-Plan: Mitglieder plus offene E-Mail-Einladungen. Standard 5, `0` = unbegrenzt.                                                                                                                                                                            |
+| `PLAN_FREE_MAX_DECKS`                                 | nein                       | Präsentationen pro Organisation im Free-Plan (archivierte zählen mit). Standard 3, `0` = unbegrenzt.                                                                                                                                                                                      |
+| `LIBREOFFICE_PATH`                                    | nein                       | Pfad zu LibreOffices `soffice` für die Folienbilder hochgeladener Decks. Leer = `soffice` im `PATH` (im Docker-Image enthalten), sonst `/Applications/LibreOffice.app/…` (macOS).                                                                                                         |
 
 ## Folienbilder
 
@@ -278,8 +320,8 @@ Passkeys erscheinen auch direkt im Vorschlagsmenü des E-Mail-Felds.
 
 - Ein Passkey meldet nur an ein **bestehendes** Konto an – das Konto entsteht immer über Microsoft,
   Google, SSO oder E-Mail. `SIGNUP` spielt für Passkeys daher keine Rolle.
-- Die **RP-ID ist der Hostname von `WEB_ORIGIN`** (z. B. `slider.firma.de`), die erlaubte Origin
-  genau `WEB_ORIGIN`. **Ein Domainwechsel macht alle Passkeys ungültig** – danach meldet man sich
+- Die **RP-ID ist der Hostname von `SLIDER_URL`** (z. B. `slider.firma.de`), die erlaubte Origin
+  genau `SLIDER_URL`. **Ein Domainwechsel macht alle Passkeys ungültig** – danach meldet man sich
   einmal anders an und legt neue an. Lokal ist die RP-ID `localhost`.
 - Passkeys funktionieren nur über HTTPS (oder `http://localhost`).
 - Gespeichert werden nur öffentlicher Schlüssel und Signaturzähler; ein Datenbank-Leak verrät
@@ -337,12 +379,15 @@ docker run --rm -v slider_slider-data:/data -v /opt/backups:/backup debian:bookw
 ## Updates
 
 ```bash
-cd /opt/slider
-git pull
-cd deploy
-docker compose up -d --build     # baut neu, Migrationen laufen beim Start
+cd /opt/slider/deploy
+docker compose pull              # neues Image (ghcr.io/root-bert/slider)
+docker compose up -d             # Migrationen laufen beim Start
 docker image prune -f
 ```
+
+Nur `docker run`: `docker pull ghcr.io/root-bert/slider:edge`, Container löschen und mit
+denselben Optionen neu starten – die Daten liegen im Volume. Eigener Build aus dem Checkout:
+nach dem Aktualisieren des Repos `SLIDER_IMAGE=slider:local docker compose up -d --build`.
 
 Vorher ein Backup ziehen. Postgres-Major-Updates (17 → 18) brauchen `pg_dump`/`pg_restore`;
 das Image-Tag also nicht einfach hochsetzen. Authentik: `AUTHENTIK_TAG` anheben, Release Notes
@@ -404,8 +449,15 @@ Sprach-/Video-Kommentare. Deshalb:
 ## Fehlersuche
 
 - `docker compose logs slider` – Konfigurationsfehler stehen beim Start im Log
-  (z. B. „SLIDER_SECRET must be set in production.“, „No login is configured …“,
-  „BOOTSTRAP_EMAIL is not set“).
+  (z. B. „SLIDER_URL must be set in production“, „BOOTSTRAP_EMAIL is not set“).
+- Einrichtungslink verloren → er steht bei jedem Start im Log, solange es kein Konto gibt
+  (`docker logs slider`); die Datei `/data/setup-token` hält ihn.
+- Login-Seite sagt „Anmeldung nicht eingerichtet“ → noch kein Anmeldeweg: Einrichtungslink aus
+  dem Log öffnen (vor dem ersten Konto) oder als Admin `/einrichtung`.
+- Nach dem Speichern auf der Einrichtungsseite „Starte den Slider-Server neu“ → Slider läuft ohne
+  den Supervisor des Images (z. B. `bun apps/api/src/server.ts`); von Hand neu starten.
+- „The settings saved on the setup page are invalid“ im Log → Slider startet ohne sie; Werte als
+  Admin auf `/einrichtung` korrigieren (oder per Umgebungsvariable überschreiben).
 - Erste Anmeldung scheitert mit `signup_closed` → `BOOTSTRAP_EMAIL`
   fehlt oder passt nicht zur Adresse, mit der man sich anmeldet; setzen und neu starten.
 - `No web app at /app/apps/web/dist` → der Web-Build im Image fehlt; Build-Log prüfen.

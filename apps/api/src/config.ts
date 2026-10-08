@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,8 +19,12 @@ export interface Config {
   port: number;
   /** Holds `db/` (PGlite) and `blobs/` (file storage). */
   dataDir: string;
-  /** Signs the guest session cookie. */
+  /**
+   * Signs cookies and login codes, encrypts Microsoft tokens and stored settings. `SLIDER_SECRET`,
+   * else (production) generated once into `<dataDir>/secret`.
+   */
   secret: string;
+  /** The public address (`SLIDER_URL`, formerly `WEB_ORIGIN`), without a trailing slash. */
   webOrigin: string;
   maxUploadBytes: number;
   /**
@@ -133,9 +139,9 @@ const DEV_SECRET = 'slider-dev-secret-do-not-use-in-production';
 const DEFAULT_DATA_DIR = fileURLToPath(new URL('../.data', import.meta.url));
 /** `.env` lives in the repo root, so relative paths in it are meant from there – not from `apps/api`. */
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url));
-const MICROSOFT_CALLBACK_PATH = '/api/auth/microsoft/callback';
-const OIDC_CALLBACK_PATH = '/api/auth/oidc/callback';
-const GOOGLE_CALLBACK_PATH = '/api/auth/google/callback';
+export const MICROSOFT_CALLBACK_PATH = '/api/auth/microsoft/callback';
+export const OIDC_CALLBACK_PATH = '/api/auth/oidc/callback';
+export const GOOGLE_CALLBACK_PATH = '/api/auth/google/callback';
 const booleanEnv = z.enum(['true', 'false', '1', '0']).transform((v) => v === 'true' || v === '1');
 
 const envSchema = z.object({
@@ -146,7 +152,9 @@ const envSchema = z.object({
     .string()
     .min(32, 'SLIDER_SECRET muss mindestens 32 Zeichen lang sein.')
     .optional(),
-  WEB_ORIGIN: z.url().default('http://localhost:5173'),
+  /** The public address; `WEB_ORIGIN` is the older name of the same setting. */
+  SLIDER_URL: z.url().optional(),
+  WEB_ORIGIN: z.url().optional(),
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(MAX_UPLOAD_BYTES),
   DEV_OWNER_NAME: z.string().min(1).default('Robert Hofmann'),
   DEV_OWNER_EMAIL: z.email().default('robert@q4-team.de'),
@@ -201,12 +209,19 @@ export function loadConfig(
   warn: (msg: string) => void = console.warn,
 ): Config {
   const parsed = envSchema.parse(stripEmpty(env));
-  if (!parsed.SLIDER_SECRET) {
-    if (parsed.NODE_ENV === 'production')
-      throw new Error('SLIDER_SECRET must be set in production.');
-    warn('SLIDER_SECRET is not set – using an insecure development secret.');
-  }
   const dataDir = path.resolve(REPO_ROOT, parsed.DATA_DIR);
+  const configuredUrl = parsed.SLIDER_URL ?? parsed.WEB_ORIGIN;
+  if (!configuredUrl && parsed.NODE_ENV === 'production') {
+    throw new Error(
+      'SLIDER_URL must be set in production: the public address, e.g. SLIDER_URL=https://slider.firma.de',
+    );
+  }
+  const webOrigin = (configuredUrl ?? 'http://localhost:5173').replace(/\/+$/, '');
+  let secret = parsed.SLIDER_SECRET;
+  if (!secret) {
+    if (parsed.NODE_ENV === 'production') secret = loadOrCreateSecret(dataDir);
+    else warn('SLIDER_SECRET is not set – using an insecure development secret.');
+  }
   const microsoft: MicrosoftConfig | null =
     parsed.MS_CLIENT_ID && parsed.MS_CLIENT_SECRET
       ? {
@@ -214,8 +229,7 @@ export function loadConfig(
           clientSecret: parsed.MS_CLIENT_SECRET,
           tenant: parsed.MS_TENANT ?? 'common',
           redirectUri:
-            parsed.MS_REDIRECT_URI ??
-            new URL(MICROSOFT_CALLBACK_PATH, parsed.WEB_ORIGIN).toString(),
+            parsed.MS_REDIRECT_URI ?? new URL(MICROSOFT_CALLBACK_PATH, webOrigin).toString(),
         }
       : null;
   const oidc: OidcConfig | null =
@@ -227,7 +241,7 @@ export function loadConfig(
           label: parsed.OIDC_LABEL,
           scopes: parsed.OIDC_SCOPES,
           redirectUri:
-            parsed.OIDC_REDIRECT_URI ?? new URL(OIDC_CALLBACK_PATH, parsed.WEB_ORIGIN).toString(),
+            parsed.OIDC_REDIRECT_URI ?? new URL(OIDC_CALLBACK_PATH, webOrigin).toString(),
         }
       : null;
   if (parsed.OIDC_ISSUER && !oidc) {
@@ -245,8 +259,7 @@ export function loadConfig(
           label: 'Weiter mit Google',
           scopes: 'openid email profile',
           redirectUri:
-            parsed.GOOGLE_REDIRECT_URI ??
-            new URL(GOOGLE_CALLBACK_PATH, parsed.WEB_ORIGIN).toString(),
+            parsed.GOOGLE_REDIRECT_URI ?? new URL(GOOGLE_CALLBACK_PATH, webOrigin).toString(),
           issuerAliases: ['accounts.google.com'],
           authorizeParams: { prompt: 'select_account' },
         }
@@ -257,13 +270,9 @@ export function loadConfig(
   const smtp =
     parsed.SMTP_URL && parsed.MAIL_FROM ? { url: parsed.SMTP_URL, from: parsed.MAIL_FROM } : null;
   const hasLoginProvider = Boolean(microsoft || oidc || google || smtp);
-  if (parsed.NODE_ENV === 'production') {
-    if (!hasLoginProvider) {
-      throw new Error(
-        'No login is configured: set MS_CLIENT_ID/MS_CLIENT_SECRET, GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET, OIDC_ISSUER/OIDC_CLIENT_ID/OIDC_CLIENT_SECRET or SMTP_URL/MAIL_FROM.',
-      );
-    }
-    if (parsed.AUTH_DEV_LOGIN) throw new Error('AUTH_DEV_LOGIN cannot be enabled in production.');
+  // Production without any login starts anyway: the setup page (`/einrichtung`) configures one.
+  if (parsed.NODE_ENV === 'production' && parsed.AUTH_DEV_LOGIN) {
+    throw new Error('AUTH_DEV_LOGIN cannot be enabled in production.');
   }
   const devLogin = parsed.NODE_ENV !== 'production' && (parsed.AUTH_DEV_LOGIN ?? !hasLoginProvider);
   const signupDomains = (parsed.SIGNUP_DOMAINS ?? '')
@@ -281,7 +290,7 @@ export function loadConfig(
   if (invalidBootstrap.length > 0) {
     throw new Error(`BOOTSTRAP_EMAIL contains invalid addresses: ${invalidBootstrap.join(', ')}`);
   }
-  if (parsed.NODE_ENV === 'production' && bootstrapEmails.length === 0) {
+  if (parsed.NODE_ENV === 'production' && hasLoginProvider && bootstrapEmails.length === 0) {
     warn(
       [
         '!!! BOOTSTRAP_EMAIL is not set !!!',
@@ -297,8 +306,8 @@ export function loadConfig(
     env: parsed.NODE_ENV,
     port: parsed.PORT,
     dataDir,
-    secret: parsed.SLIDER_SECRET ?? DEV_SECRET,
-    webOrigin: parsed.WEB_ORIGIN,
+    secret: secret ?? DEV_SECRET,
+    webOrigin,
     maxUploadBytes: parsed.MAX_UPLOAD_BYTES,
     devOwner: { name: parsed.DEV_OWNER_NAME, email: parsed.DEV_OWNER_EMAIL },
     auth: {
@@ -341,8 +350,41 @@ function expandHome(dir: string): string {
 }
 
 /** `KEY=` lines in `.env` arrive as empty strings; treat them like unset keys so defaults apply. */
-function stripEmpty(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export function stripEmpty(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return Object.fromEntries(Object.entries(env).filter(([, value]) => value !== ''));
+}
+
+/** Whether anyone can sign in at all: Microsoft, Google, OIDC or e-mail. */
+export const hasLogin = (config: Pick<Config, 'microsoft' | 'smtp' | 'auth'>): boolean =>
+  Boolean(config.microsoft || config.auth.google || config.auth.oidc || config.smtp);
+
+/**
+ * Settings saved on the setup page (`services/instance-settings`) under their env names, merged
+ * below the environment: what the environment sets always wins.
+ */
+export const withStoredSettings = (
+  env: NodeJS.ProcessEnv,
+  stored: Record<string, string>,
+): NodeJS.ProcessEnv => ({ ...stored, ...stripEmpty(env) });
+
+const SECRET_FILE = 'secret';
+
+/**
+ * Without `SLIDER_SECRET`, production generates one on the first start and keeps it in the data
+ * volume (readable by the server only) – so `docker run` needs no secret at all.
+ */
+function loadOrCreateSecret(dataDir: string): string {
+  const file = path.join(dataDir, SECRET_FILE);
+  if (existsSync(file)) {
+    const stored = readFileSync(file, 'utf8').trim();
+    if (stored.length >= 32) return stored;
+    throw new Error(`${file} holds no usable secret (at least 32 characters).`);
+  }
+  mkdirSync(dataDir, { recursive: true });
+  const secret = randomBytes(48).toString('base64url');
+  writeFileSync(file, `${secret}\n`, { mode: 0o600, flag: 'wx' });
+  chmodSync(file, 0o600);
+  return secret;
 }
 
 export const dataPaths = (config: Pick<Config, 'dataDir'>) => ({

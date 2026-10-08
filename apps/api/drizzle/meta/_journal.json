@@ -57,6 +57,13 @@
       "when": 1791478093343,
       "tag": "0007_slide_renderer",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791488795654,
+      "tag": "0008_instance_settings",
+      "breakpoints": true
     }
   ]
 }

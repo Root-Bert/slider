@@ -35,6 +35,8 @@ export const authProvidersSchema = z.object({
   /** Development only: requests without a session act as the dev owner, no login needed. */
   devLogin: z.boolean(),
   signup: signupModeSchema,
+  /** No login works yet: the login page points to the setup link in the server log. */
+  needsSetup: z.boolean(),
 });
 export type AuthProviders = z.infer<typeof authProvidersSchema>;
 

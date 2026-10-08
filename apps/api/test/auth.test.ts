@@ -200,6 +200,7 @@ describe('GET /api/auth/providers', () => {
       devMailbox: false,
       devLogin: false,
       signup: 'domains',
+      needsSetup: false,
     });
   });
 });

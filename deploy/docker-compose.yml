@@ -1,8 +1,9 @@
 # Slider on one server: Caddy (HTTPS) → Slider (API + web app) → Postgres.
 #
 #   cd deploy
-#   cp .env.example .env    # fill in, see docs/self-hosting.md
-#   docker compose up -d --build
+#   cp .env.example .env    # SLIDER_DOMAIN and POSTGRES_PASSWORD, see docs/self-hosting.md
+#   docker compose up -d    # pulls the published image (own build: SLIDER_IMAGE=slider:local, --build)
+#   docker compose logs slider   # → setup link: https://<SLIDER_DOMAIN>/einrichtung#token=…
 #
 # Optional Authentik (OIDC login): see authentik/docker-compose.yml.
 
@@ -13,14 +14,14 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    image: ${SLIDER_IMAGE:-slider:local}
+    image: ${SLIDER_IMAGE:-ghcr.io/root-bert/slider:edge}
     restart: unless-stopped
     env_file: .env
     environment:
       NODE_ENV: production
       PORT: '8787'
       DATA_DIR: /data
-      WEB_ORIGIN: https://${SLIDER_DOMAIN:?SLIDER_DOMAIN is required}
+      SLIDER_URL: https://${SLIDER_DOMAIN:?SLIDER_DOMAIN is required}
       DATABASE_URL: postgres://slider:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/slider
       # Only Caddy can reach the container, so X-Forwarded-For is trustworthy.
       TRUST_PROXY: '1'

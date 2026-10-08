@@ -191,15 +191,30 @@ returns per-slide changes plus deleted slides with their comments, and every sli
 
 ## Self-hosting
 
-One container serves the API and the built web app; Postgres and Caddy (automatic HTTPS) run
-next to it with Docker Compose. A small VPS (2 vCPU, 4 GB) is enough for a team, at roughly
-7 € a month and no per-user costs.
+One container serves the API and the built web app. The published image needs nothing but its
+public address:
+
+```bash
+docker run -d --name slider --restart unless-stopped -p 8787:8787 -v slider-data:/data \
+  -e SLIDER_URL=https://slider.firma.de ghcr.io/root-bert/slider:edge
+docker logs slider       # → https://slider.firma.de/einrichtung#token=…
+```
+
+The link in the log opens the setup page: e-mail (SMTP), Microsoft, Google or SSO login and
+the admin's address, stored encrypted in the database; the server restarts itself to apply them.
+The secret is generated into `/data`, the database is PGlite in `/data` unless `DATABASE_URL`
+is set. Environment variables still work and win over the setup page. Put a reverse proxy with
+HTTPS in front – or use `deploy/docker-compose.yml` (Caddy with automatic HTTPS + Postgres):
 
 ```bash
 cd deploy
-cp .env.example .env     # SLIDER_DOMAIN, POSTGRES_PASSWORD, SLIDER_SECRET, a login provider
-docker compose up -d --build
+cp .env.example .env     # SLIDER_DOMAIN, POSTGRES_PASSWORD
+docker compose up -d
 ```
+
+A small VPS (2 vCPU, 4 GB) is enough for a team, at roughly 7 € a month and no per-user costs.
+The image (amd64 + arm64) is built by `.github/workflows/image.yml`: `:edge` from `main`,
+`:1.2.3`/`:1.2`/`:1`/`:latest` from `v*` tags.
 
 Accounts are created on the first login (`SIGNUP=open`, the default; `invite` and `domains`
 restrict that). Everything lives in organisations: every account may found one and join any

@@ -462,6 +462,17 @@ export const guestSessions = pgTable(
 
 export type UserRow = typeof users.$inferSelect;
 export type SessionRow = typeof sessions.$inferSelect;
+/**
+ * Settings saved on the setup page (`/einrichtung`), keyed by their env name (`MS_CLIENT_ID`, …).
+ * Secrets (`*_SECRET`, `SMTP_URL`) are AES-GCM encrypted with SLIDER_SECRET. The environment
+ * always wins over these rows – see `services/instance-settings`.
+ */
+export const instanceSettings = pgTable('instance_settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+});
+
 export type WorkspaceRow = typeof workspaces.$inferSelect;
 export type WorkspaceMemberRow = typeof workspaceMembers.$inferSelect;
 export type WorkspaceInviteRow = typeof workspaceInvites.$inferSelect;

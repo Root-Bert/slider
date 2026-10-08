@@ -17,6 +17,8 @@ export const router = createBrowserRouter([
     children: [
       { path: 'login', lazy: () => import('@/features/auth/LoginPage') },
       { path: 'registrieren', lazy: () => import('@/features/auth/RegisterPage') },
+      // Self-hosting: setup token from the server log, or the instance admin (checked by the API).
+      { path: 'einrichtung', lazy: () => import('@/features/setup/SetupPage') },
       { path: 'join/:token', lazy: () => import('@/features/workspaces/JoinPage') },
       { path: 'd/:deckId', lazy: () => import('@/features/viewer/DeckPage') },
       { path: 'r/:token', lazy: () => import('@/features/sharing/GuestEntryPage') },

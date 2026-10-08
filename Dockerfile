@@ -1,16 +1,19 @@
 # syntax=docker/dockerfile:1
 #
 # Slider as one container: the Bun API also serves the built web app (apps/web/dist).
-#   docker build -t slider .
-#   docker run -p 8787:8787 -v slider-data:/data -e SLIDER_SECRET=… -e WEB_ORIGIN=… slider
-# See docs/self-hosting.md (docker compose with Postgres and Caddy).
+#   docker run -d -p 8787:8787 -v slider-data:/data -e SLIDER_URL=https://slider.firma.de \
+#     ghcr.io/root-bert/slider:edge
+# Nothing else is required: the secret is generated into /data, the database is PGlite in /data
+# (or DATABASE_URL), and the login is set up in the browser via the link in the log.
+# Published by .github/workflows/image.yml; see docs/self-hosting.md.
 #
 # Debian slim, not Alpine: @napi-rs/canvas (PDF → slide images) ships glibc binaries.
 
 ARG BUN_VERSION=1.3.13
 ARG NODE_VERSION=22
 
-FROM node:${NODE_VERSION}-bookworm-slim AS node
+# Node and the web build run on the build machine's platform: their output is platform-neutral.
+FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-bookworm-slim AS node
 
 # ── Workspace manifests only, so the dependency layers stay cached between code changes ──────
 FROM oven/bun:${BUN_VERSION}-slim AS manifests
@@ -22,7 +25,9 @@ COPY packages/shared/package.json packages/shared/
 COPY packages/pptx/package.json packages/pptx/
 
 # ── Build the web app (tsc + Vite run on Node, like in CI) ───────────────────────────────────
-FROM manifests AS web
+FROM --platform=$BUILDPLATFORM oven/bun:${BUN_VERSION}-slim AS web
+WORKDIR /app
+COPY --from=manifests /app ./
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 RUN bun install --frozen-lockfile
 COPY tsconfig.base.json ./
@@ -31,12 +36,15 @@ COPY packages/pptx packages/pptx
 COPY apps/web apps/web
 RUN cd apps/web && bun run build
 
-# ── Production dependencies of the API (and the workspace packages it uses) ──────────────────
+# ── Production dependencies of the API (target platform: @napi-rs/canvas is native) ──────────
 FROM manifests AS api-deps
 RUN bun install --frozen-lockfile --production --filter @slider/api
 
 # ── Runtime ──────────────────────────────────────────────────────────────────────────────────
 FROM oven/bun:${BUN_VERSION}-slim AS runtime
+LABEL org.opencontainers.image.title="Slider" \
+      org.opencontainers.image.description="Review PowerPoint decks precisely: mark, comment, version." \
+      org.opencontainers.image.source="https://github.com/Root-Bert/slider"
 WORKDIR /app
 ENV NODE_ENV=production \
     PORT=8787 \
@@ -65,7 +73,7 @@ COPY apps/api/drizzle apps/api/drizzle
 COPY apps/api/src apps/api/src
 COPY --from=web /app/apps/web/dist apps/web/dist
 
-# Blobs, recordings and – without DATABASE_URL – the PGlite database.
+# Blobs, recordings, the generated secret and – without DATABASE_URL – the PGlite database.
 RUN mkdir -p /data && chown bun:bun /data
 VOLUME ["/data"]
 USER bun
@@ -74,5 +82,6 @@ EXPOSE 8787
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD ["bun", "-e", "fetch('http://127.0.0.1:' + (process.env.PORT || 8787) + '/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
 
-# Bun handles SIGTERM itself (server.ts closes the server and the database).
-CMD ["bun", "apps/api/src/server.ts"]
+# The supervisor runs server.ts and restarts it after settings were saved on /einrichtung; it
+# passes SIGTERM on (server.ts closes the server and the database).
+CMD ["bun", "apps/api/src/supervisor.ts"]

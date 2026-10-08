@@ -57,6 +57,24 @@ export function Component() {
 
           <LoginsSection microsoftConnected={user.microsoftConnected} />
           <PasskeysSection onNotify={showToast} />
+
+          {user.isInstanceAdmin && (
+            <SettingsSection
+              title="Diese Slider-Instanz"
+              description="Du bist Admin: Anmeldewege, E-Mail-Versand und Registrierung für alle."
+              aside={
+                <Link
+                  to={routes.setup()}
+                  className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-control-sm px-3 text-[13px] text-fg glass hover:bg-white/15"
+                >
+                  Einrichtung
+                  <Icon name="arrowForward" size={16} />
+                </Link>
+              }
+            >
+              {null}
+            </SettingsSection>
+          )}
         </div>
       </main>
       <Toast toast={toast} />

@@ -23,6 +23,7 @@ describe('hosting config', () => {
     const config = loadConfig(
       {
         NODE_ENV: 'production',
+        SLIDER_URL: 'https://slider.firma.de',
         SLIDER_SECRET: 'x'.repeat(32),
         MS_CLIENT_ID: 'id',
         MS_CLIENT_SECRET: 'secret',

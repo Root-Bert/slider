@@ -1,6 +1,9 @@
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { loadConfig } from '../src/config';
+import { hasLogin, loadConfig, withStoredSettings } from '../src/config';
 
 const quiet = () => {};
 const API_DATA_DIR = fileURLToPath(new URL('../.data', import.meta.url));
@@ -52,7 +55,7 @@ describe('loadConfig', () => {
   });
 
   describe('login (BER-129)', () => {
-    const SECRET = { SLIDER_SECRET: 'x'.repeat(32) };
+    const SECRET = { SLIDER_SECRET: 'x'.repeat(32), SLIDER_URL: 'https://slider.firma.de' };
     const MS = { MS_CLIENT_ID: 'id', MS_CLIENT_SECRET: 'secret' };
 
     it('logs in as the dev owner in development until a login provider is configured', () => {
@@ -90,10 +93,10 @@ describe('loadConfig', () => {
       ).not.toBeNull();
     });
 
-    it('refuses to start in production without a login, and never logs in as the dev owner there', () => {
-      expect(() => loadConfig({ NODE_ENV: 'production', ...SECRET }, quiet)).toThrow(
-        /No login is configured/,
-      );
+    it('starts in production without a login (setup page), but never logs in as the dev owner there', () => {
+      const bare = loadConfig({ NODE_ENV: 'production', ...SECRET }, quiet);
+      expect(hasLogin(bare)).toBe(false);
+      expect(bare.auth.devLogin).toBe(false);
       const prod = { NODE_ENV: 'production', ...SECRET, ...MS };
       expect(loadConfig(prod, quiet).auth.devLogin).toBe(false);
       expect(() => loadConfig({ ...prod, AUTH_DEV_LOGIN: 'true' }, quiet)).toThrow(
@@ -167,6 +170,58 @@ describe('loadConfig', () => {
       expect(loadConfig({ SIGNUP: 'open', SESSION_TTL_DAYS: '7' }, quiet).auth).toMatchObject({
         signup: 'open',
         sessionTtlDays: 7,
+      });
+    });
+  });
+
+  describe('self-hosting with one container', () => {
+    const PROD = { NODE_ENV: 'production', SLIDER_URL: 'https://slider.firma.de/' };
+
+    it('needs SLIDER_URL in production (WEB_ORIGIN still works) and drops a trailing slash', () => {
+      expect(() =>
+        loadConfig({ NODE_ENV: 'production', SLIDER_SECRET: 'x'.repeat(32) }, quiet),
+      ).toThrow(/SLIDER_URL/);
+      const dir = mkdtempSync(path.join(tmpdir(), 'slider-config-'));
+      try {
+        const config = loadConfig({ ...PROD, DATA_DIR: dir }, quiet);
+        expect(config.webOrigin).toBe('https://slider.firma.de');
+        expect(
+          loadConfig(
+            { NODE_ENV: 'production', WEB_ORIGIN: 'https://old.firma.de', DATA_DIR: dir },
+            quiet,
+          ).webOrigin,
+        ).toBe('https://old.firma.de');
+        expect(loadConfig({}, quiet).webOrigin).toBe('http://localhost:5173');
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('generates SLIDER_SECRET once into the data folder when it is not set', () => {
+      const dir = mkdtempSync(path.join(tmpdir(), 'slider-config-'));
+      try {
+        const first = loadConfig({ ...PROD, DATA_DIR: dir }, quiet).secret;
+        expect(first.length).toBeGreaterThanOrEqual(32);
+        expect(readFileSync(path.join(dir, 'secret'), 'utf8').trim()).toBe(first);
+        expect(statSync(path.join(dir, 'secret')).mode & 0o777).toBe(0o600);
+        expect(loadConfig({ ...PROD, DATA_DIR: dir }, quiet).secret).toBe(first);
+        expect(
+          loadConfig({ ...PROD, DATA_DIR: dir, SLIDER_SECRET: 'y'.repeat(32) }, quiet).secret,
+        ).toBe('y'.repeat(32));
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('merges settings from the setup page below the environment', () => {
+      const env = withStoredSettings(
+        { MS_CLIENT_ID: 'env-id', MS_CLIENT_SECRET: '', SIGNUP: 'invite' },
+        { MS_CLIENT_ID: 'stored-id', MS_CLIENT_SECRET: 'stored-secret', SIGNUP: 'open' },
+      );
+      expect(env).toMatchObject({
+        MS_CLIENT_ID: 'env-id',
+        MS_CLIENT_SECRET: 'stored-secret',
+        SIGNUP: 'invite',
       });
     });
   });
