@@ -44,6 +44,12 @@ export interface Config {
   sync: SyncConfig;
   /** Voice and video comments (BER-116). */
   media: MediaConfig;
+  /**
+   * Whether this instance limits its users at all: the hosted demo does (plans, one own
+   * organisation per account, recording storage), a self-hosted instance doesn't. See
+   * {@link isLimitedInstance}.
+   */
+  limited: boolean;
   /** Limits per plan (BER-130); the free plan's can be overridden by env (self-hosting). */
   plans: Record<PlanId, PlanLimits>;
   /** Self-hosting: Postgres server, built SPA, reverse proxy. Absent in tests. */
@@ -61,8 +67,11 @@ export interface MediaConfig {
    * mounted folder, later an R2 bucket. Defaults to `<dataDir>/media`.
    */
   dir: string;
-  /** Storage per deck owner; recordings by guests count towards the owner of the deck. */
-  quotaBytes: number;
+  /**
+   * Storage per deck owner; recordings by guests count towards the owner of the deck. `null` =
+   * unlimited.
+   */
+  quotaBytes: number | null;
   /** Per recording. */
   maxBytes: number;
 }
@@ -192,9 +201,12 @@ const envSchema = z.object({
     .optional(),
   MAIL_FROM: z.string().min(3).optional(),
   MEDIA_DIR: z.string().min(1).optional(),
-  MEDIA_QUOTA_BYTES: z.coerce.number().int().positive().default(DEFAULT_MEDIA_QUOTA_BYTES),
+  /** `0` = unlimited. */
+  MEDIA_QUOTA_BYTES: z.coerce.number().int().min(0).optional(),
   MAX_MEDIA_BYTES: z.coerce.number().int().positive().default(MAX_MEDIA_BYTES),
   /** `0` = unlimited. */
+  /** Forces the demo's limits on (`true`) or off (`false`); see {@link isLimitedInstance}. */
+  SLIDER_DEMO: booleanEnv.optional(),
   PLAN_FREE_MAX_MEMBERS: z.coerce.number().int().min(0).optional(),
   PLAN_FREE_MAX_DECKS: z.coerce.number().int().min(0).optional(),
   LIBREOFFICE_PATH: z.string().min(1).optional(),
@@ -203,6 +215,19 @@ const envSchema = z.object({
 /** Env value → limit: unset keeps the default, `0` means unlimited (`null`). */
 const limitFromEnv = (value: number | undefined, fallback: number | null) =>
   value === undefined ? fallback : value === 0 ? null : value;
+
+/** The hosted demo; every other address is a self-hosted instance. */
+export const DEMO_HOSTS = ['slider.bertro.dev'];
+
+/**
+ * Limits only apply on the hosted demo, where hosting costs money: recognised by its address,
+ * or forced with `SLIDER_DEMO=true`. Every other instance – self-hosted, and development too –
+ * runs without limits; the `PLAN_FREE_*` and `MEDIA_QUOTA_BYTES` variables still set some
+ * explicitly.
+ */
+export function isLimitedInstance(webOrigin: string, demo: boolean | undefined): boolean {
+  return demo ?? DEMO_HOSTS.includes(new URL(webOrigin).hostname);
+}
 
 export function loadConfig(
   env: NodeJS.ProcessEnv = process.env,
@@ -302,6 +327,8 @@ export function loadConfig(
       ].join('\n'),
     );
   }
+  const limited = isLimitedInstance(webOrigin, parsed.SLIDER_DEMO);
+  const planDefaults = limited ? DEFAULT_PLAN_LIMITS.free : { maxMembers: null, maxDecks: null };
   return {
     env: parsed.NODE_ENV,
     port: parsed.PORT,
@@ -327,14 +354,18 @@ export function loadConfig(
       dir: parsed.MEDIA_DIR
         ? path.resolve(REPO_ROOT, expandHome(parsed.MEDIA_DIR))
         : path.join(dataDir, 'media'),
-      quotaBytes: parsed.MEDIA_QUOTA_BYTES,
+      quotaBytes: limitFromEnv(
+        parsed.MEDIA_QUOTA_BYTES,
+        limited ? DEFAULT_MEDIA_QUOTA_BYTES : null,
+      ),
       maxBytes: parsed.MAX_MEDIA_BYTES,
     },
+    limited,
     plans: {
       ...DEFAULT_PLAN_LIMITS,
       free: {
-        maxMembers: limitFromEnv(parsed.PLAN_FREE_MAX_MEMBERS, DEFAULT_PLAN_LIMITS.free.maxMembers),
-        maxDecks: limitFromEnv(parsed.PLAN_FREE_MAX_DECKS, DEFAULT_PLAN_LIMITS.free.maxDecks),
+        maxMembers: limitFromEnv(parsed.PLAN_FREE_MAX_MEMBERS, planDefaults.maxMembers),
+        maxDecks: limitFromEnv(parsed.PLAN_FREE_MAX_DECKS, planDefaults.maxDecks),
       },
     },
     hosting: loadHostingConfig(env, parsed.NODE_ENV),

@@ -111,6 +111,20 @@ describe('own organisations', () => {
   });
 });
 
+describe('self-hosted (no limits)', () => {
+  beforeEach(() => setup({ limited: false }));
+
+  it('lets an account found as many organisations as it likes', async () => {
+    const anna = await signedInUser(ctx, { name: 'Anna', email: 'anna@firma.de' });
+    const found = (name: string) =>
+      ctx.request('/api/workspaces', { method: 'POST', json: { name }, cookie: anna.cookie });
+    expect((await found('Anna GmbH')).status).toBe(201);
+    expect((await found('Noch eine')).status).toBe(201);
+    const me = (await (await ctx.request('/api/me', { cookie: anna.cookie })).json()) as MeResponse;
+    expect(me.limits).toEqual({ canCreateWorkspace: true });
+  });
+});
+
 describe('seats (members + pending e-mail invites)', () => {
   beforeEach(() => setup());
 

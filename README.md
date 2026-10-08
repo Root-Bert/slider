@@ -248,10 +248,11 @@ The image (amd64 + arm64) is built by `.github/workflows/image.yml`: `:edge` fro
 `:1.2.3`/`:1.2`/`:1`/`:latest` from `v*` tags.
 
 Accounts are created on the first login (`SIGNUP=open`, the default; `invite` and `domains`
-restrict that). Everything lives in organisations: every account may found one and join any
-number by invitation. Organisations start on the free plan – 5 people (members plus pending
-e-mail invites) and 3 decks; self-hosters lift or change that with `PLAN_FREE_MAX_MEMBERS` /
-`PLAN_FREE_MAX_DECKS` (`0` = unlimited).
+restrict that). Everything lives in organisations. A self-hosted instance has no limits. Only
+the hosted demo (`SLIDER_URL` on `slider.bertro.dev`, or `SLIDER_DEMO=true`)
+puts organisations on the free plan – 5 people (members plus pending e-mail invites), 3 decks,
+one own organisation per account, 5 GB of recordings. `PLAN_FREE_MAX_MEMBERS` /
+`PLAN_FREE_MAX_DECKS` / `MEDIA_QUOTA_BYTES` set single limits anyway (`0` = unlimited).
 
 Without Docker: `bun run build`, then `NODE_ENV=production bun apps/api/src/server.ts`
 (`bun run start`). `DATABASE_URL` switches from PGlite to a Postgres server; `GET /api/health`
@@ -277,7 +278,8 @@ reply field) record a comment of up to five minutes (BER-116).
   any folder, e.g. a synced one; keys are `decks/<deckId>/media/<uuid>.<webm|mp4|ogg>`, so
   deleting a comment or deck deletes its recordings. The store is the same `BlobStorage`
   interface as the slide files – Cloudflare R2 needs only another adapter.
-- **5 GB per account.** `MEDIA_QUOTA_BYTES` (default 5 GB) counts every recording in a deck
+- **5 GB per account on the demo.** `MEDIA_QUOTA_BYTES` (default 5 GB on the demo, unlimited
+  elsewhere) counts every recording in a deck
   owner's decks, guests' recordings included, so a guest link cannot be used to fill the disk;
   `MAX_MEDIA_BYTES` (default 100 MB) limits one recording. The recorder shows the usage.
 - **Served with a permission check.** `GET /api/media/:id` checks access to the deck on every

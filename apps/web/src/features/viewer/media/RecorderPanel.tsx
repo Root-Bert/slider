@@ -173,14 +173,17 @@ function CameraPreview({
   );
 }
 
-/** "Transkript entsteht auf deinem Gerät · 1,2 GB von 5 GB belegt". */
+/** "Transkript entsteht auf deinem Gerät · 1,2 GB von 5 GB belegt" – no storage line without a quota. */
 function StorageHint({ deckId }: { deckId: string }) {
   const usage = useMediaUsage(deckId).data;
-  const nearlyFull = usage && usage.usedBytes / usage.limitBytes > 0.9;
+  const limitBytes = usage?.limitBytes ?? null;
+  const nearlyFull = usage && limitBytes !== null && usage.usedBytes / limitBytes > 0.9;
   return (
     <p className={cn('text-[11px]', nearlyFull ? 'text-warning' : 'text-fg-faint')}>
       Max. 5 Min. · Transkript entsteht auf deinem Gerät
-      {usage && ` · ${formatBytes(usage.usedBytes)} von ${formatBytes(usage.limitBytes)} belegt`}
+      {usage &&
+        limitBytes !== null &&
+        ` · ${formatBytes(usage.usedBytes)} von ${formatBytes(limitBytes)} belegt`}
     </p>
   );
 }

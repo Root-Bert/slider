@@ -60,11 +60,13 @@ export function UsageMeter({
 export function UsageSection({ workspace }: { workspace: Workspace }) {
   const { usage } = workspace;
   const pending = usage.seatsUsed - usage.members;
+  // Self-hosted instances have no limits – no plan to name there.
+  const unlimited = usage.maxMembers === null && usage.maxDecks === null;
   return (
     <SettingsSection
       title="Plan & Nutzung"
       description="Zusammenarbeit und Kommentare gibt es innerhalb der Organisation. Offene E-Mail-Einladungen halten einen Platz frei."
-      aside={<PlanBadge plan={workspace.plan} />}
+      aside={unlimited ? undefined : <PlanBadge plan={workspace.plan} />}
     >
       <div className="flex flex-col gap-5 sm:flex-row sm:gap-8">
         <UsageMeter

@@ -178,8 +178,16 @@ export async function assertSeatForJoin(
   if (taken >= limits.maxMembers) throw planLimit(workspaceFullMessage());
 }
 
-/** Whether the user still may found an organisation: one of their own that still exists. */
-export async function canCreateWorkspace(db: Executor, userId: string): Promise<boolean> {
+/**
+ * Whether the user still may found an organisation: one of their own that still exists – only on
+ * a limited instance (the demo); self-hosted, anyone may found as many as they like.
+ */
+export async function canCreateWorkspace(
+  db: Executor,
+  config: Pick<Config, 'limited'>,
+  userId: string,
+): Promise<boolean> {
+  if (!config.limited) return true;
   const [row] = await db
     .select({ count: count() })
     .from(workspaces)

@@ -232,7 +232,8 @@ export type UpdateTranscriptInput = z.infer<typeof updateTranscriptInputSchema>;
 
 export interface MediaUsage {
   usedBytes: number;
-  limitBytes: number;
+  /** `null` = unlimited (self-hosted). */
+  limitBytes: number | null;
 }
 
 export const updateCommentInputSchema = z

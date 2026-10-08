@@ -18,7 +18,7 @@ async function meResponse(deps: AppDeps, viewer: Viewer): Promise<MeResponse> {
   const [workspaces, pendingInvites, mayFound] = await Promise.all([
     listWorkspaces(deps, user.id),
     pendingInvitesFor(deps.db, user, deps.clock.now()),
-    canCreateWorkspace(deps.db, user.id),
+    canCreateWorkspace(deps.db, deps.config, user.id),
   ]);
   return {
     viewer,

@@ -43,15 +43,53 @@ describe('loadConfig', () => {
       /SYNC_POLL_INTERVAL_MS/,
     );
   });
-  it('uses the free plan (5 people, 3 decks) unless PLAN_FREE_* says otherwise; 0 = unlimited', () => {
-    expect(loadConfig({}, quiet).plans).toEqual({ free: { maxMembers: 5, maxDecks: 3 } });
-    expect(
-      loadConfig({ PLAN_FREE_MAX_MEMBERS: '25', PLAN_FREE_MAX_DECKS: '0' }, quiet).plans,
-    ).toEqual({ free: { maxMembers: 25, maxDecks: null } });
-    expect(
-      loadConfig({ PLAN_FREE_MAX_MEMBERS: '0', PLAN_FREE_MAX_DECKS: '' }, quiet).plans,
-    ).toEqual({ free: { maxMembers: null, maxDecks: 3 } });
+  it('uses the free plan (5 people, 3 decks) on the demo unless PLAN_FREE_* says otherwise; 0 = unlimited', () => {
+    const demo = (env: NodeJS.ProcessEnv) => loadConfig({ SLIDER_DEMO: 'true', ...env }, quiet);
+    expect(demo({}).plans).toEqual({ free: { maxMembers: 5, maxDecks: 3 } });
+    expect(demo({ PLAN_FREE_MAX_MEMBERS: '25', PLAN_FREE_MAX_DECKS: '0' }).plans).toEqual({
+      free: { maxMembers: 25, maxDecks: null },
+    });
+    expect(demo({ PLAN_FREE_MAX_MEMBERS: '0', PLAN_FREE_MAX_DECKS: '' }).plans).toEqual({
+      free: { maxMembers: null, maxDecks: 3 },
+    });
     expect(() => loadConfig({ PLAN_FREE_MAX_DECKS: '-1' }, quiet)).toThrow(/PLAN_FREE_MAX_DECKS/);
+  });
+
+  describe('self-hosted vs. demo', () => {
+    const prod = (url: string, env: NodeJS.ProcessEnv = {}) =>
+      loadConfig(
+        { NODE_ENV: 'production', SLIDER_SECRET: 'x'.repeat(32), SLIDER_URL: url, ...env },
+        quiet,
+      );
+    const UNLIMITED = { free: { maxMembers: null, maxDecks: null } };
+
+    it('runs a self-hosted instance without any limits', () => {
+      const config = prod('https://slider.firma.de');
+      expect(config.limited).toBe(false);
+      expect(config.plans).toEqual(UNLIMITED);
+      expect(config.media.quotaBytes).toBeNull();
+    });
+
+    it('keeps the limits on the hosted demo only, not in development', () => {
+      const demo = prod('https://slider.bertro.dev');
+      expect(demo.limited).toBe(true);
+      expect(demo.plans).toEqual({ free: { maxMembers: 5, maxDecks: 3 } });
+      expect(demo.media.quotaBytes).toBe(5 * 1024 ** 3);
+      expect(loadConfig({}, quiet).limited).toBe(false);
+      expect(loadConfig({}, quiet).plans).toEqual(UNLIMITED);
+    });
+
+    it('lets SLIDER_DEMO and explicit limits override the detection', () => {
+      expect(prod('https://slider.firma.de', { SLIDER_DEMO: 'true' }).limited).toBe(true);
+      expect(prod('https://slider.bertro.dev', { SLIDER_DEMO: 'false' }).plans).toEqual(UNLIMITED);
+      const capped = prod('https://slider.firma.de', {
+        PLAN_FREE_MAX_DECKS: '50',
+        MEDIA_QUOTA_BYTES: '1000',
+      });
+      expect(capped.plans).toEqual({ free: { maxMembers: null, maxDecks: 50 } });
+      expect(capped.media.quotaBytes).toBe(1000);
+      expect(loadConfig({ MEDIA_QUOTA_BYTES: '0' }, quiet).media.quotaBytes).toBeNull();
+    });
   });
 
   describe('login (BER-129)', () => {

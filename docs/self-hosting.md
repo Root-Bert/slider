@@ -160,10 +160,11 @@ die Umgebungsvariable hat dann Vorrang.
 | `SMTP_URL`, `MAIL_FROM`                               | eine Login-Art (Seite)     | Login-Mails (Link + Code) und Einladungen, z. B. `smtps://user:pass@smtp.anbieter.de:465` und `Slider <slider@firma.de>`. Nur zusammen. Die Seite setzt die URL aus Server, Port, Benutzer und Passwort zusammen.                                                                         |
 | `SESSION_TTL_DAYS`                                    | nein                       | Login-Dauer, Standard 30.                                                                                                                                                                                                                                                                 |
 | `MAX_UPLOAD_BYTES`                                    | nein                       | Max. PPTX-Größe, Standard 200 MB.                                                                                                                                                                                                                                                         |
-| `MEDIA_QUOTA_BYTES`, `MAX_MEDIA_BYTES`                | nein                       | Speicher für Sprach-/Video-Kommentare pro Deck-Besitzer (Standard 5 GB) bzw. pro Aufnahme (100 MB).                                                                                                                                                                                       |
+| `MEDIA_QUOTA_BYTES`, `MAX_MEDIA_BYTES`                | nein                       | Speicher für Sprach-/Video-Kommentare pro Deck-Besitzer (Standard unbegrenzt, `0` = unbegrenzt) bzw. pro Aufnahme (100 MB).                                                                                                                                                               |
 | `SYNC_POLL_INTERVAL_MS`, `SYNC_DEBOUNCE_MS`           | nein                       | Automatische Updates verlinkter Decks (Standard 2 min / 1 min, `0` = aus).                                                                                                                                                                                                                |
-| `PLAN_FREE_MAX_MEMBERS`                               | nein                       | Plätze pro Organisation im Free-Plan: Mitglieder plus offene E-Mail-Einladungen. Standard 5, `0` = unbegrenzt.                                                                                                                                                                            |
-| `PLAN_FREE_MAX_DECKS`                                 | nein                       | Präsentationen pro Organisation im Free-Plan (archivierte zählen mit). Standard 3, `0` = unbegrenzt.                                                                                                                                                                                      |
+| `PLAN_FREE_MAX_MEMBERS`                               | nein                       | Plätze pro Organisation: Mitglieder plus offene E-Mail-Einladungen. Standard unbegrenzt, `0` = unbegrenzt.                                                                                                                                                                                |
+| `PLAN_FREE_MAX_DECKS`                                 | nein                       | Präsentationen pro Organisation (archivierte zählen mit). Standard unbegrenzt, `0` = unbegrenzt.                                                                                                                                                                                          |
+| `SLIDER_DEMO`                                         | nein                       | `true` schaltet die Grenzen der gehosteten Demo ein (5 Plätze, 3 Präsentationen, eine eigene Organisation pro Konto, 5 GB Aufnahmen). Standard: aus.                                                                                                                                      |
 | `LIBREOFFICE_PATH`                                    | nein                       | Pfad zu LibreOffices `soffice` für die Folienbilder hochgeladener Decks. Leer = `soffice` im `PATH` (im Docker-Image enthalten), sonst `/Applications/LibreOffice.app/…` (macOS).                                                                                                         |
 
 ## Folienbilder
@@ -460,18 +461,20 @@ Was die Kosten treiben könnte, ist **Speicher**: PPTX-Dateien, Folienbilder und
 Sprach-/Video-Kommentare. Deshalb:
 
 - **`SIGNUP`**: Standard ist `open` – jede Person, die sich anmelden kann, bekommt ein Konto und
-  darf eine eigene Organisation gründen (mit den Grenzen des Free-Plans, siehe unten). Für eine
+  darf Organisationen gründen. Für eine
   Firmen-Instanz ist `SIGNUP=invite` (Konten nur per Einladung) oder `SIGNUP=domains` mit
   `SIGNUP_DOMAINS=firma.de` meist die bessere Wahl: Fremde können sich dann nicht selbst
   registrieren, Decks hochladen und so Speicher verbrauchen.
-- **Free-Plan** pro Organisation: 5 Plätze (Mitglieder plus offene E-Mail-Einladungen) und
-  3 Präsentationen. Jedes Konto darf eine Organisation selbst gründen; beitreten (per Einladung)
-  kann es beliebig vielen. Auf dem eigenen Server lassen sich die Grenzen mit
-  `PLAN_FREE_MAX_MEMBERS` / `PLAN_FREE_MAX_DECKS` ändern oder mit `0` aufheben. Bestehende
-  Organisationen über der Grenze behalten ihre Decks, können aber keine neuen anlegen.
+- **Keine Grenzen auf dem eigenen Server**: beliebig viele Mitglieder, Präsentationen,
+  Organisationen und Aufnahmen. Die Grenzen des Free-Plans (5 Plätze, 3 Präsentationen, eine
+  eigene Organisation pro Konto, 5 GB Aufnahmen) gelten nur in der gehosteten Demo
+  (`slider.bertro.dev`, erkannt an `SLIDER_URL`) oder mit `SLIDER_DEMO=true`. Einzelne Grenzen
+  lassen sich trotzdem setzen: `PLAN_FREE_MAX_MEMBERS`, `PLAN_FREE_MAX_DECKS`,
+  `MEDIA_QUOTA_BYTES`.
 - **Review-Links sind nur zum Ansehen**: Gäste ohne Konto sehen die Folien und Kommentare, können
   aber nicht kommentieren. Kommentieren ist Mitgliedern der Organisation vorbehalten.
-- `MEDIA_QUOTA_BYTES` und `MAX_UPLOAD_BYTES` begrenzen den Speicher pro Person bzw. Datei.
+- `MEDIA_QUOTA_BYTES` (Standard unbegrenzt) und `MAX_UPLOAD_BYTES` begrenzen den Speicher pro
+  Person bzw. Datei.
 - Platz im Blick behalten: `docker system df -v`, `df -h`. Mehr Platz gibt es per Hetzner Volume
   (wenige Cent pro GB und Monat) oder Server-Upgrade.
 

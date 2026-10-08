@@ -138,16 +138,18 @@ async function uniqueSlug(db: Executor, name: string): Promise<string> {
 }
 
 /**
- * Founds an organisation for `userId` (BER-130: one per account, as long as it exists). Joining
+ * Founds an organisation for `userId` (BER-130: on a limited instance one per account, as long
+ * as it exists). Joining
  * others by invitation is unlimited.
  */
 export async function foundWorkspace(
-  deps: Pick<AppDeps, 'db' | 'clock'>,
+  deps: Pick<AppDeps, 'db' | 'clock' | 'config'>,
   userId: string,
   name: string,
 ): Promise<WorkspaceRow> {
   return deps.db.transaction(async (tx) => {
-    if (!(await canCreateWorkspace(tx, userId))) throw planLimit(OWN_WORKSPACE_LIMIT_MESSAGE);
+    if (!(await canCreateWorkspace(tx, deps.config, userId)))
+      throw planLimit(OWN_WORKSPACE_LIMIT_MESSAGE);
     return createWorkspace(tx, userId, name, deps.clock.now());
   });
 }

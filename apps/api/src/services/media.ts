@@ -133,9 +133,11 @@ export async function createMediaComment(
   const mimeType = container && `${kind}/${container}`;
   if (!mimeType || !isAllowedMediaMimeType(kind, mimeType)) throw unsupportedMedia();
 
-  const used = await usedMediaBytes(deps.db, deck.ownerId);
-  if (used + file.bytes.byteLength > deps.config.media.quotaBytes)
-    throw quotaExceeded(deps.config.media.quotaBytes);
+  const { quotaBytes } = deps.config.media;
+  if (quotaBytes !== null) {
+    const used = await usedMediaBytes(deps.db, deck.ownerId);
+    if (used + file.bytes.byteLength > quotaBytes) throw quotaExceeded(quotaBytes);
+  }
 
   const mediaId = crypto.randomUUID();
   const storageKey = blobKeys.media(deckId, mediaId, container);

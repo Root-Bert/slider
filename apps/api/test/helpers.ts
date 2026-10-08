@@ -66,6 +66,7 @@ export const testConfig = (overrides: Partial<Config> = {}): Config => ({
   sync: { pollIntervalMs: 0, debounceMs: 60_000 },
   media: { dir: '/unused', quotaBytes: 5 * 1024 ** 3, maxBytes: 1024 * 1024 },
   // The real free plan (5 people, 3 decks); tests that need more pass `plans`.
+  limited: true,
   plans: DEFAULT_PLAN_LIMITS,
   ...overrides,
 });
