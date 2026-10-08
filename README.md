@@ -5,7 +5,8 @@ is about: _slide + position_.
 
 Drop in a PowerPoint (share link or `.pptx`) and send reviewers a link – no account needed. They
 click where something should change, draw a frame or an arrow, and write what they mean. You see
-every note in place, reply, and tick it off. The original file is never changed.
+every note in place, reply, and tick it off. The original file is never changed – unless you,
+the owner of a linked deck, add a slide with the ⊕ between two slides.
 
 > **Status: first prototype (milestones M1 + M2).** Upload, parsing, preview rendering, the review
 > viewer with pins/frames/freehand, threads, done-status, filters, PowerPoint comment import and
@@ -108,7 +109,8 @@ Microsoft Graph token. Without one, the start page explains what is missing.
    `http://localhost:5173/api/auth/microsoft/callback` (dev, through the Vite proxy) or
    `https://<your host>/api/auth/microsoft/callback`.
 3. _Certificates & secrets_ → new client secret.
-4. _API permissions_ → Microsoft Graph, delegated: `Files.Read.All`, `offline_access`, `User.Read`.
+4. _API permissions_ → Microsoft Graph, delegated: `Files.Read.All`, `offline_access`, `User.Read`
+   – plus `Files.ReadWrite.All` for inserting slides (see below; asked for only on first use).
 5. Copy `.env.example` to `.env` in the repo root, fill in `MS_CLIENT_ID`, `MS_CLIENT_SECRET`
    (optionally `MS_TENANT`, `MS_REDIRECT_URI`) and restart `bun run dev` – `.env` is only read at
    start-up.
@@ -149,6 +151,25 @@ are; a new version can be uploaded with `POST /api/decks/:id/revisions`.
   the current revision; the deck's `sync.lastSyncError` carries a German banner text (and a
   login link). Unreachable sources show up only after three failures in a row; checks back off.
 
+### Inserting slides
+
+The ⊕ between two slides appears on hover. For the owner of a OneDrive/SharePoint deck it inserts
+an empty slide right there – in the PowerPoint itself (BER-128, `POST /api/decks/:id/slides`);
+for everyone else who may comment it starts a "hier fehlt eine Folie" comment. Uploaded decks
+and plain URLs have nothing Slider could write to.
+
+- **Minimal edit.** `@slider/pptx` `insertSlide` adds the slide with the layout (and the empty
+  placeholders) of its neighbour and patches `presentation.xml`, its relationships, the content
+  types, the sections and the slide count by string insertion; every other part stays as it was.
+- **Never overwrites someone else's save.** The API reads the newest file with its `eTag`,
+  inserts the slide and uploads with `If-Match`. If anyone saved in between, Graph answers 412,
+  nothing is overwritten and the edit is redone on the newer file (up to three times).
+- **No double import.** The uploaded file becomes the next revision right away (trigger
+  `edit`) with Graph's new `cTag`, so the next poll sees no change.
+- **Incremental consent.** Reading needs only `Files.Read.All`. The first insert asks for
+  `Files.ReadWrite.All`: without that consent the API answers `microsoft_login_required` with a
+  `loginUrl` (`…/login?access=write&returnTo=/d/:id`) and the web app sends the owner there once.
+
 For the web app: `GET /api/decks/:id/status` is a cheap poll (`revisionNumber`, `sync`),
 `GET /api/decks/:id/revisions` lists versions with a summary ("3 Folien geändert, 1 neu,
 1 gelöscht, 5 neue Kommentare aus PowerPoint"), `GET /api/decks/:id/revisions/latest/diff`
@@ -172,6 +193,7 @@ Tracked in Linear (project _Slider_). This prototype covers:
 | BER-100/101     | Threads, connector lines, done status, filters                | ✅                                                    |
 | BER-102         | Guest review links (name only, revocable, expiring)           | ✅                                                    |
 | BER-103         | "A slide is missing here" gap comments                        | ✅                                                    |
+| BER-128         | ⊕ inserts a slide into the linked PowerPoint                  | ✅                                                    |
 | BER-112/113/115 | PowerPoint comments (modern + legacy) imported and labelled   | ✅                                                    |
 | BER-121         | Owner overview "Meine Reviews"                                | ✅ (login via Microsoft/magic link pending)           |
 | BER-88/92       | Import by link: OneDrive, SharePoint, direct `.pptx` URL      | ✅ (PDF render via Graph pending)                     |
