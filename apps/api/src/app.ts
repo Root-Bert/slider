@@ -10,6 +10,7 @@ import { serveWebApp } from './http/static';
 import { authRoutes } from './routes/auth';
 import { commentsRoutes } from './routes/comments';
 import { decksRoutes } from './routes/decks';
+import { filePickerRoutes } from './routes/file-picker';
 import { filesRoutes } from './routes/files';
 import { invitesRoutes } from './routes/invites';
 import { mediaRoutes } from './routes/media';
@@ -25,13 +26,21 @@ export function createApp(deps: AppDeps) {
 
   if (deps.config.env === 'development') app.use(logger());
   // `same-site`: the web dev server (another port on localhost) may embed slide images.
-  app.use(secureHeaders({ crossOriginResourcePolicy: 'same-site' }));
+  // `same-origin-allow-popups`: the OneDrive file picker is a Microsoft popup that talks back to
+  // the page through `window.opener` – plain `same-origin` would cut that link.
+  app.use(
+    secureHeaders({
+      crossOriginResourcePolicy: 'same-site',
+      crossOriginOpenerPolicy: 'same-origin-allow-popups',
+    }),
+  );
   app.use(cors({ origin: deps.config.webOrigin, credentials: true }));
   if (deps.config.hosting?.trustProxy) app.use(trustProxy());
 
   const api = new Hono()
     .route('/', meRoutes(deps))
     .route('/', decksRoutes(deps))
+    .route('/', filePickerRoutes(deps))
     .route('/', syncRoutes(deps))
     .route('/', commentsRoutes(deps))
     .route('/', mediaRoutes(deps))

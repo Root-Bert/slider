@@ -50,6 +50,9 @@ import type { MeLimits, MeUser, PendingInvite, Workspace } from './workspaces';
  * | GET    | /invites/:token                        |                            | InviteInfo            |
  * | POST   | /invites/:token/join                   | JoinInviteInput            | MeResponse (sets cookie) |
  * | POST   | /session/leave                         |                            | 204 (clears guest cookie) |
+ * | GET    | /microsoft/file-picker                 |                            | FilePickerSession     |
+ * | POST   | /microsoft/file-picker/token           | FilePickerTokenInput       | { token }             |
+ * | POST   | /decks/drive-item                      | ImportDriveItemInput       | Deck (201)            |
  * | GET    | /auth/providers                        |                            | AuthProviders         |
  * | GET    | /auth/microsoft/login?returnTo=        | (signed in: connects files) | 302 to Microsoft     |
  * | GET    | /auth/microsoft/callback               |                            | 302 back to the web app |
@@ -145,6 +148,31 @@ export type UpdateMeInput = z.infer<typeof updateMeInputSchema>;
 
 export const importLinkInputSchema = z.object({ url: z.url() });
 export type ImportLinkInput = z.infer<typeof importLinkInputSchema>;
+
+// ── OneDrive file picker ─────────────────────────────────────────────────────
+
+/** Which OneDrive File Picker v8 to open for the signed-in Microsoft account. */
+export const filePickerSessionSchema = z.object({
+  account: z.enum(['personal', 'business']),
+  /** The resource of the first token (`https://onedrive.live.com/picker` or the OneDrive host). */
+  baseUrl: z.string(),
+  /** Where the picker form is posted to. */
+  pickerUrl: z.string(),
+});
+export type FilePickerSession = z.infer<typeof filePickerSessionSchema>;
+
+/** The picker's `authenticate` command: a token for `resource`. */
+export const filePickerTokenInputSchema = z.object({ resource: z.string().max(2048) });
+export type FilePickerTokenInput = z.infer<typeof filePickerTokenInputSchema>;
+
+/** A file picked in the OneDrive file picker (`parentReference.driveId` + `id`). */
+export const importDriveItemInputSchema = z.object({
+  driveId: z.string().min(1).max(200),
+  itemId: z.string().min(1).max(200),
+  /** Omitted → the first workspace the user may create decks in. */
+  workspaceId: z.string().max(100).optional(),
+});
+export type ImportDriveItemInput = z.infer<typeof importDriveItemInputSchema>;
 
 export const updateDeckInputSchema = z
   .object({ title: z.string().trim().min(1).max(200), archived: z.boolean() })

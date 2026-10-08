@@ -124,7 +124,7 @@ async function requestToken(
   config: MicrosoftConfig,
   fetch: Fetch,
   grant: Record<string, string>,
-  access: MicrosoftAccess = 'read',
+  scope: string = MICROSOFT_SCOPES,
 ): Promise<TokenResponse> {
   const response = await fetch(`${authority(config)}/token`, {
     method: 'POST',
@@ -132,7 +132,7 @@ async function requestToken(
     body: new URLSearchParams({
       client_id: config.clientId,
       client_secret: config.clientSecret,
-      scope: scopesFor(access),
+      scope,
       ...grant,
     }),
     signal: AbortSignal.timeout(30_000),
@@ -179,8 +179,16 @@ export const refreshAccessToken = (
   fetch: Fetch,
   refreshToken: string,
   access: MicrosoftAccess = 'read',
+) => refreshForScope(config, fetch, refreshToken, scopesFor(access));
+
+/** Trades the refresh token for a token of another resource, e.g. SharePoint for the file picker. */
+export const refreshForScope = (
+  config: MicrosoftConfig,
+  fetch: Fetch,
+  refreshToken: string,
+  scope: string,
 ) =>
-  requestToken(config, fetch, { grant_type: 'refresh_token', refresh_token: refreshToken }, access);
+  requestToken(config, fetch, { grant_type: 'refresh_token', refresh_token: refreshToken }, scope);
 
 export interface MicrosoftTokensDeps {
   /** `null` when no app registration is configured – then nobody has tokens. */
@@ -272,9 +280,43 @@ export class MicrosoftTokens {
       access = 'read',
     }: { forceRefresh?: boolean; access?: MicrosoftAccess } = {},
   ): Promise<string | null> {
+    const cacheKey = `${userId}:${access}`;
+    try {
+      return await this.refreshed(userId, cacheKey, scopesFor(access), forceRefresh);
+    } catch (error) {
+      if (!(error instanceof MicrosoftAuthError)) throw error;
+      if (access === 'write') {
+        // Most likely no write consent yet (AADSTS65001): a write login fixes it.
+        this.deps.log.warn(`Microsoft write token refused for user ${userId}: ${error.message}`);
+        return null;
+      }
+      if (error.kind === 'admin_consent') throw microsoftConsentRequired();
+      this.deps.log.warn(`Microsoft token refresh failed for user ${userId}: ${error.message}`);
+      // invalid_grant (revoked, expired, password changed) and friends: sign in again.
+      await this.forget(userId);
+      return null;
+    }
+  }
+
+  /**
+   * A token for another resource than Graph, from the same refresh token – the OneDrive file
+   * picker needs SharePoint (`https://{host}/.default`) or `OneDrive.ReadOnly` tokens. `null`
+   * without a sign-in; a refusal (e.g. the app registration lacks the SharePoint permissions)
+   * throws {@link MicrosoftAuthError} and leaves the sign-in alone.
+   */
+  getScopedToken(userId: string, scope: string): Promise<string | null> {
+    return this.refreshed(userId, `${userId}:${scope}`, scope, false);
+  }
+
+  /** Cached access token for `scope`, else one traded for the stored refresh token. */
+  private async refreshed(
+    userId: string,
+    cacheKey: string,
+    scope: string,
+    forceRefresh: boolean,
+  ): Promise<string | null> {
     const config = this.deps.config;
     if (!config) return null;
-    const cacheKey = `${userId}:${access}`;
     const cached = this.cache.get(cacheKey);
     if (cached && !forceRefresh && cached.expiresAt > this.deps.clock.now().getTime()) {
       return cached.accessToken;
@@ -295,33 +337,20 @@ export class MicrosoftTokens {
       return null;
     }
 
-    try {
-      const tokens = await refreshAccessToken(config, this.fetch, refreshToken, access);
-      if (tokens.refresh_token && tokens.refresh_token !== refreshToken) {
-        await this.deps.db
-          .update(users)
-          .set({ msRefreshToken: await encryptToken(this.deps.secret, tokens.refresh_token) })
-          .where(eq(users.id, userId));
-      }
-      return this.remember(cacheKey, tokens);
-    } catch (error) {
-      if (!(error instanceof MicrosoftAuthError)) throw error;
-      if (access === 'write') {
-        // Most likely no write consent yet (AADSTS65001): a write login fixes it.
-        this.deps.log.warn(`Microsoft write token refused for user ${userId}: ${error.message}`);
-        return null;
-      }
-      if (error.kind === 'admin_consent') throw microsoftConsentRequired();
-      this.deps.log.warn(`Microsoft token refresh failed for user ${userId}: ${error.message}`);
-      // invalid_grant (revoked, expired, password changed) and friends: sign in again.
-      await this.forget(userId);
-      return null;
+    const tokens = await refreshForScope(config, this.fetch, refreshToken, scope);
+    if (tokens.refresh_token && tokens.refresh_token !== refreshToken) {
+      await this.deps.db
+        .update(users)
+        .set({ msRefreshToken: await encryptToken(this.deps.secret, tokens.refresh_token) })
+        .where(eq(users.id, userId));
     }
+    return this.remember(cacheKey, tokens);
   }
 
   async forget(userId: string): Promise<void> {
-    this.cache.delete(`${userId}:read`);
-    this.cache.delete(`${userId}:write`);
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(`${userId}:`)) this.cache.delete(key);
+    }
     await this.deps.db
       .update(users)
       .set({ msRefreshToken: null, msAccount: null })

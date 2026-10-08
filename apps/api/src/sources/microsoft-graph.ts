@@ -56,6 +56,7 @@ interface DriveItem {
   size?: number;
   eTag?: string;
   cTag?: string;
+  webUrl?: string;
   file?: { mimeType?: string };
   parentReference?: { driveId?: string };
   '@microsoft.graph.downloadUrl'?: string;
@@ -248,6 +249,7 @@ export class GraphClient {
       fileName: item.name,
       sizeBytes: item.size ?? 0,
       changeToken: item.cTag ?? item.eTag ?? null,
+      webUrl: item.webUrl,
       downloadUrl: item['@microsoft.graph.downloadUrl'],
     };
   }
@@ -387,6 +389,10 @@ export class OneDriveAdapter implements SourceAdapter {
     }
   }
 
+  async resolveItem(item: OneDriveItemId, context: SourceContext): Promise<RemoteFile> {
+    return this.graph.toRemoteFile(await this.graph.getItem(item, context, ''));
+  }
+
   download(file: RemoteFile, context: SourceContext): Promise<Uint8Array> {
     return this.graph.download(file, context);
   }
@@ -487,6 +493,10 @@ export class SharePointAdapter implements SourceAdapter {
     const anonymous = await this.tryAnonymous(link);
     if (anonymous) return anonymous;
     return this.graph.toRemoteFile(await this.graph.getShare(link.url.href, context));
+  }
+
+  async resolveItem(item: OneDriveItemId, context: SourceContext): Promise<RemoteFile> {
+    return this.graph.toRemoteFile(await this.graph.getItem(item, context, ''));
   }
 
   /**

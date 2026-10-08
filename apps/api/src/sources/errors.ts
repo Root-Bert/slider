@@ -14,6 +14,15 @@ export const microsoftLoginRequired = (link: string) =>
     loginUrl: microsoftLoginUrl(link),
   });
 
+export const MICROSOFT_LOGIN_MESSAGE =
+  'Melde dich mit deinem Microsoft-Konto an, um Dateien aus OneDrive auszuwählen.';
+
+/** Sign-in that comes back to `returnTo` (a web app path) instead of a pasted link. */
+export const microsoftLoginRequiredAt = (returnTo: string) =>
+  new ApiError(401, 'microsoft_login_required', MICROSOFT_LOGIN_MESSAGE, {
+    loginUrl: `/api/auth/microsoft/login?returnTo=${encodeURIComponent(returnTo)}`,
+  });
+
 export const WRITE_LOGIN_REQUIRED_MESSAGE =
   'Damit Slider die PowerPoint ändern darf, bestätige einmal den Schreibzugriff mit deinem Microsoft-Konto.';
 

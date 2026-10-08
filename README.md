@@ -122,7 +122,8 @@ Microsoft Graph token. Without one, the start page explains what is missing.
 3. _Certificates & secrets_ → new client secret.
 4. _API permissions_ → Microsoft Graph, delegated: `Files.Read.All`, `offline_access`, `User.Read`
    and (for signing in to Slider, BER-129) `openid`, `profile`, `email` – plus `Files.ReadWrite.All`
-   for inserting slides (see below; asked for only on first use).
+   for inserting slides (see below; asked for only on first use). For the OneDrive file picker
+   also SharePoint, delegated: `MyFiles.Read` and `AllSites.Read`.
 5. Copy `.env.example` to `.env` in the repo root, fill in `MS_CLIENT_ID`, `MS_CLIENT_SECRET`
    (optionally `MS_TENANT`, `MS_REDIRECT_URI`) and restart `bun run dev` – `.env` is only read at
    start-up.
@@ -132,6 +133,28 @@ anmelden" → Microsoft (authorization code + PKCE) → `/api/auth/microsoft/cal
 refresh token AES-GCM-encrypted (key derived from `SLIDER_SECRET`) → back to `/neu?link=…`, which
 retries the import automatically. If an organisation requires admin approval (AADSTS65001/90094),
 the page says so; an admin grants consent once for the tenant.
+
+### Picking from OneDrive
+
+"Aus OneDrive auswählen" on the start page opens Microsoft's own
+[OneDrive File Picker v8](https://learn.microsoft.com/onedrive/developer/controls/file-pickers/)
+in a popup, starting in "Geteilt" (files others shared with you) and showing only `.pptx`. It
+replaces a list of our own: Graph's `/me/drive/sharedWithMe` stops returning data in November
+2026, and the Search API has no personal accounts.
+
+- **Which picker.** `GET /api/microsoft/file-picker` asks Graph for `/me/drive`: personal
+  accounts get `https://onedrive.live.com/picker`, work and school accounts
+  `https://{tenant}-my.sharepoint.com/_layouts/15/FilePicker.aspx`.
+- **Tokens.** The picker does not take Graph tokens. It asks the page for SharePoint tokens
+  (`https://{host}/.default`) or, for personal accounts, `OneDrive.ReadOnly`; the page gets them
+  from `POST /api/microsoft/file-picker/token`, which trades the stored refresh token. Only the
+  account's own SharePoint tenant and Graph are served. Without the SharePoint permissions in the
+  app registration this answers `microsoft_consent_required` with a hint for the admin.
+- **Import.** The picked file comes back as drive and item id; `POST /api/decks/drive-item`
+  reads it through Graph like any OneDrive/SharePoint link, so automatic updates and inserting
+  slides work the same.
+- **Popup.** The API sends `Cross-Origin-Opener-Policy: same-origin-allow-popups`, otherwise the
+  picker could not talk back to the page.
 
 ## Automatic updates
 

@@ -4,14 +4,18 @@ import type { Deck, Workspace } from '@slider/shared';
 import { AppHeader } from '@/app/AppHeader';
 import { routes } from '@/app/routes';
 import { rememberWorkspace } from '@/features/workspaces/lib/last-workspace';
+import { useMe } from '@/lib/queries';
+import { useAuthProviders } from '@/lib/workspace-queries';
 import { cn } from '@/ui';
 import { LinkImportForm } from './components/LinkImportForm';
 import { NoAccessCard } from './components/NoAccessCard';
+import { OneDrivePickerButton } from './components/OneDrivePickerButton';
 import { RecentDecks } from './components/RecentDecks';
 import { UploadDropzone } from './components/UploadDropzone';
 import { UploadProgressCard } from './components/UploadProgressCard';
 import { useDeckUpload } from './hooks/useDeckUpload';
 import { useLinkImport } from './hooks/useLinkImport';
+import { useOneDrivePicker } from './hooks/useOneDrivePicker';
 import { PPTX_ACCEPT } from './lib/upload-validation';
 
 /**
@@ -25,6 +29,13 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
 
   const link = useLinkImport(workspace.id, openDeck);
   const upload = useDeckUpload(workspace.id, openDeck);
+  const picker = useOneDrivePicker(workspace.id, openDeck);
+  const { data: me } = useMe();
+  const providers = useAuthProviders();
+  // The picker needs this server's Microsoft app (the same one the login uses).
+  const oneDriveAvailable =
+    Boolean(me?.user?.microsoftConnected) ||
+    Boolean(providers.data?.providers.some((p) => p.id === 'microsoft'));
 
   // Back from the Microsoft login only `?link=` survives – the last workspace stands in.
   useEffect(() => rememberWorkspace(workspace.id), [workspace.id]);
@@ -74,6 +85,14 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
             emphasis={link.noAccess ? 'secondary' : 'primary'}
             showSources={!link.noAccess}
           />
+
+          {!link.noAccess && oneDriveAvailable && (
+            <OneDrivePickerButton
+              onOpen={picker.open}
+              pending={picker.pending}
+              error={picker.error}
+            />
+          )}
 
           {link.noAccess ? (
             <NoAccessCard info={link.noAccess} onUploadInstead={pickFile} />

@@ -2,7 +2,13 @@ import type { ParsedShareLink, ShareLinkKind } from '@slider/shared';
 import type { Config } from '../config';
 import type { MicrosoftTokens } from '../auth/microsoft';
 import { DirectUrlAdapter } from './direct-url';
-import { GraphClient, OneDriveAdapter, SharePointAdapter } from './microsoft-graph';
+import {
+  GraphClient,
+  OneDriveAdapter,
+  SharePointAdapter,
+  type OneDriveItemId,
+} from './microsoft-graph';
+import { OneDriveFilePicker } from './onedrive-picker';
 import { dnsLookup, type FetchLike, type LookupAll, type SafeFetchOptions } from './safe-fetch';
 
 /** A file in a cloud source, as resolved from a share link. */
@@ -13,6 +19,8 @@ export interface RemoteFile {
   sizeBytes: number;
   /** Graph cTag/eTag or HTTP ETag/Last-Modified; `null` when the source offers none. */
   changeToken: string | null;
+  /** Where the file opens in the browser (Graph `webUrl`), if the source tells. */
+  webUrl?: string;
   /** Pre-authenticated, short-lived download URL (Graph `@microsoft.graph.downloadUrl`). */
   downloadUrl?: string;
   /** Bytes already fetched while resolving, so `download` does not fetch twice. */
@@ -38,6 +46,8 @@ export interface SourceContext {
  */
 export interface SourceAdapter {
   resolve(link: ParsedShareLink, context: SourceContext): Promise<RemoteFile>;
+  /** Graph sources only: a file picked in the OneDrive file picker, by its drive item ids. */
+  resolveItem?(item: OneDriveItemId, context: SourceContext): Promise<RemoteFile>;
   download(file: RemoteFile, context: SourceContext): Promise<Uint8Array>;
   getChangeToken(file: RemoteFile, context: SourceContext): Promise<string>;
   /** The file rendered to PDF by its provider (Office), for faithful slide images (BER-94). */
@@ -51,11 +61,15 @@ export interface SourceAdapter {
   replace?(file: EditableFile, bytes: Uint8Array, context: SourceContext): Promise<string>;
 }
 
-export type SourceAdapters = Record<ShareLinkKind, SourceAdapter>;
+export type SourceAdapters = Record<ShareLinkKind, SourceAdapter> & {
+  /** Microsoft's OneDrive file picker (personal and work accounts alike). */
+  picker?: OneDriveFilePicker;
+};
 
 export interface SourceAdapterDeps {
   config: Pick<Config, 'maxUploadBytes' | 'microsoft'>;
-  tokens: Pick<MicrosoftTokens, 'getAccessToken'>;
+  tokens: Pick<MicrosoftTokens, 'getAccessToken'> &
+    Partial<Pick<MicrosoftTokens, 'getScopedToken'>>;
   /** Injected for tests; defaults to the global `fetch` and DNS. */
   fetch?: FetchLike;
   lookup?: LookupAll;
@@ -74,5 +88,12 @@ export function createSourceAdapters({
     onedrive: new OneDriveAdapter(graph, http),
     sharepoint: new SharePointAdapter(graph, direct, http),
     url: direct,
+    ...(tokens.getScopedToken
+      ? {
+          picker: new OneDriveFilePicker(graph, {
+            getScopedToken: tokens.getScopedToken.bind(tokens),
+          }),
+        }
+      : {}),
   };
 }

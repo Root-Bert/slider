@@ -2,13 +2,20 @@ import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { z } from 'zod';
-import { parseShareLink, updateDeckInputSchema } from '@slider/shared';
+import {
+  importDriveItemInputSchema,
+  parseShareLink,
+  updateDeckInputSchema,
+  type DeckSource,
+} from '@slider/shared';
 import { deckAccess, requireDeckAccess, requireOwner, viewerAccess } from '../auth/access';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import { decks, type DeckRow } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { ApiError, badRequest, fileTooLarge, notAPowerPoint } from '../http/errors';
 import { readJson } from '../http/validate';
+import { withPickerLogin } from '../sources/onedrive-picker';
+import type { RemoteFile, SourceAdapter, SourceContext } from '../sources/source-adapter';
 import { createDeckFromFile, deleteDeck, listWorkspaceDecks, toDeckDto } from '../services/decks';
 import { assertDeckSlot } from '../services/plans';
 import { listSlides } from '../services/slides';
@@ -33,6 +40,31 @@ async function touchLastViewed(deps: AppDeps, deck: DeckRow): Promise<void> {
   }
   await deps.db.update(decks).set({ lastViewedAt: now }).where(eq(decks.id, deck.id));
 }
+
+/** Downloads a resolved source file and starts its import. */
+async function importRemote(
+  deps: AppDeps,
+  target: { ownerId: string; workspaceId: string },
+  adapter: SourceAdapter,
+  context: SourceContext,
+  remote: RemoteFile,
+  source: { kind: Exclude<DeckSource, 'upload'>; url?: string },
+) {
+  const maxBytes = deps.config.maxUploadBytes;
+  if (!remote.fileName.toLowerCase().endsWith('.pptx')) throw notAPowerPoint();
+  if (remote.sizeBytes > maxBytes) throw fileTooLarge(maxBytes);
+  return createDeckFromFile(deps, target, {
+    fileName: remote.fileName,
+    bytes: await adapter.download(remote, context),
+    source: source.kind,
+    sourceUrl: source.url,
+    sourceRef: remote.ref,
+    changeToken: remote.changeToken,
+  });
+}
+
+/** Work and school drives have `b!…` ids; personal OneDrive ids are plain hex. */
+const driveKind = (driveId: string) => (driveId.startsWith('b!') ? 'sharepoint' : 'onedrive');
 
 const unsupportedLink = () =>
   new ApiError(400, 'unsupported_link', 'Kein gültiger OneDrive-, SharePoint- oder PPTX-Link.');
@@ -108,19 +140,41 @@ export function decksRoutes(deps: AppDeps) {
         const adapter = deps.sources[link.kind];
         const context = { userId: viewer.author.id };
         const remote = await adapter.resolve(link, context);
-        if (!remote.fileName.toLowerCase().endsWith('.pptx')) throw notAPowerPoint();
-        if (remote.sizeBytes > maxBytes) throw fileTooLarge(maxBytes);
-        const deck = await createDeckFromFile(
+        const deck = await importRemote(
           deps,
           { ownerId: viewer.author.id, workspaceId },
-          {
-            fileName: remote.fileName,
-            bytes: await adapter.download(remote, context),
-            source: link.kind,
-            sourceUrl: link.url.href,
-            sourceRef: remote.ref,
-            changeToken: remote.changeToken,
-          },
+          adapter,
+          context,
+          remote,
+          { kind: link.kind, url: link.url.href },
+        );
+        return c.json(deck, 201);
+      })
+
+      /** A file picked in Microsoft's OneDrive file picker. */
+      .post('/decks/drive-item', viewer, async (c) => {
+        const { viewer } = c.var;
+        requireOwner(viewer);
+        const input = await readJson(c, importDriveItemInputSchema);
+        const workspaceId = await resolveUploadWorkspace(deps, viewer.author.id, input.workspaceId);
+        await assertDeckSlot(deps.db, deps.config, workspaceId);
+
+        const kind = driveKind(input.driveId);
+        const adapter = deps.sources[kind];
+        if (!adapter.resolveItem) throw unsupportedLink();
+        const resolveItem = adapter.resolveItem.bind(adapter);
+        const context = { userId: viewer.author.id };
+        const remote = await withPickerLogin(() =>
+          resolveItem({ driveId: input.driveId, itemId: input.itemId }, context),
+        );
+        const deck = await importRemote(
+          deps,
+          { ownerId: viewer.author.id, workspaceId },
+          adapter,
+          context,
+          remote,
+          // Re-syncs go by `sourceRef`; the URL is for "open in PowerPoint".
+          { kind, url: remote.webUrl },
         );
         return c.json(deck, 201);
       })
