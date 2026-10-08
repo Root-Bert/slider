@@ -1,7 +1,8 @@
-import type { AccentColor, Slide } from '@slider/shared';
-import { memo, useRef, useState } from 'react';
+import { hitTestShapes, type AccentColor, type Slide } from '@slider/shared';
+import { memo, useRef, useState, type PointerEvent } from 'react';
 import { Badge, cn, Icon } from '@/ui';
 import type { Thread } from '../lib/comment-selectors';
+import { toSlidePoint } from '../lib/geometry';
 import { slideLabel } from '../lib/labels';
 import type { SlideBadge } from '../lib/revision-changes';
 import { ChangeBadge } from '../revisions/ChangeBadge';
@@ -51,6 +52,8 @@ interface SlideFrameProps {
   badge: SlideBadge | null;
   /** The revision the badge belongs to ("Geändert · V4"). */
   badgeVersion: number;
+  /** "Boxen zeigen": outline the PowerPoint shapes (not on thumbnail-sized slides). */
+  showShapes: boolean;
 }
 
 /**
@@ -73,6 +76,7 @@ export const SlideFrame = memo(function SlideFrame({
   color,
   badge,
   badgeVersion,
+  showShapes,
 }: SlideFrameProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const registry = useStageRegistry();
@@ -82,6 +86,15 @@ export const SlideFrame = memo(function SlideFrame({
   const small = w < THUMB_MAX_W;
   const drawing = isActive && tool !== null;
   const textBox = draft?.textBox ?? null;
+  const shapesShown = showShapes && !small;
+  // With all boxes shown, the one under the pointer gets its name (the mark tool shows its own).
+  const [hoveredShapeId, setHoveredShapeId] = useState<string | null>(null);
+  const trackShapes = shapesShown && !(drawing && tool === 'mark');
+  const onBoxPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (!trackShapes || event.pointerType === 'touch' || !boxRef.current) return;
+    const id = hitTestShapes(slide.shapes, toSlidePoint(event, boxRef.current))?.id ?? null;
+    if (id !== hoveredShapeId) setHoveredShapeId(id);
+  };
 
   const activate = () => {
     dispatch({ type: 'activeSlideChanged', slideId: slide.id });
@@ -110,6 +123,8 @@ export const SlideFrame = memo(function SlideFrame({
         data-slide-box={slide.id}
         className={cn('relative size-full', !drawing && !isActive && 'cursor-pointer')}
         onClick={drawing ? undefined : activate}
+        onPointerMove={onBoxPointerMove}
+        onPointerLeave={() => setHoveredShapeId(null)}
       >
         <div
           className={cn(
@@ -165,7 +180,14 @@ export const SlideFrame = memo(function SlideFrame({
             )}
           </div>
         )}
-        <AnnotationLayer slide={slide} threads={threads} emphasisId={emphasisId} draft={draft} />
+        <AnnotationLayer
+          slide={slide}
+          threads={threads}
+          emphasisId={emphasisId}
+          draft={draft}
+          showShapes={shapesShown}
+          hoveredShapeId={trackShapes ? hoveredShapeId : null}
+        />
         {drawing && (
           <DrawingSurface
             slide={slide}

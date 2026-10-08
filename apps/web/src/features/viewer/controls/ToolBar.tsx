@@ -10,7 +10,8 @@ import { ToolOptions } from './ToolOptions';
 const OPTIONS_ROOM = 48;
 
 /**
- * Tool bar at the left of the controls row (Figma D1): draw, voice, text, video – a compact pill
+ * Tool bar at the left of the controls row (Figma D1): draw, voice, text, video, and the switch
+ * for the PowerPoint boxes comments attach to – a compact pill
  * as tall as the filter pill. While the pen is picked, its options (variant, colour, undo/redo)
  * open anchored to it: above, over the minimap, or below when there is no room above.
  * "Text auf Folie" has no options: it writes in the author's colour.
@@ -106,7 +107,7 @@ function GuestViewOnly({ deckId, className }: { deckId: string; className?: stri
 }
 
 function ToolButtons() {
-  const { tool, lastPenTool, activeSlideId, draft } = useViewerState();
+  const { tool, lastPenTool, activeSlideId, draft, showShapes } = useViewerState();
   const dispatch = useViewerDispatch();
   const drawing = isPenTool(tool);
   const record = (kind: MediaKind) => {
@@ -142,6 +143,14 @@ function ToolButtons() {
         size="sm"
         active={draft?.recordKind === 'video'}
         onClick={() => record('video')}
+      />
+      <span aria-hidden className="mx-0.5 h-5 w-px bg-white/15" />
+      <IconButton
+        icon="gridView"
+        label={showShapes ? 'PowerPoint-Boxen ausblenden (B)' : 'PowerPoint-Boxen zeigen (B)'}
+        size="sm"
+        active={showShapes}
+        onClick={() => dispatch({ type: 'showShapesToggled' })}
       />
     </GlassPanel>
   );

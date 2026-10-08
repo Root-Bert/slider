@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { gapLabel, locationLabel } from './labels';
+import { gapLabel, locationLabel, shapeLabel } from './labels';
 
 const index = new Map([
   ['s1', 0],
@@ -21,4 +21,14 @@ it('describes gaps between, before and after slides', () => {
 
 it('labels slide comments with their 1-based number', () => {
   expect(locationLabel({ type: 'slide' }, 's2', indexOf)).toBe('Folie 2');
+});
+
+it('names a PowerPoint shape with the start of its text', () => {
+  expect(shapeLabel({ name: 'Bild 4', text: '' })).toBe('Bild 4');
+  expect(shapeLabel({ name: 'Titel 1', text: 'So funktioniert\n„Vorstand“' })).toBe(
+    'Titel 1 · „So funktioniert „Vorstand““',
+  );
+  expect(shapeLabel({ name: 'Textfeld 3', text: 'a'.repeat(40) })).toBe(
+    `Textfeld 3 · „${'a'.repeat(32)}…“`,
+  );
 });

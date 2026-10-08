@@ -1,5 +1,6 @@
 import {
   distance,
+  hitTestShapes,
   MIN_DRAG_DISTANCE,
   rectCenter,
   rectFromPoints,
@@ -8,6 +9,7 @@ import {
   type Point,
   type PathStroke,
   type Rect,
+  type Shape,
   type Slide,
 } from '@slider/shared';
 import { useState, type PointerEvent, type RefObject } from 'react';
@@ -29,7 +31,8 @@ const MAX_POINTS = 2000;
  * Mark tool: tap = pin, drag = frame. Shapes: drag spans the box. Other stroke tools: one stroke
  * per press. Text: tap opens a growing text box, drag a box of that width – while the box holds
  * text, pressing the slide only returns the focus to it (it moves by its edge or name tag).
- * Works for mouse, pen and touch.
+ * Works for mouse, pen and touch. With the mark tool it also reports `targetShape`: the PowerPoint
+ * shape the comment would attach to – under the pointer, or under the centre of a dragged area.
  */
 export function useDraftDrawing({
   slide,
@@ -47,6 +50,7 @@ export function useDraftDrawing({
 }) {
   const dispatch = useViewerDispatch();
   const [gesture, setGesture] = useState<Gesture | null>(null);
+  const [hover, setHover] = useState<Point | null>(null);
 
   const pointOf = (event: PointerEvent) =>
     boxRef.current ? toSlidePoint(event, boxRef.current) : null;
@@ -74,9 +78,13 @@ export function useDraftDrawing({
   };
 
   const onPointerMove = (event: PointerEvent<HTMLElement>) => {
-    if (!gesture) return;
     const point = pointOf(event);
     if (!point) return;
+    if (!gesture) {
+      // Only the mark tool attaches to shapes; touch has no hover.
+      if (tool === 'mark' && event.pointerType !== 'touch') setHover(point);
+      return;
+    }
     if (gesture.kind !== 'stroke') {
       setGesture({ ...gesture, end: point });
       return;
@@ -146,14 +154,27 @@ export function useDraftDrawing({
   };
 
   const onPointerCancel = () => setGesture(null);
+  const onPointerLeave = () => setHover(null);
 
   const previewRect: Rect | null =
     gesture && gesture.kind !== 'stroke' ? rectFromPoints(gesture.start, gesture.end) : null;
   const previewStroke: PathStroke | null = gesture?.kind === 'stroke' ? gesture.stroke : null;
+  const targetPoint =
+    tool !== 'mark'
+      ? null
+      : gesture?.kind === 'mark'
+        ? distance(gesture.start, gesture.end) < MIN_DRAG_DISTANCE
+          ? gesture.start
+          : rectCenter(rectFromPoints(gesture.start, gesture.end))
+        : gesture
+          ? null
+          : hover;
+  const targetShape: Shape | null = targetPoint ? hitTestShapes(slide.shapes, targetPoint) : null;
 
   return {
-    handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel },
+    handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onPointerLeave },
     previewRect,
     previewStroke,
+    targetShape,
   };
 }

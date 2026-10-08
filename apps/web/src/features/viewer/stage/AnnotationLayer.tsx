@@ -1,4 +1,12 @@
-import { isPathStroke, type Comment, type Point, type Rect, type Slide } from '@slider/shared';
+import {
+  isPathStroke,
+  type Anchor,
+  type Comment,
+  type Point,
+  type Rect,
+  type Shape,
+  type Slide,
+} from '@slider/shared';
 import { memo, useMemo } from 'react';
 import { useUpdateComment } from '@/lib/queries';
 import { cn } from '@/ui';
@@ -11,6 +19,7 @@ import { strokePath, strokesBounds } from '../lib/stroke-path';
 import { DraftMark } from './DraftMark';
 import { Pin, type MarkState } from './Pin';
 import { RectFrame } from './RectFrame';
+import { ShapeOutline } from './ShapeOutline';
 import { StrokePath } from './StrokePath';
 import { TextMark } from './TextBox';
 
@@ -19,6 +28,10 @@ interface AnnotationLayerProps {
   threads: Thread[];
   emphasisId: string | null;
   draft: Draft | null;
+  /** "Boxen zeigen": outline every PowerPoint shape. */
+  showShapes?: boolean;
+  /** Shape under the pointer while all boxes are shown – it gets its name. */
+  hoveredShapeId?: string | null;
 }
 
 interface Mark {
@@ -35,12 +48,16 @@ interface Mark {
  * on its point, at a frame's top-left corner, or where a drawing starts. Frames, drawings and badge
  * share the author's colour, like the connector line. Text on the slide ("Text auf Folie")
  * is HTML in container units (`container-type: size`) and follows the same visibility as drawings.
+ * Below the marks: the PowerPoint shape the hovered/focused comment (or the draft) is attached to,
+ * and with "Boxen zeigen" every shape – the raster image does not show them.
  */
 export const AnnotationLayer = memo(function AnnotationLayer({
   slide,
   threads,
   emphasisId,
   draft,
+  showShapes = false,
+  hoveredShapeId = null,
 }: AnnotationLayerProps) {
   const dispatch = useViewerDispatch();
   const { viewer, deck, canComment } = useViewerData();
@@ -58,6 +75,13 @@ export const AnnotationLayer = memo(function AnnotationLayer({
     return result;
   }, [threads, slide.shapes, emphasisId]);
 
+  const emphasized = marks.find((mark) => mark.state === 'emphasized');
+  const emphasizedShape = emphasized
+    ? anchoredShape(emphasized.thread.root.anchor, slide.shapes)
+    : null;
+  const draftShape = draft ? anchoredShape(draft.anchor, slide.shapes) : null;
+  const highlighted = new Set([emphasizedShape?.id, draftShape?.id]);
+
   // While composing, existing marks step back (B2).
   const composing = draft !== null;
   const opacityOf = (mark: Mark) => {
@@ -71,6 +95,33 @@ export const AnnotationLayer = memo(function AnnotationLayer({
 
   return (
     <div className="pointer-events-none absolute inset-0 [container-type:size]">
+      {showShapes &&
+        slide.shapes
+          .filter((shape) => !highlighted.has(shape.id))
+          .map((shape) => (
+            <ShapeOutline
+              key={shape.id}
+              shape={shape}
+              variant="faint"
+              labelled={shape.id === hoveredShapeId}
+            />
+          ))}
+      {emphasizedShape && emphasized && !draftShape && (
+        <ShapeOutline
+          shape={emphasizedShape}
+          variant="emphasis"
+          color={accentColor(emphasized.thread.root.author.color)}
+          labelled
+        />
+      )}
+      {draftShape && (
+        <ShapeOutline
+          shape={draftShape}
+          variant="target"
+          color={accentColor(viewer.author.color)}
+          labelled
+        />
+      )}
       <svg
         className="absolute inset-0 size-full overflow-visible"
         viewBox="0 0 1 1"
@@ -188,6 +239,13 @@ export const AnnotationLayer = memo(function AnnotationLayer({
     </div>
   );
 });
+
+/** The PowerPoint shape a pin or frame is attached to, if it still exists on this slide. */
+function anchoredShape(anchor: Anchor, shapes: readonly Shape[]): Shape | null {
+  if (anchor.type !== 'point' && anchor.type !== 'rect') return null;
+  const ref = anchor.shapeRef;
+  return ref ? (shapes.find((shape) => shape.id === ref.shapeId) ?? null) : null;
+}
 
 /** Where a comment's badge sits: its point, the start of its drawing, or the area's corner. */
 function badgePoint(comment: Comment, area: Rect): Point {

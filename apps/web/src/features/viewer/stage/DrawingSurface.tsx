@@ -4,6 +4,7 @@ import { accentColor } from '@/lib/accent';
 import { useDraftDrawing } from '../hooks/useDraftDrawing';
 import type { Tool } from '../state/viewer-state';
 import { RectFrame } from './RectFrame';
+import { ShapeOutline } from './ShapeOutline';
 import { StrokePath } from './StrokePath';
 
 interface DrawingSurfaceProps {
@@ -16,11 +17,12 @@ interface DrawingSurfaceProps {
 }
 
 /**
- * Transparent layer above a slide that captures pointer input while a tool is active.
+ * Transparent layer above a slide that captures pointer input while a tool is active. With the
+ * mark tool it outlines the PowerPoint shape the comment would attach to.
  * `touch-action: none` only here, so the stage stays swipeable when no tool is selected.
  */
 export function DrawingSurface({ slide, boxRef, tool, color, hasText }: DrawingSurfaceProps) {
-  const { handlers, previewRect, previewStroke } = useDraftDrawing({
+  const { handlers, previewRect, previewStroke, targetShape } = useDraftDrawing({
     slide,
     boxRef,
     tool,
@@ -34,6 +36,9 @@ export function DrawingSurface({ slide, boxRef, tool, color, hasText }: DrawingS
       // Text too: a box is drawn first – the I-beam only appears in the placed box.
       className="absolute inset-0 z-20 cursor-crosshair touch-none select-none"
     >
+      {targetShape && (
+        <ShapeOutline shape={targetShape} variant="target" color={accentColor(color)} labelled />
+      )}
       {previewRect && <RectFrame rect={previewRect} color={accentColor(color)} dashed />}
       {previewStroke && (
         <svg

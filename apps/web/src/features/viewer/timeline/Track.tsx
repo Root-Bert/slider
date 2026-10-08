@@ -25,8 +25,16 @@ interface TrackProps {
  */
 export function Track({ layout, range, snap }: TrackProps) {
   const { slides, gapThreads, canComment, canInsertSlides } = useViewerData();
-  const { activeSlideId, tool, color, draft, focusedThreadId, hoveredThreadId, showChanges } =
-    useViewerState();
+  const {
+    activeSlideId,
+    tool,
+    color,
+    draft,
+    focusedThreadId,
+    hoveredThreadId,
+    showChanges,
+    showShapes,
+  } = useViewerState();
   const { badges, deletedSlides, deletedThreads, revisionNumber } = useRevisionData();
   const { bySlide } = useCommentThreads();
   const emphasisId = focusedThreadId ?? hoveredThreadId;
@@ -66,6 +74,7 @@ export function Track({ layout, range, snap }: TrackProps) {
           color={color}
           badge={showChanges ? (badges.get(slide.id) ?? null) : null}
           badgeVersion={revisionNumber}
+          showShapes={showShapes}
         />
         <GapDivider
           gapKey={key}

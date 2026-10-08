@@ -1,4 +1,4 @@
-import type { Anchor, Comment } from '@slider/shared';
+import type { Anchor, Comment, Shape } from '@slider/shared';
 
 /** German copy for where a comment lives ("Folie 3", "Zwischen Folie 3 und 4"). */
 
@@ -41,3 +41,14 @@ const excerpt = (body: string) => (body.length > 60 ? `${body.slice(0, 57)}…` 
 /** Accessible name of a comment's mark on the slide. */
 export const markLabel = (comment: Pick<Comment, 'author' | 'body'>) =>
   `Kommentar von ${comment.author.name}${comment.body ? `: ${excerpt(comment.body)}` : ''}`;
+
+const SHAPE_SNIPPET_LENGTH = 32;
+
+/** "Titel 1 · „So funktioniert …“" – a PowerPoint shape's name, plus the start of its text. */
+export function shapeLabel(shape: Pick<Shape, 'name' | 'text'>): string {
+  const text = shape.text.replace(/\s+/g, ' ').trim();
+  if (!text) return shape.name;
+  const snippet =
+    text.length > SHAPE_SNIPPET_LENGTH ? `${text.slice(0, SHAPE_SNIPPET_LENGTH)}…` : text;
+  return `${shape.name} · „${snippet}“`;
+}

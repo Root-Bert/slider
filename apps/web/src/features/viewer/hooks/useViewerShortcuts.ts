@@ -6,7 +6,7 @@ import { useViewerDispatch, useViewerState } from '../state/viewer-state';
 
 /**
  * Global keyboard shortcuts of the viewer:
- * ←/→ previous/next slide, Home/End first/last, F fullscreen,
+ * ←/→ previous/next slide, Home/End first/last, F fullscreen, B PowerPoint boxes on/off,
  * ⌘Z / ⇧⌘Z undo/redo while drawing, Esc cancels the draft → drops the tool → closes the thread (or the deleted slides panel).
  */
 export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen: () => void }) {
@@ -62,6 +62,10 @@ export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen:
       case 'f':
       case 'F':
         onToggleFullscreen();
+        break;
+      case 'b':
+      case 'B':
+        dispatch({ type: 'showShapesToggled' });
         break;
       default:
         return;

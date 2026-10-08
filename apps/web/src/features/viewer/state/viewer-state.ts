@@ -72,6 +72,8 @@ export interface ViewerState {
   showChanges: boolean;
   /** Side panel with the slides deleted in later revisions and their comments (BER-109). */
   deletedPanelOpen: boolean;
+  /** "Boxen zeigen": outlines of the PowerPoint shapes comments can attach to. */
+  showShapes: boolean;
 }
 
 export type ViewerAction =
@@ -106,6 +108,7 @@ export type ViewerAction =
   | { type: 'splitChanged'; split: number | null }
   | { type: 'showChangesSet'; show: boolean }
   | { type: 'deletedPanelSet'; open: boolean }
+  | { type: 'showShapesToggled' }
   /** A new revision arrived: drop what points at slides that are gone (BER-107). */
   | { type: 'slidesReplaced'; slideIds: readonly string[]; fallbackSlideId: string | null };
 
@@ -132,6 +135,7 @@ export function createInitialState(options: {
     split: options.split == null ? null : clampSplit(options.split),
     showChanges: options.showChanges ?? true,
     deletedPanelOpen: false,
+    showShapes: false,
   };
 }
 
@@ -337,6 +341,8 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
     }
     case 'showChangesSet':
       return next.showChanges === action.show ? next : { ...next, showChanges: action.show };
+    case 'showShapesToggled':
+      return { ...next, showShapes: !next.showShapes };
     case 'deletedPanelSet':
       return action.open
         ? { ...next, deletedPanelOpen: true, threadPanelOpen: false, focusedThreadId: null }
