@@ -210,6 +210,8 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
     const hi = list.scrollLeft + list.clientWidth - MINIMAP_PAD - half;
     let centre = contentX(clientX) - drag.offset;
     if (hi > lo) centre = Math.min(Math.max(centre, lo), hi);
+    // The user scrolls: the slide most in view becomes active (`useScrollActiveSlide`).
+    registry.endProgrammaticScroll();
     scroller.scrollLeft = scrollLeftForBracket(layout, miniTrack, centre, scroller.clientWidth);
   };
   // A row that scrolls (long deck) scrolls along while the bracket is held near its edges.

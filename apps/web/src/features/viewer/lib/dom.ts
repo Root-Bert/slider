@@ -15,6 +15,9 @@ export function rafThrottle(callback: () => void): { schedule: () => void; cance
         callback();
       });
     },
-    cancel: () => cancelAnimationFrame(frame),
+    cancel: () => {
+      cancelAnimationFrame(frame);
+      frame = 0;
+    },
   };
 }

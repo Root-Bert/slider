@@ -29,12 +29,50 @@ export interface StageRegistry {
   getSlideElement: (slideId: string) => HTMLElement | null;
   getGapElement: (gapKey: string) => HTMLElement | null;
   revealSlide: (slideId: string, options?: RevealOptions) => void;
+  /**
+   * Scrolls the track sideways on the app's behalf (reveals, size anchoring). Until that scroll
+   * settles, `isProgrammaticScroll` is true, so scrolling doesn't pick another active slide.
+   */
+  scrollTrackTo: (left: number, behavior?: ScrollBehavior) => void;
+  /** A programmatic scroll is still in flight (see `scrollTrackTo`). */
+  isProgrammaticScroll: () => boolean;
+  /** Called per scroll event: a programmatic scroll that keeps moving stays in flight. */
+  noteScroll: () => void;
+  /**
+   * `scrollend`: over once the track arrived where it was sent – a scroll it interrupted ends
+   * too, and that must not end the new one.
+   */
+  settleProgrammaticScroll: () => void;
+  /** The user takes over (wheel, touch, scrollbar, minimap bracket). */
+  endProgrammaticScroll: () => void;
 }
+
+/** Before its first scroll event a smooth scroll counts as in flight this long … */
+const PROGRAMMATIC_START_MS = { smooth: 500, instant: 250 } as const;
+/** … then until this long after its last scroll event (fallback where `scrollend` is missing) … */
+const PROGRAMMATIC_IDLE_MS = 200;
+/** … and never longer than this in all. */
+const PROGRAMMATIC_MAX_MS = 3000;
 
 export function createStageRegistry(): StageRegistry {
   let scroller: HTMLElement | null = null;
   let published: PublishedLayout | null = null;
   const find = (selector: string) => scroller?.querySelector<HTMLElement>(selector) ?? null;
+  // A programmatic scroll is in flight until `until` (0 = none); `deadline` caps it.
+  let until = 0;
+  let deadline = 0;
+  let target = 0;
+
+  const scrollTrackTo = (left: number, behavior: ScrollBehavior = 'instant') => {
+    if (!scroller || Math.abs(left - scroller.scrollLeft) < 0.5) return;
+    const now = performance.now();
+    until = now + PROGRAMMATIC_START_MS[behavior === 'smooth' ? 'smooth' : 'instant'];
+    deadline = now + PROGRAMMATIC_MAX_MS;
+    target = left;
+    // Assigning scrollLeft aborts a running smooth scroll (`scrollTo` would offset it).
+    if (behavior === 'smooth') scroller.scrollTo({ left, behavior });
+    else scroller.scrollLeft = left;
+  };
 
   return {
     setScroller: (element) => {
@@ -58,10 +96,20 @@ export function createStageRegistry(): StageRegistry {
         scroller.clientWidth,
         effective,
       );
-      if (Math.abs(left - scroller.scrollLeft) < 0.5) return;
-      // Assigning scrollLeft aborts a running smooth scroll (`scrollTo` would offset it).
-      if (behavior === 'smooth') scroller.scrollTo({ left, behavior });
-      else scroller.scrollLeft = left;
+      scrollTrackTo(left, behavior);
+    },
+    scrollTrackTo,
+    isProgrammaticScroll: () => until !== 0 && performance.now() < until,
+    noteScroll: () => {
+      if (until === 0) return;
+      const now = performance.now();
+      until = now < until ? Math.min(now + PROGRAMMATIC_IDLE_MS, deadline) : 0;
+    },
+    settleProgrammaticScroll: () => {
+      if (until !== 0 && scroller && Math.abs(scroller.scrollLeft - target) <= 1) until = 0;
+    },
+    endProgrammaticScroll: () => {
+      until = 0;
     },
   };
 }

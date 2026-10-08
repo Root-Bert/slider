@@ -10,8 +10,10 @@ import {
 import { cn } from '@/ui';
 import { ConnectorLines } from '../comments/ConnectorLines';
 import { useIsNarrow } from '../hooks/useMediaQuery';
+import { useScrollActiveSlide } from '../hooks/useScrollActiveSlide';
 import { useTimelineMetrics } from '../hooks/useTimelineMetrics';
 import { useTimelineWheel } from '../hooks/useTimelineWheel';
+import { rafThrottle } from '../lib/dom';
 import {
   anchoredScrollLeft,
   revealScrollLeft,
@@ -20,7 +22,6 @@ import {
   slideHeightAt,
   splitForWidth,
   TRACK_PAD_TOP,
-  TRACK_PAD_X,
   trailingWidth,
   visibleRange,
   type TrackLayout,
@@ -37,8 +38,6 @@ import { Track } from './Track';
 
 /** The active slide grows to at least this width when a drawing tool is picked. */
 const DRAW_MIN_W = 640;
-/** On phones the slide nearest to the snap point becomes active once scrolling settles. */
-const SETTLE_MS = 120;
 
 type Range = { first: number; last: number };
 const sameRange = (a: Range, b: Range) => a.first === b.first && a.last === b.last;
@@ -145,48 +144,28 @@ export function Timeline({ controls }: { controls: ReactNode }) {
         anchorRef.current ?? defaultAnchor(prev, scrollLeftRef.current, width);
       anchorRef.current = null;
       const left = anchoredScrollLeft(prev, layout, anchor.contentX, anchor.viewportX, width);
-      scroller.scrollLeft =
+      registry.scrollTrackTo(
         anchor.keep === undefined
           ? left
-          : revealScrollLeft(layout, anchor.keep, left, width, 'nearest');
+          : revealScrollLeft(layout, anchor.keep, left, width, 'nearest'),
+      );
     }
     updateRange();
   }, [layout, clientW, registry, initialSlideId]);
 
-  // Scrolling: update the window; on phones the slide at the snap point becomes active.
+  // Scrolling: update the window.
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
-    let frame = 0;
-    let settle = 0;
-    const onScroll = () => {
-      if (!frame)
-        frame = requestAnimationFrame(() => {
-          frame = 0;
-          updateRange();
-        });
-      if (!narrow) return;
-      window.clearTimeout(settle);
-      settle = window.setTimeout(() => {
-        const current = registry.getLayout();
-        if (!current) return;
-        const target = scroller.scrollLeft + TRACK_PAD_X;
-        let best = 0;
-        current.layout.slides.forEach((slide, index) => {
-          if (Math.abs(slide.x - target) < Math.abs(current.layout.slides[best]!.x - target))
-            best = index;
-        });
-        const slide = slides[best];
-        if (slide) dispatch({ type: 'activeSlideChanged', slideId: slide.id });
-      }, SETTLE_MS);
-    };
-    scroller.addEventListener('scroll', onScroll, { passive: true });
+    const update = rafThrottle(updateRange);
+    scroller.addEventListener('scroll', update.schedule, { passive: true });
     return () => {
-      scroller.removeEventListener('scroll', onScroll);
-      cancelAnimationFrame(frame);
-      window.clearTimeout(settle);
+      scroller.removeEventListener('scroll', update.schedule);
+      update.cancel();
     };
-  }, [narrow, registry, slides, dispatch]);
+  }, []);
+  // … and the slide most in view becomes active.
+  useScrollActiveSlide(scrollerRef);
 
   // A new revision reorders the track: the active slide (kept by its id) stays in view.
   const slideOrder = useMemo(() => slides.map((slide) => slide.id).join(), [slides]);
