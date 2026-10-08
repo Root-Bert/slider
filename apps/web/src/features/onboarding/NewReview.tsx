@@ -11,7 +11,6 @@ import { LinkImportForm } from './components/LinkImportForm';
 import { NoAccessCard } from './components/NoAccessCard';
 import { OneDrivePickerButton } from './components/OneDrivePickerButton';
 import { OneDrivePickerDialog } from './components/OneDrivePickerDialog';
-import { RecentDecks } from './components/RecentDecks';
 import { UploadDropzone } from './components/UploadDropzone';
 import { UploadProgressCard } from './components/UploadProgressCard';
 import { useDeckUpload } from './hooks/useDeckUpload';
@@ -56,73 +55,65 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
         className={cn(
           'flex flex-1 justify-center px-4 pb-16',
           // A3 drops the heading; the field moves down to where the card reads centred (Figma 92:2472).
-          link.noAccess ? 'pt-[clamp(8px,19vh,190px)]' : 'pt-[clamp(8px,6vh,64px)]',
+          link.noAccess ? 'pt-[clamp(8px,19vh,190px)]' : 'pt-[clamp(24px,12vh,128px)]',
         )}
       >
-        <div
-          className={cn(
-            'flex w-full flex-col gap-6',
-            link.noAccess ? 'max-w-[560px]' : 'max-w-[456px]',
-          )}
-        >
+        <div className="flex w-full max-w-[560px] flex-col gap-8">
           {!link.noAccess && (
-            <hgroup className="flex flex-col items-center gap-2 text-center">
-              <h1 className="text-[28px] leading-tight font-semibold tracking-tight text-fg">
-                Slider
+            <hgroup className="flex flex-col gap-1.5">
+              <h1 className="text-2xl leading-tight font-semibold tracking-tight text-fg">
+                Neuer Review
               </h1>
               <p className="text-sm text-fg-subtle">
-                Folien teilen. Feedback direkt auf der Folie sammeln.
+                Präsentation aus OneDrive oder SharePoint öffnen und Feedback direkt auf den Folien
+                sammeln.
               </p>
             </hgroup>
           )}
 
-          <LinkImportForm
-            url={link.url}
-            onChange={link.change}
-            onBlur={link.blur}
-            onSubmit={link.submit}
-            error={link.error}
-            pending={link.pending}
-            emphasis={link.noAccess ? 'secondary' : 'primary'}
-            showSources={!link.noAccess}
-          />
-
-          {!link.noAccess && oneDriveAvailable && (
-            <OneDrivePickerButton
-              onOpen={picker.open}
-              pending={picker.pending}
-              error={picker.error}
+          <div className="flex flex-col gap-3">
+            <LinkImportForm
+              url={link.url}
+              onChange={link.change}
+              onBlur={link.blur}
+              onSubmit={link.submit}
+              error={link.error}
+              pending={link.pending}
+              emphasis={link.noAccess ? 'secondary' : 'primary'}
+              label={link.noAccess ? undefined : 'Link einfügen'}
             />
-          )}
+
+            {!link.noAccess && oneDriveAvailable && (
+              <>
+                <p className="flex items-center gap-3 text-xs text-fg-subtle">
+                  oder
+                  <span aria-hidden className="h-px flex-1 bg-hairline" />
+                </p>
+                <OneDrivePickerButton
+                  onOpen={picker.open}
+                  pending={picker.pending}
+                  error={picker.error}
+                />
+              </>
+            )}
+          </div>
           {/* Always mounted: back from the Microsoft consent it opens before the rest loads. */}
           <OneDrivePickerDialog {...picker.dialog} onClose={picker.close} />
 
           {link.noAccess ? (
             <NoAccessCard info={link.noAccess} onUploadInstead={pickFile} />
+          ) : upload.state.status === 'uploading' ? (
+            <UploadProgressCard
+              file={upload.state.file}
+              progress={upload.state.progress}
+              onCancel={upload.cancel}
+            />
           ) : (
-            <>
-              <p className="flex items-center gap-3 text-xs text-fg-subtle">
-                <span aria-hidden className="h-px flex-1 bg-hairline" />
-                oder PPTX hochladen
-                <span aria-hidden className="h-px flex-1 bg-hairline" />
-              </p>
-
-              {upload.state.status === 'uploading' ? (
-                <UploadProgressCard
-                  file={upload.state.file}
-                  progress={upload.state.progress}
-                  onCancel={upload.cancel}
-                />
-              ) : (
-                <UploadDropzone
-                  onFile={uploadFile}
-                  onBrowse={pickFile}
-                  error={upload.state.status === 'error' ? upload.state.message : null}
-                />
-              )}
-
-              <RecentDecks workspaceId={workspace.id} />
-            </>
+            <UploadDropzone
+              onFile={uploadFile}
+              onBrowse={pickFile}
+              error={upload.state.status === 'error' ? upload.state.message : null}
+            />
           )}
 
           <input

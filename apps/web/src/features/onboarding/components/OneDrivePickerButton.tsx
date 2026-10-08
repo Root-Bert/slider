@@ -1,7 +1,7 @@
 import { MicrosoftMark } from '@/features/auth/components/MicrosoftMark';
 import { Button } from '@/ui';
 
-/** Opens Microsoft's OneDrive file picker – own files, recent ones and those shared with me. */
+/** Opens Microsoft's file picker – own OneDrive files, recent ones, shared ones and SharePoint. */
 export function OneDrivePickerButton({
   onOpen,
   pending,
@@ -12,13 +12,13 @@ export function OneDrivePickerButton({
   error: string | null;
 }) {
   return (
-    <div className="flex flex-col items-center gap-2">
-      <Button variant="secondary" loading={pending} onClick={onOpen}>
+    <div className="flex flex-col gap-2">
+      <Button variant="secondary" size="lg" loading={pending} onClick={onOpen} className="w-full">
         {!pending && <MicrosoftMark size={16} />}
-        Aus OneDrive auswählen
+        Aus OneDrive oder SharePoint auswählen
       </Button>
       {error && (
-        <p role="alert" className="max-w-[420px] text-center text-xs text-danger">
+        <p role="alert" className="text-xs text-danger">
           {error}
         </p>
       )}

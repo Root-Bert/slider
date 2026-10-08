@@ -14,9 +14,9 @@ const fetchToken = async (resource: string) =>
   (await api.post<{ token: string }>('/microsoft/file-picker/token', { resource })).token;
 
 /**
- * "Aus OneDrive auswählen": Microsoft's file picker embedded in a dialog (starting in
- * "Geteilt"), then the import of the picked PowerPoint. Without a Microsoft login the browser
- * goes to sign in first and comes back to the start page.
+ * "Aus OneDrive oder SharePoint auswählen": Microsoft's file picker embedded in a dialog
+ * (starting in "Geteilt"), then the import of the picked PowerPoint. Without a Microsoft login
+ * the browser goes to sign in first and comes back to the start page.
  */
 export function useOneDrivePicker(workspaceId: string, onImported: (deck: Deck) => void) {
   const [searchParams, setSearchParams] = useSearchParams();

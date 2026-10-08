@@ -11,7 +11,7 @@ interface UploadDropzoneProps {
 
 const hasFiles = (event: DragEvent) => event.dataTransfer.types.includes('Files');
 
-/** Dashed drop target (A1). The "Datei auswählen" button is the keyboard path to the file picker. */
+/** Slim dashed drop target – uploads are the rare path. "Datei auswählen" is the keyboard path. */
 export function UploadDropzone({ onFile, onBrowse, error }: UploadDropzoneProps) {
   const [dragOver, setDragOver] = useState(false);
 
@@ -36,30 +36,35 @@ export function UploadDropzone({ onFile, onBrowse, error }: UploadDropzoneProps)
           if (file) onFile(file);
         }}
         onClick={(event) => {
-          // Mouse convenience: the whole zone opens the picker; the inner button handles keyboard.
+          // Mouse convenience: the whole row opens the picker; the inner button handles keyboard.
           if (event.target === event.currentTarget) onBrowse();
         }}
         className={cn(
-          'flex cursor-pointer flex-col items-center gap-1.5 rounded-panel border border-dashed px-6 py-8 text-center transition-colors',
+          'flex cursor-pointer items-center gap-3 rounded-control border border-dashed px-4 py-3 transition-colors',
           dragOver ? 'border-fg bg-white/5' : 'border-hairline-strong hover:bg-white/[0.03]',
           error && !dragOver && 'border-danger/60',
         )}
       >
-        <Icon name="upload" size={22} className="pointer-events-none text-fg-muted" />
-        <p className="pointer-events-none text-sm font-medium text-fg">
-          {dragOver ? 'Loslassen zum Hochladen' : 'Datei hierher ziehen'}
+        <Icon name="upload" size={18} className="pointer-events-none shrink-0 text-fg-subtle" />
+        <p className="pointer-events-none min-w-0 flex-1 text-sm text-fg-muted">
+          {dragOver ? (
+            'Loslassen zum Hochladen'
+          ) : (
+            <>
+              PPTX hierher ziehen oder{' '}
+              <button
+                type="button"
+                onClick={onBrowse}
+                className="pointer-events-auto text-fg underline underline-offset-2 hover:text-fg"
+              >
+                Datei auswählen
+              </button>
+            </>
+          )}
         </p>
-        <p className="text-xs text-fg-subtle">
-          oder{' '}
-          <button
-            type="button"
-            onClick={onBrowse}
-            className="text-fg-muted underline underline-offset-2 hover:text-fg"
-          >
-            Datei auswählen
-          </button>{' '}
-          · .pptx bis {formatBytes(MAX_UPLOAD_BYTES)}
-        </p>
+        <span className="pointer-events-none shrink-0 text-xs text-fg-subtle">
+          bis {formatBytes(MAX_UPLOAD_BYTES)}
+        </span>
       </div>
       {error && (
         <p role="alert" className="text-xs text-danger">
