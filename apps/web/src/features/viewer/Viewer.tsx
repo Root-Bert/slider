@@ -47,7 +47,7 @@ export function Viewer({ onLeave }: { onLeave: () => void }) {
         data-viewer-root
         className={cn(
           'dot-grid relative flex h-dvh flex-col overflow-hidden text-fg transition-[padding] duration-300',
-          threadPanelOpen && 'md:pr-[400px]',
+          threadPanelOpen && 'md:pr-[412px]',
         )}
       >
         <h1 className="sr-only">{deck.title}</h1>

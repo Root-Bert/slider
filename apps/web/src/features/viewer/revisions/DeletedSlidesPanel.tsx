@@ -43,10 +43,11 @@ function DeletedSlidesPanelView({ deletedSlides }: { deletedSlides: readonly Del
       tabIndex={-1}
       aria-labelledby={titleId}
       className={[
-        'glass-elevated fixed z-40 flex flex-col outline-none',
+        'glass fixed z-40 flex flex-col overflow-hidden shadow-[inset_0_0_0_1px_var(--color-hairline),var(--shadow-float)] outline-none',
         'transition-transform duration-300 ease-out',
         'inset-x-0 bottom-0 max-h-[85dvh] rounded-t-panel starting:translate-y-full',
-        'md:inset-y-0 md:right-0 md:left-auto md:max-h-none md:w-[400px] md:rounded-none md:starting:translate-x-full md:starting:translate-y-0',
+        // Tablet and up: a floating glass card at the right edge.
+        'md:inset-y-3 md:right-3 md:left-auto md:max-h-none md:w-[400px] md:rounded-panel md:starting:translate-x-[calc(100%+12px)] md:starting:translate-y-0',
       ].join(' ')}
     >
       <header className="flex flex-col gap-1.5 border-b border-hairline px-5 pt-[18px] pb-3.5">
