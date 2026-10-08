@@ -272,8 +272,8 @@ export function Timeline({ controls }: { controls: ReactNode }) {
               <div className="px-3">
                 <Minimap layout={layout} scrollerRef={scrollerRef} narrow={narrow} />
               </div>
-              {/* Figma D1: ~28px from the thumbnails to the controls row. */}
-              <div className="px-4 pt-2 md:px-[clamp(16px,3vw,32px)] md:pt-5">{controls}</div>
+              {/* Same gap below the thumbnails as above them (track to minimap). */}
+              <div className="px-4 pt-2 md:px-[clamp(16px,3vw,32px)]">{controls}</div>
               {geometry && slideH && !narrow && (
                 <div className="pt-1">
                   <SplitHandle geometry={geometry} slideH={slideH} />
