@@ -18,6 +18,9 @@ export interface MenuAction {
   icon: IconName;
   onSelect: () => void;
   tone?: 'default' | 'danger';
+  /** Greyed out and skipped by the arrow keys, with `title` as the reason. */
+  disabled?: boolean;
+  title?: string;
 }
 
 interface MenuProps {
@@ -34,6 +37,8 @@ interface MenuProps {
  */
 export function Menu({ label, actions, className, triggerClassName }: MenuProps) {
   const [open, setOpen] = useState(false);
+  // Only a keyboard-opened menu puts focus on its first item; a click shouldn't pre-select one.
+  const [openedByKeyboard, setOpenedByKeyboard] = useState(false);
   const menuId = useId();
   const wrapperRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -56,10 +61,15 @@ export function Menu({ label, actions, className, triggerClassName }: MenuProps)
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        onClick={() => setOpen((value) => !value)}
+        onClick={(event) => {
+          // `detail` is 0 for Enter/Space, the click count for a pointer.
+          setOpenedByKeyboard(event.detail === 0);
+          setOpen((value) => !value);
+        }}
         onKeyDown={(event) => {
           if (event.key === 'ArrowDown' && !open) {
             event.preventDefault();
+            setOpenedByKeyboard(true);
             setOpen(true);
           }
         }}
@@ -77,6 +87,7 @@ export function Menu({ label, actions, className, triggerClassName }: MenuProps)
           label={label}
           actions={actions}
           onClose={() => setOpen(false)}
+          focusFirst={openedByKeyboard}
           // Focus goes back to the trigger first, so a dialog opened by the action restores it on close.
           returnFocusTo={triggerRef}
           className="absolute top-full right-0 mt-1"
@@ -128,7 +139,7 @@ export function ContextMenu({ label, actions, at, onClose }: ContextMenuProps) {
 
   return createPortal(
     <div ref={ref} className="fixed z-50" style={position}>
-      <MenuList label={label} actions={actions} onClose={onClose} />
+      <MenuList label={label} actions={actions} onClose={onClose} focusFirst={false} />
     </div>,
     document.body,
   );
@@ -140,40 +151,56 @@ interface MenuListProps {
   actions: readonly MenuAction[];
   onClose: () => void;
   returnFocusTo?: RefObject<HTMLElement | null>;
+  /** Focus the first item (keyboard) or only the menu itself (pointer), so ↑/↓ still work. */
+  focusFirst?: boolean;
   className?: string;
 }
 
-/** The open menu: focuses the first item, ↑/↓/Home/End move, Tab closes. */
-function MenuList({ id, label, actions, onClose, returnFocusTo, className }: MenuListProps) {
+/** The open menu: ↑/↓/Home/End move between the enabled items, Tab closes. */
+function MenuList({
+  id,
+  label,
+  actions,
+  onClose,
+  returnFocusTo,
+  focusFirst = true,
+  className,
+}: MenuListProps) {
+  const menuRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const enabled = actions.flatMap((action, index) => (action.disabled ? [] : [index]));
 
   useEffect(() => {
-    itemRefs.current[0]?.focus();
+    const first = enabled[0];
+    if (focusFirst && first !== undefined) itemRefs.current[first]?.focus();
+    else menuRef.current?.focus();
+    // Only on open – later re-renders (e.g. a progress label) must not move the focus.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const focusItem = (index: number) => {
-    const count = actions.length;
-    itemRefs.current[(index + count) % count]?.focus();
-  };
-
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const current = itemRefs.current.findIndex((item) => item === document.activeElement);
+    const count = enabled.length;
+    // -1 while the menu itself has focus: ↓ goes to the first item, ↑ to the last.
+    const current = enabled.findIndex(
+      (index) => itemRefs.current[index] === document.activeElement,
+    );
     const moves: Partial<Record<string, number>> = {
       ArrowDown: current + 1,
-      ArrowUp: current - 1,
+      ArrowUp: current === -1 ? count - 1 : current - 1,
       Home: 0,
-      End: actions.length - 1,
+      End: count - 1,
     };
     const target = moves[event.key];
     if (target !== undefined) {
       event.preventDefault();
-      focusItem(target);
+      if (count > 0) itemRefs.current[enabled[(target + count) % count]!]?.focus();
     } else if (event.key === 'Tab') {
       onClose();
     }
   };
 
   const select = (action: MenuAction) => {
+    if (action.disabled) return;
     onClose();
     returnFocusTo?.current?.focus();
     action.onSelect();
@@ -181,12 +208,14 @@ function MenuList({ id, label, actions, onClose, returnFocusTo, className }: Men
 
   return (
     <div
+      ref={menuRef}
       id={id}
       role="menu"
       aria-label={label}
+      tabIndex={-1}
       onKeyDown={handleKeyDown}
       className={cn(
-        'glass-elevated z-30 flex min-w-48 animate-pop-in flex-col rounded-panel p-1',
+        'glass-elevated z-30 flex min-w-48 animate-pop-in flex-col rounded-panel p-1 outline-none',
         className,
       )}
     >
@@ -199,10 +228,18 @@ function MenuList({ id, label, actions, onClose, returnFocusTo, className }: Men
           type="button"
           role="menuitem"
           tabIndex={-1}
+          aria-disabled={action.disabled || undefined}
+          title={action.title}
           onClick={() => select(action)}
+          // The pointer moves the focus along, so hover and keyboard never mark two items.
+          onMouseEnter={(event) => {
+            if (!action.disabled) event.currentTarget.focus({ preventScroll: true });
+          }}
           className={cn(
             'flex h-9 items-center gap-2.5 rounded-control px-2.5 text-left text-[13px] outline-none',
-            'hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none',
+            action.disabled
+              ? 'cursor-default opacity-40'
+              : 'hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none',
             action.tone === 'danger' ? 'text-danger' : 'text-fg',
           )}
         >

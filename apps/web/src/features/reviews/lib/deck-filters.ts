@@ -41,6 +41,7 @@ const comparators = (openedAt: OpenedAt): Record<DeckSort, (a: Deck, b: Deck) =>
 });
 
 const neverOpened: OpenedAt = () => undefined;
+const nonePinned = () => false;
 
 /** `shared` counts the shared decks (see {@link sharedWith}), the other tabs the workspace's. */
 export function countByTab(
@@ -65,13 +66,22 @@ export function selectDecks(
     query,
     sort,
     openedAt = neverOpened,
-  }: { tab: ReviewTab; query: string; sort: DeckSort; openedAt?: OpenedAt },
+    isPinned = nonePinned,
+  }: {
+    tab: ReviewTab;
+    query: string;
+    sort: DeckSort;
+    openedAt?: OpenedAt;
+    /** Pinned decks come first under every sort, sorted among themselves. */
+    isPinned?: (deckId: string) => boolean;
+  },
 ): Deck[] {
   const needle = normalize(query.trim());
+  const bySort = comparators(openedAt)[sort];
   return decks
     .filter(TAB_PREDICATES[tab])
     .filter((deck) => needle === '' || normalize(deck.title).includes(needle))
-    .sort(comparators(openedAt)[sort]);
+    .sort((a, b) => Number(isPinned(b.id)) - Number(isPinned(a.id)) || bySort(a, b));
 }
 
 /** Totals for the page subline ("6 Reviews · 30 offene Kommentare"), excluding the archive. */

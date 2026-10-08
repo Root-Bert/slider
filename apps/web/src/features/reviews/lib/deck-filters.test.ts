@@ -39,6 +39,20 @@ describe('selectDecks', () => {
     ).toEqual(['a', 'c', 'b']);
   });
 
+  it('puts pinned decks first under every sort, sorted among themselves', () => {
+    const isPinned = (id: string) => id === 'a' || id === 'c';
+    expect(ids(selectDecks(decks, { tab: 'all', query: '', sort: 'updated', isPinned }))).toEqual([
+      'c',
+      'a',
+      'b',
+    ]);
+    expect(ids(selectDecks(decks, { tab: 'all', query: '', sort: 'name', isPinned }))).toEqual([
+      'c',
+      'a',
+      'b',
+    ]);
+  });
+
   it('"Offen" keeps decks with open comments only', () => {
     expect(ids(selectDecks(decks, { tab: 'open', query: '', sort: 'comments' }))).toEqual([
       'c',

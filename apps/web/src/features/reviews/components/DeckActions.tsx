@@ -8,6 +8,7 @@ import {
 } from '@/lib/queries';
 import type { ShowToast } from '@/ui';
 import { markDeckVisited } from '../lib/last-visits';
+import { MAX_PINNED, pinDeck, unpinDeck, usePinnedDecks } from '../lib/pinned-decks';
 import { DeleteDeckDialog } from './DeleteDeckDialog';
 import { ContextMenu, Menu, type MenuAction } from '@/ui';
 import { RenameDeckDialog } from './RenameDeckDialog';
@@ -76,8 +77,8 @@ function useRerender(deck: Deck, onNotify: ShowToast) {
 }
 
 /**
- * The ⋯ menu of a deck card/row – rename, re-render, archive/restore, delete – for decks the
- * viewer manages. The same actions open at `contextAt` for a right click.
+ * The ⋯ menu of a deck card/row – pin for every deck; rename, re-render, archive/restore, delete
+ * for decks the viewer manages. The same actions open at `contextAt` for a right click.
  */
 export function DeckActions({
   deck,
@@ -90,6 +91,8 @@ export function DeckActions({
   const [dialog, setDialog] = useState<'rename' | 'delete' | null>(null);
   const update = useUpdateDeck(deck.id);
   const rerender = useRerender(deck, onNotify);
+  const pins = usePinnedDecks();
+  const pinned = pins.isPinned(deck.id);
   const archived = deck.archivedAt !== null;
   const close = () => setDialog(null);
 
@@ -106,7 +109,20 @@ export function DeckActions({
       },
     );
 
-  const actions: MenuAction[] = [
+  const pinAction: MenuAction = pinned
+    ? { label: 'Lösen', icon: 'pushPin', onSelect: () => unpinDeck(deck.id) }
+    : {
+        label: 'Anpinnen',
+        icon: 'pushPin',
+        onSelect: () => pinDeck(deck.id),
+        disabled: pins.full,
+        title: pins.full
+          ? `Höchstens ${MAX_PINNED} Reviews angepinnt – löse zuerst einen.`
+          : undefined,
+      };
+
+  // Reviewers and members on other people's decks can only pin them (BER-129).
+  const manageActions: MenuAction[] = [
     { label: 'Umbenennen', icon: 'edit', onSelect: () => setDialog('rename') },
     ...(deck.import.status === 'ready'
       ? [{ label: rerender.label, icon: 'image', onSelect: rerender.start } satisfies MenuAction]
@@ -116,9 +132,7 @@ export function DeckActions({
       : { label: 'Archivieren', icon: 'archive', onSelect: toggleArchived },
     { label: 'Löschen', icon: 'delete', tone: 'danger', onSelect: () => setDialog('delete') },
   ];
-
-  // Reviewers and members on other people's decks: nothing to manage (BER-129).
-  if (!deck.permissions.canManage) return null;
+  const actions = deck.permissions.canManage ? [pinAction, ...manageActions] : [pinAction];
 
   return (
     <>
@@ -152,6 +166,7 @@ export function DeckActions({
           deck={deck}
           onClose={close}
           onDeleted={() => {
+            unpinDeck(deck.id);
             close();
             onNotify(`„${deck.title}“ gelöscht`);
           }}

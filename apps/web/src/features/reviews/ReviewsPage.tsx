@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useNavigate } from 'react-router';
 import type { Deck } from '@slider/shared';
 import { AppHeader } from '@/app/AppHeader';
@@ -29,6 +29,7 @@ import {
   type ReviewTab,
 } from './lib/deck-filters';
 import { useLastVisits } from './lib/last-visits';
+import { prunePinnedDecks, usePinnedDecks } from './lib/pinned-decks';
 
 const DECK_VIEWS = ['grid', 'list'] as const satisfies readonly DeckView[];
 const NO_DECKS: readonly Deck[] = [];
@@ -50,6 +51,7 @@ export function Component() {
   const allDecksQuery = useAllDecks();
   const shared = sharedWith(allDecksQuery.data ?? NO_DECKS, user.id);
   const { isUnseen, openedAt } = useLastVisits();
+  const { isPinned } = usePinnedDecks();
   const [toast, showToast] = useToast();
 
   const [query, setQuery] = useState('');
@@ -61,7 +63,13 @@ export function Component() {
   const sharedTab = tab === 'shared';
   const listQuery = sharedTab ? allDecksQuery : decksQuery;
   const listed = sharedTab ? shared : decks;
-  const visible = selectDecks(listed, { tab, query, sort, openedAt });
+  const visible = selectDecks(listed, { tab, query, sort, openedAt, isPinned });
+
+  // A pinned deck deleted elsewhere would otherwise hold one of the few pin slots forever.
+  const allDecks = allDecksQuery.isSuccess ? allDecksQuery.data : undefined;
+  useEffect(() => {
+    if (allDecks) prunePinnedDecks(new Set(allDecks.map((deck) => deck.id)));
+  }, [allDecks]);
   const goToNew =
     mayCreate && !decksFull ? () => void navigate(routes.newReview(workspace.id)) : undefined;
 

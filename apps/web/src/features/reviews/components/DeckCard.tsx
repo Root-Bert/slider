@@ -1,10 +1,11 @@
 import { Link } from 'react-router';
 import type { Deck } from '@slider/shared';
 import { routes } from '@/app/routes';
-import { AvatarStack, cn } from '@/ui';
+import { AvatarStack, cn, Icon } from '@/ui';
 import type { ShowToast } from '@/ui';
 import { isImporting } from '../lib/deck-labels';
 import { markDeckVisited } from '../lib/last-visits';
+import { usePinnedDecks } from '../lib/pinned-decks';
 import { useDeckContextMenu } from '../hooks/useDeckContextMenu';
 import { DeckActions } from './DeckActions';
 import {
@@ -17,6 +18,19 @@ import {
 } from './DeckBits';
 import { SlideThumbnail } from './SlideThumbnail';
 
+/** Marks a deck pinned to the top of the list. */
+function PinnedMark({ deckId }: { deckId: string }) {
+  if (!usePinnedDecks().isPinned(deckId)) return null;
+  return (
+    <Icon
+      name="pushPin"
+      size={14}
+      className="shrink-0 rotate-45 text-fg-subtle"
+      label="Angepinnt"
+    />
+  );
+}
+
 export interface DeckItemProps {
   deck: Deck;
   unseen: boolean;
@@ -28,7 +42,7 @@ export interface DeckItemProps {
  * target while the ⋯ menu stays a separate, non-nested control.
  */
 export function DeckCard({ deck, unseen, onNotify }: DeckItemProps) {
-  const { onContextMenu, ...contextMenu } = useDeckContextMenu(deck);
+  const { onContextMenu, ...contextMenu } = useDeckContextMenu();
   return (
     <article className="group relative flex min-w-0 flex-col gap-3" onContextMenu={onContextMenu}>
       <div className="relative">
@@ -60,8 +74,9 @@ export function DeckCard({ deck, unseen, onNotify }: DeckItemProps) {
       </div>
 
       <div className="flex min-w-0 flex-col gap-1">
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="truncate text-[15px] font-medium text-fg">
+        <div className="flex items-center gap-1.5">
+          <PinnedMark deckId={deck.id} />
+          <h3 className="mr-auto truncate pr-1.5 text-[15px] font-medium text-fg">
             <Link
               to={routes.deck(deck.id)}
               onClick={() => markDeckVisited(deck.id)}
@@ -85,7 +100,7 @@ export function DeckCard({ deck, unseen, onNotify }: DeckItemProps) {
 
 /** Compact list-view row with the same information as the card. */
 export function DeckRow({ deck, unseen, onNotify }: DeckItemProps) {
-  const { onContextMenu, ...contextMenu } = useDeckContextMenu(deck);
+  const { onContextMenu, ...contextMenu } = useDeckContextMenu();
   return (
     <article
       onContextMenu={onContextMenu}
@@ -104,6 +119,7 @@ export function DeckRow({ deck, unseen, onNotify }: DeckItemProps) {
 
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <div className="flex min-w-0 items-center gap-2">
+          <PinnedMark deckId={deck.id} />
           <h3 className="truncate text-sm font-medium text-fg">
             <Link
               to={routes.deck(deck.id)}
