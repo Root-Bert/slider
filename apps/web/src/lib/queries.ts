@@ -368,15 +368,19 @@ export function useUploadRevision(deckId: string) {
 }
 
 /**
- * "Folienbilder neu erzeugen" (BER-94): queues new slide images by Office/LibreOffice. Progress
- * and the end show up in the deck status (`rendering`, `renderedAt`).
+ * "Neu rendern" (BER-94): queues new slide images, Office first, then LibreOffice. Progress and
+ * the end show up in the deck status (`rendering`, `renderedAt`). `newVersion`: the linked file
+ * had changed and comes in as a new revision instead.
  */
 export function useRerenderDeck(deckId: string) {
   const queryClient = useQueryClient();
+  const invalidateRevision = useInvalidateRevision(deckId);
   return useMutation({
     mutationFn: () => api.post<RerenderResult>(`/decks/${deckId}/rerender`),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: queryKeys.status(deckId), exact: true }),
+    onSuccess: (result) =>
+      result.status === 'newVersion'
+        ? invalidateRevision()
+        : queryClient.invalidateQueries({ queryKey: queryKeys.status(deckId), exact: true }),
   });
 }
 

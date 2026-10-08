@@ -5,6 +5,7 @@ import { AvatarStack, cn } from '@/ui';
 import type { ShowToast } from '@/ui';
 import { isImporting } from '../lib/deck-labels';
 import { markDeckVisited } from '../lib/last-visits';
+import { useDeckContextMenu } from '../hooks/useDeckContextMenu';
 import { DeckActions } from './DeckActions';
 import {
   DeckMeta,
@@ -27,8 +28,9 @@ export interface DeckItemProps {
  * target while the ⋯ menu stays a separate, non-nested control.
  */
 export function DeckCard({ deck, unseen, onNotify }: DeckItemProps) {
+  const { onContextMenu, ...contextMenu } = useDeckContextMenu(deck);
   return (
-    <article className="group relative flex min-w-0 flex-col gap-3">
+    <article className="group relative flex min-w-0 flex-col gap-3" onContextMenu={onContextMenu}>
       <div className="relative">
         <SlideThumbnail
           src={deck.thumbnailUrl}
@@ -48,6 +50,7 @@ export function DeckCard({ deck, unseen, onNotify }: DeckItemProps) {
           <DeckActions
             deck={deck}
             onNotify={onNotify}
+            {...contextMenu}
             triggerClassName={cn(
               'glass opacity-0 group-hover:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100',
               'pointer-coarse:opacity-100',
@@ -82,8 +85,10 @@ export function DeckCard({ deck, unseen, onNotify }: DeckItemProps) {
 
 /** Compact list-view row with the same information as the card. */
 export function DeckRow({ deck, unseen, onNotify }: DeckItemProps) {
+  const { onContextMenu, ...contextMenu } = useDeckContextMenu(deck);
   return (
     <article
+      onContextMenu={onContextMenu}
       className={cn(
         'group relative flex items-center gap-4 rounded-control-sm px-3 py-2.5 transition-colors',
         'hover:bg-white/5 has-[a:focus-visible]:bg-white/5 has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-mention',
@@ -117,7 +122,7 @@ export function DeckRow({ deck, unseen, onNotify }: DeckItemProps) {
         <OpenCommentsChip count={deck.openCommentCount} />
         <AvatarStack authors={deck.participants} max={3} size={24} className="w-20 justify-end" />
       </div>
-      <DeckActions deck={deck} onNotify={onNotify} className="z-10 shrink-0" />
+      <DeckActions deck={deck} onNotify={onNotify} {...contextMenu} className="z-10 shrink-0" />
     </article>
   );
 }

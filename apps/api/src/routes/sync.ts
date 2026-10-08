@@ -39,13 +39,22 @@ export function syncRoutes(deps: AppDeps) {
       })
 
       /**
-       * "Folienbilder neu erzeugen": draws the current revision's slides again with Office or
-       * LibreOffice, in the background (BER-94). Progress shows in `GET …/status`.
+       * "Neu rendern": draws the current revision's slides again, Office first, then LibreOffice,
+       * in the background (BER-94). Progress shows in `GET …/status`. A linked file that changed
+       * meanwhile (e.g. pictures compressed so Office accepts it) is imported as a new version
+       * instead – Office cannot render the old revision from the new file.
        */
       .post('/decks/:deckId/rerender', viewer, async (c) => {
         const deck = await requireDeckAccess(deps.db, c.var.viewer, c.req.param('deckId'), 'own');
         if (deck.importState.status !== 'ready' || !deck.currentRevisionId) {
           throw badRequest('Die Präsentation wird gerade noch importiert.');
+        }
+        if (isSyncEnabled(deck)) {
+          const sync = await deps.sync.checkDeck(deck.id, { manual: true });
+          if (sync.status === 'updated' || sync.status === 'queued') {
+            const renderedAt = deps.rendering?.progress.renderedAt(deck.id) ?? null;
+            return c.json({ status: 'newVersion', renderedAt } satisfies RerenderResult, 202);
+          }
         }
         const rendering = deps.rendering;
         if (!rendering || !hasPdfRenderer(rendering.renderers, deck)) {

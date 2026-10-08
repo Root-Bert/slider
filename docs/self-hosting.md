@@ -185,7 +185,8 @@ Slider zeigt Folien so, wie PowerPoint sie zeichnet (Master, Theme-Schriften, Ve
   „LibreOffice is not installed …“ im Log.
 - **Bestehende Decks** werden nach dem Start automatisch im Hintergrund neu gerendert (einmal pro
   Version, nacheinander), sobald ein besserer Renderer verfügbar ist. Von Hand: ⋯-Menü der
-  Präsentation → **Folienbilder neu erzeugen**. Schlägt etwas fehl, bleiben die alten Bilder.
+  Präsentation oder Rechtsklick → **Neu rendern** (versucht zuerst wieder PowerPoint; hat sich die
+  Datei geändert, wird die neue Version importiert). Schlägt etwas fehl, bleiben die alten Bilder.
 
 Ohne Docker (z. B. lokal auf dem Mac): `brew install --cask libreoffice`, danach findet Slider
 `soffice` selbst; sonst `LIBREOFFICE_PATH` setzen. Unter Debian/Ubuntu:
@@ -516,6 +517,6 @@ Sprach-/Video-Kommentare. Deshalb:
 - Folien sehen anders aus als in PowerPoint → im Log nach „Office PDF …“, „PDF (…) of deck …“
   oder „LibreOffice …“ suchen. Fehlen Firmenschriften, rendert LibreOffice mit Ersatzschriften:
   Schriftdateien (`.ttf`/`.otf`) in den Container nach `/usr/local/share/fonts/` legen. Danach im
-  ⋯-Menü **Folienbilder neu erzeugen**.
+  ⋯-Menü **Neu rendern**.
 - OIDC „issuer mismatch“ → `OIDC_ISSUER` muss der Issuer aus der Discovery-URL sein
   (bei Authentik mit `/application/o/<slug>/`).

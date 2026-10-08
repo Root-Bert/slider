@@ -1,7 +1,7 @@
 import { asc, eq } from 'drizzle-orm';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { deckSchema, deckStatusSchema, slideSchema, type Deck } from '@slider/shared';
-import { slideVersions } from '../src/db/schema';
+import { decks, slideVersions } from '../src/db/schema';
 import type { PptxToPdf } from '../src/import/libreoffice';
 import { findRerenderCandidates, rerenderRevision } from '../src/import/rerender';
 import { silentLogger } from '../src/logger';
@@ -49,6 +49,16 @@ const versionsOf = (context: TestContext, deck: Deck) =>
 async function importedDeck(context: TestContext): Promise<Deck> {
   const created = await upload(context);
   return deckSchema.parse(await (await context.request(`/api/decks/${created.id}`)).json());
+}
+
+/** An imported deck that pretends to come from a OneDrive link. */
+async function linkedDeck(context: TestContext): Promise<Deck> {
+  const deck = await importedDeck(context);
+  await context.deps.db
+    .update(decks)
+    .set({ source: 'onedrive', sourceRef: 'drives/d1/items/i1' })
+    .where(eq(decks.id, deck.id));
+  return deck;
 }
 
 /** Pretends the deck was imported before `renderer` existed. */
@@ -191,6 +201,30 @@ describe('POST /api/decks/:id/rerender', () => {
     expect(status.renderedAt).not.toBeNull();
     const rows = await versionsOf(ctx, deck);
     expect(rows.map((row) => row.renderer)).toEqual(['libreoffice', 'libreoffice']);
+  });
+
+  it('imports a linked file that changed meanwhile instead of re-rendering the old one', async () => {
+    const libreOffice = switchableLibreOffice();
+    ctx = await createTestContext({ libreOfficePdf: libreOffice.convert });
+    const deck = await linkedDeck(ctx);
+    const check = vi.spyOn(ctx.deps.sync, 'checkDeck').mockResolvedValue({ status: 'queued' });
+    const enqueue = vi.spyOn(ctx.deps.queue, 'enqueue');
+
+    const res = await ctx.request(`/api/decks/${deck.id}/rerender`, { method: 'POST' });
+    expect(res.status).toBe(202);
+    expect(await res.json()).toEqual({ status: 'newVersion', renderedAt: null });
+    expect(check).toHaveBeenCalledWith(deck.id, { manual: true });
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it('re-renders a linked deck whose file is unchanged', async () => {
+    const libreOffice = switchableLibreOffice();
+    ctx = await createTestContext({ libreOfficePdf: libreOffice.convert });
+    const deck = await linkedDeck(ctx);
+    vi.spyOn(ctx.deps.sync, 'checkDeck').mockResolvedValue({ status: 'unchanged' });
+
+    const res = await ctx.request(`/api/decks/${deck.id}/rerender`, { method: 'POST' });
+    expect(await res.json()).toEqual({ status: 'queued', renderedAt: null });
   });
 
   it('says why when the server has no better renderer', async () => {

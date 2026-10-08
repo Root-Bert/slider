@@ -43,7 +43,8 @@ export type SlideRendering = z.infer<typeof slideRenderingSchema>;
 
 /** `POST /decks/:deckId/rerender`. */
 export const rerenderResultSchema = z.object({
-  status: z.enum(['queued', 'running']),
+  /** `newVersion`: the linked file had changed; it is imported as a new version instead. */
+  status: z.enum(['queued', 'running', 'newVersion']),
   /** `renderedAt` of the deck status before this run – it changes once new images are in. */
   renderedAt: z.iso.datetime().nullable(),
 });

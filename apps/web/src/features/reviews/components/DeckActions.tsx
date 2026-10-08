@@ -9,7 +9,7 @@ import {
 import type { ShowToast } from '@/ui';
 import { markDeckVisited } from '../lib/last-visits';
 import { DeleteDeckDialog } from './DeleteDeckDialog';
-import { Menu, type MenuAction } from '@/ui';
+import { ContextMenu, Menu, type MenuAction } from '@/ui';
 import { RenameDeckDialog } from './RenameDeckDialog';
 
 interface DeckActionsProps {
@@ -17,11 +17,15 @@ interface DeckActionsProps {
   onNotify: ShowToast;
   className?: string;
   triggerClassName?: string;
+  /** Where the card was right-clicked: the same actions open there as a context menu. */
+  contextAt?: { x: number; y: number } | null;
+  onContextClose?: () => void;
 }
 
 /**
- * "Folienbilder neu erzeugen" (BER-94): starts the re-render and follows it through the deck
- * status until it is done. Returns the menu label (with progress) and the action.
+ * "Neu rendern" (BER-94): starts the re-render (Office first, so a file that was too big before
+ * gets another chance) and follows it through the deck status until it is done. Returns the
+ * menu label (with progress) and the action.
  */
 function useRerender(deck: Deck, onNotify: ShowToast) {
   const rerender = useRerenderDeck(deck.id);
@@ -41,7 +45,7 @@ function useRerender(deck: Deck, onNotify: ShowToast) {
     announced.current = following;
     if (renderedAt && renderedAt !== following.renderedAt) {
       void invalidateImages();
-      onNotify(`Folienbilder von „${deck.title}“ neu erzeugt`);
+      onNotify(`„${deck.title}“ neu gerendert`);
     } else {
       onNotify('Keine besseren Folienbilder möglich – die Vorschau bleibt.');
     }
@@ -53,22 +57,36 @@ function useRerender(deck: Deck, onNotify: ShowToast) {
     const startedAt = Date.now();
     rerender.mutate(undefined, {
       onSuccess: (result) => {
+        if (result.status === 'newVersion') {
+          onNotify('Die Datei hat sich geändert – die neue Version wird importiert.');
+          return;
+        }
         setFollowing({ renderedAt: result.renderedAt, startedAt });
-        onNotify('Folienbilder werden neu erzeugt …');
+        onNotify('Folien werden neu gerendert …');
       },
       onError: (error) => onNotify(error.message, 'danger'),
     });
   };
   const label = !busy
-    ? 'Folienbilder neu erzeugen'
+    ? 'Neu rendern'
     : rendering && rendering.total > 0
-      ? `Folienbilder werden erzeugt … ${rendering.done}/${rendering.total}`
-      : 'Folienbilder werden erzeugt …';
+      ? `Wird gerendert … ${rendering.done}/${rendering.total}`
+      : 'Wird gerendert …';
   return { label, start };
 }
 
-/** The ⋯ menu of a deck card/row: rename, archive/restore, delete – for decks the viewer manages. */
-export function DeckActions({ deck, onNotify, className, triggerClassName }: DeckActionsProps) {
+/**
+ * The ⋯ menu of a deck card/row – rename, re-render, archive/restore, delete – for decks the
+ * viewer manages. The same actions open at `contextAt` for a right click.
+ */
+export function DeckActions({
+  deck,
+  onNotify,
+  className,
+  triggerClassName,
+  contextAt,
+  onContextClose,
+}: DeckActionsProps) {
   const [dialog, setDialog] = useState<'rename' | 'delete' | null>(null);
   const update = useUpdateDeck(deck.id);
   const rerender = useRerender(deck, onNotify);
@@ -110,6 +128,14 @@ export function DeckActions({ deck, onNotify, className, triggerClassName }: Dec
         className={className}
         triggerClassName={triggerClassName}
       />
+      {contextAt && onContextClose && (
+        <ContextMenu
+          label={`Aktionen für „${deck.title}“`}
+          actions={actions}
+          at={contextAt}
+          onClose={onContextClose}
+        />
+      )}
       {dialog === 'rename' && (
         <RenameDeckDialog
           deck={deck}

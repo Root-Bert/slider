@@ -91,7 +91,8 @@ Design decisions worth knowing:
   back to the built-in SVG preview, whose hash also drives slide matching. `slide_versions.renderer`
   records which one drew each slide; decks from before a renderer was available are re-rendered
   in the background after start-up (once per revision), or via the deck's ⋯ menu
-  ("Folienbilder neu erzeugen", `POST /api/decks/:id/rerender`). Locally:
+  or right click ("Neu rendern", `POST /api/decks/:id/rerender` – Office first; a linked file
+  that changed meanwhile is imported as a new version). Locally:
   `brew install --cask libreoffice` (or set `LIBREOFFICE_PATH`).
 - **The original stays untouched.** Slider only ever reads the PPTX. Guests see rendered slide
   images, never the file.

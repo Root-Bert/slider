@@ -8,7 +8,7 @@ export { Icon, type IconName } from './Icon';
 export { IconButton } from './IconButton';
 export { Kbd } from './Kbd';
 export { Logo } from './Logo';
-export { Menu, type MenuAction } from './Menu';
+export { ContextMenu, Menu, type MenuAction } from './Menu';
 export { ProgressBar } from './ProgressBar';
 export { FilterChip, SegmentedControl, type Segment } from './SegmentedControl';
 export { Select, type SelectOption } from './Select';
