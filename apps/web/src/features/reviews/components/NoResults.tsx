@@ -15,6 +15,14 @@ export function NoResults({
   /** Missing for reviewers, who can't add decks. */
   onAdd?: () => void;
 }) {
+  if (!hasDecks && tab === 'shared') {
+    return (
+      <EmptyState
+        title="Noch nichts geteilt"
+        message="Sobald jemand in einer deiner Organisationen eine Präsentation hinzufügt, erscheint sie hier."
+      />
+    );
+  }
   if (!hasDecks) {
     return (
       <EmptyState
@@ -46,6 +54,7 @@ export function NoResults({
     all: 'Alle Reviews sind archiviert.',
     open: 'Keine offenen Kommentare – alles erledigt.',
     archive: 'Archivierte Reviews erscheinen hier.',
+    shared: 'Alle geteilten Reviews sind archiviert.',
   };
   return <EmptyState title="Hier ist nichts" message={messages[tab]} />;
 }

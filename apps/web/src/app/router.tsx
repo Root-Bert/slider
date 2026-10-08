@@ -27,7 +27,6 @@ export const router = createBrowserRouter([
         children: [
           { index: true, lazy: () => import('@/features/workspaces/HomePage') },
           { path: 'neu', lazy: () => import('@/features/onboarding/NewReviewPage') },
-          { path: 'geteilt', lazy: () => import('@/features/reviews/SharedPage') },
           { path: 'konto', lazy: () => import('@/features/account/AccountPage') },
           {
             path: 'w/:workspaceId',

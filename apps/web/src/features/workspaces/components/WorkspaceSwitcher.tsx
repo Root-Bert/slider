@@ -73,15 +73,6 @@ export function WorkspaceSwitcher() {
               ))}
             </div>
             <PopoverDivider />
-            <PopoverItem
-              icon={<Icon name="iosShare" size={18} className="text-fg-subtle" />}
-              onSelect={() => {
-                close();
-                void navigate(routes.shared());
-              }}
-            >
-              Mit mir geteilt
-            </PopoverItem>
             {canCreate ? (
               <PopoverItem
                 icon={<Icon name="add" size={18} className="text-fg-subtle" />}

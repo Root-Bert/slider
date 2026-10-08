@@ -32,7 +32,7 @@ export const queryKeys = {
   /** Every workspace's deck list – invalidate this after a deck was created or changed. */
   deckLists: ['decks', 'list'] as const,
   deckList: (workspaceId: string) => ['decks', 'list', workspaceId] as const,
-  /** The decks of all my workspaces ("Mit mir geteilt"). */
+  /** The decks of all my workspaces (tab "Geteilt"). */
   allDecks: ['decks', 'list', '*'] as const,
   deck: (deckId: string) => ['decks', deckId] as const,
   slides: (deckId: string) => ['decks', deckId, 'slides'] as const,

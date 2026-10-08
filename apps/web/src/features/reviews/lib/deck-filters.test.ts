@@ -64,15 +64,28 @@ describe('selectDecks', () => {
 
 describe('totals', () => {
   it('counts tabs and the non-archived open comments', () => {
-    expect(countByTab(decks)).toEqual({ all: 3, open: 2, archive: 1 });
+    expect(countByTab(decks)).toEqual({ all: 3, open: 2, archive: 1, shared: 0 });
     expect(activeTotals(decks)).toEqual({ reviews: 3, openComments: 10 });
   });
 });
 
-describe('sharedWith', () => {
+describe('shared tab', () => {
+  const colleague = { ...owner, id: 'u2', name: 'Kollegin' };
+  const mixed = [
+    makeDeck({ id: 'mine' }),
+    makeDeck({ id: 'theirs', owner: colleague }),
+    makeDeck({ id: 'old', owner: colleague, archivedAt: '2026-09-01T00:00:00Z' }),
+  ];
+
   it('keeps only the decks someone else added', () => {
-    const colleague = { ...owner, id: 'u2', name: 'Kollegin' };
-    const mixed = [makeDeck({ id: 'mine' }), makeDeck({ id: 'theirs', owner: colleague })];
-    expect(ids(sharedWith(mixed, owner.id))).toEqual(['theirs']);
+    expect(ids(sharedWith(mixed, owner.id))).toEqual(['theirs', 'old']);
+  });
+
+  it('lists and counts the non-archived shared decks', () => {
+    const shared = sharedWith(mixed, owner.id);
+    expect(ids(selectDecks(shared, { tab: 'shared', query: '', sort: 'updated' }))).toEqual([
+      'theirs',
+    ]);
+    expect(countByTab(decks, shared).shared).toBe(1);
   });
 });

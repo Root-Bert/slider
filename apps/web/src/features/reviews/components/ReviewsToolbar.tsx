@@ -28,6 +28,7 @@ export function ReviewsToolbar({
     { value: 'all', label: 'Alle', count: counts.all },
     { value: 'open', label: 'Offen', count: counts.open },
     { value: 'archive', label: 'Archiv', count: counts.archive > 0 ? counts.archive : undefined },
+    { value: 'shared', label: 'Geteilt', count: counts.shared > 0 ? counts.shared : undefined },
   ];
 
   return (

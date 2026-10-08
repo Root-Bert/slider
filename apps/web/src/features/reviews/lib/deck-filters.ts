@@ -1,6 +1,7 @@
 import type { Deck } from '@slider/shared';
 
-export const REVIEW_TABS = ['all', 'open', 'archive'] as const;
+/** `shared` lists other people's decks from all my organisations, not just this workspace's. */
+export const REVIEW_TABS = ['all', 'open', 'archive', 'shared'] as const;
 export type ReviewTab = (typeof REVIEW_TABS)[number];
 
 export const DECK_SORTS = ['updated', 'name', 'comments'] as const;
@@ -18,6 +19,7 @@ const TAB_PREDICATES: Record<ReviewTab, (deck: Deck) => boolean> = {
   all: (deck) => !isArchived(deck),
   open: (deck) => !isArchived(deck) && deck.openCommentCount > 0,
   archive: isArchived,
+  shared: (deck) => !isArchived(deck),
 };
 
 const byUpdated = (a: Deck, b: Deck) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
@@ -29,11 +31,16 @@ const COMPARATORS: Record<DeckSort, (a: Deck, b: Deck) => number> = {
   comments: (a, b) => b.openCommentCount - a.openCommentCount || byUpdated(a, b),
 };
 
-export function countByTab(decks: readonly Deck[]): Record<ReviewTab, number> {
+/** `shared` counts the shared decks (see {@link sharedWith}), the other tabs the workspace's. */
+export function countByTab(
+  decks: readonly Deck[],
+  shared: readonly Deck[] = [],
+): Record<ReviewTab, number> {
   return {
     all: decks.filter(TAB_PREDICATES.all).length,
     open: decks.filter(TAB_PREDICATES.open).length,
     archive: decks.filter(TAB_PREDICATES.archive).length,
+    shared: shared.filter(TAB_PREDICATES.shared).length,
   };
 }
 
@@ -60,6 +67,6 @@ export function activeTotals(decks: readonly Deck[]) {
   };
 }
 
-/** "Mit mir geteilt": the decks someone else added to one of my organisations. */
+/** Tab "Geteilt": the decks someone else added to one of my organisations. */
 export const sharedWith = (decks: readonly Deck[], userId: string): Deck[] =>
   decks.filter((deck) => deck.owner.id !== userId);
