@@ -10,22 +10,50 @@ import { useViewerToast } from '../state/viewer-toast';
 
 /**
  * Version pill in the controls row: owners reload a linked deck ("Neu laden") or upload a new
- * version of an uploaded one; from version 2 on everybody can switch the change markers of the
- * latest version on and off (Figma D2 "Änderungen zeigen").
+ * version of an uploaded one; linked decks say that they update themselves ("Auto-Sync"); the
+ * change markers of the latest version (Figma D2 "Änderungen zeigen") can be switched on and off
+ * only when that version actually added, changed or moved slides.
  */
 export function RevisionControls({ className }: { className?: string }) {
   const { isOwner } = useViewerData();
-  const { revisionNumber, isLinked } = useRevisionData();
+  const { revisionNumber, isLinked, sync, badges } = useRevisionData();
   const showUpdate = isOwner;
-  const showToggle = revisionNumber > 1;
-  if (!showUpdate && !showToggle) return null;
+  const showAutoSync = isLinked && Boolean(sync?.enabled);
+  const showToggle = revisionNumber > 1 && badges.size > 0;
+  if (!showUpdate && !showAutoSync && !showToggle) return null;
 
   return (
     <GlassPanel className={cn('flex shrink-0 items-center gap-1 py-1 pr-1 pl-1', className)}>
       {showUpdate && (isLinked ? <ReloadButton /> : <UploadButton />)}
-      {showUpdate && showToggle && <span aria-hidden className="mx-0.5 h-5 w-px bg-white/15" />}
+      {showAutoSync && <AutoSyncStatus />}
+      {(showUpdate || showAutoSync) && showToggle && (
+        <span aria-hidden className="mx-0.5 h-5 w-px bg-white/15" />
+      )}
       {showToggle && <ChangesToggle revisionNumber={revisionNumber} />}
     </GlassPanel>
+  );
+}
+
+/** "Auto-Sync" next to the reload button: linked decks are checked for changes by the server. */
+function AutoSyncStatus() {
+  const { sync } = useRevisionData();
+  const failing = Boolean(sync?.lastSyncError);
+  const label = failing
+    ? 'Auto-Sync gestört – die PowerPoint konnte zuletzt nicht geprüft werden'
+    : `Auto-Sync an – Slider prüft die PowerPoint automatisch auf Änderungen · ${lastCheckedLabel(sync)}`;
+  return (
+    <span
+      role="status"
+      aria-label={label}
+      title={label}
+      className="flex h-8 items-center gap-1.5 pr-1.5 pl-1 text-xs text-fg-muted"
+    >
+      <span
+        aria-hidden
+        className={cn('size-1.5 shrink-0 rounded-full', failing ? 'bg-warning' : 'bg-success')}
+      />
+      <span className="md:@max-[900px]:hidden max-md:hidden">Auto-Sync</span>
+    </span>
   );
 }
 
