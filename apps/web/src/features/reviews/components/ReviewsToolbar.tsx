@@ -25,10 +25,20 @@ export function ReviewsToolbar({
   onViewChange,
 }: ReviewsToolbarProps) {
   const segments: Segment<ReviewTab>[] = [
-    { value: 'all', label: 'Alle', count: counts.all },
-    { value: 'open', label: 'Offen', count: counts.open },
-    { value: 'archive', label: 'Archiv', count: counts.archive > 0 ? counts.archive : undefined },
-    { value: 'shared', label: 'Geteilt', count: counts.shared > 0 ? counts.shared : undefined },
+    { value: 'all', label: 'Alle', icon: 'description', count: counts.all },
+    { value: 'open', label: 'Offen', icon: 'chatBubble', count: counts.open },
+    {
+      value: 'archive',
+      label: 'Archiv',
+      icon: 'archive',
+      count: counts.archive > 0 ? counts.archive : undefined,
+    },
+    {
+      value: 'shared',
+      label: 'Geteilt',
+      icon: 'iosShare',
+      count: counts.shared > 0 ? counts.shared : undefined,
+    },
   ];
 
   return (
@@ -36,6 +46,7 @@ export function ReviewsToolbar({
       <div className="glass rounded-panel p-1">
         <SegmentedControl
           label="Reviews filtern"
+          variant="tool"
           segments={segments}
           value={tab}
           onChange={onTabChange}
