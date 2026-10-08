@@ -14,8 +14,11 @@ export interface ViewerData {
   slides: Slide[];
   slideIndex: ReadonlyMap<string, number>;
   viewer: Viewer;
-  isOwner: boolean;
-  /** Guests with a "view" link can only look (BER-102). */
+  /** Joined through a review link (no account): leaves the session instead of closing the deck. */
+  isGuest: boolean;
+  /** Rename, share, new versions, sync – from `deck.permissions` (BER-129). */
+  canManage: boolean;
+  /** Write comments, reply and resolve; guests with a "view" link can only look (BER-102). */
   canComment: boolean;
   /**
    * The ⊕ between slides inserts a slide into the PowerPoint (BER-128): owner only, and only for
@@ -48,10 +51,11 @@ export function deriveViewerData(
     slides,
     slideIndex: new Map(slides.map((slide, index) => [slide.id, index])),
     viewer,
-    isOwner: viewer.kind === 'owner',
-    canComment: viewer.kind === 'owner' || viewer.role === 'comment',
+    isGuest: viewer.kind === 'guest',
+    canManage: deck.permissions.canManage,
+    canComment: deck.permissions.canComment,
     canInsertSlides:
-      viewer.kind === 'owner' && (deck.source === 'onedrive' || deck.source === 'sharepoint'),
+      deck.permissions.canManage && (deck.source === 'onedrive' || deck.source === 'sharepoint'),
     threads,
     threadById: new Map(threads.map((thread) => [thread.id, thread])),
     threadsBySlide: groupThreadsBySlide(threads, slides),

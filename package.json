@@ -15,6 +15,7 @@
   "scripts": {
     "dev": "bun run --filter @slider/api --filter @slider/web dev",
     "build": "bun run --filter '*' build",
+    "start": "bun apps/api/src/server.ts",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "vitest run",
     "lint": "eslint .",

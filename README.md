@@ -111,7 +111,8 @@ Microsoft Graph token. Without one, the start page explains what is missing.
    `https://<your host>/api/auth/microsoft/callback`.
 3. _Certificates & secrets_ → new client secret.
 4. _API permissions_ → Microsoft Graph, delegated: `Files.Read.All`, `offline_access`, `User.Read`
-   – plus `Files.ReadWrite.All` for inserting slides (see below; asked for only on first use).
+   and (for signing in to Slider, BER-129) `openid`, `profile`, `email` – plus `Files.ReadWrite.All`
+   for inserting slides (see below; asked for only on first use).
 5. Copy `.env.example` to `.env` in the repo root, fill in `MS_CLIENT_ID`, `MS_CLIENT_SECRET`
    (optionally `MS_TENANT`, `MS_REDIRECT_URI`) and restart `bun run dev` – `.env` is only read at
    start-up.
@@ -178,6 +179,23 @@ For the web app: `GET /api/decks/:id/status` is a cheap poll (`revisionNumber`, 
 1 gelöscht, 5 neue Kommentare aus PowerPoint"), `GET /api/decks/:id/revisions/latest/diff`
 returns per-slide changes plus deleted slides with their comments, and every slide carries
 `change`.
+
+## Self-hosting
+
+One container serves the API and the built web app; Postgres and Caddy (automatic HTTPS) run
+next to it with Docker Compose. A small VPS (2 vCPU, 4 GB) is enough for a team, at roughly
+7 € a month and no per-user costs.
+
+```bash
+cd deploy
+cp .env.example .env     # SLIDER_DOMAIN, POSTGRES_PASSWORD, SLIDER_SECRET, a login provider
+docker compose up -d --build
+```
+
+Without Docker: `bun run build`, then `NODE_ENV=production bun apps/api/src/server.ts`
+(`bun run start`). `DATABASE_URL` switches from PGlite to a Postgres server; `GET /api/health`
+checks the database. Step-by-step guide (German) with all variables, optional Authentik (OIDC),
+backups, updates and costs: [docs/self-hosting.md](docs/self-hosting.md).
 
 ## Voice and video comments
 

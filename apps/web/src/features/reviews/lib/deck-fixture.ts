@@ -12,6 +12,7 @@ export const owner: Author = {
 export function makeDeck(overrides: Partial<Deck> = {}): Deck {
   return {
     id: 'd1',
+    workspaceId: 'w1',
     title: 'Q4 Strategie',
     fileName: 'Q4 Strategie.pptx',
     source: 'onedrive',
@@ -25,6 +26,7 @@ export function makeDeck(overrides: Partial<Deck> = {}): Deck {
     thumbnailUrl: null,
     participants: [],
     import: { status: 'ready' },
+    permissions: { canManage: true, canComment: true },
     ...overrides,
   };
 }

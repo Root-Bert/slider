@@ -174,7 +174,7 @@ describe('inserting a slide (POST /decks/:id/slides)', () => {
     );
     expect((await insert(ctx, deckId, agendaId, guest)).status).toBe(403);
 
-    const upload = await createDeckFromFile(ctx.deps, ctx.ownerId, {
+    const upload = await createDeckFromFile(ctx.deps, ctx, {
       fileName: 'Upload.pptx',
       bytes: pptxBytes('v1'),
       source: 'upload',

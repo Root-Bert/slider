@@ -14,7 +14,7 @@ interface DeckActionsProps {
   triggerClassName?: string;
 }
 
-/** The ⋯ menu of a deck card/row: rename, archive/restore, delete. */
+/** The ⋯ menu of a deck card/row: rename, archive/restore, delete – for decks the viewer manages. */
 export function DeckActions({ deck, onNotify, className, triggerClassName }: DeckActionsProps) {
   const [dialog, setDialog] = useState<'rename' | 'delete' | null>(null);
   const update = useUpdateDeck(deck.id);
@@ -41,6 +41,9 @@ export function DeckActions({ deck, onNotify, className, triggerClassName }: Dec
       : { label: 'Archivieren', icon: 'archive', onSelect: toggleArchived },
     { label: 'Löschen', icon: 'delete', tone: 'danger', onSelect: () => setDialog('delete') },
   ];
+
+  // Reviewers and members on other people's decks: nothing to manage (BER-129).
+  if (!deck.permissions.canManage) return null;
 
   return (
     <>

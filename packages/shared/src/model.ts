@@ -54,8 +54,30 @@ export const importStateSchema = z.discriminatedUnion('status', [
 ]);
 export type ImportState = z.infer<typeof importStateSchema>;
 
+// ── Workspaces and rights (BER-129) ─────────────────────────────────────────
+
+/**
+ * Role in a workspace, strongest first. `reviewer` views and comments; `member` also creates
+ * decks and manages its own; `admin` manages every deck, the members and invites; `owner` may
+ * also rename/delete the workspace and appoint owners.
+ */
+export const WORKSPACE_ROLES = ['owner', 'admin', 'member', 'reviewer'] as const;
+export const workspaceRoleSchema = z.enum(WORKSPACE_ROLES);
+export type WorkspaceRole = z.infer<typeof workspaceRoleSchema>;
+
+/** What the caller may do with a deck – the web app shows/hides actions from this, not from `viewer.kind`. */
+export const deckPermissionsSchema = z.object({
+  /** Rename, archive, delete, share (review links), new versions, sync, delete any comment. */
+  canManage: z.boolean(),
+  /** Write comments and replies, resolve threads. */
+  canComment: z.boolean(),
+});
+export type DeckPermissions = z.infer<typeof deckPermissionsSchema>;
+
 export const deckSchema = z.object({
   id: z.string(),
+  /** The workspace the deck belongs to (BER-129). */
+  workspaceId: z.string(),
   title: z.string(),
   fileName: z.string(),
   source: deckSourceSchema,
@@ -73,6 +95,8 @@ export const deckSchema = z.object({
   currentRevisionId: z.string().nullable().optional(),
   /** Automatic update state of link imports (BER-107). */
   sync: deckSyncSchema.optional(),
+  /** The caller's rights on this deck (BER-129). */
+  permissions: deckPermissionsSchema,
 });
 export type Deck = z.infer<typeof deckSchema>;
 
@@ -251,7 +275,10 @@ export const reviewLinkSchema = z.object({
 });
 export type ReviewLink = z.infer<typeof reviewLinkSchema>;
 
-/** Who is making a request: the deck owner or a guest who joined through a review link. */
+/**
+ * Who is making a request: `owner` is a signed-in account (BER-129 – the name is historical; what
+ * the account may do with a deck is in `Deck.permissions`), `guest` joined through a review link.
+ */
 export const viewerSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('owner'), author: authorSchema }),
   z.object({

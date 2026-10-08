@@ -1,5 +1,6 @@
 import { and, asc, count, desc, eq, inArray, isNull, max, min } from 'drizzle-orm';
 import type { Author, Deck, DeckSource } from '@slider/shared';
+import { permissionsFor, type DeckViewerAccess } from '../auth/access';
 import { ownerAuthor } from '../authors';
 import type { Executor } from '../db/client';
 import { comments, decks, revisions, slideVersions, users, type DeckRow } from '../db/schema';
@@ -7,12 +8,15 @@ import type { AppDeps } from '../deps';
 import { sha256Hex } from '../import/common';
 import { blobKeys, fileUrl } from '../storage/blob-storage';
 import { toDeckSync } from './deck-sync';
+import { rolesOf } from './workspaces';
 
 const MAX_PARTICIPANTS = 5;
 
 export interface DeckDtoOptions {
   /** Guests get no owner-only details (the Microsoft login link of a sync error). */
   forGuest?: boolean;
+  /** Who is asking, for `permissions`; without it every permission is `false`. */
+  access?: DeckViewerAccess;
 }
 
 /** Builds the `Deck` DTOs with their aggregates in a fixed number of queries, however many decks. */
@@ -98,6 +102,7 @@ export async function toDeckDtos(
     const revisionId = row.currentRevisionId ?? '';
     return {
       id: row.id,
+      workspaceId: row.workspaceId,
       title: row.title,
       fileName: row.fileName,
       source: row.source,
@@ -115,8 +120,9 @@ export async function toDeckDtos(
       sync: toDeckSync(row, {
         pendingRevisionAt: pendingByDeck.get(row.id) ?? null,
         summary: summaryByRevision.get(revisionId) ?? null,
-        forGuest: options.forGuest ?? false,
+        forGuest: options.forGuest ?? options.access?.kind === 'guest',
       }),
+      permissions: permissionsFor(options.access, row),
     };
   });
 }
@@ -150,13 +156,19 @@ export async function toDeckDto(
   return deck;
 }
 
-export async function listOwnerDecks(db: Executor, ownerId: string): Promise<Deck[]> {
+/** Decks of the given workspaces, most recently updated first. */
+export async function listWorkspaceDecks(
+  db: Executor,
+  workspaceIds: readonly string[],
+  access: DeckViewerAccess,
+): Promise<Deck[]> {
+  if (workspaceIds.length === 0) return [];
   const rows = await db
     .select()
     .from(decks)
-    .where(eq(decks.ownerId, ownerId))
+    .where(inArray(decks.workspaceId, [...workspaceIds]))
     .orderBy(desc(decks.updatedAt));
-  return toDeckDtos(db, rows);
+  return toDeckDtos(db, rows, { access });
 }
 
 /** Records activity on a deck so the overview sorts it to the top. */
@@ -174,10 +186,13 @@ export interface NewDeckFile {
   changeToken?: string | null;
 }
 
-/** Stores the original, creates deck + revision 1 and queues the import. Returns at once. */
+/**
+ * Stores the original, creates deck + revision 1 and queues the import. Returns at once.
+ * `ownerId` is the creator (whose Microsoft login keeps a linked deck in sync).
+ */
 export async function createDeckFromFile(
   deps: AppDeps,
-  ownerId: string,
+  { ownerId, workspaceId }: { ownerId: string; workspaceId: string },
   file: NewDeckFile,
 ): Promise<Deck> {
   const deckId = crypto.randomUUID();
@@ -190,6 +205,7 @@ export async function createDeckFromFile(
     await tx.insert(decks).values({
       id: deckId,
       ownerId,
+      workspaceId,
       title: titleFromFileName(file.fileName),
       fileName: file.fileName,
       source: file.source,
@@ -219,7 +235,9 @@ export async function createDeckFromFile(
   if (!row) throw new Error('Deck insert returned no row');
 
   deps.queue.enqueue({ deckId, revisionId });
-  return toDeckDto(deps.db, row);
+  return toDeckDto(deps.db, row, {
+    access: { kind: 'user', userId: ownerId, roles: await rolesOf(deps.db, ownerId) },
+  });
 }
 
 /** Deletes the deck with everything in it, files included (BER-121). */

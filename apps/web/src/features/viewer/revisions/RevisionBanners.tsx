@@ -65,7 +65,7 @@ function PendingBanner({ sync }: { sync: DeckSync }) {
 }
 
 function ErrorBanner({ error }: { error: SyncError }) {
-  const { deck, isOwner } = useViewerData();
+  const { deck, canManage } = useViewerData();
   const { revisionNumber, isLinked } = useRevisionData();
   const syncDeck = useSyncDeck(deck.id);
   const showToast = useViewerToast();
@@ -85,9 +85,9 @@ function ErrorBanner({ error }: { error: SyncError }) {
       },
       onError: (failure) => showToast(failure.message, 'danger'),
     });
-  const login = isOwner && isLoginError(error.code) && error.loginUrl;
+  const login = canManage && isLoginError(error.code) && error.loginUrl;
   // Only link imports can be checked again; uploads get a new version by hand.
-  const canRetry = isOwner && isLinked;
+  const canRetry = canManage && isLinked;
   const icon: IconName =
     isLoginError(error.code) || error.code === 'access_revoked' ? 'lock' : 'warning';
   const title = syncErrorTitle(error.code);

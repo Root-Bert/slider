@@ -1,0 +1,4 @@
+# Copy to deploy/sites/ to serve Authentik through Slider's Caddy (AUTHENTIK_DOMAIN in deploy/.env).
+{$AUTHENTIK_DOMAIN} {
+	reverse_proxy authentik-server:9000
+}

@@ -21,6 +21,7 @@ import {
 } from '../src/sources/errors';
 import { SyncScheduler, syncTickMs } from '../src/sync/scheduler';
 import { createDeckFromFile } from '../src/services/decks';
+import { createWorkspace } from '../src/services/workspaces';
 import { cookieFrom, createTestContext, pinComment, type TestContext } from './helpers';
 import {
   BASE_SLIDES,
@@ -200,10 +201,14 @@ describe('manual sync (POST /decks/:id/sync)', () => {
       .insert(users)
       .values({ id: crypto.randomUUID(), name: 'Fremd', email: 'fremd@example.com', color: 'blue' })
       .returning();
-    await ctx.deps.db.update(decks).set({ ownerId: stranger!.id }).where(eq(decks.id, deckId));
+    const strangers = await createWorkspace(ctx.deps.db, stranger!.id, 'Fremd');
+    await ctx.deps.db
+      .update(decks)
+      .set({ ownerId: stranger!.id, workspaceId: strangers.id })
+      .where(eq(decks.id, deckId));
     expect((await ctx.request(`/api/decks/${deckId}/sync`, { method: 'POST' })).status).toBe(404);
 
-    const upload = await createDeckFromFile(ctx.deps, ctx.ownerId, {
+    const upload = await createDeckFromFile(ctx.deps, ctx, {
       fileName: 'Upload.pptx',
       bytes: pptxBytes('v1'),
       source: 'upload',
@@ -642,6 +647,7 @@ describe('robustness', () => {
     await ctx.deps.db.insert(decks).values({
       id,
       ownerId: ctx.ownerId,
+      workspaceId: ctx.workspaceId,
       title: 'Alt',
       fileName: 'Alt.pptx',
       source: 'upload',

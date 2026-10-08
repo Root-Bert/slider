@@ -17,10 +17,10 @@ import { useViewerToast } from '../state/viewer-toast';
  * version arrived, a short notice next to the button says what changed (`RevisionNotice`).
  */
 export function RevisionControls({ className }: { className?: string }) {
-  const { isOwner } = useViewerData();
+  const { canManage } = useViewerData();
   const { revisionNumber, isLinked, sync, badges, announcement, dismissAnnouncement } =
     useRevisionData();
-  const showUpdate = isOwner;
+  const showUpdate = canManage;
   const showAutoSync = isLinked && Boolean(sync?.enabled);
   const showToggle = revisionNumber > 1 && badges.size > 0;
   const showPill = showUpdate || showAutoSync || showToggle || announcement !== null;

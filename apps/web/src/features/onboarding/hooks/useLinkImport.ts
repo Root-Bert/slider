@@ -71,7 +71,7 @@ function noAccessFromLoginError(kind: string, host: string, link: string): NoAcc
  * After the Microsoft login the API sends the browser back to `/neu?link=…`: the link is
  * prefilled and imported once automatically. `&msError=…` instead explains why the login failed.
  */
-export function useLinkImport(onImported: (deck: Deck) => void) {
+export function useLinkImport(workspaceId: string, onImported: (deck: Deck) => void) {
   const [searchParams, setSearchParams] = useSearchParams();
   // Back from the Microsoft login: `?link=` (and maybe `&msError=`), read once on mount.
   const [resume] = useState(() => {
@@ -87,7 +87,7 @@ export function useLinkImport(onImported: (deck: Deck) => void) {
       ? noAccessFromLoginError(resume.msError, resume.parsed.host, resume.link)
       : null,
   );
-  const importLink = useImportLink();
+  const importLink = useImportLink(workspaceId);
   const queryClient = useQueryClient();
   const resumed = useRef(false);
 
@@ -106,7 +106,7 @@ export function useLinkImport(onImported: (deck: Deck) => void) {
     importLink.mutate(link.url.toString(), {
       onSuccess: (deck) => {
         queryClient.setQueryData(queryKeys.deck(deck.id), deck);
-        void queryClient.invalidateQueries({ queryKey: queryKeys.decks, exact: true });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.deckLists });
         onImported(deck);
       },
     });

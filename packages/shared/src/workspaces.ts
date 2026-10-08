@@ -1,0 +1,174 @@
+import { z } from 'zod';
+import { accentColorSchema, workspaceRoleSchema } from './model';
+
+/**
+ * Accounts, login and workspaces (BER-129). Routes are listed in the contract table in `api.ts`.
+ */
+
+// ── Login ───────────────────────────────────────────────────────────────────
+
+/** How new accounts may be created: only by invitation, by anyone, or by verified company domains. */
+export const SIGNUP_MODES = ['invite', 'open', 'domains'] as const;
+export const signupModeSchema = z.enum(SIGNUP_MODES);
+export type SignupMode = z.infer<typeof signupModeSchema>;
+
+export const loginProviderSchema = z.object({
+  id: z.enum(['microsoft', 'oidc']),
+  /** Button text, e.g. "Mit Microsoft anmelden". */
+  label: z.string(),
+  /** Both are browser redirects: send the browser to `${loginUrl}?returnTo=<path>`. */
+  kind: z.literal('redirect'),
+  loginUrl: z.string(),
+});
+export type LoginProvider = z.infer<typeof loginProviderSchema>;
+
+/** `GET /auth/providers` – what the login page offers. */
+export const authProvidersSchema = z.object({
+  providers: z.array(loginProviderSchema),
+  /** Magic link by e-mail (`POST /auth/email/start`); only with SMTP configured. */
+  magicLink: z.boolean(),
+  /** Development only: requests without a session act as the dev owner, no login needed. */
+  devLogin: z.boolean(),
+  signup: signupModeSchema,
+});
+export type AuthProviders = z.infer<typeof authProvidersSchema>;
+
+/**
+ * `?error=` on `/login` after a failed sign-in:
+ * `signup_closed` (no account and no invitation), `account_exists` (the e-mail belongs to an
+ * account that signs in another way), `no_email`/`email_unverified` (the provider sent no usable
+ * address), `link_invalid`/`link_expired` (magic link), `admin_consent`/`denied`/`failed`.
+ */
+export const LOGIN_ERRORS = [
+  'signup_closed',
+  'account_exists',
+  'no_email',
+  'email_unverified',
+  'link_invalid',
+  'link_expired',
+  'admin_consent',
+  'denied',
+  'failed',
+] as const;
+export type LoginError = (typeof LOGIN_ERRORS)[number];
+
+export const startEmailLoginInputSchema = z.object({
+  email: z.email().max(320),
+  /** Same-origin path to land on after the link was clicked, e.g. `/join/<token>`. */
+  returnTo: z.string().max(2048).optional(),
+});
+export type StartEmailLoginInput = z.infer<typeof startEmailLoginInputSchema>;
+
+// ── Account ─────────────────────────────────────────────────────────────────
+
+export const meUserSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string(),
+  color: accentColorSchema,
+  avatarUrl: z.string().nullable(),
+  isInstanceAdmin: z.boolean(),
+  /** A Microsoft refresh token is stored – OneDrive/SharePoint links can be imported. */
+  microsoftConnected: z.boolean(),
+});
+export type MeUser = z.infer<typeof meUserSchema>;
+
+// ── Workspaces ──────────────────────────────────────────────────────────────
+
+export const workspaceSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  createdAt: z.iso.datetime(),
+  /** The caller's role. */
+  role: workspaceRoleSchema,
+  memberCount: z.number().int(),
+});
+export type Workspace = z.infer<typeof workspaceSchema>;
+
+export const workspaceNameSchema = z.string().trim().min(1).max(80);
+export const createWorkspaceInputSchema = z.object({ name: workspaceNameSchema });
+export type CreateWorkspaceInput = z.infer<typeof createWorkspaceInputSchema>;
+export const updateWorkspaceInputSchema = z.object({ name: workspaceNameSchema });
+export type UpdateWorkspaceInput = z.infer<typeof updateWorkspaceInputSchema>;
+
+export const workspaceMemberSchema = z.object({
+  userId: z.string(),
+  name: z.string(),
+  email: z.string(),
+  color: accentColorSchema,
+  avatarUrl: z.string().nullable(),
+  role: workspaceRoleSchema,
+  joinedAt: z.iso.datetime(),
+});
+export type WorkspaceMember = z.infer<typeof workspaceMemberSchema>;
+
+export const updateMemberInputSchema = z.object({ role: workspaceRoleSchema });
+export type UpdateMemberInput = z.infer<typeof updateMemberInputSchema>;
+
+/** Invitations hand out every role but `owner` – owners are appointed among members. */
+export const inviteRoleSchema = z.enum(['admin', 'member', 'reviewer']);
+export type InviteRole = z.infer<typeof inviteRoleSchema>;
+
+export const INVITE_STATES = ['valid', 'expired', 'revoked', 'used'] as const;
+export const inviteStateSchema = z.enum(INVITE_STATES);
+export type InviteState = z.infer<typeof inviteStateSchema>;
+
+export const workspaceInviteSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  /** `null`: a link anyone may use (until it expires or is revoked); else single-use for this address. */
+  email: z.string().nullable(),
+  role: inviteRoleSchema,
+  state: inviteStateSchema,
+  createdBy: z.object({ id: z.string(), name: z.string() }).nullable(),
+  createdAt: z.iso.datetime(),
+  expiresAt: z.iso.datetime(),
+  acceptedAt: z.iso.datetime().nullable(),
+  revokedAt: z.iso.datetime().nullable(),
+  useCount: z.number().int(),
+});
+export type WorkspaceInvite = z.infer<typeof workspaceInviteSchema>;
+
+export const createWorkspaceInviteInputSchema = z.object({
+  /** Omit for a link invite. */
+  email: z.email().max(320).optional(),
+  role: inviteRoleSchema.default('member'),
+});
+export type CreateWorkspaceInviteInput = z.input<typeof createWorkspaceInviteInputSchema>;
+
+/** `POST /workspaces/:id/invites` – the only time the plain link is visible. */
+export const createdWorkspaceInviteSchema = z.object({
+  invite: workspaceInviteSchema,
+  /** `${WEB_ORIGIN}/join/<token>` */
+  url: z.string(),
+  /** An e-mail went out (only for e-mail invites with SMTP configured). */
+  emailSent: z.boolean(),
+});
+export type CreatedWorkspaceInvite = z.infer<typeof createdWorkspaceInviteSchema>;
+
+/** `GET /join/:token` – public preview of an invite link. */
+export const joinPreviewSchema = z.object({
+  workspaceName: z.string(),
+  inviterName: z.string().nullable(),
+  role: inviteRoleSchema,
+  /** E-mail invites: the address, masked (`r…t@firma.de`); `null` for link invites. */
+  email: z.string().nullable(),
+  state: inviteStateSchema,
+});
+export type JoinPreview = z.infer<typeof joinPreviewSchema>;
+
+/** E-mail invites for the signed-in address, shown in `GET /me`. */
+export const pendingInviteSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  workspaceName: z.string(),
+  inviterName: z.string().nullable(),
+  role: inviteRoleSchema,
+  expiresAt: z.iso.datetime(),
+});
+export type PendingInvite = z.infer<typeof pendingInviteSchema>;
+
+/** Response of `POST /join/:token` and `POST /workspace-invites/:id/accept`. */
+export const joinResultSchema = z.object({ workspace: workspaceSchema });
+export type JoinResult = z.infer<typeof joinResultSchema>;

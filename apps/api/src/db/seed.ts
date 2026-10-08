@@ -8,6 +8,7 @@ import type { Clock } from '../clock';
 import { dataPaths, loadConfig } from '../config';
 import { newReviewToken } from '../services/review-links';
 import { upsertUser } from '../services/users';
+import { ensurePersonalWorkspace } from '../services/workspaces';
 import { blobKeys, type BlobStorage } from '../storage/blob-storage';
 import { FsBlobStorage } from '../storage/fs-blob-storage';
 import { openDatabase, type Database, type Transaction } from './client';
@@ -46,6 +47,7 @@ interface SeedContext extends SeedDeps {
   authors: Record<PersonKey, Author>;
   slideImageKeys: Record<SlideImage, string>;
   ownerId: string;
+  workspaceId: string;
 }
 
 /** Fills an empty database with the demo decks from the design. Returns the owner. */
@@ -79,7 +81,14 @@ export async function seedDemoData(deps: SeedDeps): Promise<UserRow> {
     anna: await reviewer('anna'),
   };
 
-  const context: SeedContext = { ...deps, now, authors, slideImageKeys, ownerId: robert.id };
+  const context: SeedContext = {
+    ...deps,
+    now,
+    authors,
+    slideImageKeys,
+    ownerId: robert.id,
+    workspaceId: await ensurePersonalWorkspace(deps.db, robert.id, now),
+  };
   for (const deck of demoDecks(now)) await seedDeck(context, deck);
   return robert;
 }
@@ -94,6 +103,7 @@ async function seedDeck(ctx: SeedContext, seed: DeckSeed): Promise<void> {
     await tx.insert(decks).values({
       id: deckId,
       ownerId: ctx.ownerId,
+      workspaceId: ctx.workspaceId,
       title: seed.title,
       fileName: `${seed.title}.pptx`,
       source: seed.source,

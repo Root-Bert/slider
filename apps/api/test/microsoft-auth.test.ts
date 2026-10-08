@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { mapMicrosoftError } from '../src/auth/microsoft';
+import { mapMicrosoftError, MICROSOFT_SCOPES, MICROSOFT_WRITE_SCOPES } from '../src/auth/microsoft';
 import { decryptToken, encryptToken } from '../src/auth/token-crypto';
 import { users } from '../src/db/schema';
 import type { FetchLike } from '../src/sources/safe-fetch';
@@ -86,7 +86,7 @@ describe('Microsoft login routes', () => {
       client_id: 'client-id',
       response_type: 'code',
       redirect_uri: MICROSOFT_TEST_CONFIG.redirectUri,
-      scope: 'Files.Read.All offline_access User.Read',
+      scope: 'openid profile email offline_access User.Read Files.Read.All',
       code_challenge_method: 'S256',
     });
     expect(location.searchParams.get('code_challenge')).toMatch(/^[\w-]{43}$/);
@@ -226,7 +226,7 @@ describe('Microsoft login routes', () => {
       `/api/auth/microsoft/login?access=write&returnTo=${encodeURIComponent('/d/deck-1')}`,
     );
     const location = new URL(res.headers.get('location') ?? '');
-    expect(location.searchParams.get('scope')).toBe('Files.ReadWrite.All offline_access User.Read');
+    expect(location.searchParams.get('scope')).toBe(MICROSOFT_WRITE_SCOPES);
   });
 
   it('without write consent yet, a write token is null but the sign-in stays (BER-128)', async () => {
@@ -251,10 +251,7 @@ describe('Microsoft login routes', () => {
 
     expect(await ctx.deps.microsoft.getAccessToken(ctx.ownerId, { access: 'write' })).toBeNull();
     expect(await ctx.deps.microsoft.getAccessToken(ctx.ownerId)).toBe('at-read');
-    expect(scopes).toEqual([
-      'Files.ReadWrite.All offline_access User.Read',
-      'Files.Read.All offline_access User.Read',
-    ]);
+    expect(scopes).toEqual([MICROSOFT_WRITE_SCOPES, MICROSOFT_SCOPES]);
     const [owner] = await ctx.deps.db.select().from(users).where(eq(users.id, ctx.ownerId));
     expect(owner?.msRefreshToken).not.toBeNull();
   });

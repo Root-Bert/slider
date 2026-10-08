@@ -12,17 +12,24 @@ export function NoResults({
   hasDecks: boolean;
   query: string;
   tab: ReviewTab;
-  onAdd: () => void;
+  /** Missing for reviewers, who can't add decks. */
+  onAdd?: () => void;
 }) {
   if (!hasDecks) {
     return (
       <EmptyState
         title="Noch keine Reviews"
-        message="Füge eine PowerPoint per OneDrive- oder SharePoint-Link hinzu oder lade eine PPTX hoch – Feedback landet direkt auf der Folie."
+        message={
+          onAdd
+            ? 'Füge eine PowerPoint per OneDrive- oder SharePoint-Link hinzu oder lade eine PPTX hoch – Feedback landet direkt auf der Folie.'
+            : 'In diesem Workspace gibt es noch keine Präsentationen. Sobald jemand eine hinzufügt, erscheint sie hier.'
+        }
         action={
-          <Button icon="add" onClick={onAdd}>
-            Präsentation hinzufügen
-          </Button>
+          onAdd && (
+            <Button icon="add" onClick={onAdd}>
+              Präsentation hinzufügen
+            </Button>
+          )
         }
       />
     );

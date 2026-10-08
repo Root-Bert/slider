@@ -5,3 +5,4 @@ export * from './link';
 export * from './shapes';
 export * from './sync';
 export * from './revisions';
+export * from './workspaces';

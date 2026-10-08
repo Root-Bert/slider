@@ -1,0 +1,281 @@
+# Slider selbst hosten
+
+Kurz und praktisch: Slider auf einem eigenen kleinen Server für ein Unternehmen betreiben.
+Stand Oktober 2026 – Preise und Versionen sind Näherungswerte, bitte vor dem Bestellen prüfen.
+
+> **Hinweis:** Das Docker-Image (`Dockerfile`) und die Compose-Dateien sind bisher **nicht mit
+> Docker gebaut/getestet** worden (auf der Entwicklungsmaschine gibt es kein Docker). Getestet sind
+> die Teile darunter: API gegen einen echten Postgres-Server inkl. Migrationen, Auslieferung der
+> Web-App durch die API, Health-Check, sauberes Herunterfahren, die Caddyfile (`caddy adapt`) und
+> die gefilterte Produktions-Installation (`bun install --production --filter @slider/api`).
+> Beim ersten echten `docker compose up` also genau hinschauen (siehe [Fehlersuche](#fehlersuche)).
+
+## Aufbau
+
+```
+Internet ──443──▶ Caddy (HTTPS, Let's Encrypt)
+                    │
+                    ▼
+                  slider  (ein Container: Bun-API + gebaute Web-App, Port 8787)
+                    │            │
+                    ▼            ▼
+                 Postgres     Volume /data  (Folien-Bilder, PPTX, Aufnahmen)
+                    ▲
+   optional: Authentik (Firmen-Login per OIDC, eigener Postgres)
+```
+
+- **Ein Deployable:** Die API liefert im Produktivbetrieb auch die Web-App aus `apps/web/dist`
+  (alle Pfade außer `/api` und `/files` fallen auf `index.html` zurück). Gehashte Dateien unter
+  `/assets/` werden ein Jahr gecacht, `index.html` nie. Dadurch gilt: `WEB_ORIGIN` = öffentliche URL.
+- **Datenbank:** Mit `DATABASE_URL` ein echter Postgres (in Compose: `postgres:17`), sonst
+  die eingebettete PGlite-Datenbank in `/data/db`. Migrationen laufen beim Start automatisch.
+- **Dateien** liegen im Volume `/data` (`blobs/`, `media/`).
+- **Health-Check:** `GET /api/health` → `200 {"ok":true}`, wenn die Datenbank antwortet.
+- **Hinter Caddy:** `TRUST_PROXY=1` sorgt dafür, dass Rate-Limits die echte Client-IP aus
+  `X-Forwarded-For` nehmen. Sichere Cookies gibt es automatisch mit `NODE_ENV=production`.
+
+## Voraussetzungen
+
+- Ein Linux-Server mit Docker + Compose-Plugin, öffentlicher IPv4/IPv6, Ports 80 und 443 offen.
+  - Nur Slider: 2 vCPU, 4 GB RAM, 40 GB SSD reichen für ein Team (z. B. Hetzner CX23).
+  - Mit Authentik: **8 GB RAM** einplanen (Authentik braucht laut Doku mind. 2 CPU-Kerne und
+    2 GB RAM zusätzlich), z. B. Hetzner CX33.
+  - x86 (amd64) ist der Normalfall. ARM (z. B. Hetzner CAX) sollte gehen – alle Basis-Images und
+    `@napi-rs/canvas` gibt es für arm64 –, ist aber ungetestet.
+- Eine (Sub-)Domain, z. B. `slider.firma.de`, deren A-/AAAA-Record auf den Server zeigt.
+- Mindestens ein Login-Weg: Microsoft (Entra), OIDC (z. B. Authentik) oder E-Mail (SMTP).
+  Im Produktivbetrieb startet Slider ohne Login-Weg nicht.
+
+## Schritt für Schritt (Hetzner-VPS)
+
+1. **Server anlegen:** Hetzner Console → Server → Ubuntu 24.04, Typ CX23 (bzw. CX33 mit
+   Authentik), SSH-Key hinterlegen. Optional: Backups aktivieren (+20 % vom Serverpreis).
+2. **Firewall:** In der Hetzner-Firewall nur 22 (SSH), 80 und 443 (TCP) sowie 443/UDP (HTTP/3)
+   erlauben.
+3. **DNS:** Beim Domain-Anbieter `A slider.firma.de → <IPv4>` (und `AAAA → <IPv6>`) setzen.
+   Warten, bis `dig +short slider.firma.de` die IP liefert – sonst schlägt das Zertifikat fehl.
+4. **Docker installieren** (als root):
+   ```bash
+   curl -fsSL https://get.docker.com | sh
+   ```
+5. **Slider holen und konfigurieren:**
+   ```bash
+   git clone <repo-url> /opt/slider
+   cd /opt/slider/deploy
+   cp .env.example .env
+   sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 24)/" .env
+   sed -i "s|^SLIDER_SECRET=.*|SLIDER_SECRET=$(openssl rand -base64 48 | tr -d '\n')|" .env
+   chmod 600 .env
+   nano .env   # SLIDER_DOMAIN, BOOTSTRAP_EMAIL, Login (MS_* / OIDC_* / SMTP_*), SIGNUP
+   ```
+   **Wichtig:** `BOOTSTRAP_EMAIL` auf die eigene Adresse setzen. Das erste Konto der Instanz wird
+   Instanz-Admin – ohne diese Variable könnte bei `MS_TENANT=common` (oder `SIGNUP=open`) eine
+   fremde Person schneller sein.
+6. **Starten:**
+   ```bash
+   docker compose up -d --build
+   docker compose logs -f slider        # "Slider API listening on …"
+   curl -s https://slider.firma.de/api/health   # {"ok":true}
+   ```
+   Der erste Build dauert einige Minuten (Abhängigkeiten installieren, Web-App bauen).
+   Danach sofort selbst anmelden – mit der Adresse aus `BOOTSTRAP_EMAIL`. Dieses Konto ist
+   Instanz-Admin; alle Weiteren kommen per Einladung oder über `SIGNUP`.
+7. **Microsoft-Login** (falls genutzt): In der Entra-App-Registrierung unter _Authentication_ die
+   Redirect-URI `https://slider.firma.de/api/auth/microsoft/callback` ergänzen (Typ _Web_).
+
+Ohne Docker geht es auch: `bun install --frozen-lockfile && bun run build`, dann
+`NODE_ENV=production bun apps/api/src/server.ts` (oder `bun run start`). Die Konfiguration kommt
+dann aus der Umgebung; Bun liest zusätzlich eine `.env` im aktuellen Ordner, falls vorhanden –
+eine fehlende `.env` ist kein Fehler. Davor einen Reverse-Proxy mit HTTPS setzen.
+
+## Umgebungsvariablen
+
+In Compose stehen sie in `deploy/.env` (Vorlage: `deploy/.env.example`). `NODE_ENV`, `PORT`,
+`DATA_DIR`, `WEB_ORIGIN`, `DATABASE_URL` und `TRUST_PROXY` setzt `docker-compose.yml` selbst.
+
+| Variable                                              | Pflicht            | Bedeutung                                                                                                                                                                                                                             |
+| ----------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SLIDER_DOMAIN`                                       | ja (Compose)       | Öffentlicher Hostname; daraus wird `WEB_ORIGIN=https://<domain>`.                                                                                                                                                                     |
+| `POSTGRES_PASSWORD`                                   | ja (Compose)       | Passwort des Postgres-Users `slider`. Nur Hex (`openssl rand -hex 24`), da es in der URL landet.                                                                                                                                      |
+| `SLIDER_SECRET`                                       | ja                 | ≥ 32 Zeichen, signiert Sessions/Gast-Cookies und verschlüsselt Microsoft-Tokens: `openssl rand -base64 48`. Ändern meldet alle ab und macht gespeicherte Microsoft-Verbindungen ungültig.                                             |
+| `WEB_ORIGIN`                                          | ja (ohne Compose)  | Öffentliche URL, z. B. `https://slider.firma.de` (CORS, Redirect-URIs, Links in Mails).                                                                                                                                               |
+| `DATABASE_URL`                                        | nein               | `postgres://user:pass@host:5432/db`. Leer = PGlite in `DATA_DIR/db`.                                                                                                                                                                  |
+| `DATA_DIR`                                            | nein               | Daten-Ordner (Container: `/data`).                                                                                                                                                                                                    |
+| `WEB_DIST_DIR`                                        | nein               | Gebaute Web-App; Standard in Produktion `apps/web/dist`.                                                                                                                                                                              |
+| `TRUST_PROXY`                                         | nein               | `1` hinter Caddy/Proxy. Nur setzen, wenn die API nicht direkt erreichbar ist.                                                                                                                                                         |
+| `SIGNUP`                                              | nein               | `invite` (Standard) = nur Eingeladene · `domains` = alle mit E-Mail aus `SIGNUP_DOMAINS` · `open` = jeder.                                                                                                                            |
+| `SIGNUP_DOMAINS`                                      | bei `domains`      | Kommagetrennt, z. B. `firma.de,firma.com`.                                                                                                                                                                                            |
+| `BOOTSTRAP_EMAIL`                                     | dringend empfohlen | Kommagetrennt, z. B. `ich@firma.de`. Nur diese (verifizierte) Adresse darf das erste Konto (Instanz-Admin) anlegen. Leer: in Produktion nur, wen `SIGNUP=open`/`domains` ohnehin zulässt (bei `invite` niemand), plus Warnung im Log. |
+| `MS_CLIENT_ID`, `MS_CLIENT_SECRET`                    | eine Login-Art     | Entra-App (Login + OneDrive/SharePoint-Import).                                                                                                                                                                                       |
+| `MS_TENANT`                                           | nein               | `common` (Standard) oder die Tenant-ID, um nur die eigene Firma zuzulassen.                                                                                                                                                           |
+| `MS_REDIRECT_URI`                                     | nein               | Standard `${WEB_ORIGIN}/api/auth/microsoft/callback` – genau so in Entra eintragen.                                                                                                                                                   |
+| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | eine Login-Art     | z. B. Authentik: `https://auth.firma.de/application/o/slider/`.                                                                                                                                                                       |
+| `OIDC_LABEL`, `OIDC_SCOPES`, `OIDC_REDIRECT_URI`      | nein               | Button-Text, Scopes (`openid profile email`), Redirect (Standard `${WEB_ORIGIN}/api/auth/oidc/callback`).                                                                                                                             |
+| `SMTP_URL`, `MAIL_FROM`                               | eine Login-Art     | Magic Links und Einladungen, z. B. `smtps://user:pass@smtp.anbieter.de:465` und `Slider <slider@firma.de>`. Nur zusammen.                                                                                                             |
+| `SESSION_TTL_DAYS`                                    | nein               | Login-Dauer, Standard 30.                                                                                                                                                                                                             |
+| `MAX_UPLOAD_BYTES`                                    | nein               | Max. PPTX-Größe, Standard 200 MB.                                                                                                                                                                                                     |
+| `MEDIA_QUOTA_BYTES`, `MAX_MEDIA_BYTES`                | nein               | Speicher für Sprach-/Video-Kommentare pro Deck-Besitzer (Standard 5 GB) bzw. pro Aufnahme (100 MB).                                                                                                                                   |
+| `SYNC_POLL_INTERVAL_MS`, `SYNC_DEBOUNCE_MS`           | nein               | Automatische Updates verlinkter Decks (Standard 2 min / 1 min, `0` = aus).                                                                                                                                                            |
+
+## Login einrichten
+
+### Microsoft (Entra ID)
+
+Wie im README unter „Link import“ beschrieben, plus für den Server: Redirect-URI
+`https://<SLIDER_DOMAIN>/api/auth/microsoft/callback` hinzufügen. Wer nur Kolleg:innen der eigenen
+Firma zulassen will, setzt `MS_TENANT=<Tenant-ID>` (dann die App als „nur dieses Verzeichnis“
+registrieren).
+
+### Authentik (optional, eigener Identity Provider)
+
+Sinnvoll, wenn Kund:innen kein Microsoft 365 haben oder ein zentrales Login für mehrere Tools
+wollen. Läuft neben Slider auf demselben Server (Netzwerk `slider`, Caddy macht HTTPS).
+
+1. DNS: `auth.firma.de` auf denselben Server zeigen lassen; in `deploy/.env`
+   `AUTHENTIK_DOMAIN=auth.firma.de` setzen.
+2. Starten:
+   ```bash
+   cd /opt/slider/deploy/authentik
+   cp .env.example .env
+   sed -i "s|^PG_PASS=.*|PG_PASS=$(openssl rand -base64 36 | tr -d '\n')|" .env
+   sed -i "s|^AUTHENTIK_SECRET_KEY=.*|AUTHENTIK_SECRET_KEY=$(openssl rand -base64 60 | tr -d '\n')|" .env
+   chmod 600 .env
+   docker compose up -d
+   cp authentik.caddy ../sites/
+   cd .. && docker compose up -d --force-recreate caddy
+   ```
+3. Ersteinrichtung: `https://auth.firma.de/if/flow/initial-setup/` öffnen und das Passwort für
+   `akadmin` setzen.
+4. Im Admin-Interface → _Applications_ → _Applications_ → **Create with provider**:
+   - Application: Name `Slider`, Slug **`slider`** (der Slug steckt in der Issuer-URL).
+   - Provider-Typ **OAuth2/OpenID Connect**, Authorization flow
+     `default-provider-authorization-implicit-consent` (oder `explicit`, wenn Nutzer:innen
+     zustimmen sollen).
+   - Client type **Confidential**; Client ID und Client Secret notieren.
+   - Redirect URI (strict): `https://slider.firma.de/api/auth/oidc/callback`.
+   - Signing key: das mitgelieferte `authentik Self-signed Certificate` (RS256).
+   - Scopes: `openid`, `profile`, `email` (Standard-Mappings).
+5. In `deploy/.env` eintragen und Slider neu starten (`docker compose up -d`):
+   ```env
+   OIDC_ISSUER=https://auth.firma.de/application/o/slider/
+   OIDC_CLIENT_ID=<Client ID>
+   OIDC_CLIENT_SECRET=<Client Secret>
+   OIDC_LABEL=Mit Firmen-Login anmelden
+   ```
+   Prüfen: `https://auth.firma.de/application/o/slider/.well-known/openid-configuration` muss
+   JSON liefern.
+6. Nutzer:innen in Authentik anlegen (oder Authentik an ein bestehendes Verzeichnis anbinden).
+   Wer in Slider ein Konto bekommt, entscheidet weiterhin `SIGNUP`.
+
+Authentik-Version: gepinnt auf `2026.8.3` (`AUTHENTIK_TAG`). Seit 2025.10 braucht Authentik kein
+Redis mehr. Der Worker hat hier keinen Docker-Socket – Outposts müssen dann manuell betrieben
+werden, für reines OIDC sind keine nötig.
+
+### E-Mail (Magic Links, Einladungen)
+
+Jeder SMTP-Zugang geht: das vorhandene Firmen-Postfach oder ein Versanddienst mit Gratis-Kontingent
+(z. B. Brevo, Mailjet; für ein Team reicht das locker). Absender-Domain mit SPF/DKIM einrichten,
+sonst landen Mails im Spam.
+
+Der Link in der Mail öffnet zuerst eine Bestätigungsseite mit dem Knopf „Anmelden“; erst der
+Klick löst den Link ein. So verbrauchen Link-Scanner (z. B. Outlook Safe Links), die jeden Link
+vorab öffnen, ihn nicht.
+
+## Backups
+
+Wichtig sind **zwei** Dinge: die Datenbank und das Volume `/data`.
+
+```bash
+cd /opt/slider/deploy
+mkdir -p /opt/backups
+# Datenbank (konsistent, im laufenden Betrieb)
+docker compose exec -T postgres pg_dump -U slider -Fc slider > /opt/backups/slider-$(date +%F).dump
+# Dateien
+docker run --rm -v slider_slider-data:/data -v /opt/backups:/backup debian:bookworm-slim \
+  tar czf /backup/slider-data-$(date +%F).tar.gz -C /data .
+```
+
+- Per Cron täglich ausführen und die Dateien **außer Haus** kopieren (z. B. Hetzner Storage Box,
+  `restic`/`borg`). Alte Backups rotieren.
+- Hetzner-Server-Backups (+20 %) sind ein bequemes Sicherheitsnetz, ersetzen aber kein
+  `pg_dump` (Snapshots einer laufenden Datenbank sind nicht garantiert konsistent).
+- Wiederherstellen: `docker compose exec -T postgres pg_restore -U slider -d slider --clean < datei.dump`
+  und das Tar-Archiv zurück ins Volume entpacken.
+- Ohne `DATABASE_URL` (PGlite) liegt die Datenbank in `/data/db`: dann Slider kurz stoppen und
+  das Volume sichern.
+- Authentik: `docker compose exec -T authentik-db pg_dump -U authentik -Fc authentik > …`.
+
+## Updates
+
+```bash
+cd /opt/slider
+git pull
+cd deploy
+docker compose up -d --build     # baut neu, Migrationen laufen beim Start
+docker image prune -f
+```
+
+Vorher ein Backup ziehen. Postgres-Major-Updates (17 → 18) brauchen `pg_dump`/`pg_restore`;
+das Image-Tag also nicht einfach hochsetzen. Authentik: `AUTHENTIK_TAG` anheben, Release Notes
+lesen, `docker compose pull && docker compose up -d` in `deploy/authentik`.
+
+## Kosten (Stand Oktober 2026, ca.-Werte)
+
+| Posten                                                       | Monatlich             | Anmerkung                                                                                    |
+| ------------------------------------------------------------ | --------------------- | -------------------------------------------------------------------------------------------- |
+| Hetzner CX23 (2 vCPU, 4 GB, 40 GB)                           | ca. 6–7 € brutto      | Nach der Preisanpassung vom Juni 2026 ca. 5,49 € netto zzgl. IPv4. Reicht für Slider allein. |
+| Hetzner CX33 (4 vCPU, 8 GB, 80 GB)                           | ca. 10–11 € brutto    | Nötig, wenn Authentik mitläuft (+2 GB RAM Bedarf).                                           |
+| Server-Backups bei Hetzner                                   | +20 % vom Serverpreis | Optional, zusätzlich zu `pg_dump`.                                                           |
+| Domain                                                       | ca. 1 €               | (ca. 5–15 € pro Jahr)                                                                        |
+| Microsoft Entra App-Registrierung, Login, Graph-Dateizugriff | 0 €                   | Registrierung, Anmeldung und delegierter Lesezugriff über Graph kosten nichts.               |
+| Authentik                                                    | 0 €                   | Open Source; kostet nur RAM (größerer Server, s. o.).                                        |
+| E-Mail (SMTP)                                                | 0 €                   | Gratis-Kontingente der Versanddienste oder vorhandenes Postfach.                             |
+| Let's Encrypt-Zertifikate                                    | 0 €                   | Caddy holt und erneuert sie automatisch.                                                     |
+
+**Realistisch: ca. 7 € im Monat** (nur Slider) bzw. **ca. 11–13 €** mit Authentik und Backups.
+Es gibt **keine Kosten pro Nutzer:in** – Slider hat keine Lizenz- oder API-Gebühren. Hetzner-Preise
+sind 2026 zweimal gestiegen; die CX-Reihe ist zeitweise nicht in jedem Standort bestellbar –
+vor dem Bestellen in der Hetzner Console prüfen.
+
+Was die Kosten treiben könnte, ist **Speicher**: PPTX-Dateien, Folienbilder und vor allem
+Sprach-/Video-Kommentare. Deshalb:
+
+- **`SIGNUP=invite` (Standard)**: Konten entstehen nur per Einladung. Fremde können sich nicht
+  selbst registrieren, Decks hochladen und so Speicher verbrauchen. Gäste über Review-Links
+  können kommentieren, aber keine eigenen Decks anlegen; ihre Aufnahmen zählen zum Kontingent
+  der Deck-Besitzer:in.
+- `SIGNUP=domains` mit `SIGNUP_DOMAINS=firma.de` ist die bequeme Alternative für eine Firma.
+  `SIGNUP=open` nur, wenn das wirklich gewollt ist.
+- `MEDIA_QUOTA_BYTES` und `MAX_UPLOAD_BYTES` begrenzen den Speicher pro Person bzw. Datei.
+- Platz im Blick behalten: `docker system df -v`, `df -h`. Mehr Platz gibt es per Hetzner Volume
+  (wenige Cent pro GB und Monat) oder Server-Upgrade.
+
+## Sicherheits-Checkliste
+
+- [ ] `.env`-Dateien niemals committen (sind in `.gitignore` und `.dockerignore`), Rechte `600`.
+- [ ] `SLIDER_SECRET`, `POSTGRES_PASSWORD`, `AUTHENTIK_SECRET_KEY` lang und zufällig; bei Verdacht
+      rotieren (`SLIDER_SECRET` neu → alle müssen sich neu anmelden, Microsoft-Verbindungen neu
+      herstellen). Client Secrets in Entra/Authentik ebenfalls rotieren und Ablaufdaten notieren.
+- [ ] Nur HTTPS: Caddy leitet HTTP automatisch um; Slider setzt HSTS und sichere Cookies.
+- [ ] Nur Caddy veröffentlicht Ports (80/443). Slider (8787) und Postgres (5432) sind nicht von
+      außen erreichbar – so bleibt auch `TRUST_PROXY=1` sicher.
+- [ ] Firewall: nur 22, 80, 443. SSH nur mit Key, `PasswordAuthentication no`.
+- [ ] Sicherheitsupdates: `unattended-upgrades` aktivieren, Slider/Authentik regelmäßig updaten.
+- [ ] `BOOTSTRAP_EMAIL` gesetzt und das erste Konto selbst angelegt.
+- [ ] `SIGNUP=invite` oder `domains`, nicht `open`.
+- [ ] Backups automatisch, außer Haus, und Wiederherstellung einmal ausprobiert.
+
+## Fehlersuche
+
+- `docker compose logs slider` – Konfigurationsfehler stehen beim Start im Log
+  (z. B. „SLIDER_SECRET must be set in production.“, „No login is configured …“,
+  „BOOTSTRAP_EMAIL is not set“).
+- Erste Anmeldung scheitert mit `signup_closed` → `BOOTSTRAP_EMAIL`
+  fehlt oder passt nicht zur Adresse, mit der man sich anmeldet; setzen und neu starten.
+- `No web app at /app/apps/web/dist` → der Web-Build im Image fehlt; Build-Log prüfen.
+- Zertifikat schlägt fehl → DNS zeigt noch nicht auf den Server oder Port 80 ist zu
+  (`docker compose logs caddy`).
+- Microsoft „AADSTS50011 redirect URI mismatch“ → Redirect-URI in Entra exakt wie
+  `https://<domain>/api/auth/microsoft/callback` eintragen.
+- OIDC „issuer mismatch“ → `OIDC_ISSUER` muss der Issuer aus der Discovery-URL sein
+  (bei Authentik mit `/application/o/<slug>/`).

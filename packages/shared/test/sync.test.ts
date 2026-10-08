@@ -104,6 +104,7 @@ describe('sync contract', () => {
   it('keeps the new fields optional on existing schemas', () => {
     const deck = {
       id: 'd1',
+      workspaceId: 'w1',
       title: 'Q4',
       fileName: 'Q4.pptx',
       source: 'onedrive',
@@ -117,6 +118,7 @@ describe('sync contract', () => {
       thumbnailUrl: null,
       participants: [],
       import: { status: 'ready' },
+      permissions: { canManage: true, canComment: true },
     };
     expect(deckSchema.parse(deck).sync).toBeUndefined();
     expect(deckSchema.parse({ ...deck, currentRevisionId: 'r1', sync }).sync?.enabled).toBe(true);

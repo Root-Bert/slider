@@ -22,9 +22,9 @@ const personOf = (deck: Deck) =>
   deck.participants.find((person) => person.id !== deck.owner.id) ?? deck.owner;
 
 /** "Zuletzt geöffnet" (A1). Hidden for new users without decks. */
-export function RecentDecks() {
+export function RecentDecks({ workspaceId }: { workspaceId: string }) {
   const headingId = useId();
-  const { data: decks, isPending } = useDecks();
+  const { data: decks, isPending } = useDecks(workspaceId);
   const recent = decks ? mostRecent(decks) : [];
   if (!isPending && recent.length === 0) return null;
 
@@ -34,7 +34,7 @@ export function RecentDecks() {
         <h2 id={headingId} className="text-fg-subtle">
           Zuletzt geöffnet
         </h2>
-        <Link to={routes.reviews()} className="text-fg-subtle hover:text-fg">
+        <Link to={routes.workspace(workspaceId)} className="text-fg-subtle hover:text-fg">
           Alle anzeigen
         </Link>
       </div>

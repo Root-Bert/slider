@@ -1,0 +1,79 @@
+# Slider on one server: Caddy (HTTPS) → Slider (API + web app) → Postgres.
+#
+#   cd deploy
+#   cp .env.example .env    # fill in, see docs/self-hosting.md
+#   docker compose up -d --build
+#
+# Optional Authentik (OIDC login): see authentik/docker-compose.yml.
+
+name: slider
+
+services:
+  slider:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: ${SLIDER_IMAGE:-slider:local}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: '8787'
+      DATA_DIR: /data
+      WEB_ORIGIN: https://${SLIDER_DOMAIN:?SLIDER_DOMAIN is required}
+      DATABASE_URL: postgres://slider:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/slider
+      # Only Caddy can reach the container, so X-Forwarded-For is trustworthy.
+      TRUST_PROXY: '1'
+    volumes:
+      - slider-data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Not published: only reachable through Caddy.
+    expose:
+      - '8787'
+
+  postgres:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: slider
+      POSTGRES_USER: slider
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U slider -d slider']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      SLIDER_DOMAIN: ${SLIDER_DOMAIN}
+      AUTHENTIK_DOMAIN: ${AUTHENTIK_DOMAIN:-}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./sites:/etc/caddy/sites:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - slider
+
+volumes:
+  slider-data:
+  postgres-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  default:
+    # Fixed name so deploy/authentik can join it and Caddy can reach Authentik.
+    name: slider

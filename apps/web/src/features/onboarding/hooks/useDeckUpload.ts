@@ -10,8 +10,8 @@ export type UploadState =
   | { status: 'uploading'; file: File; /** 0–1 */ progress: number }
   | { status: 'error'; message: string };
 
-/** PPTX upload with progress and cancel (BER-91). Calls `onUploaded` with the created deck. */
-export function useDeckUpload(onUploaded: (deck: Deck) => void) {
+/** PPTX upload into a workspace with progress and cancel (BER-91). Calls `onUploaded` with the created deck. */
+export function useDeckUpload(workspaceId: string, onUploaded: (deck: Deck) => void) {
   const [state, setState] = useState<UploadState>({ status: 'idle' });
   const controllerRef = useRef<AbortController | null>(null);
   const queryClient = useQueryClient();
@@ -32,6 +32,7 @@ export function useDeckUpload(onUploaded: (deck: Deck) => void) {
     setState({ status: 'uploading', file, progress: 0 });
 
     const formData = new FormData();
+    formData.append('workspaceId', workspaceId);
     formData.append('file', file);
     try {
       const deck = await uploadWithProgress<Deck>(
@@ -41,7 +42,7 @@ export function useDeckUpload(onUploaded: (deck: Deck) => void) {
         controller.signal,
       );
       queryClient.setQueryData(queryKeys.deck(deck.id), deck);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.decks, exact: true });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.deckLists });
       onUploaded(deck);
     } catch (error) {
       if (controller.signal.aborted) return;

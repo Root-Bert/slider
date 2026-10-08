@@ -28,6 +28,9 @@ import { confirmComment, pendingReply } from './comment-cache';
 export const queryKeys = {
   me: ['me'] as const,
   decks: ['decks'] as const,
+  /** Every workspace's deck list – invalidate this after a deck was created or changed. */
+  deckLists: ['decks', 'list'] as const,
+  deckList: (workspaceId: string) => ['decks', 'list', workspaceId] as const,
   deck: (deckId: string) => ['decks', deckId] as const,
   slides: (deckId: string) => ['decks', deckId, 'slides'] as const,
   comments: (deckId: string) => ['decks', deckId, 'comments'] as const,
@@ -73,10 +76,11 @@ export function useUpdateMe() {
 
 // ── Decks ───────────────────────────────────────────────────────────────────
 
-export const useDecks = () =>
+/** The decks of one workspace (BER-129). */
+export const useDecks = (workspaceId: string) =>
   useQuery({
-    queryKey: queryKeys.decks,
-    queryFn: () => api.get<Deck[]>('/decks'),
+    queryKey: queryKeys.deckList(workspaceId),
+    queryFn: () => api.get<Deck[]>(`/decks?workspaceId=${encodeURIComponent(workspaceId)}`),
     // Keep "Import läuft" cards fresh without a realtime channel (BER-104 comes later).
     refetchInterval: (query) => (query.state.data?.some(isImporting) ? IMPORT_POLL_MS * 2 : false),
   });
@@ -95,7 +99,7 @@ export function useUpdateDeck(deckId: string) {
     mutationFn: (input: UpdateDeckInput) => api.patch<Deck>(`/decks/${deckId}`, input),
     onSuccess: (deck) => {
       queryClient.setQueryData(queryKeys.deck(deckId), deck);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.decks, exact: true });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.deckLists });
     },
   });
 }
@@ -108,8 +112,11 @@ export function useDeleteDeck() {
   });
 }
 
-export const useImportLink = () =>
-  useMutation({ mutationFn: (url: string) => api.post<Deck>('/decks/link', { url }) });
+export const useImportLink = (workspaceId: string | null) =>
+  useMutation({
+    mutationFn: (url: string) =>
+      api.post<Deck>('/decks/link', workspaceId ? { url, workspaceId } : { url }),
+  });
 
 // ── Slides & comments ───────────────────────────────────────────────────────
 
@@ -297,7 +304,7 @@ export function useInvalidateRevision(deckId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.comments(deckId) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.revisions(deckId), exact: true }),
       queryClient.invalidateQueries({ queryKey: queryKeys.status(deckId), exact: true }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.decks, exact: true }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.deckLists }),
     ]);
 }
 

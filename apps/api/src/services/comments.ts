@@ -8,7 +8,7 @@ import {
   type Viewer,
 } from '@slider/shared';
 import type { z } from 'zod';
-import { requireDeckAccess } from '../auth/access';
+import { deckAccess, requireDeckAccess } from '../auth/access';
 import type { Executor } from '../db/client';
 import { comments, type CommentRow, type DeckRow } from '../db/schema';
 import type { AppDeps } from '../deps';
@@ -220,16 +220,19 @@ export async function updateComment(
   return dto!;
 }
 
-/** Authors delete their own comments; the owner may delete any. Replies go with their root. */
+/**
+ * Authors delete their own comments; whoever manages the deck may delete any. Replies go with
+ * their root.
+ */
 export async function deleteComment(
   deps: AppDeps,
   viewer: Viewer,
   commentId: string,
 ): Promise<void> {
   const comment = await loadComment(deps, commentId);
-  const isOwner = viewer.kind === 'owner';
-  await requireDeckAccess(deps.db, viewer, comment.deckId, isOwner ? 'own' : 'comment');
-  if (!isOwner && comment.author.id !== viewer.author.id) {
+  const { permissions } = await deckAccess(deps.db, viewer, comment.deckId, 'view');
+  const own = comment.author.id === viewer.author.id;
+  if (!permissions.canManage && !(own && permissions.canComment)) {
     throw forbidden('Nur eigene Kommentare können gelöscht werden.');
   }
   const mediaKeys = await mediaKeysOfThread(deps.db, commentId);

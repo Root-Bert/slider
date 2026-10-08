@@ -1,0 +1,10 @@
+# Automatic HTTPS (Let's Encrypt) for the Slider domain. DNS A/AAAA records must point at this
+# server and ports 80 + 443 must be open before the first start.
+{$SLIDER_DOMAIN} {
+	encode zstd gzip
+	# Slider sets its own security headers (HSTS, nosniff, …) and serves the web app itself.
+	reverse_proxy slider:8787
+}
+
+# Further sites, e.g. Authentik: copy authentik/authentik.caddy into sites/.
+import /etc/caddy/sites/*.caddy

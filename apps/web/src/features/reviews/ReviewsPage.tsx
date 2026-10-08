@@ -5,6 +5,8 @@ import { AppHeader } from '@/app/AppHeader';
 import { routes } from '@/app/routes';
 import { pluralize } from '@/lib/format';
 import { useDecks } from '@/lib/queries';
+import { canCreateDecks } from '@/features/workspaces/lib/roles';
+import { useWorkspace } from '@/features/workspaces/useWorkspace';
 import { Button } from '@/ui';
 import { DeckCollection, DeckCollectionSkeleton, type DeckView } from './components/DeckCollection';
 import { DeckSearch } from './components/DeckSearch';
@@ -27,10 +29,12 @@ import { useLastVisits } from './lib/last-visits';
 const DECK_VIEWS = ['grid', 'list'] as const satisfies readonly DeckView[];
 const NO_DECKS: readonly Deck[] = [];
 
-/** G1 "Meine Reviews" – the owner's deck overview (BER-121, BER-124). */
+/** G1 "Meine Reviews" – the decks of one workspace (BER-121, BER-124, BER-129). */
 export function Component() {
   const navigate = useNavigate();
-  const decksQuery = useDecks();
+  const workspace = useWorkspace();
+  const mayCreate = canCreateDecks(workspace.role);
+  const decksQuery = useDecks(workspace.id);
   const decks = decksQuery.data ?? NO_DECKS;
   const { isUnseen } = useLastVisits();
   const [toast, showToast] = useToast();
@@ -42,16 +46,18 @@ export function Component() {
 
   const totals = activeTotals(decks);
   const visible = selectDecks(decks, { tab, query, sort });
-  const goToNew = () => void navigate(routes.newReview());
+  const goToNew = mayCreate ? () => void navigate(routes.newReview(workspace.id)) : undefined;
 
   return (
     <div className="dot-grid min-h-full">
-      <title>Meine Reviews · Slider</title>
+      <title>{`Meine Reviews · ${workspace.name} · Slider`}</title>
       <AppHeader
         leading={
-          <Button size="sm" icon="add" aria-label="Neuer Review" onClick={goToNew}>
-            <span className="max-sm:hidden">Neuer Review</span>
-          </Button>
+          goToNew && (
+            <Button size="sm" icon="add" aria-label="Neuer Review" onClick={goToNew}>
+              <span className="max-sm:hidden">Neuer Review</span>
+            </Button>
+          )
         }
         center={<DeckSearch placement="header" value={query} onChange={setQuery} />}
         actions={<NotificationsButton decks={decks} isUnseen={isUnseen} />}

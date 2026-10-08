@@ -5,20 +5,23 @@ import type { Executor } from '../db/client';
 import { users } from '../db/schema';
 import type { Logger } from '../logger';
 import { microsoftConsentRequired, sourceUnreachable } from '../sources/errors';
+import { validateIdToken, type IdTokenClaims } from './id-token';
 import { decryptToken, encryptToken, toBase64Url } from './token-crypto';
 
 /**
- * Microsoft sign-in for OneDrive/SharePoint links (BER-92): OAuth 2.0 authorization code flow
- * with PKCE plus the client secret, against the Microsoft identity platform v2. Plain `fetch`,
- * no MSAL – Slider needs only "code → tokens" and "refresh token → access token".
+ * Microsoft sign-in (BER-92, BER-129): OAuth 2.0 authorization code flow with PKCE plus the
+ * client secret, against the Microsoft identity platform v2. One login yields both the identity
+ * (ID token: `tid` + `oid`) and the Graph refresh token for OneDrive/SharePoint links. Plain
+ * `fetch`, no MSAL – Slider needs only "code → tokens" and "refresh token → access token".
  */
 
-export const MICROSOFT_SCOPES = 'Files.Read.All offline_access User.Read';
+export const MICROSOFT_SCOPES = 'openid profile email offline_access User.Read Files.Read.All';
 /**
  * Asked for only when the owner first edits a linked PowerPoint (BER-128): reading never needs
  * more, and a write consent is a bigger ask (in companies often one for an admin).
  */
-export const MICROSOFT_WRITE_SCOPES = 'Files.ReadWrite.All offline_access User.Read';
+export const MICROSOFT_WRITE_SCOPES =
+  'openid profile email offline_access User.Read Files.ReadWrite.All';
 
 /** `read` for importing and syncing, `write` for changing the PowerPoint itself. */
 export type MicrosoftAccess = 'read' | 'write';
@@ -72,6 +75,8 @@ export interface Pkce {
   state: string;
   verifier: string;
   challenge: string;
+  /** Echoed in the ID token; binds it to this browser's login attempt. */
+  nonce: string;
 }
 
 const randomToken = () => toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
@@ -79,7 +84,12 @@ const randomToken = () => toBase64Url(crypto.getRandomValues(new Uint8Array(32))
 export async function createPkce(): Promise<Pkce> {
   const verifier = randomToken();
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
-  return { state: randomToken(), verifier, challenge: toBase64Url(new Uint8Array(digest)) };
+  return {
+    state: randomToken(),
+    verifier,
+    challenge: toBase64Url(new Uint8Array(digest)),
+    nonce: randomToken(),
+  };
 }
 
 export function buildAuthorizeUrl(
@@ -95,6 +105,7 @@ export function buildAuthorizeUrl(
     response_mode: 'query',
     scope: scopesFor(access),
     state: pkce.state,
+    nonce: pkce.nonce,
     code_challenge: pkce.challenge,
     code_challenge_method: 'S256',
     prompt: 'select_account',
@@ -102,9 +113,10 @@ export function buildAuthorizeUrl(
   return url.toString();
 }
 
-interface TokenResponse {
+export interface TokenResponse {
   access_token: string;
   refresh_token?: string;
+  id_token?: string;
   expires_in: number;
 }
 
@@ -144,6 +156,7 @@ async function requestToken(
   return {
     access_token: body.access_token,
     refresh_token: body.refresh_token,
+    id_token: body.id_token,
     expires_in: body.expires_in ?? 3600,
   };
 }
@@ -196,10 +209,40 @@ export class MicrosoftTokens {
     return this.deps.config !== null;
   }
 
-  /** Finishes the login: trades the code for tokens and stores them for `userId`. */
+  /** "Connect for file access" of a signed-in account: trades the code and stores the tokens. */
   async completeLogin(userId: string, code: string, verifier: string): Promise<void> {
+    const tokens = await exchangeCode(this.requireConfig(), this.fetch, code, verifier);
+    await this.saveTokens(userId, tokens);
+  }
+
+  /**
+   * Login with Microsoft: trades the code and returns the validated identity plus the tokens,
+   * which the caller stores with {@link saveTokens} once it knows the account.
+   */
+  async exchangeLogin(
+    code: string,
+    verifier: string,
+    nonce: string,
+  ): Promise<{ claims: IdTokenClaims; tokens: TokenResponse }> {
     const config = this.requireConfig();
     const tokens = await exchangeCode(config, this.fetch, code, verifier);
+    if (!tokens.id_token) {
+      throw new MicrosoftAuthError('failed', 'no_id_token', 'openid was not granted');
+    }
+    const claims = validateIdToken(tokens.id_token, {
+      // Multi-tenant (`common`): the issuer names the tenant of the account.
+      issuer: (iss, all) =>
+        typeof all['tid'] === 'string' &&
+        iss === `https://login.microsoftonline.com/${all['tid']}/v2.0`,
+      clientId: config.clientId,
+      nonce,
+      now: this.deps.clock.now(),
+    });
+    return { claims, tokens };
+  }
+
+  /** Stores the refresh token (encrypted) for `userId` and caches the access token. */
+  async saveTokens(userId: string, tokens: TokenResponse): Promise<void> {
     if (!tokens.refresh_token) {
       throw new MicrosoftAuthError('failed', 'no_refresh_token', 'offline_access was not granted');
     }

@@ -1,0 +1,67 @@
+# Optional: Authentik as the company login (OIDC) for Slider, on the same server.
+# Needs about 2 GB RAM extra. Since 2025.10 Authentik runs without Redis.
+#
+#   cd deploy/authentik
+#   cp .env.example .env    # fill in
+#   docker compose up -d    # after deploy/docker-compose.yml is up (shared network "slider")
+#   cp authentik.caddy ../sites/ && (cd .. && docker compose restart caddy)
+#
+# Setup guide: docs/self-hosting.md → "Authentik".
+
+name: slider-authentik
+
+x-authentik: &authentik
+  image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.8.3}
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    AUTHENTIK_POSTGRESQL__HOST: authentik-db
+    AUTHENTIK_POSTGRESQL__NAME: authentik
+    AUTHENTIK_POSTGRESQL__USER: authentik
+    AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS:?PG_PASS is required}
+    AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?AUTHENTIK_SECRET_KEY is required}
+  shm_size: 512mb
+  volumes:
+    - authentik-data:/data
+    - authentik-templates:/templates
+  depends_on:
+    authentik-db:
+      condition: service_healthy
+
+services:
+  authentik-db:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: ${PG_PASS:?PG_PASS is required}
+    volumes:
+      - authentik-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U authentik -d authentik']
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  authentik-server:
+    <<: *authentik
+    command: server
+    # Reached by Caddy over the shared network; not published on the host.
+    expose:
+      - '9000'
+
+  authentik-worker:
+    <<: *authentik
+    command: worker
+
+volumes:
+  authentik-db:
+  authentik-data:
+  authentik-templates:
+
+networks:
+  default:
+    name: slider
+    external: true

@@ -163,7 +163,7 @@ export class FakeSource implements SourceAdapter {
 
 /** A ready OneDrive deck made through the real import pipeline from `source`'s current state. */
 export async function createLinkDeck(ctx: TestContext, source: FakeSource): Promise<string> {
-  const deck = await createDeckFromFile(ctx.deps, ctx.ownerId, {
+  const deck = await createDeckFromFile(ctx.deps, ctx, {
     fileName: 'Q4 Strategie.pptx',
     bytes: source.bytes,
     source: 'onedrive',

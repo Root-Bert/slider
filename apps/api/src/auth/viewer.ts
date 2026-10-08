@@ -4,31 +4,45 @@ import { deleteCookie, getSignedCookie, setSignedCookie } from 'hono/cookie';
 import { createMiddleware } from 'hono/factory';
 import type { Viewer } from '@slider/shared';
 import { ownerAuthor } from '../authors';
-import { guestSessions, reviewLinks, users } from '../db/schema';
+import { guestSessions, reviewLinks, users, type UserRow } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { ApiError } from '../http/errors';
 import { guestViewer } from '../services/review-links';
 import { LINK_EXPIRED_MESSAGE, LINK_REVOKED_MESSAGE, reviewLinkState } from './review-link-state';
+import { loadSessionUser } from './session';
 
 export const GUEST_COOKIE = 'slider_guest';
 const GUEST_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 
 export type ViewerEnv = { Variables: { viewer: Viewer } };
+/** For routes anonymous callers may use too (login, public previews). */
+export type OptionalViewerEnv = { Variables: { viewer: Viewer | null } };
+
+export const unauthorized = () => new ApiError(401, 'unauthorized', 'Bitte melde dich an.');
 
 /**
- * Resolves who is calling and exposes it as `c.var.viewer`.
- * A valid signed guest cookie makes the caller a guest scoped to one deck. Anyone else is
- * the dev owner – Microsoft login is not configured yet (BER-92), so this prototype trusts
- * every cookie-less request. That is the one thing to replace before exposing it publicly.
+ * Resolves who is calling and exposes it as `c.var.viewer`; anonymous callers get 401.
+ * Order: a valid signed guest cookie (a guest scoped to one deck) → the login session cookie
+ * (a signed-in account, `kind: 'owner'`) → with `auth.devLogin` the dev owner → nobody.
  */
 export function viewerMiddleware(deps: AppDeps) {
   return createMiddleware<ViewerEnv>(async (c, next) => {
+    const viewer = await resolveViewer(c, deps);
+    if (!viewer) throw unauthorized();
+    c.set('viewer', viewer);
+    await next();
+  });
+}
+
+/** Like {@link viewerMiddleware}, but lets anonymous callers through with `viewer: null`. */
+export function optionalViewerMiddleware(deps: AppDeps) {
+  return createMiddleware<OptionalViewerEnv>(async (c, next) => {
     c.set('viewer', await resolveViewer(c, deps));
     await next();
   });
 }
 
-async function resolveViewer(c: Context, deps: AppDeps): Promise<Viewer> {
+export async function resolveViewer(c: Context, deps: AppDeps): Promise<Viewer | null> {
   const sessionId = await getSignedCookie(c, deps.config.secret, GUEST_COOKIE);
   if (sessionId) {
     const guest = await loadGuestViewer(deps, sessionId);
@@ -36,8 +50,13 @@ async function resolveViewer(c: Context, deps: AppDeps): Promise<Viewer> {
     // Unknown session (e.g. after a reseed): drop the stale cookie.
     clearGuestCookie(c);
   }
-  return loadOwnerViewer(deps);
+  const user = await loadSessionUser(c, deps);
+  if (user) return userViewer(user);
+  if (deps.config.auth.devLogin && deps.ownerId) return loadOwnerViewer(deps, deps.ownerId);
+  return null;
 }
+
+export const userViewer = (user: UserRow): Viewer => ({ kind: 'owner', author: ownerAuthor(user) });
 
 async function loadGuestViewer(deps: AppDeps, sessionId: string): Promise<Viewer | null> {
   const [row] = await deps.db
@@ -54,10 +73,10 @@ async function loadGuestViewer(deps: AppDeps, sessionId: string): Promise<Viewer
   return guestViewer(row.session, row.link);
 }
 
-export async function loadOwnerViewer(deps: AppDeps): Promise<Viewer> {
-  const [owner] = await deps.db.select().from(users).where(eq(users.id, deps.ownerId));
-  if (!owner) throw new Error(`Dev owner ${deps.ownerId} does not exist`);
-  return { kind: 'owner', author: ownerAuthor(owner) };
+async function loadOwnerViewer(deps: AppDeps, userId: string): Promise<Viewer> {
+  const [owner] = await deps.db.select().from(users).where(eq(users.id, userId));
+  if (!owner) throw new Error(`Dev owner ${userId} does not exist`);
+  return userViewer(owner);
 }
 
 export async function setGuestCookie(c: Context, deps: AppDeps, sessionId: string): Promise<void> {

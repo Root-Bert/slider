@@ -13,6 +13,7 @@ import {
   type Slide,
   type Viewer,
 } from './model';
+import type { MeUser, PendingInvite, Workspace } from './workspaces';
 
 /**
  * HTTP contract between `apps/web` and `apps/api`.
@@ -20,10 +21,10 @@ import {
  *
  * | Method | Path                                   | Body                       | Response              |
  * |--------|----------------------------------------|----------------------------|-----------------------|
- * | GET    | /me                                    |                            | MeResponse            |
+ * | GET    | /me                                    |                            | MeResponse (401 signed out) |
  * | PATCH  | /me                                    | UpdateMeInput              | MeResponse            |
- * | GET    | /decks                                 |                            | Deck[]                |
- * | POST   | /decks/upload  (multipart field `file`)|                            | Deck (201)            |
+ * | GET    | /decks?workspaceId=                    | (omit: all my workspaces)  | Deck[]                |
+ * | POST   | /decks/upload  (multipart `file`, optional `workspaceId`) |         | Deck (201)            |
  * | POST   | /decks/link                            | ImportLinkInput            | Deck (201) / ApiError |
  * | GET    | /decks/:deckId                         |                            | Deck                  |
  * | PATCH  | /decks/:deckId                         | UpdateDeckInput            | Deck                  |
@@ -49,8 +50,28 @@ import {
  * | GET    | /invites/:token                        |                            | InviteInfo            |
  * | POST   | /invites/:token/join                   | JoinInviteInput            | MeResponse (sets cookie) |
  * | POST   | /session/leave                         |                            | 204 (clears guest cookie) |
- * | GET    | /auth/microsoft/login?returnTo=        |                            | 302 to Microsoft      |
+ * | GET    | /auth/providers                        |                            | AuthProviders         |
+ * | GET    | /auth/microsoft/login?returnTo=        | (signed in: connects files) | 302 to Microsoft     |
  * | GET    | /auth/microsoft/callback               |                            | 302 back to the web app |
+ * | GET    | /auth/oidc/login?returnTo=             |                            | 302 to the SSO provider |
+ * | GET    | /auth/oidc/callback                    |                            | 302 back to the web app |
+ * | POST   | /auth/email/start                      | StartEmailLoginInput       | 204 (always)          |
+ * | GET    | /auth/email/verify?token=              |                            | 302 back to the web app |
+ * | POST   | /auth/logout                           |                            | 204 (clears session)  |
+ * | GET    | /workspaces                            |                            | Workspace[]           |
+ * | POST   | /workspaces                            | CreateWorkspaceInput       | Workspace (201)       |
+ * | GET    | /workspaces/:id                        |                            | Workspace             |
+ * | PATCH  | /workspaces/:id                        | UpdateWorkspaceInput       | Workspace (admin+)    |
+ * | DELETE | /workspaces/:id                        |                            | 204 (owner)           |
+ * | GET    | /workspaces/:id/members                |                            | WorkspaceMember[]     |
+ * | PATCH  | /workspaces/:id/members/:userId        | UpdateMemberInput          | WorkspaceMember       |
+ * | DELETE | /workspaces/:id/members/:userId        |                            | 204 (admin+ or self)  |
+ * | GET    | /workspaces/:id/invites                |                            | WorkspaceInvite[]     |
+ * | POST   | /workspaces/:id/invites                | CreateWorkspaceInviteInput | CreatedWorkspaceInvite (201) |
+ * | DELETE | /workspace-invites/:inviteId           |                            | 204 (revokes)         |
+ * | POST   | /workspace-invites/:inviteId/accept    |                            | JoinResult            |
+ * | GET    | /join/:token                           |                            | JoinPreview (public)  |
+ * | POST   | /join/:token                           |                            | JoinResult            |
  *
  * Binary files (slide images, thumbnails, avatars) are served from `/files/*`.
  */
@@ -76,6 +97,7 @@ export const ERROR_CODES = [
   'unsupported_media',
   'link_revoked',
   'link_expired',
+  'invite_used',
   'rate_limited',
   'internal',
 ] as const;
@@ -95,6 +117,10 @@ export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 
 export interface MeResponse {
   viewer: Viewer;
+  /** Signed-in accounts only (BER-129); guests get just `viewer`. */
+  user?: MeUser;
+  workspaces?: Workspace[];
+  pendingInvites?: PendingInvite[];
 }
 
 /** The viewer's own settings: their accent colour (pins, lines, drawings). */

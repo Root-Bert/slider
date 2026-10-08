@@ -2,7 +2,13 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
-import { DEFAULT_MEDIA_QUOTA_BYTES, MAX_MEDIA_BYTES, MAX_UPLOAD_BYTES } from '@slider/shared';
+import {
+  DEFAULT_MEDIA_QUOTA_BYTES,
+  MAX_MEDIA_BYTES,
+  MAX_UPLOAD_BYTES,
+  SIGNUP_MODES,
+  type SignupMode,
+} from '@slider/shared';
 
 export interface Config {
   env: 'development' | 'production' | 'test';
@@ -13,8 +19,15 @@ export interface Config {
   secret: string;
   webOrigin: string;
   maxUploadBytes: number;
-  /** Until Microsoft login exists (BER-92), every request without a guest cookie acts as this person. */
+  /**
+   * With `auth.devLogin`, every request without a guest or session cookie acts as this person.
+   * The first real login adopts this account (and its decks) – see `services/accounts`.
+   */
   devOwner: { name: string; email: string };
+  /** Login, sessions and who may sign up (BER-129). */
+  auth: AuthConfig;
+  /** Outgoing mail for magic links and invitations; `null` until SMTP_URL and MAIL_FROM are set. */
+  smtp: SmtpConfig | null;
   /** Requests per minute and IP on `/api/invites/*`. */
   inviteRateLimit: number;
   /** Entra app for OneDrive/SharePoint links (BER-92); `null` until MS_CLIENT_ID and MS_CLIENT_SECRET are set. */
@@ -23,6 +36,8 @@ export interface Config {
   sync: SyncConfig;
   /** Voice and video comments (BER-116). */
   media: MediaConfig;
+  /** Self-hosting: Postgres server, built SPA, reverse proxy. Absent in tests. */
+  hosting?: HostingConfig;
 }
 
 export interface MediaConfig {
@@ -35,6 +50,46 @@ export interface MediaConfig {
   quotaBytes: number;
   /** Per recording. */
   maxBytes: number;
+}
+
+export interface AuthConfig {
+  /**
+   * Cookie-less requests act as the dev owner – no login at all. Default: on in development and
+   * tests when no login provider is configured; never in production.
+   */
+  devLogin: boolean;
+  /** Who may create an account (the very first account and invited people always may). */
+  signup: SignupMode;
+  /** For `signup: 'domains'`: verified e-mail domains that may sign up, lower-case. */
+  signupDomains: string[];
+  /** Generic OpenID Connect provider (Authentik, Keycloak, Google, Zitadel, …). */
+  oidc: OidcConfig | null;
+  /** Session lifetime; renewed on use (at most once a day). */
+  sessionTtlDays: number;
+  /**
+   * `BOOTSTRAP_EMAIL`: the (verified) addresses that may create the very first account, which
+   * becomes instance admin and adopts the dev owner. Lower-case. Empty: anyone in development;
+   * in production only who `SIGNUP` would admit anyway – see `services/accounts`.
+   */
+  bootstrapEmails: string[];
+}
+
+export interface OidcConfig {
+  /** Discovery runs against `${issuer}/.well-known/openid-configuration`. */
+  issuer: string;
+  clientId: string;
+  clientSecret: string;
+  /** Button text on the login page. */
+  label: string;
+  scopes: string;
+  redirectUri: string;
+}
+
+export interface SmtpConfig {
+  /** e.g. `smtps://user:pass@mail.example.com:465` */
+  url: string;
+  /** e.g. `Slider <slider@example.com>` */
+  from: string;
 }
 
 export interface SyncConfig {
@@ -62,6 +117,8 @@ const DEFAULT_DATA_DIR = fileURLToPath(new URL('../.data', import.meta.url));
 /** `.env` lives in the repo root, so relative paths in it are meant from there – not from `apps/api`. */
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url));
 const MICROSOFT_CALLBACK_PATH = '/api/auth/microsoft/callback';
+const OIDC_CALLBACK_PATH = '/api/auth/oidc/callback';
+const booleanEnv = z.enum(['true', 'false', '1', '0']).transform((v) => v === 'true' || v === '1');
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -89,6 +146,22 @@ const envSchema = z.object({
     })
     .default(DEFAULT_SYNC_POLL_INTERVAL_MS),
   SYNC_DEBOUNCE_MS: z.coerce.number().int().min(0).default(DEFAULT_SYNC_DEBOUNCE_MS),
+  AUTH_DEV_LOGIN: booleanEnv.optional(),
+  SIGNUP: z.enum(SIGNUP_MODES).default('invite'),
+  SIGNUP_DOMAINS: z.string().optional(),
+  BOOTSTRAP_EMAIL: z.string().optional(),
+  SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(365).default(30),
+  OIDC_ISSUER: z.url().optional(),
+  OIDC_CLIENT_ID: z.string().optional(),
+  OIDC_CLIENT_SECRET: z.string().optional(),
+  OIDC_LABEL: z.string().min(1).default('Mit SSO anmelden'),
+  OIDC_SCOPES: z.string().min(1).default('openid profile email'),
+  OIDC_REDIRECT_URI: z.url().optional(),
+  SMTP_URL: z
+    .string()
+    .regex(/^smtps?:\/\//, 'SMTP_URL muss mit smtp:// oder smtps:// beginnen.')
+    .optional(),
+  MAIL_FROM: z.string().min(3).optional(),
   MEDIA_DIR: z.string().min(1).optional(),
   MEDIA_QUOTA_BYTES: z.coerce.number().int().positive().default(DEFAULT_MEDIA_QUOTA_BYTES),
   MAX_MEDIA_BYTES: z.coerce.number().int().positive().default(MAX_MEDIA_BYTES),
@@ -105,6 +178,74 @@ export function loadConfig(
     warn('SLIDER_SECRET is not set – using an insecure development secret.');
   }
   const dataDir = path.resolve(REPO_ROOT, parsed.DATA_DIR);
+  const microsoft: MicrosoftConfig | null =
+    parsed.MS_CLIENT_ID && parsed.MS_CLIENT_SECRET
+      ? {
+          clientId: parsed.MS_CLIENT_ID,
+          clientSecret: parsed.MS_CLIENT_SECRET,
+          tenant: parsed.MS_TENANT ?? 'common',
+          redirectUri:
+            parsed.MS_REDIRECT_URI ??
+            new URL(MICROSOFT_CALLBACK_PATH, parsed.WEB_ORIGIN).toString(),
+        }
+      : null;
+  const oidc: OidcConfig | null =
+    parsed.OIDC_ISSUER && parsed.OIDC_CLIENT_ID && parsed.OIDC_CLIENT_SECRET
+      ? {
+          issuer: parsed.OIDC_ISSUER.replace(/\/+$/, ''),
+          clientId: parsed.OIDC_CLIENT_ID,
+          clientSecret: parsed.OIDC_CLIENT_SECRET,
+          label: parsed.OIDC_LABEL,
+          scopes: parsed.OIDC_SCOPES,
+          redirectUri:
+            parsed.OIDC_REDIRECT_URI ?? new URL(OIDC_CALLBACK_PATH, parsed.WEB_ORIGIN).toString(),
+        }
+      : null;
+  if (parsed.OIDC_ISSUER && !oidc) {
+    throw new Error('OIDC_ISSUER needs OIDC_CLIENT_ID and OIDC_CLIENT_SECRET.');
+  }
+  if (Boolean(parsed.SMTP_URL) !== Boolean(parsed.MAIL_FROM)) {
+    throw new Error('SMTP_URL and MAIL_FROM must be set together.');
+  }
+  const smtp =
+    parsed.SMTP_URL && parsed.MAIL_FROM ? { url: parsed.SMTP_URL, from: parsed.MAIL_FROM } : null;
+  const hasLoginProvider = Boolean(microsoft || oidc || smtp);
+  if (parsed.NODE_ENV === 'production') {
+    if (!hasLoginProvider) {
+      throw new Error(
+        'No login is configured: set MS_CLIENT_ID/MS_CLIENT_SECRET, OIDC_ISSUER/OIDC_CLIENT_ID/OIDC_CLIENT_SECRET or SMTP_URL/MAIL_FROM.',
+      );
+    }
+    if (parsed.AUTH_DEV_LOGIN) throw new Error('AUTH_DEV_LOGIN cannot be enabled in production.');
+  }
+  const devLogin = parsed.NODE_ENV !== 'production' && (parsed.AUTH_DEV_LOGIN ?? !hasLoginProvider);
+  const signupDomains = (parsed.SIGNUP_DOMAINS ?? '')
+    .split(',')
+    .map((domain) => domain.trim().toLowerCase().replace(/^@/, ''))
+    .filter(Boolean);
+  if (parsed.SIGNUP === 'domains' && signupDomains.length === 0) {
+    throw new Error('SIGNUP=domains needs SIGNUP_DOMAINS, e.g. SIGNUP_DOMAINS=firma.de,firma.com');
+  }
+  const bootstrapEmails = (parsed.BOOTSTRAP_EMAIL ?? '')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+  const invalidBootstrap = bootstrapEmails.filter((email) => !z.email().safeParse(email).success);
+  if (invalidBootstrap.length > 0) {
+    throw new Error(`BOOTSTRAP_EMAIL contains invalid addresses: ${invalidBootstrap.join(', ')}`);
+  }
+  if (parsed.NODE_ENV === 'production' && bootstrapEmails.length === 0) {
+    warn(
+      [
+        '!!! BOOTSTRAP_EMAIL is not set !!!',
+        'The first login of this instance becomes instance admin. Without BOOTSTRAP_EMAIL that first',
+        parsed.SIGNUP === 'invite'
+          ? 'account cannot be created at all (SIGNUP=invite). Set BOOTSTRAP_EMAIL=you@example.com.'
+          : `account may be claimed by anyone SIGNUP=${parsed.SIGNUP} admits. Set BOOTSTRAP_EMAIL=you@example.com.`,
+        '(Harmless once the first account exists.)',
+      ].join('\n'),
+    );
+  }
   return {
     env: parsed.NODE_ENV,
     port: parsed.PORT,
@@ -113,18 +254,17 @@ export function loadConfig(
     webOrigin: parsed.WEB_ORIGIN,
     maxUploadBytes: parsed.MAX_UPLOAD_BYTES,
     devOwner: { name: parsed.DEV_OWNER_NAME, email: parsed.DEV_OWNER_EMAIL },
+    auth: {
+      devLogin,
+      signup: parsed.SIGNUP,
+      signupDomains,
+      oidc,
+      sessionTtlDays: parsed.SESSION_TTL_DAYS,
+      bootstrapEmails,
+    },
+    smtp,
     inviteRateLimit: parsed.INVITE_RATE_LIMIT,
-    microsoft:
-      parsed.MS_CLIENT_ID && parsed.MS_CLIENT_SECRET
-        ? {
-            clientId: parsed.MS_CLIENT_ID,
-            clientSecret: parsed.MS_CLIENT_SECRET,
-            tenant: parsed.MS_TENANT ?? 'common',
-            redirectUri:
-              parsed.MS_REDIRECT_URI ??
-              new URL(MICROSOFT_CALLBACK_PATH, parsed.WEB_ORIGIN).toString(),
-          }
-        : null,
+    microsoft,
     sync: { pollIntervalMs: parsed.SYNC_POLL_INTERVAL_MS, debounceMs: parsed.SYNC_DEBOUNCE_MS },
     media: {
       dir: parsed.MEDIA_DIR
@@ -133,6 +273,7 @@ export function loadConfig(
       quotaBytes: parsed.MEDIA_QUOTA_BYTES,
       maxBytes: parsed.MAX_MEDIA_BYTES,
     },
+    hosting: loadHostingConfig(env, parsed.NODE_ENV),
   };
 }
 
@@ -150,3 +291,36 @@ export const dataPaths = (config: Pick<Config, 'dataDir'>) => ({
   dbDir: path.join(config.dataDir, 'db'),
   blobsDir: path.join(config.dataDir, 'blobs'),
 });
+
+// ── Self-hosting ────────────────────────────────────────────────────────────────────────────
+
+export interface HostingConfig {
+  /** `postgres://…` → a Postgres server; `null` → PGlite in `<dataDir>/db`. */
+  databaseUrl: string | null;
+  /** Built web app (`apps/web/dist`) served by the API itself; `null` → API only (dev: Vite). */
+  webDistDir: string | null;
+  /** Behind a reverse proxy (Caddy): take the client address from `X-Forwarded-For`. */
+  trustProxy: boolean;
+}
+
+const hostingEnvSchema = z.object({
+  DATABASE_URL: z
+    .string()
+    .regex(/^postgres(ql)?:\/\//i, 'DATABASE_URL muss mit postgres:// beginnen.')
+    .optional(),
+  WEB_DIST_DIR: z.string().min(1).optional(),
+  TRUST_PROXY: z
+    .enum(['0', '1', 'false', 'true'])
+    .transform((value) => value === '1' || value === 'true')
+    .optional(),
+});
+
+function loadHostingConfig(env: NodeJS.ProcessEnv, nodeEnv: Config['env']): HostingConfig {
+  const parsed = hostingEnvSchema.parse(stripEmpty(env));
+  const webDist = parsed.WEB_DIST_DIR ?? (nodeEnv === 'production' ? 'apps/web/dist' : null);
+  return {
+    databaseUrl: parsed.DATABASE_URL ?? null,
+    webDistDir: webDist ? path.resolve(REPO_ROOT, webDist) : null,
+    trustProxy: parsed.TRUST_PROXY ?? false,
+  };
+}

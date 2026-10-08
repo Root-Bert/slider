@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router';
+import { Navigate, useLocation, useParams, useSearchParams } from 'react-router';
+import { routes } from '@/app/routes';
+import { isSignedOutError } from '@/features/auth/lib/gate';
 import { ImportProgress } from '@/features/onboarding/ImportProgress';
 import { useComments, useDeck, useMe, useSlides } from '@/lib/queries';
 import { DeckError, DeckLoading, SessionEnded } from './DeckStates';
@@ -16,6 +18,7 @@ export function Component() {
   const [searchParams] = useSearchParams();
   const [initialSlideId] = useState(() => searchParams.get(SLIDE_PARAM));
   const { hasLeft, leave } = useLeaveReview();
+  const location = useLocation();
 
   const deck = useDeck(deckId);
   const me = useMe();
@@ -36,6 +39,10 @@ export function Component() {
   if (hasLeft) return <SessionEnded />;
 
   const error = deck.error ?? me.error ?? slides.error ?? comments.error;
+  // Neither signed in nor a review-link guest: sign in and come back here.
+  if (isSignedOutError(me.error) || isSignedOutError(deck.error)) {
+    return <Navigate to={routes.login(location.pathname + location.search)} replace />;
+  }
   if (error) return <DeckError error={error} />;
   if (deck.data && deck.data.import.status !== 'ready') return <ImportProgress deck={deck.data} />;
   if (!data) return <DeckLoading />;

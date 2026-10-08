@@ -5,6 +5,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -28,6 +29,7 @@ import type {
   SyncErrorCode,
   SyncSummary,
   TranscriptStatus,
+  WorkspaceRole,
 } from '@slider/shared';
 
 /**
@@ -81,16 +83,130 @@ export const users = pgTable('users', {
   msRefreshToken: text('ms_refresh_token'),
   /** The Microsoft account it belongs to (mail or UPN), for display. */
   msAccount: text('ms_account'),
+  /** The first account of the instance (BER-129). */
+  isInstanceAdmin: boolean('is_instance_admin').notNull().default(false),
   createdAt: createdAt(),
 });
+
+/**
+ * Login sessions (BER-129). The cookie holds a random token; only its SHA-256 is stored, so a
+ * leaked database cannot be replayed as cookies.
+ */
+export const sessions = pgTable(
+  'sessions',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull().unique(),
+    createdAt: createdAt(),
+    lastSeenAt: timestamptz('last_seen_at').notNull().defaultNow(),
+    expiresAt: timestamptz('expires_at').notNull(),
+    userAgent: text('user_agent'),
+  },
+  (t) => [index('sessions_user_idx').on(t.userId)],
+);
+
+/**
+ * How an account signs in: `microsoft` (`<tid>:<oid>`), `oidc` (`sub` of the configured issuer)
+ * or `email` (the lower-case address, magic link). One account may have several.
+ */
+export const userIdentities = pgTable(
+  'user_identities',
+  {
+    provider: text('provider').$type<IdentityProvider>().notNull(),
+    subject: text('subject').notNull(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** The address the provider reported at the last login. */
+    email: text('email'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.provider, t.subject] }),
+    index('user_identities_user_idx').on(t.userId),
+  ],
+);
+
+export type IdentityProvider = 'microsoft' | 'oidc' | 'email';
+
+/** One-time magic-link tokens (hashed, 15 minutes, single use). */
+export const loginTokens = pgTable(
+  'login_tokens',
+  {
+    id: text('id').primaryKey(),
+    email: text('email').notNull(),
+    tokenHash: text('token_hash').notNull().unique(),
+    returnTo: text('return_to').notNull(),
+    createdAt: createdAt(),
+    expiresAt: timestamptz('expires_at').notNull(),
+    usedAt: timestamptz('used_at'),
+  },
+  (t) => [index('login_tokens_email_idx').on(t.email)],
+);
+
+/** A team space: decks belong to a workspace, people to workspaces with a role (BER-129). */
+export const workspaces = pgTable('workspaces', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  slug: text('slug').notNull().unique(),
+  createdAt: createdAt(),
+  createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+});
+
+export const workspaceMembers = pgTable(
+  'workspace_members',
+  {
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    role: text('role').$type<WorkspaceRole>().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.userId] }),
+    index('workspace_members_user_idx').on(t.userId),
+  ],
+);
+
+/** E-mail invites (`email` set, single use) and invite links (`email` null, multi use). */
+export const workspaceInvites = pgTable(
+  'workspace_invites',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    email: text('email'),
+    role: text('role').$type<Exclude<WorkspaceRole, 'owner'>>().notNull(),
+    tokenHash: text('token_hash').notNull().unique(),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    expiresAt: timestamptz('expires_at').notNull(),
+    acceptedAt: timestamptz('accepted_at'),
+    revokedAt: timestamptz('revoked_at'),
+    useCount: integer('use_count').notNull().default(0),
+  },
+  (t) => [index('workspace_invites_workspace_idx').on(t.workspaceId)],
+);
 
 export const decks = pgTable(
   'decks',
   {
     id: text('id').primaryKey(),
+    /** Who created the deck; their Microsoft login is used to keep a linked deck in sync. */
     ownerId: text('owner_id')
       .notNull()
       .references(() => users.id),
+    /** Access is decided by membership in this workspace (BER-129). */
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
     title: text('title').notNull(),
     fileName: text('file_name').notNull(),
     source: text('source').$type<DeckSource>().notNull(),
@@ -110,7 +226,10 @@ export const decks = pgTable(
     /** Last time someone opened the deck; only decks active in the last 7 days are polled. */
     lastViewedAt: timestamptz('last_viewed_at'),
   },
-  (t) => [index('decks_owner_updated_idx').on(t.ownerId, t.updatedAt)],
+  (t) => [
+    index('decks_owner_updated_idx').on(t.ownerId, t.updatedAt),
+    index('decks_workspace_updated_idx').on(t.workspaceId, t.updatedAt),
+  ],
 );
 
 export const revisions = pgTable(
@@ -285,6 +404,10 @@ export const guestSessions = pgTable(
 );
 
 export type UserRow = typeof users.$inferSelect;
+export type SessionRow = typeof sessions.$inferSelect;
+export type WorkspaceRow = typeof workspaces.$inferSelect;
+export type WorkspaceMemberRow = typeof workspaceMembers.$inferSelect;
+export type WorkspaceInviteRow = typeof workspaceInvites.$inferSelect;
 export type DeckRow = typeof decks.$inferSelect;
 export type RevisionRow = typeof revisions.$inferSelect;
 export type SlideVersionRow = typeof slideVersions.$inferSelect;

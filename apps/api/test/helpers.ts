@@ -6,17 +6,21 @@ import type { CreateCommentInput, Shape } from '@slider/shared';
 import type { ParsedPresentation, ParsedSlide } from '@slider/pptx';
 import { createApp } from '../src/app';
 import { MicrosoftTokens } from '../src/auth/microsoft';
+import { OidcClient } from '../src/auth/oidc';
+import { hashToken, newSecretToken, SESSION_COOKIE } from '../src/auth/session';
 import type { Clock } from '../src/clock';
 import type { Config } from '../src/config';
 import { openDatabase } from '../src/db/client';
-import { decks, revisions, slides, slideVersions } from '../src/db/schema';
+import { decks, revisions, sessions, slides, slideVersions, type UserRow } from '../src/db/schema';
 import type { AppDeps } from '../src/deps';
 import { importDeck } from '../src/import/import-deck';
 import type { OfficePdf } from '../src/import/office-pages';
 import type { OpenPptx } from '../src/import/pptx';
 import { InProcessQueue, type ImportJob } from '../src/import/queue';
 import { silentLogger } from '../src/logger';
+import { NullMailer, type Mailer } from '../src/mail/mailer';
 import { upsertUser } from '../src/services/users';
+import { ensurePersonalWorkspace } from '../src/services/workspaces';
 import type { FetchLike, LookupAll } from '../src/sources/safe-fetch';
 import { createSourceAdapters, type SourceAdapters } from '../src/sources/source-adapter';
 import { blobKeys } from '../src/storage/blob-storage';
@@ -41,6 +45,16 @@ export const testConfig = (overrides: Partial<Config> = {}): Config => ({
   webOrigin: 'http://localhost:5173',
   maxUploadBytes: 1024 * 1024,
   devOwner: { name: 'Robert Hofmann', email: 'robert@q4-team.de' },
+  // Requests without a session act as the dev owner, like `bun run dev` without a login.
+  auth: {
+    devLogin: true,
+    signup: 'invite',
+    signupDomains: [],
+    oidc: null,
+    sessionTtlDays: 30,
+    bootstrapEmails: [],
+  },
+  smtp: null,
   inviteRateLimit: 1000,
   microsoft: null,
   // Polling is driven by hand in tests (`SyncScheduler.tick`); the debounce default applies.
@@ -96,6 +110,8 @@ export interface TestContext {
   deps: AppDeps;
   clock: TestClock;
   ownerId: string;
+  /** The dev owner's workspace ("Mein Workspace"); `createReadyDeck` puts decks here. */
+  workspaceId: string;
   blobsDir: string;
   request(
     path: string,
@@ -129,6 +145,8 @@ export async function createTestContext(
     lookup?: LookupAll;
     /** Replaces individual source adapters, e.g. with a fake OneDrive (no network). */
     sources?: Partial<SourceAdapters>;
+    /** e.g. a `RecordingMailer` – magic links are only offered with a configured mailer. */
+    mailer?: Mailer;
     /** Replaces the PPTX edit behind the ⊕, for decks made of fake bytes. */
     insertSlide?: SyncServiceDeps['insertSlide'];
   } = {},
@@ -143,6 +161,7 @@ export async function createTestContext(
     email: 'robert@q4-team.de',
     color: 'red',
   });
+  const workspaceId = await ensurePersonalWorkspace(db, owner.id);
   const openPptx = options.openPptx ?? stubPptx();
   const queue = new InProcessQueue<ImportJob>(
     (job) =>
@@ -192,6 +211,8 @@ export async function createTestContext(
     clock,
     log: silentLogger,
     sync,
+    oidc: config.auth.oidc ? new OidcClient(config.auth.oidc, clock, fetch) : null,
+    mailer: options.mailer ?? new NullMailer(),
     ownerId: owner.id,
   };
   const app = createApp(deps);
@@ -201,6 +222,7 @@ export async function createTestContext(
     deps,
     clock,
     ownerId: owner.id,
+    workspaceId,
     blobsDir,
     request: async (url, init = {}) => {
       const { json, cookie, ...rest } = init;
@@ -242,6 +264,7 @@ export async function createReadyDeck(
   await db.insert(decks).values({
     id: deckId,
     ownerId: ctx.ownerId,
+    workspaceId: ctx.workspaceId,
     title,
     fileName: `${title}.pptx`,
     source: 'upload',
@@ -278,3 +301,39 @@ export function cookieFrom(response: Response): string {
   if (!header) throw new Error('Response sets no cookie');
   return header.split(';')[0] ?? '';
 }
+
+/** A user with a login session (BER-129); `cookie` signs requests in as them. */
+export async function signedInUser(
+  ctx: TestContext,
+  person: { name: string; email: string },
+): Promise<{ user: UserRow; cookie: string }> {
+  const user = await upsertUser(ctx.deps.db, { ...person, color: 'blue' });
+  const token = newSecretToken();
+  const now = ctx.clock.now();
+  await ctx.deps.db.insert(sessions).values({
+    id: crypto.randomUUID(),
+    userId: user.id,
+    tokenHash: hashToken(token),
+    createdAt: now,
+    lastSeenAt: now,
+    expiresAt: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000),
+  });
+  return { user, cookie: `${SESSION_COOKIE}=${token}` };
+}
+
+/** The `slider_session=…` pair a response sets, or `null` (deletions don't count). */
+export function sessionCookieFrom(response: Response): string | null {
+  for (const header of response.headers.getSetCookie()) {
+    const pair = header.split(';')[0] ?? '';
+    if (pair.startsWith(`${SESSION_COOKIE}=`) && pair !== `${SESSION_COOKIE}=`) return pair;
+  }
+  return null;
+}
+
+/** An unsigned JWT – the code flow takes ID tokens from the token endpoint unverified. */
+export const fakeJwt = (claims: Record<string, unknown>) =>
+  [
+    Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url'),
+    Buffer.from(JSON.stringify(claims)).toString('base64url'),
+    'signature',
+  ].join('.');
