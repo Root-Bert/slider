@@ -10,53 +10,34 @@ import {
   minimapAsTrack,
   scrollLeftForBracket,
   THUMB_GAP,
-  THUMB_GAP_MAX,
-  THUMB_MAX_H_NARROW,
+  THUMB_H,
 } from './minimap';
 import { layoutTrack } from './timeline-layout';
 
 const deck = (n: number) => Array.from({ length: n }, () => 16 / 9);
 
 describe('minimap thumbnails', () => {
-  it('uses the Figma size when the deck fits', () => {
+  it('keeps the fixed height for a short deck', () => {
     const mini = layoutMinimap(deck(4), 1376);
-    expect(mini.h).toBe(64);
-    expect(mini.slides[0]!.w).toBe(114);
-    expect(mini.slides[1]!.x).toBe(114 + THUMB_GAP_MAX);
-    expect(mini.contentW).toBe(4 * 114 + 3 * THUMB_GAP_MAX);
+    expect(mini.h).toBe(THUMB_H);
+    expect(mini.slides[0]!.w).toBe(64);
+    expect(mini.slides[1]!.x).toBe(64 + THUMB_GAP);
+    expect(mini.contentW).toBe(4 * 64 + 3 * THUMB_GAP);
     expect(mini.scrolls).toBe(false);
   });
 
-  it('widens the gaps so a capped row ends flush with the right edge', () => {
-    // 16 slides at 1968px: thumbnails stop at 64px high, 31px are left over.
-    const mini = layoutMinimap(deck(16), 1968);
-    expect(mini.h).toBe(64);
-    expect(mini.gap).toBeGreaterThan(THUMB_GAP);
-    expect(mini.gap).toBeLessThanOrEqual(THUMB_GAP_MAX);
-    expect(mini.contentW).toBeCloseTo(1968);
-  });
-
-  it('shrinks the thumbnails so the whole deck fits the width', () => {
-    const mini = layoutMinimap(deck(12), 1376);
-    expect(mini.h).toBeLessThan(64);
-    expect(mini.slides[0]!.w).toBeGreaterThanOrEqual(64);
-    expect(mini.contentW).toBeCloseTo(1376);
-    expect(mini.scrolls).toBe(false);
-  });
-
-  it('floors thumbnails at 64px wide and scrolls instead', () => {
+  it('keeps the fixed height for a long deck and scrolls', () => {
     const mini = layoutMinimap(deck(120), 1376);
-    expect(mini.slides[0]!.w).toBeGreaterThanOrEqual(64);
-    expect(mini.slides[0]!.w).toBeLessThan(70);
+    expect(mini.h).toBe(THUMB_H);
+    expect(mini.slides[0]!.w).toBe(64);
     expect(mini.scrolls).toBe(true);
     expect(mini.contentW).toBeGreaterThan(1376);
   });
 
-  it('caps the height on phones and keeps mixed aspect ratios', () => {
-    const mini = layoutMinimap([16 / 9, 4 / 3], 1000, THUMB_MAX_H_NARROW);
-    expect(mini.h).toBe(40);
-    expect(mini.slides[0]!.w).toBe(71);
-    expect(mini.slides[1]!.w).toBe(53);
+  it('keeps mixed aspect ratios', () => {
+    const mini = layoutMinimap([16 / 9, 4 / 3], 1000);
+    expect(mini.slides[0]!.w).toBe(64);
+    expect(mini.slides[1]!.w).toBe(48);
   });
 
   it('handles an empty deck', () => {

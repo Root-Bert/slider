@@ -27,8 +27,7 @@ import {
   minimapAsTrack,
   scrollLeftForBracket,
   THUMB_GAP,
-  THUMB_MAX_H,
-  THUMB_MAX_H_NARROW,
+  THUMB_H,
 } from '../lib/minimap';
 import type { TrackLayout } from '../lib/timeline-layout';
 import { useRevisionData } from '../state/revision-data';
@@ -53,8 +52,8 @@ interface MinimapProps {
 
 /**
  * Thumbnail row of the whole deck under the big track (Figma D1, 87:327) – PowerPoint's
- * thumbnail pane turned sideways. Thumbnails fit the width so the whole deck shows at once
- * (a long deck scrolls), the active one is framed white, and a bracket marks the part of the
+ * thumbnail pane turned sideways. Thumbnails have one fixed height (a long deck
+ * scrolls), the active one is framed white, and a bracket marks the part of the
  * deck in view above; it follows scrolling and resizing live and can be dragged to scroll the
  * track. Clicking a thumbnail activates its slide and reveals it. The row has a fixed height and
  * moves with the split handle, right under the track.
@@ -80,15 +79,14 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
   const suppressClickRef = useRef(false);
   const [availableW, setAvailableW] = useState(0);
 
-  const maxH = narrow ? THUMB_MAX_H_NARROW : THUMB_MAX_H;
-  const rowH = maxH + 2 * MINIMAP_PAD;
+  const rowH = THUMB_H + 2 * MINIMAP_PAD;
   const aspectRatios = useMemo(() => slides.map((slide) => slide.aspectRatio), [slides]);
   const mini = useMemo(
     () =>
       availableW > 0
-        ? layoutMinimap(aspectRatios, availableW - 2 * MINIMAP_PAD - deletedRoom, maxH)
+        ? layoutMinimap(aspectRatios, availableW - 2 * MINIMAP_PAD - deletedRoom)
         : null,
-    [aspectRatios, availableW, maxH, deletedRoom],
+    [aspectRatios, availableW, deletedRoom],
   );
   const miniTrack = useMemo(() => mini && minimapAsTrack(mini), [mini]);
 
@@ -322,7 +320,6 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
                   w={box.w}
                   h={mini.h}
                   isActive={index === activeIndex}
-                  gapW={mini.gap}
                   gapColor={gapColor}
                   badge={showChanges ? (badges.get(slide.id) ?? null) : null}
                   onSelect={select}
@@ -435,8 +432,6 @@ interface ThumbnailProps {
   w: number;
   h: number;
   isActive: boolean;
-  /** Space to the next thumbnail. */
-  gapW: number;
   /** Accent of a "missing slide" comment between this slide and the next (BER-103). */
   gapColor: string | null;
   /** Change of the latest revision while changes are shown (Figma D2). */
@@ -452,7 +447,6 @@ const Thumbnail = memo(function Thumbnail({
   w,
   h,
   isActive,
-  gapW,
   gapColor,
   badge,
   onSelect,
@@ -512,7 +506,7 @@ const Thumbnail = memo(function Thumbnail({
         <span
           aria-hidden
           className="absolute top-1 bottom-1 w-0.5 rounded-full"
-          style={{ left: w + gapW / 2 - 1, backgroundColor: gapColor }}
+          style={{ left: w + THUMB_GAP / 2 - 1, backgroundColor: gapColor }}
         />
       )}
     </li>
