@@ -80,7 +80,7 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
       aria-labelledby={titleId}
       style={{ '--card-accent': accentColor(root.author.color) } as CSSProperties}
       className={[
-        'glass fixed z-40 flex flex-col overflow-hidden shadow-[inset_0_0_0_1px_var(--color-hairline),var(--shadow-float)] outline-none',
+        'glass-panel fixed z-40 flex flex-col overflow-hidden shadow-[inset_0_0_0_1px_var(--color-hairline),var(--shadow-float)] outline-none',
         'transition-transform duration-300 ease-out',
         // Phone: bottom sheet.
         'inset-x-0 bottom-0 max-h-[85dvh] rounded-t-panel starting:translate-y-full',

@@ -45,7 +45,7 @@ function DeletedSlidesPanelView({ deletedSlides }: { deletedSlides: readonly Del
       tabIndex={-1}
       aria-labelledby={titleId}
       className={[
-        'glass fixed z-40 flex flex-col overflow-hidden shadow-[inset_0_0_0_1px_var(--color-hairline),var(--shadow-float)] outline-none',
+        'glass-panel fixed z-40 flex flex-col overflow-hidden shadow-[inset_0_0_0_1px_var(--color-hairline),var(--shadow-float)] outline-none',
         'transition-transform duration-300 ease-out',
         'inset-x-0 bottom-0 max-h-[85dvh] rounded-t-panel starting:translate-y-full',
         // Tablet and up: a floating glass card at the right edge.

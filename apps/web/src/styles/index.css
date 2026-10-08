@@ -115,6 +115,14 @@
   box-shadow: inset 0 0 0 1px var(--color-hairline);
 }
 
+/* Side panels floating over slides: darker and denser than `glass`, so text stays readable over
+   white slides while the track still shows through. */
+@utility glass-panel {
+  background-color: rgb(24 24 24 / 0.75);
+  backdrop-filter: blur(32px) saturate(140%);
+  -webkit-backdrop-filter: blur(32px) saturate(140%);
+}
+
 /* Opaque variant for overlays that sit above busy content (dialogs, popovers, panels). */
 @utility glass-elevated {
   background-color: rgb(20 20 20 / 0.86);
