@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { cn, GlassPanel, Icon, IconButton } from '@/ui';
 import { useViewerData } from '../state/viewer-data';
-import { useViewerDispatch, useViewerState } from '../state/viewer-state';
+import { isPenTool, useViewerDispatch, useViewerState } from '../state/viewer-state';
 import { ToolOptions } from './ToolOptions';
 
 const COMING_SOON = 'Sprach- und Videokommentare folgen bald';
@@ -9,19 +9,21 @@ const COMING_SOON = 'Sprach- und Videokommentare folgen bald';
 const OPTIONS_ROOM = 48;
 
 /**
- * Tool bar at the left of the controls row (Figma D1): draw, voice, mark, video – a compact pill
- * as tall as the filter pill. While a tool is picked, its options (variant, colour, undo/redo)
+ * Tool bar at the left of the controls row (Figma D1): draw, voice, text, video – a compact pill
+ * as tall as the filter pill. While the pen is picked, its options (variant, colour, undo/redo)
  * open anchored to it: above, over the minimap, or below when there is no room above.
+ * "Text auf Folie" has no options: it writes in the author's colour.
  */
 export function ToolBar({ className }: { className?: string }) {
   const { canComment } = useViewerData();
   const { tool } = useViewerState();
+  const penOptions = isPenTool(tool);
   const anchorRef = useRef<HTMLDivElement>(null);
   const [placement, setPlacement] = useState<'above' | 'below'>('above');
 
   useLayoutEffect(() => {
     const anchor = anchorRef.current;
-    if (!tool || !anchor) return;
+    if (!penOptions || !anchor) return;
     const place = () => {
       const rect = anchor.getBoundingClientRect();
       // The viewer root is the fullscreen element; outside fullscreen it fills the window.
@@ -35,7 +37,7 @@ export function ToolBar({ className }: { className?: string }) {
     place();
     window.addEventListener('resize', place);
     return () => window.removeEventListener('resize', place);
-  }, [tool]);
+  }, [penOptions]);
 
   if (!canComment) {
     return (
@@ -55,7 +57,7 @@ export function ToolBar({ className }: { className?: string }) {
   return (
     <div ref={anchorRef} className={cn('relative shrink-0', className)}>
       <ToolButtons />
-      {tool && (
+      {penOptions && (
         <div
           data-tool-options
           data-placement={placement}
@@ -73,9 +75,9 @@ export function ToolBar({ className }: { className?: string }) {
 }
 
 function ToolButtons() {
-  const { tool, lastStrokeTool } = useViewerState();
+  const { tool, lastPenTool } = useViewerState();
   const dispatch = useViewerDispatch();
-  const drawing = tool !== null && tool !== 'mark';
+  const drawing = isPenTool(tool);
 
   return (
     <GlassPanel role="toolbar" aria-label="Werkzeuge" className="flex items-center gap-1 p-1">
@@ -84,7 +86,7 @@ function ToolButtons() {
         label="Zeichnen"
         size="sm"
         active={drawing}
-        onClick={() => dispatch({ type: 'toolSelected', tool: drawing ? null : lastStrokeTool })}
+        onClick={() => dispatch({ type: 'toolSelected', tool: drawing ? null : lastPenTool })}
       />
       <IconButton
         icon="mic"
@@ -95,10 +97,10 @@ function ToolButtons() {
       />
       <IconButton
         icon="formatShapes"
-        label="Stelle markieren (Klick = Punkt, Ziehen = Bereich)"
+        label="Text auf Folie"
         size="sm"
-        active={tool === 'mark'}
-        onClick={() => dispatch({ type: 'toolSelected', tool: 'mark' })}
+        active={tool === 'text'}
+        onClick={() => dispatch({ type: 'toolSelected', tool: 'text' })}
       />
       <IconButton
         icon="cameraVideo"

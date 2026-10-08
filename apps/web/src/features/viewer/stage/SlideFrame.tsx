@@ -9,6 +9,7 @@ import { useStageRegistry } from '../state/stage-registry';
 import { useViewerDispatch, type Draft, type Tool } from '../state/viewer-state';
 import { AnnotationLayer } from './AnnotationLayer';
 import { DrawingSurface } from './DrawingSurface';
+import { TextBoxEditor } from './TextBox';
 
 /** Below this width the slide shows its thumbnail image and small corners. */
 const THUMB_MAX_W = 320;
@@ -66,6 +67,7 @@ export const SlideFrame = memo(function SlideFrame({
   const label = slideLabel(index);
   const small = w < THUMB_MAX_W;
   const drawing = isActive && tool !== null;
+  const textBox = draft?.textBox ?? null;
 
   const activate = () => {
     dispatch({ type: 'activeSlideChanged', slideId: slide.id });
@@ -149,7 +151,16 @@ export const SlideFrame = memo(function SlideFrame({
           </div>
         )}
         <AnnotationLayer slide={slide} threads={threads} emphasisId={emphasisId} draft={draft} />
-        {drawing && <DrawingSurface slide={slide} boxRef={boxRef} tool={tool} color={color} />}
+        {drawing && (
+          <DrawingSurface
+            slide={slide}
+            boxRef={boxRef}
+            tool={tool}
+            color={color}
+            hasText={(textBox?.text.trim().length ?? 0) > 0}
+          />
+        )}
+        {textBox && <TextBoxEditor box={textBox} />}
       </div>
     </div>
   );

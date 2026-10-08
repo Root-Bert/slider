@@ -7,6 +7,7 @@ import { useComposerPosition } from '../hooks/useComposerPosition';
 import { useIsNarrow } from '../hooks/useMediaQuery';
 import { accentAlpha } from '../lib/colors';
 import { locationLabel } from '../lib/labels';
+import { draftSubmission } from '../lib/text-box';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, useViewerState, type Draft } from '../state/viewer-state';
 
@@ -29,7 +30,10 @@ function ComposerPopover({ draft }: { draft: Draft }) {
   const titleId = useId();
 
   const { author } = viewer;
-  const canSend = body.trim().length > 0 || draft.strokes.length > 0;
+  // "Text auf Folie": the text is typed on the slide, the composer only sends it.
+  const onSlideText = draft.textBox !== null;
+  const submission = draftSubmission(draft, body, author.color);
+  const canSend = submission !== null;
   const subtitle =
     draft.anchor.type === 'gap'
       ? locationLabel(draft.anchor, null, (id) => slideIndex.get(id))
@@ -37,15 +41,9 @@ function ComposerPopover({ draft }: { draft: Draft }) {
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
-    if (!canSend || createComment.isPending) return;
+    if (!submission || createComment.isPending) return;
     createComment.mutate(
-      {
-        slideId: draft.slideId,
-        parentId: null,
-        body: body.trim(),
-        anchor: draft.anchor,
-        strokes: draft.strokes,
-      },
+      { slideId: draft.slideId, parentId: null, ...submission },
       { onSuccess: () => dispatch({ type: 'draftSubmitted' }) },
     );
   };
@@ -53,6 +51,8 @@ function ComposerPopover({ draft }: { draft: Draft }) {
   return (
     <form
       ref={popoverRef}
+      // The on-slide text box sends through this form (⌘↵).
+      data-composer
       role="dialog"
       aria-labelledby={titleId}
       onSubmit={submit}
@@ -80,22 +80,28 @@ function ComposerPopover({ draft }: { draft: Draft }) {
 
       <MediaTabs />
 
-      <div className="rounded-control-sm bg-white/5 px-3 py-2 shadow-[inset_0_0_0_1px_var(--color-hairline-strong)] focus-within:shadow-[inset_0_0_0_1px_rgb(255_255_255/0.35)]">
-        <AutosizeTextarea
-          // While drawing, keep focus on the stage so ⌘Z undoes strokes.
-          autoFocus={draft.strokes.length === 0}
-          aria-label="Kommentar"
-          placeholder={
-            draft.strokes.length > 0 ? 'Optional: Was soll sich ändern?' : 'Was fällt dir auf?'
-          }
-          value={body}
-          onChange={(event) => setBody(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit();
-          }}
-          className="text-[13px] leading-5 text-fg"
-        />
-      </div>
+      {onSlideText ? (
+        <p className="rounded-control-sm bg-white/5 px-3 py-2 text-[13px] leading-5 text-fg-muted shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]">
+          Schreib direkt auf die Folie. ↵ beginnt eine neue Zeile.
+        </p>
+      ) : (
+        <div className="rounded-control-sm bg-white/5 px-3 py-2 shadow-[inset_0_0_0_1px_var(--color-hairline-strong)] focus-within:shadow-[inset_0_0_0_1px_rgb(255_255_255/0.35)]">
+          <AutosizeTextarea
+            // While drawing, keep focus on the stage so ⌘Z undoes strokes.
+            autoFocus={draft.strokes.length === 0}
+            aria-label="Kommentar"
+            placeholder={
+              draft.strokes.length > 0 ? 'Optional: Was soll sich ändern?' : 'Was fällt dir auf?'
+            }
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit();
+            }}
+            className="text-[13px] leading-5 text-fg"
+          />
+        </div>
+      )}
 
       {createComment.isError && (
         <p role="alert" className="text-xs text-danger">

@@ -1,4 +1,4 @@
-import type { Author } from '@slider/shared';
+import { isPathStroke, type Author } from '@slider/shared';
 import { accentColor } from '@/lib/accent';
 import type { Draft } from '../state/viewer-state';
 import { RectFrame } from './RectFrame';
@@ -17,7 +17,10 @@ const HANDLE_POSITIONS = [
   '-bottom-1 -right-1',
 ];
 
-/** The unsent comment's mark: frame with corner handles and name tag (B2), pin, or drawing. */
+/**
+ * The unsent comment's mark: frame with corner handles and name tag (B2), pin, or drawing.
+ * A text box is its own mark (`TextBoxEditor`, above the drawing surface).
+ */
 export function DraftMark({ draft, author, aspectRatio }: DraftMarkProps) {
   const color = accentColor(author.color);
   const { anchor } = draft;
@@ -30,12 +33,12 @@ export function DraftMark({ draft, author, aspectRatio }: DraftMarkProps) {
         preserveAspectRatio="none"
         aria-hidden
       >
-        {draft.strokes.map((stroke, index) => (
+        {draft.strokes.filter(isPathStroke).map((stroke, index) => (
           <StrokePath key={index} stroke={stroke} aspectRatio={aspectRatio} />
         ))}
       </svg>
 
-      {anchor.type === 'rect' && !draft.anchorFromStrokes && (
+      {anchor.type === 'rect' && !draft.anchorFromStrokes && !draft.textBox && (
         <RectFrame rect={anchor.rect} color={color} className="bg-white/5">
           <span
             className="absolute -top-6 left-[-2px] rounded-t-thumb rounded-br-thumb px-1.5 py-0.5 text-[11px] leading-4 font-medium whitespace-nowrap text-white"

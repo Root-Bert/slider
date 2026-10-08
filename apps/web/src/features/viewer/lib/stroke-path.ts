@@ -1,11 +1,16 @@
-import type { Point, Rect, Stroke, StrokeTool } from '@slider/shared';
+import type { PathStroke, PathStrokeTool, Point, Rect, Stroke } from '@slider/shared';
 
 /** Visual style per drawing tool. Widths are screen pixels (strokes use `non-scaling-stroke`). */
-export const STROKE_STYLE: Record<StrokeTool, { width: number; opacity: number }> = {
+export const STROKE_STYLE: Record<PathStrokeTool, { width: number; opacity: number }> = {
   pen: { width: 3, opacity: 1 },
   arrow: { width: 3, opacity: 1 },
   highlighter: { width: 16, opacity: 0.4 },
+  rect: { width: 3, opacity: 1 },
+  ellipse: { width: 3, opacity: 1 },
 };
+
+/** Shapes are spanned by two corners and drawn by dragging; a tap leaves nothing. */
+export const isShapeTool = (tool: PathStrokeTool) => tool === 'rect' || tool === 'ellipse';
 
 /** Minimum distance (normalised) between recorded points – keeps payloads small and lines smooth. */
 export const MIN_POINT_DISTANCE = 0.002;
@@ -72,17 +77,96 @@ export function arrowPath(points: readonly Point[], aspectRatio: number): string
   );
 }
 
-export const strokePath = (stroke: Pick<Stroke, 'tool' | 'points'>, aspectRatio: number): string =>
-  stroke.tool === 'arrow' ? arrowPath(stroke.points, aspectRatio) : smoothPath(stroke.points);
+/** Normalised box spanned by the first and last point of a shape stroke. */
+function shapeBox(points: readonly Point[]): Rect | null {
+  const start = points[0];
+  const end = points.at(-1);
+  if (!start || !end) return null;
+  return {
+    x: Math.min(start.x, end.x),
+    y: Math.min(start.y, end.y),
+    w: Math.abs(end.x - start.x),
+    h: Math.abs(end.y - start.y),
+  };
+}
 
-/** Bounding box of all points of all strokes (normalised). */
-export function strokesBounds(strokes: readonly Pick<Stroke, 'points'>[]): Rect | null {
+/** Rectangle through two opposite corners. */
+export function rectPath(points: readonly Point[]): string {
+  const box = shapeBox(points);
+  if (!box) return '';
+  const { x, y, w, h } = box;
+  return `M${fmt(x)} ${fmt(y)}H${fmt(x + w)}V${fmt(y + h)}H${fmt(x)}Z`;
+}
+
+/**
+ * Ellipse inscribed in the box of two opposite corners. Two arcs in normalised units – the
+ * non-uniform `viewBox` scaling keeps it an ellipse at every slide size.
+ */
+export function ellipsePath(points: readonly Point[]): string {
+  const box = shapeBox(points);
+  if (!box) return '';
+  const rx = box.w / 2;
+  const ry = box.h / 2;
+  const cy = box.y + ry;
+  const arc = `A${fmt(rx)} ${fmt(ry)} 0 1 0`;
+  return (
+    `M${fmt(box.x)} ${fmt(cy)}${arc} ${fmt(box.x + box.w)} ${fmt(cy)}` +
+    `${arc} ${fmt(box.x)} ${fmt(cy)}Z`
+  );
+}
+
+export function strokePath(stroke: Pick<PathStroke, 'tool' | 'points'>, aspectRatio: number) {
+  switch (stroke.tool) {
+    case 'arrow':
+      return arrowPath(stroke.points, aspectRatio);
+    case 'rect':
+      return rectPath(stroke.points);
+    case 'ellipse':
+      return ellipsePath(stroke.points);
+    default:
+      return smoothPath(stroke.points);
+  }
+}
+
+/** The box of a text annotation. */
+export const textBox = (stroke: Extract<Stroke, { tool: 'text' }>): Rect => ({
+  x: stroke.x,
+  y: stroke.y,
+  w: stroke.w,
+  h: stroke.h,
+});
+
+/**
+ * Points that describe where a stroke reaches: every point of a freehand line or arrow, the
+ * edge midpoints of a shape or text box (its outermost points left/right and top/bottom).
+ */
+export function strokeOutline(stroke: Stroke): Point[] {
+  const box =
+    stroke.tool === 'text'
+      ? textBox(stroke)
+      : isShapeTool(stroke.tool)
+        ? shapeBox(stroke.points)
+        : null;
+  if (stroke.tool !== 'text' && !box) return stroke.points;
+  if (!box) return [];
+  const cx = box.x + box.w / 2;
+  const cy = box.y + box.h / 2;
+  return [
+    { x: box.x, y: cy },
+    { x: box.x + box.w, y: cy },
+    { x: cx, y: box.y },
+    { x: cx, y: box.y + box.h },
+  ];
+}
+
+/** Bounding box of all strokes (normalised). */
+export function strokesBounds(strokes: readonly Stroke[]): Rect | null {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
   for (const stroke of strokes) {
-    for (const { x, y } of stroke.points) {
+    for (const { x, y } of strokeOutline(stroke)) {
       minX = Math.min(minX, x);
       minY = Math.min(minY, y);
       maxX = Math.max(maxX, x);

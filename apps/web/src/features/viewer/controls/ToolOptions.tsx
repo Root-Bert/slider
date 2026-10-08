@@ -1,13 +1,21 @@
 import { ACCENT_COLORS, type AccentColor } from '@slider/shared';
 import { accentColor } from '@/lib/accent';
 import { cn, GlassPanel, Icon, IconButton, type IconName } from '@/ui';
-import { useViewerDispatch, useViewerState, type Tool } from '../state/viewer-state';
+import { useViewerDispatch, useViewerState, type PenTool } from '../state/viewer-state';
 
-const TOOL_OPTIONS: { tool: Tool; icon: IconName; label: string; hint: string }[] = [
-  { tool: 'mark', icon: 'cropSquare', label: 'Rechteck', hint: 'Rechteck oder Punkt (Klick)' },
+/** The pen's variants: lines, shapes, and marking a spot (click = point, drag = area). */
+const TOOL_OPTIONS: { tool: PenTool; icon: IconName; label: string; hint: string }[] = [
   { tool: 'pen', icon: 'gesture', label: 'Freihand', hint: 'Freihand' },
   { tool: 'arrow', icon: 'arrow', label: 'Pfeil', hint: 'Pfeil' },
   { tool: 'highlighter', icon: 'marker', label: 'Marker', hint: 'Marker' },
+  { tool: 'rect', icon: 'cropSquare', label: 'Rechteck', hint: 'Rechteck' },
+  { tool: 'ellipse', icon: 'radioButtonUnchecked', label: 'Kreis', hint: 'Kreis/Ellipse' },
+  {
+    tool: 'mark',
+    icon: 'highlightAlt',
+    label: 'Punkt/Bereich',
+    hint: 'Punkt/Bereich (Klick = Punkt, Ziehen = Bereich)',
+  },
 ];
 
 const COLOR_NAMES: Record<AccentColor, string> = {
@@ -17,7 +25,7 @@ const COLOR_NAMES: Record<AccentColor, string> = {
   yellow: 'Gelb',
 };
 
-/** Tool options pill next to the tool bar (B2): shape/pen variant, colour, undo/redo. */
+/** Pen options pill next to the tool bar (B2): pen/shape variant, colour, undo/redo. */
 export function ToolOptions() {
   const { tool, color, draft } = useViewerState();
   const dispatch = useViewerDispatch();
@@ -25,7 +33,7 @@ export function ToolOptions() {
   return (
     // Phones: narrower than the pill – it scrolls sideways instead of overflowing the screen.
     <GlassPanel className="scrollbar-none flex max-w-full animate-pop-in items-center gap-1 overflow-x-auto p-1 *:shrink-0">
-      <div role="radiogroup" aria-label="Werkzeug" className="flex items-center gap-1">
+      <div role="radiogroup" aria-label="Zeichenwerkzeug" className="flex items-center gap-1">
         {TOOL_OPTIONS.map((option) => {
           const selected = option.tool === tool;
           return (

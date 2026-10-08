@@ -8,6 +8,7 @@ import {
   gapKey,
   gapThreadsByGap,
   groupThreadsBySlide,
+  isImplicitFrame,
   isStrokeOnly,
   sortThreadsByAnchor,
   sortThreadsClockwise,
@@ -233,4 +234,57 @@ it('orders threads clockwise around the slide, lineless last', () => {
     rightHigh.id,
     slideLevel.id,
   ]);
+});
+
+describe('isImplicitFrame', () => {
+  const rect = { x: 0.1, y: 0.2, w: 0.3, h: 0.1 };
+  const text = {
+    tool: 'text' as const,
+    color: 'red' as const,
+    ...rect,
+    text: 'Hallo',
+    fontSize: 0.04,
+  };
+  const ellipse = {
+    tool: 'ellipse' as const,
+    color: 'red' as const,
+    points: [
+      { x: 0.1, y: 0.2 },
+      { x: 0.4, y: 0.3 },
+    ],
+  };
+  const pen = { ...ellipse, tool: 'pen' as const };
+
+  it('hides the frame of text boxes and shapes – they are the mark', () => {
+    expect(
+      isImplicitFrame({ anchor: { type: 'rect', rect, shapeRef: null }, strokes: [text] }),
+    ).toBe(true);
+    expect(
+      isImplicitFrame({ anchor: { type: 'rect', rect, shapeRef: null }, strokes: [ellipse] }),
+    ).toBe(true);
+  });
+
+  it('keeps explicit frames and the frames of freehand drawings', () => {
+    const wider = { ...rect, w: 0.5 };
+    expect(
+      isImplicitFrame({
+        anchor: { type: 'rect', rect: wider, shapeRef: null },
+        strokes: [ellipse],
+      }),
+    ).toBe(false);
+    expect(
+      isImplicitFrame({ anchor: { type: 'rect', rect, shapeRef: null }, strokes: [pen] }),
+    ).toBe(false);
+    expect(isImplicitFrame({ anchor: { type: 'rect', rect, shapeRef: null }, strokes: [] })).toBe(
+      false,
+    );
+  });
+
+  it('starts the connector line at the text box', () => {
+    const anchor = connectorAnchor(
+      comment({ anchor: { type: 'rect', rect, shapeRef: null }, strokes: [text] }),
+      [],
+    );
+    expect(anchor?.start.left).toEqual({ x: 0.1, y: 0.25 });
+  });
 });

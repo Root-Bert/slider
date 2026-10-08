@@ -1,4 +1,5 @@
 import {
+  isTextStroke,
   resolveShapeRef,
   type Anchor,
   type Author,
@@ -8,7 +9,7 @@ import {
   type Shape,
   type Slide,
 } from '@slider/shared';
-import { STROKE_STYLE, strokesBounds } from './stroke-path';
+import { isShapeTool, STROKE_STYLE, strokeOutline, strokesBounds, textBox } from './stroke-path';
 
 /** A root comment together with its replies – the unit shown as a card and in the thread panel. */
 export interface Thread {
@@ -229,8 +230,8 @@ export function connectorAnchor(
     let left: { point: Point; pad: number } | null = null;
     let right: { point: Point; pad: number } | null = null;
     for (const stroke of strokes) {
-      const pad = STROKE_STYLE[stroke.tool].width / 2;
-      for (const point of stroke.points) {
+      const pad = stroke.tool === 'text' ? 0 : STROKE_STYLE[stroke.tool].width / 2;
+      for (const point of strokeOutline(stroke)) {
         if (!left || point.x < left.point.x) left = { point, pad };
         if (!right || point.x > right.point.x) right = { point, pad };
       }
@@ -284,6 +285,33 @@ export const countLeftExits = (threads: readonly Thread[], shapes: readonly Shap
     const anchor = connectorAnchor(thread.root, shapes);
     return anchor !== null && connectorSide(anchor) === 'left';
   }).length;
+
+const rectsMatch = (a: Rect, b: Rect) =>
+  Math.abs(a.x - b.x) < 1e-6 &&
+  Math.abs(a.y - b.y) < 1e-6 &&
+  Math.abs(a.w - b.w) < 1e-6 &&
+  Math.abs(a.h - b.h) < 1e-6;
+
+/**
+ * The rect anchor only repeats what is drawn – a text box or the bounds of shapes – so no extra
+ * frame is drawn around it: the text box or shape is the mark itself.
+ */
+export function isImplicitFrame(comment: Pick<Comment, 'anchor' | 'strokes'>): boolean {
+  const { anchor, strokes } = comment;
+  if (anchor.type !== 'rect' || strokes.length === 0) return false;
+  if (strokes.some((stroke) => stroke.tool === 'text' && rectsMatch(textBox(stroke), anchor.rect)))
+    return true;
+  const bounds = strokesBounds(strokes);
+  return (
+    bounds !== null &&
+    strokes.some((stroke) => stroke.tool === 'text' || isShapeTool(stroke.tool)) &&
+    rectsMatch(bounds, anchor.rect)
+  );
+}
+
+/** The text written on the slide, if the comment has one ("Text auf Folie"). */
+export const textAnnotation = (comment: Pick<Comment, 'strokes'>) =>
+  comment.strokes.find(isTextStroke) ?? null;
 
 /** True when the body only consists of a drawing (shown as "✏️ Markierung"). */
 export const isStrokeOnly = (comment: Comment) =>

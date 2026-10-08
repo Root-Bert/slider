@@ -6,35 +6,44 @@ import {
   shapeRefAt,
   type AccentColor,
   type Point,
+  type PathStroke,
   type Rect,
   type Slide,
-  type Stroke,
 } from '@slider/shared';
 import { useState, type PointerEvent, type RefObject } from 'react';
 import { toSlidePoint } from '../lib/geometry';
-import { appendPoint } from '../lib/stroke-path';
+import { appendPoint, isShapeTool } from '../lib/stroke-path';
+import { clickTextBox, dragTextBox, startFontSize } from '../lib/text-box';
 import { useViewerDispatch, type Tool } from '../state/viewer-state';
 
 /** What is being drawn right now, before the pointer is released. */
 export type Gesture =
-  { kind: 'mark'; start: Point; end: Point } | { kind: 'stroke'; stroke: Stroke };
+  | { kind: 'mark'; start: Point; end: Point }
+  | { kind: 'text'; start: Point; end: Point }
+  | { kind: 'stroke'; stroke: PathStroke };
 
 const MAX_POINTS = 2000;
 
 /**
  * Turns pointer input on a slide into draft anchors and strokes (BER-98, BER-99).
- * Mark tool: tap = pin, drag = frame. Stroke tools: one stroke per press. Works for mouse, pen and touch.
+ * Mark tool: tap = pin, drag = frame. Shapes: drag spans the box. Other stroke tools: one stroke
+ * per press. Text: tap opens a growing text box, drag a box of that width – while the box holds
+ * text, pressing the slide only returns the focus to it (it moves by its handle).
+ * Works for mouse, pen and touch.
  */
 export function useDraftDrawing({
   slide,
   boxRef,
   tool,
   color,
+  hasText = false,
 }: {
   slide: Slide;
   boxRef: RefObject<HTMLElement | null>;
   tool: Tool | null;
   color: AccentColor;
+  /** The draft's text box on this slide holds text. */
+  hasText?: boolean;
 }) {
   const dispatch = useViewerDispatch();
   const [gesture, setGesture] = useState<Gesture | null>(null);
@@ -47,11 +56,20 @@ export function useDraftDrawing({
     const point = pointOf(event);
     if (!point) return;
     event.preventDefault();
+    if (tool === 'text' && hasText) {
+      boxRef.current?.querySelector<HTMLTextAreaElement>('[data-text-editor] textarea')?.focus();
+      return;
+    }
     event.currentTarget.setPointerCapture(event.pointerId);
     setGesture(
       tool === 'mark'
         ? { kind: 'mark', start: point, end: point }
-        : { kind: 'stroke', stroke: { tool, color, points: [point] } },
+        : tool === 'text'
+          ? { kind: 'text', start: point, end: point }
+          : {
+              kind: 'stroke',
+              stroke: { tool, color, points: isShapeTool(tool) ? [point, point] : [point] },
+            },
     );
   };
 
@@ -59,8 +77,15 @@ export function useDraftDrawing({
     if (!gesture) return;
     const point = pointOf(event);
     if (!point) return;
-    if (gesture.kind === 'mark') {
+    if (gesture.kind !== 'stroke') {
       setGesture({ ...gesture, end: point });
+      return;
+    }
+    if (isShapeTool(gesture.stroke.tool)) {
+      setGesture({
+        kind: 'stroke',
+        stroke: { ...gesture.stroke, points: [gesture.stroke.points[0]!, point] },
+      });
       return;
     }
     const points = appendPoint(gesture.stroke.points, point);
@@ -92,7 +117,28 @@ export function useDraftDrawing({
       return;
     }
 
+    if (gesture.kind === 'text') {
+      const { start, end } = gesture;
+      const fontSize = startFontSize(boxRef.current?.getBoundingClientRect().height ?? 0);
+      dispatch({
+        type: 'textBoxPlaced',
+        slideId: slide.id,
+        box:
+          distance(start, end) < MIN_DRAG_DISTANCE
+            ? clickTextBox(start, fontSize)
+            : dragTextBox(rectFromPoints(start, end), fontSize),
+      });
+      return;
+    }
+
     const { stroke } = gesture;
+    if (isShapeTool(stroke.tool)) {
+      // A shape needs a drag; a tap leaves nothing.
+      const [start, end] = stroke.points;
+      if (start && end && distance(start, end) >= MIN_DRAG_DISTANCE)
+        dispatch({ type: 'strokeAdded', slideId: slide.id, stroke });
+      return;
+    }
     // A single tap with a pen still leaves a dot: the API needs at least two points.
     const points =
       stroke.points.length >= 2 ? stroke.points : [stroke.points[0]!, stroke.points[0]!];
@@ -102,8 +148,8 @@ export function useDraftDrawing({
   const onPointerCancel = () => setGesture(null);
 
   const previewRect: Rect | null =
-    gesture?.kind === 'mark' ? rectFromPoints(gesture.start, gesture.end) : null;
-  const previewStroke: Stroke | null = gesture?.kind === 'stroke' ? gesture.stroke : null;
+    gesture && gesture.kind !== 'stroke' ? rectFromPoints(gesture.start, gesture.end) : null;
+  const previewStroke: PathStroke | null = gesture?.kind === 'stroke' ? gesture.stroke : null;
 
   return {
     handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel },

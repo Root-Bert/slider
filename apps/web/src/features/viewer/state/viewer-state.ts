@@ -1,11 +1,35 @@
-import type { AccentColor, Anchor, Stroke, StrokeTool } from '@slider/shared';
+import type { AccentColor, Anchor, PathStrokeTool, Rect, Stroke } from '@slider/shared';
 import { createContext, useContext, type Dispatch } from 'react';
 import type { StatusFilter } from '../lib/comment-selectors';
 import { strokesBounds } from '../lib/stroke-path';
 import { clampSplit } from '../lib/split';
 
-/** `mark` places pins (click) and frames (drag); the stroke tools draw (BER-98, BER-99). */
-export type Tool = 'mark' | StrokeTool;
+/**
+ * Variants of the pen ("Zeichnen"): `mark` places pins (click) and frames (drag) – "Punkt/Bereich" –,
+ * the stroke tools draw lines and shapes (BER-98, BER-99).
+ */
+export type PenTool = 'mark' | PathStrokeTool;
+/** `text` writes directly on the slide ("Text auf Folie"). */
+export type Tool = PenTool | 'text';
+
+export const isPenTool = (tool: Tool | null): tool is PenTool => tool !== null && tool !== 'text';
+
+/** The text box of an unsent "Text auf Folie" comment. Normalised to the slide box. */
+export interface TextBoxDraft {
+  x: number;
+  y: number;
+  /** Fixed width (dragged or resized), or `null` to grow with the longest line. */
+  width: number | null;
+  /** The box grows with its lines beyond this height. */
+  minHeight: number;
+  /** Relative to the slide height. */
+  fontSize: number;
+  text: string;
+  /** The box as rendered, measured from the editor – what gets stored. */
+  measured: Rect | null;
+}
+
+export type TextBoxPatch = Partial<Pick<TextBoxDraft, 'x' | 'y' | 'width' | 'minHeight' | 'text'>>;
 
 /** An unsent comment: where it points and what has been drawn so far. */
 export interface Draft {
@@ -17,13 +41,15 @@ export interface Draft {
   strokes: Stroke[];
   /** Undone strokes, most recent last (for redo). */
   undone: Stroke[];
+  /** Text written on the slide; while present, its box is the anchor. */
+  textBox: TextBoxDraft | null;
 }
 
 export interface ViewerState {
   activeSlideId: string | null;
   tool: Tool | null;
   /** Remembered so the `draw` button returns to the last pen variant. */
-  lastStrokeTool: StrokeTool;
+  lastPenTool: PenTool;
   color: AccentColor;
   draft: Draft | null;
   focusedThreadId: string | null;
@@ -52,6 +78,14 @@ export type ViewerAction =
   | { type: 'anchorPlaced'; slideId: string; anchor: Anchor }
   | { type: 'strokeAdded'; slideId: string; stroke: Stroke }
   | { type: 'gapDraftStarted'; afterSlideId: string | null; beforeSlideId: string | null }
+  /** A text box was clicked or dragged open on a slide; on the same slide it keeps its text. */
+  | {
+      type: 'textBoxPlaced';
+      slideId: string;
+      box: Pick<TextBoxDraft, 'x' | 'y' | 'width' | 'minHeight' | 'fontSize'>;
+    }
+  | { type: 'textBoxChanged'; patch: TextBoxPatch }
+  | { type: 'textBoxMeasured'; rect: Rect }
   | { type: 'undo' }
   | { type: 'redo' }
   | { type: 'draftCancelled' }
@@ -81,7 +115,7 @@ export function createInitialState(options: {
   return {
     activeSlideId: options.activeSlideId,
     tool: null,
-    lastStrokeTool: 'pen',
+    lastPenTool: 'pen',
     color: options.color,
     draft: null,
     focusedThreadId: null,
@@ -109,19 +143,69 @@ function withStrokes(draft: Draft, strokes: Stroke[], undone: Stroke[]): Draft |
   return anchor ? { ...draft, anchor, strokes, undone } : null;
 }
 
+const rectAnchor = (rect: Rect): Anchor => ({ type: 'rect', rect, shapeRef: null });
+
+/** Anchor of a text box before it has been measured. */
+const placedTextRect = (box: TextBoxDraft): Rect => ({
+  x: box.x,
+  y: box.y,
+  w: Math.max(box.width ?? 0, 0.01),
+  h: Math.max(box.minHeight, 0.01),
+});
+
 function draftReducer(draft: Draft | null, action: ViewerAction): Draft | null {
   switch (action.type) {
     case 'anchorPlaced':
-      // Placing a mark on another slide starts over; on the same slide the drawing is kept.
+      // Placing a mark on another slide starts over; on the same slide the drawing is kept
+      // (a text box makes way – the mark is the anchor now).
       if (draft?.slideId === action.slideId)
-        return { ...draft, anchor: action.anchor, anchorFromStrokes: false };
+        return { ...draft, anchor: action.anchor, anchorFromStrokes: false, textBox: null };
       return {
         slideId: action.slideId,
         anchor: action.anchor,
         anchorFromStrokes: false,
         strokes: [],
         undone: [],
+        textBox: null,
       };
+    case 'textBoxPlaced': {
+      const same = draft?.slideId === action.slideId ? draft : null;
+      const textBox: TextBoxDraft = {
+        ...action.box,
+        text: same?.textBox?.text ?? '',
+        measured: null,
+      };
+      return {
+        slideId: action.slideId,
+        anchor: rectAnchor(placedTextRect(textBox)),
+        anchorFromStrokes: false,
+        strokes: same?.strokes ?? [],
+        undone: same?.undone ?? [],
+        textBox,
+      };
+    }
+    case 'textBoxChanged': {
+      if (!draft?.textBox) return draft;
+      const textBox = { ...draft.textBox, ...action.patch };
+      // Moving keeps the measured size until the editor reports the new box.
+      const measured = textBox.measured && { ...textBox.measured, x: textBox.x, y: textBox.y };
+      const rect = measured ?? placedTextRect(textBox);
+      return { ...draft, anchor: rectAnchor(rect), textBox: { ...textBox, measured } };
+    }
+    case 'textBoxMeasured': {
+      if (!draft?.textBox) return draft;
+      const { measured } = draft.textBox;
+      const { rect } = action;
+      if (
+        measured &&
+        measured.x === rect.x &&
+        measured.y === rect.y &&
+        measured.w === rect.w &&
+        measured.h === rect.h
+      )
+        return draft;
+      return { ...draft, anchor: rectAnchor(rect), textBox: { ...draft.textBox, measured: rect } };
+    }
     case 'strokeAdded': {
       const base: Draft =
         draft?.slideId === action.slideId
@@ -132,6 +216,7 @@ function draftReducer(draft: Draft | null, action: ViewerAction): Draft | null {
               anchorFromStrokes: true,
               strokes: [],
               undone: [],
+              textBox: null,
             };
       return withStrokes(base, [...base.strokes, action.stroke], []);
     }
@@ -146,6 +231,7 @@ function draftReducer(draft: Draft | null, action: ViewerAction): Draft | null {
         anchorFromStrokes: false,
         strokes: [],
         undone: [],
+        textBox: null,
       };
     case 'undo': {
       const last = draft?.strokes.at(-1);
@@ -186,14 +272,15 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
         : { ...next, activeSlideId: action.slideId };
     case 'toolSelected': {
       const tool = action.tool === next.tool ? null : action.tool;
-      const lastStrokeTool = tool && tool !== 'mark' ? tool : next.lastStrokeTool;
-      return { ...next, tool, lastStrokeTool };
+      const lastPenTool = isPenTool(tool) ? tool : next.lastPenTool;
+      return { ...next, tool, lastPenTool };
     }
     case 'colorSelected':
       return { ...next, color: action.color };
     case 'anchorPlaced':
     case 'strokeAdded':
     case 'gapDraftStarted':
+    case 'textBoxPlaced':
       // Composing a new comment takes over the focus.
       return { ...next, focusedThreadId: null, threadPanelOpen: false };
     case 'draftSubmitted':

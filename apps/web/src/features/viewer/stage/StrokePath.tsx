@@ -1,9 +1,9 @@
-import type { Stroke } from '@slider/shared';
+import type { PathStroke } from '@slider/shared';
 import { accentColor } from '@/lib/accent';
 import { STROKE_STYLE, strokePath } from '../lib/stroke-path';
 
 interface StrokePathProps {
-  stroke: Pick<Stroke, 'tool' | 'color' | 'points'>;
+  stroke: Pick<PathStroke, 'tool' | 'color' | 'points'>;
   aspectRatio: number;
   /** Multiplies the tool's own opacity (dimming). */
   opacity?: number;

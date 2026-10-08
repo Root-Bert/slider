@@ -123,14 +123,54 @@ export const anchorSchema = z.discriminatedUnion('type', [
 export type Anchor = z.infer<typeof anchorSchema>;
 export type AnchorType = Anchor['type'];
 
-export const STROKE_TOOLS = ['pen', 'arrow', 'highlighter'] as const;
-export const strokeSchema = z.object({
-  tool: z.enum(STROKE_TOOLS),
+/**
+ * Drawn strokes: freehand, arrow and marker follow their points; `rect` and `ellipse` are shapes
+ * spanned by their first and last point (two opposite corners of the bounding box).
+ */
+export const PATH_STROKE_TOOLS = ['pen', 'arrow', 'highlighter', 'rect', 'ellipse'] as const;
+export const pathStrokeSchema = z.object({
+  tool: z.enum(PATH_STROKE_TOOLS),
   color: accentColorSchema,
   points: z.array(pointSchema).min(2).max(2000),
 });
+export type PathStroke = z.infer<typeof pathStrokeSchema>;
+export type PathStrokeTool = PathStroke['tool'];
+
+/** Relative font size of on-slide text: a fraction of the slide height. */
+export const TEXT_FONT_SIZE = { min: 0.01, max: 0.2, default: 0.04 } as const;
+export const MAX_TEXT_ANNOTATION_LENGTH = 2000;
+/** Tolerance for rounding when checking that a text box stays on the slide. */
+const RECT_EPSILON = 1e-6;
+
+/**
+ * Text written directly on the slide ("Text auf Folie"). The box is normalised to the slide
+ * (`x`/`y` top-left, `w`/`h` size); `fontSize` is relative to the slide height, so the text keeps
+ * its proportions at every slide size. The comment body carries the same text.
+ */
+export const textStrokeSchema = z
+  .object({
+    tool: z.literal('text'),
+    color: accentColorSchema,
+    x: unit,
+    y: unit,
+    w: z.number().gt(0).max(1),
+    h: z.number().gt(0).max(1),
+    text: z.string().trim().min(1).max(MAX_TEXT_ANNOTATION_LENGTH),
+    fontSize: z.number().min(TEXT_FONT_SIZE.min).max(TEXT_FONT_SIZE.max),
+  })
+  .refine((box) => box.x + box.w <= 1 + RECT_EPSILON && box.y + box.h <= 1 + RECT_EPSILON, {
+    message: 'Das Textfeld muss auf der Folie liegen.',
+  });
+export type TextStroke = z.infer<typeof textStrokeSchema>;
+
+/** Everything drawn or written on a slide as part of a comment (BER-99). */
+export const STROKE_TOOLS = [...PATH_STROKE_TOOLS, 'text'] as const;
+export const strokeSchema = z.union([pathStrokeSchema, textStrokeSchema]);
 export type Stroke = z.infer<typeof strokeSchema>;
 export type StrokeTool = Stroke['tool'];
+
+export const isTextStroke = (stroke: Stroke): stroke is TextStroke => stroke.tool === 'text';
+export const isPathStroke = (stroke: Stroke): stroke is PathStroke => stroke.tool !== 'text';
 
 export const commentStatusSchema = z.enum(['open', 'done']);
 export type CommentStatus = z.infer<typeof commentStatusSchema>;

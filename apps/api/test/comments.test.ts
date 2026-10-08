@@ -119,6 +119,130 @@ describe('creating comments', () => {
   });
 });
 
+describe('text on the slide ("Text auf Folie")', () => {
+  const box = { x: 0.1, y: 0.2, w: 0.3, h: 0.1 };
+  const textStroke = (overrides: Record<string, unknown> = {}) =>
+    ({
+      tool: 'text',
+      color: 'red',
+      ...box,
+      text: 'Logo größer\nund mittig',
+      fontSize: 0.04,
+      ...overrides,
+    }) as const;
+  const textComment = (stroke: object, body = 'Logo größer\nund mittig'): CreateCommentInput =>
+    ({
+      slideId: slide(0),
+      body,
+      anchor: { type: 'rect', rect: box, shapeRef: null },
+      strokes: [stroke],
+    }) as CreateCommentInput;
+
+  it('stores the text box next to drawings and keeps the text as body', async () => {
+    const comment = await create({
+      ...textComment(textStroke()),
+      strokes: [
+        textStroke(),
+        {
+          tool: 'ellipse',
+          color: 'red',
+          points: [
+            { x: 0.5, y: 0.5 },
+            { x: 0.7, y: 0.8 },
+          ],
+        },
+      ],
+    });
+    expect(comment.body).toBe('Logo größer\nund mittig');
+    expect(comment.strokes[0]).toEqual(textStroke());
+    expect(comment.strokes[1]).toMatchObject({ tool: 'ellipse' });
+
+    const [listed] = commentSchema
+      .array()
+      .parse(await (await ctx.request(`/api/decks/${deck.deckId}/comments`)).json());
+    expect(listed?.strokes[0]).toEqual(textStroke());
+  });
+
+  it('fills an empty body from the text', async () => {
+    const comment = await create(textComment(textStroke(), ''));
+    expect(comment.body).toBe('Logo größer\nund mittig');
+  });
+
+  it('still accepts the old stroke format and rect shapes', async () => {
+    const comment = await create({
+      slideId: slide(0),
+      body: '',
+      anchor: { type: 'rect', rect: box, shapeRef: null },
+      strokes: [
+        {
+          tool: 'rect',
+          color: 'blue',
+          points: [
+            { x: 0.1, y: 0.2 },
+            { x: 0.4, y: 0.3 },
+          ],
+        },
+        {
+          tool: 'highlighter',
+          color: 'yellow',
+          points: [
+            { x: 0.1, y: 0.1 },
+            { x: 0.2, y: 0.2 },
+          ],
+        },
+      ],
+    });
+    expect(comment.strokes.map((stroke) => stroke.tool)).toEqual(['rect', 'highlighter']);
+  });
+
+  it.each([
+    ['empty text', { text: '   ' }],
+    ['a box beyond the slide', { x: 0.8, w: 0.3 }],
+    ['a zero-width box', { w: 0 }],
+    ['a tiny font', { fontSize: 0.001 }],
+    ['a huge font', { fontSize: 0.5 }],
+    ['an unknown colour', { color: 'green' }],
+    ['text that is too long', { text: 'x'.repeat(2001) }],
+  ])('rejects %s', async (_, overrides) => {
+    const res = await post(textComment(textStroke(overrides)));
+    expect(res.status).toBe(400);
+  });
+
+  it('allows only one text box, and none on replies or gaps', async () => {
+    const two = await post({ ...textComment(textStroke()), strokes: [textStroke(), textStroke()] });
+    expect(two.status).toBe(400);
+
+    const root = await create(pinComment(slide(0)));
+    const reply = await post({
+      slideId: slide(0),
+      parentId: root.id,
+      body: 'Antwort',
+      anchor: { type: 'slide' },
+      strokes: [textStroke()],
+    });
+    expect(reply.status).toBe(400);
+
+    const gap = await post({
+      slideId: null,
+      body: 'x',
+      anchor: { type: 'gap', afterSlideId: slide(0), beforeSlideId: slide(1) },
+      strokes: [textStroke()],
+    });
+    expect(gap.status).toBe(400);
+  });
+
+  it('keeps the text on the slide in step when the body is edited', async () => {
+    const comment = await create(textComment(textStroke()));
+    const res = await ctx.request(`/api/comments/${comment.id}`, {
+      method: 'PATCH',
+      json: { body: 'Neuer Text' },
+    });
+    const updated = commentSchema.parse(await res.json());
+    expect(updated.body).toBe('Neuer Text');
+    expect(updated.strokes[0]).toMatchObject({ tool: 'text', text: 'Neuer Text', ...box });
+  });
+});
+
 describe('replies', () => {
   it('inherit the parent’s slide', async () => {
     const root = await create(pinComment(slide(1)));

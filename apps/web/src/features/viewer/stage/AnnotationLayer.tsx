@@ -1,7 +1,7 @@
-import type { Rect, Slide } from '@slider/shared';
+import { isPathStroke, type Rect, type Slide } from '@slider/shared';
 import { memo, useMemo } from 'react';
 import { cn } from '@/ui';
-import { anchorRect, type Thread } from '../lib/comment-selectors';
+import { anchorRect, isImplicitFrame, textAnnotation, type Thread } from '../lib/comment-selectors';
 import { markColor } from '../lib/colors';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, type Draft } from '../state/viewer-state';
@@ -11,6 +11,7 @@ import { DraftMark } from './DraftMark';
 import { Pin, type MarkState } from './Pin';
 import { RectFrame } from './RectFrame';
 import { StrokePath } from './StrokePath';
+import { TextMark } from './TextBox';
 
 interface AnnotationLayerProps {
   slide: Slide;
@@ -30,7 +31,8 @@ interface Mark {
  * Everything is positioned in normalised slide coordinates, so marks stay exact at every slide size.
  * Strokes live in one SVG with `viewBox="0 0 1 1"`; pins and frames are HTML for crisp borders.
  * Only point comments without a drawing get a dot (B1): frames and drawings are themselves the
- * click target, and their connector line leaves the shape.
+ * click target, and their connector line leaves the shape. Text on the slide ("Text auf Folie")
+ * is HTML in container units (`container-type: size`) and follows the same visibility as drawings.
  */
 export const AnnotationLayer = memo(function AnnotationLayer({
   slide,
@@ -65,7 +67,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
     dispatch({ type: 'threadHovered', threadId: hovering ? mark.thread.id : null });
 
   return (
-    <div className="pointer-events-none absolute inset-0">
+    <div className="pointer-events-none absolute inset-0 [container-type:size]">
       <svg
         className="absolute inset-0 size-full overflow-visible"
         viewBox="0 0 1 1"
@@ -73,7 +75,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
         aria-hidden
       >
         {marks.map((mark) =>
-          mark.thread.root.strokes.map((stroke, index) => (
+          mark.thread.root.strokes.filter(isPathStroke).map((stroke, index) => (
             <g key={`${mark.thread.id}-${index}`}>
               <StrokePath
                 stroke={stroke}
@@ -108,9 +110,10 @@ export const AnnotationLayer = memo(function AnnotationLayer({
         const { root } = mark.thread;
         // A drawing is its own mark, wherever the comment is anchored.
         const area = (root.strokes.length > 0 && strokesBounds(root.strokes)) || mark.rect;
+        const text = textAnnotation(root);
         return (
           <div key={mark.thread.id} className={cn(composing && 'opacity-30')}>
-            {root.anchor.type === 'rect' && (
+            {root.anchor.type === 'rect' && !isImplicitFrame(root) && (
               <RectFrame
                 rect={mark.rect}
                 color={markColor(root)}
@@ -123,7 +126,18 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                 isMark
               />
             )}
-            {root.anchor.type === 'point' && root.strokes.length === 0 ? (
+            {text ? (
+              // The text box is the mark and the click target.
+              <TextMark
+                stroke={text}
+                label={markLabel(root)}
+                opacity={mark.state === 'dimmed' ? 0.3 : root.status === 'done' ? 0.5 : 1}
+                emphasized={mark.state === 'emphasized'}
+                interactive={!composing}
+                onActivate={() => activate(mark)}
+                onHover={(hovering) => hover(mark, hovering)}
+              />
+            ) : root.anchor.type === 'point' && root.strokes.length === 0 ? (
               <Pin
                 comment={root}
                 at={mark.rect}

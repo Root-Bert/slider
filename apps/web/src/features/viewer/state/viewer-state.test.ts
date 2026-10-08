@@ -29,7 +29,7 @@ describe('viewerReducer', () => {
     expect(state.tool).toBe('arrow');
     state = viewerReducer(state, { type: 'toolSelected', tool: 'arrow' });
     expect(state.tool).toBeNull();
-    expect(state.lastStrokeTool).toBe('arrow');
+    expect(state.lastPenTool).toBe('arrow');
   });
 
   it('collects strokes into one draft whose anchor follows them, with undo/redo', () => {
@@ -60,6 +60,62 @@ describe('viewerReducer', () => {
     state = viewerReducer(state, { type: 'anchorPlaced', slideId: 's2', anchor });
     expect(state.draft?.strokes).toHaveLength(0);
     expect(state.draft?.slideId).toBe('s2');
+  });
+
+  it('places a text box as the anchor, keeps its text when re-placed and follows its size', () => {
+    const box = { x: 0.2, y: 0.3, width: null, minHeight: 0, fontSize: 0.04 };
+    let state = run(
+      { type: 'strokeAdded', slideId: 's1', stroke: stroke(0.5) },
+      { type: 'textBoxPlaced', slideId: 's1', box },
+      { type: 'textBoxChanged', patch: { text: 'Hallo' } },
+      { type: 'textBoxMeasured', rect: { x: 0.2, y: 0.3, w: 0.15, h: 0.06 } },
+    );
+    expect(state.draft?.strokes).toHaveLength(1);
+    expect(state.draft?.anchorFromStrokes).toBe(false);
+    expect(state.draft?.anchor).toEqual({
+      type: 'rect',
+      rect: { x: 0.2, y: 0.3, w: 0.15, h: 0.06 },
+      shapeRef: null,
+    });
+
+    // Moving keeps the measured size.
+    state = viewerReducer(state, { type: 'textBoxChanged', patch: { x: 0.4, y: 0.5 } });
+    expect(state.draft?.anchor).toMatchObject({ rect: { x: 0.4, y: 0.5, w: 0.15, h: 0.06 } });
+
+    // An unchanged measurement is a no-op.
+    expect(
+      viewerReducer(state, {
+        type: 'textBoxMeasured',
+        rect: { x: 0.4, y: 0.5, w: 0.15, h: 0.06 },
+      }),
+    ).toBe(state);
+
+    state = viewerReducer(state, {
+      type: 'textBoxPlaced',
+      slideId: 's1',
+      box: { ...box, x: 0.6 },
+    });
+    expect(state.draft?.textBox).toMatchObject({ x: 0.6, text: 'Hallo', measured: null });
+
+    // Another slide starts over; a mark on the same slide replaces the text box.
+    expect(
+      viewerReducer(state, { type: 'textBoxPlaced', slideId: 's2', box }).draft?.textBox?.text,
+    ).toBe('');
+    const anchor = { type: 'point' as const, point: { x: 0.5, y: 0.5 }, shapeRef: null };
+    expect(
+      viewerReducer(state, { type: 'anchorPlaced', slideId: 's1', anchor }).draft?.textBox,
+    ).toBeNull();
+  });
+
+  it('remembers pen variants but not the text tool', () => {
+    let state = run(
+      { type: 'toolSelected', tool: 'ellipse' },
+      { type: 'toolSelected', tool: 'text' },
+    );
+    expect(state.tool).toBe('text');
+    expect(state.lastPenTool).toBe('ellipse');
+    state = viewerReducer(state, { type: 'toolSelected', tool: 'mark' });
+    expect(state.lastPenTool).toBe('mark');
   });
 
   it('starts gap drafts without a slide and clears focus', () => {
