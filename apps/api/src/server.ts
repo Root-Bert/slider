@@ -5,7 +5,6 @@ import { MicrosoftTokens } from './auth/microsoft';
 import { systemClock } from './clock';
 import { dataPaths, loadConfig } from './config';
 import { openDatabase } from './db/client';
-import { hasDecks, seedDemoData } from './db/seed';
 import { findInterruptedImports, importDeck } from './import/import-deck';
 import { InProcessQueue, type ImportJob } from './import/queue';
 import { consoleLogger as log } from './logger';
@@ -23,10 +22,6 @@ async function main(): Promise<void> {
   const { db } = database;
   const storage = new FsBlobStorage(blobsDir);
 
-  if (!(await hasDecks(db))) {
-    await seedDemoData({ db, storage, clock, owner: config.devOwner });
-    log.info('Empty database – seeded demo data.');
-  }
   const owner = await upsertUser(db, config.devOwner);
 
   const queue = new InProcessQueue<ImportJob>(

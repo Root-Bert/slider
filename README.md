@@ -23,8 +23,8 @@ bun install
 bun run dev          # API on :8787, web app on http://localhost:5173
 ```
 
-The first start creates a local database in `apps/api/.data` and seeds a demo workspace
-("Q4 Strategie" with feedback from four reviewers). Reset it any time with `bun run seed`.
+The first start creates an empty local database in `apps/api/.data`. To get a demo workspace
+("Q4 Strategie" with feedback from four reviewers), run `bun run seed` – it wipes the database first.
 
 Try the upload flow with the generated sample deck:
 

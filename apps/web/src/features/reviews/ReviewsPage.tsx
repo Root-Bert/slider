@@ -48,15 +48,13 @@ export function Component() {
     <div className="dot-grid min-h-full">
       <title>Meine Reviews · Slider</title>
       <AppHeader
-        center={<DeckSearch placement="header" value={query} onChange={setQuery} />}
-        actions={
-          <>
-            <NotificationsButton decks={decks} isUnseen={isUnseen} />
-            <Button size="sm" icon="add" aria-label="Neuer Review" onClick={goToNew}>
-              <span className="max-sm:hidden">Neuer Review</span>
-            </Button>
-          </>
+        leading={
+          <Button size="sm" icon="add" aria-label="Neuer Review" onClick={goToNew}>
+            <span className="max-sm:hidden">Neuer Review</span>
+          </Button>
         }
+        center={<DeckSearch placement="header" value={query} onChange={setQuery} />}
+        actions={<NotificationsButton decks={decks} isUnseen={isUnseen} />}
       />
 
       <main className="flex flex-col gap-6 px-4 pt-2 pb-16 md:px-14">

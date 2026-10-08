@@ -1,7 +1,7 @@
 import { readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { count, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { Anchor, Author } from '@slider/shared';
 import { externalAuthor, ownerAuthor } from '../authors';
 import type { Clock } from '../clock';
@@ -46,11 +46,6 @@ interface SeedContext extends SeedDeps {
   authors: Record<PersonKey, Author>;
   slideImageKeys: Record<SlideImage, string>;
   ownerId: string;
-}
-
-export async function hasDecks(db: Database): Promise<boolean> {
-  const [row] = await db.select({ count: count() }).from(decks);
-  return (row?.count ?? 0) > 0;
 }
 
 /** Fills an empty database with the demo decks from the design. Returns the owner. */
