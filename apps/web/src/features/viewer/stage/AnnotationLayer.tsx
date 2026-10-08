@@ -1,5 +1,6 @@
 import { isPathStroke, type Comment, type Point, type Rect, type Slide } from '@slider/shared';
 import { memo, useMemo } from 'react';
+import { useUpdateComment } from '@/lib/queries';
 import { cn } from '@/ui';
 import { anchorRect, isImplicitFrame, textAnnotation, type Thread } from '../lib/comment-selectors';
 import { accentColor } from '@/lib/accent';
@@ -42,7 +43,8 @@ export const AnnotationLayer = memo(function AnnotationLayer({
   draft,
 }: AnnotationLayerProps) {
   const dispatch = useViewerDispatch();
-  const { viewer } = useViewerData();
+  const { viewer, deck, canComment } = useViewerData();
+  const update = useUpdateComment(deck.id);
 
   const marks = useMemo<Mark[]>(() => {
     const result: Mark[] = [];
@@ -138,6 +140,12 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                 interactive={!composing}
                 onActivate={() => activate(mark)}
                 onHover={(hovering) => hover(mark, hovering)}
+                onPlace={
+                  canComment && root.source === 'app' && root.author.id === viewer.author.id
+                    ? (textBox, done) =>
+                        update.mutate({ commentId: root.id, textBox }, { onSettled: done })
+                    : undefined
+                }
               />
             ) : null}
             <Pin

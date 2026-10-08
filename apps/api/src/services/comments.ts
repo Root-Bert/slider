@@ -4,6 +4,7 @@ import {
   isTextStroke,
   type Comment,
   type CommentMedia,
+  type Rect,
   type UpdateCommentInput,
   type Viewer,
 } from '@slider/shared';
@@ -190,12 +191,13 @@ export async function updateComment(
   const comment = await loadComment(deps, commentId);
   await requireDeckAccess(deps.db, viewer, comment.deckId, 'comment');
 
-  if (input.body !== undefined) {
+  if (input.body !== undefined || input.textBox !== undefined) {
     if (comment.source === 'pptx')
       throw forbidden('Kommentare aus PowerPoint können nicht bearbeitet werden.');
     if (comment.author.id !== viewer.author.id)
       throw forbidden('Nur die Autorin oder der Autor kann den Text ändern.');
   }
+  const placement = input.textBox ? moveTextBox(comment, input.textBox) : {};
 
   const now = deps.clock.now();
   const statusChange =
@@ -209,6 +211,7 @@ export async function updateComment(
     .update(comments)
     .set({
       ...(input.body !== undefined ? { body: input.body } : {}),
+      ...placement,
       ...statusChange,
       updatedAt: now,
     })
@@ -218,6 +221,27 @@ export async function updateComment(
   await touchDeck(deps.db, comment.deckId, now);
   const [dto] = await withMedia(deps.db, [row]);
   return dto!;
+}
+
+const sameRect = (a: Rect, b: Rect) =>
+  Math.abs(a.x - b.x) < 1e-6 &&
+  Math.abs(a.y - b.y) < 1e-6 &&
+  Math.abs(a.w - b.w) < 1e-6 &&
+  Math.abs(a.h - b.h) < 1e-6;
+
+/**
+ * Moves / resizes the comment's text on the slide. A rect anchor that was the text box itself
+ * (the usual case) follows it; an anchor of its own stays where it is.
+ */
+function moveTextBox(comment: CommentRow, box: Rect): Pick<CommentRow, 'strokes' | 'anchor'> {
+  const text = comment.strokes.find(isTextStroke);
+  if (!text) throw badRequest('Dieser Kommentar hat kein Textfeld auf der Folie.');
+  const { anchor } = comment;
+  const followsText = anchor.type === 'rect' && sameRect(anchor.rect, text);
+  return {
+    strokes: comment.strokes.map((stroke) => (stroke === text ? { ...text, ...box } : stroke)),
+    anchor: followsText ? { ...anchor, rect: box } : anchor,
+  };
 }
 
 /**

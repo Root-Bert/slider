@@ -5,6 +5,7 @@ import {
   commentStatusSchema,
   MAX_MEDIA_PEAKS,
   mediaKindSchema,
+  rectSchema,
   strokeSchema,
   type Comment,
   type Deck,
@@ -207,7 +208,16 @@ export interface MediaUsage {
 }
 
 export const updateCommentInputSchema = z
-  .object({ body: z.string().trim().min(1).max(10_000), status: commentStatusSchema })
+  .object({
+    body: z.string().trim().min(1).max(10_000),
+    status: commentStatusSchema,
+    /** Moves / resizes the comment's text on the slide ("Text auf Folie"); author only. */
+    textBox: rectSchema
+      .refine((box) => box.w > 0 && box.h > 0, { message: 'Das Textfeld braucht eine Größe.' })
+      .refine((box) => box.x + box.w <= 1 + 1e-6 && box.y + box.h <= 1 + 1e-6, {
+        message: 'Das Textfeld muss auf der Folie liegen.',
+      }),
+  })
   .partial();
 export type UpdateCommentInput = z.infer<typeof updateCommentInputSchema>;
 

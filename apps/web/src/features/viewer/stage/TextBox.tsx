@@ -1,8 +1,9 @@
-import type { AccentColor, TextStroke } from '@slider/shared';
+import type { AccentColor, Rect, TextStroke } from '@slider/shared';
 import {
   useEffect,
   useLayoutEffect,
   useRef,
+  useState,
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
@@ -43,7 +44,30 @@ interface TextMarkProps {
   interactive: boolean;
   onActivate: () => void;
   onHover: (hovering: boolean) => void;
+  /**
+   * Own text: dragging the box moves it, its corner handle resizes it. Called with the new box
+   * (normalised, as rendered) when the drag ends; `done` once it is stored (or failed).
+   */
+  onPlace?: (rect: Rect, done: () => void) => void;
 }
+
+/** Pointer travel before a press on the box counts as a drag rather than a click. */
+const DRAG_THRESHOLD = 3;
+
+interface MarkBox {
+  x: number;
+  y: number;
+  width: number;
+  minHeight: number;
+}
+
+type MarkDrag = {
+  kind: 'move' | 'resize';
+  pointerX: number;
+  pointerY: number;
+  start: MarkBox;
+  moved: boolean;
+};
 
 /** A sent text annotation – also the comment's click target; its connector line leaves the box. */
 export function TextMark({
@@ -54,18 +78,120 @@ export function TextMark({
   interactive,
   onActivate,
   onHover,
+  onPlace,
 }: TextMarkProps) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const dragRef = useRef<MarkDrag | null>(null);
+  const draggedRef = useRef(false);
+  // While dragging and until the new place is stored: the box as dragged.
+  const [preview, setPreviewState] = useState<MarkBox | null>(null);
+  // Same, readable by the pointer-up handler before the last move has rendered.
+  const previewRef = useRef<MarkBox | null>(null);
+  const setPreview = (next: MarkBox | null) => {
+    previewRef.current = next;
+    setPreviewState(next);
+  };
+  const editable = interactive && onPlace !== undefined;
+  const box = preview ?? { x: stroke.x, y: stroke.y, width: stroke.w, minHeight: stroke.h };
+
+  // The slide box: the annotation layer is the button's offset parent.
+  const slideRect = () => {
+    const rect = ref.current?.offsetParent?.getBoundingClientRect();
+    return rect && rect.width > 0 && rect.height > 0 ? rect : null;
+  };
+
+  const startDrag = (event: ReactPointerEvent<HTMLElement>, kind: MarkDrag['kind']) => {
+    if (!editable || event.button !== 0 || !ref.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    // Captured by the box: the resize handle's moves bubble to it too.
+    ref.current.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      kind,
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      start: box,
+      moved: false,
+    };
+  };
+
+  const onDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    const slide = slideRect();
+    const element = ref.current;
+    if (!drag || !slide || !element) return;
+    if (
+      !drag.moved &&
+      Math.hypot(event.clientX - drag.pointerX, event.clientY - drag.pointerY) < DRAG_THRESHOLD
+    )
+      return;
+    drag.moved = true;
+    const { start } = drag;
+    if (drag.kind === 'move') {
+      const w = element.offsetWidth / slide.width;
+      const h = element.offsetHeight / slide.height;
+      const x = start.x + (event.clientX - drag.pointerX) / slide.width;
+      const y = start.y + (event.clientY - drag.pointerY) / slide.height;
+      setPreview({
+        ...start,
+        x: Math.min(Math.max(0, x), Math.max(0, 1 - w)),
+        y: Math.min(Math.max(0, y), Math.max(0, 1 - h)),
+      });
+      return;
+    }
+    const right = (event.clientX - slide.left) / slide.width;
+    const bottom = (event.clientY - slide.top) / slide.height;
+    setPreview({
+      ...start,
+      width: Math.min(1 - start.x, Math.max(MIN_TEXT_WIDTH, right - start.x)),
+      minHeight: Math.min(1 - start.y, Math.max(0, bottom - start.y)),
+    });
+  };
+
+  const endDrag = () => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    const slide = slideRect();
+    const element = ref.current;
+    const placed = previewRef.current;
+    if (!drag?.moved || !placed || !slide || !element || !onPlace) {
+      if (drag?.moved) setPreview(null);
+      return;
+    }
+    // A drag is no click: the thread doesn't open.
+    draggedRef.current = true;
+    onPlace(
+      normalizeTextRect({
+        x: placed.x,
+        y: placed.y,
+        // +1px, like the editor: the stored width must not wrap a line the box kept on one.
+        w: (element.offsetWidth + 1) / slide.width,
+        h: element.offsetHeight / slide.height,
+      }),
+      () => setPreview(null),
+    );
+  };
+
   return (
     <button
+      ref={ref}
       type="button"
       // Connector lines pass behind the box.
       data-mark="frame"
       aria-label={label}
-      title={label}
+      title={editable ? `${label} – ziehen zum Verschieben` : label}
       onClick={(event) => {
         event.stopPropagation();
+        if (draggedRef.current) {
+          draggedRef.current = false;
+          return;
+        }
         onActivate();
       }}
+      onPointerDown={(event) => startDrag(event, 'move')}
+      onPointerMove={onDrag}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
       onPointerEnter={() => onHover(true)}
       onPointerLeave={() => onHover(false)}
       onFocus={() => onHover(true)}
@@ -74,20 +200,32 @@ export function TextMark({
         TEXT_CLASS,
         'absolute rounded-[0.25em] outline-offset-2 transition-[opacity,box-shadow] duration-200',
         interactive ? 'pointer-events-auto cursor-pointer' : 'pointer-events-none',
-        emphasized && 'z-10',
+        editable && 'cursor-move touch-none',
+        (emphasized || preview) && 'z-10',
       )}
       style={{
-        ...boxPosition(stroke.x, stroke.y, stroke.fontSize),
+        ...boxPosition(box.x, box.y, stroke.fontSize),
         ...textSurface(stroke.color),
-        width: `${stroke.w * 100}%`,
-        minHeight: `${stroke.h * 100}%`,
+        width: `${box.width * 100}%`,
+        minHeight: `${box.minHeight * 100}%`,
         opacity,
-        boxShadow: emphasized
-          ? `0 0 0 2px ${accentColor(stroke.color)}, 0 2px 10px rgb(0 0 0 / 0.35)`
-          : `0 0 0 1px ${accentAlpha(stroke.color, 55)}, 0 1px 4px rgb(0 0 0 / 0.25)`,
+        boxShadow:
+          emphasized || preview
+            ? `0 0 0 2px ${accentColor(stroke.color)}, 0 2px 10px rgb(0 0 0 / 0.35)`
+            : `0 0 0 1px ${accentAlpha(stroke.color, 55)}, 0 1px 4px rgb(0 0 0 / 0.25)`,
       }}
     >
       {stroke.text}
+      {editable && (emphasized || preview) && (
+        // Resize handle, like the editor's.
+        <span
+          role="presentation"
+          title="Größe ändern"
+          onPointerDown={(event) => startDrag(event, 'resize')}
+          className="absolute -right-1.5 -bottom-1.5 size-3 cursor-nwse-resize touch-none rounded-[2px] bg-white"
+          style={{ boxShadow: `0 0 0 1.5px ${accentColor(stroke.color)}` }}
+        />
+      )}
     </button>
   );
 }

@@ -260,6 +260,36 @@ describe('text on the slide ("Text auf Folie")', () => {
     expect(updated.body).toBe('Neuer Text');
     expect(updated.strokes[0]).toEqual(textStroke());
   });
+
+  it('moves and resizes the text box afterwards; the anchor follows it', async () => {
+    const comment = await create(textComment(textStroke()));
+    const moved = { x: 0.5, y: 0.6, w: 0.4, h: 0.2 };
+    const res = await ctx.request(`/api/comments/${comment.id}`, {
+      method: 'PATCH',
+      json: { textBox: moved },
+    });
+    const updated = commentSchema.parse(await res.json());
+    expect(updated.strokes[0]).toEqual(textStroke(moved));
+    expect(updated.anchor).toEqual({ type: 'rect', rect: moved, shapeRef: null });
+    expect(updated.body).toBe('Bitte prüfen');
+  });
+
+  it('lets only the author move a text box, onto the slide, on comments that have one', async () => {
+    const comment = await create(textComment(textStroke()));
+    const patch = (textBox: object, cookie?: string) =>
+      ctx.request(`/api/comments/${comment.id}`, { method: 'PATCH', json: { textBox }, cookie });
+    const guest = await asMember('Max Kern');
+    expect((await patch({ x: 0.2, y: 0.2, w: 0.2, h: 0.1 }, guest)).status).toBe(403);
+    expect((await patch({ x: 0.9, y: 0.2, w: 0.2, h: 0.1 })).status).toBe(400);
+    expect((await patch({ x: 0.2, y: 0.2, w: 0, h: 0.1 })).status).toBe(400);
+
+    const pin = await create(pinComment(slide(0)));
+    const noText = await ctx.request(`/api/comments/${pin.id}`, {
+      method: 'PATCH',
+      json: { textBox: { x: 0.2, y: 0.2, w: 0.2, h: 0.1 } },
+    });
+    expect(noText.status).toBe(400);
+  });
 });
 
 describe('replies', () => {

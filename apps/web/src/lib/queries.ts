@@ -1,4 +1,5 @@
 import {
+  isTextStroke,
   type Author,
   type Comment,
   type CreateCommentInput,
@@ -213,6 +214,22 @@ export function useCreateReply(deckId: string, author: Author) {
   });
 }
 
+/** The comment as the server will return it after `input` (mirrors `updateComment`). */
+function withUpdate(comment: Comment, { textBox, ...input }: UpdateCommentInput): Comment {
+  const next = { ...comment, ...input };
+  const text = textBox && comment.strokes.find(isTextStroke);
+  if (!textBox || !text) return next;
+  const { anchor } = comment;
+  const followsText =
+    anchor.type === 'rect' &&
+    (['x', 'y', 'w', 'h'] as const).every((key) => Math.abs(anchor.rect[key] - text[key]) < 1e-6);
+  return {
+    ...next,
+    strokes: comment.strokes.map((stroke) => (stroke === text ? { ...text, ...textBox } : stroke)),
+    anchor: followsText ? { ...anchor, rect: textBox } : anchor,
+  };
+}
+
 export function useUpdateComment(deckId: string) {
   const queryClient = useQueryClient();
   const invalidate = useInvalidateDeckFeedback(deckId);
@@ -225,7 +242,7 @@ export function useUpdateComment(deckId: string) {
       await queryClient.cancelQueries({ queryKey: key });
       const previous = queryClient.getQueryData<Comment[]>(key);
       queryClient.setQueryData<Comment[]>(key, (current = []) =>
-        current.map((comment) => (comment.id === commentId ? { ...comment, ...input } : comment)),
+        current.map((comment) => (comment.id === commentId ? withUpdate(comment, input) : comment)),
       );
       return { previous };
     },
