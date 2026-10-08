@@ -32,6 +32,8 @@ export const queryKeys = {
   /** Every workspace's deck list – invalidate this after a deck was created or changed. */
   deckLists: ['decks', 'list'] as const,
   deckList: (workspaceId: string) => ['decks', 'list', workspaceId] as const,
+  /** The decks of all my workspaces ("Mit mir geteilt"). */
+  allDecks: ['decks', 'list', '*'] as const,
   deck: (deckId: string) => ['decks', deckId] as const,
   slides: (deckId: string) => ['decks', deckId, 'slides'] as const,
   comments: (deckId: string) => ['decks', deckId, 'comments'] as const,
@@ -83,6 +85,14 @@ export const useDecks = (workspaceId: string) =>
     queryKey: queryKeys.deckList(workspaceId),
     queryFn: () => api.get<Deck[]>(`/decks?workspaceId=${encodeURIComponent(workspaceId)}`),
     // Keep "Import läuft" cards fresh without a realtime channel (BER-104 comes later).
+    refetchInterval: (query) => (query.state.data?.some(isImporting) ? IMPORT_POLL_MS * 2 : false),
+  });
+
+/** The decks of every workspace I belong to – `GET /decks` without `workspaceId`. */
+export const useAllDecks = () =>
+  useQuery({
+    queryKey: queryKeys.allDecks,
+    queryFn: () => api.get<Deck[]>('/decks'),
     refetchInterval: (query) => (query.state.data?.some(isImporting) ? IMPORT_POLL_MS * 2 : false),
   });
 

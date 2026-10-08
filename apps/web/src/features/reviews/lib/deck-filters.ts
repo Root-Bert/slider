@@ -59,3 +59,7 @@ export function activeTotals(decks: readonly Deck[]) {
     openComments: active.reduce((sum, deck) => sum + deck.openCommentCount, 0),
   };
 }
+
+/** "Mit mir geteilt": the decks someone else added to one of my organisations. */
+export const sharedWith = (decks: readonly Deck[], userId: string): Deck[] =>
+  decks.filter((deck) => deck.owner.id !== userId);

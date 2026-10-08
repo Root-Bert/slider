@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { activeTotals, countByTab, selectDecks } from './deck-filters';
-import { makeDeck } from './deck-fixture';
+import { activeTotals, countByTab, selectDecks, sharedWith } from './deck-filters';
+import { makeDeck, owner } from './deck-fixture';
 
 const decks = [
   makeDeck({
@@ -66,5 +66,13 @@ describe('totals', () => {
   it('counts tabs and the non-archived open comments', () => {
     expect(countByTab(decks)).toEqual({ all: 3, open: 2, archive: 1 });
     expect(activeTotals(decks)).toEqual({ reviews: 3, openComments: 10 });
+  });
+});
+
+describe('sharedWith', () => {
+  it('keeps only the decks someone else added', () => {
+    const colleague = { ...owner, id: 'u2', name: 'Kollegin' };
+    const mixed = [makeDeck({ id: 'mine' }), makeDeck({ id: 'theirs', owner: colleague })];
+    expect(ids(sharedWith(mixed, owner.id))).toEqual(['theirs']);
   });
 });

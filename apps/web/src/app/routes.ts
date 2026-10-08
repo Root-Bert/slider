@@ -5,6 +5,8 @@ export const routes = {
   /** Redirects to the last used workspace (or the onboarding without one). */
   reviews: () => '/',
   workspace: (workspaceId: string) => `/w/${workspaceId}`,
+  /** The decks others added to any of my organisations. */
+  shared: () => '/geteilt',
   workspaceSettings: (workspaceId: string) => `/w/${workspaceId}/einstellungen`,
   /** The invitations on the settings page (BER-130). */
   workspaceInvites: (workspaceId: string) => `/w/${workspaceId}/einstellungen#einladen`,
