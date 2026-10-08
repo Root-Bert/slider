@@ -26,7 +26,7 @@ const TEXT_CLASS =
  */
 const textSurface = (color: AccentColor): CSSProperties => ({
   color: `color-mix(in srgb, ${accentColor(color)} 75%, white)`,
-  backgroundColor: 'color-mix(in srgb, var(--color-glass-solid) 92%, transparent)',
+  backgroundColor: 'color-mix(in srgb, var(--color-glass-solid) 75%, transparent)',
 });
 
 const boxPosition = (x: number, y: number, fontSize: number): CSSProperties => ({
