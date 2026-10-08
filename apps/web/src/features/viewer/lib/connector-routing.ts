@@ -495,42 +495,6 @@ function towards(from: Px, to: Px, distance: number, length: number): Px {
   };
 }
 
-/** Clearance kept between the panel link and a card it would otherwise run through. */
-const PANEL_LINK_CLEARANCE = 6;
-
-/**
- * Polyline of the link from the focused thread to the thread panel (B4). Straight across when
- * nothing is in the way; otherwise it leaves through the gap beside its column (`exitX`), runs
- * along `laneY` (above every column's cards) to `entryX` next to the panel and drops back to the
- * dock height – so it never crosses other slides' cards.
- */
-export function panelLinkPoints(
-  from: Px,
-  toX: number,
-  obstacles: readonly Box[],
-  lanes: { exitX: number; laneY: number; entryX: number },
-): Px[] {
-  const end = { x: toX, y: from.y };
-  const blocked = obstacles.some(
-    (box) =>
-      box.right > from.x + 1 &&
-      box.left < toX &&
-      box.top - PANEL_LINK_CLEARANCE < from.y &&
-      box.bottom + PANEL_LINK_CLEARANCE > from.y,
-  );
-  const entryX = Math.min(lanes.entryX, toX);
-  const exitX = Math.min(Math.max(lanes.exitX, from.x), entryX);
-  if (!blocked || lanes.laneY >= from.y || exitX >= entryX) return [from, end];
-  return [
-    from,
-    { x: exitX, y: from.y },
-    { x: exitX, y: lanes.laneY },
-    { x: entryX, y: lanes.laneY },
-    { x: entryX, y: from.y },
-    end,
-  ];
-}
-
 export interface Band {
   top: number;
   bottom: number;

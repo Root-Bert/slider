@@ -6,7 +6,6 @@ import {
   findGutter,
   layoutBlobConnectors,
   layoutConnectors,
-  panelLinkPoints,
   roundedPath,
   type Box,
   type Connector,
@@ -345,41 +344,6 @@ describe('findGutter', () => {
   it('finds the nearest free x next to the blocking cards', () => {
     expect(findGutter(100, -50, 200, cards)).toBe(-6);
     expect(findGutter(260, -50, 200, cards)).toBe(286);
-  });
-});
-
-describe('panelLinkPoints', () => {
-  const from = { x: 300, y: 500 };
-  const lanes = { exitX: 330, laneY: 420, entryX: 1030 };
-  const card = (left: number, top: number): Box => ({
-    left,
-    right: left + 240,
-    top,
-    bottom: top + 90,
-  });
-
-  it('runs straight to the panel when no card is in the way', () => {
-    expect(panelLinkPoints(from, 1036, [card(400, 600), card(700, 380)], lanes)).toEqual([
-      from,
-      { x: 1036, y: 500 },
-    ]);
-  });
-
-  it('detours above the other columns when a card sits on its height', () => {
-    expect(panelLinkPoints(from, 1036, [card(400, 450)], lanes)).toEqual([
-      from,
-      { x: 330, y: 500 },
-      { x: 330, y: 420 },
-      { x: 1030, y: 420 },
-      { x: 1030, y: 500 },
-      { x: 1036, y: 500 },
-    ]);
-  });
-
-  it('ignores cards left of the source and keeps the lanes between source and panel', () => {
-    expect(panelLinkPoints(from, 1036, [card(20, 450)], lanes)).toHaveLength(2);
-    const points = panelLinkPoints(from, 1036, [card(400, 450)], { ...lanes, exitX: 2000 });
-    expect(Math.max(...points.map((point) => point.x))).toBe(1036);
   });
 });
 

@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent,
   type ReactNode,
 } from 'react';
 import { cn } from '@/ui';
@@ -36,6 +37,10 @@ import { SplitHandle } from './SplitHandle';
 import { TimelineContext, type SizeAnchor } from './timeline-context';
 import { Track } from './Track';
 
+/** Clicks on these (or inside them) in the comment area keep the thread panel open. */
+const KEEPS_PANEL =
+  'button, a, input, textarea, select, label, [contenteditable], [role="button"], [data-comment-card], [data-connector-blob], [data-gap-bubble]';
+
 /** The active slide grows to at least this width when a drawing tool is picked. */
 const DRAW_MIN_W = 640;
 
@@ -52,7 +57,7 @@ const sameRange = (a: Range, b: Range) => a.first === b.first && a.last === b.la
  */
 export function Timeline({ controls }: { controls: ReactNode }) {
   const { slides, slideIndex } = useViewerData();
-  const { split, activeSlideId, tool } = useViewerState();
+  const { split, activeSlideId, tool, threadPanelOpen } = useViewerState();
   const { deletedSlides } = useRevisionData();
   const hasDeleted = deletedSlides.length > 0;
   const dispatch = useViewerDispatch();
@@ -210,11 +215,21 @@ export function Timeline({ controls }: { controls: ReactNode }) {
     [geometry, layout],
   );
 
+  // A click on the comment area's background (not on a card or control) closes the thread panel.
+  const onCommentAreaClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (!threadPanelOpen || !(event.target instanceof Element)) return;
+    if (event.target.closest('[data-timeline-header]') || event.target.closest(KEEPS_PANEL)) return;
+    // Selecting text ends in a click too.
+    if (!(window.getSelection()?.isCollapsed ?? true)) return;
+    dispatch({ type: 'threadPanelClosed' });
+  };
+
   return (
     <main ref={wrapperRef} className="relative min-h-0 flex-1 overflow-hidden">
       <div
         ref={scrollerRef}
         data-timeline
+        onClick={onCommentAreaClick}
         className={cn(
           'absolute inset-0 overflow-auto overscroll-contain [container-type:inline-size] [scrollbar-color:rgb(255_255_255/0.2)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin]',
           narrow && 'snap-x snap-mandatory [scroll-padding-inline:16px]',

@@ -7,7 +7,6 @@ import {
   type ConnectorItem,
   type ConnectorLayout,
   type ConnectorRoute,
-  type PanelLink,
 } from '../hooks/useConnectorLayout';
 import { useIsNarrow } from '../hooks/useMediaQuery';
 import {
@@ -20,7 +19,7 @@ import { useViewerData } from '../state/viewer-data';
 import { useViewerState } from '../state/viewer-state';
 
 interface ConnectorLinesProps {
-  /** The timeline wrapper (outside the scroller): holds the panel link's overlay. */
+  /** The timeline wrapper (outside the scroller): keyboard focus on its cards highlights lines. */
   wrapperRef: RefObject<HTMLElement | null>;
   /**
    * The connector layer: a zero-height sticky element at the top of the scrolled content. The
@@ -30,14 +29,14 @@ interface ConnectorLinesProps {
 }
 
 /**
- * The lines between marks and their cards (B1), or the thread blob and the thread panel (B4).
+ * The lines between marks and their cards (B1).
  * Lines are drawn for the active slide, the hovered slide and the slide of the hovered or
  * focused thread – the other slides only show their marks, so the timeline stays readable.
  * Lines take the author's accent, fade out behind the minimap and the control row, and pass
  * behind cards and marks. Hidden on narrow screens.
  *
- * The mark → card lines live inside the scrolled content (the connector layer), so horizontal
- * scrolling moves them natively. Only the link to the fixed thread panel is a viewport overlay.
+ * The lines live inside the scrolled content (the connector layer), so horizontal scrolling
+ * moves them natively.
  */
 export function ConnectorLines({ wrapperRef, layer }: ConnectorLinesProps) {
   const { slides, slideIndex, threadById } = useViewerData();
@@ -115,12 +114,11 @@ export function ConnectorLines({ wrapperRef, layer }: ConnectorLinesProps) {
     layer,
     routes,
     enabled,
-    panelThreadId,
   });
 
   const keyboardThreadId = useFocusedCard(wrapperRef);
 
-  const { lines, height, panelLink } = layout;
+  const { lines, height } = layout;
   if (!enabled || !layer || lines.length === 0) return null;
 
   const emphasisId = focusedThreadId ?? hoveredThreadId ?? keyboardThreadId;
@@ -134,61 +132,31 @@ export function ConnectorLines({ wrapperRef, layer }: ConnectorLinesProps) {
     return base;
   };
 
-  return (
-    <>
-      {createPortal(
-        <svg
-          aria-hidden
-          data-connectors
-          className="absolute inset-x-0 top-0 w-full overflow-hidden"
-          style={{ height }}
-        >
-          <ConnectorMask id={maskId} layout={layout} />
-          <g mask={`url(#${maskId})`}>
-            {lines.map((line) => (
-              <path
-                key={line.threadId}
-                data-connector-id={line.threadId}
-                d={line.d}
-                fill="none"
-                strokeWidth={2}
-                strokeLinejoin="round"
-                className="transition-opacity duration-200"
-                // CSS (not the presentation attribute) so the colour may be a `var()`.
-                style={{ stroke: line.color, opacity: opacityOf(line.threadId) }}
-              />
-            ))}
-          </g>
-        </svg>,
-        layer,
-      )}
-      {panelLink && (
-        <svg
-          aria-hidden
-          data-connector-panel-link
-          className="pointer-events-none absolute inset-0 z-[25] size-full overflow-hidden"
-        >
-          {/* Same mask as the lines, in the layer's coordinates. */}
-          <g transform={`translate(${panelLink.offset.x} ${panelLink.offset.y})`}>
-            <ConnectorMask id={`${maskId}-panel`} layout={layout} />
-            <g mask={`url(#${maskId}-panel)`}>
-              <path
-                data-connector-panel={panelLink.threadId}
-                d={panelLink.d}
-                fill="none"
-                strokeWidth={3}
-                strokeLinejoin="round"
-                style={{
-                  stroke: panelLink.color,
-                  filter: `drop-shadow(0 0 6px ${panelLink.color})`,
-                }}
-              />
-            </g>
-          </g>
-        </svg>
-      )}
-      {panelLink && <PanelDock link={panelLink} />}
-    </>
+  return createPortal(
+    <svg
+      aria-hidden
+      data-connectors
+      className="absolute inset-x-0 top-0 w-full overflow-hidden"
+      style={{ height }}
+    >
+      <ConnectorMask id={maskId} layout={layout} />
+      <g mask={`url(#${maskId})`}>
+        {lines.map((line) => (
+          <path
+            key={line.threadId}
+            data-connector-id={line.threadId}
+            d={line.d}
+            fill="none"
+            strokeWidth={2}
+            strokeLinejoin="round"
+            className="transition-opacity duration-200"
+            // CSS (not the presentation attribute) so the colour may be a `var()`.
+            style={{ stroke: line.color, opacity: opacityOf(line.threadId) }}
+          />
+        ))}
+      </g>
+    </svg>,
+    layer,
   );
 }
 
@@ -282,32 +250,6 @@ function ConnectorMask({ id, layout }: { id: string; layout: ConnectorLayout }) 
         )}
       </mask>
     </defs>
-  );
-}
-
-/**
- * Where the panel link docks (Figma 112:759, 120:735): a 4×40 pill on the panel's left edge and
- * a 3px rail up that edge into the root message. The panel is fixed and above <main>, so this is
- * a fixed overlay of its own in viewport coordinates.
- */
-function PanelDock({ link }: { link: PanelLink }) {
-  const { x, y, railTop, rootLeft } = link.dock;
-  const railX = x + 1.5;
-  const radius = rootLeft === null ? 0 : Math.min(8, Math.max(0, y - railTop), rootLeft - railX);
-  const rail =
-    rootLeft === null
-      ? `M${railX} ${y}V${railTop}`
-      : `M${railX} ${y}V${railTop + radius}Q${railX} ${railTop} ${railX + radius} ${railTop}H${rootLeft}`;
-  return (
-    <svg
-      aria-hidden
-      data-connector-dock
-      className="pointer-events-none fixed inset-0 z-[41] size-full overflow-visible max-md:hidden"
-      style={{ filter: `drop-shadow(0 0 6px ${link.color})` }}
-    >
-      {railTop < y && <path d={rail} fill="none" strokeWidth={3} style={{ stroke: link.color }} />}
-      <rect x={x} y={y - 20} width={4} height={40} rx={2} style={{ fill: link.color }} />
-    </svg>
   );
 }
 
