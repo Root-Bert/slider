@@ -226,6 +226,14 @@ export const isPptxBytes = (bytes: Uint8Array): boolean =>
   bytes[2] === 0x03 &&
   bytes[3] === 0x04;
 
+/** A PDF starts with `%PDF`. */
+export const isPdfBytes = (bytes: Uint8Array): boolean =>
+  bytes.length >= 4 &&
+  bytes[0] === 0x25 &&
+  bytes[1] === 0x50 &&
+  bytes[2] === 0x44 &&
+  bytes[3] === 0x46;
+
 export const isHtmlResponse = (response: Response): boolean =>
   (response.headers.get('content-type') ?? '').toLowerCase().startsWith('text/html');
 

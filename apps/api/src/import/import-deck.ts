@@ -8,6 +8,7 @@ import type { Logger } from '../logger';
 import { blobKeys, type BlobStorage } from '../storage/blob-storage';
 import { importSyncRevision } from '../sync/sync-import';
 import { deleteOrphanSlides, sha256Hex, toShape } from './common';
+import { officeSlidePages, storeSlideRender, type OfficePdf } from './office-pages';
 import type { OpenPptx } from './pptx';
 import { upsertPptxComments, type ImportedSlide } from './pptx-comments';
 import type { ImportJob } from './queue';
@@ -18,6 +19,8 @@ export interface ImportDeps {
   openPptx: OpenPptx;
   clock: Clock;
   log: Logger;
+  /** Office's rendering of cloud decks (BER-94); without it every slide uses the SVG preview. */
+  officePdf?: OfficePdf;
 }
 
 const PPTX_ERROR_MESSAGES: Record<PptxError['code'], string> = {
@@ -67,6 +70,8 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
     .from(revisions)
     .where(and(eq(revisions.id, revisionId), eq(revisions.deckId, deckId)));
   if (!revision) throw new DeckGoneError();
+  const [deck] = await db.select().from(decks).where(eq(decks.id, deckId));
+  if (!deck) throw new DeckGoneError();
   const bytes = revision.pptxKey ? await storage.get(revision.pptxKey) : null;
   if (!bytes) throw new Error(`Original file of revision ${revisionId} is missing`);
 
@@ -79,7 +84,7 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
     parsed,
     slideId: crypto.randomUUID(),
     versionId: crypto.randomUUID(),
-    // TODO: render a smaller raster thumbnail; the full SVG is good enough for now.
+    // Placeholder until the slide is rendered below.
     imageKey: blobKeys.slideRender(deckId, revisionId, 'svg'),
     shapes: parsed.shapes.map(toShape),
   }));
@@ -113,13 +118,21 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
   await storage.deletePrefix(blobKeys.slideRenderPrefix(deckId, revisionId)).catch(() => {});
 
   const total = planned.length;
+  await running({ status: 'running', step: 'rendering', progress: { done: 0, total } });
+  const pages = await officeSlidePages(
+    deps,
+    deck,
+    revision,
+    planned.map(({ parsed }) => parsed),
+  );
   for (const [done, slide] of planned.entries()) {
     await running({ status: 'running', step: 'rendering', progress: { done, total } });
+    // The SVG is rendered either way: its hash is what slide matching compares (BER-108).
     const svg = await document.renderSlideSvg(slide.parsed);
-    await storage.put(slide.imageKey, new TextEncoder().encode(svg));
+    const keys = await storeSlideRender(storage, deckId, revisionId, svg, pages[done] ?? null);
     await db
       .update(slideVersions)
-      .set({ renderHash: sha256Hex(svg) })
+      .set({ ...keys, renderHash: sha256Hex(svg) })
       .where(eq(slideVersions.id, slide.versionId));
   }
 

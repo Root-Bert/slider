@@ -12,6 +12,7 @@ import { openDatabase } from '../src/db/client';
 import { decks, revisions, slides, slideVersions } from '../src/db/schema';
 import type { AppDeps } from '../src/deps';
 import { importDeck } from '../src/import/import-deck';
+import type { OfficePdf } from '../src/import/office-pages';
 import type { OpenPptx } from '../src/import/pptx';
 import { InProcessQueue, type ImportJob } from '../src/import/queue';
 import { silentLogger } from '../src/logger';
@@ -120,6 +121,8 @@ export const publicLookup: LookupAll = async () => [{ address: '203.0.113.10' }]
 export async function createTestContext(
   options: {
     openPptx?: OpenPptx;
+    /** Office's PDF of a deck (BER-94); without it every slide gets the SVG preview. */
+    officePdf?: OfficePdf;
     config?: Partial<Config>;
     fetch?: FetchLike;
     lookup?: LookupAll;
@@ -138,7 +141,11 @@ export async function createTestContext(
   });
   const openPptx = options.openPptx ?? stubPptx();
   const queue = new InProcessQueue<ImportJob>(
-    (job) => importDeck({ db, storage, openPptx, clock, log: silentLogger }, job),
+    (job) =>
+      importDeck(
+        { db, storage, openPptx, clock, log: silentLogger, officePdf: options.officePdf },
+        job,
+      ),
     silentLogger,
   );
   const config = testConfig(options.config);

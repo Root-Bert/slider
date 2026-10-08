@@ -546,3 +546,61 @@ describe('re-sync of stored references (BER-107)', () => {
     expect(calls[0]?.url).toBe('https://graph.microsoft.com/v1.0/drives/d1/items/i1');
   });
 });
+
+describe('Office PDF export (BER-94)', () => {
+  const PDF = new TextEncoder().encode('%PDF-1.7 rendered by Office');
+  const item = {
+    ref: 'drives/d1/items/i1',
+    fileName: 'Deck.pptx',
+    sizeBytes: 0,
+    changeToken: null,
+  };
+
+  it('follows Graph’s redirect to the converted file without sending the token there', async () => {
+    const { fetch, calls } = mockFetch({
+      'https://graph.microsoft.com/v1.0/drives/d1/items/i1/content?format=pdf': () =>
+        redirect('https://public.dm.files.1drv.com/converted.pdf'),
+      'https://public.dm.files.1drv.com/': () => new Response(PDF),
+    });
+    const { sources } = adapters({ fetch });
+    expect(await sources.onedrive.exportPdf!(item, context)).toEqual(PDF);
+    expect(new Headers(calls[0]?.init?.headers).get('authorization')).toBe('Bearer access-token');
+    expect(new Headers(calls[1]?.init?.headers).get('authorization')).toBeNull();
+  });
+
+  it('exports an anonymous SharePoint link through Graph /shares', async () => {
+    const sharingUrl = 'https://contoso.sharepoint.com/:p:/s/team/EabcDEF?e=x1';
+    const { fetch, calls } = mockFetch({
+      'https://graph.microsoft.com/v1.0/shares/': () =>
+        redirect('https://contoso.sharepoint.com/_layouts/15/converted.pdf'),
+      'https://contoso.sharepoint.com/_layouts/': () => new Response(PDF),
+    });
+    const { sources } = adapters({ fetch });
+    const file = { ...item, ref: sharingUrl };
+    expect(await sources.sharepoint.exportPdf!(file, context)).toEqual(PDF);
+    expect(calls[0]?.url).toBe(
+      `https://graph.microsoft.com/v1.0/shares/${shareIdFor(sharingUrl)}/driveItem/content?format=pdf`,
+    );
+  });
+
+  it('rejects a conversion error and anything that is not a PDF', async () => {
+    const failing = mockFetch({
+      'https://graph.microsoft.com/': () => new Response(null, { status: 406 }),
+    });
+    expect(
+      (
+        await apiErrorOf(
+          adapters({ fetch: failing.fetch }).sources.onedrive.exportPdf!(item, context),
+        )
+      ).code,
+    ).toBe('source_unreachable');
+    const notPdf = mockFetch({ 'https://graph.microsoft.com/': () => html() });
+    expect(
+      (
+        await apiErrorOf(
+          adapters({ fetch: notPdf.fetch }).sources.onedrive.exportPdf!(item, context),
+        )
+      ).code,
+    ).toBe('source_unreachable');
+  });
+});

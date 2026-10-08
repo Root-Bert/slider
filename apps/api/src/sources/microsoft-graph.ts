@@ -10,7 +10,15 @@ import {
   sourceNotFound,
   sourceUnreachable,
 } from './errors';
-import { fetchHop, MAX_REDIRECTS, redirectTarget, type SafeFetchOptions } from './safe-fetch';
+import {
+  fetchHop,
+  isPdfBytes,
+  MAX_REDIRECTS,
+  readBodyCapped,
+  redirectTarget,
+  safeFetch,
+  type SafeFetchOptions,
+} from './safe-fetch';
 import type { RemoteFile, SourceAdapter, SourceContext } from './source-adapter';
 
 /**
@@ -25,6 +33,8 @@ import type { RemoteFile, SourceAdapter, SourceContext } from './source-adapter'
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 const GRAPH_TIMEOUT_MS = 30_000;
+/** Office converts the deck before it answers; large decks take a while. */
+const PDF_EXPORT_TIMEOUT_MS = 120_000;
 
 interface DriveItem {
   id: string;
@@ -153,11 +163,16 @@ export class GraphClient {
     }
   }
 
-  private async send(path: string, token: string): Promise<Response> {
+  private async send(
+    path: string,
+    token: string,
+    init: { redirect?: RequestInit['redirect']; timeoutMs?: number } = {},
+  ): Promise<Response> {
     try {
       return await this.deps.http.fetch(`${GRAPH}/${path}`, {
         headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-        signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS),
+        redirect: init.redirect,
+        signal: AbortSignal.timeout(init.timeoutMs ?? GRAPH_TIMEOUT_MS),
       });
     } catch {
       throw sourceUnreachable('Microsoft Graph ist gerade nicht erreichbar.');
@@ -200,6 +215,36 @@ export class GraphClient {
     if (!downloadUrl)
       throw sourceUnreachable('Microsoft Graph liefert keinen Download für diese Datei.');
     return (await downloadPptx(new URL(downloadUrl), this.deps.http)).bytes;
+  }
+
+  /**
+   * The file as PDF, rendered by Office itself (`/content?format=pdf`, BER-94). Graph answers
+   * with a redirect to a pre-authenticated URL, which is fetched without the token.
+   */
+  async exportPdf(file: RemoteFile, context: SourceContext): Promise<Uint8Array> {
+    const path = `${graphItemPath(file.ref)}/content?format=pdf`;
+    const init = { redirect: 'manual' as const, timeoutMs: PDF_EXPORT_TIMEOUT_MS };
+    let response = await this.send(path, await this.requireToken(context, ''), init);
+    if (response.status === 401) {
+      await response.body?.cancel();
+      response = await this.send(path, await this.requireToken(context, '', true), init);
+    }
+    const location = response.headers.get('location');
+    if (!response.ok && !(response.status >= 300 && response.status < 400 && location)) {
+      await response.body?.cancel();
+      throw sourceUnreachable(`Microsoft Graph liefert kein PDF (HTTP ${response.status}).`);
+    }
+    if (location) {
+      await response.body?.cancel();
+      response = (await safeFetch(new URL(location), this.deps.http)).response;
+      if (!response.ok) {
+        await response.body?.cancel();
+        throw sourceUnreachable(`Der PDF-Download antwortet mit HTTP ${response.status}.`);
+      }
+    }
+    const bytes = await readBodyCapped(response, this.deps.http.maxBytes);
+    if (!isPdfBytes(bytes)) throw sourceUnreachable('Microsoft Graph liefert kein gültiges PDF.');
+    return bytes;
   }
 
   async getChangeToken(file: RemoteFile, context: SourceContext): Promise<string> {
@@ -246,6 +291,10 @@ export class OneDriveAdapter implements SourceAdapter {
   getChangeToken(file: RemoteFile, context: SourceContext): Promise<string> {
     return this.graph.getChangeToken(file, context);
   }
+
+  exportPdf(file: RemoteFile, context: SourceContext): Promise<Uint8Array> {
+    return this.graph.exportPdf(file, context);
+  }
 }
 
 /** Errors that mean "this did not work anonymously" rather than "this link is broken". */
@@ -256,7 +305,11 @@ const ANONYMOUS_FALLBACK_CODES = new Set([
   'source_unreachable',
 ]);
 
-const isGraphRef = (ref: string) => ref.startsWith('drives/') || ref.startsWith('items/');
+export const isGraphRef = (ref: string) => ref.startsWith('drives/') || ref.startsWith('items/');
+
+/** Graph path of a deck's file: its drive item, or the item behind a sharing link. */
+const graphItemPath = (ref: string) =>
+  isGraphRef(ref) ? ref : `shares/${shareIdFor(ref)}/driveItem`;
 
 const anonymousDownloadUrl = (sharingUrl: string) => {
   const url = new URL(sharingUrl);
@@ -307,6 +360,11 @@ export class SharePointAdapter implements SourceAdapter {
       const remote = this.graph.toRemoteFile(await this.graph.getShare(file.ref, context));
       return this.graph.download(remote, context);
     }
+  }
+
+  /** Office's PDF needs Graph, so it works only with a Microsoft login, even for public links. */
+  exportPdf(file: RemoteFile, context: SourceContext): Promise<Uint8Array> {
+    return this.graph.exportPdf(file, context);
   }
 
   async getChangeToken(file: RemoteFile, context: SourceContext): Promise<string> {

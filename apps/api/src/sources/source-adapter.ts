@@ -32,6 +32,8 @@ export interface SourceAdapter {
   resolve(link: ParsedShareLink, context: SourceContext): Promise<RemoteFile>;
   download(file: RemoteFile, context: SourceContext): Promise<Uint8Array>;
   getChangeToken(file: RemoteFile, context: SourceContext): Promise<string>;
+  /** The file rendered to PDF by its provider (Office), for faithful slide images (BER-94). */
+  exportPdf?(file: RemoteFile, context: SourceContext): Promise<Uint8Array>;
 }
 
 export type SourceAdapters = Record<ShareLinkKind, SourceAdapter>;

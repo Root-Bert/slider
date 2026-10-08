@@ -10,6 +10,7 @@ import {
 import { toSyncSummary, type Shape, type SyncSummary } from '@slider/shared';
 import { decks, revisions, slides, slideVersions, type RevisionDiffRecord } from '../db/schema';
 import { deleteOrphanSlides, sha256Hex, toShape } from '../import/common';
+import { officeSlidePages, storeSlideRender } from '../import/office-pages';
 import type { ImportDeps } from '../import/import-deck';
 import { upsertPptxComments, type ImportedSlide } from '../import/pptx-comments';
 import type { ImportJob } from '../import/queue';
@@ -51,17 +52,25 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
       parsed: ParsedSlide;
       position: number;
       imageKey: string;
+      thumbnailKey: string;
       shapes: Shape[];
       renderHash: string;
     }[] = [];
+    const pages = await officeSlidePages(deps, deck, revision, presentation.slides);
     for (const [position, parsed] of presentation.slides.entries()) {
-      const imageKey = blobKeys.slideRender(deckId, revisionId, 'svg');
+      // The SVG is rendered either way: its hash is what slide matching compares (BER-108).
       const svg = await document.renderSlideSvg(parsed);
-      await storage.put(imageKey, new TextEncoder().encode(svg));
+      const keys = await storeSlideRender(
+        storage,
+        deckId,
+        revisionId,
+        svg,
+        pages[position] ?? null,
+      );
       planned.push({
         parsed,
         position,
-        imageKey,
+        ...keys,
         shapes: parsed.shapes.map(toShape),
         renderHash: sha256Hex(svg),
       });
@@ -209,7 +218,7 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
             layoutName: slide.parsed.layoutName,
             textHash: slide.parsed.textHash,
             imageKey: slide.imageKey,
-            thumbnailKey: slide.imageKey,
+            thumbnailKey: slide.thumbnailKey,
             aspectRatio,
             shapes: slide.shapes,
             renderHash: slide.renderHash,

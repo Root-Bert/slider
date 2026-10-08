@@ -6,6 +6,7 @@ import { systemClock } from './clock';
 import { dataPaths, loadConfig } from './config';
 import { openDatabase } from './db/client';
 import { findInterruptedImports, importDeck } from './import/import-deck';
+import { createOfficePdf } from './import/office-pages';
 import { InProcessQueue, type ImportJob } from './import/queue';
 import { consoleLogger as log } from './logger';
 import { upsertUser } from './services/users';
@@ -24,15 +25,6 @@ async function main(): Promise<void> {
 
   const owner = await upsertUser(db, config.devOwner);
 
-  const queue = new InProcessQueue<ImportJob>(
-    (job) => importDeck({ db, storage, openPptx, clock, log }, job),
-    log,
-  );
-  for (const job of await findInterruptedImports(db)) {
-    log.info(`Resuming interrupted ${job.kind ?? 'initial'} import of deck ${job.deckId}`);
-    queue.enqueue(job);
-  }
-
   const microsoft = new MicrosoftTokens({
     config: config.microsoft,
     secret: config.secret,
@@ -47,6 +39,16 @@ async function main(): Promise<void> {
   }
 
   const sources = createSourceAdapters({ config, tokens: microsoft });
+  const officePdf = createOfficePdf(sources, log);
+  const queue = new InProcessQueue<ImportJob>(
+    (job) => importDeck({ db, storage, openPptx, clock, log, officePdf }, job),
+    log,
+  );
+  for (const job of await findInterruptedImports(db)) {
+    log.info(`Resuming interrupted ${job.kind ?? 'initial'} import of deck ${job.deckId}`);
+    queue.enqueue(job);
+  }
+
   const sync = new SyncService({ db, storage, sources, queue, clock, log, config });
   const app = createApp({
     config,
