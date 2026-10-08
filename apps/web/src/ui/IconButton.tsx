@@ -9,6 +9,8 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
   /** Pressed / selected state, e.g. the active drawing tool. */
   active?: boolean;
   size?: 'sm' | 'md';
+  /** `chip`: the shared rounding of controls inside the floating pills (controls row). */
+  shape?: 'default' | 'chip';
   iconSize?: number;
   ref?: Ref<HTMLButtonElement>;
 }
@@ -18,6 +20,7 @@ export function IconButton({
   label,
   active = false,
   size = 'md',
+  shape = 'default',
   iconSize,
   className,
   type = 'button',
@@ -30,7 +33,8 @@ export function IconButton({
       title={label}
       aria-pressed={active || undefined}
       className={cn(
-        'inline-flex shrink-0 items-center justify-center rounded-[10px] transition-colors',
+        'inline-flex shrink-0 items-center justify-center transition-colors',
+        shape === 'chip' ? 'rounded-chip' : 'rounded-[10px]',
         'disabled:pointer-events-none disabled:opacity-40',
         size === 'md' ? 'size-10' : 'size-8',
         active ? 'bg-white/15 text-fg' : 'text-fg-muted hover:bg-white/10 hover:text-fg',

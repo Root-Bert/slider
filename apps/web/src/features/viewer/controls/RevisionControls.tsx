@@ -89,7 +89,7 @@ function ReloadButton() {
       aria-busy={busy || pending || undefined}
       disabled={busy}
       onClick={() => syncDeck.mutate(undefined, toast)}
-      className="inline-flex size-8 shrink-0 items-center justify-center rounded-[10px] text-fg-muted transition-colors hover:bg-white/10 hover:text-fg disabled:cursor-progress"
+      className="inline-flex size-8 shrink-0 items-center justify-center rounded-chip text-fg-muted transition-colors hover:bg-white/10 hover:text-fg disabled:cursor-progress"
     >
       {busy || pending ? (
         <Spinner size={18} className="text-fg-muted" />
@@ -113,6 +113,7 @@ function UploadButton() {
         icon="upload"
         label={busy ? 'Neue Version wird verarbeitet …' : 'Neue Version hochladen (.pptx)'}
         size="sm"
+        shape="chip"
         disabled={busy}
         aria-busy={busy || undefined}
         onClick={() => inputRef.current?.click()}
@@ -156,7 +157,7 @@ function ChangesToggle({ revisionNumber }: { revisionNumber: number }) {
       aria-label={`Änderungen der Version ${revisionNumber} zeigen`}
       title={label}
       onClick={() => dispatch({ type: 'showChangesSet', show: !showChanges })}
-      className="flex h-8 items-center gap-2 rounded-[10px] pr-1.5 pl-2 text-xs text-fg-muted transition-colors hover:bg-white/10 hover:text-fg"
+      className="flex h-8 items-center gap-2 rounded-chip pr-1.5 pl-2 text-xs text-fg-muted transition-colors hover:bg-white/10 hover:text-fg"
     >
       {/* Narrow timeline (side panel open at laptop widths): just the switch, so the filter pill
           next to it keeps its room. Tooltip and label still name the version. */}

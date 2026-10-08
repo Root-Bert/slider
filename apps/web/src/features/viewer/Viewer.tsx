@@ -7,7 +7,6 @@ import { RevisionControls } from './controls/RevisionControls';
 import { SessionControls } from './controls/SessionControls';
 import { SlideCounter } from './controls/SlideCounter';
 import { ToolBar } from './controls/ToolBar';
-import { ViewControls } from './controls/ViewControls';
 import { useFullscreen } from './hooks/useFullscreen';
 import { useSlideUrlSync } from './hooks/useSlideUrlSync';
 import { useViewerShortcuts } from './hooks/useViewerShortcuts';
@@ -31,10 +30,11 @@ export function Viewer({ onLeave }: { onLeave: () => void }) {
   const { activeSlideId, threadPanelOpen: threadOpen, deletedPanelOpen } = useViewerState();
   // Thread panel and deleted slides panel share the right side.
   const threadPanelOpen = threadOpen || deletedPanelOpen;
-  const fullscreen = useFullscreen(rootRef);
+  const toggleFullscreen = useFullscreen(rootRef);
   const [toast, showToast] = useToast();
 
-  useViewerShortcuts({ onToggleFullscreen: fullscreen.toggle });
+  // No button any more – F still toggles fullscreen (the hook is all it costs).
+  useViewerShortcuts({ onToggleFullscreen: toggleFullscreen });
   useSlideUrlSync(activeSlideId);
 
   return (
@@ -58,15 +58,10 @@ export function Viewer({ onLeave }: { onLeave: () => void }) {
             <div className="flex flex-wrap items-center gap-3 md:flex-nowrap">
               <ToolBar />
               <CommentFilterBar />
-              {/* Figma 87:359 / 87:369: right-aligned, 10px apart. */}
+              {/* Figma 87:359: right-aligned, 10px apart. */}
               <div className="ml-auto flex shrink-0 items-center gap-2.5">
                 <RevisionControls />
                 <SlideCounter className="md:@max-[740px]:hidden" />
-                <ViewControls
-                  isFullscreen={fullscreen.isFullscreen}
-                  onToggleFullscreen={fullscreen.toggle}
-                  fullscreenSupported={fullscreen.isSupported}
-                />
               </div>
             </div>
           }

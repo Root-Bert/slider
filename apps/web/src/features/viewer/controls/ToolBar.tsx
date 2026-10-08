@@ -83,6 +83,7 @@ function ToolButtons() {
         icon="draw"
         label="Zeichnen"
         size="sm"
+        shape="chip"
         active={drawing}
         onClick={() => dispatch({ type: 'toolSelected', tool: drawing ? null : lastStrokeTool })}
       />
@@ -90,6 +91,7 @@ function ToolButtons() {
         icon="mic"
         label={COMING_SOON}
         size="sm"
+        shape="chip"
         aria-disabled
         className="cursor-not-allowed opacity-40"
       />
@@ -97,6 +99,7 @@ function ToolButtons() {
         icon="formatShapes"
         label="Stelle markieren (Klick = Punkt, Ziehen = Bereich)"
         size="sm"
+        shape="chip"
         active={tool === 'mark'}
         onClick={() => dispatch({ type: 'toolSelected', tool: 'mark' })}
       />
@@ -104,6 +107,7 @@ function ToolButtons() {
         icon="cameraVideo"
         label={COMING_SOON}
         size="sm"
+        shape="chip"
         aria-disabled
         className="cursor-not-allowed opacity-40"
       />

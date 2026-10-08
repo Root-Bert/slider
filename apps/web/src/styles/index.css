@@ -46,6 +46,8 @@
 
   --radius-thumb: 4px;
   --radius-control: 12px;
+  /* Buttons, chips and fields inside the floating glass pills (controls row): one rounding for all. */
+  --radius-chip: 16px;
   --radius-panel: 16px;
 
   --shadow-float: 0 8px 32px rgb(0 0 0 / 0.5);

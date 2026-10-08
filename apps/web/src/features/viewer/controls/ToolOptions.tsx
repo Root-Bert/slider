@@ -38,7 +38,7 @@ export function ToolOptions() {
               title={option.hint}
               onClick={() => dispatch({ type: 'toolSelected', tool: option.tool })}
               className={cn(
-                'flex h-8 items-center gap-1.5 rounded-[10px] px-2 text-[13px] transition-colors',
+                'flex h-8 items-center gap-1.5 rounded-chip px-2 text-[13px] transition-colors',
                 selected
                   ? 'bg-white/15 font-medium text-fg'
                   : 'text-fg-muted hover:bg-white/10 hover:text-fg',
@@ -81,6 +81,7 @@ export function ToolOptions() {
             icon="undo"
             label="Rückgängig (⌘Z)"
             size="sm"
+            shape="chip"
             iconSize={18}
             disabled={!draft?.strokes.length}
             onClick={() => dispatch({ type: 'undo' })}
@@ -89,6 +90,7 @@ export function ToolOptions() {
             icon="redo"
             label="Wiederholen (⇧⌘Z)"
             size="sm"
+            shape="chip"
             iconSize={18}
             disabled={!draft?.undone.length}
             onClick={() => dispatch({ type: 'redo' })}

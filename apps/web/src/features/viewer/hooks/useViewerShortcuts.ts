@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent } from 'react';
 import { isTypingTarget } from '../lib/dom';
-import { useStageRegistry } from '../state/stage-registry';
+import { useGoToSlide } from './useGoToSlide';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
 
@@ -13,14 +13,7 @@ export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen:
   const { slides, slideIndex } = useViewerData();
   const { activeSlideId, draft, tool, threadPanelOpen, deletedPanelOpen } = useViewerState();
   const dispatch = useViewerDispatch();
-  const registry = useStageRegistry();
-
-  const goTo = (index: number) => {
-    const slide = slides[Math.max(0, Math.min(slides.length - 1, index))];
-    if (!slide) return;
-    dispatch({ type: 'activeSlideChanged', slideId: slide.id });
-    registry.revealSlide(slide.id, { align: 'nearest', behavior: 'smooth' });
-  };
+  const goTo = useGoToSlide();
 
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
     // Modal dialogs (share, delete confirmation) handle their own keys.
