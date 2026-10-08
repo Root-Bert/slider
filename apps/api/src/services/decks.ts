@@ -36,7 +36,12 @@ export async function toDeckDtos(
       db.select().from(users).where(inArray(users.id, ownerIds)),
       revisionIds.length
         ? db
-            .select({ id: revisions.id, number: revisions.number, summary: revisions.summary })
+            .select({
+              id: revisions.id,
+              number: revisions.number,
+              summary: revisions.summary,
+              officeFailure: revisions.officeFailure,
+            })
             .from(revisions)
             .where(inArray(revisions.id, revisionIds))
         : [],
@@ -92,6 +97,9 @@ export async function toDeckDtos(
   const ownerById = new Map(owners.map((owner) => [owner.id, ownerAuthor(owner)]));
   const numberByRevision = new Map(revisionNumbers.map((row) => [row.id, row.number]));
   const summaryByRevision = new Map(revisionNumbers.map((row) => [row.id, row.summary]));
+  const officeFailureByRevision = new Map(
+    revisionNumbers.map((row) => [row.id, row.officeFailure]),
+  );
   const pendingByDeck = new Map(pendingRevisions.map((row) => [row.deckId, row.since]));
   const slideCountByRevision = new Map(slideCounts.map((row) => [row.revisionId, row.count]));
   const thumbnailByRevision = new Map(thumbnails.map((row) => [row.revisionId, row]));
@@ -118,6 +126,7 @@ export async function toDeckDtos(
       openCommentCount: openCountByDeck.get(row.id) ?? 0,
       thumbnailUrl: thumbnail ? fileUrl(thumbnail.key) : null,
       thumbnailRenderer: thumbnail?.renderer ?? null,
+      officeFailure: officeFailureByRevision.get(revisionId) ?? null,
       participants: participantsByDeck.get(row.id) ?? [],
       import: row.importState,
       currentRevisionId: row.currentRevisionId,

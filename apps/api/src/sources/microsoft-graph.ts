@@ -280,16 +280,12 @@ export class GraphClient {
     }
     const location = response.headers.get('location');
     if (!response.ok && !(response.status >= 300 && response.status < 400 && location)) {
-      await response.body?.cancel();
-      throw sourceUnreachable(`Microsoft Graph liefert kein PDF (HTTP ${response.status}).`);
+      throw await OfficePdfError.from(response);
     }
     if (location) {
       await response.body?.cancel();
       response = (await safeFetch(new URL(location), this.deps.http)).response;
-      if (!response.ok) {
-        await response.body?.cancel();
-        throw sourceUnreachable(`Der PDF-Download antwortet mit HTTP ${response.status}.`);
-      }
+      if (!response.ok) throw await OfficePdfError.from(response);
     }
     const bytes = await readBodyCapped(response, this.deps.http.maxBytes);
     if (!isPdfBytes(bytes)) throw sourceUnreachable('Microsoft Graph liefert kein gültiges PDF.');
@@ -419,6 +415,53 @@ const ANONYMOUS_FALLBACK_CODES = new Set([
   'source_not_found',
   'source_unreachable',
 ]);
+
+/** Office's error code when its PDF conversion refuses a file for its size. */
+export const OFFICE_FILE_TOO_BIG = 'Service_InvalidInput_FileTooBigToConvert';
+
+const OFFICE_PDF_MESSAGES: Record<string, string> = {
+  [OFFICE_FILE_TOO_BIG]: 'Die Datei ist zu groß für die PDF-Umwandlung von Microsoft.',
+};
+
+/**
+ * Office would not convert the file to PDF (BER-94). `officeCode` is Office's own error code
+ * (e.g. {@link OFFICE_FILE_TOO_BIG}) when the answer names one – the bare HTTP status hid why
+ * decks silently fell back to LibreOffice.
+ */
+export class OfficePdfError extends ApiError {
+  constructor(
+    readonly httpStatus: number,
+    readonly officeCode: string | null,
+  ) {
+    super(
+      502,
+      'source_unreachable',
+      (officeCode ? OFFICE_PDF_MESSAGES[officeCode] : undefined) ??
+        `Microsoft liefert kein PDF (${officeCode ?? `HTTP ${httpStatus}`}).`,
+    );
+    this.name = 'OfficePdfError';
+  }
+
+  static async from(response: Response): Promise<OfficePdfError> {
+    const body = await response.text().catch(() => '');
+    return new OfficePdfError(response.status, officeErrorCode(body));
+  }
+}
+
+/**
+ * The most specific code in an error answer: the conversion service's `ErrorCode=…` (inside a
+ * problem+json `detail`), else Graph's `error.code`.
+ */
+export function officeErrorCode(body: string): string | null {
+  const conversion = /ErrorCode=(\w+)/.exec(body)?.[1];
+  if (conversion) return conversion;
+  try {
+    const code = (JSON.parse(body) as { error?: { code?: unknown } }).error?.code;
+    return typeof code === 'string' ? code : null;
+  } catch {
+    return null;
+  }
+}
 
 export const isGraphRef = (ref: string) => ref.startsWith('drives/') || ref.startsWith('items/');
 

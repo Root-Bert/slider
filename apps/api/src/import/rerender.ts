@@ -82,6 +82,10 @@ export async function rerenderRevision(
 
   const rendered = await renderSlidePages(deps, deck, revision, bytes, parsed);
   if (rendered.renderer === null) return skipped('no renderer available');
+  await db
+    .update(revisions)
+    .set({ officeFailure: rendered.officeFailure })
+    .where(eq(revisions.id, id));
   if (rendered.renderer === 'svg') {
     await markTried(db, id);
     return { status: 'unchanged', renderer: 'svg', replaced: 0 };

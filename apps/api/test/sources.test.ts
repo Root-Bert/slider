@@ -595,6 +595,24 @@ describe('Office PDF export (BER-94)', () => {
         )
       ).code,
     ).toBe('source_unreachable');
+    const tooBig = mockFetch({
+      'https://graph.microsoft.com/': () =>
+        new Response(
+          JSON.stringify({
+            status: 400,
+            detail: 'Error from Office Service. ErrorCode=Service_InvalidInput_FileTooBigToConvert',
+          }),
+          { status: 400, headers: { 'content-type': 'application/problem+json' } },
+        ),
+    });
+    const tooBigError = await apiErrorOf(
+      adapters({ fetch: tooBig.fetch }).sources.onedrive.exportPdf!(item, context),
+    );
+    expect(tooBigError).toMatchObject({
+      code: 'source_unreachable',
+      officeCode: 'Service_InvalidInput_FileTooBigToConvert',
+      message: 'Die Datei ist zu groß für die PDF-Umwandlung von Microsoft.',
+    });
     const notPdf = mockFetch({ 'https://graph.microsoft.com/': () => html() });
     expect(
       (

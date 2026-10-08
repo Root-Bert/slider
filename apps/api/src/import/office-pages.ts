@@ -1,7 +1,7 @@
 import type { ParsedSlide } from '@slider/pptx';
 import type { DeckRow, RevisionRow, SlideRenderer } from '../db/schema';
 import type { Logger } from '../logger';
-import { isGraphRef } from '../sources/microsoft-graph';
+import { isGraphRef, OFFICE_FILE_TOO_BIG, OfficePdfError } from '../sources/microsoft-graph';
 import type { SourceAdapters } from '../sources/source-adapter';
 import { blobKeys, type BlobStorage } from '../storage/blob-storage';
 import type { PptxToPdf } from './libreoffice';
@@ -10,10 +10,23 @@ import { rasterizePdf, type PageImages } from './pdf-pages';
 type PdfRenderer = Exclude<SlideRenderer, 'svg'>;
 
 /**
- * The deck's file rendered to PDF by Office, or `null` when there is none (uploads, plain links,
- * no Microsoft login, …). Only ever a nicer picture: callers fall back to the SVG preview.
+ * The deck's file rendered to PDF by Office, or `null` when Office does not apply (uploads, plain
+ * links, …). Throws {@link OfficePdfUnavailable} when it applies but did not work. Only ever a
+ * nicer picture: callers fall back to LibreOffice and the SVG preview.
  */
 export type OfficePdf = (deck: DeckRow, revision: RevisionRow) => Promise<Uint8Array | null>;
+
+/** Office applied to the deck but gave no PDF; the message says why, for the deck card. */
+export class OfficePdfUnavailable extends Error {
+  constructor(
+    message: string,
+    /** Office's own error code, see {@link OfficePdfError}. */
+    readonly officeCode: string | null = null,
+  ) {
+    super(message);
+    this.name = 'OfficePdfUnavailable';
+  }
+}
 
 /** Asks the deck's source for Office's PDF of exactly the file this revision was made from. */
 export function createOfficePdf(sources: SourceAdapters, log: Logger): OfficePdf {
@@ -31,13 +44,17 @@ export function createOfficePdf(sources: SourceAdapters, log: Logger): OfficePdf
         const now = await adapter.getChangeToken(file, context);
         if (now !== revision.sourceChangeToken) {
           log.info(`Deck ${deck.id} changed since revision ${revision.id}; using the preview`);
-          return null;
+          throw new OfficePdfUnavailable('Die Datei wurde seit dieser Version geändert.');
         }
       }
       return await adapter.exportPdf(file, context);
     } catch (error) {
+      if (error instanceof OfficePdfUnavailable) throw error;
       log.warn(`Office PDF of deck ${deck.id} unavailable; using the preview`, error);
-      return null;
+      throw new OfficePdfUnavailable(
+        error instanceof Error ? error.message : 'Microsoft liefert kein PDF.',
+        error instanceof OfficePdfError ? error.officeCode : null,
+      );
     }
   };
 }
@@ -51,6 +68,8 @@ export interface SlidePages {
   renderer: SlideRenderer | null;
   /** One entry per slide, in order; `null` where the slide keeps its SVG preview (hidden ones). */
   pages: (PageImages | null)[];
+  /** Why Office was tried and not used (German, for the deck card); `null` otherwise. */
+  officeFailure: string | null;
 }
 
 export interface SlidePagesDeps {
@@ -86,7 +105,20 @@ export async function renderSlidePages(
   const none = slides.map(() => null);
   const candidates: { renderer: PdfRenderer; pdf: () => Promise<Uint8Array | null> }[] = [];
   const { officePdf, libreOfficePdf } = deps;
-  if (officePdf) candidates.push({ renderer: 'office', pdf: () => officePdf(deck, revision) });
+  let officeFailure: string | null = null;
+  if (officePdf) {
+    candidates.push({
+      renderer: 'office',
+      pdf: async () => {
+        try {
+          return await officePdf(deck, revision);
+        } catch (error) {
+          officeFailure = officeFailureMessage(error, pptx.length);
+          return null;
+        }
+      },
+    });
+  }
   if (libreOfficePdf) {
     candidates.push({
       renderer: 'libreoffice',
@@ -109,21 +141,36 @@ export async function renderSlidePages(
       pages = await rasterizePdf(pdf);
     } catch (error) {
       deps.log.warn(`PDF (${candidate.renderer}) of deck ${deck.id} could not be rendered`, error);
+      if (candidate.renderer === 'office')
+        officeFailure = 'Das PDF von Microsoft ist nicht lesbar.';
       continue;
     }
     if (pages.length !== visible) {
       deps.log.warn(
         `PDF (${candidate.renderer}) of deck ${deck.id} has ${pages.length} pages for ${visible} visible slides`,
       );
+      if (candidate.renderer === 'office') {
+        officeFailure = `Das PDF von Microsoft hat ${pages.length} Seiten für ${visible} sichtbare Folien.`;
+      }
       continue;
     }
     let next = 0;
     return {
       renderer: candidate.renderer,
       pages: slides.map((slide) => (slide.hidden ? null : (pages[next++] ?? null))),
+      officeFailure,
     };
   }
-  return { renderer: hasPdfRenderer(deps, deck) ? 'svg' : null, pages: none };
+  return { renderer: hasPdfRenderer(deps, deck) ? 'svg' : null, pages: none, officeFailure };
+}
+
+/** The deck card's reason for a failed Office PDF; a too-big file names its size. */
+function officeFailureMessage(error: unknown, sizeBytes: number): string {
+  if (!(error instanceof Error)) return 'Microsoft liefert kein PDF.';
+  if (error instanceof OfficePdfUnavailable && error.officeCode === OFFICE_FILE_TOO_BIG) {
+    return `${error.message.replace(/\.$/, '')} (${Math.round(sizeBytes / 1_000_000)} MB).`;
+  }
+  return error.message;
 }
 
 /** `slide_versions.renderer` of one slide of a {@link renderSlidePages} result. */

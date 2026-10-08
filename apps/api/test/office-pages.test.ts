@@ -1,10 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { deckSchema, slideSchema } from '@slider/shared';
 import type { DeckRow, RevisionRow } from '../src/db/schema';
-import { createOfficePdf, renderSlidePages, type OfficePdf } from '../src/import/office-pages';
+import {
+  createOfficePdf,
+  OfficePdfUnavailable,
+  renderSlidePages,
+  type OfficePdf,
+} from '../src/import/office-pages';
 import type { PptxToPdf } from '../src/import/libreoffice';
 import { rasterizePdf } from '../src/import/pdf-pages';
 import { silentLogger } from '../src/logger';
+import {
+  OFFICE_FILE_TOO_BIG,
+  officeErrorCode,
+  OfficePdfError,
+} from '../src/sources/microsoft-graph';
 import type { SourceAdapter, SourceAdapters } from '../src/sources/source-adapter';
 import { createTestContext, parsedSlide, stubPptx, type TestContext } from './helpers';
 import { makePdf } from './pdf';
@@ -71,17 +81,25 @@ describe('renderSlidePages (BER-94)', () => {
       pptx,
       slides([false, false, false]),
     );
-    expect(result).toEqual({ renderer: 'svg', pages: [null, null, null] });
+    expect(result).toEqual({
+      renderer: 'svg',
+      pages: [null, null, null],
+      officeFailure: 'Das PDF von Microsoft hat 2 Seiten für 3 sichtbare Folien.',
+    });
   });
 
   it('falls back to the preview without a PDF or with a broken one', async () => {
     expect(await renderSlidePages(deps(), deckRow(), revisionRow(), pptx, slides([false]))).toEqual(
-      { renderer: null, pages: [null] },
+      { renderer: null, pages: [null], officeFailure: null },
     );
     const broken: OfficePdf = async () => new TextEncoder().encode('%PDF-1.4 nonsense');
     expect(
       await renderSlidePages(deps(broken), deckRow(), revisionRow(), pptx, slides([false])),
-    ).toEqual({ renderer: 'svg', pages: [null] });
+    ).toEqual({
+      renderer: 'svg',
+      pages: [null],
+      officeFailure: 'Das PDF von Microsoft ist nicht lesbar.',
+    });
   });
 
   it("renders uploads with LibreOffice, from the revision's own file", async () => {
@@ -118,7 +136,7 @@ describe('renderSlidePages (BER-94)', () => {
       pptx,
       slides([false]),
     );
-    expect(failing).toEqual({ renderer: 'svg', pages: [null] });
+    expect(failing).toEqual({ renderer: 'svg', pages: [null], officeFailure: null });
   });
 
   it('prefers Office over LibreOffice for linked decks', async () => {
@@ -164,7 +182,9 @@ describe('createOfficePdf', () => {
     expect(await officePdf(deckRow({ source: 'upload', sourceRef: null }), revisionRow())).toBe(
       null,
     );
-    expect(await officePdf(deckRow(), revisionRow())).toBeNull();
+    await expect(officePdf(deckRow(), revisionRow())).rejects.toThrow(
+      'Die Datei wurde seit dieser Version geändert.',
+    );
     expect(adapter.exportPdf).not.toHaveBeenCalled();
   });
 
@@ -175,13 +195,58 @@ describe('createOfficePdf', () => {
     expect(adapter.getChangeToken).not.toHaveBeenCalled();
   });
 
-  it('turns export errors into "no PDF"', async () => {
+  it('turns export errors into OfficePdfUnavailable with the reason', async () => {
     const { sources } = sourcesWith({
       exportPdf: vi.fn(async () => {
-        throw new Error('Graph down');
+        throw new OfficePdfError(400, OFFICE_FILE_TOO_BIG);
       }),
     });
-    expect(await createOfficePdf(sources, silentLogger)(deckRow(), revisionRow())).toBeNull();
+    const error: unknown = await createOfficePdf(sources, silentLogger)(
+      deckRow(),
+      revisionRow(),
+    ).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(OfficePdfUnavailable);
+    expect(error).toMatchObject({
+      message: 'Die Datei ist zu groß für die PDF-Umwandlung von Microsoft.',
+      officeCode: OFFICE_FILE_TOO_BIG,
+    });
+  });
+
+  it('names the size of a file too big for Office on the deck', async () => {
+    const tooBig: OfficePdf = async () => {
+      throw new OfficePdfUnavailable(
+        'Die Datei ist zu groß für die PDF-Umwandlung von Microsoft.',
+        OFFICE_FILE_TOO_BIG,
+      );
+    };
+    const result = await renderSlidePages(
+      { officePdf: tooBig, libreOfficePdf: async () => makePdf(1), log: silentLogger },
+      deckRow(),
+      revisionRow(),
+      new Uint8Array(153_600_000),
+      slides([false]),
+    );
+    expect(result.renderer).toBe('libreoffice');
+    expect(result.officeFailure).toBe(
+      'Die Datei ist zu groß für die PDF-Umwandlung von Microsoft (154 MB).',
+    );
+  });
+});
+
+describe('officeErrorCode', () => {
+  it("reads the conversion service's code from a problem+json answer", () => {
+    const body = JSON.stringify({
+      title: 'BadRequest',
+      detail:
+        'Error from Office Service. HttpCode=BadRequest ErrorCategory=BadRequest ' +
+        'ErrorCode=Service_InvalidInput_FileTooBigToConvert Url=https://example.test/pdf',
+    });
+    expect(officeErrorCode(body)).toBe(OFFICE_FILE_TOO_BIG);
+  });
+
+  it("falls back to Graph's error code, and to null", () => {
+    expect(officeErrorCode('{"error":{"code":"notSupported","message":"x"}}')).toBe('notSupported');
+    expect(officeErrorCode('<html>bad gateway</html>')).toBeNull();
   });
 });
 

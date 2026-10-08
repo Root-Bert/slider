@@ -306,6 +306,11 @@ export const revisions = pgTable(
     /** Slide diff against the previous revision; `null` for revision 1. */
     diff: jsonb('diff').$type<RevisionDiffRecord>(),
     summary: jsonb('summary').$type<SyncSummary>(),
+    /**
+     * Why Office's PDF was tried and not used for the slide images (BER-94), e.g. a file too big
+     * for Microsoft's conversion; `null` when Office drew them or was not tried.
+     */
+    officeFailure: text('office_failure'),
   },
   (t) => [
     unique('revisions_deck_number_unique').on(t.deckId, t.number),

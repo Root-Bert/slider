@@ -59,11 +59,21 @@ const RENDERER_LABELS: Partial<Record<SlideRenderer, string>> = {
 
 /**
  * Bottom-left logo on the thumbnail: who drew the slide images (BER-94). Nothing for the built-in
- * SVG preview.
+ * SVG preview. When PowerPoint was tried and failed, the tooltip says why.
  */
-export function RendererChip({ renderer }: { renderer: SlideRenderer | null | undefined }) {
-  const label = renderer ? RENDERER_LABELS[renderer] : undefined;
-  if (!renderer || !label) return null;
+export function RendererChip({
+  renderer,
+  officeFailure,
+}: {
+  renderer: SlideRenderer | null | undefined;
+  officeFailure?: string | null;
+}) {
+  const name = renderer ? RENDERER_LABELS[renderer] : undefined;
+  if (!renderer || !name) return null;
+  const label =
+    renderer !== 'office' && officeFailure
+      ? `${name} – PowerPoint ging nicht: ${officeFailure}`
+      : name;
   return (
     <span
       className="absolute bottom-2 left-2 flex size-6 items-center justify-center rounded-chip bg-black/55 backdrop-blur-md"

@@ -137,6 +137,10 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
     bytes,
     planned.map(({ parsed }) => parsed),
   );
+  await db
+    .update(revisions)
+    .set({ officeFailure: rendered.officeFailure })
+    .where(eq(revisions.id, revisionId));
   for (const [done, slide] of planned.entries()) {
     await running({ status: 'running', step: 'rendering', progress: { done, total } });
     // The SVG is rendered either way: its hash is what slide matching compares (BER-108).

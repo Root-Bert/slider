@@ -97,6 +97,11 @@ export const deckSchema = z.object({
    * `null` when unknown. Optional for older API versions.
    */
   thumbnailRenderer: slideRendererSchema.nullable().optional(),
+  /**
+   * Why PowerPoint (Office) did not draw the slides although it was tried, e.g. a file too big
+   * for Microsoft's PDF conversion. `null` otherwise. Optional for older API versions.
+   */
+  officeFailure: z.string().nullable().optional(),
   participants: z.array(authorSchema),
   import: importStateSchema,
   /** The revision the slides belong to (BER-107). Optional for older API versions. */
