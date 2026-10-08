@@ -1,0 +1,10 @@
+# gitleaks config for the CI secret scan (picked up from the repo root). Keeps all default rules.
+[extend]
+useDefault = true
+
+# generic-api-key reads an env example like `OIDC_CLIENT_SECRET=<Client Secret>` followed by
+# `OIDC_LABEL=Mit Firmen-Login …` as one key/value and flags `OIDC_LABEL=Mit` as the secret.
+[[allowlists]]
+description = "Env placeholders in docs and examples"
+regexTarget = "secret"
+regexes = ['''^[A-Z][A-Z0-9_]*=''', '''^<[^>]*>?$''']
