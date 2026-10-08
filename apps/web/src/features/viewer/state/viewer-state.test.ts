@@ -149,9 +149,14 @@ describe('viewerReducer', () => {
       expect(state).toMatchObject({ deletedPanelOpen: false, threadPanelOpen: true });
     });
 
-    it('toggles the change markers', () => {
-      expect(initial.showChanges).toBe(false);
-      expect(run({ type: 'showChangesSet', show: true }).showChanges).toBe(true);
+    it('shows the change markers by default and toggles them', () => {
+      expect(initial.showChanges).toBe(true);
+      const hidden = run({ type: 'showChangesSet', show: false });
+      expect(hidden.showChanges).toBe(false);
+      expect(viewerReducer(hidden, { type: 'showChangesSet', show: true }).showChanges).toBe(true);
+      expect(
+        createInitialState({ activeSlideId: null, color: 'red', showChanges: false }),
+      ).toMatchObject({ showChanges: false });
     });
   });
 });

@@ -10,7 +10,7 @@ interface SessionControlsProps {
   onLeave: () => void;
 }
 
-/** Bottom-right pill: owners close and share, guests leave the session. */
+/** Bottom-left pill: owners close and share, guests leave the session. */
 export function SessionControls({ onLeave }: SessionControlsProps) {
   const { deck, isOwner } = useViewerData();
   const navigate = useNavigate();

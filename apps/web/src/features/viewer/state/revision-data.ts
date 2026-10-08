@@ -3,7 +3,7 @@ import { createContext, useContext } from 'react';
 import type { Thread } from '../lib/comment-selectors';
 import type { SlideBadge } from '../lib/revision-changes';
 
-/** A new revision the viewer should be told about (banner, Figma D1). */
+/** A new revision the viewer should be told about (notice next to "Neu laden"). */
 export interface RevisionAnnouncement {
   revisionNumber: number;
   summary: SyncSummary | null;

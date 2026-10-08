@@ -191,61 +191,30 @@ export const currentRevision = (revisions: readonly Revision[] | undefined) =>
 
 // ── Copy ────────────────────────────────────────────────────────────────────
 
-export interface SummaryChip {
-  tone: 'success' | 'warning' | 'info' | 'danger' | 'neutral';
-  label: string;
-}
-
-/** Coloured slide count chips of a revision summary (Figma D1): "2 neu", "3 geändert", … */
-export function summaryChips(summary: SyncSummary | null | undefined): SummaryChip[] {
-  if (!summary) return [];
-  const chips: SummaryChip[] = [];
-  if (summary.slidesNew > 0) chips.push({ tone: 'success', label: `${summary.slidesNew} neu` });
-  if (summary.slidesModified > 0)
-    chips.push({ tone: 'warning', label: `${summary.slidesModified} geändert` });
-  if (summary.slidesMoved > 0)
-    chips.push({ tone: 'info', label: `${summary.slidesMoved} verschoben` });
-  if (summary.slidesDeleted > 0)
-    chips.push({ tone: 'danger', label: `${summary.slidesDeleted} gelöscht` });
-  return chips;
-}
-
 /**
- * The comment side of a summary as one short line ("1 neuer Kommentar · 3 Kommentare
- * entfernt"), `null` without comment changes. Shown as text next to the slide chips, so the
- * banner stays one compact block.
+ * Short notice next to "Neu laden" after a new revision arrived: "V5 geladen · 3 Folien
+ * geändert, 1 neu" (the summary text comes from the server, see `formatSyncSummary`).
  */
-export function commentChangesText(summary: SyncSummary | null | undefined): string | null {
-  if (!summary) return null;
-  const parts: string[] = [];
-  const add = (count: number, one: string, many: string) => {
-    if (count > 0) parts.push(`${count} ${count === 1 ? one : many}`);
-  };
-  add(summary.commentsNew, 'neuer Kommentar', 'neue Kommentare');
-  add(summary.commentsUpdated, 'Kommentar geändert', 'Kommentare geändert');
-  add(summary.commentsRemoved, 'Kommentar entfernt', 'Kommentare entfernt');
-  return parts.length > 0 ? parts.join(' · ') : null;
-}
-
-/** Banner headline after a new revision arrived: "Neue Version geladen · 3 Folien geändert, 1 neu". */
-export function revisionBannerText(summary: SyncSummary | null | undefined): string {
-  return summary ? `Neue Version geladen · ${summary.text}` : 'Neue Version geladen';
+export function revisionNoticeText(
+  revisionNumber: number,
+  summary: SyncSummary | null | undefined,
+): string {
+  const head = `V${revisionNumber} geladen`;
+  return summary?.text ? `${head} · ${summary.text}` : head;
 }
 
 export type ToastTone = 'neutral' | 'danger';
 
-/** Toast after "Neu laden" / "Neue Version hochladen". */
-export function syncResultMessage(result: SyncResult): { text: string; tone: ToastTone } {
+/**
+ * Toast after "Neu laden" / "Neue Version hochladen". `null` for a new version: that one is
+ * announced by the notice next to the button (`RevisionNotice`), for everybody watching.
+ */
+export function syncResultMessage(result: SyncResult): { text: string; tone: ToastTone } | null {
   switch (result.status) {
     case 'unchanged':
       return { text: 'Keine Änderungen', tone: 'neutral' };
     case 'updated':
-      return {
-        text: result.summary
-          ? `Neue Version geladen · ${result.summary.text}`
-          : 'Neue Version geladen',
-        tone: 'neutral',
-      };
+      return null;
     case 'queued':
       return { text: 'Änderung erkannt – wird übernommen …', tone: 'neutral' };
     case 'error':

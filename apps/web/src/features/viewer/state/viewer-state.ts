@@ -35,7 +35,11 @@ export interface ViewerState {
   pptxOnly: boolean;
   /** Split handle position `t` ∈ [0, 1] (slide size vs comment area), `null` = default; see `lib/split`. */
   split: number | null;
-  /** "Änderungen ansehen": badges of the latest revision on track and minimap (Figma D2). */
+  /**
+   * "Änderungen": badges of the latest revision on track and minimap (Figma D2). On by default –
+   * the switch only shows when the latest revision changed slides, so there is always something
+   * to mark.
+   */
   showChanges: boolean;
   /** Side panel with the slides deleted in later revisions and their comments (BER-109). */
   deletedPanelOpen: boolean;
@@ -88,7 +92,7 @@ export function createInitialState(options: {
     statusFilter: 'open',
     pptxOnly: false,
     split: options.split == null ? null : clampSplit(options.split),
-    showChanges: options.showChanges ?? false,
+    showChanges: options.showChanges ?? true,
     deletedPanelOpen: false,
   };
 }

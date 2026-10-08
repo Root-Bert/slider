@@ -3,18 +3,16 @@ import { describe, expect, it } from 'vitest';
 import type { Revision } from '@slider/shared';
 import {
   bannerSyncError,
-  commentChangesText,
   currentRevision,
   oldestOpenComment,
   revisionsToCheck,
   isChangedSinceComment,
   isLoginError,
   lastCheckedLabel,
-  revisionBannerText,
+  revisionNoticeText,
   slideBadge,
   slideBadges,
   slideModifiedAt,
-  summaryChips,
   syncResultMessage,
 } from './revision-changes';
 import { comment, slide } from './test-fixtures';
@@ -212,29 +210,10 @@ describe('changed since comment', () => {
 });
 
 describe('copy', () => {
-  it('builds the banner headline from the summary', () => {
+  it('builds the new-version notice from the summary', () => {
     const summary = toSyncSummary(counts({ slidesModified: 3, slidesNew: 1 }));
-    expect(revisionBannerText(summary)).toBe('Neue Version geladen · 3 Folien geändert, 1 neu');
-    expect(revisionBannerText(null)).toBe('Neue Version geladen');
-  });
-
-  it('turns the slide counts into coloured chips and the comments into a line', () => {
-    const summary = toSyncSummary(
-      counts({ slidesNew: 2, slidesModified: 3, slidesMoved: 1, slidesDeleted: 1, commentsNew: 1 }),
-    );
-    expect(summaryChips(summary)).toEqual([
-      { tone: 'success', label: '2 neu' },
-      { tone: 'warning', label: '3 geändert' },
-      { tone: 'info', label: '1 verschoben' },
-      { tone: 'danger', label: '1 gelöscht' },
-    ]);
-    expect(commentChangesText(summary)).toBe('1 neuer Kommentar');
-    const onlyComments = toSyncSummary(counts({ commentsRemoved: 3, commentsUpdated: 1 }));
-    expect(summaryChips(onlyComments)).toEqual([]);
-    expect(commentChangesText(onlyComments)).toBe('1 Kommentar geändert · 3 Kommentare entfernt');
-    expect(commentChangesText(toSyncSummary(counts({ slidesNew: 1 })))).toBeNull();
-    expect(summaryChips(null)).toEqual([]);
-    expect(commentChangesText(null)).toBeNull();
+    expect(revisionNoticeText(5, summary)).toBe('V5 geladen · 3 Folien geändert, 1 neu');
+    expect(revisionNoticeText(5, null)).toBe('V5 geladen');
   });
 
   it('words the result of "Neu laden"', () => {
@@ -243,10 +222,9 @@ describe('copy', () => {
       tone: 'neutral',
     });
     const summary = toSyncSummary(counts({ commentsNew: 1 }));
-    expect(syncResultMessage({ status: 'updated', summary }).text).toBe(
-      'Neue Version geladen · 1 neuer Kommentar aus PowerPoint',
-    );
-    expect(syncResultMessage({ status: 'queued' }).text).toContain('wird übernommen');
+    // A new version is announced by the notice next to the button, not by a toast.
+    expect(syncResultMessage({ status: 'updated', summary })).toBeNull();
+    expect(syncResultMessage({ status: 'queued' })?.text).toContain('wird übernommen');
     const error = {
       code: 'auth_required' as const,
       message: 'Bitte melde dich erneut an.',

@@ -2,7 +2,8 @@ import type { SyncResult } from '@slider/shared';
 import { useRef } from 'react';
 import { useSyncDeck, useUploadRevision } from '@/lib/queries';
 import { cn, GlassPanel, Icon, IconButton, Spinner } from '@/ui';
-import { lastCheckedLabel, syncResultMessage } from '../lib/revision-changes';
+import { lastCheckedLabel, revisionNoticeText, syncResultMessage } from '../lib/revision-changes';
+import { RevisionNotice } from '../revisions/RevisionNotice';
 import { useRevisionData } from '../state/revision-data';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
@@ -11,31 +12,52 @@ import { useViewerToast } from '../state/viewer-toast';
 /**
  * Version pill in the controls row: owners reload a linked deck ("Neu laden") or upload a new
  * version of an uploaded one; linked decks say that they update themselves ("Auto-Sync"); the
- * change markers of the latest version (Figma D2 "Änderungen zeigen") can be switched on and off
- * only when that version actually added, changed or moved slides.
+ * change markers of the latest version (Figma D2 "Änderungen", on by default) can be switched
+ * on and off only when that version actually added, changed or moved slides. After a new
+ * version arrived, a short notice next to the button says what changed (`RevisionNotice`).
  */
 export function RevisionControls({ className }: { className?: string }) {
   const { isOwner } = useViewerData();
-  const { revisionNumber, isLinked, sync, badges } = useRevisionData();
+  const { revisionNumber, isLinked, sync, badges, announcement, dismissAnnouncement } =
+    useRevisionData();
   const showUpdate = isOwner;
   const showAutoSync = isLinked && Boolean(sync?.enabled);
   const showToggle = revisionNumber > 1 && badges.size > 0;
-  if (!showUpdate && !showAutoSync && !showToggle) return null;
+  const showPill = showUpdate || showAutoSync || showToggle || announcement !== null;
 
   return (
-    <GlassPanel className={cn('flex shrink-0 items-center gap-1 py-1 pr-1 pl-1', className)}>
-      {showUpdate && (isLinked ? <ReloadButton /> : <UploadButton />)}
-      {showAutoSync && <AutoSyncStatus />}
-      {(showUpdate || showAutoSync) && showToggle && (
-        <span aria-hidden className="mx-0.5 h-5 w-px bg-white/15" />
+    <>
+      {/* Always mounted, so the notice's text is read out when it appears. */}
+      <span role="status" className="sr-only">
+        {announcement
+          ? revisionNoticeText(announcement.revisionNumber, announcement.summary)
+          : null}
+      </span>
+      {showPill && (
+        <GlassPanel className={cn('flex shrink-0 items-center gap-1 py-1 pr-1 pl-1', className)}>
+          {showUpdate && (isLinked ? <ReloadButton /> : <UploadButton />)}
+          {announcement && (
+            // Keyed by number: a newer version restarts the notice.
+            <RevisionNotice
+              key={announcement.revisionNumber}
+              announcement={announcement}
+              onDone={dismissAnnouncement}
+            />
+          )}
+          {/* Phones: the notice takes the status dot's room while it shows. */}
+          {showAutoSync && <AutoSyncStatus className={cn(announcement && 'max-sm:hidden')} />}
+          {(showUpdate || showAutoSync || announcement) && showToggle && (
+            <span aria-hidden className="mx-0.5 h-5 w-px bg-white/15" />
+          )}
+          {showToggle && <ChangesToggle revisionNumber={revisionNumber} />}
+        </GlassPanel>
       )}
-      {showToggle && <ChangesToggle revisionNumber={revisionNumber} />}
-    </GlassPanel>
+    </>
   );
 }
 
 /** "Auto-Sync" next to the reload button: linked decks are checked for changes by the server. */
-function AutoSyncStatus() {
+function AutoSyncStatus({ className }: { className?: string }) {
   const { sync } = useRevisionData();
   const failing = Boolean(sync?.lastSyncError);
   const label = failing
@@ -46,7 +68,7 @@ function AutoSyncStatus() {
       role="status"
       aria-label={label}
       title={label}
-      className="flex h-8 items-center gap-1.5 pr-1.5 pl-1 text-xs text-fg-muted"
+      className={cn('flex h-8 items-center gap-1.5 pr-1.5 pl-1 text-xs text-fg-muted', className)}
     >
       <span
         aria-hidden
@@ -61,8 +83,8 @@ function useResultToast() {
   const showToast = useViewerToast();
   return {
     onSuccess: (result: SyncResult) => {
-      const { text, tone } = syncResultMessage(result);
-      showToast(text, tone);
+      const message = syncResultMessage(result);
+      if (message) showToast(message.text, message.tone);
     },
     onError: (error: Error) => showToast(error.message, 'danger'),
   };

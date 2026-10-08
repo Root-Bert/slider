@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent } from 'react';
+import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { cn, GlassPanel } from '@/ui';
 import { useGoToSlide } from '../hooks/useGoToSlide';
 import { parseSlideInput, stepSlide } from '../lib/slide-input';
@@ -6,9 +6,10 @@ import { useViewerData } from '../state/viewer-data';
 import { useViewerState } from '../state/viewer-state';
 
 /**
- * "[1] / 12" pill in the controls row (Figma 87:332): position of the active slide. The boxed
- * number is a field – type a number, Enter (or leaving the field) jumps there, Esc restores,
- * ↑/↓ step one slide. Viewer shortcuts skip typing targets, so ←/→ etc. edit the text here.
+ * "1 / 12" pill in the controls row (Figma 87:332): position of the active slide. The number is
+ * a field – type a number, Enter (or leaving the field) jumps there, Esc restores, ↑/↓ step one
+ * slide and select the new number, so typing replaces it. Viewer shortcuts skip typing targets,
+ * so ←/→ etc. edit the text here.
  */
 export function SlideCounter({ className }: { className?: string }) {
   const { slides, slideIndex } = useViewerData();
@@ -20,6 +21,16 @@ export function SlideCounter({ className }: { className?: string }) {
   // change from elsewhere while the field has focus never leaves a stale number to commit.
   const [draft, setDraft] = useState<string | null>(null);
   const cancelledRef = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Set by ↑/↓: select the number once the field shows the slide it stepped to.
+  const selectPendingRef = useRef(false);
+  const shown = draft ?? String(position);
+  useLayoutEffect(() => {
+    const input = inputRef.current;
+    if (!selectPendingRef.current || !input || document.activeElement !== input) return;
+    selectPendingRef.current = false;
+    input.select();
+  }, [shown]);
 
   const commit = () => {
     if (draft !== null) {
@@ -44,6 +55,9 @@ export function SlideCounter({ className }: { className?: string }) {
       const next = stepSlide(from, event.key === 'ArrowUp' ? 1 : -1, total);
       // Back to "not edited": the field follows the slide we just moved to.
       setDraft(null);
+      // Select now (same number) and again once the new number shows.
+      event.currentTarget.select();
+      selectPendingRef.current = true;
       if (next !== position) goTo(next - 1);
     }
   };
@@ -56,6 +70,7 @@ export function SlideCounter({ className }: { className?: string }) {
       )}
     >
       <input
+        ref={inputRef}
         type="text"
         inputMode="numeric"
         autoComplete="off"
@@ -63,20 +78,27 @@ export function SlideCounter({ className }: { className?: string }) {
         aria-label={`Aktuelle Folie, 1 bis ${total}`}
         title="Zu Folie springen"
         maxLength={Math.max(3, String(total).length)}
-        value={draft ?? String(position)}
+        value={shown}
+        style={{ width: `calc(${Math.max(1, shown.length)}ch + 0.75rem)` }}
         onFocus={(event) => event.currentTarget.select()}
-        onChange={(event) => setDraft(event.target.value)}
+        onChange={(event) => {
+          selectPendingRef.current = false;
+          setDraft(event.target.value);
+        }}
         onKeyDown={onKeyDown}
         onBlur={() => {
+          selectPendingRef.current = false;
           if (cancelledRef.current) {
             cancelledRef.current = false;
             setDraft(null);
           } else commit();
         }}
         className={cn(
-          // Room for three digits; same boxed look as the static number it replaces.
-          'h-8 w-11 rounded-chip border border-white/30 bg-transparent px-1 text-center leading-5 text-fg-muted transition-colors',
-          'hover:border-white/50 focus:text-fg',
+          // As wide as its digits (style below), so the number keeps the pill's even padding. No
+          // border: a soft fill on hover hints that it is a field, the focus ring (global
+          // :focus-visible – text fields match it on click too) marks editing.
+          'h-8 min-w-8 rounded-chip bg-transparent px-1.5 text-center leading-5 text-fg-muted transition-colors',
+          'hover:bg-white/8 focus:bg-white/10 focus:text-fg focus-visible:outline-offset-0',
         )}
       />
       <span aria-hidden className="text-fg-subtle">

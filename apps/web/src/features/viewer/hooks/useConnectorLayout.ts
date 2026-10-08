@@ -1,4 +1,5 @@
-import { useEffect, useState, type RefObject } from 'react';
+import { useEffect, useState } from 'react';
+import { flushSync } from 'react-dom';
 import type { ConnectorAnchor } from '../lib/comment-selectors';
 import {
   fadeStops,
@@ -33,7 +34,7 @@ export interface ConnectorRoute {
 export interface MeasuredConnector {
   threadId: string;
   color: string;
-  /** SVG path data, relative to the timeline wrapper. */
+  /** SVG path data, relative to the connector layer (see `useConnectorLayout`). */
   d: string;
 }
 
@@ -44,6 +45,12 @@ export interface PanelLink {
   from: Px;
   /** Path from the thread to the panel's left edge (detours around other columns' cards). */
   d: string;
+  /**
+   * Where the connector layer's origin was, relative to the timeline wrapper, when this was
+   * measured. The link ends at the fixed panel, so it is drawn outside the scroller (in wrapper
+   * coordinates) and re-measured when the timeline scrolls.
+   */
+  offset: Px;
   /**
    * Dock pill and rail inside the panel, in viewport coordinates (the panel is fixed): the rail
    * runs up the panel's left edge from the link to the root message's middle.
@@ -60,13 +67,15 @@ export type Cutout =
 
 export interface ConnectorLayout {
   lines: MeasuredConnector[];
+  /** Height of the scroller's viewport: the layer's SVG covers it. */
+  height: number;
   /** Opacity profile along y that hides the lines behind the minimap, controls row and handle. */
   fade: FadeStop[];
   cutouts: Cutout[];
   panelLink: PanelLink | null;
 }
 
-const EMPTY: ConnectorLayout = { lines: [], fade: [], cutouts: [], panelLink: null };
+const EMPTY: ConnectorLayout = { lines: [], height: 0, fade: [], cutouts: [], panelLink: null };
 
 /** Lines enter the card next to its avatar. */
 const CARD_ENTRY_X = 26;
@@ -104,19 +113,25 @@ const centreX = (element: Element, origin: DOMRect) => {
 /**
  * Measures marks, cards and the control row of every routed slide and routes the connector
  * lines between them. Each slide routes in its own corridor – from the middle of the gap before
- * it to the middle of the gap after it – so lines of different slides never cross. Coordinates
- * are relative to the timeline wrapper (the overlay's box). Re-measures, batched to one per
- * frame, when the timeline scrolls (both axes), anything in it resizes or moves, the thread
- * panel slides, or the window resizes. A passive effect on purpose: the wrapper is an ancestor,
- * and ancestor refs are attached after child layout effects run.
+ * it to the middle of the gap after it – so lines of different slides never cross.
+ *
+ * Coordinates are relative to the connector layer: a zero-height `sticky top-0` element inside
+ * the scrolled content, so x is in content space (the lines scroll sideways natively, in the
+ * same frame as slides and cards – no re-measure) and y is in the scroller's viewport, like
+ * the sticky header holding the marks. Re-measures, batched to one per frame and committed
+ * before that frame paints, when the comment area scrolls vertically (cards move under the
+ * fixed marks), anything in the timeline resizes or moves, the thread panel slides, or the
+ * window resizes. While the panel link is shown, horizontal scrolling re-measures too: the
+ * link ends at the fixed panel.
  */
 export function useConnectorLayout({
-  wrapperRef,
+  layer,
   routes,
   enabled,
   panelThreadId,
 }: {
-  wrapperRef: RefObject<HTMLElement | null>;
+  /** The connector layer (see above); its parent is the scrolled content. */
+  layer: HTMLElement | null;
   routes: readonly ConnectorRoute[];
   enabled: boolean;
   /** Focused thread while the thread panel is open. */
@@ -126,16 +141,21 @@ export function useConnectorLayout({
   const [layout, setLayout] = useState<ConnectorLayout>(EMPTY);
 
   useEffect(() => {
-    const wrapper = wrapperRef.current;
     const scroller = registry.getScroller();
+    const wrapper = scroller?.parentElement;
     const panel = () => document.querySelector<HTMLElement>('[data-thread-panel]');
+    // Committed before the frame paints, so the lines never trail the cards by a frame.
+    const commit = (next: ConnectorLayout) =>
+      flushSync(() =>
+        setLayout((current) => (current === EMPTY && next === EMPTY ? current : next)),
+      );
 
     const measure = () => {
-      if (!enabled || !wrapper || !scroller || routes.length === 0) {
-        setLayout((current) => (current === EMPTY ? current : EMPTY));
+      if (!enabled || !layer || !wrapper || !scroller || routes.length === 0) {
+        commit(EMPTY);
         return;
       }
-      const origin = wrapper.getBoundingClientRect();
+      const origin = layer.getBoundingClientRect();
       const stage = relative(scroller.getBoundingClientRect(), origin);
       const header = wrapper.querySelector('[data-timeline-header]');
       // Top of the visible comment area: everything above it is the sticky header.
@@ -157,16 +177,16 @@ export function useConnectorLayout({
       let panelExitX = 0;
       const obstacles: Box[] = [];
 
-      // Lines (and the panel link) pass behind every visible card, bubble and blob.
+      // Lines (and the panel link) pass behind every visible card, bubble and blob. All rendered
+      // ones, not just those in view: the lines scroll sideways without a re-measure.
       const area = scroller.querySelector('[data-comment-area]');
       for (const element of area?.querySelectorAll(
         '[data-comment-card], [data-connector-blob], [data-gap-bubble]',
       ) ?? []) {
         const box = relative(element.getBoundingClientRect(), origin);
-        if (visible(box) && box.right > stage.left && box.left < stage.right) {
-          cutouts.push({ kind: 'fill', box: clipped(box) });
-          obstacles.push(box);
-        }
+        if (!visible(box)) continue;
+        cutouts.push({ kind: 'fill', box: clipped(box) });
+        if (box.right > stage.left && box.left < stage.right) obstacles.push(box);
       }
 
       for (const route of routes) {
@@ -248,9 +268,6 @@ export function useConnectorLayout({
           const { anchor } = item.source;
           const x = (value: number) => slide.left + value * slideRect.width;
           const y = (value: number) => slide.top + value * slideRect.height;
-          // Mark scrolled out of the timeline: no line.
-          const centre = (x(anchor.left) + x(anchor.right)) / 2;
-          if (centre < stage.left || centre > stage.right) continue;
           requests.push({
             id: item.threadId,
             anchor: { left: x(anchor.left), right: x(anchor.right) },
@@ -331,11 +348,13 @@ export function useConnectorLayout({
           const rootMiddle = root ? (root.top + root.bottom) / 2 : null;
           // Root scrolled out of the history: the rail ends at the history's top edge.
           const rootVisible = rootMiddle !== null && (!history || rootMiddle >= history.top);
+          const wrapperBox = wrapper.getBoundingClientRect();
           panelLink = {
             threadId: panelThreadId!,
             color: colorOf.get(panelThreadId!) ?? 'white',
             from,
             d,
+            offset: { x: origin.left - wrapperBox.left, y: origin.top - wrapperBox.top },
             dock: {
               x: panelBox.left,
               y: from.y + origin.top,
@@ -346,7 +365,13 @@ export function useConnectorLayout({
         }
       }
 
-      setLayout({ lines, fade: fadeStops(band), cutouts, panelLink });
+      commit({
+        lines,
+        height: stage.bottom - stage.top,
+        fade: fadeStops(band),
+        cutouts,
+        panelLink,
+      });
     };
 
     const throttled = rafThrottle(measure);
@@ -362,8 +387,11 @@ export function useConnectorLayout({
     const panelElement = panel();
     observe(panelElement);
     // Slides, columns and cards move without resizing when the split or the brick layout change:
-    // watch their inline styles and the rendered window too.
-    const mutationObserver = new MutationObserver(throttled.schedule);
+    // watch their inline styles and the rendered window too. The lines themselves live in the
+    // scroller as well – their own updates don't count.
+    const mutationObserver = new MutationObserver((records) => {
+      if (records.some((record) => !layer?.contains(record.target))) throttled.schedule();
+    });
     if (scroller)
       mutationObserver.observe(scroller, {
         subtree: true,
@@ -371,7 +399,15 @@ export function useConnectorLayout({
         attributes: true,
         attributeFilter: ['style'],
       });
-    scroller?.addEventListener('scroll', throttled.schedule, { passive: true });
+    // Sideways the lines scroll with the content; only a vertical scroll (cards moving under the
+    // fixed marks) or the panel link (ending at the fixed panel) need a re-measure.
+    let scrollTop = scroller?.scrollTop ?? 0;
+    const onScroll = () => {
+      if (!scroller || (scroller.scrollTop === scrollTop && !panelThreadId)) return;
+      scrollTop = scroller.scrollTop;
+      throttled.schedule();
+    };
+    scroller?.addEventListener('scroll', onScroll, { passive: true });
     wrapper?.addEventListener('transitionend', throttled.schedule);
     panelElement?.addEventListener('transitionend', throttled.schedule);
     // The rail follows the root message when the thread history scrolls.
@@ -382,13 +418,13 @@ export function useConnectorLayout({
       throttled.cancel();
       resizeObserver.disconnect();
       mutationObserver.disconnect();
-      scroller?.removeEventListener('scroll', throttled.schedule);
+      scroller?.removeEventListener('scroll', onScroll);
       wrapper?.removeEventListener('transitionend', throttled.schedule);
       panelElement?.removeEventListener('transitionend', throttled.schedule);
       panelElement?.removeEventListener('scroll', throttled.schedule, { capture: true });
       window.removeEventListener('resize', throttled.schedule);
     };
-  }, [wrapperRef, registry, routes, enabled, panelThreadId]);
+  }, [layer, registry, routes, enabled, panelThreadId]);
 
   return layout;
 }

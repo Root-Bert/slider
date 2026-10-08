@@ -1,12 +1,8 @@
 import type { Comment } from '@slider/shared';
-import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { useCreateReply } from '@/lib/queries';
 import { Avatar, cn, Icon } from '@/ui';
 import { AutosizeTextarea } from '../components/AutosizeTextarea';
-import { MediaTabs } from '../components/MediaTabs';
-import { replyInput } from '../lib/replies';
-import { useViewerData } from '../state/viewer-data';
-import { useViewerToast } from '../state/viewer-toast';
+import { MediaSoonButtons } from '../components/MediaTabs';
+import { useReplyDraft } from '../hooks/useReplyDraft';
 
 interface ReplyComposerProps {
   root: Comment;
@@ -31,49 +27,14 @@ export function ReplyComposer({
   onCancel,
   onSent,
 }: ReplyComposerProps) {
-  const { viewer } = useViewerData();
-  const showToast = useViewerToast();
-  const createReply = useCreateReply(deckId, viewer.author);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [body, setBody] = useState('');
-  const canSend = body.trim().length > 0 && !createReply.isPending;
-
-  const submit = (event?: FormEvent) => {
-    event?.preventDefault();
-    if (!canSend) return;
-    const sent = body;
-    // Clear right away – the reply is already in the thread; restored if the request fails.
-    setBody('');
-    createReply.mutate(
-      { input: replyInput(root, sent), root },
-      {
-        onSuccess: () => onSent?.(),
-        onError: (error) => {
-          setBody((current) => current || sent);
-          showToast(error.message, 'danger');
-        },
-      },
-    );
-    textareaRef.current?.focus();
-  };
-
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-      event.preventDefault();
-      submit();
-    } else if (event.key === 'Escape' && onCancel) {
-      // Handled here, so the viewer doesn't also close the panel.
-      event.preventDefault();
-      event.stopPropagation();
-      onCancel();
-    }
-  };
+  const draft = useReplyDraft(root, deckId, { onCancel, onSent });
+  const { body, setBody, canSend, submit, onKeyDown, textareaRef } = draft;
 
   const textarea = (
     <AutosizeTextarea
       ref={textareaRef}
-      aria-label="Antwort schreiben"
-      placeholder="Antworten…"
+      aria-label={`Antwort an ${root.author.name}`}
+      placeholder="Antworten …"
       value={body}
       autoFocus={autoFocus}
       maxHeight={variant === 'inline' ? 120 : 160}
@@ -83,9 +44,9 @@ export function ReplyComposer({
     />
   );
 
-  const error = createReply.isError && (
+  const error = draft.error && (
     <p role="alert" className="text-xs text-danger">
-      {createReply.error.message}
+      {draft.error.message}
     </p>
   );
 
@@ -99,8 +60,8 @@ export function ReplyComposer({
         )}
       >
         <header className="flex min-w-0 items-center gap-2">
-          <Avatar author={viewer.author} size={24} />
-          <span className="truncate text-xs font-medium text-fg">{viewer.author.name}</span>
+          <Avatar author={draft.author} size={24} />
+          <span className="truncate text-xs font-medium text-fg">{draft.author.name}</span>
           <span className="shrink-0 text-[11px] text-fg-subtle">jetzt</span>
         </header>
         <div className="flex items-end gap-2 rounded-[12px] bg-black/25 py-1.5 pr-2 pl-3">
@@ -132,12 +93,12 @@ export function ReplyComposer({
   return (
     <form
       onSubmit={submit}
-      className="flex flex-col gap-2.5 border-t border-hairline px-5 pt-3.5 pb-[18px]"
+      className="flex flex-col gap-2 border-t border-hairline px-5 pt-3.5 pb-[18px]"
     >
-      <MediaTabs />
       <div className="flex items-end gap-2">
-        <div className="flex min-h-10 min-w-0 flex-1 items-center rounded-[12px] border border-white/10 bg-white/[0.06] py-[10px] pr-3 pl-3.5 transition-colors focus-within:border-white/35">
-          {textarea}
+        <div className="flex min-h-10 min-w-0 flex-1 items-end gap-0.5 rounded-[12px] border border-white/10 bg-white/[0.06] py-[5px] pr-1 pl-3.5 transition-colors focus-within:border-white/35">
+          <div className="min-w-0 flex-1 py-[5px]">{textarea}</div>
+          <MediaSoonButtons />
         </div>
         <button
           type="submit"

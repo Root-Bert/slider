@@ -67,11 +67,21 @@ export function Viewer({ onLeave }: { onLeave: () => void }) {
           }
         />
 
+        {/* Bottom left: close and share (owners) or leave (guests). */}
+        <div
+          className={cn(
+            'fixed bottom-4 left-4 z-30 md:bottom-6 md:left-6',
+            threadPanelOpen && 'max-md:hidden',
+          )}
+        >
+          <SessionControls onLeave={onLeave} />
+        </div>
+        {/* Bottom right: who else is here – moves left of the side panel when that opens. */}
         {deck.participants.length > 0 && (
           <div
             className={cn(
-              'fixed bottom-4 left-4 z-30 md:bottom-6 md:left-6',
-              threadPanelOpen && 'max-md:hidden',
+              'fixed right-4 bottom-4 z-30 transition-[right] duration-300 md:right-6 md:bottom-6',
+              threadPanelOpen && 'max-md:hidden md:right-[424px]',
             )}
           >
             <GlassPanel
@@ -83,14 +93,6 @@ export function Viewer({ onLeave }: { onLeave: () => void }) {
             </GlassPanel>
           </div>
         )}
-        <div
-          className={cn(
-            'fixed right-4 bottom-4 z-30 transition-[right] duration-300 md:right-6 md:bottom-6',
-            threadPanelOpen && 'max-md:hidden md:right-[424px]',
-          )}
-        >
-          <SessionControls onLeave={onLeave} />
-        </div>
 
         <Composer />
         <ThreadPanel />

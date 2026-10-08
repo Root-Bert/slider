@@ -13,11 +13,12 @@ import { isPendingComment } from '@/lib/comment-cache';
 import { pluralize } from '@/lib/format';
 import { AvatarStack, cn, Icon } from '@/ui';
 import { isRemovedInPowerPoint, isStrokeOnly, type Thread } from '../lib/comment-selectors';
-import { MEDIA_KINDS, MEDIA_SOON } from '../lib/media-kinds';
+import { AutosizeTextarea } from '../components/AutosizeTextarea';
+import { MediaSoonButtons } from '../components/MediaTabs';
+import { useReplyDraft } from '../hooks/useReplyDraft';
 import { useViewerDispatch } from '../state/viewer-state';
 import { AuthorLine } from './AuthorLine';
 import { CommentBody } from './CommentBody';
-import { ReplyComposer } from './ReplyComposer';
 import { ResolveButton } from './ResolveButton';
 import { ChangedSinceCommentNote, RemovedInPowerPointNote } from './RevisionNotes';
 
@@ -50,9 +51,7 @@ export const CommentCard = memo(function CommentCard({
 }: CommentCardProps) {
   const dispatch = useViewerDispatch();
   const [expanded, setExpanded] = useState(false);
-  const [composing, setComposing] = useState(false);
   const repliesId = useId();
-  const repliesRef = useRef<HTMLOListElement>(null);
   const { root, replies } = thread;
   const done = root.status === 'done';
   const highlighted = expanded || emphasis === 'focused' || emphasis === 'hovered';
@@ -60,26 +59,15 @@ export const CommentCard = memo(function CommentCard({
   const canReply = canResolve;
   const removed = isRemovedInPowerPoint(root);
 
-  // Every sent reply pushes the inline reply box down; keep it in view while typing.
-  useEffect(() => {
-    if (!composing) return;
-    repliesRef.current?.lastElementChild?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  }, [composing, replies.length]);
-
   // An expanded thread is the selected one: its line stays lit, the other cards dim (B3).
-  const expand = (compose: boolean) => {
+  const expand = () => {
+    if (expanded) return;
     setExpanded(true);
-    setComposing(compose);
     dispatch({ type: 'threadFocused', threadId: thread.id, openPanel: false });
   };
   const collapse = () => {
     setExpanded(false);
-    setComposing(false);
     dispatch({ type: 'threadUnfocused', threadId: thread.id });
-  };
-  const stopComposing = () => {
-    if (replies.length === 0) collapse();
-    else setComposing(false);
   };
 
   return (
@@ -163,7 +151,7 @@ export const CommentCard = memo(function CommentCard({
               type="button"
               aria-expanded={false}
               aria-controls={repliesId}
-              onClick={() => expand(false)}
+              onClick={expand}
               className="relative z-10 ml-auto inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-xs text-fg-subtle hover:bg-white/10 hover:text-fg"
             >
               Aufklappen
@@ -174,39 +162,25 @@ export const CommentCard = memo(function CommentCard({
       </div>
 
       {expanded && (
-        <ol
-          ref={repliesRef}
-          id={repliesId}
-          aria-label="Antworten"
-          className="flex flex-col gap-1.5 pt-1.5 pl-11"
-        >
+        <ol id={repliesId} aria-label="Antworten" className="flex flex-col gap-1.5 pt-1.5 pl-11">
           {replies.map((reply) => (
             <ThreadBranch key={reply.id}>
               <InlineReply reply={reply} />
             </ThreadBranch>
           ))}
-          {composing && canReply && (
-            <ThreadBranch>
-              <ReplyComposer
-                root={root}
-                deckId={deckId}
-                variant="inline"
-                autoFocus
-                onCancel={stopComposing}
-              />
-            </ThreadBranch>
-          )}
         </ol>
       )}
 
-      {canReply && !composing && (
+      {canReply && (
         <ReplyBar
           root={root}
           deckId={deckId}
+          replyCount={replies.length}
           // Below the stacked sheets, if any.
           offset={stacked ? 14 : 6}
-          visible={emphasis === 'focused' && !expanded}
-          onText={() => expand(true)}
+          focused={emphasis === 'focused' && !expanded}
+          onCompose={expand}
+          onCancel={replies.length === 0 && expanded ? collapse : undefined}
         />
       )}
     </article>
@@ -267,62 +241,89 @@ function InlineReply({ reply }: { reply: Comment }) {
 }
 
 /**
- * "Antworten mit" bar under a hovered or focused card (Figma B1 105:277): text opens the inline
- * thread with a reply box, audio/video/image follow with BER-116, ✓ resolves. It overlays the
- * cards below instead of pushing them, so the layout and the connector lines stay put; a
- * transparent bridge keeps the hover alive across the gap.
+ * "Antworten mit …" field under a hovered or focused card (Figma B1 105:277): typing is the text
+ * reply and expands the thread inline (B3), so sent replies show up between card and field.
+ * Audio/video/image follow with BER-116, ✓ resolves. It overlays the cards below instead of
+ * pushing them, so the layout and the connector lines stay put; a transparent bridge keeps the
+ * hover alive across the gap. A draft keeps it open.
  */
 function ReplyBar({
   root,
   deckId,
+  replyCount,
   offset,
-  visible,
-  onText,
+  focused,
+  onCompose,
+  onCancel,
 }: {
   root: Comment;
   deckId: string;
+  replyCount: number;
   offset: number;
-  visible: boolean;
-  onText: () => void;
+  focused: boolean;
+  onCompose: () => void;
+  onCancel: (() => void) | undefined;
 }) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const { body, setBody, canSend, submit, onKeyDown, textareaRef } = useReplyDraft(root, deckId, {
+    onCancel: () => {
+      setBody('');
+      textareaRef.current?.blur();
+      onCancel?.();
+    },
+  });
+  const hasDraft = body.length > 0;
+
+  // Each sent reply pushes the field down; keep it in view while it has focus.
+  useEffect(() => {
+    if (formRef.current?.contains(document.activeElement))
+      formRef.current.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [replyCount]);
+
   return (
-    <div
-      role="toolbar"
-      aria-label="Antworten mit"
+    <form
+      ref={formRef}
+      onSubmit={submit}
       style={{ top: `calc(100% + ${offset}px)` }}
       className={cn(
-        'glass absolute left-0 flex items-center gap-0.5 rounded-[12px] py-1 pr-1 pl-3',
-        'transition-[opacity,visibility] duration-150',
+        'glass absolute inset-x-0 flex scroll-mb-4 items-end gap-0.5 rounded-[12px] py-1 pr-1 pl-3',
+        'transition-[opacity,visibility,box-shadow] duration-150',
+        'focus-within:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--card-accent)_45%,transparent)]!',
         'before:absolute before:inset-x-0 before:bottom-full before:h-4',
-        visible
+        focused || hasDraft
           ? 'visible opacity-100'
           : 'invisible opacity-0 group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100',
       )}
     >
-      <span className="mr-1.5 text-[11px] whitespace-nowrap text-white/60">Antworten mit</span>
-      {MEDIA_KINDS.map((kind) => (
+      <div className="min-w-0 flex-1 py-[5px]">
+        <AutosizeTextarea
+          ref={textareaRef}
+          aria-label={`Antwort an ${root.author.name}`}
+          placeholder="Antworten mit …"
+          value={body}
+          maxHeight={120}
+          onChange={(event) => {
+            setBody(event.target.value);
+            if (event.target.value.length > 0) onCompose();
+          }}
+          onKeyDown={onKeyDown}
+          className="text-[13px] leading-[18px] text-fg placeholder:text-white/60"
+        />
+      </div>
+      {hasDraft && (
         <button
-          key={kind.id}
-          type="button"
-          aria-label={
-            kind.enabled ? `Mit ${kind.label} antworten` : `${kind.label} – ${MEDIA_SOON}`
-          }
-          aria-disabled={!kind.enabled || undefined}
-          tabIndex={kind.enabled ? undefined : -1}
-          title={kind.enabled ? `Mit ${kind.label} antworten` : MEDIA_SOON}
-          onClick={kind.enabled ? onText : undefined}
-          className={cn(
-            'flex size-7 items-center justify-center rounded-lg',
-            kind.enabled
-              ? 'text-fg-muted hover:bg-white/10 hover:text-fg'
-              : 'cursor-not-allowed text-fg-faint',
-          )}
+          type="submit"
+          aria-label="Antwort senden"
+          title="Senden (Enter)"
+          disabled={!canSend}
+          className="flex size-7 shrink-0 items-center justify-center rounded-lg text-success hover:bg-white/10 disabled:text-fg-faint disabled:hover:bg-transparent"
         >
-          <Icon name={kind.icon} size={18} />
+          <Icon name="arrowUpward" size={18} />
         </button>
-      ))}
-      <span aria-hidden className="mx-0.5 h-4 w-px bg-white/15" />
+      )}
+      <MediaSoonButtons />
+      <span aria-hidden className="mx-0.5 mb-1.5 h-4 w-px shrink-0 bg-white/15" />
       <ResolveButton comment={root} deckId={deckId} />
-    </div>
+    </form>
   );
 }

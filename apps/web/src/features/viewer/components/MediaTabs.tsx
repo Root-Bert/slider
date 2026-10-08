@@ -30,3 +30,30 @@ export function MediaTabs({ className }: { className?: string }) {
     </div>
   );
 }
+
+/**
+ * Audio / Video / Bild icons beside a reply field. Text needs no button – typing is the text
+ * reply; the others stay visible but disabled until BER-116.
+ */
+export function MediaSoonButtons({ size = 'sm' }: { size?: 'sm' | 'md' }) {
+  return (
+    <>
+      {MEDIA_KINDS.filter((kind) => !kind.enabled).map((kind) => (
+        <button
+          key={kind.id}
+          type="button"
+          aria-label={`${kind.label} – ${MEDIA_SOON}`}
+          aria-disabled
+          tabIndex={-1}
+          title={MEDIA_SOON}
+          className={cn(
+            'flex shrink-0 cursor-not-allowed items-center justify-center rounded-lg text-fg-faint',
+            size === 'sm' ? 'size-7' : 'size-8',
+          )}
+        >
+          <Icon name={kind.icon} size={18} />
+        </button>
+      ))}
+    </>
+  );
+}

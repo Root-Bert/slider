@@ -1,9 +1,11 @@
 import { useEffect, useId, useMemo, useState, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
 import { accentColor } from '@/lib/accent';
 import { threadsOf, useCommentThreads } from '../hooks/useCommentThreads';
 import {
   useConnectorLayout,
   type ConnectorItem,
+  type ConnectorLayout,
   type ConnectorRoute,
   type PanelLink,
 } from '../hooks/useConnectorLayout';
@@ -18,18 +20,26 @@ import { useViewerData } from '../state/viewer-data';
 import { useViewerState } from '../state/viewer-state';
 
 interface ConnectorLinesProps {
-  /** The timeline wrapper: the overlay covers it and all coordinates are relative to it. */
+  /** The timeline wrapper (outside the scroller): holds the panel link's overlay. */
   wrapperRef: RefObject<HTMLElement | null>;
+  /**
+   * The connector layer: a zero-height sticky element at the top of the scrolled content. The
+   * lines' SVG is portalled into it, so they scroll sideways together with slides and cards.
+   */
+  layer: HTMLElement | null;
 }
 
 /**
- * One SVG overlay with the lines between marks and their cards (B1), or the thread blob and the
- * thread panel (B4). Lines are drawn for the active slide, the hovered slide and the slide of the
- * hovered or focused thread – the other slides only show their marks, so the timeline stays
- * readable. Lines take the author's accent, fade out behind the minimap and the control row,
- * and pass behind cards and marks. Hidden on narrow screens.
+ * The lines between marks and their cards (B1), or the thread blob and the thread panel (B4).
+ * Lines are drawn for the active slide, the hovered slide and the slide of the hovered or
+ * focused thread – the other slides only show their marks, so the timeline stays readable.
+ * Lines take the author's accent, fade out behind the minimap and the control row, and pass
+ * behind cards and marks. Hidden on narrow screens.
+ *
+ * The mark → card lines live inside the scrolled content (the connector layer), so horizontal
+ * scrolling moves them natively. Only the link to the fixed thread panel is a viewport overlay.
  */
-export function ConnectorLines({ wrapperRef }: ConnectorLinesProps) {
+export function ConnectorLines({ wrapperRef, layer }: ConnectorLinesProps) {
   const { slides, slideIndex, threadById } = useViewerData();
   const {
     activeSlideId,
@@ -101,8 +111,8 @@ export function ConnectorLines({ wrapperRef }: ConnectorLinesProps) {
   }, [routed, slides, slideIndex, bySlide, byGap]);
 
   const panelThreadId = threadPanelOpen ? focusedThreadId : null;
-  const { lines, fade, cutouts, panelLink } = useConnectorLayout({
-    wrapperRef,
+  const layout = useConnectorLayout({
+    layer,
     routes,
     enabled,
     panelThreadId,
@@ -110,7 +120,8 @@ export function ConnectorLines({ wrapperRef }: ConnectorLinesProps) {
 
   const keyboardThreadId = useFocusedCard(wrapperRef);
 
-  if (!enabled || lines.length === 0) return null;
+  const { lines, height, panelLink } = layout;
+  if (!enabled || !layer || lines.length === 0) return null;
 
   const emphasisId = focusedThreadId ?? hoveredThreadId ?? keyboardThreadId;
   const opacityOf = (threadId: string) => {
@@ -123,114 +134,154 @@ export function ConnectorLines({ wrapperRef }: ConnectorLinesProps) {
     return base;
   };
 
+  return (
+    <>
+      {createPortal(
+        <svg
+          aria-hidden
+          data-connectors
+          className="absolute inset-x-0 top-0 w-full overflow-hidden"
+          style={{ height }}
+        >
+          <ConnectorMask id={maskId} layout={layout} />
+          <g mask={`url(#${maskId})`}>
+            {lines.map((line) => (
+              <path
+                key={line.threadId}
+                data-connector-id={line.threadId}
+                d={line.d}
+                fill="none"
+                strokeWidth={2}
+                strokeLinejoin="round"
+                className="transition-opacity duration-200"
+                // CSS (not the presentation attribute) so the colour may be a `var()`.
+                style={{ stroke: line.color, opacity: opacityOf(line.threadId) }}
+              />
+            ))}
+          </g>
+        </svg>,
+        layer,
+      )}
+      {panelLink && (
+        <svg
+          aria-hidden
+          data-connector-panel-link
+          className="pointer-events-none absolute inset-0 z-[25] size-full overflow-hidden"
+        >
+          {/* Same mask as the lines, in the layer's coordinates. */}
+          <g transform={`translate(${panelLink.offset.x} ${panelLink.offset.y})`}>
+            <ConnectorMask id={`${maskId}-panel`} layout={layout} />
+            <g mask={`url(#${maskId}-panel)`}>
+              <path
+                data-connector-panel={panelLink.threadId}
+                d={panelLink.d}
+                fill="none"
+                strokeWidth={3}
+                strokeLinejoin="round"
+                style={{
+                  stroke: panelLink.color,
+                  filter: `drop-shadow(0 0 6px ${panelLink.color})`,
+                }}
+              />
+            </g>
+          </g>
+        </svg>
+      )}
+      {panelLink && <PanelDock link={panelLink} />}
+    </>
+  );
+}
+
+/** Mask region: generous, the layer is as wide as the whole deck. */
+const MASK_EXTENT = 1e6;
+
+/**
+ * The lines' mask: the fade behind the minimap and controls band, with the marks on the slides
+ * and the visible cards cut out, so lines pass behind them.
+ */
+function ConnectorMask({ id, layout }: { id: string; layout: ConnectorLayout }) {
+  const { fade, cutouts } = layout;
   const first = fade[0];
   const last = fade.at(-1);
   const span = first && last ? Math.max(1, last.y - first.y) : 1;
-
   return (
-    <>
-      <svg
-        aria-hidden
-        data-connectors
-        className="pointer-events-none absolute inset-0 z-[25] size-full overflow-hidden"
-      >
-        {first && (
-          <defs>
-            <linearGradient
-              id={`${maskId}-gradient`}
-              gradientUnits="userSpaceOnUse"
-              x1="0"
-              y1={first.y}
-              x2="0"
-              y2={first.y + span}
-            >
-              {fade.map((stop, index) => (
-                <stop
-                  key={index}
-                  offset={(stop.y - first.y) / span}
-                  stopColor="white"
-                  stopOpacity={stop.opacity}
-                />
-              ))}
-            </linearGradient>
-          </defs>
-        )}
-        <defs>
-          <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width="100%" height="100%">
-            <rect width="100%" height="100%" fill={first ? `url(#${maskId}-gradient)` : 'white'} />
-            {/* Lines pass behind the marks on the slide. */}
-            {cutouts.map((cutout, index) =>
-              cutout.kind === 'circle' ? (
-                <circle key={index} cx={cutout.cx} cy={cutout.cy} r={cutout.r} fill="black" />
-              ) : cutout.kind === 'fill' ? (
-                <rect
-                  key={index}
-                  x={cutout.box.left}
-                  y={cutout.box.top}
-                  width={cutout.box.right - cutout.box.left}
-                  height={cutout.box.bottom - cutout.box.top}
-                  rx={12}
-                  fill="black"
-                />
-              ) : cutout.kind === 'rect' ? (
-                <rect
-                  key={index}
-                  x={cutout.box.left}
-                  y={cutout.box.top}
-                  width={cutout.box.right - cutout.box.left}
-                  height={cutout.box.bottom - cutout.box.top}
-                  rx={4}
-                  fill="none"
-                  stroke="black"
-                  strokeWidth={6}
-                />
-              ) : (
-                <path
-                  key={index}
-                  d={cutout.d}
-                  transform={cutout.transform}
-                  fill="none"
-                  stroke="black"
-                  strokeWidth={cutout.width}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  vectorEffect="non-scaling-stroke"
-                />
-              ),
-            )}
-          </mask>
-        </defs>
-        <g mask={`url(#${maskId})`}>
-          {lines.map((line) => (
-            <path
-              key={line.threadId}
-              data-connector-id={line.threadId}
-              d={line.d}
-              fill="none"
-              strokeWidth={2}
-              strokeLinejoin="round"
-              className="transition-opacity duration-200"
-              // CSS (not the presentation attribute) so the colour may be a `var()`.
-              style={{ stroke: line.color, opacity: opacityOf(line.threadId) }}
+    <defs>
+      {first && (
+        <linearGradient
+          id={`${id}-gradient`}
+          gradientUnits="userSpaceOnUse"
+          x1="0"
+          y1={first.y}
+          x2="0"
+          y2={first.y + span}
+        >
+          {fade.map((stop, index) => (
+            <stop
+              key={index}
+              offset={(stop.y - first.y) / span}
+              stopColor="white"
+              stopOpacity={stop.opacity}
             />
           ))}
-          {panelLink && (
-            <path
-              data-connector-panel={panelLink.threadId}
-              d={panelLink.d}
-              fill="none"
-              strokeWidth={3}
-              strokeLinejoin="round"
-              style={{
-                stroke: panelLink.color,
-                filter: `drop-shadow(0 0 6px ${panelLink.color})`,
-              }}
+        </linearGradient>
+      )}
+      <mask
+        id={id}
+        maskUnits="userSpaceOnUse"
+        x={-MASK_EXTENT}
+        y={-MASK_EXTENT}
+        width={2 * MASK_EXTENT}
+        height={2 * MASK_EXTENT}
+      >
+        <rect
+          x={-MASK_EXTENT}
+          y={-MASK_EXTENT}
+          width={2 * MASK_EXTENT}
+          height={2 * MASK_EXTENT}
+          fill={first ? `url(#${id}-gradient)` : 'white'}
+        />
+        {/* Lines pass behind the marks on the slide. */}
+        {cutouts.map((cutout, index) =>
+          cutout.kind === 'circle' ? (
+            <circle key={index} cx={cutout.cx} cy={cutout.cy} r={cutout.r} fill="black" />
+          ) : cutout.kind === 'fill' ? (
+            <rect
+              key={index}
+              x={cutout.box.left}
+              y={cutout.box.top}
+              width={cutout.box.right - cutout.box.left}
+              height={cutout.box.bottom - cutout.box.top}
+              rx={12}
+              fill="black"
             />
-          )}
-        </g>
-      </svg>
-      {panelLink && <PanelDock link={panelLink} />}
-    </>
+          ) : cutout.kind === 'rect' ? (
+            <rect
+              key={index}
+              x={cutout.box.left}
+              y={cutout.box.top}
+              width={cutout.box.right - cutout.box.left}
+              height={cutout.box.bottom - cutout.box.top}
+              rx={4}
+              fill="none"
+              stroke="black"
+              strokeWidth={6}
+            />
+          ) : (
+            <path
+              key={index}
+              d={cutout.d}
+              transform={cutout.transform}
+              fill="none"
+              stroke="black"
+              strokeWidth={cutout.width}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          ),
+        )}
+      </mask>
+    </defs>
   );
 }
 

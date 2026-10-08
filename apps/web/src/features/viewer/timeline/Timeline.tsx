@@ -63,6 +63,7 @@ export function Timeline({ controls }: { controls: ReactNode }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<SizeAnchor | null>(null);
+  const [connectorLayer, setConnectorLayer] = useState<HTMLDivElement | null>(null);
   const [initialSlideId] = useState(activeSlideId);
 
   const metrics = useTimelineMetrics(wrapperRef, scrollerRef, controlsRef);
@@ -241,6 +242,13 @@ export function Timeline({ controls }: { controls: ReactNode }) {
         )}
       >
         <div className="relative min-w-full" style={{ width: layout?.contentW }}>
+          {/* Connector lines: in the content, so they scroll sideways with slides and cards in
+              the same frame; sticky, so vertically they stay with the header's marks. */}
+          <div
+            ref={setConnectorLayer}
+            data-connector-layer
+            className="pointer-events-none sticky top-0 z-[25] h-0"
+          />
           {/* Sticky header: the comment area starts where the split handle puts it. */}
           <div
             data-timeline-header
@@ -281,7 +289,7 @@ export function Timeline({ controls }: { controls: ReactNode }) {
           )}
         </div>
       </div>
-      <ConnectorLines wrapperRef={wrapperRef} />
+      <ConnectorLines wrapperRef={wrapperRef} layer={connectorLayer} />
       {/* The floating avatar dock and session controls sit on a scrim, not on top of card text:
           cards scrolling under them fade out (the comment area has room to scroll them clear). */}
       <div

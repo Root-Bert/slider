@@ -24,7 +24,7 @@ import { useViewerDispatch } from './viewer-state';
 /**
  * Keeps the open deck current (BER-107): polls the cheap status endpoint while the tab is
  * visible (and on focus), reloads deck, slides and comments when a new revision shows up, and
- * provides what that revision changed – badges, deleted slides, the "Neue Version" banner.
+ * provides what that revision changed – badges, deleted slides, the "V5 geladen" notice.
  */
 export function RevisionProvider({ children }: { children: ReactNode }) {
   const { deck, slides, threads } = useViewerData();
