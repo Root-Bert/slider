@@ -1,10 +1,11 @@
 # Slider
 
-**Review PowerPoint decks precisely – mark, comment, version.** Like Frame.io, but for slides:
-where Frame.io has a timecode, Slider has _slide + position_.
+**Feedback directly on the slide – click, mark, comment.** Every note sits on the exact spot it
+is about: _slide + position_.
 
-Drop in a PowerPoint (share link or `.pptx`), invite reviewers with a link – no account needed –
-and collect feedback pinned to the exact spot on the slide. The original file is never changed.
+Drop in a PowerPoint (share link or `.pptx`) and send reviewers a link – no account needed. They
+click where something should change, draw a frame or an arrow, and write what they mean. You see
+every note in place, reply, and tick it off. The original file is never changed.
 
 > **Status: first prototype (milestones M1 + M2).** Upload, parsing, preview rendering, the review
 > viewer with pins/frames/freehand, threads, done-status, filters, PowerPoint comment import and
