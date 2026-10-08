@@ -17,6 +17,7 @@ export const REL = {
     'http://schemas.openxmlformats.org/officeDocument/2006/relationships/commentAuthors',
   modernComments: 'http://schemas.microsoft.com/office/2018/10/relationships/comments',
   authors: 'http://schemas.microsoft.com/office/2018/10/relationships/authors',
+  viewProps: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/viewProps',
 } as const;
 
 export interface Relationship {

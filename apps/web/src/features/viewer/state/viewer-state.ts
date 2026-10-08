@@ -74,6 +74,8 @@ export interface ViewerState {
   deletedPanelOpen: boolean;
   /** "Boxen zeigen": outlines of the PowerPoint shapes comments can attach to. */
   showShapes: boolean;
+  /** "Hilfslinien zeigen": PowerPoint's drawing guides, and the boxes that cross them. */
+  showGuides: boolean;
 }
 
 export type ViewerAction =
@@ -109,6 +111,7 @@ export type ViewerAction =
   | { type: 'showChangesSet'; show: boolean }
   | { type: 'deletedPanelSet'; open: boolean }
   | { type: 'showShapesToggled' }
+  | { type: 'showGuidesToggled' }
   /** A new revision arrived: drop what points at slides that are gone (BER-107). */
   | { type: 'slidesReplaced'; slideIds: readonly string[]; fallbackSlideId: string | null };
 
@@ -136,6 +139,7 @@ export function createInitialState(options: {
     showChanges: options.showChanges ?? true,
     deletedPanelOpen: false,
     showShapes: false,
+    showGuides: false,
   };
 }
 
@@ -343,6 +347,8 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
       return next.showChanges === action.show ? next : { ...next, showChanges: action.show };
     case 'showShapesToggled':
       return { ...next, showShapes: !next.showShapes };
+    case 'showGuidesToggled':
+      return { ...next, showGuides: !next.showGuides };
     case 'deletedPanelSet':
       return action.open
         ? { ...next, deletedPanelOpen: true, threadPanelOpen: false, focusedThreadId: null }

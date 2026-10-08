@@ -225,6 +225,7 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
             thumbnailKey: slide.thumbnailKey,
             aspectRatio,
             shapes: slide.shapes,
+            guides: slide.parsed.guides,
             renderHash: slide.renderHash,
             renderer: slide.renderer,
           })),

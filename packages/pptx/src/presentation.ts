@@ -2,6 +2,7 @@ import { REL, type Archive } from './archive';
 import { readAuthors, type AuthorDirectory } from './comments/authors';
 import { readLegacyComments } from './comments/legacy';
 import { readModernComments } from './comments/modern';
+import { readExtGuides, readViewPropsGuides, type EmuGuide } from './guides';
 import { LayoutResolver } from './layouts';
 import { parseSlide, type SlideRef } from './slides';
 import { PptxError, type ParsedComment, type ParsedPresentation, type ParsedSlide } from './types';
@@ -19,9 +20,10 @@ export async function parsePresentation(archive: Archive): Promise<ParsedPresent
   const size = readSlideSize(presentation);
   const slideRefs = await readSlideRefs(archive, presentation);
   const layouts = new LayoutResolver(archive);
+  const guides = await readPresentationGuides(archive, presentation);
   const slides: ParsedSlide[] = [];
   for (const ref of slideRefs) {
-    slides.push(await parseSlide(archive, ref, size, await layouts.forSlide(ref.path)));
+    slides.push(await parseSlide(archive, ref, size, await layouts.forSlide(ref.path), guides));
   }
 
   return {
@@ -56,6 +58,17 @@ async function readSlideRefs(archive: Archive, presentation: XmlElement): Promis
     refs.push({ sldId, index: refs.length, path: relationship.target });
   }
   return refs;
+}
+
+/** The presentation's own guides; files from before PowerPoint 2013 only have them in viewProps. */
+async function readPresentationGuides(
+  archive: Archive,
+  presentation: XmlElement,
+): Promise<EmuGuide[]> {
+  const guides = readExtGuides(presentation);
+  if (guides.length > 0) return guides;
+  const [rel] = await archive.relationshipsOfType(PRESENTATION_PATH, REL.viewProps);
+  return readViewPropsGuides(await archive.readXml(rel?.target ?? 'ppt/viewProps.xml'));
 }
 
 /** `p14:sectionLst` lives in an `p:extLst/p:ext` of the presentation. */

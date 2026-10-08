@@ -50,6 +50,7 @@ export async function listSlides(db: Executor, deck: DeckRow): Promise<Slide[]> 
     imageUrl: fileUrl(version.imageKey),
     thumbnailUrl: fileUrl(version.thumbnailKey),
     shapes: version.shapes,
+    guides: version.guides,
     openCommentCount: openCountBySlide.get(version.slideId) ?? 0,
     change: diff ? (changeBySlide.get(version.slideId) ?? null) : null,
   }));

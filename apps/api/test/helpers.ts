@@ -92,6 +92,7 @@ export function parsedSlide(sldId: number, index: number): ParsedSlide {
     index,
     path: `ppt/slides/slide${index + 1}.xml`,
     hidden: false,
+    guides: [],
     title: `Folie ${index + 1}`,
     layoutName: 'Titel und Inhalt',
     textHash: `hash${index}`,

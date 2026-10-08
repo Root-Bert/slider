@@ -34,6 +34,7 @@ export function Track({ layout, range, snap }: TrackProps) {
     hoveredThreadId,
     showChanges,
     showShapes,
+    showGuides,
   } = useViewerState();
   const { badges, deletedSlides, deletedThreads, revisionNumber } = useRevisionData();
   const { bySlide } = useCommentThreads();
@@ -75,6 +76,7 @@ export function Track({ layout, range, snap }: TrackProps) {
           badge={showChanges ? (badges.get(slide.id) ?? null) : null}
           badgeVersion={revisionNumber}
           showShapes={showShapes}
+          showGuides={showGuides}
         />
         <GapDivider
           gapKey={key}

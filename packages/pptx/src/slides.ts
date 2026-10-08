@@ -1,5 +1,6 @@
 import type { Archive } from './archive';
 import { solidFillOf } from './colors';
+import { normaliseGuides, type EmuGuide } from './guides';
 import { textHash } from './hash';
 import { readBackground, type LayoutContext } from './layouts';
 import { walkShapeTree, type ShapeNode } from './shape-tree';
@@ -22,6 +23,7 @@ export async function parseSlide(
   ref: SlideRef,
   size: SlideSize,
   layout: LayoutContext,
+  presentationGuides: EmuGuide[],
 ): Promise<ParsedSlide> {
   const slide = await archive.readXml(ref.path);
   if (!slide) throw new PptxError('corrupt', `Missing slide part ${ref.path}`);
@@ -46,6 +48,7 @@ export async function parseSlide(
     textHash: textHash(shapes.map((shape) => shape.text).join('\n')),
     shapes,
     background: readBackground(cSld, layout.scheme) ?? layout.background,
+    guides: normaliseGuides([...presentationGuides, ...layout.guides], size),
   };
 }
 

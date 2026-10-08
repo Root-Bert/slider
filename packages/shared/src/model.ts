@@ -123,6 +123,17 @@ export const shapeSchema = z.object({
 });
 export type Shape = z.infer<typeof shapeSchema>;
 
+/**
+ * A PowerPoint drawing guide ("Führungslinie"): a horizontal line at `position` = y, or a
+ * vertical one at `position` = x, normalised to the slide. From the presentation, its slide
+ * master or the slide's layout.
+ */
+export const guideSchema = z.object({
+  orientation: z.enum(['horizontal', 'vertical']),
+  position: unit,
+});
+export type Guide = z.infer<typeof guideSchema>;
+
 /** A slide as seen in the current revision. `id` is Slider's stable slide id, never its number. */
 export const slideSchema = z.object({
   id: z.string(),
@@ -134,6 +145,8 @@ export const slideSchema = z.object({
   imageUrl: z.string(),
   thumbnailUrl: z.string(),
   shapes: z.array(shapeSchema),
+  /** Drawing guides of the slide; optional for older API versions. */
+  guides: z.array(guideSchema).optional(),
   openCommentCount: z.number().int(),
   /** How the slide changed against the previous revision (BER-108); `null` in revision 1. */
   change: slideChangeSchema.nullable().optional(),

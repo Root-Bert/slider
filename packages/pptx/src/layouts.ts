@@ -1,5 +1,6 @@
 import { REL, type Archive } from './archive';
 import { readColorScheme, resolveColor, type ColorScheme } from './colors';
+import { readExtGuides, type EmuGuide } from './guides';
 import { walkShapeTree, type PlaceholderRef } from './shape-tree';
 import {
   mergeTextDefaults,
@@ -22,6 +23,7 @@ interface MasterInfo {
   bodyStyle: TextDefaults;
   background: string | null;
   scheme: ColorScheme;
+  guides: EmuGuide[];
 }
 
 /** What a slide inherits from its layout and, through it, from the slide master. */
@@ -29,6 +31,8 @@ export interface LayoutContext {
   name: string | null;
   background: string | null;
   scheme: ColorScheme;
+  /** Guides set in slide master view, on the master or the layout. */
+  guides: EmuGuide[];
   /** Position and text defaults for a slide placeholder (both may be unknown). */
   resolvePlaceholder(ref: PlaceholderRef): { box: EmuRect | null; text: TextDefaults };
 }
@@ -88,6 +92,7 @@ export class LayoutResolver {
       name: attr(cSld, 'name') ?? null,
       background: readBackground(cSld, scheme) ?? master?.background ?? null,
       scheme,
+      guides: [...(master?.guides ?? []), ...readExtGuides(layout)],
       resolvePlaceholder(ref) {
         const onLayout = findPlaceholder(layoutPlaceholders, ref);
         const onMaster = findPlaceholder(masterPlaceholders, {
@@ -127,6 +132,7 @@ export class LayoutResolver {
       bodyStyle: readListStyleDefaults(path(master, 'p:txStyles', 'p:bodyStyle')),
       background: readBackground(cSld, scheme),
       scheme,
+      guides: readExtGuides(master),
     };
   }
 }

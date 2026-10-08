@@ -123,6 +123,7 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
         thumbnailKey: imageKey,
         aspectRatio,
         shapes,
+        guides: parsed.guides,
       })),
     );
   });

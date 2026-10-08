@@ -49,6 +49,33 @@ describe('presentation structure', () => {
     const { presentation } = await openDeck({ slides: [{ title: 'A' }] });
     expect(presentation.sections).toEqual([]);
   });
+
+  it('gives every slide the drawing guides, normalised, next to sections', async () => {
+    const { presentation } = await openDeck({
+      slides: [{ title: 'A' }, { title: 'B' }],
+      sections: [{ name: 'Intro', slides: [0, 1] }],
+      // 16:9 is 7680 × 4320 master units; the last one lies off the slide.
+      guides: [
+        { orient: 'horz', pos: 2160 },
+        { orient: 'vert', pos: 384 },
+        { orient: 'vert', pos: 384 },
+        { orient: 'vert', pos: 9000 },
+      ],
+    });
+
+    for (const slide of presentation.slides) {
+      expect(slide.guides).toEqual([
+        { orientation: 'horizontal', position: 0.5 },
+        { orientation: 'vertical', position: 0.05 },
+      ]);
+    }
+    expect(presentation.sections).toHaveLength(1);
+  });
+
+  it('has no guides when the deck defines none', async () => {
+    const { presentation } = await openDeck({ slides: [{ title: 'A' }] });
+    expect(defined(presentation.slides[0]).guides).toEqual([]);
+  });
 });
 
 describe('slide metadata', () => {

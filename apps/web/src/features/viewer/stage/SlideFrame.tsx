@@ -10,6 +10,7 @@ import { useStageRegistry } from '../state/stage-registry';
 import { useViewerDispatch, type Draft, type Tool } from '../state/viewer-state';
 import { AnnotationLayer } from './AnnotationLayer';
 import { DrawingSurface } from './DrawingSurface';
+import { GuideLayer } from './GuideLayer';
 import { TextBoxEditor } from './TextBox';
 
 /** Below this width the slide shows its thumbnail image and small corners. */
@@ -54,6 +55,8 @@ interface SlideFrameProps {
   badgeVersion: number;
   /** "Boxen zeigen": outline the PowerPoint shapes (not on thumbnail-sized slides). */
   showShapes: boolean;
+  /** "Hilfslinien zeigen": PowerPoint's guides and the boxes crossing them (not on thumbnails). */
+  showGuides: boolean;
 }
 
 /**
@@ -77,6 +80,7 @@ export const SlideFrame = memo(function SlideFrame({
   badge,
   badgeVersion,
   showShapes,
+  showGuides,
 }: SlideFrameProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const registry = useStageRegistry();
@@ -180,6 +184,7 @@ export const SlideFrame = memo(function SlideFrame({
             )}
           </div>
         )}
+        {showGuides && !small && <GuideLayer slide={slide} />}
         <AnnotationLayer
           slide={slide}
           threads={threads}

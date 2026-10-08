@@ -52,6 +52,7 @@ export function slide(def: SlideDef, index: number): ParsedSlide {
     index,
     path: `ppt/slides/slide${index + 1}.xml`,
     hidden: false,
+    guides: [],
     title: def.title,
     layoutName: def.layout ?? 'Titel und Inhalt',
     textHash: textHash(shapes.map((shape) => shape.text).join('\n')),

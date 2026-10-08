@@ -1,4 +1,4 @@
-import type { Point, Rect } from '@slider/shared';
+import type { Guide, Point, Rect } from '@slider/shared';
 
 /**
  * Public result types of the PPTX parser (BER-93, BER-112, BER-113).
@@ -33,6 +33,8 @@ export interface ParsedSlide {
   shapes: ParsedShape[];
   /** Solid background colour as `#rrggbb`, if one is set on slide, layout or master. */
   background: string | null;
+  /** Drawing guides shown on the slide: the presentation's, its master's and its layout's. */
+  guides: Guide[];
 }
 
 export type ParsedShapeKind = 'text' | 'picture' | 'table' | 'connector' | 'other';

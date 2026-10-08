@@ -37,6 +37,8 @@ export interface DeckSpec {
   slides: SlideSpec[];
   /** Presentation sections; `slides` are 0-based indexes into {@link DeckSpec.slides}. */
   sections?: { name: string; slides: number[] }[];
+  /** Drawing guides of the presentation (`p15:sldGuideLst`), `pos` in 1/576 inch. */
+  guides?: { orient: 'horz' | 'vert'; pos: number }[];
 }
 
 export interface SlideSpec {
@@ -401,11 +403,30 @@ class PptxWriter {
         '<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>' +
         `<p:sldIdLst>${slideIds}</p:sldIdLst>` +
         `<p:sldSz cx="${this.size.cx}" cy="${this.size.cy}"/><p:notesSz cx="6858000" cy="9144000"/>` +
-        this.sectionsXml(slides) +
+        this.extensionsXml(slides) +
         '</p:presentation>',
       CONTENT_TYPES.presentation,
     );
     this.addPart('ppt/_rels/presentation.xml.rels', relationshipsXml(rels));
+  }
+
+  private extensionsXml(slides: { sldId: number }[]): string {
+    const extensions = this.sectionsXml(slides) + this.guidesXml();
+    return extensions ? `<p:extLst>${extensions}</p:extLst>` : '';
+  }
+
+  private guidesXml(): string {
+    if (!this.deck.guides?.length) return '';
+    const guides = this.deck.guides
+      .map(
+        (guide, index) =>
+          `<p15:guide id="${index + 1}" orient="${guide.orient}" pos="${guide.pos}"/>`,
+      )
+      .join('');
+    return (
+      '<p:ext uri="{EFAFB233-063F-42B5-8137-9DF3F51BA10A}">' +
+      `<p15:sldGuideLst xmlns:p15="${NS.p15}">${guides}</p15:sldGuideLst></p:ext>`
+    );
   }
 
   private sectionsXml(slides: { sldId: number }[]): string {
@@ -419,8 +440,8 @@ class PptxWriter {
       })
       .join('');
     return (
-      '<p:extLst><p:ext uri="{521415D9-36F7-43E2-AB2F-B90AF26B5E84}">' +
-      `<p14:sectionLst xmlns:p14="${NS.p14}">${sections}</p14:sectionLst></p:ext></p:extLst>`
+      '<p:ext uri="{521415D9-36F7-43E2-AB2F-B90AF26B5E84}">' +
+      `<p14:sectionLst xmlns:p14="${NS.p14}">${sections}</p14:sectionLst></p:ext>`
     );
   }
 

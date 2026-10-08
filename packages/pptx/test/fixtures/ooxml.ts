@@ -9,6 +9,7 @@ export const NS = {
   r: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
   p: 'http://schemas.openxmlformats.org/presentationml/2006/main',
   p14: 'http://schemas.microsoft.com/office/powerpoint/2010/main',
+  p15: 'http://schemas.microsoft.com/office/powerpoint/2012/main',
   p188: 'http://schemas.microsoft.com/office/powerpoint/2018/8/main',
   pc: 'http://schemas.microsoft.com/office/powerpoint/2013/main/command',
   ac: 'http://schemas.microsoft.com/office/drawing/2013/main/command',

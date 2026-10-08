@@ -18,6 +18,7 @@ import type {
   CommentSource,
   CommentStatus,
   DeckSource,
+  Guide,
   ImportState,
   MediaKind,
   ReviewLinkRole,
@@ -350,6 +351,8 @@ export const slideVersions = pgTable(
     thumbnailKey: text('thumbnail_key').notNull(),
     aspectRatio: doublePrecision('aspect_ratio').notNull(),
     shapes: jsonb('shapes').$type<Shape[]>().notNull().default([]),
+    /** PowerPoint drawing guides; empty for rows imported before they were read. */
+    guides: jsonb('guides').$type<Guide[]>().notNull().default([]),
     /** SHA-256 of the rendered image, for slide matching (BER-108); filled lazily for old rows. */
     renderHash: text('render_hash'),
     /**

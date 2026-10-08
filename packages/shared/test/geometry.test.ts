@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { offsetInRect, pointInRect, rectContains, rectFromPoints } from '../src/geometry';
-import { hitTestShapes, resolveShapeRef, shapeRefAt } from '../src/shapes';
-import type { Shape } from '../src/model';
+import { guideOverflows, hitTestShapes, resolveShapeRef, shapeRefAt } from '../src/shapes';
+import type { Guide, Shape } from '../src/model';
 
 describe('rectFromPoints', () => {
   it('normalises a drag in any direction', () => {
@@ -73,5 +73,44 @@ describe('shape hit-testing', () => {
       y: expect.closeTo(0.55),
     });
     expect(resolveShapeRef([], ref!)).toBeNull();
+  });
+});
+
+describe('guideOverflows', () => {
+  const box = (id: string, x: number, y: number, w: number, h: number): Shape => ({
+    id,
+    name: id,
+    bbox: { x, y, w, h },
+    text: '',
+  });
+  const margins: Guide[] = [
+    { orientation: 'vertical', position: 0.1 },
+    { orientation: 'vertical', position: 0.5 },
+    { orientation: 'vertical', position: 0.9 },
+    { orientation: 'horizontal', position: 0.1 },
+    { orientation: 'horizontal', position: 0.9 },
+  ];
+
+  it('flags shapes that straddle the outer guides, with the part beyond them', () => {
+    const [overflow, ...rest] = guideOverflows([box('wide', 0.2, 0.2, 0.75, 0.2)], margins);
+    expect(rest).toEqual([]);
+    expect(overflow?.shape.id).toBe('wide');
+    expect(overflow?.overflow).toEqual([{ x: 0.9, y: 0.2, w: expect.closeTo(0.05), h: 0.2 }]);
+  });
+
+  it('ignores inner guides, shapes outside the margins, slight overlaps and bleeds', () => {
+    const shapes = [
+      box('centred', 0.2, 0.2, 0.6, 0.2),
+      box('footer', 0.1, 0.92, 0.8, 0.05),
+      box('flush', 0.1, 0.1, 0.802, 0.2),
+      box('background', 0, 0, 1, 1),
+      box('edge picture', 0.5, 0, 0.5, 0.6),
+    ];
+    expect(guideOverflows(shapes, margins)).toEqual([]);
+  });
+
+  it('needs two guides in a direction to know where the margins are', () => {
+    const centre: Guide[] = [{ orientation: 'vertical', position: 0.5 }];
+    expect(guideOverflows([box('wide', 0.2, 0.2, 0.6, 0.2)], centre)).toEqual([]);
   });
 });

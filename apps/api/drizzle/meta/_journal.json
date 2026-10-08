@@ -71,6 +71,13 @@
       "when": 1791494073067,
       "tag": "0009_office_failure",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791498469414,
+      "tag": "0010_slide_guides",
+      "breakpoints": true
     }
   ]
 }
