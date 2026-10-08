@@ -1,7 +1,6 @@
 import type { AccentColor, Slide } from '@slider/shared';
 import type { RefObject } from 'react';
 import { accentColor } from '@/lib/accent';
-import { cn } from '@/ui';
 import { useDraftDrawing } from '../hooks/useDraftDrawing';
 import type { Tool } from '../state/viewer-state';
 import { RectFrame } from './RectFrame';
@@ -32,10 +31,8 @@ export function DrawingSurface({ slide, boxRef, tool, color, hasText }: DrawingS
   return (
     <div
       {...handlers}
-      className={cn(
-        'absolute inset-0 z-20 touch-none select-none',
-        tool === 'text' ? 'cursor-text' : 'cursor-crosshair',
-      )}
+      // Text too: a box is drawn first – the I-beam only appears in the placed box.
+      className="absolute inset-0 z-20 cursor-crosshair touch-none select-none"
     >
       {previewRect && <RectFrame rect={previewRect} color={accentColor(color)} dashed />}
       {previewStroke && (

@@ -20,10 +20,13 @@ import { useViewerDispatch, type TextBoxDraft } from '../state/viewer-state';
 const TEXT_CLASS =
   'whitespace-pre-wrap [overflow-wrap:anywhere] px-[0.35em] py-[0.15em] text-left leading-[1.25] font-semibold';
 
-/** Readable on light and dark slides: a near-opaque backdrop that contrasts with the accent. */
+/**
+ * Dark like the rest of the app, readable on light and dark slides. The text is the author's
+ * accent lifted towards white – pure blue or red alone is too dark on the dark backdrop.
+ */
 const textSurface = (color: AccentColor): CSSProperties => ({
-  color: accentColor(color),
-  backgroundColor: color === 'yellow' ? 'rgb(18 18 20 / 0.82)' : 'rgb(255 255 255 / 0.94)',
+  color: `color-mix(in srgb, ${accentColor(color)} 75%, white)`,
+  backgroundColor: 'color-mix(in srgb, var(--color-glass-solid) 92%, transparent)',
 });
 
 const boxPosition = (x: number, y: number, fontSize: number): CSSProperties => ({
@@ -100,7 +103,7 @@ type Drag =
 
 /**
  * The draft's text box, typed into directly on the slide. It grows with its text (to the slide's
- * right edge, then it wraps), moves by its name tag and resizes by its corner handle.
+ * right edge, then it wraps), moves by its edge or name tag and resizes by its corner handle.
  * ↵ = new line, ⌘↵ / Ctrl↵ sends (through the composer), Esc cancels (global shortcut).
  */
 export function TextBoxEditor({ box }: TextBoxEditorProps) {
@@ -211,6 +214,14 @@ export function TextBoxEditor({ box }: TextBoxEditorProps) {
         }}
         onClick={(event) => event.stopPropagation()}
       >
+        {/* Move frame: the box's edge (and the ring around it) drags it, the inside is for typing. */}
+        <span
+          role="presentation"
+          title="Textfeld verschieben"
+          onPointerDown={(event) => startDrag(event, 'move')}
+          {...dragHandlers}
+          className="absolute -inset-1.5 cursor-move touch-none rounded-[0.4em]"
+        />
         {/* Sizes the box: same text and style as the textarea on top of it. */}
         <div aria-hidden className={cn(TEXT_CLASS, 'invisible')}>
           {box.text || PLACEHOLDER}

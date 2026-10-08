@@ -28,7 +28,7 @@ const MAX_POINTS = 2000;
  * Turns pointer input on a slide into draft anchors and strokes (BER-98, BER-99).
  * Mark tool: tap = pin, drag = frame. Shapes: drag spans the box. Other stroke tools: one stroke
  * per press. Text: tap opens a growing text box, drag a box of that width – while the box holds
- * text, pressing the slide only returns the focus to it (it moves by its handle).
+ * text, pressing the slide only returns the focus to it (it moves by its edge or name tag).
  * Works for mouse, pen and touch.
  */
 export function useDraftDrawing({
