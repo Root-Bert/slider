@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { commentSchema, type Comment, type CreateCommentInput } from '@slider/shared';
+import { commentSchema, viewerSchema, type Comment, type CreateCommentInput } from '@slider/shared';
 import { comments } from '../src/db/schema';
 import { externalAuthor } from '../src/authors';
 import {
@@ -403,3 +403,43 @@ describe('view-only guests', () => {
     expect(await res.json()).toMatchObject({ error: { code: 'forbidden' } });
   });
 });
+
+describe('own colour (PATCH /me)', () => {
+  const patchMe = (color: string, cookie?: string) =>
+    ctx.request('/api/me', { method: 'PATCH', json: { color }, cookie });
+  const listed = async (cookie?: string) =>
+    commentSchema
+      .array()
+      .parse(await (await ctx.request(`/api/decks/${deck.deckId}/comments`, { cookie })).json());
+
+  it('recolours the owner and their existing comments, not other people’s', async () => {
+    const guest = await joinAsGuest('Lena');
+    const own = await create(pinComment(slide(0)));
+    const guestComment = await create(pinComment(slide(1)), guest);
+
+    const res = await patchMe('violet');
+    expect(res.status).toBe(200);
+    expect(meResponse(await res.json()).author.color).toBe('violet');
+    expect(meResponse(await (await ctx.request('/api/me')).json()).author.color).toBe('violet');
+
+    const comments = await listed();
+    expect(comments.find((c) => c.id === own.id)?.author.color).toBe('violet');
+    expect(comments.find((c) => c.id === guestComment.id)?.author.color).toBe(
+      guestComment.author.color,
+    );
+  });
+
+  it('lets a guest pick their colour', async () => {
+    const guest = await joinAsGuest('Lena');
+    const own = await create(pinComment(slide(0)), guest);
+    const res = await patchMe('yellow', guest);
+    expect(meResponse(await res.json()).author.color).toBe('yellow');
+    expect((await listed(guest)).find((c) => c.id === own.id)?.author.color).toBe('yellow');
+  });
+
+  it('rejects unknown colours', async () => {
+    expect((await patchMe('green')).status).toBe(400);
+  });
+});
+
+const meResponse = (json: unknown) => viewerSchema.parse((json as { viewer: unknown }).viewer);

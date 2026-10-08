@@ -3,6 +3,7 @@ import { AvatarStack, cn, Toast, useToast } from '@/ui';
 import { CommentFilterBar } from './comments/CommentFilterBar';
 import { Composer } from './comments/Composer';
 import { ThreadPanel } from './comments/ThreadPanel';
+import { ColorPicker } from './controls/ColorPicker';
 import { RevisionControls } from './controls/RevisionControls';
 import { SessionControls } from './controls/SessionControls';
 import { SlideCounter } from './controls/SlideCounter';
@@ -26,7 +27,8 @@ import { Timeline } from './timeline/Timeline';
  */
 export function Viewer({ onLeave }: { onLeave: () => void }) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const { deck } = useViewerData();
+  const { deck, viewer } = useViewerData();
+  const others = deck.participants.filter((person) => person.id !== viewer.author.id);
   const { activeSlideId, threadPanelOpen: threadOpen, deletedPanelOpen } = useViewerState();
   // Thread panel and deleted slides panel share the right side.
   const threadPanelOpen = threadOpen || deletedPanelOpen;
@@ -68,19 +70,18 @@ export function Viewer({ onLeave }: { onLeave: () => void }) {
           }
         />
 
-        {/* Bottom right: who else is here, just the avatars – moves left of the side panel when that opens. */}
-        {deck.participants.length > 0 && (
-          <div
-            className={cn(
-              'fixed right-4 bottom-4 z-30 transition-[right] duration-300 md:right-6 md:bottom-6',
-              threadPanelOpen && 'max-md:hidden md:right-[424px]',
-            )}
-          >
-            <div role="group" aria-label="Teilnehmende" className="flex items-center">
-              <AvatarStack authors={deck.participants} size={32} max={6} />
-            </div>
+        {/* Bottom right: who else is here, then you – click yourself to pick your colour. Moves left of the side panel when that opens. */}
+        <div
+          className={cn(
+            'fixed right-4 bottom-4 z-30 transition-[right] duration-300 md:right-6 md:bottom-6',
+            threadPanelOpen && 'max-md:hidden md:right-[424px]',
+          )}
+        >
+          <div role="group" aria-label="Teilnehmende" className="flex items-center gap-1.5">
+            <AvatarStack authors={others} size={32} max={5} />
+            <ColorPicker />
           </div>
-        )}
+        </div>
 
         <Composer />
         <ThreadPanel />

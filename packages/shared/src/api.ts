@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  accentColorSchema,
   anchorSchema,
   commentStatusSchema,
   reviewLinkRoleSchema,
@@ -18,6 +19,7 @@ import {
  * | Method | Path                                   | Body                       | Response              |
  * |--------|----------------------------------------|----------------------------|-----------------------|
  * | GET    | /me                                    |                            | MeResponse            |
+ * | PATCH  | /me                                    | UpdateMeInput              | MeResponse            |
  * | GET    | /decks                                 |                            | Deck[]                |
  * | POST   | /decks/upload  (multipart field `file`)|                            | Deck (201)            |
  * | POST   | /decks/link                            | ImportLinkInput            | Deck (201) / ApiError |
@@ -85,6 +87,10 @@ export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 export interface MeResponse {
   viewer: Viewer;
 }
+
+/** The viewer's own settings: their accent colour (pins, lines, drawings). */
+export const updateMeInputSchema = z.object({ color: accentColorSchema });
+export type UpdateMeInput = z.infer<typeof updateMeInputSchema>;
 
 export const importLinkInputSchema = z.object({ url: z.url() });
 export type ImportLinkInput = z.infer<typeof importLinkInputSchema>;
