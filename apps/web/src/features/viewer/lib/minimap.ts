@@ -8,8 +8,8 @@
  */
 import { unitAt, xAt, type TrackLayout } from './timeline-layout';
 
-/** All thumbnails are this high, whatever the deck's length (64×36 for 16:9), 8px apart. */
-export const THUMB_H = 36;
+/** All thumbnails are this high, whatever the deck's length (85×48 for 16:9), 8px apart. */
+export const THUMB_H = 48;
 export const THUMB_GAP = 8;
 /** Room around the thumbnails for the active frame and the bracket (each side). */
 export const MINIMAP_PAD = 4;

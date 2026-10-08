@@ -20,24 +20,24 @@ describe('minimap thumbnails', () => {
   it('keeps the fixed height for a short deck', () => {
     const mini = layoutMinimap(deck(4), 1376);
     expect(mini.h).toBe(THUMB_H);
-    expect(mini.slides[0]!.w).toBe(64);
-    expect(mini.slides[1]!.x).toBe(64 + THUMB_GAP);
-    expect(mini.contentW).toBe(4 * 64 + 3 * THUMB_GAP);
+    expect(mini.slides[0]!.w).toBe(85);
+    expect(mini.slides[1]!.x).toBe(85 + THUMB_GAP);
+    expect(mini.contentW).toBe(4 * 85 + 3 * THUMB_GAP);
     expect(mini.scrolls).toBe(false);
   });
 
   it('keeps the fixed height for a long deck and scrolls', () => {
     const mini = layoutMinimap(deck(120), 1376);
     expect(mini.h).toBe(THUMB_H);
-    expect(mini.slides[0]!.w).toBe(64);
+    expect(mini.slides[0]!.w).toBe(85);
     expect(mini.scrolls).toBe(true);
     expect(mini.contentW).toBeGreaterThan(1376);
   });
 
   it('keeps mixed aspect ratios', () => {
     const mini = layoutMinimap([16 / 9, 4 / 3], 1000);
-    expect(mini.slides[0]!.w).toBe(64);
-    expect(mini.slides[1]!.w).toBe(48);
+    expect(mini.slides[0]!.w).toBe(85);
+    expect(mini.slides[1]!.w).toBe(64);
   });
 
   it('handles an empty deck', () => {
