@@ -13,6 +13,8 @@ export const THUMB_MAX_H = 64;
 /** On phones the row is shorter – it competes with the comments for very little height. */
 export const THUMB_MAX_H_NARROW = 40;
 export const THUMB_GAP = 8;
+/** Gaps widen up to this so the row reaches the right edge (thumbnail sizes are capped and rounded). */
+export const THUMB_GAP_MAX = 12;
 /** Narrowest readable thumbnail: a longer deck scrolls instead of shrinking further. */
 export const THUMB_MIN_W = 64;
 /** Room around the thumbnails for the active frame and the bracket (each side). */
@@ -25,6 +27,8 @@ export interface MinimapLayout {
   h: number;
   /** Thumbnail boxes, x from the row's content start. */
   slides: { x: number; w: number }[];
+  /** Space between two thumbnails: `THUMB_GAP`, widened up to `THUMB_GAP_MAX` to fill the row. */
+  gap: number;
   /** Width of all thumbnails with the gaps between them. */
   contentW: number;
   /** True when the thumbnails don't fit the available width: the row scrolls. */
@@ -33,7 +37,9 @@ export interface MinimapLayout {
 
 /**
  * Thumbnails fitted to `availableW` so the whole deck is visible – capped at the Figma size and
- * floored at `THUMB_MIN_W` for the narrowest slide (then the row scrolls).
+ * floored at `THUMB_MIN_W` for the narrowest slide (then the row scrolls). Width left over by the
+ * cap and the rounding goes into the gaps (up to `THUMB_GAP_MAX`), so the row ends flush with
+ * the controls below it.
  */
 export function layoutMinimap(
   aspectRatios: readonly number[],
@@ -41,21 +47,24 @@ export function layoutMinimap(
   maxH = THUMB_MAX_H,
 ): MinimapLayout {
   const n = aspectRatios.length;
-  if (n === 0) return { h: maxH, slides: [], contentW: 0, scrolls: false };
+  if (n === 0) return { h: maxH, slides: [], gap: THUMB_GAP, contentW: 0, scrolls: false };
   const sumAr = aspectRatios.reduce((sum, ar) => sum + ar, 0);
   const arMin = Math.min(...aspectRatios);
   const fit = Math.floor((Math.max(0, availableW) - (n - 1) * THUMB_GAP) / sumAr);
   const floor = Math.ceil(THUMB_MIN_W / arMin);
   const h = Math.max(Math.min(maxH, floor), Math.min(maxH, fit));
+  const widths = aspectRatios.map((ar) => Math.round(h * ar));
+  const thumbsW = widths.reduce((sum, w) => sum + w, 0);
+  const spare = n > 1 ? (availableW - thumbsW) / (n - 1) : THUMB_GAP;
+  const gap = Math.min(THUMB_GAP_MAX, Math.max(THUMB_GAP, spare));
   const slides: MinimapLayout['slides'] = [];
   let x = 0;
-  for (const ar of aspectRatios) {
-    const w = Math.round(h * ar);
+  for (const w of widths) {
     slides.push({ x, w });
-    x += w + THUMB_GAP;
+    x += w + gap;
   }
-  const contentW = x - THUMB_GAP;
-  return { h, slides, contentW, scrolls: contentW > availableW + 0.5 };
+  const contentW = x - gap;
+  return { h, slides, gap, contentW, scrolls: contentW > availableW + 0.5 };
 }
 
 /**
@@ -66,7 +75,7 @@ export function minimapAsTrack(mini: MinimapLayout): TrackLayout {
   return {
     h: mini.h,
     slides: mini.slides,
-    gaps: mini.slides.map((slide) => ({ x: slide.x + slide.w, w: THUMB_GAP })),
+    gaps: mini.slides.map((slide) => ({ x: slide.x + slide.w, w: mini.gap })),
     contentW: mini.contentW,
   };
 }

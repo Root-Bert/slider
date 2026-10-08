@@ -322,6 +322,7 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
                   w={box.w}
                   h={mini.h}
                   isActive={index === activeIndex}
+                  gapW={mini.gap}
                   gapColor={gapColor}
                   badge={showChanges ? (badges.get(slide.id) ?? null) : null}
                   onSelect={select}
@@ -434,6 +435,8 @@ interface ThumbnailProps {
   w: number;
   h: number;
   isActive: boolean;
+  /** Space to the next thumbnail. */
+  gapW: number;
   /** Accent of a "missing slide" comment between this slide and the next (BER-103). */
   gapColor: string | null;
   /** Change of the latest revision while changes are shown (Figma D2). */
@@ -449,6 +452,7 @@ const Thumbnail = memo(function Thumbnail({
   w,
   h,
   isActive,
+  gapW,
   gapColor,
   badge,
   onSelect,
@@ -508,7 +512,7 @@ const Thumbnail = memo(function Thumbnail({
         <span
           aria-hidden
           className="absolute top-1 bottom-1 w-0.5 rounded-full"
-          style={{ left: w + THUMB_GAP / 2 - 1, backgroundColor: gapColor }}
+          style={{ left: w + gapW / 2 - 1, backgroundColor: gapColor }}
         />
       )}
     </li>
