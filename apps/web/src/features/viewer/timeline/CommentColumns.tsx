@@ -2,7 +2,6 @@ import type { Slide } from '@slider/shared';
 import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { accentColor } from '@/lib/accent';
 import { pluralize } from '@/lib/format';
-import { AvatarStack, cn, Icon } from '@/ui';
 import { threadsOf, useCommentThreads } from '../hooks/useCommentThreads';
 import { bandCapacity, brickLayout, planBands } from '../lib/card-layout';
 import {
@@ -53,7 +52,6 @@ interface CommentColumnsProps {
 export function CommentColumns({ layout, range, narrow }: CommentColumnsProps) {
   const { slides } = useViewerData();
   const { bySlide, byGap } = useCommentThreads();
-  const { threadPanelOpen, focusedThreadId } = useViewerState();
 
   // Same bus room for every column and slide size: cards don't jump when lines appear or the split moves.
   const padTop = useMemo(() => {
@@ -70,8 +68,6 @@ export function CommentColumns({ layout, range, narrow }: CommentColumnsProps) {
     const gap = layout.gaps[index];
     if (!slide || !box || !gap) continue;
     const threads = threadsOf(bySlide, slide.id);
-    const panelHere =
-      threadPanelOpen && focusedThreadId !== null && threads.some((t) => t.id === focusedThreadId);
     columns.push(
       <SlideColumn
         key={slide.id}
@@ -81,7 +77,6 @@ export function CommentColumns({ layout, range, narrow }: CommentColumnsProps) {
         width={box.w}
         padTop={padTop}
         threads={threads}
-        folded={panelHere}
         narrow={narrow}
       />,
     );
@@ -120,8 +115,6 @@ interface SlideColumnProps {
   width: number;
   padTop: number;
   threads: Thread[];
-  /** The thread panel shows one of these threads: fold them into the blob (B4). */
-  folded: boolean;
   narrow: boolean;
 }
 
@@ -132,7 +125,6 @@ const SlideColumn = memo(function SlideColumn({
   width,
   padTop,
   threads,
-  folded,
   narrow,
 }: SlideColumnProps) {
   const dispatch = useViewerDispatch();
@@ -148,8 +140,6 @@ const SlideColumn = memo(function SlideColumn({
     if (narrow) content = <StackedCards slide={slide} threads={threads} />;
     else if (mode === 'bubble')
       content = <SlideBubble slide={slide} index={index} threads={threads} width={width} />;
-    else if (folded)
-      content = <ThreadBlob label={slideLabel(index)} threads={threads} width={width} />;
     else
       content = (
         <BrickCards
@@ -317,88 +307,6 @@ function StackedCards({ slide, threads }: { slide: Slide; threads: Thread[] }) {
         </li>
       ))}
     </ul>
-  );
-}
-
-/**
- * The slide's threads folded into one stacked card while the thread panel is open (Figma B4
- * 120:687): glass card with two paper layers below, the connector lines enter its top edge and
- * the link to the panel leaves its right edge. Clicking it closes the panel again.
- */
-function ThreadBlob({
-  label,
-  threads,
-  width,
-}: {
-  label: string;
-  threads: Thread[];
-  width: number;
-}) {
-  const dispatch = useViewerDispatch();
-  const { focusedThreadId } = useViewerState();
-  const focused = threads.find((thread) => thread.id === focusedThreadId);
-  const open = threads.filter((thread) => thread.root.status === 'open').length;
-  const comments = threads.reduce((sum, thread) => sum + 1 + thread.replies.length, 0);
-  const drawings = threads.filter((thread) => thread.root.strokes.length > 0).length;
-  const authors = [
-    ...new Map(
-      threads.flatMap((thread) => thread.participants).map((author) => [author.id, author]),
-    ).values(),
-  ];
-  const accent = accentColor(focused?.root.author.color ?? 'blue');
-  const roomy = width >= 240;
-
-  return (
-    <div data-connector-blob className="relative pb-7" style={{ width: Math.min(360, width) }}>
-      <span
-        aria-hidden
-        className="glass absolute inset-x-[26px] bottom-0 h-4 rounded-b-control opacity-50"
-      />
-      <span aria-hidden className="glass absolute inset-x-3 bottom-3 h-4 rounded-b-control" />
-      <button
-        type="button"
-        onClick={() => dispatch({ type: 'threadPanelClosed' })}
-        aria-label={`Thread schließen und alle ${pluralize(threads.length, 'Kommentar', 'Kommentare')} zeigen`}
-        className="glass relative flex w-full flex-col gap-2.5 rounded-panel border px-4 pt-3.5 pb-3 text-left"
-        style={{
-          borderColor: accent,
-          boxShadow: `0 0 20px color-mix(in srgb, ${accent} 45%, transparent)`,
-        }}
-      >
-        <span className="flex min-w-0 items-center gap-2.5">
-          {roomy && <AvatarStack authors={authors} size={24} max={4} className="shrink-0" />}
-          <span className="flex min-w-0 flex-col gap-0.5">
-            <span className="truncate text-[13px] font-semibold text-fg">
-              {pluralize(threads.length, 'Kommentar', 'Kommentare')}
-              {roomy && ` zu ${label}`}
-            </span>
-            <span className="truncate text-xs text-fg-subtle">
-              {open} offen · {threads.length - open} erledigt
-            </span>
-          </span>
-        </span>
-        <span aria-hidden className="h-px w-full bg-white/8" />
-        <span className="flex items-center gap-3 text-[11px] font-medium text-fg-muted">
-          <span className="flex items-center gap-1" title="Nachrichten">
-            <Icon name="notes" size={14} />
-            {comments}
-          </span>
-          {drawings > 0 && (
-            <span className="flex items-center gap-1" title="Zeichnungen">
-              <Icon name="draw" size={14} />
-              {drawings}
-            </span>
-          )}
-          <span
-            className={cn('ml-auto flex items-center gap-1 text-xs', !roomy && 'sr-only')}
-            style={{ color: accent }}
-          >
-            Thread geöffnet
-            <Icon name="arrowForward" size={14} />
-          </span>
-        </span>
-      </button>
-    </div>
   );
 }
 
