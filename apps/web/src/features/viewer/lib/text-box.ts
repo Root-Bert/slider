@@ -84,31 +84,28 @@ export function textStrokeFromDraft(box: TextBoxDraft, color: AccentColor): Text
 }
 
 /**
- * What the composer sends for a draft. With a text box, the body is its text and the box is the
- * anchor (the connector line starts there); an empty box is dropped.
+ * What the composer sends for a draft. The body is always the composer's comment – text on the
+ * slide is stored apart from it. With a text box, the box is the anchor (the connector line starts
+ * there); an empty box is dropped.
  */
 export function draftSubmission(
   draft: Draft,
   body: string,
   color: AccentColor,
 ): { body: string; anchor: Anchor; strokes: Stroke[] } | null {
-  if (!draft.textBox) {
-    const text = body.trim();
-    return text || draft.strokes.length > 0
-      ? { body: text, anchor: draft.anchor, strokes: draft.strokes }
-      : null;
-  }
-  const textStroke = textStrokeFromDraft(draft.textBox, color);
+  const comment = body.trim();
+  const textStroke = draft.textBox && textStrokeFromDraft(draft.textBox, color);
   if (textStroke) {
     const { x, y, w, h } = textStroke;
     return {
-      body: textStroke.text,
+      body: comment,
       anchor: { type: 'rect', rect: { x, y, w, h }, shapeRef: null },
       strokes: [...draft.strokes, textStroke],
     };
   }
-  const bounds = strokesBounds(draft.strokes);
-  return bounds
-    ? { body: '', anchor: { type: 'rect', rect: bounds, shapeRef: null }, strokes: draft.strokes }
+  const bounds = draft.textBox ? strokesBounds(draft.strokes) : null;
+  const anchor: Anchor = bounds ? { type: 'rect', rect: bounds, shapeRef: null } : draft.anchor;
+  return comment || draft.strokes.length > 0
+    ? { body: comment, anchor, strokes: draft.strokes }
     : null;
 }

@@ -30,7 +30,7 @@ function ComposerPopover({ draft }: { draft: Draft }) {
   const titleId = useId();
 
   const { author } = viewer;
-  // "Text auf Folie": the text is typed on the slide, the composer only sends it.
+  // "Text auf Folie": the text is typed on the slide; the composer adds an optional comment.
   const onSlideText = draft.textBox !== null;
   const submission = draftSubmission(draft, body, author.color);
   const canSend = submission !== null;
@@ -80,28 +80,26 @@ function ComposerPopover({ draft }: { draft: Draft }) {
 
       <MediaTabs />
 
-      {onSlideText ? (
-        <p className="rounded-control-sm bg-white/5 px-3 py-2 text-[13px] leading-5 text-fg-muted shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]">
-          Schreib direkt auf die Folie. ↵ beginnt eine neue Zeile.
-        </p>
-      ) : (
-        <div className="rounded-control-sm bg-white/5 px-3 py-2 shadow-[inset_0_0_0_1px_var(--color-hairline-strong)] focus-within:shadow-[inset_0_0_0_1px_rgb(255_255_255/0.35)]">
-          <AutosizeTextarea
-            // While drawing, keep focus on the stage so ⌘Z undoes strokes.
-            autoFocus={draft.strokes.length === 0}
-            aria-label="Kommentar"
-            placeholder={
-              draft.strokes.length > 0 ? 'Optional: Was soll sich ändern?' : 'Was fällt dir auf?'
-            }
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit();
-            }}
-            className="text-[13px] leading-5 text-fg"
-          />
-        </div>
-      )}
+      <div className="rounded-control-sm bg-white/5 px-3 py-2 shadow-[inset_0_0_0_1px_var(--color-hairline-strong)] focus-within:shadow-[inset_0_0_0_1px_rgb(255_255_255/0.35)]">
+        <AutosizeTextarea
+          // While drawing or writing on the slide, keep focus there (⌘Z undoes strokes).
+          autoFocus={draft.strokes.length === 0 && !onSlideText}
+          aria-label="Kommentar"
+          placeholder={
+            onSlideText
+              ? 'Optional: Kommentar zum Text auf der Folie'
+              : draft.strokes.length > 0
+                ? 'Optional: Was soll sich ändern?'
+                : 'Was fällt dir auf?'
+          }
+          value={body}
+          onChange={(event) => setBody(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit();
+          }}
+          className="text-[13px] leading-5 text-fg"
+        />
+      </div>
 
       {createComment.isError && (
         <p role="alert" className="text-xs text-danger">

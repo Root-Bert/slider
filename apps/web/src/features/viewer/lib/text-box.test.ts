@@ -87,7 +87,7 @@ describe('sending a text box', () => {
     expect(textStrokeFromDraft(textBox({ text: '   ' }), 'blue')).toBeNull();
   });
 
-  it('sends the text as body, anchored at the box, next to other drawings', () => {
+  it('sends the box next to other drawings, anchored at the box, with the comment as body', () => {
     const pen = {
       tool: 'pen' as const,
       color: 'red' as const,
@@ -96,8 +96,8 @@ describe('sending a text box', () => {
         { x: 0.6, y: 0.6 },
       ],
     };
-    const submission = draftSubmission(draft({ strokes: [pen] }), 'ignored', 'red');
-    expect(submission?.body).toBe('Logo größer');
+    const submission = draftSubmission(draft({ strokes: [pen] }), ' Bitte prüfen ', 'red');
+    expect(submission?.body).toBe('Bitte prüfen');
     expect(submission?.anchor).toEqual({
       type: 'rect',
       rect: { x: 0.1, y: 0.2, w: 0.25, h: 0.08 },
@@ -123,6 +123,15 @@ describe('sending a text box', () => {
     );
     expect(submission?.anchor).toMatchObject({ type: 'rect', rect: { x: 0.5, y: 0.5 } });
     expect(submission?.strokes).toEqual([pen]);
+  });
+
+  it('keeps the comment when the box stays empty', () => {
+    const empty = draft({ textBox: textBox({ text: '' }) });
+    expect(draftSubmission(empty, 'Nur ein Kommentar', 'red')).toEqual({
+      body: 'Nur ein Kommentar',
+      anchor: empty.anchor,
+      strokes: [],
+    });
   });
 
   it('sends other drafts unchanged, with the composer text as body', () => {

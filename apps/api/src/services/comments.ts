@@ -1,13 +1,6 @@
 import { and, asc, eq } from 'drizzle-orm';
 import type { createCommentInputSchema } from '@slider/shared';
-import {
-  isTextStroke,
-  MAX_TEXT_ANNOTATION_LENGTH,
-  type Comment,
-  type Stroke,
-  type UpdateCommentInput,
-  type Viewer,
-} from '@slider/shared';
+import { isTextStroke, type Comment, type UpdateCommentInput, type Viewer } from '@slider/shared';
 import type { z } from 'zod';
 import { requireDeckAccess } from '../auth/access';
 import { comments, type CommentRow, type DeckRow } from '../db/schema';
@@ -63,10 +56,9 @@ export async function createComment(
   const slideId = input.parentId
     ? await validateReply(deps, deck, input)
     : await validateRoot(deps, deck, input);
-  const text = validateTextAnnotation(input);
-  // "Text auf Folie": the body carries the text, so lists, search and exports have it.
-  const body = input.body || (text?.text ?? '');
-  if (!body && input.strokes.length === 0) {
+  // "Text auf Folie": the text lives in its stroke; the body is a separate, optional comment.
+  validateTextAnnotation(input);
+  if (!input.body && input.strokes.length === 0) {
     throw badRequest('Ein Kommentar braucht Text oder eine Zeichnung.');
   }
 
@@ -79,7 +71,7 @@ export async function createComment(
       slideId,
       parentId: input.parentId,
       author: viewer.author,
-      body,
+      body: input.body,
       anchor: input.anchor,
       strokes: input.strokes,
       status: 'open',
@@ -95,25 +87,16 @@ export async function createComment(
 
 /**
  * Text on the slide (`tool: 'text'`, shape checked by the schema): one box per comment, only on
- * root comments that sit on a slide. Returns it, if any.
+ * root comments that sit on a slide.
  */
 function validateTextAnnotation(input: CreateCommentData) {
   const texts = input.strokes.filter(isTextStroke);
-  if (texts.length === 0) return null;
+  if (texts.length === 0) return;
   if (texts.length > 1)
     throw badRequest('Ein Kommentar kann nur ein Textfeld auf der Folie haben.');
   if (input.parentId) throw badRequest('Antworten können keinen Text auf die Folie schreiben.');
   if (input.anchor.type === 'gap')
     throw badRequest('Text auf der Folie braucht eine Folie, keine Lücke.');
-  return texts[0]!;
-}
-
-/** Keeps a text annotation in step with an edited body (the body is its text). */
-function syncTextAnnotation(strokes: Stroke[], body: string): Stroke[] | null {
-  if (!strokes.some(isTextStroke)) return null;
-  return strokes.map((stroke) =>
-    isTextStroke(stroke) ? { ...stroke, text: body.slice(0, MAX_TEXT_ANNOTATION_LENGTH) } : stroke,
-  );
 }
 
 /** Replies hang off a root comment of the same deck and inherit its slide. Returns the slide id. */
@@ -189,13 +172,10 @@ export async function updateComment(
         ? { status: 'done' as const, resolvedBy: viewer.author.id, resolvedAt: now }
         : { status: 'open' as const, resolvedBy: null, resolvedAt: null };
 
-  const syncedStrokes =
-    input.body !== undefined ? syncTextAnnotation(comment.strokes, input.body) : null;
   const [row] = await deps.db
     .update(comments)
     .set({
       ...(input.body !== undefined ? { body: input.body } : {}),
-      ...(syncedStrokes ? { strokes: syncedStrokes } : {}),
       ...statusChange,
       updatedAt: now,
     })

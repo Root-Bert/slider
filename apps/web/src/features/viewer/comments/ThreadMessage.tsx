@@ -4,7 +4,7 @@ import { isPendingComment } from '@/lib/comment-cache';
 import { useDeleteComment, useUpdateComment } from '@/lib/queries';
 import { Button, cn, Dialog, Menu } from '@/ui';
 import { AutosizeTextarea } from '../components/AutosizeTextarea';
-import { isRemovedInPowerPoint, isStrokeOnly } from '../lib/comment-selectors';
+import { isRemovedInPowerPoint, isStrokeOnly, strokeOnlyLabel } from '../lib/comment-selectors';
 import { AuthorLine } from './AuthorLine';
 import { CommentBody } from './CommentBody';
 import { RemovedInPowerPointNote } from './RevisionNotes';
@@ -75,7 +75,7 @@ export function ThreadMessage({
       {editing ? (
         <EditForm comment={comment} deckId={deckId} onDone={() => setEditing(false)} />
       ) : isStrokeOnly(comment) ? (
-        <p className="text-[13px] text-fg-muted">✏️ Markierung</p>
+        <p className="text-[13px] text-fg-muted">{strokeOnlyLabel(comment)}</p>
       ) : (
         <CommentBody
           body={comment.body}

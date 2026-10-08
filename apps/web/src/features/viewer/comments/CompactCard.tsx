@@ -1,7 +1,12 @@
 import { memo, type CSSProperties } from 'react';
 import { accentColor } from '@/lib/accent';
 import { Avatar, cn, Icon } from '@/ui';
-import { isRemovedInPowerPoint, isStrokeOnly, type Thread } from '../lib/comment-selectors';
+import {
+  isRemovedInPowerPoint,
+  isStrokeOnly,
+  strokeOnlyLabel,
+  type Thread,
+} from '../lib/comment-selectors';
 import { useViewerDispatch } from '../state/viewer-state';
 import type { CardEmphasis } from './CommentCard';
 
@@ -22,7 +27,7 @@ export const CompactCard = memo(function CompactCard({
   const dispatch = useViewerDispatch();
   const { root, replies } = thread;
   const highlighted = emphasis === 'focused' || emphasis === 'hovered';
-  const text = isStrokeOnly(root) ? '✏️ Markierung' : root.body;
+  const text = isStrokeOnly(root) ? strokeOnlyLabel(root) : root.body;
   const removed = isRemovedInPowerPoint(root);
   const flagged = changedSince && root.status === 'open';
   const notes = [

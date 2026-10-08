@@ -317,6 +317,12 @@ export const textAnnotation = (comment: Pick<Comment, 'strokes'>) =>
 export const isStrokeOnly = (comment: Comment) =>
   comment.body.trim() === '' && comment.strokes.length > 0;
 
+/** Stand-in for an empty body: the text on the slide, if any, else "✏️ Markierung". */
+export const strokeOnlyLabel = (comment: Pick<Comment, 'strokes'>) => {
+  const text = textAnnotation(comment);
+  return text ? `„${text.text}“` : '✏️ Markierung';
+};
+
 /** An imported PowerPoint comment that was deleted in the file – kept, but shown muted (BER-114). */
 export const isRemovedInPowerPoint = (comment: Pick<Comment, 'sourceStatus'>) =>
   comment.sourceStatus === 'removed_in_pptx';

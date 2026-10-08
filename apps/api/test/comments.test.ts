@@ -130,7 +130,7 @@ describe('text on the slide ("Text auf Folie")', () => {
       fontSize: 0.04,
       ...overrides,
     }) as const;
-  const textComment = (stroke: object, body = 'Logo größer\nund mittig'): CreateCommentInput =>
+  const textComment = (stroke: object, body = 'Bitte prüfen'): CreateCommentInput =>
     ({
       slideId: slide(0),
       body,
@@ -138,7 +138,7 @@ describe('text on the slide ("Text auf Folie")', () => {
       strokes: [stroke],
     }) as CreateCommentInput;
 
-  it('stores the text box next to drawings and keeps the text as body', async () => {
+  it('stores the text box next to drawings, separate from the comment', async () => {
     const comment = await create({
       ...textComment(textStroke()),
       strokes: [
@@ -153,7 +153,7 @@ describe('text on the slide ("Text auf Folie")', () => {
         },
       ],
     });
-    expect(comment.body).toBe('Logo größer\nund mittig');
+    expect(comment.body).toBe('Bitte prüfen');
     expect(comment.strokes[0]).toEqual(textStroke());
     expect(comment.strokes[1]).toMatchObject({ tool: 'ellipse' });
 
@@ -163,9 +163,10 @@ describe('text on the slide ("Text auf Folie")', () => {
     expect(listed?.strokes[0]).toEqual(textStroke());
   });
 
-  it('fills an empty body from the text', async () => {
+  it('accepts a text box without a comment', async () => {
     const comment = await create(textComment(textStroke(), ''));
-    expect(comment.body).toBe('Logo größer\nund mittig');
+    expect(comment.body).toBe('');
+    expect(comment.strokes[0]).toEqual(textStroke());
   });
 
   it('still accepts the old stroke format and rect shapes', async () => {
@@ -231,7 +232,7 @@ describe('text on the slide ("Text auf Folie")', () => {
     expect(gap.status).toBe(400);
   });
 
-  it('keeps the text on the slide in step when the body is edited', async () => {
+  it('leaves the text on the slide alone when the comment is edited', async () => {
     const comment = await create(textComment(textStroke()));
     const res = await ctx.request(`/api/comments/${comment.id}`, {
       method: 'PATCH',
@@ -239,7 +240,7 @@ describe('text on the slide ("Text auf Folie")', () => {
     });
     const updated = commentSchema.parse(await res.json());
     expect(updated.body).toBe('Neuer Text');
-    expect(updated.strokes[0]).toMatchObject({ tool: 'text', text: 'Neuer Text', ...box });
+    expect(updated.strokes[0]).toEqual(textStroke());
   });
 });
 

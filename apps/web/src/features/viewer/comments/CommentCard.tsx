@@ -12,7 +12,12 @@ import { accentColor } from '@/lib/accent';
 import { isPendingComment } from '@/lib/comment-cache';
 import { pluralize } from '@/lib/format';
 import { AvatarStack, cn, Icon } from '@/ui';
-import { isRemovedInPowerPoint, isStrokeOnly, type Thread } from '../lib/comment-selectors';
+import {
+  isRemovedInPowerPoint,
+  isStrokeOnly,
+  strokeOnlyLabel,
+  type Thread,
+} from '../lib/comment-selectors';
 import { AutosizeTextarea } from '../components/AutosizeTextarea';
 import { MediaSoonButtons } from '../components/MediaTabs';
 import { useReplyDraft } from '../hooks/useReplyDraft';
@@ -131,7 +136,7 @@ export const CommentCard = memo(function CommentCard({
         {location && <p className="text-[11px] font-medium text-fg-subtle">{location}</p>}
         {removed && <RemovedInPowerPointNote />}
         {isStrokeOnly(root) ? (
-          <p className="text-[13px] text-fg-muted">✏️ Markierung</p>
+          <p className="text-[13px] text-fg-muted">{strokeOnlyLabel(root)}</p>
         ) : (
           <CommentBody
             body={root.body}
@@ -232,7 +237,7 @@ function InlineReply({ reply }: { reply: Comment }) {
     >
       <AuthorLine comment={reply} />
       {isStrokeOnly(reply) ? (
-        <p className="text-[13px] text-fg-muted">✏️ Markierung</p>
+        <p className="text-[13px] text-fg-muted">{strokeOnlyLabel(reply)}</p>
       ) : (
         <CommentBody body={reply.body} className="text-fg-muted" />
       )}
