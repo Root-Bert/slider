@@ -221,5 +221,8 @@ describe('import with Office pages', () => {
       ['image/webp', 'image/webp'],
     ]);
     expect(list[0]?.imageUrl).not.toBe(list[0]?.thumbnailUrl);
+
+    const deck = deckSchema.parse(await (await ctx.request(`/api/decks/${created.id}`)).json());
+    expect(deck.thumbnailRenderer).toBe('office');
   });
 });

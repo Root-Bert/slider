@@ -52,6 +52,7 @@ export async function toDeckDtos(
             .selectDistinctOn([slideVersions.revisionId], {
               revisionId: slideVersions.revisionId,
               key: slideVersions.thumbnailKey,
+              renderer: slideVersions.renderer,
             })
             .from(slideVersions)
             .where(
@@ -93,7 +94,7 @@ export async function toDeckDtos(
   const summaryByRevision = new Map(revisionNumbers.map((row) => [row.id, row.summary]));
   const pendingByDeck = new Map(pendingRevisions.map((row) => [row.deckId, row.since]));
   const slideCountByRevision = new Map(slideCounts.map((row) => [row.revisionId, row.count]));
-  const thumbnailByRevision = new Map(thumbnails.map((row) => [row.revisionId, fileUrl(row.key)]));
+  const thumbnailByRevision = new Map(thumbnails.map((row) => [row.revisionId, row]));
   const openCountByDeck = new Map(openCounts.map((row) => [row.deckId, row.count]));
   const participantsByDeck = groupParticipants(authors);
 
@@ -101,6 +102,7 @@ export async function toDeckDtos(
     const owner = ownerById.get(row.ownerId);
     if (!owner) throw new Error(`Owner ${row.ownerId} of deck ${row.id} is missing`);
     const revisionId = row.currentRevisionId ?? '';
+    const thumbnail = thumbnailByRevision.get(revisionId);
     return {
       id: row.id,
       workspaceId: row.workspaceId,
@@ -114,7 +116,8 @@ export async function toDeckDtos(
       revisionNumber: numberByRevision.get(revisionId) ?? 0,
       slideCount: slideCountByRevision.get(revisionId) ?? 0,
       openCommentCount: openCountByDeck.get(row.id) ?? 0,
-      thumbnailUrl: thumbnailByRevision.get(revisionId) ?? null,
+      thumbnailUrl: thumbnail ? fileUrl(thumbnail.key) : null,
+      thumbnailRenderer: thumbnail?.renderer ?? null,
       participants: participantsByDeck.get(row.id) ?? [],
       import: row.importState,
       currentRevisionId: row.currentRevisionId,

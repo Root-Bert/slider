@@ -54,6 +54,7 @@ describe('decks', () => {
       openCommentCount: 1,
       revisionNumber: 1,
       thumbnailUrl: `/files/${newer.imageKeys[0]}`,
+      thumbnailRenderer: null,
       participants: [{ name: 'Robert Hofmann' }],
     });
     expect(list[1]).toMatchObject({ id: older.deckId, openCommentCount: 0, participants: [] });

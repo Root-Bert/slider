@@ -74,6 +74,9 @@ export const deckPermissionsSchema = z.object({
 });
 export type DeckPermissions = z.infer<typeof deckPermissionsSchema>;
 
+export const slideRendererSchema = z.enum(['office', 'libreoffice', 'svg']);
+export type SlideRenderer = z.infer<typeof slideRendererSchema>;
+
 export const deckSchema = z.object({
   id: z.string(),
   /** The workspace the deck belongs to (BER-129). */
@@ -89,6 +92,11 @@ export const deckSchema = z.object({
   slideCount: z.number().int(),
   openCommentCount: z.number().int(),
   thumbnailUrl: z.string().nullable(),
+  /**
+   * Who drew the thumbnail slide: PowerPoint (`office`), LibreOffice or the built-in SVG preview.
+   * `null` when unknown. Optional for older API versions.
+   */
+  thumbnailRenderer: slideRendererSchema.nullable().optional(),
   participants: z.array(authorSchema),
   import: importStateSchema,
   /** The revision the slides belong to (BER-107). Optional for older API versions. */

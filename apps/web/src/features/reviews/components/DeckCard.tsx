@@ -11,6 +11,7 @@ import {
   DeckStatusBadge,
   ImportOverlay,
   OpenCommentsChip,
+  RendererChip,
   SlideCountChip,
 } from './DeckBits';
 import { SlideThumbnail } from './SlideThumbnail';
@@ -37,6 +38,7 @@ export function DeckCard({ deck, unseen, onNotify }: DeckItemProps) {
             'group-hover:ring-fg group-has-[a:focus-visible]:ring-mention',
           )}
         >
+          {deck.slideCount > 0 && <RendererChip renderer={deck.thumbnailRenderer} />}
           {deck.slideCount > 0 && <SlideCountChip count={deck.slideCount} />}
           <ImportOverlay deck={deck} />
         </SlideThumbnail>

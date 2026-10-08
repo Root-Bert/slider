@@ -1,4 +1,4 @@
-import type { Deck } from '@slider/shared';
+import type { Deck, SlideRenderer } from '@slider/shared';
 import { formatDateTime, formatRelativeTime } from '@/lib/format';
 import { Badge, cn, Icon, ProgressBar } from '@/ui';
 import {
@@ -49,6 +49,50 @@ export function SlideCountChip({ count }: { count: number }) {
     <span className="absolute right-2 bottom-2 rounded-chip bg-black/55 px-2 py-0.5 text-[11px] leading-5 text-fg backdrop-blur-md">
       {slidesLabel(count)}
     </span>
+  );
+}
+
+const RENDERER_LABELS: Partial<Record<SlideRenderer, string>> = {
+  office: 'Gerendert mit PowerPoint',
+  libreoffice: 'Gerendert mit LibreOffice',
+};
+
+/**
+ * Bottom-left logo on the thumbnail: who drew the slide images (BER-94). Nothing for the built-in
+ * SVG preview.
+ */
+export function RendererChip({ renderer }: { renderer: SlideRenderer | null | undefined }) {
+  const label = renderer ? RENDERER_LABELS[renderer] : undefined;
+  if (!renderer || !label) return null;
+  return (
+    <span
+      className="absolute bottom-2 left-2 flex size-6 items-center justify-center rounded-chip bg-black/55 backdrop-blur-md"
+      role="img"
+      aria-label={label}
+      title={label}
+    >
+      {renderer === 'office' ? <PowerPointMark /> : <LibreOfficeMark />}
+    </span>
+  );
+}
+
+/** PowerPoint's orange "P" tile, as on imported PowerPoint comments. */
+function PowerPointMark() {
+  return (
+    <span className="flex size-4 items-center justify-center rounded-thumb bg-powerpoint text-[10px] leading-none font-semibold text-white">
+      P
+    </span>
+  );
+}
+
+/** LibreOffice's green document with the folded corner. */
+function LibreOfficeMark() {
+  return (
+    <svg viewBox="0 0 16 16" className="size-4 text-libreoffice" aria-hidden>
+      <path d="M3 1.5h6.5L13 5v9.5H3z" fill="currentColor" />
+      <path d="M9.5 1.5V5H13" fill="white" fillOpacity={0.6} />
+      <path d="M5 8h6M5 10.5h6M5 13h4" stroke="white" strokeWidth={1.2} strokeLinecap="round" />
+    </svg>
   );
 }
 

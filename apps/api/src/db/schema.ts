@@ -25,6 +25,7 @@ import type {
   RevisionTrigger,
   Shape,
   SlideDiffStatus,
+  SlideRenderer,
   Stroke,
   SyncErrorCode,
   SyncSummary,
@@ -480,7 +481,7 @@ export type DeckRow = typeof decks.$inferSelect;
 export type RevisionRow = typeof revisions.$inferSelect;
 export type SlideVersionRow = typeof slideVersions.$inferSelect;
 /** Who drew a slide image – see `slide_versions.renderer`. */
-export type SlideRenderer = 'office' | 'libreoffice' | 'svg';
+export type { SlideRenderer };
 export type CommentRow = typeof comments.$inferSelect;
 export type NewCommentRow = typeof comments.$inferInsert;
 export type MediaRow = typeof media.$inferSelect;
