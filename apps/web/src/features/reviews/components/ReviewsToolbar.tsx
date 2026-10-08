@@ -50,7 +50,7 @@ export function ReviewsToolbar({
         <div
           role="group"
           aria-label="Ansicht"
-          className="glass flex items-center gap-0.5 rounded-panel p-0.5"
+          className="glass flex items-center gap-1 rounded-panel p-1"
         >
           <IconButton
             icon="gridView"

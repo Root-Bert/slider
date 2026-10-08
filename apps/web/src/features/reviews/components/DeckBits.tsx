@@ -33,7 +33,7 @@ export function DeckMeta({ deck, className }: { deck: Deck; className?: string }
 export function OpenCommentsChip({ count }: { count: number }) {
   const done = count === 0;
   return (
-    <span className="glass inline-flex h-7 items-center gap-1.5 rounded-[10px] px-2.5 text-xs text-fg-muted">
+    <span className="glass inline-flex h-7 items-center gap-1.5 rounded-chip px-2.5 text-xs text-fg-muted">
       <Icon
         name={done ? 'checkCircle' : 'chatBubble'}
         size={16}
@@ -46,7 +46,7 @@ export function OpenCommentsChip({ count }: { count: number }) {
 
 export function SlideCountChip({ count }: { count: number }) {
   return (
-    <span className="absolute right-2 bottom-2 rounded-[8px] bg-black/55 px-2 py-0.5 text-[11px] leading-5 text-fg backdrop-blur-md">
+    <span className="absolute right-2 bottom-2 rounded-chip bg-black/55 px-2 py-0.5 text-[11px] leading-5 text-fg backdrop-blur-md">
       {slidesLabel(count)}
     </span>
   );

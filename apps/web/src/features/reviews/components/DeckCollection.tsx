@@ -36,10 +36,10 @@ export function DeckCollectionSkeleton({ view, count = 6 }: { view: DeckView; co
       <div className="glass flex flex-col gap-0.5 rounded-panel p-1.5" aria-hidden>
         {items.map((index) => (
           <div key={index} className="flex items-center gap-4 px-3 py-2.5">
-            <div className="skeleton aspect-video w-24 rounded-[6px]" />
+            <div className="skeleton aspect-video w-24 rounded-badge" />
             <div className="flex flex-1 flex-col gap-2">
-              <div className="skeleton h-3.5 w-40 rounded" />
-              <div className="skeleton h-3 w-56 rounded" />
+              <div className="skeleton h-3.5 w-40 rounded-thumb" />
+              <div className="skeleton h-3 w-56 rounded-thumb" />
             </div>
           </div>
         ))}
@@ -50,9 +50,9 @@ export function DeckCollectionSkeleton({ view, count = 6 }: { view: DeckView; co
     <div className={GRID_CLASSES} aria-hidden>
       {items.map((index) => (
         <div key={index} className="flex flex-col gap-3">
-          <div className="skeleton aspect-video rounded-[10px]" />
-          <div className="skeleton h-4 w-2/5 rounded" />
-          <div className="skeleton h-3 w-3/5 rounded" />
+          <div className="skeleton aspect-video rounded-control-sm" />
+          <div className="skeleton h-4 w-2/5 rounded-thumb" />
+          <div className="skeleton h-3 w-3/5 rounded-thumb" />
         </div>
       ))}
     </div>

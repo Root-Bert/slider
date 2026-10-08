@@ -7,7 +7,7 @@ export function MediaTabs({ className }: { className?: string }) {
     <div
       role="tablist"
       aria-label="Kommentarart"
-      className={cn('flex w-fit items-center gap-1 rounded-[12px] bg-white/5 p-1', className)}
+      className={cn('flex w-fit items-center gap-1 rounded-control bg-white/5 p-1', className)}
     >
       {MEDIA_KINDS.map((kind) => (
         <button
@@ -19,7 +19,7 @@ export function MediaTabs({ className }: { className?: string }) {
           tabIndex={kind.enabled ? 0 : -1}
           title={kind.enabled ? undefined : MEDIA_SOON}
           className={cn(
-            'flex items-center gap-1.5 rounded-lg py-1.5 pr-3 pl-2.5 text-xs font-medium',
+            'flex items-center gap-1.5 rounded-chip py-1.5 pr-3 pl-2.5 text-xs font-medium',
             kind.enabled ? 'bg-white/12 text-fg' : 'cursor-not-allowed text-fg-subtle',
           )}
         >
@@ -47,7 +47,7 @@ export function MediaSoonButtons({ size = 'sm' }: { size?: 'sm' | 'md' }) {
           tabIndex={-1}
           title={MEDIA_SOON}
           className={cn(
-            'flex shrink-0 cursor-not-allowed items-center justify-center rounded-lg text-fg-faint',
+            'flex shrink-0 cursor-not-allowed items-center justify-center rounded-chip text-fg-faint',
             size === 'sm' ? 'size-7' : 'size-8',
           )}
         >

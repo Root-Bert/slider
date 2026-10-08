@@ -124,7 +124,7 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
             <button
               type="button"
               onClick={() => setShowAll(true)}
-              className="-ml-1 inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-xs font-medium text-fg-muted hover:bg-white/10 hover:text-fg"
+              className="-ml-1 inline-flex items-center gap-1.5 rounded-badge px-1 py-0.5 text-xs font-medium text-fg-muted hover:bg-white/10 hover:text-fg"
             >
               <Icon name="expandMore" size={16} />
               {hidden === 1 ? '1 frühere Antwort anzeigen' : `${hidden} frühere Antworten anzeigen`}
@@ -137,7 +137,7 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
           <ol aria-label="Antworten" className="relative mt-2.5 flex flex-col gap-2 pl-[39px]">
             <span
               aria-hidden
-              className="absolute inset-y-0 left-[25px] w-0.5 rounded-[1px] bg-white/12"
+              className="absolute inset-y-0 left-[25px] w-0.5 rounded-full bg-white/12"
             />
             {visible.map((reply) => (
               <li key={reply.id}>

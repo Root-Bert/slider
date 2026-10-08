@@ -48,7 +48,7 @@ export const CompactCard = memo(function CompactCard({
         aria-label={`Thread von ${root.author.name} öffnen`}
         title={[root.body, ...notes].filter(Boolean).join(' · ') || undefined}
         className={cn(
-          'glass flex w-full flex-col gap-1 rounded-xl p-2 text-left transition-shadow duration-200',
+          'glass flex w-full flex-col gap-1 rounded-panel p-2 text-left transition-shadow duration-200',
           highlighted &&
             'shadow-[inset_0_0_0_1px_var(--card-accent),0_0_16px_color-mix(in_srgb,var(--card-accent)_50%,transparent)]!',
         )}

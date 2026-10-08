@@ -9,7 +9,7 @@ export function RemovedInPowerPointNote({ className }: { className?: string }) {
       data-removed-in-pptx
       title="Dieser Kommentar wurde in der PowerPoint-Datei gelöscht. In Slider bleibt er mit allen Antworten erhalten."
       className={cn(
-        'flex w-fit max-w-full items-center gap-1.5 rounded-lg bg-white/[0.06] px-2 py-1 text-[11px] leading-4 text-fg-subtle',
+        'flex w-fit max-w-full items-center gap-1.5 rounded-chip bg-white/[0.06] px-2 py-1 text-[11px] leading-4 text-fg-subtle',
         className,
       )}
     >
@@ -39,7 +39,7 @@ export function ChangedSinceCommentNote({
     <div
       data-changed-since-comment
       className={cn(
-        'relative z-10 flex w-fit max-w-full items-center gap-1 rounded-lg py-0.5 pr-0.5 pl-2 text-[11px] leading-4 text-warning shadow-[inset_0_0_0_1px_rgb(245_166_35/0.4)]',
+        'relative z-10 flex w-fit max-w-full items-center gap-1 rounded-chip py-0.5 pr-0.5 pl-2 text-[11px] leading-4 text-warning shadow-[inset_0_0_0_1px_rgb(245_166_35/0.4)]',
         !canResolve && 'pr-2',
         className,
       )}
@@ -56,7 +56,7 @@ export function ChangedSinceCommentNote({
             update.mutate({ commentId: comment.id, status: 'done' });
           }}
           title="Als erledigt markieren"
-          className="ml-1 inline-flex h-6 items-center gap-0.5 rounded-md bg-warning/12 px-1.5 font-medium hover:bg-warning/20"
+          className="ml-1 inline-flex h-6 items-center gap-0.5 rounded-badge bg-warning/12 px-1.5 font-medium hover:bg-warning/20"
         >
           <Icon name="check" size={14} />
           Erledigt

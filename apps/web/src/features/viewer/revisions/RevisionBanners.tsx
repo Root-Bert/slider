@@ -55,7 +55,7 @@ function PendingBanner({ sync }: { sync: DeckSync }) {
   return (
     <section
       role="status"
-      className="glass-elevated pointer-events-auto flex animate-fade-in items-center gap-2 rounded-full py-1.5 pr-3.5 pl-2.5 text-xs text-fg-muted"
+      className="glass-elevated pointer-events-auto flex animate-fade-in items-center gap-2 rounded-control py-1.5 pr-3.5 pl-2.5 text-xs text-fg-muted"
       title={sync.pendingSince ? `Erkannt ${formatRelativeTime(sync.pendingSince)}` : undefined}
     >
       <Spinner size={14} className="text-fg-subtle" />
@@ -129,7 +129,7 @@ function ErrorBanner({ error }: { error: SyncError }) {
     >
       <span
         className={cn(
-          'flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-danger/12 text-danger',
+          'flex size-10 shrink-0 items-center justify-center rounded-control-sm bg-danger/12 text-danger',
           !expanded && 'max-sm:size-8',
         )}
       >

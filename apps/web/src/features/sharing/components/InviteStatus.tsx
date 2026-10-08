@@ -16,7 +16,7 @@ export function InviteError({ error, onRetry }: { error: Error; onRetry: () => v
   return (
     <div role="alert" className="flex flex-col items-center gap-4 py-2 text-center">
       <title>Link ungültig · Slider</title>
-      <span className="flex size-12 items-center justify-center rounded-full bg-white/10 text-fg-muted">
+      <span className="flex size-12 items-center justify-center rounded-control bg-white/10 text-fg-muted">
         <Icon name={known?.icon ?? 'error'} size={22} />
       </span>
       <div className="flex flex-col gap-1.5">
@@ -41,9 +41,9 @@ export function InviteError({ error, onRetry }: { error: Error; onRetry: () => v
 export function InviteSkeleton() {
   return (
     <div className="flex flex-col items-center gap-5" aria-busy aria-label="Einladung wird geladen">
-      <div className="skeleton aspect-video w-40 rounded-[8px]" />
-      <div className="skeleton h-5 w-4/5 rounded" />
-      <div className="skeleton h-3 w-3/5 rounded" />
+      <div className="skeleton aspect-video w-40 rounded-chip" />
+      <div className="skeleton h-5 w-4/5 rounded-thumb" />
+      <div className="skeleton h-3 w-3/5 rounded-thumb" />
       <div className="skeleton h-10 w-full rounded-control" />
       <div className="skeleton h-11 w-full rounded-control" />
     </div>

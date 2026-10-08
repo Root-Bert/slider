@@ -66,7 +66,7 @@ export function FilterChip({
       aria-checked={selected}
       onClick={onClick}
       className={cn(
-        'inline-flex h-8 items-center gap-1.5 rounded-chip px-3 text-[13px] whitespace-nowrap transition-colors',
+        'inline-flex h-8 items-center gap-1.5 rounded-control px-3 text-[13px] whitespace-nowrap transition-colors',
         selected ? 'bg-primary font-medium text-on-primary' : 'glass text-fg-muted hover:text-fg',
       )}
     >

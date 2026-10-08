@@ -57,7 +57,7 @@ function ComposerPopover({ draft }: { draft: Draft }) {
       aria-labelledby={titleId}
       onSubmit={submit}
       className={cn(
-        'glass-elevated fixed z-50 flex w-[min(340px,calc(100vw-24px))] animate-pop-in flex-col gap-3 rounded-2xl p-3',
+        'glass-elevated fixed z-50 flex w-[min(340px,calc(100vw-24px))] animate-pop-in flex-col gap-3 rounded-panel p-3',
         narrow && 'inset-x-3 bottom-24 w-auto',
       )}
       style={
@@ -80,7 +80,7 @@ function ComposerPopover({ draft }: { draft: Draft }) {
 
       <MediaTabs />
 
-      <div className="rounded-[10px] bg-white/5 px-3 py-2 shadow-[inset_0_0_0_1px_var(--color-hairline-strong)] focus-within:shadow-[inset_0_0_0_1px_rgb(255_255_255/0.35)]">
+      <div className="rounded-control-sm bg-white/5 px-3 py-2 shadow-[inset_0_0_0_1px_var(--color-hairline-strong)] focus-within:shadow-[inset_0_0_0_1px_rgb(255_255_255/0.35)]">
         <AutosizeTextarea
           // While drawing, keep focus on the stage so ⌘Z undoes strokes.
           autoFocus={draft.strokes.length === 0}

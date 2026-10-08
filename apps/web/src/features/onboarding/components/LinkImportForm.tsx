@@ -71,7 +71,7 @@ function SupportedSources() {
         {SOURCES.map((source) => (
           <li
             key={source.label}
-            className="glass inline-flex h-7 items-center gap-1.5 rounded-[10px] px-2.5 text-fg-muted"
+            className="glass inline-flex h-7 items-center gap-1.5 rounded-chip px-2.5 text-fg-muted"
           >
             <Icon name={source.icon} size={14} />
             {source.label}

@@ -55,7 +55,7 @@ export function ReplyComposer({
       <form
         onSubmit={submit}
         className={cn(
-          'glass flex flex-col gap-2 rounded-2xl px-3.5 py-3',
+          'glass flex flex-col gap-2 rounded-panel px-3.5 py-3',
           'focus-within:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--card-accent)_45%,transparent)]!',
         )}
       >
@@ -64,14 +64,14 @@ export function ReplyComposer({
           <span className="truncate text-xs font-medium text-fg">{draft.author.name}</span>
           <span className="shrink-0 text-[11px] text-fg-subtle">jetzt</span>
         </header>
-        <div className="flex items-end gap-2 rounded-[12px] bg-black/25 py-1.5 pr-2 pl-3">
+        <div className="flex items-end gap-2 rounded-control bg-black/25 py-1.5 pr-2 pl-3">
           <div className="min-w-0 flex-1 py-[3px]">{textarea}</div>
           <button
             type="button"
             aria-label="Antwort verwerfen"
             title="Verwerfen (Esc)"
             onClick={onCancel}
-            className="flex size-6 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-white/10 hover:text-fg"
+            className="flex size-6 shrink-0 items-center justify-center rounded-badge text-fg-subtle hover:bg-white/10 hover:text-fg"
           >
             <Icon name="close" size={18} />
           </button>
@@ -80,7 +80,7 @@ export function ReplyComposer({
             aria-label="Antwort senden"
             title="Senden (Enter)"
             disabled={!canSend}
-            className="flex size-6 shrink-0 items-center justify-center rounded-md text-success hover:bg-white/10 disabled:text-fg-faint disabled:hover:bg-transparent"
+            className="flex size-6 shrink-0 items-center justify-center rounded-badge text-success hover:bg-white/10 disabled:text-fg-faint disabled:hover:bg-transparent"
           >
             <Icon name="arrowUpward" size={18} />
           </button>
@@ -96,7 +96,7 @@ export function ReplyComposer({
       className="flex flex-col gap-2 border-t border-hairline px-5 pt-3.5 pb-[18px]"
     >
       <div className="flex items-end gap-2">
-        <div className="flex min-h-10 min-w-0 flex-1 items-end gap-0.5 rounded-[12px] border border-white/10 bg-white/[0.06] py-[5px] pr-1 pl-3.5 transition-colors focus-within:border-white/35">
+        <div className="flex min-h-10 min-w-0 flex-1 items-end gap-0.5 rounded-control border border-white/10 bg-white/[0.06] py-[5px] pr-1 pl-3.5 transition-colors focus-within:border-white/35">
           <div className="min-w-0 flex-1 py-[5px]">{textarea}</div>
           <MediaSoonButtons />
         </div>
@@ -105,7 +105,7 @@ export function ReplyComposer({
           aria-label="Antwort senden"
           title="Senden (Enter)"
           disabled={!canSend}
-          className="flex size-10 shrink-0 items-center justify-center rounded-[12px] bg-primary text-on-primary transition-opacity disabled:opacity-40"
+          className="flex size-10 shrink-0 items-center justify-center rounded-control bg-primary text-on-primary transition-opacity disabled:opacity-40"
         >
           <Icon name="arrowUpward" size={20} />
         </button>

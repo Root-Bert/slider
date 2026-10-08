@@ -53,12 +53,12 @@ function RecentDeckItem({ deck }: { deck: Deck }) {
       <Link
         to={routes.deck(deck.id)}
         onClick={() => markDeckVisited(deck.id)}
-        className="flex items-center gap-3 rounded-control p-1.5 transition-colors hover:bg-white/5"
+        className="flex items-center gap-3 rounded-control-sm p-1.5 transition-colors hover:bg-white/5"
       >
         <SlideThumbnail
           src={deck.thumbnailUrl}
           pending={isImporting(deck)}
-          className="w-12 shrink-0 rounded-[4px]"
+          className="w-12 shrink-0 rounded-thumb"
         />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-[13px] font-medium text-fg">{deck.title}</span>
@@ -85,10 +85,10 @@ function RecentDeckItem({ deck }: { deck: Deck }) {
 function RecentDeckSkeleton() {
   return (
     <li className="flex items-center gap-3 p-1.5" aria-hidden>
-      <div className="skeleton aspect-video w-12 rounded-[4px]" />
+      <div className="skeleton aspect-video w-12 rounded-thumb" />
       <div className="flex flex-1 flex-col gap-1.5">
-        <div className="skeleton h-3 w-32 rounded" />
-        <div className="skeleton h-2.5 w-24 rounded" />
+        <div className="skeleton h-3 w-32 rounded-thumb" />
+        <div className="skeleton h-2.5 w-24 rounded-thumb" />
       </div>
     </li>
   );

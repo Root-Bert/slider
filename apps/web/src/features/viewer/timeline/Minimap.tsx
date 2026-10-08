@@ -364,7 +364,7 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
           ref={bracketRef}
           aria-hidden
           data-minimap-bracket
-          className="pointer-events-none absolute top-0 left-0 rounded-[7px] border border-white/25 bg-white/[0.06] shadow-[0_0_0_1px_rgb(0_0_0/0.6)] will-change-transform"
+          className="pointer-events-none absolute top-0 left-0 rounded-[calc(var(--radius-thumb)+3px)] border border-white/25 bg-white/[0.06] shadow-[0_0_0_1px_rgb(0_0_0/0.6)] will-change-transform"
           style={{
             top: mini ? (rowH - mini.h) / 2 - BRACKET_OUTSET : 0,
             height: mini ? mini.h + 2 * BRACKET_OUTSET : rowH,
@@ -496,7 +496,7 @@ const Thumbnail = memo(function Thumbnail({
           // Subtle open-comment count; a dot would read as a stray control on small thumbnails.
           <span
             aria-hidden
-            className="absolute right-0.5 bottom-0.5 rounded-[3px] bg-black/65 px-[3px] text-[9px] leading-3 font-medium text-white/80 tabular-nums"
+            className="absolute right-0.5 bottom-0.5 rounded-thumb bg-black/65 px-[3px] text-[9px] leading-3 font-medium text-white/80 tabular-nums"
           >
             {count}
           </span>

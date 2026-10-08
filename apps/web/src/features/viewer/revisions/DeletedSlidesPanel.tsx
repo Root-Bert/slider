@@ -88,7 +88,7 @@ function DeletedSlideItem({ slide, threads }: { slide: DeletedSlide; threads: Th
     <li data-deleted-slide={slide.slideId} className="flex flex-col gap-3">
       <figure className="flex flex-col gap-2">
         <div
-          className="relative overflow-hidden rounded-xl bg-placeholder shadow-[inset_0_0_0_1px_var(--color-hairline)]"
+          className="relative overflow-hidden rounded-control bg-placeholder shadow-[inset_0_0_0_1px_var(--color-hairline)]"
           style={{ aspectRatio: slide.aspectRatio }}
         >
           <img
@@ -160,7 +160,7 @@ function DeletedThread({ thread }: { thread: Thread }) {
         <ol aria-label="Antworten" className="relative flex flex-col gap-2 pl-[39px]">
           <span
             aria-hidden
-            className="absolute inset-y-0 left-[25px] w-0.5 rounded-[1px] bg-white/12"
+            className="absolute inset-y-0 left-[25px] w-0.5 rounded-full bg-white/12"
           />
           {replies.map((reply) => (
             <li key={reply.id}>
@@ -192,7 +192,7 @@ function DeletedThread({ thread }: { thread: Thread }) {
             <button
               type="button"
               onClick={() => setReplying(true)}
-              className="inline-flex h-8 items-center gap-1.5 rounded-[10px] px-2.5 text-xs font-medium text-fg-muted hover:bg-white/10 hover:text-fg"
+              className="inline-flex h-8 items-center gap-1.5 rounded-control-sm px-2.5 text-xs font-medium text-fg-muted hover:bg-white/10 hover:text-fg"
             >
               <Icon name="chatBubble" size={16} />
               Antworten

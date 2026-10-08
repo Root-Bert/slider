@@ -34,7 +34,7 @@ export function RevisionControls({ className }: { className?: string }) {
           : null}
       </span>
       {showPill && (
-        <GlassPanel className={cn('flex shrink-0 items-center gap-1 py-1 pr-1 pl-1', className)}>
+        <GlassPanel className={cn('flex shrink-0 items-center gap-1 p-1', className)}>
           {showUpdate && (isLinked ? <ReloadButton /> : <UploadButton />)}
           {announcement && (
             // Keyed by number: a newer version restarts the notice.
@@ -111,7 +111,7 @@ function ReloadButton() {
       aria-busy={busy || pending || undefined}
       disabled={busy}
       onClick={() => syncDeck.mutate(undefined, toast)}
-      className="inline-flex size-8 shrink-0 items-center justify-center rounded-chip text-fg-muted transition-colors hover:bg-white/10 hover:text-fg disabled:cursor-progress"
+      className="inline-flex size-8 shrink-0 items-center justify-center rounded-control text-fg-muted transition-colors hover:bg-white/10 hover:text-fg disabled:cursor-progress"
     >
       {busy || pending ? (
         <Spinner size={18} className="text-fg-muted" />
@@ -135,7 +135,6 @@ function UploadButton() {
         icon="upload"
         label={busy ? 'Neue Version wird verarbeitet …' : 'Neue Version hochladen (.pptx)'}
         size="sm"
-        shape="chip"
         disabled={busy}
         aria-busy={busy || undefined}
         onClick={() => inputRef.current?.click()}
@@ -179,7 +178,7 @@ function ChangesToggle({ revisionNumber }: { revisionNumber: number }) {
       aria-label={`Änderungen der Version ${revisionNumber} zeigen`}
       title={label}
       onClick={() => dispatch({ type: 'showChangesSet', show: !showChanges })}
-      className="flex h-8 items-center gap-2 rounded-chip pr-1.5 pl-2 text-xs text-fg-muted transition-colors hover:bg-white/10 hover:text-fg"
+      className="flex h-8 items-center gap-2 rounded-control pr-1.5 pl-2 text-xs text-fg-muted transition-colors hover:bg-white/10 hover:text-fg"
     >
       {/* Narrow timeline (side panel open at laptop widths): just the switch, so the filter pill
           next to it keeps its room. Tooltip and label still name the version. */}
@@ -191,13 +190,13 @@ function ChangesToggle({ revisionNumber }: { revisionNumber: number }) {
       <span
         aria-hidden
         className={cn(
-          'relative h-4 w-7 shrink-0 rounded-full transition-colors',
+          'relative h-4 w-7 shrink-0 rounded-badge transition-colors',
           showChanges ? 'bg-primary' : 'bg-white/20',
         )}
       >
         <span
           className={cn(
-            'absolute top-0.5 left-0.5 size-3 rounded-full transition-transform',
+            'absolute top-0.5 left-0.5 size-3 rounded-thumb transition-transform',
             showChanges ? 'translate-x-3 bg-black' : 'bg-white/80',
           )}
         />

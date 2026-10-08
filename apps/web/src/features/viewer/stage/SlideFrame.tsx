@@ -81,7 +81,7 @@ export const SlideFrame = memo(function SlideFrame({
       aria-current={isActive || undefined}
       className={cn(
         'absolute snap-start transition-shadow',
-        small ? 'rounded-thumb' : 'rounded-2xl',
+        small ? 'rounded-thumb' : 'rounded-panel',
         // Filmstrip style: 2px white frame outside the image, a thin black line inside.
         isActive && 'shadow-[0_0_0_2px_white]',
       )}
@@ -98,7 +98,7 @@ export const SlideFrame = memo(function SlideFrame({
         <div
           className={cn(
             'absolute inset-0 overflow-hidden bg-placeholder transition-shadow',
-            small ? 'rounded-thumb' : 'rounded-2xl',
+            small ? 'rounded-thumb' : 'rounded-panel',
             !loaded && 'skeleton',
             !isActive && 'hover:shadow-[0_0_0_2px_rgb(255_255_255/0.3)]',
           )}

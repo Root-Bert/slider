@@ -37,7 +37,7 @@ export function DeletedSlidesEntry({
       title={deletedLabel(deletedSlides.length)}
       onClick={() => dispatch({ type: 'deletedPanelSet', open: !deletedPanelOpen })}
       className={cn(
-        'absolute top-0 flex flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border border-dashed border-white/20 bg-white/[0.02] px-3 text-center text-fg-muted transition-colors hover:border-white/35 hover:bg-white/[0.05] hover:text-fg',
+        'absolute top-0 flex flex-col items-center justify-center gap-2 overflow-hidden rounded-panel border border-dashed border-white/20 bg-white/[0.02] px-3 text-center text-fg-muted transition-colors hover:border-white/35 hover:bg-white/[0.05] hover:text-fg',
         deletedPanelOpen && 'border-white/45 bg-white/[0.06] text-fg',
       )}
       style={{ left: x, width: w, height: h }}

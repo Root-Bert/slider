@@ -29,7 +29,7 @@ export function NoAccessCard({
       aria-labelledby={titleId}
       className="glass flex animate-fade-in flex-col items-center gap-5 rounded-panel px-8 pt-10 pb-8 text-center"
     >
-      <span className="flex size-14 items-center justify-center rounded-full bg-white/6 text-fg">
+      <span className="flex size-14 items-center justify-center rounded-panel bg-white/6 text-fg">
         <Icon name="lock" size={24} />
       </span>
       <div className="flex flex-col gap-2">
@@ -46,7 +46,7 @@ export function NoAccessCard({
             : info.message}
         </p>
       </div>
-      <p className="glass inline-flex max-w-full items-center gap-1.5 rounded-[14px] py-1.5 pr-3 pl-2.5 text-xs text-fg-muted">
+      <p className="glass inline-flex max-w-full items-center gap-1.5 rounded-chip py-1.5 pr-3 pl-2.5 text-xs text-fg-muted">
         <Icon name="lock" size={16} className="shrink-0" />
         <span className="truncate">{info.host} · Nur Personen in deiner Organisation</span>
       </p>

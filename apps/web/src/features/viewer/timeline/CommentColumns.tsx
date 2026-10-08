@@ -352,14 +352,14 @@ function ThreadBlob({
     <div data-connector-blob className="relative pb-7" style={{ width: Math.min(360, width) }}>
       <span
         aria-hidden
-        className="glass absolute inset-x-[26px] bottom-0 h-4 rounded-b-xl opacity-50"
+        className="glass absolute inset-x-[26px] bottom-0 h-4 rounded-b-control opacity-50"
       />
-      <span aria-hidden className="glass absolute inset-x-3 bottom-3 h-4 rounded-b-xl" />
+      <span aria-hidden className="glass absolute inset-x-3 bottom-3 h-4 rounded-b-control" />
       <button
         type="button"
         onClick={() => dispatch({ type: 'threadPanelClosed' })}
         aria-label={`Thread schließen und alle ${pluralize(threads.length, 'Kommentar', 'Kommentare')} zeigen`}
-        className="glass relative flex w-full flex-col gap-2.5 rounded-2xl border px-4 pt-3.5 pb-3 text-left"
+        className="glass relative flex w-full flex-col gap-2.5 rounded-panel border px-4 pt-3.5 pb-3 text-left"
         style={{
           borderColor: accent,
           boxShadow: `0 0 20px color-mix(in srgb, ${accent} 45%, transparent)`,

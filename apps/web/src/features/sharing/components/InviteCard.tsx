@@ -21,7 +21,7 @@ export function InviteCard({ token, invite }: { token: string; invite: InviteInf
       <figure className="flex flex-col items-center gap-2">
         <SlideThumbnail
           src={invite.thumbnailUrl}
-          className="w-36 rounded-[8px] ring-1 ring-hairline-strong"
+          className="w-36 rounded-chip ring-1 ring-hairline-strong"
         />
         <figcaption className="flex items-center gap-1.5 text-xs text-fg-subtle">
           <Icon name={invite.role === 'view' ? 'lock' : 'chatBubble'} size={14} />

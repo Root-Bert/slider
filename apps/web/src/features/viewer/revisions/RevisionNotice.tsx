@@ -54,7 +54,7 @@ export function RevisionNotice({
       onPointerEnter={() => setPaused(true)}
       onPointerLeave={() => setPaused(false)}
       className={cn(
-        'relative flex h-8 min-w-0 animate-slide-in-x items-center overflow-hidden rounded-chip bg-white/8 px-2.5 text-xs text-fg transition-opacity duration-200',
+        'relative flex h-8 min-w-0 animate-slide-in-x items-center overflow-hidden rounded-control bg-white/8 px-2.5 text-xs text-fg transition-opacity duration-200',
         'max-w-[320px]',
         leaving && 'opacity-0',
       )}

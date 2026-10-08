@@ -89,7 +89,7 @@ export function Menu({ label, actions, className, triggerClassName }: MenuProps)
           }
         }}
         className={cn(
-          'inline-flex size-8 items-center justify-center rounded-[10px] transition-colors',
+          'inline-flex size-8 items-center justify-center rounded-control transition-colors',
           open ? 'bg-white/15 text-fg' : 'text-fg-muted hover:bg-white/10 hover:text-fg',
           triggerClassName,
         )}
@@ -102,7 +102,7 @@ export function Menu({ label, actions, className, triggerClassName }: MenuProps)
           role="menu"
           aria-label={label}
           onKeyDown={handleMenuKeyDown}
-          className="glass-elevated absolute top-full right-0 z-30 mt-1 flex min-w-48 animate-pop-in flex-col rounded-control p-1"
+          className="glass-elevated absolute top-full right-0 z-30 mt-1 flex min-w-48 animate-pop-in flex-col rounded-panel p-1"
         >
           {actions.map((action, index) => (
             <button
@@ -115,7 +115,7 @@ export function Menu({ label, actions, className, triggerClassName }: MenuProps)
               tabIndex={-1}
               onClick={() => select(action)}
               className={cn(
-                'flex h-9 items-center gap-2.5 rounded-[8px] px-2.5 text-left text-[13px] outline-none',
+                'flex h-9 items-center gap-2.5 rounded-control px-2.5 text-left text-[13px] outline-none',
                 'hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none',
                 action.tone === 'danger' ? 'text-danger' : 'text-fg',
               )}

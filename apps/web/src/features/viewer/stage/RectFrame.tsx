@@ -26,7 +26,7 @@ export function RectFrame({
   return (
     <div
       data-mark={isMark ? 'frame' : undefined}
-      className={cn('absolute rounded-[4px] border-2', dashed && 'border-dashed', className)}
+      className={cn('absolute rounded-thumb border-2', dashed && 'border-dashed', className)}
       style={{
         left: `${rect.x * 100}%`,
         top: `${rect.y * 100}%`,

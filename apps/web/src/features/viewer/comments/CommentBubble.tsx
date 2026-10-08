@@ -34,15 +34,18 @@ export function CommentBubble({
       className={cn('relative mx-auto pb-2.5', !open && 'opacity-60')}
       style={{ width }}
     >
-      <span aria-hidden className="glass absolute inset-x-3 bottom-0 h-3 rounded-b-lg opacity-50" />
-      <span aria-hidden className="glass absolute inset-x-1.5 bottom-1 h-3 rounded-b-lg" />
+      <span
+        aria-hidden
+        className="glass absolute inset-x-3 bottom-0 h-3 rounded-b-chip opacity-50"
+      />
+      <span aria-hidden className="glass absolute inset-x-1.5 bottom-1 h-3 rounded-b-chip" />
       <button
         type="button"
         onClick={onActivate}
         title={label}
         aria-label={`${label} zu ${slideLabel} – vergrößern`}
         className={cn(
-          'glass relative flex h-9 w-full items-center justify-center gap-1.5 rounded-xl px-1.5 transition-shadow',
+          'glass relative flex h-9 w-full items-center justify-center gap-1.5 rounded-control px-1.5 transition-shadow',
           emphasized
             ? 'shadow-[inset_0_0_0_1px_white]!'
             : 'hover:shadow-[inset_0_0_0_1px_rgb(255_255_255/0.3)]!',

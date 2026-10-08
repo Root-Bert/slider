@@ -49,7 +49,7 @@ export function NotificationsButton({
         aria-expanded={open}
         aria-controls={open ? popoverId : undefined}
         onClick={() => setOpen((value) => !value)}
-        className="glass relative inline-flex size-8 items-center justify-center rounded-full text-fg-muted transition-colors hover:text-fg"
+        className="glass relative inline-flex size-8 items-center justify-center rounded-control text-fg-muted transition-colors hover:text-fg"
       >
         <Icon name="notifications" size={18} />
         {unreadCount > 0 && (
@@ -193,7 +193,7 @@ function NotificationItem({ item, onOpen }: { item: DeckNotification; onOpen: ()
     >
       <span
         className={cn(
-          'flex size-8 shrink-0 items-center justify-center rounded-full bg-white/10',
+          'flex size-8 shrink-0 items-center justify-center rounded-chip bg-white/10',
           kind === 'import_failed' ? 'text-danger' : 'text-fg-muted',
         )}
       >

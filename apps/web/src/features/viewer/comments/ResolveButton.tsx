@@ -38,10 +38,10 @@ export function ResolveButton({
           update.mutate({ commentId: comment.id, status: done ? 'open' : 'done' });
         }}
         className={cn(
-          'inline-flex items-center gap-1 rounded-[10px] text-xs font-medium transition-colors',
+          'inline-flex items-center gap-1 text-xs font-medium transition-colors',
           variant === 'chip'
-            ? 'h-8 px-3 shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]'
-            : 'size-7 justify-center',
+            ? 'h-8 rounded-control-sm px-3 shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]'
+            : 'size-7 justify-center rounded-chip',
           done ? 'text-success' : 'text-fg-subtle hover:bg-white/10 hover:text-fg',
           done && variant === 'chip' && 'bg-success/10',
         )}

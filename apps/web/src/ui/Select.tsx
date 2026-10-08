@@ -38,9 +38,11 @@ export function Select<T extends string>({
           if (next) onChange(next.value);
         }}
         className={cn(
-          'glass w-full cursor-pointer appearance-none rounded-[10px] pr-8 text-fg-muted transition-colors hover:text-fg',
+          'glass w-full cursor-pointer appearance-none pr-8 text-fg-muted transition-colors hover:text-fg',
           'disabled:cursor-default disabled:opacity-50',
-          size === 'md' ? 'h-9 pl-3.5 text-[13px]' : 'h-7 pl-2.5 text-xs',
+          size === 'md'
+            ? 'h-9 rounded-control pl-3.5 text-[13px]'
+            : 'h-7 rounded-chip pl-2.5 text-xs',
         )}
         {...props}
       >

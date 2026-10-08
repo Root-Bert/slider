@@ -174,12 +174,12 @@ function ViewerSkeleton() {
     >
       <div className="flex min-h-0 flex-1 gap-4">
         <div className="flex flex-1 flex-col gap-4 rounded-panel bg-[#111] p-8">
-          <div className="skeleton h-8 w-1/3 rounded-md" />
-          <div className="skeleton h-3 w-1/4 rounded" />
+          <div className="skeleton h-8 w-1/3 rounded-chip" />
+          <div className="skeleton h-3 w-1/4 rounded-thumb" />
           <div className="mt-auto grid grid-cols-3 gap-4">
-            <div className="skeleton h-20 rounded-md" />
-            <div className="skeleton h-20 rounded-md" />
-            <div className="skeleton h-20 rounded-md" />
+            <div className="skeleton h-20 rounded-chip" />
+            <div className="skeleton h-20 rounded-chip" />
+            <div className="skeleton h-20 rounded-chip" />
           </div>
         </div>
         <div className="hidden w-60 rounded-panel bg-[#111] lg:block" />

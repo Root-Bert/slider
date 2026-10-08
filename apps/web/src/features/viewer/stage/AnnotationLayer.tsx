@@ -147,7 +147,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                 onFocus={() => hover(mark, true)}
                 onBlur={() => hover(mark, false)}
                 className={cn(
-                  'absolute rounded-[4px] outline-offset-2',
+                  'absolute rounded-thumb outline-offset-2',
                   root.anchor.type === 'rect' && !composing
                     ? 'pointer-events-auto cursor-pointer'
                     : 'pointer-events-none',

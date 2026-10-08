@@ -48,7 +48,7 @@ export function Avatar({ author, size = 24, showPowerPointBadge = false, classNa
       </span>
       {showPowerPointBadge && (
         <span
-          className="absolute -right-1 -bottom-1 flex items-center justify-center rounded-[4px] bg-powerpoint text-white"
+          className="absolute -right-1 -bottom-1 flex items-center justify-center rounded-thumb bg-powerpoint text-white"
           style={{ width: size * 0.6, height: size * 0.6 }}
           aria-label="aus PowerPoint"
         >
@@ -100,7 +100,7 @@ export function AvatarStack({ authors, max = 4, size = 24, className }: AvatarSt
 export function PowerPointMark({ size = 24 }: { size?: number }) {
   return (
     <span
-      className="inline-flex items-center justify-center rounded-[6px] bg-powerpoint font-semibold text-white"
+      className="inline-flex items-center justify-center rounded-badge bg-powerpoint font-semibold text-white"
       style={{ width: size, height: size, fontSize: size * 0.5 }}
       aria-label="PowerPoint"
     >

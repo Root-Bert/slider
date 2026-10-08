@@ -51,7 +51,7 @@ export function Pin({ comment, at, state, onActivate, onHover }: PinProps) {
     >
       {fromPowerPoint ? (
         <span
-          className="flex size-5 items-center justify-center rounded-[5px] text-[11px] leading-none font-semibold text-white shadow-[0_0_0_1.5px_rgb(255_255_255/0.9),0_2px_6px_rgb(0_0_0/0.4)]"
+          className="flex size-5 items-center justify-center rounded-badge text-[11px] leading-none font-semibold text-white shadow-[0_0_0_1.5px_rgb(255_255_255/0.9),0_2px_6px_rgb(0_0_0/0.4)]"
           style={{ backgroundColor: POWERPOINT_COLOR }}
         >
           P

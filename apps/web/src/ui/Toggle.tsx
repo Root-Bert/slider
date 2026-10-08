@@ -34,13 +34,13 @@ export function Toggle({
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={cn(
-          'relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:opacity-40',
+          'relative h-5 w-9 shrink-0 rounded-badge transition-colors disabled:opacity-40',
           checked ? 'bg-primary' : 'bg-white/20',
         )}
       >
         <span
           className={cn(
-            'absolute top-0.5 left-0.5 size-4 rounded-full transition-transform',
+            'absolute top-0.5 left-0.5 size-4 rounded-thumb transition-transform',
             checked ? 'translate-x-4 bg-black' : 'bg-white/80',
           )}
         />

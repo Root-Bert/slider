@@ -38,7 +38,7 @@ export function DraftMark({ draft, author, aspectRatio }: DraftMarkProps) {
       {anchor.type === 'rect' && !draft.anchorFromStrokes && (
         <RectFrame rect={anchor.rect} color={color} className="bg-white/5">
           <span
-            className="absolute -top-6 left-[-2px] rounded-t-[4px] rounded-br-[4px] px-1.5 py-0.5 text-[11px] leading-4 font-medium whitespace-nowrap text-white"
+            className="absolute -top-6 left-[-2px] rounded-t-thumb rounded-br-thumb px-1.5 py-0.5 text-[11px] leading-4 font-medium whitespace-nowrap text-white"
             style={{ backgroundColor: color }}
           >
             {author.name.split(' ')[0]}

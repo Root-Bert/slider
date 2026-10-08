@@ -97,7 +97,7 @@ export function SlideCounter({ className }: { className?: string }) {
           // As wide as its digits (style below), so the number keeps the pill's even padding. No
           // border: a soft fill on hover hints that it is a field, the focus ring (global
           // :focus-visible – text fields match it on click too) marks editing.
-          'h-8 min-w-8 rounded-chip bg-transparent px-1.5 text-center leading-5 text-fg-muted transition-colors',
+          'h-8 min-w-8 rounded-control bg-transparent px-1.5 text-center leading-5 text-fg-muted transition-colors',
           'hover:bg-white/8 focus:bg-white/10 focus:text-fg focus-visible:outline-offset-0',
         )}
       />

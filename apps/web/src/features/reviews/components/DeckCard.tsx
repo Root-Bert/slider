@@ -33,7 +33,7 @@ export function DeckCard({ deck, unseen, onNotify }: DeckItemProps) {
           src={deck.thumbnailUrl}
           pending={isImporting(deck)}
           className={cn(
-            'rounded-[10px] ring-2 ring-transparent transition-shadow',
+            'rounded-control-sm ring-2 ring-transparent transition-shadow',
             'group-hover:ring-fg group-has-[a:focus-visible]:ring-mention',
           )}
         >
@@ -81,14 +81,14 @@ export function DeckRow({ deck, unseen, onNotify }: DeckItemProps) {
   return (
     <article
       className={cn(
-        'group relative flex items-center gap-4 rounded-control px-3 py-2.5 transition-colors',
+        'group relative flex items-center gap-4 rounded-control-sm px-3 py-2.5 transition-colors',
         'hover:bg-white/5 has-[a:focus-visible]:bg-white/5 has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-mention',
       )}
     >
       <SlideThumbnail
         src={deck.thumbnailUrl}
         pending={isImporting(deck)}
-        className="w-24 shrink-0 rounded-[6px]"
+        className="w-24 shrink-0 rounded-badge"
       >
         <ImportOverlay deck={deck} compact />
       </SlideThumbnail>

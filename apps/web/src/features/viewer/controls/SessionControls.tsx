@@ -18,17 +18,30 @@ export function SessionControls({ onLeave }: SessionControlsProps) {
 
   return (
     <>
-      <GlassPanel className="flex items-center gap-2 px-3 py-2">
+      <GlassPanel className="flex items-center gap-1 p-1">
         {isOwner ? (
           <IconButton
             icon="close"
             label="Review schließen"
+            className="size-12"
             onClick={() => navigate(routes.reviews())}
           />
         ) : (
-          <IconButton icon="logout" label="Review verlassen" onClick={onLeave} />
+          <IconButton
+            icon="logout"
+            label="Review verlassen"
+            className="size-12"
+            onClick={onLeave}
+          />
         )}
-        {isOwner && <IconButton icon="iosShare" label="Teilen" onClick={() => setSharing(true)} />}
+        {isOwner && (
+          <IconButton
+            icon="iosShare"
+            label="Teilen"
+            className="size-12"
+            onClick={() => setSharing(true)}
+          />
+        )}
       </GlassPanel>
       {isOwner && sharing && <ShareDialog deck={deck} open onClose={() => setSharing(false)} />}
     </>

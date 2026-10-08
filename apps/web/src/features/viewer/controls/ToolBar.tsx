@@ -6,7 +6,7 @@ import { ToolOptions } from './ToolOptions';
 
 const COMING_SOON = 'Sprach- und Videokommentare folgen bald';
 /** Room the tool options pill needs next to the tool bar (its height plus the gap). */
-const OPTIONS_ROOM = 56;
+const OPTIONS_ROOM = 48;
 
 /**
  * Tool bar at the left of the controls row (Figma D1): draw, voice, mark, video – a compact pill
@@ -83,7 +83,6 @@ function ToolButtons() {
         icon="draw"
         label="Zeichnen"
         size="sm"
-        shape="chip"
         active={drawing}
         onClick={() => dispatch({ type: 'toolSelected', tool: drawing ? null : lastStrokeTool })}
       />
@@ -91,7 +90,6 @@ function ToolButtons() {
         icon="mic"
         label={COMING_SOON}
         size="sm"
-        shape="chip"
         aria-disabled
         className="cursor-not-allowed opacity-40"
       />
@@ -99,7 +97,6 @@ function ToolButtons() {
         icon="formatShapes"
         label="Stelle markieren (Klick = Punkt, Ziehen = Bereich)"
         size="sm"
-        shape="chip"
         active={tool === 'mark'}
         onClick={() => dispatch({ type: 'toolSelected', tool: 'mark' })}
       />
@@ -107,7 +104,6 @@ function ToolButtons() {
         icon="cameraVideo"
         label={COMING_SOON}
         size="sm"
-        shape="chip"
         aria-disabled
         className="cursor-not-allowed opacity-40"
       />

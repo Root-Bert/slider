@@ -40,7 +40,7 @@ export function ThreadMessage({
     <article
       aria-busy={pending || undefined}
       className={cn(
-        'flex flex-col gap-2 rounded-2xl px-3.5 py-3 transition-opacity',
+        'flex flex-col gap-2 rounded-panel px-3.5 py-3 transition-opacity',
         isRoot
           ? 'bg-white/[0.06] shadow-[inset_0_0_0_1px_var(--card-accent),0_0_20px_-4px_color-mix(in_srgb,var(--card-accent)_50%,transparent)]'
           : cn('glass max-w-80', editing ? 'w-full' : 'w-fit min-w-48'),
@@ -148,7 +148,7 @@ function EditForm({
         save();
       }}
     >
-      <div className="rounded-[10px] bg-white/5 px-3 py-2 shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]">
+      <div className="rounded-control-sm bg-white/5 px-3 py-2 shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]">
         <AutosizeTextarea
           autoFocus
           aria-label="Kommentar bearbeiten"

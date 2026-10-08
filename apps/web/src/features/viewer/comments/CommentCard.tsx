@@ -89,14 +89,14 @@ export const CommentCard = memo(function CommentCard({
         <>
           <span
             aria-hidden
-            className="glass absolute inset-x-3 -bottom-2 h-6 rounded-b-2xl opacity-60"
+            className="glass absolute inset-x-3 -bottom-2 h-6 rounded-b-panel opacity-60"
           />
-          <span aria-hidden className="glass absolute inset-x-1.5 -bottom-1 h-6 rounded-b-2xl" />
+          <span aria-hidden className="glass absolute inset-x-1.5 -bottom-1 h-6 rounded-b-panel" />
         </>
       )}
       <div
         className={cn(
-          'glass relative flex flex-col gap-2 rounded-2xl px-3.5 py-3 transition-shadow duration-200',
+          'glass relative flex flex-col gap-2 rounded-panel px-3.5 py-3 transition-shadow duration-200',
           highlighted &&
             'shadow-[inset_0_0_0_1px_var(--card-accent),0_0_20px_color-mix(in_srgb,var(--card-accent)_50%,transparent)]!',
         )}
@@ -105,7 +105,7 @@ export const CommentCard = memo(function CommentCard({
           type="button"
           aria-label={`Thread von ${root.author.name} öffnen`}
           onClick={() => dispatch({ type: 'threadFocused', threadId: thread.id, openPanel: true })}
-          className="absolute inset-0 rounded-2xl"
+          className="absolute inset-0 rounded-panel"
         />
         <AuthorLine
           comment={root}
@@ -116,7 +116,7 @@ export const CommentCard = memo(function CommentCard({
                 aria-expanded
                 aria-controls={repliesId}
                 onClick={collapse}
-                className="relative z-10 -my-0.5 inline-flex items-center gap-0.5 rounded-lg bg-white/8 py-0.5 pr-1 pl-2 text-[11px] text-fg-muted hover:bg-white/15 hover:text-fg"
+                className="relative z-10 -my-0.5 inline-flex items-center gap-0.5 rounded-chip bg-white/8 py-0.5 pr-1 pl-2 text-[11px] text-fg-muted hover:bg-white/15 hover:text-fg"
               >
                 Zuklappen
                 <Icon name="expandLess" size={16} />
@@ -152,7 +152,7 @@ export const CommentCard = memo(function CommentCard({
               aria-expanded={false}
               aria-controls={repliesId}
               onClick={expand}
-              className="relative z-10 ml-auto inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-xs text-fg-subtle hover:bg-white/10 hover:text-fg"
+              className="relative z-10 ml-auto inline-flex items-center gap-0.5 rounded-badge px-1.5 py-0.5 text-xs text-fg-subtle hover:bg-white/10 hover:text-fg"
             >
               Aufklappen
               <Icon name="expandMore" size={16} />
@@ -226,7 +226,7 @@ function InlineReply({ reply }: { reply: Comment }) {
     <article
       aria-busy={isPendingComment(reply) || undefined}
       className={cn(
-        'glass flex flex-col gap-2 rounded-2xl px-3.5 py-3',
+        'glass flex flex-col gap-2 rounded-panel px-3.5 py-3',
         isPendingComment(reply) && 'opacity-60',
       )}
     >
@@ -286,7 +286,7 @@ function ReplyBar({
       onSubmit={submit}
       style={{ top: `calc(100% + ${offset}px)` }}
       className={cn(
-        'glass absolute inset-x-0 flex scroll-mb-4 items-end gap-0.5 rounded-[12px] py-1 pr-1 pl-3',
+        'glass absolute inset-x-0 flex scroll-mb-4 items-end gap-0.5 rounded-control py-1 pr-1 pl-3',
         'transition-[opacity,visibility,box-shadow] duration-150',
         'focus-within:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--card-accent)_45%,transparent)]!',
         'before:absolute before:inset-x-0 before:bottom-full before:h-4',
@@ -316,7 +316,7 @@ function ReplyBar({
           aria-label="Antwort senden"
           title="Senden (Enter)"
           disabled={!canSend}
-          className="flex size-7 shrink-0 items-center justify-center rounded-lg text-success hover:bg-white/10 disabled:text-fg-faint disabled:hover:bg-transparent"
+          className="flex size-7 shrink-0 items-center justify-center rounded-chip text-success hover:bg-white/10 disabled:text-fg-faint disabled:hover:bg-transparent"
         >
           <Icon name="arrowUpward" size={18} />
         </button>

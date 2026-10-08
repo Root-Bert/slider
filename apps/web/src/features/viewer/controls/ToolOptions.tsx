@@ -24,7 +24,7 @@ export function ToolOptions() {
 
   return (
     // Phones: narrower than the pill – it scrolls sideways instead of overflowing the screen.
-    <GlassPanel className="scrollbar-none flex max-w-full animate-pop-in items-center gap-1 overflow-x-auto px-2 py-1.5 *:shrink-0">
+    <GlassPanel className="scrollbar-none flex max-w-full animate-pop-in items-center gap-1 overflow-x-auto p-1 *:shrink-0">
       <div role="radiogroup" aria-label="Werkzeug" className="flex items-center gap-1">
         {TOOL_OPTIONS.map((option) => {
           const selected = option.tool === tool;
@@ -38,7 +38,7 @@ export function ToolOptions() {
               title={option.hint}
               onClick={() => dispatch({ type: 'toolSelected', tool: option.tool })}
               className={cn(
-                'flex h-8 items-center gap-1.5 rounded-chip px-2 text-[13px] transition-colors',
+                'flex h-8 items-center gap-1.5 rounded-control px-2 text-[13px] transition-colors',
                 selected
                   ? 'bg-white/15 font-medium text-fg'
                   : 'text-fg-muted hover:bg-white/10 hover:text-fg',
@@ -81,7 +81,6 @@ export function ToolOptions() {
             icon="undo"
             label="Rückgängig (⌘Z)"
             size="sm"
-            shape="chip"
             iconSize={18}
             disabled={!draft?.strokes.length}
             onClick={() => dispatch({ type: 'undo' })}
@@ -90,7 +89,6 @@ export function ToolOptions() {
             icon="redo"
             label="Wiederholen (⇧⌘Z)"
             size="sm"
-            shape="chip"
             iconSize={18}
             disabled={!draft?.undone.length}
             onClick={() => dispatch({ type: 'redo' })}

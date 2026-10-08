@@ -32,8 +32,10 @@ export function ChangeBadge({
       data-change-badge={badge.kind}
       title={badge.description}
       className={cn(
-        'pointer-events-auto inline-flex max-w-full items-center rounded-full bg-black/75 font-medium whitespace-nowrap backdrop-blur',
-        mini ? 'h-3.5 gap-0.5 px-1 text-[9px] leading-3' : 'h-6 gap-1 px-2.5 text-xs',
+        'pointer-events-auto inline-flex max-w-full items-center bg-black/75 font-medium whitespace-nowrap backdrop-blur',
+        mini
+          ? 'h-3.5 gap-0.5 rounded-thumb px-1 text-[9px] leading-3'
+          : 'h-6 gap-1 rounded-badge px-2.5 text-xs',
         toneClasses[badge.kind],
         className,
       )}

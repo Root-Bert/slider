@@ -44,11 +44,24 @@
   --color-ring-violet: #dad0fc;
   --color-ring-yellow: #fff7b8;
 
-  --radius-thumb: 4px;
-  --radius-control: 12px;
-  /* Buttons, chips and fields inside the floating glass pills (controls row): one rounding for all. */
-  --radius-chip: 16px;
+  /*
+   * Corner radii – one small scale, slightly boxy throughout (no capsules for controls). Nested
+   * corners stay concentric: inner radius = outer radius − padding, e.g. a 32px button in a pill
+   * with 4px padding gets 16 − 4 = 12px. Only avatars, pin dots, colour swatches, the ⊕ gap
+   * icon and spinners are round.
+   */
+  /* Outer pills and panels: controls-row pills, docks, cards, dialogs, menus, toasts. */
   --radius-panel: 16px;
+  /* Buttons, segments and fields inside a pill with 4px padding (16 − 4); standalone fields. */
+  --radius-control: 12px;
+  /* Controls inside 6px padding (16 − 6); small standalone buttons. */
+  --radius-control-sm: 10px;
+  /* Small chips and tags; buttons inside a 12px field with 4px padding (12 − 4). */
+  --radius-chip: 8px;
+  /* Badges, kbd hints, switch tracks, 24px buttons inside fields. */
+  --radius-badge: 6px;
+  /* Slide thumbnails and tiny marks: switch knobs, mini badges, frames on slides. */
+  --radius-thumb: 4px;
 
   --shadow-float: 0 8px 32px rgb(0 0 0 / 0.5);
 
