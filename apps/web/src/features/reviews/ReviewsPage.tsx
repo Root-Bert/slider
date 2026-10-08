@@ -8,7 +8,7 @@ import { useDecks } from '@/lib/queries';
 import { deckLimitMessage, deckState, formatDeckUsage } from '@/features/workspaces/lib/plan';
 import { canCreateDecks } from '@/features/workspaces/lib/roles';
 import { useWorkspace } from '@/features/workspaces/useWorkspace';
-import { Button, Icon } from '@/ui';
+import { Button } from '@/ui';
 import { DeckCollection, DeckCollectionSkeleton, type DeckView } from './components/DeckCollection';
 import { DeckSearch } from './components/DeckSearch';
 import { EmptyState } from './components/EmptyState';
@@ -100,9 +100,8 @@ export function Component() {
         {mayCreate && decksFull && (
           <p
             id={limitNoticeId}
-            className="flex max-w-[720px] items-start gap-2 rounded-control bg-warning/10 px-3 py-2.5 text-[13px] leading-5 text-fg"
+            className="max-w-[720px] rounded-control bg-warning/10 px-3 py-2.5 text-[13px] leading-5 text-fg"
           >
-            <Icon name="warning" size={18} className="mt-px shrink-0 text-warning" />
             {deckLimitMessage(workspace)}
           </p>
         )}
