@@ -10,7 +10,7 @@ interface SessionControlsProps {
   onLeave: () => void;
 }
 
-/** Bottom-left pill: owners close and share, guests leave the session. */
+/** Pill right of the slide counter: owners close and share, guests leave the session. */
 export function SessionControls({ onLeave }: SessionControlsProps) {
   const { deck, isOwner } = useViewerData();
   const navigate = useNavigate();
@@ -23,24 +23,14 @@ export function SessionControls({ onLeave }: SessionControlsProps) {
           <IconButton
             icon="close"
             label="Review schließen"
-            className="size-12"
+            size="sm"
             onClick={() => navigate(routes.reviews())}
           />
         ) : (
-          <IconButton
-            icon="logout"
-            label="Review verlassen"
-            className="size-12"
-            onClick={onLeave}
-          />
+          <IconButton icon="logout" label="Review verlassen" size="sm" onClick={onLeave} />
         )}
         {isOwner && (
-          <IconButton
-            icon="iosShare"
-            label="Teilen"
-            className="size-12"
-            onClick={() => setSharing(true)}
-          />
+          <IconButton icon="iosShare" label="Teilen" size="sm" onClick={() => setSharing(true)} />
         )}
       </GlassPanel>
       {isOwner && sharing && <ShareDialog deck={deck} open onClose={() => setSharing(false)} />}

@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { AvatarStack, cn, GlassPanel, Toast, useToast } from '@/ui';
+import { AvatarStack, cn, Toast, useToast } from '@/ui';
 import { CommentFilterBar } from './comments/CommentFilterBar';
 import { Composer } from './comments/Composer';
 import { ThreadPanel } from './comments/ThreadPanel';
@@ -19,8 +19,8 @@ import { Timeline } from './timeline/Timeline';
 
 /**
  * Layout of the review viewer: the deck as a timeline (all slides side by side, every slide's
- * comments in a column below it), the controls row with the tool bar in between, and the
- * floating participants dock, session controls, composer and thread panel. Composition only –
+ * comments in a column below it), the controls row with the tool bar in between (session controls sit
+ * right of the slide counter), and the floating participants, composer and thread panel. Composition only –
  * behaviour lives in the hooks and the components. The root is the fullscreen target, so
  * floating controls and panels stay visible in fullscreen.
  */
@@ -62,21 +62,13 @@ export function Viewer({ onLeave }: { onLeave: () => void }) {
               <div className="ml-auto flex shrink-0 items-center gap-2.5">
                 <RevisionControls />
                 <SlideCounter className="md:@max-[740px]:hidden" />
+                <SessionControls onLeave={onLeave} />
               </div>
             </div>
           }
         />
 
-        {/* Bottom left: close and share (owners) or leave (guests). */}
-        <div
-          className={cn(
-            'fixed bottom-4 left-4 z-30 md:bottom-6 md:left-6',
-            threadPanelOpen && 'max-md:hidden',
-          )}
-        >
-          <SessionControls onLeave={onLeave} />
-        </div>
-        {/* Bottom right: who else is here – moves left of the side panel when that opens. */}
+        {/* Bottom right: who else is here, just the avatars – moves left of the side panel when that opens. */}
         {deck.participants.length > 0 && (
           <div
             className={cn(
@@ -84,13 +76,9 @@ export function Viewer({ onLeave }: { onLeave: () => void }) {
               threadPanelOpen && 'max-md:hidden md:right-[424px]',
             )}
           >
-            <GlassPanel
-              role="group"
-              aria-label="Teilnehmende"
-              className="flex h-14 items-center px-3"
-            >
+            <div role="group" aria-label="Teilnehmende" className="flex items-center">
               <AvatarStack authors={deck.participants} size={32} max={6} />
-            </GlassPanel>
+            </div>
           </div>
         )}
 
