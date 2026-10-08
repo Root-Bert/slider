@@ -8,6 +8,7 @@ import type { AppDeps } from '../deps';
 import { sha256Hex } from '../import/common';
 import { blobKeys, fileUrl } from '../storage/blob-storage';
 import { toDeckSync } from './deck-sync';
+import { assertDeckSlot } from './plans';
 import { rolesOf } from './workspaces';
 
 const MAX_PARTICIPANTS = 5;
@@ -188,6 +189,7 @@ export interface NewDeckFile {
 
 /**
  * Stores the original, creates deck + revision 1 and queues the import. Returns at once.
+ * Fails with `plan_limit` when the workspace has no deck slot left (BER-130).
  * `ownerId` is the creator (whose Microsoft login keeps a linked deck in sync).
  */
 export async function createDeckFromFile(
@@ -201,37 +203,44 @@ export async function createDeckFromFile(
   const now = deps.clock.now();
 
   await deps.storage.put(pptxKey, file.bytes);
-  const row = await deps.db.transaction(async (tx) => {
-    await tx.insert(decks).values({
-      id: deckId,
-      ownerId,
-      workspaceId,
-      title: titleFromFileName(file.fileName),
-      fileName: file.fileName,
-      source: file.source,
-      sourceUrl: file.sourceUrl ?? null,
-      sourceRef: file.sourceRef ?? null,
-      createdAt: now,
-      updatedAt: now,
-      importState: { status: 'queued' },
+  const row = await deps.db
+    .transaction(async (tx) => {
+      // The plan's deck limit (BER-130), checked under a lock on the workspace.
+      await assertDeckSlot(tx, deps.config, workspaceId);
+      await tx.insert(decks).values({
+        id: deckId,
+        ownerId,
+        workspaceId,
+        title: titleFromFileName(file.fileName),
+        fileName: file.fileName,
+        source: file.source,
+        sourceUrl: file.sourceUrl ?? null,
+        sourceRef: file.sourceRef ?? null,
+        createdAt: now,
+        updatedAt: now,
+        importState: { status: 'queued' },
+      });
+      await tx.insert(revisions).values({
+        id: revisionId,
+        deckId,
+        number: 1,
+        createdAt: now,
+        pptxKey,
+        sourceChangeToken: file.changeToken ?? null,
+        trigger: 'initial',
+        contentSha256: sha256Hex(file.bytes),
+      });
+      const [deck] = await tx
+        .update(decks)
+        .set({ currentRevisionId: revisionId })
+        .where(eq(decks.id, deckId))
+        .returning();
+      return deck;
+    })
+    .catch(async (error: unknown) => {
+      await deps.storage.deletePrefix(blobKeys.deckPrefix(deckId));
+      throw error;
     });
-    await tx.insert(revisions).values({
-      id: revisionId,
-      deckId,
-      number: 1,
-      createdAt: now,
-      pptxKey,
-      sourceChangeToken: file.changeToken ?? null,
-      trigger: 'initial',
-      contentSha256: sha256Hex(file.bytes),
-    });
-    const [deck] = await tx
-      .update(decks)
-      .set({ currentRevisionId: revisionId })
-      .where(eq(decks.id, deckId))
-      .returning();
-    return deck;
-  });
   if (!row) throw new Error('Deck insert returned no row');
 
   deps.queue.enqueue({ deckId, revisionId });

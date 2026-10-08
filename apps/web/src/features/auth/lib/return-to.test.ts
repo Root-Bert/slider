@@ -5,6 +5,7 @@ import {
   loginPath,
   providerLoginUrl,
   safeReturnTo,
+  signupHintCopy,
 } from './return-to';
 
 describe('safeReturnTo', () => {
@@ -26,6 +27,17 @@ describe('safeReturnTo', () => {
     expect(safeReturnTo('/login')).toBe('/');
     expect(safeReturnTo('/login?returnTo=/x')).toBe('/');
     expect(safeReturnTo('/loginx')).toBe('/loginx');
+    expect(safeReturnTo('/registrieren')).toBe('/');
+  });
+});
+
+describe('signupHintCopy', () => {
+  it('explains how accounts come about in each SIGNUP mode', () => {
+    expect(signupHintCopy('open')).toBe(
+      'Noch kein Konto? Es wird beim ersten Anmelden automatisch erstellt.',
+    );
+    expect(signupHintCopy('invite')).toMatch(/Einladung/);
+    expect(signupHintCopy('domains')).toMatch(/Firmenadresse/);
   });
 });
 

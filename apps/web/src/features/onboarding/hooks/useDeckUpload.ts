@@ -43,6 +43,7 @@ export function useDeckUpload(workspaceId: string, onUploaded: (deck: Deck) => v
       );
       queryClient.setQueryData(queryKeys.deck(deck.id), deck);
       void queryClient.invalidateQueries({ queryKey: queryKeys.deckLists });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.me });
       onUploaded(deck);
     } catch (error) {
       if (controller.signal.aborted) return;

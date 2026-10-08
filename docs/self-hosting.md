@@ -70,7 +70,8 @@ Internet ──443──▶ Caddy (HTTPS, Let's Encrypt)
    ```
    **Wichtig:** `BOOTSTRAP_EMAIL` auf die eigene Adresse setzen. Das erste Konto der Instanz wird
    Instanz-Admin – ohne diese Variable könnte bei `MS_TENANT=common` (oder `SIGNUP=open`) eine
-   fremde Person schneller sein.
+   fremde Person schneller sein. `SIGNUP` steht standardmäßig auf `open` (siehe unten) – für eine
+   reine Firmen-Instanz eher `invite` oder `domains` wählen.
 6. **Starten:**
    ```bash
    docker compose up -d --build
@@ -79,7 +80,8 @@ Internet ──443──▶ Caddy (HTTPS, Let's Encrypt)
    ```
    Der erste Build dauert einige Minuten (Abhängigkeiten installieren, Web-App bauen).
    Danach sofort selbst anmelden – mit der Adresse aus `BOOTSTRAP_EMAIL`. Dieses Konto ist
-   Instanz-Admin; alle Weiteren kommen per Einladung oder über `SIGNUP`.
+   Instanz-Admin; alle Weiteren kommen per Einladung oder über `SIGNUP`. Neue Konten haben noch
+   keine Organisation: Nach dem ersten Login gründen sie eine oder treten per Einladungslink bei.
 7. **Microsoft-Login** (falls genutzt): In der Entra-App-Registrierung unter _Authentication_ die
    Redirect-URI `https://slider.firma.de/api/auth/microsoft/callback` ergänzen (Typ _Web_).
 
@@ -103,7 +105,7 @@ In Compose stehen sie in `deploy/.env` (Vorlage: `deploy/.env.example`). `NODE_E
 | `DATA_DIR`                                            | nein               | Daten-Ordner (Container: `/data`).                                                                                                                                                                                                    |
 | `WEB_DIST_DIR`                                        | nein               | Gebaute Web-App; Standard in Produktion `apps/web/dist`.                                                                                                                                                                              |
 | `TRUST_PROXY`                                         | nein               | `1` hinter Caddy/Proxy. Nur setzen, wenn die API nicht direkt erreichbar ist.                                                                                                                                                         |
-| `SIGNUP`                                              | nein               | `invite` (Standard) = nur Eingeladene · `domains` = alle mit E-Mail aus `SIGNUP_DOMAINS` · `open` = jeder.                                                                                                                            |
+| `SIGNUP`                                              | nein               | `open` (Standard) = jeder, der sich anmelden kann – das Konto entsteht beim ersten Login · `invite` = nur Eingeladene · `domains` = alle mit E-Mail aus `SIGNUP_DOMAINS`.                                                             |
 | `SIGNUP_DOMAINS`                                      | bei `domains`      | Kommagetrennt, z. B. `firma.de,firma.com`.                                                                                                                                                                                            |
 | `BOOTSTRAP_EMAIL`                                     | dringend empfohlen | Kommagetrennt, z. B. `ich@firma.de`. Nur diese (verifizierte) Adresse darf das erste Konto (Instanz-Admin) anlegen. Leer: in Produktion nur, wen `SIGNUP=open`/`domains` ohnehin zulässt (bei `invite` niemand), plus Warnung im Log. |
 | `MS_CLIENT_ID`, `MS_CLIENT_SECRET`                    | eine Login-Art     | Entra-App (Login + OneDrive/SharePoint-Import).                                                                                                                                                                                       |
@@ -116,6 +118,8 @@ In Compose stehen sie in `deploy/.env` (Vorlage: `deploy/.env.example`). `NODE_E
 | `MAX_UPLOAD_BYTES`                                    | nein               | Max. PPTX-Größe, Standard 200 MB.                                                                                                                                                                                                     |
 | `MEDIA_QUOTA_BYTES`, `MAX_MEDIA_BYTES`                | nein               | Speicher für Sprach-/Video-Kommentare pro Deck-Besitzer (Standard 5 GB) bzw. pro Aufnahme (100 MB).                                                                                                                                   |
 | `SYNC_POLL_INTERVAL_MS`, `SYNC_DEBOUNCE_MS`           | nein               | Automatische Updates verlinkter Decks (Standard 2 min / 1 min, `0` = aus).                                                                                                                                                            |
+| `PLAN_FREE_MAX_MEMBERS`                               | nein               | Plätze pro Organisation im Free-Plan: Mitglieder plus offene E-Mail-Einladungen. Standard 5, `0` = unbegrenzt.                                                                                                                        |
+| `PLAN_FREE_MAX_DECKS`                                 | nein               | Präsentationen pro Organisation im Free-Plan (archivierte zählen mit). Standard 3, `0` = unbegrenzt.                                                                                                                                  |
 
 ## Login einrichten
 
@@ -160,7 +164,7 @@ wollen. Läuft neben Slider auf demselben Server (Netzwerk `slider`, Caddy macht
    OIDC_ISSUER=https://auth.firma.de/application/o/slider/
    OIDC_CLIENT_ID=<Client ID>
    OIDC_CLIENT_SECRET=<Client Secret>
-   OIDC_LABEL=Mit Firmen-Login anmelden
+   OIDC_LABEL=Weiter mit Firmen-Login
    ```
    Prüfen: `https://auth.firma.de/application/o/slider/.well-known/openid-configuration` muss
    JSON liefern.
@@ -240,12 +244,18 @@ vor dem Bestellen in der Hetzner Console prüfen.
 Was die Kosten treiben könnte, ist **Speicher**: PPTX-Dateien, Folienbilder und vor allem
 Sprach-/Video-Kommentare. Deshalb:
 
-- **`SIGNUP=invite` (Standard)**: Konten entstehen nur per Einladung. Fremde können sich nicht
-  selbst registrieren, Decks hochladen und so Speicher verbrauchen. Gäste über Review-Links
-  können kommentieren, aber keine eigenen Decks anlegen; ihre Aufnahmen zählen zum Kontingent
-  der Deck-Besitzer:in.
-- `SIGNUP=domains` mit `SIGNUP_DOMAINS=firma.de` ist die bequeme Alternative für eine Firma.
-  `SIGNUP=open` nur, wenn das wirklich gewollt ist.
+- **`SIGNUP`**: Standard ist `open` – jede Person, die sich anmelden kann, bekommt ein Konto und
+  darf eine eigene Organisation gründen (mit den Grenzen des Free-Plans, siehe unten). Für eine
+  Firmen-Instanz ist `SIGNUP=invite` (Konten nur per Einladung) oder `SIGNUP=domains` mit
+  `SIGNUP_DOMAINS=firma.de` meist die bessere Wahl: Fremde können sich dann nicht selbst
+  registrieren, Decks hochladen und so Speicher verbrauchen.
+- **Free-Plan** pro Organisation: 5 Plätze (Mitglieder plus offene E-Mail-Einladungen) und
+  3 Präsentationen. Jedes Konto darf eine Organisation selbst gründen; beitreten (per Einladung)
+  kann es beliebig vielen. Auf dem eigenen Server lassen sich die Grenzen mit
+  `PLAN_FREE_MAX_MEMBERS` / `PLAN_FREE_MAX_DECKS` ändern oder mit `0` aufheben. Bestehende
+  Organisationen über der Grenze behalten ihre Decks, können aber keine neuen anlegen.
+- **Review-Links sind nur zum Ansehen**: Gäste ohne Konto sehen die Folien und Kommentare, können
+  aber nicht kommentieren. Kommentieren ist Mitgliedern der Organisation vorbehalten.
 - `MEDIA_QUOTA_BYTES` und `MAX_UPLOAD_BYTES` begrenzen den Speicher pro Person bzw. Datei.
 - Platz im Blick behalten: `docker system df -v`, `df -h`. Mehr Platz gibt es per Hetzner Volume
   (wenige Cent pro GB und Monat) oder Server-Upgrade.
@@ -262,7 +272,8 @@ Sprach-/Video-Kommentare. Deshalb:
 - [ ] Firewall: nur 22, 80, 443. SSH nur mit Key, `PasswordAuthentication no`.
 - [ ] Sicherheitsupdates: `unattended-upgrades` aktivieren, Slider/Authentik regelmäßig updaten.
 - [ ] `BOOTSTRAP_EMAIL` gesetzt und das erste Konto selbst angelegt.
-- [ ] `SIGNUP=invite` oder `domains`, nicht `open`.
+- [ ] `SIGNUP` bewusst gewählt: `open` (Standard) nur, wenn sich wirklich jede:r registrieren
+      soll – sonst `invite` oder `domains`.
 - [ ] Backups automatisch, außer Haus, und Wiederherstellung einmal ausprobiert.
 
 ## Fehlersuche

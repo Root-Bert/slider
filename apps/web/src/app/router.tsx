@@ -16,6 +16,7 @@ export const router = createBrowserRouter([
     hydrateFallbackElement: <div className="dot-grid min-h-full" aria-busy />,
     children: [
       { path: 'login', lazy: () => import('@/features/auth/LoginPage') },
+      { path: 'registrieren', lazy: () => import('@/features/auth/RegisterPage') },
       { path: 'join/:token', lazy: () => import('@/features/workspaces/JoinPage') },
       { path: 'd/:deckId', lazy: () => import('@/features/viewer/DeckPage') },
       { path: 'r/:token', lazy: () => import('@/features/sharing/GuestEntryPage') },

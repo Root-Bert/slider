@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useNavigate } from 'react-router';
 import type { Deck } from '@slider/shared';
 import { AppHeader } from '@/app/AppHeader';
 import { routes } from '@/app/routes';
 import { pluralize } from '@/lib/format';
 import { useDecks } from '@/lib/queries';
+import { deckLimitMessage, deckState, formatDeckUsage } from '@/features/workspaces/lib/plan';
 import { canCreateDecks } from '@/features/workspaces/lib/roles';
 import { useWorkspace } from '@/features/workspaces/useWorkspace';
-import { Button } from '@/ui';
+import { Button, Icon } from '@/ui';
 import { DeckCollection, DeckCollectionSkeleton, type DeckView } from './components/DeckCollection';
 import { DeckSearch } from './components/DeckSearch';
 import { EmptyState } from './components/EmptyState';
@@ -34,6 +35,9 @@ export function Component() {
   const navigate = useNavigate();
   const workspace = useWorkspace();
   const mayCreate = canCreateDecks(workspace.role);
+  // The plan's deck limit (BER-130): the button stays visible, but off, with the reason.
+  const decksFull = deckState(workspace.usage).full;
+  const limitNoticeId = useId();
   const decksQuery = useDecks(workspace.id);
   const decks = decksQuery.data ?? NO_DECKS;
   const { isUnseen } = useLastVisits();
@@ -46,15 +50,24 @@ export function Component() {
 
   const totals = activeTotals(decks);
   const visible = selectDecks(decks, { tab, query, sort });
-  const goToNew = mayCreate ? () => void navigate(routes.newReview(workspace.id)) : undefined;
+  const goToNew =
+    mayCreate && !decksFull ? () => void navigate(routes.newReview(workspace.id)) : undefined;
 
   return (
     <div className="dot-grid min-h-full">
       <title>{`Meine Reviews · ${workspace.name} · Slider`}</title>
       <AppHeader
         leading={
-          goToNew && (
-            <Button size="sm" icon="add" aria-label="Neuer Review" onClick={goToNew}>
+          mayCreate && (
+            <Button
+              size="sm"
+              icon="add"
+              aria-label="Neuer Review"
+              disabled={decksFull}
+              title={decksFull ? deckLimitMessage(workspace) : undefined}
+              aria-describedby={decksFull ? limitNoticeId : undefined}
+              onClick={goToNew}
+            >
               <span className="max-sm:hidden">Neuer Review</span>
             </Button>
           )
@@ -72,9 +85,27 @@ export function Component() {
             <p className="text-[13px] text-fg-subtle">
               {pluralize(totals.reviews, 'Review', 'Reviews')} ·{' '}
               {pluralize(totals.openComments, 'offener Kommentar', 'offene Kommentare')}
+              {workspace.usage.maxDecks !== null && (
+                <>
+                  {' · '}
+                  <span className={decksFull ? 'text-warning' : undefined}>
+                    {formatDeckUsage(workspace.usage)}
+                  </span>
+                </>
+              )}
             </p>
           )}
         </div>
+
+        {mayCreate && decksFull && (
+          <p
+            id={limitNoticeId}
+            className="flex max-w-[720px] items-start gap-2 rounded-control bg-warning/10 px-3 py-2.5 text-[13px] leading-5 text-fg"
+          >
+            <Icon name="warning" size={18} className="mt-px shrink-0 text-warning" />
+            {deckLimitMessage(workspace)}
+          </p>
+        )}
 
         <DeckSearch placement="inline" value={query} onChange={setQuery} />
 

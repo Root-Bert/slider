@@ -14,7 +14,7 @@ export type SignupMode = z.infer<typeof signupModeSchema>;
 
 export const loginProviderSchema = z.object({
   id: z.enum(['microsoft', 'oidc']),
-  /** Button text, e.g. "Mit Microsoft anmelden". */
+  /** Button text, e.g. "Weiter mit Microsoft". */
   label: z.string(),
   /** Both are browser redirects: send the browser to `${loginUrl}?returnTo=<path>`. */
   kind: z.literal('redirect'),
@@ -73,8 +73,35 @@ export const meUserSchema = z.object({
 });
 export type MeUser = z.infer<typeof meUserSchema>;
 
+// ── Plans (BER-130) ─────────────────────────────────────────────────────────
+
+/** Plans an organisation can be on. Only `free` for now; higher plans get their own limits. */
+export const PLAN_IDS = ['free'] as const;
+export type PlanId = (typeof PLAN_IDS)[number];
+
+/**
+ * What an organisation uses of its plan. `seatsUsed` = members + pending e-mail invites (a sent
+ * invite reserves a seat). `max*` is `null` for unlimited (self-hosted instances may lift limits).
+ */
+export const workspaceUsageSchema = z.object({
+  members: z.number().int(),
+  seatsUsed: z.number().int(),
+  maxMembers: z.number().int().nullable(),
+  decks: z.number().int(),
+  maxDecks: z.number().int().nullable(),
+});
+export type WorkspaceUsage = z.infer<typeof workspaceUsageSchema>;
+
+/** `GET /me` → `limits`. */
+export const meLimitsSchema = z.object({
+  /** Every account may found one organisation of its own (joining others is unlimited). */
+  canCreateWorkspace: z.boolean(),
+});
+export type MeLimits = z.infer<typeof meLimitsSchema>;
+
 // ── Workspaces ──────────────────────────────────────────────────────────────
 
+/** A workspace is called "Organisation" in the UI (BER-130). */
 export const workspaceSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -83,6 +110,9 @@ export const workspaceSchema = z.object({
   /** The caller's role. */
   role: workspaceRoleSchema,
   memberCount: z.number().int(),
+  /** Usually a {@link PlanId}; a string so older clients survive new plans. */
+  plan: z.string(),
+  usage: workspaceUsageSchema,
 });
 export type Workspace = z.infer<typeof workspaceSchema>;
 

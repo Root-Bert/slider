@@ -19,6 +19,7 @@ import type { OpenPptx } from '../src/import/pptx';
 import { InProcessQueue, type ImportJob } from '../src/import/queue';
 import { silentLogger } from '../src/logger';
 import { NullMailer, type Mailer } from '../src/mail/mailer';
+import { DEFAULT_PLAN_LIMITS } from '../src/services/plans';
 import { upsertUser } from '../src/services/users';
 import { ensurePersonalWorkspace } from '../src/services/workspaces';
 import type { FetchLike, LookupAll } from '../src/sources/safe-fetch';
@@ -60,6 +61,8 @@ export const testConfig = (overrides: Partial<Config> = {}): Config => ({
   // Polling is driven by hand in tests (`SyncScheduler.tick`); the debounce default applies.
   sync: { pollIntervalMs: 0, debounceMs: 60_000 },
   media: { dir: '/unused', quotaBytes: 5 * 1024 ** 3, maxBytes: 1024 * 1024 },
+  // The real free plan (5 people, 3 decks); tests that need more pass `plans`.
+  plans: DEFAULT_PLAN_LIMITS,
   ...overrides,
 });
 
@@ -110,7 +113,7 @@ export interface TestContext {
   deps: AppDeps;
   clock: TestClock;
   ownerId: string;
-  /** The dev owner's workspace ("Mein Workspace"); `createReadyDeck` puts decks here. */
+  /** The dev owner's workspace ("Meine Organisation"); `createReadyDeck` puts decks here. */
   workspaceId: string;
   blobsDir: string;
   request(

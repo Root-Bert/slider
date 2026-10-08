@@ -7,7 +7,7 @@ const link = (overrides: Partial<ReviewLink>): ReviewLink => ({
   id: 'l1',
   deckId: 'd1',
   token: 'tok',
-  role: 'comment',
+  role: 'view',
   expiresAt: null,
   revokedAt: null,
   createdAt: '2026-10-01T00:00:00Z',

@@ -12,5 +12,7 @@ export function useAccount() {
     user: data.user,
     workspaces: data.workspaces ?? [],
     pendingInvites: data.pendingInvites ?? [],
+    /** One self-founded organisation per account (BER-130); older servers send no limits. */
+    canCreateWorkspace: data.limits?.canCreateWorkspace ?? true,
   };
 }

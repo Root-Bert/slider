@@ -20,6 +20,7 @@ import {
   ROLE_LABELS,
   sortInvites,
 } from '../lib/roles';
+import { formatRatio, INVITE_SECTION_ID, seatsLine, seatState } from '../lib/plan';
 import { SettingsSection } from './SettingsSection';
 
 const ROLE_OPTIONS = INVITE_ROLES.map((role) => ({ value: role, label: ROLE_LABELS[role] }));
@@ -42,6 +43,8 @@ export function InvitesSection({
   const [emailTouched, setEmailTouched] = useState(false);
   const [created, setCreated] = useState<CreatedWorkspaceInvite | null>(null);
   const emailValid = EMAIL_PATTERN.test(email.trim());
+  const seats = seatState(workspace.usage);
+  const seatsHint = seatsLine(workspace.usage);
   const pendingKind = create.isPending ? (create.variables.email ? 'email' : 'link') : null;
 
   const inviteByEmail = () => {
@@ -77,9 +80,31 @@ export function InvitesSection({
 
   return (
     <SettingsSection
+      id={INVITE_SECTION_ID}
       title="Einladen"
       description="Per E-Mail für eine bestimmte Adresse (7 Tage gültig) oder als Link für mehrere Personen (30 Tage)."
+      aside={
+        seats.max !== null && (
+          <Badge tone={seats.full ? 'warning' : 'neutral'}>{formatRatio(seats)} Plätze</Badge>
+        )
+      }
     >
+      {seatsHint && (
+        <p
+          className={
+            seats.full
+              ? 'flex items-start gap-2 rounded-control bg-warning/10 px-3 py-2.5 text-[13px] leading-5 text-fg'
+              : 'text-[13px] text-fg-subtle'
+          }
+        >
+          {seats.full && <Icon name="warning" size={18} className="mt-px shrink-0 text-warning" />}
+          <span>
+            {seatsHint}
+            {seats.full &&
+              ' Entferne ein Mitglied oder ziehe eine Einladung zurück, um jemanden per E-Mail einzuladen.'}
+          </span>
+        </p>
+      )}
       <form
         noValidate
         className="flex flex-col gap-2 sm:flex-row sm:items-start"
@@ -93,6 +118,7 @@ export function InvitesSection({
           aria-label="E-Mail-Adresse"
           icon="at"
           placeholder="name@firma.de"
+          disabled={seats.full}
           value={email}
           error={emailTouched && !emailValid ? 'Gib eine gültige E-Mail-Adresse ein.' : null}
           onChange={(event) => setEmail(event.target.value)}
@@ -106,7 +132,13 @@ export function InvitesSection({
             options={ROLE_OPTIONS}
             className="h-10 flex-1 sm:w-[132px] [&>select]:h-10"
           />
-          <Button type="submit" className="h-10" icon="send" loading={pendingKind === 'email'}>
+          <Button
+            type="submit"
+            className="h-10"
+            icon="send"
+            disabled={seats.full}
+            loading={pendingKind === 'email'}
+          >
             Einladen
           </Button>
         </div>
@@ -115,7 +147,9 @@ export function InvitesSection({
       <div className="flex flex-col gap-2 rounded-control bg-white/4 p-3 sm:flex-row sm:items-center">
         <p className="flex flex-1 items-center gap-2 text-[13px] text-fg-muted">
           <Icon name="link" size={18} className="shrink-0 text-fg-subtle" />
-          Einladungslink für alle, die ihn bekommen
+          {seats.full
+            ? 'Einladungslink – Beitreten klappt erst wieder, wenn ein Platz frei ist'
+            : 'Einladungslink für alle, die ihn bekommen'}
         </p>
         <div className="flex gap-2">
           <Select<InviteRole>

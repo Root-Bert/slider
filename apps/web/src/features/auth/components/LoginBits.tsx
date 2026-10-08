@@ -1,6 +1,7 @@
+import { Link } from 'react-router';
 import type { AuthProviders, LoginError } from '@slider/shared';
 import { Icon } from '@/ui';
-import { loginErrorCopy } from '../lib/return-to';
+import { loginErrorCopy, loginPath, signupHintCopy } from '../lib/return-to';
 
 export function LoginErrorBanner({ code }: { code: LoginError }) {
   const copy = loginErrorCopy(code);
@@ -18,13 +19,27 @@ export function LoginErrorBanner({ code }: { code: LoginError }) {
   );
 }
 
-export function SignupHint({ signup }: { signup: AuthProviders['signup'] }) {
-  if (signup === 'open') return null;
+/** Below the login card: how accounts come about in this instance's `SIGNUP` mode (BER-130). */
+export function SignupHint({
+  signup,
+  mode,
+  returnTo,
+}: {
+  signup: AuthProviders['signup'];
+  mode: 'login' | 'register';
+  returnTo: string;
+}) {
   return (
-    <p className="text-center text-[13px] text-fg-subtle">
-      {signup === 'invite'
-        ? 'Neu hier? Du brauchst eine Einladung.'
-        : 'Neu hier? Melde dich mit deiner Firmenadresse an.'}
-    </p>
+    <div className="flex flex-col items-center gap-1 text-center text-[13px] leading-5 text-fg-subtle">
+      <p>{signupHintCopy(signup)}</p>
+      {mode === 'register' && (
+        <p>
+          Schon ein Konto?{' '}
+          <Link to={loginPath(returnTo)} className="font-medium text-fg-muted hover:text-fg">
+            Anmelden
+          </Link>
+        </p>
+      )}
+    </div>
   );
 }

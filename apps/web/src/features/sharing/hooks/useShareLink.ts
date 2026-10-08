@@ -1,20 +1,20 @@
 import { useEffect, useRef } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import type { ReviewLinkRole } from '@slider/shared';
 import { useCreateReviewLink, useReviewLinks, useRevokeReviewLink } from '@/lib/queries';
 import { findActiveLink, linkLifetimeDays } from '../lib/review-links';
 
 export interface LinkSettings {
-  role: ReviewLinkRole;
+  role: 'view';
   expiresInDays: number | null;
 }
 
-const DEFAULT_SETTINGS: LinkSettings = { role: 'comment', expiresInDays: null };
+/** Review links are view-only (BER-130); commenting is for members of the organisation. */
+const DEFAULT_SETTINGS: LinkSettings = { role: 'view', expiresInDays: null };
 
 /**
  * The deck's current review link (C1, BER-102).
  *
- * - Opening the dialog without an active link creates one (comment role, no expiry).
+ * - Opening the dialog without an active link creates one (view only, no expiry).
  * - Links are immutable on the server, so changing role or expiry creates a new link and
  *   revokes the old one – new first, so the deck is never without a link in between.
  * - After an explicit revoke nothing is recreated until the dialog is opened again.
@@ -60,7 +60,7 @@ export function useShareLink(deckId: string, open: boolean) {
   });
 
   const settings: LinkSettings = activeLink
-    ? { role: activeLink.role, expiresInDays: linkLifetimeDays(activeLink) }
+    ? { role: 'view', expiresInDays: linkLifetimeDays(activeLink) }
     : DEFAULT_SETTINGS;
 
   return {

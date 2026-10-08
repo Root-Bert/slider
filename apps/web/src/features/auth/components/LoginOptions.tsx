@@ -156,7 +156,7 @@ function MagicLinkForm({ returnTo }: { returnTo: string }) {
         disabled={!valid}
         loading={start.isPending}
       >
-        Anmeldelink senden
+        Weiter mit E-Mail
       </Button>
     </form>
   );

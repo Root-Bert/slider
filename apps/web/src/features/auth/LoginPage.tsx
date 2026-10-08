@@ -9,8 +9,13 @@ import { isLoginError, safeReturnTo } from './lib/return-to';
 /**
  * `/login?returnTo=…&error=…` – sign in with Microsoft, the configured SSO provider or a
  * magic link by e-mail (BER-129). Card layout after Figma A3 (92:2472).
+ * The first login creates the account (BER-130), so `/registrieren` is the same page.
  */
 export function Component() {
+  return <AuthPage mode="login" />;
+}
+
+export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const [searchParams] = useSearchParams();
   const returnTo = safeReturnTo(searchParams.get('returnTo'));
   const errorCode = searchParams.get('error');
@@ -24,7 +29,7 @@ export function Component() {
 
   return (
     <div className="dot-grid flex min-h-full flex-col">
-      <title>Anmelden · Slider</title>
+      <title>{mode === 'register' ? 'Konto erstellen · Slider' : 'Anmelden · Slider'}</title>
       <header className="flex h-[88px] shrink-0 items-center px-6 md:px-14">
         <Logo />
       </header>
@@ -40,7 +45,7 @@ export function Component() {
             </span>
             <div className="flex flex-col gap-2">
               <h1 id="login-title" className="text-2xl leading-8 font-semibold text-fg">
-                Bei Slider anmelden
+                {mode === 'register' ? 'Konto erstellen' : 'Anmelden oder Konto erstellen'}
               </h1>
               <p className="text-sm leading-5 text-fg-subtle">
                 {joining
@@ -56,7 +61,9 @@ export function Component() {
               <LoginOptions config={providers.data} returnTo={returnTo} />
             )}
           </section>
-          {providers.data && <SignupHint signup={providers.data.signup} />}
+          {providers.data && (
+            <SignupHint signup={providers.data.signup} mode={mode} returnTo={returnTo} />
+          )}
         </div>
       </main>
     </div>

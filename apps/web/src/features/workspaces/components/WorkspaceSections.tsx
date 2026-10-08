@@ -84,8 +84,8 @@ export function LeaveSection({
 
   return (
     <SettingsSection
-      title="Workspace verlassen"
-      description="Du verlierst den Zugriff auf die Präsentationen dieses Workspace. Deine Präsentationen und Kommentare bleiben hier. Als einziger Owner ernenne zuerst jemand anderen."
+      title="Organisation verlassen"
+      description="Du verlierst den Zugriff auf die Präsentationen dieser Organisation. Deine Präsentationen und Kommentare bleiben hier. Als einziger Owner ernenne zuerst jemand anderen."
       aside={
         <Button variant="secondary" icon="logout" onClick={() => setConfirming(true)}>
           Verlassen
@@ -143,8 +143,8 @@ export function DeleteSection({
   return (
     <SettingsSection
       tone="danger"
-      title="Workspace löschen"
-      description="Löscht den Workspace mit allen Präsentationen, Kommentaren, Aufnahmen und Einladungen. Das lässt sich nicht rückgängig machen."
+      title="Organisation löschen"
+      description="Löscht die Organisation mit allen Präsentationen, Kommentaren, Aufnahmen und Einladungen. Das lässt sich nicht rückgängig machen."
       aside={
         <Button variant="danger" icon="delete" onClick={() => setConfirming(true)}>
           Löschen
@@ -158,7 +158,7 @@ export function DeleteSection({
         description={
           <>
             Alle Präsentationen, Kommentare und Mitgliedschaften gehen verloren. Tippe zur
-            Bestätigung den Namen des Workspace ein.
+            Bestätigung den Namen der Organisation ein.
           </>
         }
         footer={
@@ -188,7 +188,7 @@ export function DeleteSection({
       >
         {confirming && (
           <TextField
-            aria-label="Name des Workspace"
+            aria-label="Name der Organisation"
             placeholder={workspace.name}
             value={typed}
             autoFocus

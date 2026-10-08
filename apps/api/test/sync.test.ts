@@ -60,7 +60,13 @@ async function setup(
 ) {
   const source = new FakeSource();
   const pptx = versionedPptx({ v1: presentation(BASE_SLIDES), ...versions });
-  ctx = await createTestContext({ openPptx: pptx.open, sources: { onedrive: source }, ...config });
+  ctx = await createTestContext({
+    openPptx: pptx.open,
+    sources: { onedrive: source },
+    ...config,
+    // Sync is not about plans: no deck limit (BER-130).
+    config: { plans: { free: { maxMembers: null, maxDecks: null } }, ...config.config },
+  });
   const deckId = await createLinkDeck(ctx, source);
   return { ctx, source, pptx, deckId };
 }
@@ -181,7 +187,7 @@ describe('manual sync (POST /decks/:id/sync)', () => {
     const link = (await (
       await ctx.request(`/api/decks/${deckId}/review-links`, {
         method: 'POST',
-        json: { role: 'comment' },
+        json: { role: 'view' },
       })
     ).json()) as { token: string };
     const guest = cookieFrom(

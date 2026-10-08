@@ -23,7 +23,7 @@ const CLOSED_COPY: Record<Exclude<InviteState, 'valid'>, { title: string; messag
   used: {
     title: 'Einladung schon angenommen',
     message:
-      'Diese Einladung wurde bereits verwendet. Bist du schon Mitglied, findest du den Workspace in deinen Reviews.',
+      'Diese Einladung wurde bereits verwendet. Bist du schon Mitglied, findest du die Organisation in deinen Reviews.',
   },
 };
 
@@ -87,7 +87,8 @@ export function JoinButton({ token }: { token: string }) {
   const join = useJoinWorkspace(token);
   const logout = useLogout();
   const navigate = useNavigate();
-  const wrongAccount = join.error instanceof ApiError && join.error.status === 403;
+  const full = join.error instanceof ApiError && join.error.code === 'plan_limit';
+  const wrongAccount = join.error instanceof ApiError && join.error.status === 403 && !full;
 
   const switchAccount = () =>
     logout.mutate(undefined, {
@@ -96,14 +97,28 @@ export function JoinButton({ token }: { token: string }) {
 
   return (
     <div className="flex w-full flex-col items-center gap-3">
-      {join.error && (
-        <p
+      {full ? (
+        // The plan's member limit (BER-130): nothing the joiner can fix themselves.
+        <div
           role="alert"
-          className="flex w-full items-start gap-2 rounded-control bg-danger/10 px-3 py-2.5 text-left text-[13px] leading-5 text-fg"
+          className="flex w-full items-start gap-2.5 rounded-control bg-warning/10 px-3 py-2.5 text-left"
         >
-          <Icon name="error" size={18} className="mt-px shrink-0 text-danger" />
-          {join.error.message}
-        </p>
+          <Icon name="warning" size={18} className="mt-px shrink-0 text-warning" />
+          <span className="flex flex-col gap-0.5">
+            <span className="text-[13px] font-medium text-fg">Organisation voll</span>
+            <span className="text-[13px] leading-5 text-fg-muted">{join.error?.message}</span>
+          </span>
+        </div>
+      ) : (
+        join.error && (
+          <p
+            role="alert"
+            className="flex w-full items-start gap-2 rounded-control bg-danger/10 px-3 py-2.5 text-left text-[13px] leading-5 text-fg"
+          >
+            <Icon name="error" size={18} className="mt-px shrink-0 text-danger" />
+            {join.error.message}
+          </p>
+        )
       )}
       {wrongAccount ? (
         <Button size="lg" className="w-full" loading={logout.isPending} onClick={switchAccount}>
@@ -120,9 +135,10 @@ export function JoinButton({ token }: { token: string }) {
             })
           }
         >
-          Beitreten
+          {full ? 'Erneut versuchen' : 'Beitreten'}
         </Button>
       )}
+      {full && <BackLink />}
     </div>
   );
 }

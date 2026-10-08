@@ -59,13 +59,20 @@ const invite = async (body: { email?: string; role?: string }, cookie?: string) 
 };
 
 describe('workspaces', () => {
-  it('the dev owner has "Mein Workspace"; anyone signed in can create more', async () => {
+  it('the dev owner has "Meine Organisation"; others found their own', async () => {
     const me = (await (await ctx.request('/api/me')).json()) as MeResponse;
     expect(me.workspaces).toEqual([
-      expect.objectContaining({ id: ctx.workspaceId, name: 'Mein Workspace', role: 'owner' }),
+      expect.objectContaining({ id: ctx.workspaceId, name: 'Meine Organisation', role: 'owner' }),
     ]);
+    // One self-founded organisation per account (BER-130).
+    expect(me.limits).toEqual({ canCreateWorkspace: false });
 
-    const res = await ctx.request('/api/workspaces', { method: 'POST', json: { name: 'Q4 Team' } });
+    const anna = await signedInUser(ctx, { name: 'Anna', email: 'anna@firma.de' });
+    const res = await ctx.request('/api/workspaces', {
+      method: 'POST',
+      json: { name: 'Q4 Team' },
+      cookie: anna.cookie,
+    });
     expect(res.status).toBe(201);
     const created = workspaceSchema.parse(await res.json());
     expect(created).toMatchObject({
@@ -73,16 +80,25 @@ describe('workspaces', () => {
       slug: 'q4-team',
       role: 'owner',
       memberCount: 1,
+      plan: 'free',
+      usage: { members: 1, seatsUsed: 1, maxMembers: 5, decks: 0, maxDecks: 3 },
     });
+    const ben = await signedInUser(ctx, { name: 'Ben', email: 'ben@firma.de' });
     const again = workspaceSchema.parse(
       await (
-        await ctx.request('/api/workspaces', { method: 'POST', json: { name: 'Q4 Team' } })
+        await ctx.request('/api/workspaces', {
+          method: 'POST',
+          json: { name: 'Q4 Team' },
+          cookie: ben.cookie,
+        })
       ).json(),
     );
     expect(again.slug).toBe('q4-team-2');
     expect(
-      workspaceSchema.array().parse(await (await ctx.request('/api/workspaces')).json()),
-    ).toHaveLength(3);
+      workspaceSchema
+        .array()
+        .parse(await (await ctx.request('/api/workspaces', { cookie: anna.cookie })).json()),
+    ).toHaveLength(1);
   });
 
   it('renames (admin+), deletes (owner only, with decks and files) and hides from outsiders', async () => {
@@ -312,7 +328,7 @@ describe('invitations', () => {
       await (await ctx.request(`/api/join/${created.token}`)).json(),
     );
     expect(preview).toEqual({
-      workspaceName: 'Mein Workspace',
+      workspaceName: 'Meine Organisation',
       inviterName: 'Robert Hofmann',
       role: 'reviewer',
       email: 'l…a@firma.de',
@@ -423,7 +439,7 @@ describe('invitations', () => {
     expect(me.pendingInvites).toEqual([
       expect.objectContaining({
         id: created.invite.id,
-        workspaceName: 'Mein Workspace',
+        workspaceName: 'Meine Organisation',
         inviterName: 'Robert Hofmann',
         role: 'member',
       }),

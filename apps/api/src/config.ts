@@ -7,8 +7,10 @@ import {
   MAX_MEDIA_BYTES,
   MAX_UPLOAD_BYTES,
   SIGNUP_MODES,
+  type PlanId,
   type SignupMode,
 } from '@slider/shared';
+import { DEFAULT_PLAN_LIMITS, type PlanLimits } from './services/plans';
 
 export interface Config {
   env: 'development' | 'production' | 'test';
@@ -36,6 +38,8 @@ export interface Config {
   sync: SyncConfig;
   /** Voice and video comments (BER-116). */
   media: MediaConfig;
+  /** Limits per plan (BER-130); the free plan's can be overridden by env (self-hosting). */
+  plans: Record<PlanId, PlanLimits>;
   /** Self-hosting: Postgres server, built SPA, reverse proxy. Absent in tests. */
   hosting?: HostingConfig;
 }
@@ -147,14 +151,14 @@ const envSchema = z.object({
     .default(DEFAULT_SYNC_POLL_INTERVAL_MS),
   SYNC_DEBOUNCE_MS: z.coerce.number().int().min(0).default(DEFAULT_SYNC_DEBOUNCE_MS),
   AUTH_DEV_LOGIN: booleanEnv.optional(),
-  SIGNUP: z.enum(SIGNUP_MODES).default('invite'),
+  SIGNUP: z.enum(SIGNUP_MODES).default('open'),
   SIGNUP_DOMAINS: z.string().optional(),
   BOOTSTRAP_EMAIL: z.string().optional(),
   SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(365).default(30),
   OIDC_ISSUER: z.url().optional(),
   OIDC_CLIENT_ID: z.string().optional(),
   OIDC_CLIENT_SECRET: z.string().optional(),
-  OIDC_LABEL: z.string().min(1).default('Mit SSO anmelden'),
+  OIDC_LABEL: z.string().min(1).default('Weiter mit SSO'),
   OIDC_SCOPES: z.string().min(1).default('openid profile email'),
   OIDC_REDIRECT_URI: z.url().optional(),
   SMTP_URL: z
@@ -165,7 +169,14 @@ const envSchema = z.object({
   MEDIA_DIR: z.string().min(1).optional(),
   MEDIA_QUOTA_BYTES: z.coerce.number().int().positive().default(DEFAULT_MEDIA_QUOTA_BYTES),
   MAX_MEDIA_BYTES: z.coerce.number().int().positive().default(MAX_MEDIA_BYTES),
+  /** `0` = unlimited. */
+  PLAN_FREE_MAX_MEMBERS: z.coerce.number().int().min(0).optional(),
+  PLAN_FREE_MAX_DECKS: z.coerce.number().int().min(0).optional(),
 });
+
+/** Env value → limit: unset keeps the default, `0` means unlimited (`null`). */
+const limitFromEnv = (value: number | undefined, fallback: number | null) =>
+  value === undefined ? fallback : value === 0 ? null : value;
 
 export function loadConfig(
   env: NodeJS.ProcessEnv = process.env,
@@ -272,6 +283,13 @@ export function loadConfig(
         : path.join(dataDir, 'media'),
       quotaBytes: parsed.MEDIA_QUOTA_BYTES,
       maxBytes: parsed.MAX_MEDIA_BYTES,
+    },
+    plans: {
+      ...DEFAULT_PLAN_LIMITS,
+      free: {
+        maxMembers: limitFromEnv(parsed.PLAN_FREE_MAX_MEMBERS, DEFAULT_PLAN_LIMITS.free.maxMembers),
+        maxDecks: limitFromEnv(parsed.PLAN_FREE_MAX_DECKS, DEFAULT_PLAN_LIMITS.free.maxDecks),
+      },
     },
     hosting: loadHostingConfig(env, parsed.NODE_ENV),
   };

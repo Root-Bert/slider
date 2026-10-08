@@ -1,20 +1,31 @@
-import { Link } from 'react-router';
+import { useEffect } from 'react';
+import { Link, useLocation } from 'react-router';
 import { AppHeader } from '@/app/AppHeader';
 import { routes } from '@/app/routes';
 import { Icon, Toast, useToast } from '@/ui';
 import { useAccount } from '../auth/useAccount';
 import { InvitesSection } from './components/InvitesSection';
 import { MembersSection } from './components/MembersSection';
+import { UsageSection } from './components/PlanUsage';
 import { DeleteSection, GeneralSection, LeaveSection } from './components/WorkspaceSections';
 import { WorkspaceMark } from './components/WorkspaceMark';
 import { canDeleteWorkspace, canManageMembers, ROLE_LABELS } from './lib/roles';
 import { useWorkspace } from './useWorkspace';
 
-/** `/w/:workspaceId/einstellungen` – name, members, invitations, leave and delete (BER-129). */
+/**
+ * `/w/:workspaceId/einstellungen` – plan usage (BER-130), name, members, invitations, leave and
+ * delete (BER-129). `#einladen` scrolls to the invitations.
+ */
 export function Component() {
   const workspace = useWorkspace();
   const { user } = useAccount();
   const [toast, showToast] = useToast();
+  const { hash } = useLocation();
+
+  // `#einladen` from the share dialog: React Router doesn't scroll to anchors by itself.
+  useEffect(() => {
+    if (hash) document.getElementById(decodeURIComponent(hash.slice(1)))?.scrollIntoView();
+  }, [hash]);
 
   return (
     <div className="dot-grid min-h-full">
@@ -37,12 +48,13 @@ export function Component() {
                   {workspace.name}
                 </h1>
                 <p className="text-[13px] text-fg-subtle">
-                  Workspace-Einstellungen · Deine Rolle: {ROLE_LABELS[workspace.role]}
+                  Organisation · Deine Rolle: {ROLE_LABELS[workspace.role]}
                 </p>
               </div>
             </div>
           </div>
 
+          <UsageSection workspace={workspace} />
           <GeneralSection key={workspace.id} workspace={workspace} onNotify={showToast} />
           <MembersSection workspace={workspace} userId={user.id} onNotify={showToast} />
           {canManageMembers(workspace.role) && (

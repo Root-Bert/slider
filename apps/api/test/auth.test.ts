@@ -185,7 +185,7 @@ describe('GET /api/auth/providers', () => {
       providers: [
         {
           id: 'microsoft',
-          label: 'Mit Microsoft anmelden',
+          label: 'Weiter mit Microsoft',
           kind: 'redirect',
           loginUrl: '/api/auth/microsoft/login',
         },
@@ -244,7 +244,7 @@ describe('sessions', () => {
       microsoftConnected: false,
     });
     expect(body.workspaces).toEqual([
-      expect.objectContaining({ name: 'Mein Workspace', role: 'owner', memberCount: 1 }),
+      expect.objectContaining({ name: 'Meine Organisation', role: 'owner', memberCount: 1 }),
     ]);
 
     // Only the hash is stored.
@@ -314,7 +314,9 @@ describe('OIDC login', () => {
     expect(cookie).toBeTruthy();
     const { body } = await me(cookie ?? '');
     expect(body.user).toMatchObject({ name: 'Anna Becker', email: 'anna@firma.de' });
-    expect(body.workspaces).toEqual([expect.objectContaining({ role: 'owner' })]);
+    // No organisation yet (BER-130): the onboarding offers to found or join one.
+    expect(body.workspaces).toEqual([]);
+    expect(body.limits).toEqual({ canCreateWorkspace: true });
 
     // The same identity signs into the same account again.
     const again = await redirectLogin('oidc', idp);
@@ -338,7 +340,7 @@ describe('OIDC login', () => {
     expect(sessionCookieFrom(res)).toBeNull();
   });
 
-  it('keeps sign-up closed by default (SIGNUP=invite)', async () => {
+  it('keeps sign-up closed with SIGNUP=invite', async () => {
     const idp = fakeOidc();
     await oidcContext(idp);
     const res = await redirectLogin('oidc', idp, { returnTo: '/decks' });
@@ -373,7 +375,7 @@ describe('OIDC login', () => {
     const { body } = await me(cookie);
     expect(body.workspaces).toEqual([]);
     expect(body.pendingInvites).toEqual([
-      expect.objectContaining({ workspaceName: 'Mein Workspace', role: 'reviewer' }),
+      expect.objectContaining({ workspaceName: 'Meine Organisation', role: 'reviewer' }),
     ]);
   });
 
@@ -457,7 +459,7 @@ describe('Microsoft login', () => {
     const { body } = await me(cookie);
     expect(body.user?.id).not.toBe(ctx.ownerId);
     expect(body.user?.isInstanceAdmin).toBe(true);
-    expect(body.workspaces).toEqual([expect.objectContaining({ role: 'owner' })]);
+    expect(body.workspaces).toEqual([]);
   });
 
   it('only connects file access for someone already signed in – no new session', async () => {
@@ -634,7 +636,7 @@ describe('magic link', () => {
     expect((await start('robert@q4-team.de')).status).toBe(404);
   });
 
-  it('a new account adopts nothing but its own workspace', async () => {
+  it('a new account adopts nothing and gets no organisation automatically (BER-130)', async () => {
     await mailContext({ signup: 'open' });
     await start('neu@example.com');
     const cookie = sessionCookieFrom(await visit(linkFrom())) ?? '';
@@ -643,8 +645,7 @@ describe('magic link', () => {
       .select()
       .from(workspaceMembers)
       .where(eq(workspaceMembers.userId, id));
-    expect(memberships).toEqual([expect.objectContaining({ role: 'owner' })]);
-    expect(memberships[0]?.workspaceId).not.toBe(ctx.workspaceId);
+    expect(memberships).toEqual([]);
   });
 });
 

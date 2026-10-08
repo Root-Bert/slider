@@ -5,7 +5,7 @@ import { Button, TextField } from '@/ui';
 
 const MAX_NAME = 80;
 
-/** Name field + "Workspace erstellen"; calls `onCreated` once `/me` knows the new workspace. */
+/** Name field + "Organisation erstellen"; calls `onCreated` once `/me` knows the new workspace. */
 export function CreateWorkspaceForm({
   onCreated,
   autoFocus = false,
@@ -21,7 +21,7 @@ export function CreateWorkspaceForm({
   const create = useCreateWorkspace();
   const trimmed = name.trim();
   const error =
-    touched && trimmed === '' ? 'Gib dem Workspace einen Namen.' : create.error?.message;
+    touched && trimmed === '' ? 'Gib der Organisation einen Namen.' : create.error?.message;
 
   return (
     <form
@@ -51,7 +51,7 @@ export function CreateWorkspaceForm({
       <div className="flex justify-end gap-2">
         {secondaryAction}
         <Button type="submit" size="lg" loading={create.isPending}>
-          Workspace erstellen
+          Organisation erstellen
         </Button>
       </div>
     </form>

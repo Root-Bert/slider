@@ -38,7 +38,8 @@ export function toReviewLinkDto(row: ReviewLinkRow): ReviewLink {
     id: row.id,
     deckId: row.deckId,
     token: row.token,
-    role: row.role,
+    // Every link is view-only now (BER-130), old `comment` links included.
+    role: 'view',
     expiresAt: row.expiresAt?.toISOString() ?? null,
     revokedAt: row.revokedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
@@ -121,7 +122,7 @@ export async function getInviteInfo(deps: AppDeps, token: string): Promise<Invit
     slideCount: deck.slideCount,
     thumbnailUrl: deck.thumbnailUrl,
     ownerName: deck.owner.name,
-    role: link.role,
+    role: 'view',
     participants: deck.participants,
   };
 }
@@ -168,10 +169,11 @@ async function nextGuestColor(deps: AppDeps, deckId: string) {
 
 export const guestViewer = (
   session: GuestSessionRow,
-  link: Pick<ReviewLinkRow, 'deckId' | 'role'>,
+  link: Pick<ReviewLinkRow, 'deckId'>,
 ): Viewer => ({
   kind: 'guest',
   author: guestAuthor(session),
   deckId: link.deckId,
-  role: link.role,
+  // Guests only look (BER-130), whatever an old link says.
+  role: 'view',
 });

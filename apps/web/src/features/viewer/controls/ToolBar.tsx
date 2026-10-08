@@ -3,6 +3,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { cn, GlassPanel, Icon, IconButton } from '@/ui';
 import { useViewerData } from '../state/viewer-data';
 import { isPenTool, useViewerDispatch, useViewerState } from '../state/viewer-state';
+import { GUEST_COMMENT_HINT, useSignInFromGuest } from '../hooks/useSignInFromGuest';
 import { ToolOptions } from './ToolOptions';
 
 /** Room the tool options pill needs next to the tool bar (its height plus the gap). */
@@ -15,7 +16,7 @@ const OPTIONS_ROOM = 48;
  * "Text auf Folie" has no options: it writes in the author's colour.
  */
 export function ToolBar({ className }: { className?: string }) {
-  const { canComment } = useViewerData();
+  const { canComment, isGuest, deck } = useViewerData();
   const { tool } = useViewerState();
   const penOptions = isPenTool(tool);
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -40,7 +41,9 @@ export function ToolBar({ className }: { className?: string }) {
   }, [penOptions]);
 
   if (!canComment) {
-    return (
+    return isGuest ? (
+      <GuestViewOnly deckId={deck.id} className={className} />
+    ) : (
       <GlassPanel
         role="status"
         className={cn(
@@ -71,6 +74,34 @@ export function ToolBar({ className }: { className?: string }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Guests only look (BER-130): no tools, but the way to an account. */
+function GuestViewOnly({ deckId, className }: { deckId: string; className?: string }) {
+  const { leaving, signIn } = useSignInFromGuest(deckId);
+  return (
+    <GlassPanel
+      role="status"
+      title={GUEST_COMMENT_HINT}
+      className={cn(
+        'flex h-10 shrink-0 items-center gap-2 pr-1 pl-3 text-sm text-fg-muted',
+        className,
+      )}
+    >
+      <Icon name="visibility" size={18} />
+      <span className="whitespace-nowrap">Nur ansehen</span>
+      <span className="sr-only">{GUEST_COMMENT_HINT}</span>
+      <button
+        type="button"
+        disabled={leaving}
+        onClick={signIn}
+        className="h-8 rounded-control-sm px-2.5 text-[13px] font-medium whitespace-nowrap text-fg hover:bg-white/10 disabled:opacity-50"
+      >
+        <span className="max-sm:hidden">Zum Kommentieren anmelden</span>
+        <span className="sm:hidden">Anmelden</span>
+      </button>
+    </GlassPanel>
   );
 }
 

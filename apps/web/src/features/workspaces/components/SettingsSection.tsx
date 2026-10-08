@@ -3,12 +3,15 @@ import { cn } from '@/ui';
 
 /** A card on the workspace settings page: heading, short explanation, content. */
 export function SettingsSection({
+  id,
   title,
   description,
   aside,
   tone = 'default',
   children,
 }: {
+  /** Anchor for links into the page, e.g. `#einladen`. */
+  id?: string;
   title: string;
   description?: ReactNode;
   /** Right of the heading, e.g. a count or an action. */
@@ -19,9 +22,10 @@ export function SettingsSection({
   const headingId = useId();
   return (
     <section
+      id={id}
       aria-labelledby={headingId}
       className={cn(
-        'glass flex flex-col gap-5 rounded-panel p-5 sm:p-6',
+        'glass flex scroll-mt-4 flex-col gap-5 rounded-panel p-5 sm:p-6',
         tone === 'danger' && 'shadow-[inset_0_0_0_1px_rgb(255_59_48/0.25)]',
       )}
     >

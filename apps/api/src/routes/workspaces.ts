@@ -17,8 +17,8 @@ import { readJson } from '../http/validate';
 import {
   acceptInviteById,
   createInvite,
-  createWorkspace,
   deleteWorkspace,
+  foundWorkspace,
   getWorkspace,
   joinByToken,
   listInvites,
@@ -55,22 +55,20 @@ export function workspacesRoutes(deps: AppDeps) {
   return (
     new Hono<ViewerEnv>()
       .get('/workspaces', viewer, async (c) =>
-        c.json(await listWorkspaces(deps.db, userId(c.var.viewer))),
+        c.json(await listWorkspaces(deps, userId(c.var.viewer))),
       )
       .post('/workspaces', viewer, async (c) => {
         const id = userId(c.var.viewer);
         const { name } = await readJson(c, createWorkspaceInputSchema);
-        const row = await createWorkspace(deps.db, id, name, deps.clock.now());
-        return c.json(await getWorkspace(deps.db, id, row.id), 201);
+        const row = await foundWorkspace(deps, id, name);
+        return c.json(await getWorkspace(deps, id, row.id), 201);
       })
       .get('/workspaces/:id', viewer, async (c) =>
-        c.json(await getWorkspace(deps.db, userId(c.var.viewer), c.req.param('id'))),
+        c.json(await getWorkspace(deps, userId(c.var.viewer), c.req.param('id'))),
       )
       .patch('/workspaces/:id', viewer, async (c) => {
         const { name } = await readJson(c, updateWorkspaceInputSchema);
-        return c.json(
-          await renameWorkspace(deps.db, userId(c.var.viewer), c.req.param('id'), name),
-        );
+        return c.json(await renameWorkspace(deps, userId(c.var.viewer), c.req.param('id'), name));
       })
       .delete('/workspaces/:id', viewer, async (c) => {
         await deleteWorkspace(deps, userId(c.var.viewer), c.req.param('id'));

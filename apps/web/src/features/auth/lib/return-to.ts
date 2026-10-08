@@ -1,4 +1,7 @@
-import { LOGIN_ERRORS, type LoginError } from '@slider/shared';
+import { LOGIN_ERRORS, type LoginError, type SignupMode } from '@slider/shared';
+
+/** The login page and its sign-up twin `/registrieren` (BER-130). */
+const AUTH_PAGES = ['/login', '/registrieren'];
 
 /** Where to land when no (usable) `returnTo` was given. */
 export const DEFAULT_RETURN_TO = '/';
@@ -16,7 +19,9 @@ export function safeReturnTo(value: string | null | undefined): string {
   if ([...value].some((char) => char.charCodeAt(0) < 0x20 || char === '\\'))
     return DEFAULT_RETURN_TO;
   const path = value.split(/[?#]/)[0]!;
-  if (path === '/login' || path.startsWith('/login/')) return DEFAULT_RETURN_TO;
+  if (AUTH_PAGES.some((page) => path === page || path.startsWith(`${page}/`))) {
+    return DEFAULT_RETURN_TO;
+  }
   return value;
 }
 
@@ -41,7 +46,7 @@ const LOGIN_ERROR_COPY: Record<LoginError, { title: string; message: string }> =
   signup_closed: {
     title: 'Kein Konto gefunden',
     message:
-      'Für diese Adresse gibt es noch kein Slider-Konto. Neue Konten entstehen nur über eine Einladung – bitte jemanden aus deinem Team, dich einzuladen.',
+      'Für diese Adresse gibt es noch kein Slider-Konto, und auf diesem Server entstehen neue Konten nur über eine Einladung oder mit einer freigegebenen Firmenadresse. Bitte jemanden aus deiner Organisation, dich einzuladen.',
   },
   account_exists: {
     title: 'Konto meldet sich anders an',
@@ -83,3 +88,15 @@ const LOGIN_ERROR_COPY: Record<LoginError, { title: string; message: string }> =
 };
 
 export const loginErrorCopy = (code: LoginError) => LOGIN_ERROR_COPY[code];
+
+/** Under the login card: how an account comes about with this instance's `SIGNUP` (BER-130). */
+export function signupHintCopy(signup: SignupMode): string {
+  switch (signup) {
+    case 'open':
+      return 'Noch kein Konto? Es wird beim ersten Anmelden automatisch erstellt.';
+    case 'domains':
+      return 'Noch kein Konto? Es wird beim ersten Anmelden mit deiner Firmenadresse automatisch erstellt.';
+    case 'invite':
+      return 'Noch kein Konto? Du brauchst eine Einladung – das Konto wird beim ersten Anmelden über den Einladungslink erstellt.';
+  }
+}

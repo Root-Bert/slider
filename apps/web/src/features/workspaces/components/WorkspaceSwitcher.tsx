@@ -10,7 +10,7 @@ import { HeaderPopover, PopoverDivider, PopoverHeading, PopoverItem } from './He
 import { PendingInvites } from './PendingInvites';
 import { WorkspaceMark } from './WorkspaceMark';
 
-/** Header: current workspace with a menu to switch, create one, open its settings and join invites. */
+/** Header: current organisation with a menu to switch, found one, open its settings and join invites. */
 export function WorkspaceSwitcher() {
   const { data: me } = useMe();
   const current = useActiveWorkspace();
@@ -19,11 +19,12 @@ export function WorkspaceSwitcher() {
   const [toast, showToast] = useToast();
   const workspaces = me?.workspaces ?? [];
   const invites = me?.pendingInvites ?? [];
+  const canCreate = me?.limits?.canCreateWorkspace ?? true;
   if (!me?.user) return null;
 
   const label = current
-    ? `Workspace: ${current.name}${invites.length > 0 ? `, ${invites.length} Einladungen` : ''}`
-    : 'Workspaces';
+    ? `Organisation: ${current.name}${invites.length > 0 ? `, ${invites.length} Einladungen` : ''}`
+    : 'Organisationen';
 
   return (
     <>
@@ -34,7 +35,7 @@ export function WorkspaceSwitcher() {
           <>
             {current ? <WorkspaceMark name={current.name} /> : <Icon name="folder" size={20} />}
             <span className="truncate text-sm font-medium max-sm:hidden">
-              {current?.name ?? 'Workspaces'}
+              {current?.name ?? 'Organisationen'}
             </span>
             {invites.length > 0 && (
               <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-thumb bg-info px-1 text-[10px] font-semibold text-white">
@@ -47,7 +48,7 @@ export function WorkspaceSwitcher() {
       >
         {(close) => (
           <>
-            <PopoverHeading>Workspaces</PopoverHeading>
+            <PopoverHeading>Organisationen</PopoverHeading>
             <div className="flex max-h-[min(320px,50vh)] flex-col gap-0.5 overflow-y-auto">
               {workspaces.map((workspace) => (
                 <PopoverItem
@@ -72,15 +73,28 @@ export function WorkspaceSwitcher() {
               ))}
             </div>
             <PopoverDivider />
-            <PopoverItem
-              icon={<Icon name="add" size={18} className="text-fg-subtle" />}
-              onSelect={() => {
-                close();
-                setCreating(true);
-              }}
-            >
-              Neuer Workspace
-            </PopoverItem>
+            {canCreate ? (
+              <PopoverItem
+                icon={<Icon name="add" size={18} className="text-fg-subtle" />}
+                onSelect={() => {
+                  close();
+                  setCreating(true);
+                }}
+              >
+                Neue Organisation
+              </PopoverItem>
+            ) : (
+              // One self-founded organisation per account (BER-130).
+              <div className="flex items-start gap-2.5 px-2.5 py-1.5 text-[13px] text-fg-subtle">
+                <Icon name="add" size={18} className="shrink-0 opacity-50" />
+                <span className="flex flex-col gap-0.5">
+                  <span>Neue Organisation</span>
+                  <span className="text-xs leading-4">
+                    Du hast bereits eine eigene Organisation. Weiteren trittst du per Einladung bei.
+                  </span>
+                </span>
+              </div>
+            )}
             {current && (
               <PopoverItem
                 icon={<Icon name="person" size={18} className="text-fg-subtle" />}

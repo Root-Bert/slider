@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { commentSchema, type Comment, type CreateMediaCommentInput } from '@slider/shared';
+import { workspaceMembers } from '../src/db/schema';
 import { parseRange } from '../src/http/range';
 import { sniffMediaContainer } from '../src/services/media';
 import {
   cookieFrom,
   createReadyDeck,
   createTestContext,
+  signedInUser,
   type DeckFixture,
   type TestContext,
 } from './helpers';
@@ -59,15 +61,13 @@ async function create(input = voiceComment(), bytes = webm()): Promise<Comment> 
   return commentSchema.parse(await res.json());
 }
 
-async function joinAsGuest(name: string): Promise<string> {
-  const link = (await (
-    await ctx.request(`/api/decks/${deck.deckId}/review-links`, { method: 'POST', json: {} })
-  ).json()) as { token: string };
-  const res = await ctx.request(`/api/invites/${link.token}/join`, {
-    method: 'POST',
-    json: { name },
-  });
-  return cookieFrom(res);
+/** Another member of the organisation – guests only look (BER-130). */
+async function joinAsMember(name: string): Promise<string> {
+  const person = await signedInUser(ctx, { name, email: `${name.toLowerCase()}@firma.de` });
+  await ctx.deps.db
+    .insert(workspaceMembers)
+    .values({ workspaceId: ctx.workspaceId, userId: person.user.id, role: 'reviewer' });
+  return person.cookie;
 }
 
 describe('voice and video comments', () => {
@@ -154,9 +154,9 @@ describe('voice and video comments', () => {
     expect(await big.json()).toMatchObject({ error: { code: 'file_too_large' } });
   });
 
-  it('enforces the storage quota of the deck owner, guests included', async () => {
+  it('enforces the storage quota of the deck owner, other members included', async () => {
     await create(voiceComment(), webm(2500));
-    const guest = await joinAsGuest('Mara');
+    const guest = await joinAsMember('Mara');
     const res = await upload(voiceComment(), webm(2000), 'audio/webm', guest);
     expect(res.status).toBe(413);
     expect(await res.json()).toMatchObject({ error: { code: 'quota_exceeded' } });
@@ -166,7 +166,7 @@ describe('voice and video comments', () => {
   });
 
   it('lets only the recording person set the transcript', async () => {
-    const guest = await joinAsGuest('Mara');
+    const guest = await joinAsMember('Mara');
     const res = await upload(voiceComment(), webm(), 'audio/webm', guest);
     const { media } = commentSchema.parse(await res.json());
 

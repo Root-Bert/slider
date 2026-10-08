@@ -9,6 +9,7 @@ import { migrate } from 'drizzle-orm/pglite/migrator';
 
 const MIGRATIONS_DIR = fileURLToPath(new URL('../drizzle', import.meta.url));
 const WORKSPACES_TAG = '0004_workspaces';
+const PLANS_TAG = '0005_plans';
 
 let client: PGlite | null = null;
 let tmp: string | null = null;
@@ -19,15 +20,15 @@ afterEach(async () => {
   tmp = null;
 });
 
-/** The migrations folder as it was before BER-129 (journal cut before the workspaces migration). */
-async function migrationsBeforeWorkspaces(): Promise<string> {
+/** The migrations folder as it was before `tag` (journal cut before that migration). */
+async function migrationsBefore(tag: string): Promise<string> {
   tmp = await mkdtemp(path.join(tmpdir(), 'slider-migrations-'));
   await cp(MIGRATIONS_DIR, tmp, { recursive: true });
   const journalPath = path.join(tmp, 'meta', '_journal.json');
   const journal = JSON.parse(await readFile(journalPath, 'utf8')) as {
     entries: { tag: string }[];
   };
-  const cut = journal.entries.findIndex((entry) => entry.tag === WORKSPACES_TAG);
+  const cut = journal.entries.findIndex((entry) => entry.tag === tag);
   expect(cut).toBeGreaterThan(0);
   journal.entries = journal.entries.slice(0, cut);
   await writeFile(journalPath, JSON.stringify(journal));
@@ -38,7 +39,7 @@ describe('migration 0004_workspaces', () => {
   it('gives every deck owner a workspace and moves their decks into it', async () => {
     client = new PGlite();
     const db = drizzle({ client });
-    await migrate(db, { migrationsFolder: await migrationsBeforeWorkspaces() });
+    await migrate(db, { migrationsFolder: await migrationsBefore(WORKSPACES_TAG) });
 
     await client.exec(`
       INSERT INTO users (id, name, email, color, created_at) VALUES
@@ -89,5 +90,40 @@ describe('migration 0004_workspaces', () => {
       'SELECT count(*)::int AS n FROM users WHERE is_instance_admin',
     );
     expect(admins[0]?.n).toBe(0);
+  });
+});
+
+describe('migration 0005_plans', () => {
+  it('puts existing organisations on the free plan and keeps everything else', async () => {
+    client = new PGlite();
+    const db = drizzle({ client });
+    await migrate(db, { migrationsFolder: await migrationsBefore(PLANS_TAG) });
+    await client.exec(`
+      INSERT INTO users (id, name, email, color) VALUES ('u-robert', 'Robert', 'robert@q4-team.de', 'red');
+      INSERT INTO workspaces (id, name, slug, created_by) VALUES ('w1', 'Mein Workspace', 'mein-workspace', 'u-robert');
+      INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ('w1', 'u-robert', 'owner');
+      INSERT INTO decks (id, owner_id, workspace_id, title, file_name, source, import_state) VALUES
+        ('d1', 'u-robert', 'w1', 'Q4', 'q4.pptx', 'upload', '{"status":"ready"}'),
+        ('d2', 'u-robert', 'w1', 'Q3', 'q3.pptx', 'upload', '{"status":"ready"}'),
+        ('d3', 'u-robert', 'w1', 'Q2', 'q2.pptx', 'upload', '{"status":"ready"}'),
+        ('d4', 'u-robert', 'w1', 'Q1', 'q1.pptx', 'upload', '{"status":"ready"}');
+    `);
+
+    await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+
+    const { rows } = await client.query<{ id: string; name: string; plan: string }>(
+      'SELECT id, name, plan FROM workspaces',
+    );
+    expect(rows).toEqual([{ id: 'w1', name: 'Mein Workspace', plan: 'free' }]);
+    // Decks above the limit stay.
+    const { rows: deckRows } = await client.query<{ n: number }>(
+      'SELECT count(*)::int AS n FROM decks',
+    );
+    expect(deckRows[0]?.n).toBe(4);
+    await client.exec(`INSERT INTO workspaces (id, name, slug) VALUES ('w2', 'Neu', 'neu')`);
+    const { rows: fresh } = await client.query<{ plan: string }>(
+      `SELECT plan FROM workspaces WHERE id = 'w2'`,
+    );
+    expect(fresh[0]?.plan).toBe('free');
   });
 });

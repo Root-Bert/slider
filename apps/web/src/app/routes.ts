@@ -6,6 +6,8 @@ export const routes = {
   reviews: () => '/',
   workspace: (workspaceId: string) => `/w/${workspaceId}`,
   workspaceSettings: (workspaceId: string) => `/w/${workspaceId}/einstellungen`,
+  /** The invitations on the settings page (BER-130). */
+  workspaceInvites: (workspaceId: string) => `/w/${workspaceId}/einstellungen#einladen`,
   /** The workspace the new deck goes into rides along as `?workspace=`. */
   newReview: (workspaceId?: string | null) =>
     workspaceId ? `/neu?workspace=${encodeURIComponent(workspaceId)}` : '/neu',
@@ -16,6 +18,8 @@ export const routes = {
   /** Workspace invitation link (BER-129). */
   join: (token: string) => `/join/${token}`,
   login: (returnTo?: string | null) => loginPath(returnTo),
+  /** Same page as the login – the first login creates the account (BER-130). */
+  register: () => '/registrieren',
 };
 
 /** Absolute URL for sharing (review links). */

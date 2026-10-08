@@ -10,6 +10,7 @@ import type { AppDeps } from '../deps';
 import { ApiError, badRequest, fileTooLarge, notAPowerPoint } from '../http/errors';
 import { readJson } from '../http/validate';
 import { createDeckFromFile, deleteDeck, listWorkspaceDecks, toDeckDto } from '../services/decks';
+import { assertDeckSlot } from '../services/plans';
 import { listSlides } from '../services/slides';
 import { requireRole, resolveUploadWorkspace } from '../services/workspaces';
 
@@ -80,6 +81,7 @@ export function decksRoutes(deps: AppDeps) {
             viewer.author.id,
             typeof field === 'string' && field ? field : undefined,
           );
+          await assertDeckSlot(deps.db, deps.config, workspaceId);
           const deck = await createDeckFromFile(
             deps,
             { ownerId: viewer.author.id, workspaceId },
@@ -100,6 +102,8 @@ export function decksRoutes(deps: AppDeps) {
         const link = parseShareLink(url);
         if (!link) throw unsupportedLink();
         const workspaceId = await resolveUploadWorkspace(deps, viewer.author.id, requested);
+        // Fail before downloading; `createDeckFromFile` checks again under a lock.
+        await assertDeckSlot(deps.db, deps.config, workspaceId);
 
         const adapter = deps.sources[link.kind];
         const context = { userId: viewer.author.id };

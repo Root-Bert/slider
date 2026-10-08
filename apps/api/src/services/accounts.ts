@@ -196,22 +196,18 @@ export async function signInWithIdentity(
 
   const policy = await maySignUp(deps, email, input.emailVerified, input.inviteToken);
   if (!policy.allowed) return { ok: false, error: 'signup_closed' };
-  const user = await db.transaction(async (tx) => {
-    const [row] = await tx
-      .insert(users)
-      .values({
-        id: crypto.randomUUID(),
-        name: input.name?.trim() || email.slice(0, email.indexOf('@')),
-        email,
-        color: randomColor(),
-        createdAt: now,
-      })
-      .returning();
-    if (!row) throw new Error('User insert returned no row');
-    // Invited people land in the inviting workspace; everyone else gets their own.
-    if (!policy.viaInvite) await ensurePersonalWorkspace(tx, row.id, now);
-    return row;
-  });
+  // No organisation yet (BER-130): the onboarding offers to found one or to join by invitation.
+  const [user] = await db
+    .insert(users)
+    .values({
+      id: crypto.randomUUID(),
+      name: input.name?.trim() || email.slice(0, email.indexOf('@')),
+      email,
+      color: randomColor(),
+      createdAt: now,
+    })
+    .returning();
+  if (!user) throw new Error('User insert returned no row');
   return attach(user);
 }
 
@@ -248,20 +244,17 @@ async function bootstrapAccount(
     deps.log.info(`First login: ${email} adopted the dev owner account ${row.id}`);
     return row;
   }
-  return db.transaction(async (tx) => {
-    const [row] = await tx
-      .insert(users)
-      .values({
-        id: crypto.randomUUID(),
-        name: input.name?.trim() || email.slice(0, email.indexOf('@')),
-        email,
-        color: randomColor(),
-        isInstanceAdmin: true,
-        createdAt: now,
-      })
-      .returning();
-    if (!row) throw new Error('User insert returned no row');
-    await ensurePersonalWorkspace(tx, row.id, now);
-    return row;
-  });
+  const [row] = await db
+    .insert(users)
+    .values({
+      id: crypto.randomUUID(),
+      name: input.name?.trim() || email.slice(0, email.indexOf('@')),
+      email,
+      color: randomColor(),
+      isInstanceAdmin: true,
+      createdAt: now,
+    })
+    .returning();
+  if (!row) throw new Error('User insert returned no row');
+  return row;
 }

@@ -3,9 +3,10 @@
 **Feedback directly on the slide – click, mark, comment.** Every note sits on the exact spot it
 is about: _slide + position_.
 
-Drop in a PowerPoint (share link or `.pptx`) and send reviewers a link – no account needed. They
+Drop in a PowerPoint (share link or `.pptx`) and invite your team into your organisation. They
 click where something should change, draw a frame or an arrow, and write what they mean. You see
-every note in place, reply, and tick it off. The original file is never changed – unless you,
+every note in place, reply, and tick it off. People outside the organisation get a view-only link –
+no account needed. The original file is never changed – unless you,
 the owner of a linked deck, add a slide with the ⊕ between two slides.
 
 > **Status: first prototype (milestones M1 + M2).** Upload, parsing, preview rendering, the review
@@ -192,6 +193,12 @@ cp .env.example .env     # SLIDER_DOMAIN, POSTGRES_PASSWORD, SLIDER_SECRET, a lo
 docker compose up -d --build
 ```
 
+Accounts are created on the first login (`SIGNUP=open`, the default; `invite` and `domains`
+restrict that). Everything lives in organisations: every account may found one and join any
+number by invitation. Organisations start on the free plan – 5 people (members plus pending
+e-mail invites) and 3 decks; self-hosters lift or change that with `PLAN_FREE_MAX_MEMBERS` /
+`PLAN_FREE_MAX_DECKS` (`0` = unlimited).
+
 Without Docker: `bun run build`, then `NODE_ENV=production bun apps/api/src/server.ts`
 (`bun run start`). `DATABASE_URL` switches from PGlite to a Postgres server; `GET /api/health`
 checks the database. Step-by-step guide (German) with all variables, optional Authentik (OIDC),
@@ -238,7 +245,7 @@ Tracked in Linear (project _Slider_). This prototype covers:
 | BER-97          | Import status and error states                                | ✅                                                    |
 | BER-98/99       | Pins, frames, freehand, arrow, highlighter                    | ✅                                                    |
 | BER-100/101     | Threads, connector lines, done status, filters                | ✅                                                    |
-| BER-102         | Guest review links (name only, revocable, expiring)           | ✅                                                    |
+| BER-102         | Guest review links (name only, revocable, expiring)           | ✅ view-only since BER-130                            |
 | BER-103         | "A slide is missing here" gap comments                        | ✅                                                    |
 | BER-128         | ⊕ inserts a slide into the linked PowerPoint                  | ✅                                                    |
 | BER-112/113/115 | PowerPoint comments (modern + legacy) imported and labelled   | ✅                                                    |
@@ -247,6 +254,8 @@ Tracked in Linear (project _Slider_). This prototype covers:
 | BER-107/108/114 | Change detection, slide matching, PPT comment re-import       | ✅ API (polling, debounce, diff, manual sync)         |
 | BER-109–111     | Version UI: change badges, deleted slides, version history    | ⏳ API ready, UI pending                              |
 | BER-116         | Voice and video comments, on-device transcription             | ✅                                                    |
+| BER-129         | Login (Microsoft, OIDC, magic link), organisations, invites   | ✅                                                    |
+| BER-130         | Open sign-up, free plan (5 people, 3 decks), view-only links  | ✅                                                    |
 
 ## Contributing
 

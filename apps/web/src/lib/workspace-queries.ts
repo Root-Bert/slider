@@ -119,20 +119,28 @@ export const useWorkspaceInvites = (workspaceId: string, enabled = true) =>
 
 export function useCreateWorkspaceInvite(workspaceId: string) {
   const queryClient = useQueryClient();
+  const reloadMe = useReloadMe();
   return useMutation({
     mutationFn: (input: CreateWorkspaceInviteInput) =>
       api.post<CreatedWorkspaceInvite>(`/workspaces/${workspaceId}/invites`, input),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: workspaceKeys.invites(workspaceId) }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: workspaceKeys.invites(workspaceId) });
+      // E-mail invites hold a seat (`Workspace.usage`, BER-130).
+      void reloadMe();
+    },
   });
 }
 
 export function useRevokeWorkspaceInvite(workspaceId: string) {
   const queryClient = useQueryClient();
+  const reloadMe = useReloadMe();
   return useMutation({
     mutationFn: (inviteId: string) => api.delete(`/workspace-invites/${inviteId}`),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: workspaceKeys.invites(workspaceId) }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: workspaceKeys.invites(workspaceId) });
+      // E-mail invites hold a seat (`Workspace.usage`, BER-130).
+      void reloadMe();
+    },
   });
 }
 

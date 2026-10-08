@@ -83,7 +83,7 @@ export function JoinForm({ token }: { token: string }) {
         </p>
       )}
       <Button type="submit" size="lg" loading={join.isPending} className="w-full">
-        Review starten
+        Ansehen
       </Button>
       <Button
         variant="ghost"

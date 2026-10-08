@@ -3,7 +3,6 @@ import {
   accentColorSchema,
   anchorSchema,
   commentStatusSchema,
-  reviewLinkRoleSchema,
   MAX_MEDIA_PEAKS,
   mediaKindSchema,
   strokeSchema,
@@ -13,7 +12,7 @@ import {
   type Slide,
   type Viewer,
 } from './model';
-import type { MeUser, PendingInvite, Workspace } from './workspaces';
+import type { MeLimits, MeUser, PendingInvite, Workspace } from './workspaces';
 
 /**
  * HTTP contract between `apps/web` and `apps/api`.
@@ -99,6 +98,8 @@ export const ERROR_CODES = [
   'link_expired',
   'invite_used',
   'rate_limited',
+  /** A limit of the organisation's plan (members, decks, own organisations) is reached (BER-130). */
+  'plan_limit',
   'internal',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -121,6 +122,8 @@ export interface MeResponse {
   user?: MeUser;
   workspaces?: Workspace[];
   pendingInvites?: PendingInvite[];
+  /** What the account may still do (BER-130), e.g. found its own organisation. */
+  limits?: MeLimits;
 }
 
 /** The viewer's own settings: their accent colour (pins, lines, drawings). */
@@ -196,8 +199,17 @@ export const updateCommentInputSchema = z
   .partial();
 export type UpdateCommentInput = z.infer<typeof updateCommentInputSchema>;
 
+/**
+ * Review links are view-only (BER-130): commenting is for members of the organisation. Old
+ * `comment` links still exist in the database but behave like `view`.
+ */
 export const createReviewLinkInputSchema = z.object({
-  role: reviewLinkRoleSchema.default('comment'),
+  role: z
+    .literal('view', {
+      error:
+        'Links zum Teilen sind nur zum Ansehen. Zum Kommentieren lade die Person in die Organisation ein.',
+    })
+    .default('view'),
   expiresInDays: z.number().int().min(1).max(365).nullable().default(null),
 });
 export type CreateReviewLinkInput = z.input<typeof createReviewLinkInputSchema>;

@@ -28,19 +28,33 @@ import { ApiError, badRequest, forbidden, notFound } from '../http/errors';
 import { buttonMail } from '../mail/mailer';
 import { fileUrl } from '../storage/blob-storage';
 import { deleteDeck } from './decks';
+import {
+  assertSeatForInvite,
+  assertSeatForJoin,
+  canCreateWorkspace,
+  OWN_WORKSPACE_LIMIT_MESSAGE,
+  planLimit,
+  workspaceUsages,
+} from './plans';
 
-/** Workspaces, members and invitations (BER-129). */
+/**
+ * Workspaces, members and invitations (BER-129). In the UI a workspace is an "Organisation"
+ * (BER-130); its plan limits live in `./plans`.
+ */
+
+/** What reading workspaces with their usage needs. */
+type WorkspaceDeps = Pick<AppDeps, 'db' | 'config' | 'clock'>;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const EMAIL_INVITE_DAYS = 7;
 const LINK_INVITE_DAYS = 30;
-export const PERSONAL_WORKSPACE_NAME = 'Mein Workspace';
+export const PERSONAL_WORKSPACE_NAME = 'Meine Organisation';
 
 const RANK: Record<WorkspaceRole, number> = { owner: 4, admin: 3, member: 2, reviewer: 1 };
 export const atLeast = (role: WorkspaceRole, min: WorkspaceRole) => RANK[role] >= RANK[min];
 const stronger = (a: WorkspaceRole, b: WorkspaceRole) => (RANK[a] >= RANK[b] ? a : b);
 
-export const workspaceNotFound = () => notFound('Diesen Workspace gibt es nicht (mehr).');
+export const workspaceNotFound = () => notFound('Diese Organisation gibt es nicht (mehr).');
 const inviteNotFound = () => notFound('Diese Einladung gibt es nicht.');
 
 /**
@@ -87,7 +101,7 @@ export async function requireRole(
   workspaceId: string,
   userId: string,
   min: WorkspaceRole = 'reviewer',
-  message = 'Dafür brauchst du mehr Rechte in diesem Workspace.',
+  message = 'Dafür brauchst du mehr Rechte in dieser Organisation.',
 ): Promise<WorkspaceRole> {
   const role = await getRole(db, workspaceId, userId);
   if (!role) throw workspaceNotFound();
@@ -123,7 +137,22 @@ async function uniqueSlug(db: Executor, name: string): Promise<string> {
   for (let n = 2; ; n++) if (!taken.has(`${base}-${n}`)) return `${base}-${n}`;
 }
 
-/** Creates a workspace with `userId` as its owner. */
+/**
+ * Founds an organisation for `userId` (BER-130: one per account, as long as it exists). Joining
+ * others by invitation is unlimited.
+ */
+export async function foundWorkspace(
+  deps: Pick<AppDeps, 'db' | 'clock'>,
+  userId: string,
+  name: string,
+): Promise<WorkspaceRow> {
+  return deps.db.transaction(async (tx) => {
+    if (!(await canCreateWorkspace(tx, userId))) throw planLimit(OWN_WORKSPACE_LIMIT_MESSAGE);
+    return createWorkspace(tx, userId, name, deps.clock.now());
+  });
+}
+
+/** Creates a workspace with `userId` as its owner – no limits; see {@link foundWorkspace}. */
 export async function createWorkspace(
   db: Executor,
   userId: string,
@@ -147,7 +176,11 @@ export async function createWorkspace(
   return row;
 }
 
-/** The user's first workspace; creates "Mein Workspace" when they have none. */
+/**
+ * The user's first workspace; creates "Meine Organisation" when they have none. Only for the dev
+ * owner and the very first account, which adopts the dev owner's decks – everyone else founds or
+ * joins an organisation in the onboarding (BER-130).
+ */
 export async function ensurePersonalWorkspace(
   db: Executor,
   userId: string,
@@ -165,7 +198,7 @@ export async function ensurePersonalWorkspace(
 
 /**
  * Where a new deck goes: the given workspace (member or more required), else the first one the
- * user may create decks in – created on the fly for old clients that send no `workspaceId`.
+ * user may create decks in (old clients send no `workspaceId`).
  */
 export async function resolveUploadWorkspace(
   deps: AppDeps,
@@ -178,7 +211,7 @@ export async function resolveUploadWorkspace(
       workspaceId,
       userId,
       'member',
-      'Als Reviewer kannst du in diesem Workspace keine Präsentationen anlegen.',
+      'Als Reviewer kannst du in dieser Organisation keine Präsentationen anlegen.',
     );
     return workspaceId;
   }
@@ -194,66 +227,69 @@ export async function resolveUploadWorkspace(
     .orderBy(asc(workspaceMembers.createdAt))
     .limit(1);
   if (first) return first.id;
-  return (await createWorkspace(deps.db, userId, PERSONAL_WORKSPACE_NAME, deps.clock.now())).id;
+  throw badRequest('Erstelle zuerst eine Organisation oder tritt einer bei.');
 }
 
-async function memberCounts(db: Executor, ids: string[]): Promise<Map<string, number>> {
-  if (ids.length === 0) return new Map();
-  const rows = await db
-    .select({ id: workspaceMembers.workspaceId, count: count() })
-    .from(workspaceMembers)
-    .where(inArray(workspaceMembers.workspaceId, ids))
-    .groupBy(workspaceMembers.workspaceId);
-  return new Map(rows.map((row) => [row.id, row.count]));
+/** Workspace rows with the caller's role → DTOs with member count, plan and usage. */
+async function toWorkspaceDtos(
+  deps: WorkspaceDeps,
+  rows: { workspace: WorkspaceRow; role: WorkspaceRole }[],
+): Promise<Workspace[]> {
+  const usages = await workspaceUsages(
+    deps.db,
+    deps.config,
+    rows.map((row) => row.workspace),
+    deps.clock.now(),
+  );
+  return rows.map(({ workspace, role }) => {
+    const usage = usages.get(workspace.id);
+    if (!usage) throw new Error(`No usage for workspace ${workspace.id}`);
+    return {
+      id: workspace.id,
+      name: workspace.name,
+      slug: workspace.slug,
+      createdAt: workspace.createdAt.toISOString(),
+      role,
+      memberCount: usage.members,
+      plan: workspace.plan,
+      usage,
+    };
+  });
 }
-
-const toWorkspaceDto = (row: WorkspaceRow, role: WorkspaceRole, memberCount: number) => ({
-  id: row.id,
-  name: row.name,
-  slug: row.slug,
-  createdAt: row.createdAt.toISOString(),
-  role,
-  memberCount,
-});
 
 /** The user's workspaces in the order they joined them. */
-export async function listWorkspaces(db: Executor, userId: string): Promise<Workspace[]> {
-  const rows = await db
+export async function listWorkspaces(deps: WorkspaceDeps, userId: string): Promise<Workspace[]> {
+  const rows = await deps.db
     .select({ workspace: workspaces, role: workspaceMembers.role })
     .from(workspaceMembers)
     .innerJoin(workspaces, eq(workspaces.id, workspaceMembers.workspaceId))
     .where(eq(workspaceMembers.userId, userId))
     .orderBy(asc(workspaceMembers.createdAt), asc(workspaces.name));
-  const counts = await memberCounts(
-    db,
-    rows.map((row) => row.workspace.id),
-  );
-  return rows.map((row) =>
-    toWorkspaceDto(row.workspace, row.role, counts.get(row.workspace.id) ?? 0),
-  );
+  return toWorkspaceDtos(deps, rows);
 }
 
 export async function getWorkspace(
-  db: Executor,
+  deps: WorkspaceDeps,
   userId: string,
   workspaceId: string,
 ): Promise<Workspace> {
-  const role = await requireRole(db, workspaceId, userId);
-  const [row] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+  const role = await requireRole(deps.db, workspaceId, userId);
+  const [row] = await deps.db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
   if (!row) throw workspaceNotFound();
-  const counts = await memberCounts(db, [row.id]);
-  return toWorkspaceDto(row, role, counts.get(row.id) ?? 0);
+  const [dto] = await toWorkspaceDtos(deps, [{ workspace: row, role }]);
+  if (!dto) throw workspaceNotFound();
+  return dto;
 }
 
 export async function renameWorkspace(
-  db: Executor,
+  deps: WorkspaceDeps,
   userId: string,
   workspaceId: string,
   name: string,
 ): Promise<Workspace> {
-  await requireRole(db, workspaceId, userId, 'admin');
-  await db.update(workspaces).set({ name }).where(eq(workspaces.id, workspaceId));
-  return getWorkspace(db, userId, workspaceId);
+  await requireRole(deps.db, workspaceId, userId, 'admin');
+  await deps.db.update(workspaces).set({ name }).where(eq(workspaces.id, workspaceId));
+  return getWorkspace(deps, userId, workspaceId);
 }
 
 /** Owners only. Deletes every deck with its files, then the workspace (members, invites). */
@@ -267,7 +303,7 @@ export async function deleteWorkspace(
     workspaceId,
     userId,
     'owner',
-    'Nur Owner können einen Workspace löschen.',
+    'Nur Owner können eine Organisation löschen.',
   );
   const deckRows = await deps.db
     .select({ id: decks.id })
@@ -318,7 +354,7 @@ async function ownerCount(db: Executor, workspaceId: string): Promise<number> {
 }
 
 const lastOwner = () =>
-  badRequest('Ein Workspace braucht mindestens einen Owner. Ernenne zuerst jemand anderen.');
+  badRequest('Eine Organisation braucht mindestens einen Owner. Ernenne zuerst jemand anderen.');
 
 /** Admins change roles below owner; only owners appoint or demote owners. */
 export async function updateMemberRole(
@@ -330,7 +366,7 @@ export async function updateMemberRole(
 ): Promise<WorkspaceMember> {
   const actorRole = await requireRole(db, workspaceId, actorId, 'admin');
   const current = await getRole(db, workspaceId, targetId);
-  if (!current) throw notFound('Diese Person ist nicht Mitglied des Workspace.');
+  if (!current) throw notFound('Diese Person ist nicht Mitglied der Organisation.');
   if ((current === 'owner' || role === 'owner') && actorRole !== 'owner') {
     throw forbidden('Nur Owner können Owner ernennen oder ändern.');
   }
@@ -366,7 +402,7 @@ export async function removeMember(
 ): Promise<void> {
   const actorRole = await requireRole(db, workspaceId, actorId);
   const target = actorId === targetId ? actorRole : await getRole(db, workspaceId, targetId);
-  if (!target) throw notFound('Diese Person ist nicht Mitglied des Workspace.');
+  if (!target) throw notFound('Diese Person ist nicht Mitglied der Organisation.');
   if (actorId !== targetId) {
     if (!atLeast(actorRole, 'admin')) throw forbidden('Nur Admins können Mitglieder entfernen.');
     if (target === 'owner' && actorRole !== 'owner') {
@@ -461,24 +497,30 @@ export async function createInvite(
       .where(
         and(eq(workspaceMembers.workspaceId, workspaceId), sql`lower(${users.email}) = ${email}`),
       );
-    if (member) throw badRequest('Diese Person ist schon Mitglied des Workspace.');
+    if (member) throw badRequest('Diese Person ist schon Mitglied der Organisation.');
   }
   const token = newSecretToken();
   const now = deps.clock.now();
   const days = email ? EMAIL_INVITE_DAYS : LINK_INVITE_DAYS;
-  const [row] = await deps.db
-    .insert(workspaceInvites)
-    .values({
-      id: crypto.randomUUID(),
-      workspaceId,
-      email,
-      role: input.role,
-      tokenHash: hashToken(token),
-      createdBy: actor.id,
-      createdAt: now,
-      expiresAt: new Date(now.getTime() + days * DAY_MS),
-    })
-    .returning();
+  // An e-mail invite reserves a seat (BER-130); links may always be created, joining checks.
+  const [row] = await deps.db.transaction(async (tx) => {
+    if (email && !(await hasPendingEmailInviteIn(tx, workspaceId, email, now))) {
+      await assertSeatForInvite(tx, deps.config, workspaceId, now);
+    }
+    return tx
+      .insert(workspaceInvites)
+      .values({
+        id: crypto.randomUUID(),
+        workspaceId,
+        email,
+        role: input.role,
+        tokenHash: hashToken(token),
+        createdBy: actor.id,
+        createdAt: now,
+        expiresAt: new Date(now.getTime() + days * DAY_MS),
+      })
+      .returning();
+  });
   if (!row) throw new Error('Invite insert returned no row');
   const url = inviteUrl(deps, token);
 
@@ -493,7 +535,7 @@ export async function createInvite(
         buttonMail({
           to: email,
           subject: `${actor.name} lädt dich zu „${workspace?.name ?? 'Slider'}“ ein`,
-          intro: `${actor.name} hat dich in den Slider-Workspace „${workspace?.name ?? ''}“ eingeladen, um Präsentationen zu prüfen und zu kommentieren.`,
+          intro: `${actor.name} hat dich in die Slider-Organisation „${workspace?.name ?? ''}“ eingeladen, um Präsentationen zu prüfen und zu kommentieren.`,
           button: 'Einladung annehmen',
           url,
           outro: `Die Einladung gilt ${EMAIL_INVITE_DAYS} Tage und nur für ${email}.`,
@@ -587,26 +629,29 @@ async function acceptInvite(
   const now = deps.clock.now();
   const current = await getRole(deps.db, invite.workspaceId, user.id);
   if (invite.email && normalizeEmail(user.email) !== invite.email) {
-    if (current) return getWorkspace(deps.db, user.id, invite.workspaceId);
+    if (current) return getWorkspace(deps, user.id, invite.workspaceId);
     throw forbidden(
       `Diese Einladung gilt für ${maskEmail(invite.email)}. Du bist als ${user.email} angemeldet – melde dich mit der eingeladenen Adresse an.`,
     );
   }
   if (inviteState(invite, now) === 'used' && current) {
-    return getWorkspace(deps.db, user.id, invite.workspaceId);
+    return getWorkspace(deps, user.id, invite.workspaceId);
   }
   requireValidInvite(invite, now);
 
   await deps.db.transaction(async (tx) => {
     if (!current) {
-      await tx
-        .insert(workspaceMembers)
-        .values({
-          workspaceId: invite.workspaceId,
-          userId: user.id,
-          role: invite.role,
-          createdAt: now,
-        });
+      // Someone with a pending e-mail invite brings their reserved seat, even through a link.
+      const reserved =
+        Boolean(invite.email) ||
+        (await hasPendingEmailInviteIn(tx, invite.workspaceId, normalizeEmail(user.email), now));
+      await assertSeatForJoin(tx, deps.config, invite.workspaceId, { reserved, now });
+      await tx.insert(workspaceMembers).values({
+        workspaceId: invite.workspaceId,
+        userId: user.id,
+        role: invite.role,
+        createdAt: now,
+      });
     } else if (stronger(current, invite.role) !== current) {
       await tx
         .update(workspaceMembers)
@@ -629,7 +674,7 @@ async function acceptInvite(
         .where(eq(workspaceInvites.id, invite.id));
     }
   });
-  return getWorkspace(deps.db, user.id, invite.workspaceId);
+  return getWorkspace(deps, user.id, invite.workspaceId);
 }
 
 export async function joinByToken(deps: AppDeps, user: UserRow, token: string): Promise<Workspace> {
@@ -695,6 +740,29 @@ export async function hasPendingEmailInvite(
     .where(
       and(
         eq(workspaceInvites.email, normalizeEmail(email)),
+        isNull(workspaceInvites.revokedAt),
+        isNull(workspaceInvites.acceptedAt),
+        gt(workspaceInvites.expiresAt, now),
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
+/** Whether `email` already holds a seat in this workspace through a pending e-mail invite. */
+async function hasPendingEmailInviteIn(
+  db: Executor,
+  workspaceId: string,
+  email: string,
+  now: Date,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: workspaceInvites.id })
+    .from(workspaceInvites)
+    .where(
+      and(
+        eq(workspaceInvites.workspaceId, workspaceId),
+        eq(workspaceInvites.email, email),
         isNull(workspaceInvites.revokedAt),
         isNull(workspaceInvites.acceptedAt),
         gt(workspaceInvites.expiresAt, now),

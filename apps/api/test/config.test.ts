@@ -40,6 +40,17 @@ describe('loadConfig', () => {
       /SYNC_POLL_INTERVAL_MS/,
     );
   });
+  it('uses the free plan (5 people, 3 decks) unless PLAN_FREE_* says otherwise; 0 = unlimited', () => {
+    expect(loadConfig({}, quiet).plans).toEqual({ free: { maxMembers: 5, maxDecks: 3 } });
+    expect(
+      loadConfig({ PLAN_FREE_MAX_MEMBERS: '25', PLAN_FREE_MAX_DECKS: '0' }, quiet).plans,
+    ).toEqual({ free: { maxMembers: 25, maxDecks: null } });
+    expect(
+      loadConfig({ PLAN_FREE_MAX_MEMBERS: '0', PLAN_FREE_MAX_DECKS: '' }, quiet).plans,
+    ).toEqual({ free: { maxMembers: null, maxDecks: 3 } });
+    expect(() => loadConfig({ PLAN_FREE_MAX_DECKS: '-1' }, quiet)).toThrow(/PLAN_FREE_MAX_DECKS/);
+  });
+
   describe('login (BER-129)', () => {
     const SECRET = { SLIDER_SECRET: 'x'.repeat(32) };
     const MS = { MS_CLIENT_ID: 'id', MS_CLIENT_SECRET: 'secret' };
@@ -47,7 +58,7 @@ describe('loadConfig', () => {
     it('logs in as the dev owner in development until a login provider is configured', () => {
       expect(loadConfig({}, quiet).auth).toEqual({
         devLogin: true,
-        signup: 'invite',
+        signup: 'open',
         signupDomains: [],
         oidc: null,
         sessionTtlDays: 30,
@@ -83,7 +94,7 @@ describe('loadConfig', () => {
         issuer: 'https://auth.firma.de/application/o/slider',
         clientId: 'slider',
         clientSecret: 's',
-        label: 'Mit SSO anmelden',
+        label: 'Weiter mit SSO',
         scopes: 'openid profile email',
         redirectUri: 'https://slider.firma.de/api/auth/oidc/callback',
       });

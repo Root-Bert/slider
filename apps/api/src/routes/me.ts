@@ -7,6 +7,7 @@ import type { AppDeps } from '../deps';
 import { readJson } from '../http/validate';
 import { fileUrl } from '../storage/blob-storage';
 import { updateViewerColor } from '../services/users';
+import { canCreateWorkspace } from '../services/plans';
 import { listWorkspaces, pendingInvitesFor } from '../services/workspaces';
 
 /** Guests get their viewer; signed-in accounts also their account, workspaces and invitations. */
@@ -14,9 +15,10 @@ async function meResponse(deps: AppDeps, viewer: Viewer): Promise<MeResponse> {
   if (viewer.kind === 'guest') return { viewer };
   const [user] = await deps.db.select().from(users).where(eq(users.id, viewer.author.id));
   if (!user) return { viewer };
-  const [workspaces, pendingInvites] = await Promise.all([
-    listWorkspaces(deps.db, user.id),
+  const [workspaces, pendingInvites, mayFound] = await Promise.all([
+    listWorkspaces(deps, user.id),
     pendingInvitesFor(deps.db, user, deps.clock.now()),
+    canCreateWorkspace(deps.db, user.id),
   ]);
   return {
     viewer,
@@ -31,6 +33,7 @@ async function meResponse(deps: AppDeps, viewer: Viewer): Promise<MeResponse> {
     },
     workspaces,
     pendingInvites,
+    limits: { canCreateWorkspace: mayFound },
   };
 }
 

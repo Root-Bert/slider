@@ -1,6 +1,7 @@
 import { Link, Navigate } from 'react-router';
 import { CenteredMessage } from '@/app/RouteError';
 import { routes } from '@/app/routes';
+import { deckLimitMessage, deckState } from '@/features/workspaces/lib/plan';
 import { canCreateDecks } from '@/features/workspaces/lib/roles';
 import { useActiveWorkspace } from '@/features/workspaces/useWorkspace';
 import { NewReview } from './NewReview';
@@ -24,6 +25,19 @@ export function Component() {
           className="text-sm text-fg-muted underline underline-offset-4 hover:text-fg"
         >
           Zurück zu den Reviews
+        </Link>
+      </CenteredMessage>
+    );
+  }
+  if (deckState(workspace.usage).full) {
+    // The plan's deck limit (BER-130) – the API would refuse the import anyway.
+    return (
+      <CenteredMessage title="Keine Präsentation mehr frei" message={deckLimitMessage(workspace)}>
+        <Link
+          to={routes.workspace(workspace.id)}
+          className="text-sm text-fg-muted underline underline-offset-4 hover:text-fg"
+        >
+          Zu den Reviews
         </Link>
       </CenteredMessage>
     );

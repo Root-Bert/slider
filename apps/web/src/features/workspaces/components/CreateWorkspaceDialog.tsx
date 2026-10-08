@@ -3,15 +3,15 @@ import { routes } from '@/app/routes';
 import { Button, Dialog } from '@/ui';
 import { CreateWorkspaceForm } from './CreateWorkspaceForm';
 
-/** "Neuer Workspace" from the switcher; opens the new workspace afterwards. */
+/** "Neue Organisation" from the switcher; opens the new organisation afterwards. */
 export function CreateWorkspaceDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate();
   return (
     <Dialog
       open={open}
       onClose={onClose}
-      title="Neuer Workspace"
-      description="Ein eigener Bereich mit eigenen Präsentationen und Mitgliedern."
+      title="Neue Organisation"
+      description="Ein eigener Bereich mit eigenen Präsentationen und Mitgliedern. Jedes Konto kann eine Organisation gründen."
     >
       {open && (
         <CreateWorkspaceForm

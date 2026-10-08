@@ -215,7 +215,7 @@ export function authRoutes(deps: AppDeps) {
         if (config.microsoft) {
           providers.push({
             id: 'microsoft',
-            label: 'Mit Microsoft anmelden',
+            label: 'Weiter mit Microsoft',
             kind: 'redirect',
             loginUrl: '/api/auth/microsoft/login',
           });

@@ -40,7 +40,7 @@ describe('review links', () => {
   it('creates unguessable tokens and lists them for the owner', async () => {
     const link = await createLink({ expiresInDays: 7 });
     expect(link.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(link.role).toBe('comment');
+    expect(link.role).toBe('view');
     expect(link.expiresAt).not.toBeNull();
 
     const list = reviewLinkSchema
@@ -49,7 +49,18 @@ describe('review links', () => {
     expect(list.map((l) => l.id)).toEqual([link.id]);
   });
 
-  it('runs the full guest flow: invite → join → comment → revoke', async () => {
+  it('only creates view links (BER-130)', async () => {
+    const res = await ctx.request(`/api/decks/${deck.deckId}/review-links`, {
+      method: 'POST',
+      json: { role: 'comment' },
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({
+      error: { code: 'bad_request', message: expect.stringMatching(/nur zum Ansehen/) },
+    });
+  });
+
+  it('runs the full guest flow: invite → join → look, not comment → revoke', async () => {
     const link = await createLink();
 
     const info = await ctx.request(`/api/invites/${link.token}`);
@@ -58,7 +69,7 @@ describe('review links', () => {
       deckTitle: 'Q4 Strategie',
       slideCount: 2,
       ownerName: 'Robert Hofmann',
-      role: 'comment',
+      role: 'view',
     });
 
     const joined = await join(link.token);
@@ -69,7 +80,7 @@ describe('review links', () => {
     expect(viewer).toMatchObject({
       kind: 'guest',
       deckId: deck.deckId,
-      role: 'comment',
+      role: 'view',
       author: { name: 'Lena Wolf', type: 'guest' },
     });
     expect(viewer.author.color).not.toBe('red');
@@ -85,8 +96,8 @@ describe('review links', () => {
       json: pinComment(deck.slideIds[0] ?? ''),
       cookie: guest,
     });
-    expect(comment.status).toBe(201);
-    expect(await comment.json()).toMatchObject({ author: { name: 'Lena Wolf', type: 'guest' } });
+    expect(comment.status).toBe(403);
+    expect(await comment.json()).toMatchObject({ error: { code: 'forbidden' } });
 
     expect((await ctx.request(`/api/review-links/${link.id}`, { method: 'DELETE' })).status).toBe(
       204,

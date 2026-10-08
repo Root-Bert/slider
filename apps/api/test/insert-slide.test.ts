@@ -163,7 +163,7 @@ describe('inserting a slide (POST /decks/:id/slides)', () => {
     const link = (await (
       await ctx.request(`/api/decks/${deckId}/review-links`, {
         method: 'POST',
-        json: { role: 'comment' },
+        json: { role: 'view' },
       })
     ).json()) as { token: string };
     const guest = cookieFrom(

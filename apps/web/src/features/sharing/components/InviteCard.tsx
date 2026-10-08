@@ -24,9 +24,8 @@ export function InviteCard({ token, invite }: { token: string; invite: InviteInf
           className="w-36 rounded-chip ring-1 ring-hairline-strong"
         />
         <figcaption className="flex items-center gap-1.5 text-xs text-fg-subtle">
-          <Icon name={invite.role === 'view' ? 'lock' : 'chatBubble'} size={14} />
-          {invite.deckTitle} · {slidesLabel(invite.slideCount)} ·{' '}
-          {invite.role === 'view' ? 'nur lesen' : 'Kommentieren erlaubt'}
+          <Icon name="visibility" size={14} />
+          {invite.deckTitle} · {slidesLabel(invite.slideCount)} · nur ansehen
         </figcaption>
       </figure>
 
@@ -35,9 +34,8 @@ export function InviteCard({ token, invite }: { token: string; invite: InviteInf
           {firstName(invite.ownerName)} hat dich zum Review von „{invite.deckTitle}“ eingeladen
         </h1>
         <p className="text-[13px] text-fg-subtle">
-          {invite.role === 'view'
-            ? 'Sieh dir die Folien an – ohne Account.'
-            : 'Markiere Folien und kommentiere direkt – ohne Account.'}
+          Sieh dir die Folien an – ohne Account. Kommentieren können nur Mitglieder der
+          Organisation.
         </p>
       </div>
 

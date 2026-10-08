@@ -1,8 +1,13 @@
 import { useId, type ReactNode } from 'react';
-import type { Author, Deck } from '@slider/shared';
+import { Link } from 'react-router';
+import type { Author, Deck, Workspace } from '@slider/shared';
+import { routes } from '@/app/routes';
+import { useMe } from '@/lib/queries';
 import { Avatar, Button, Dialog, Icon, Toggle, type IconName } from '@/ui';
 import { Select, type SelectOption } from '@/ui';
 import { slidesLabel } from '@/features/reviews/lib/deck-labels';
+import { seatsLine } from '@/features/workspaces/lib/plan';
+import { canManageMembers } from '@/features/workspaces/lib/roles';
 import { OriginalUntouchedNote } from './components/OriginalUntouchedNote';
 import { ShareLinkField } from './components/ShareLinkField';
 import { useShareLink } from './hooks/useShareLink';
@@ -13,9 +18,15 @@ interface ShareDialogProps {
   onClose: () => void;
 }
 
-/** C1 "Review teilen" (BER-102): one guest link per deck, role and expiry, people with access. */
+/**
+ * C1 "Review teilen" (BER-102). Since BER-130 collaboration happens inside the organisation:
+ * the primary action invites members, the guest link is view-only.
+ */
 export function ShareDialog({ deck, open, onClose }: ShareDialogProps) {
   const share = useShareLink(deck.id, open);
+  const { data: me } = useMe();
+  const workspace = me?.workspaces?.find((candidate) => candidate.id === deck.workspaceId) ?? null;
+  const viewLinkId = useId();
 
   return (
     <Dialog
@@ -32,18 +43,26 @@ export function ShareDialog({ deck, open, onClose }: ShareDialogProps) {
         </>
       }
     >
-      <ShareLinkField link={share.activeLink} loading={share.loading} onCreate={share.createNew} />
+      {workspace && <InviteMembers workspace={workspace} onNavigate={onClose} />}
+
+      <section aria-labelledby={viewLinkId} className="flex flex-col gap-3">
+        <div className="flex flex-col gap-0.5">
+          <h3 id={viewLinkId} className="flex items-center gap-2 text-sm font-medium text-fg">
+            <Icon name="visibility" size={18} className="text-fg-subtle" />
+            Link zum Ansehen
+          </h3>
+          <p className="text-xs text-fg-subtle">
+            Ansehen ohne Konto – kommentieren können nur Mitglieder der Organisation.
+          </p>
+        </div>
+        <ShareLinkField
+          link={share.activeLink}
+          loading={share.loading}
+          onCreate={share.createNew}
+        />
+      </section>
 
       <div className="flex flex-col gap-3.5">
-        <SettingRow icon="person">
-          <Toggle
-            label="Gäste ohne Account dürfen kommentieren"
-            description="Gäste geben beim Öffnen nur ihren Namen an"
-            checked={share.settings.role === 'comment'}
-            disabled={!share.activeLink || share.busy}
-            onChange={(checked) => share.update({ role: checked ? 'comment' : 'view' })}
-          />
-        </SettingRow>
         <SettingRow icon="schedule">
           <ExpirySetting
             value={share.settings.expiresInDays}
@@ -86,8 +105,8 @@ export function ShareDialog({ deck, open, onClose }: ShareDialogProps) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="min-w-0 flex-1 text-xs text-fg-subtle">
           {share.activeLink
-            ? 'Widerrufen sperrt den Link sofort für alle Gäste.'
-            : 'Kein aktiver Link – Gäste können den Review gerade nicht öffnen.'}
+            ? 'Widerrufen sperrt den Link sofort für alle, die nur ansehen.'
+            : 'Kein aktiver Link – ohne Konto kann den Review gerade niemand öffnen.'}
         </p>
         <Button
           variant="danger"
@@ -101,6 +120,43 @@ export function ShareDialog({ deck, open, onClose }: ShareDialogProps) {
         </Button>
       </div>
     </Dialog>
+  );
+}
+
+/** The primary way to share: people join the organisation and comment there. */
+function InviteMembers({
+  workspace,
+  onNavigate,
+}: {
+  workspace: Workspace;
+  onNavigate: () => void;
+}) {
+  const mayInvite = canManageMembers(workspace.role);
+  const seats = seatsLine(workspace.usage);
+  return (
+    <section className="flex flex-col items-start gap-3 rounded-control bg-white/5 p-4">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <p className="text-sm font-medium text-fg">Mit dem Team kommentieren</p>
+        <p className="text-xs leading-[18px] text-fg-subtle">
+          Alle Mitglieder von „{workspace.name}“ sehen diesen Review und können kommentieren.
+          {mayInvite
+            ? seats
+              ? ` ${seats}`
+              : ''
+            : ' Neue Mitglieder lädt ein Admin der Organisation ein.'}
+        </p>
+      </div>
+      {mayInvite && (
+        <Link
+          to={routes.workspaceInvites(workspace.id)}
+          onClick={onNavigate}
+          className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-control bg-primary px-4 text-sm font-medium whitespace-nowrap text-on-primary transition-colors hover:bg-white"
+        >
+          <Icon name="personAdd" size={18} />
+          Mitglieder einladen
+        </Link>
+      )}
+    </section>
   );
 }
 
@@ -174,7 +230,11 @@ function People({ owner, participants }: { owner: Author; participants: readonly
       <ul className="flex max-h-48 flex-col gap-3 overflow-y-auto">
         <PersonRow person={owner} suffix="(Du)" role="Besitzer" />
         {others.map((person) => (
-          <PersonRow key={person.id} person={person} role="Kann kommentieren" />
+          <PersonRow
+            key={person.id}
+            person={person}
+            role={person.type === 'guest' ? 'Kann ansehen' : 'Kann kommentieren'}
+          />
         ))}
       </ul>
     </section>

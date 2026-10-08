@@ -41,7 +41,7 @@ export function MembersSection({
   return (
     <SettingsSection
       title="Mitglieder"
-      description="Wer in diesem Workspace Präsentationen sieht und kommentiert."
+      description="Wer in dieser Organisation Präsentationen sieht und kommentiert."
       aside={
         members.isSuccess && (
           <span className="pt-0.5 text-[13px] text-fg-subtle">{list.length}</span>
@@ -128,7 +128,7 @@ export function MembersSection({
         open={removing !== null}
         onClose={() => setRemoving(null)}
         title={removing ? `${removing.name} entfernen?` : ''}
-        description="Die Person verliert den Zugriff auf alle Präsentationen dieses Workspace. Ihre Präsentationen und Kommentare bleiben erhalten."
+        description="Die Person verliert den Zugriff auf alle Präsentationen dieser Organisation. Ihre Präsentationen und Kommentare bleiben erhalten."
         footer={
           <>
             <Button variant="ghost" onClick={() => setRemoving(null)}>

@@ -10,6 +10,14 @@ export type DeckRight = 'view' | 'comment' | 'own';
 
 export const deckNotFound = () => notFound('Diese Präsentation gibt es nicht (mehr).');
 
+/**
+ * Guests only look (BER-130): commenting is for members of the organisation, whatever role an
+ * old review link was created with.
+ */
+const GUEST_PERMISSIONS: DeckPermissions = { canManage: false, canComment: false };
+export const GUEST_COMMENT_MESSAGE =
+  'Zum Kommentieren brauchst du ein Konto in dieser Organisation. Mit diesem Link kannst du nur ansehen.';
+
 /** What the caller may do with decks, for `Deck.permissions` in lists. */
 export type DeckViewerAccess =
   | { kind: 'guest'; role: ReviewLinkRole }
@@ -25,7 +33,7 @@ export function permissionsFor(
   deck: Pick<DeckRow, 'workspaceId' | 'ownerId'>,
 ): DeckPermissions {
   if (!access) return { canManage: false, canComment: false };
-  if (access.kind === 'guest') return { canManage: false, canComment: access.role === 'comment' };
+  if (access.kind === 'guest') return GUEST_PERMISSIONS;
   return deckPermissions(access.roles.get(deck.workspaceId) ?? null, deck.ownerId, access.userId);
 }
 
@@ -42,14 +50,12 @@ export async function deckAccess(
 ): Promise<{ deck: DeckRow; permissions: DeckPermissions }> {
   if (viewer.kind === 'guest') {
     if (viewer.deckId !== deckId || right === 'own') throw forbidden();
-    if (right === 'comment' && viewer.role !== 'comment') {
-      throw forbidden('Mit diesem Link kannst du nur ansehen, nicht kommentieren.');
-    }
+    if (right === 'comment') throw forbidden(GUEST_COMMENT_MESSAGE);
   }
   const [deck] = await db.select().from(decks).where(eq(decks.id, deckId));
   if (!deck) throw deckNotFound();
   if (viewer.kind === 'guest') {
-    return { deck, permissions: { canManage: false, canComment: viewer.role === 'comment' } };
+    return { deck, permissions: GUEST_PERMISSIONS };
   }
 
   const role = await getRole(db, deck.workspaceId, viewer.author.id);

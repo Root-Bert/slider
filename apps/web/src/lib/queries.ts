@@ -108,15 +108,22 @@ export function useDeleteDeck() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (deckId: string) => api.delete(`/decks/${deckId}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.decks }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.decks });
+      // Frees a slot of the plan's deck limit (`Workspace.usage`, BER-130).
+      void queryClient.invalidateQueries({ queryKey: queryKeys.me });
+    },
   });
 }
 
-export const useImportLink = (workspaceId: string | null) =>
-  useMutation({
+export function useImportLink(workspaceId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
     mutationFn: (url: string) =>
       api.post<Deck>('/decks/link', workspaceId ? { url, workspaceId } : { url }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.me }),
   });
+}
 
 // ── Slides & comments ───────────────────────────────────────────────────────
 

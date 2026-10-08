@@ -153,7 +153,10 @@ export const workspaces = pgTable('workspaces', {
   name: text('name').notNull(),
   slug: text('slug').notNull().unique(),
   createdAt: createdAt(),
+  /** Who founded it; every account may found one (BER-130). */
   createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+  /** `PlanId` – decides the limits (members, decks); see `services/plans`. */
+  plan: text('plan').notNull().default('free'),
 });
 
 export const workspaceMembers = pgTable(

@@ -21,7 +21,7 @@ export const ROLE_HINTS: Record<WorkspaceRole, string> = {
   reviewer: 'Präsentationen ansehen und kommentieren.',
   member: 'Zusätzlich eigene Präsentationen anlegen.',
   admin: 'Zusätzlich Mitglieder, Einladungen und alle Präsentationen verwalten.',
-  owner: 'Alles, auch den Workspace umbenennen, löschen und Owner ernennen.',
+  owner: 'Alles, auch die Organisation umbenennen, löschen und Owner ernennen.',
 };
 
 export const INVITE_ROLES = [

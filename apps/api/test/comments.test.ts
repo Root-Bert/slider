@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { commentSchema, viewerSchema, type Comment, type CreateCommentInput } from '@slider/shared';
-import { comments } from '../src/db/schema';
+import { comments, reviewLinks, workspaceMembers } from '../src/db/schema';
+import { newReviewToken } from '../src/services/review-links';
 import { externalAuthor } from '../src/authors';
 import {
   cookieFrom,
   createReadyDeck,
   createTestContext,
   pinComment,
+  signedInUser,
   type DeckFixture,
   type TestContext,
 } from './helpers';
@@ -31,16 +33,32 @@ async function create(input: CreateCommentInput, cookie?: string): Promise<Comme
   return commentSchema.parse(await res.json());
 }
 
-/** Joins the deck as a guest through a fresh review link and returns the cookie. */
-async function joinAsGuest(name: string, role: 'view' | 'comment' = 'comment'): Promise<string> {
+/** Joins the deck as a guest through a fresh (view-only) review link and returns the cookie. */
+async function joinAsGuest(name: string): Promise<string> {
   const link = (await (
-    await ctx.request(`/api/decks/${deck.deckId}/review-links`, { method: 'POST', json: { role } })
+    await ctx.request(`/api/decks/${deck.deckId}/review-links`, {
+      method: 'POST',
+      json: { role: 'view' },
+    })
   ).json()) as { token: string };
-  const res = await ctx.request(`/api/invites/${link.token}/join`, {
-    method: 'POST',
-    json: { name },
-  });
+  return joinWithToken(link.token, name);
+}
+
+async function joinWithToken(token: string, name: string): Promise<string> {
+  const res = await ctx.request(`/api/invites/${token}/join`, { method: 'POST', json: { name } });
   return cookieFrom(res);
+}
+
+/** A reviewer in the deck's organisation – commenting is for members (BER-130). */
+async function asMember(name: string): Promise<string> {
+  const person = await signedInUser(ctx, {
+    name,
+    email: `${name.split(' ')[0]?.toLowerCase()}@firma.de`,
+  });
+  await ctx.deps.db
+    .insert(workspaceMembers)
+    .values({ workspaceId: ctx.workspaceId, userId: person.user.id, role: 'reviewer' });
+  return person.cookie;
 }
 
 describe('creating comments', () => {
@@ -290,7 +308,7 @@ describe('replies', () => {
 describe('updating and deleting', () => {
   it('lets anyone with comment rights resolve, and records who did', async () => {
     const root = await create(pinComment(slide(0)));
-    const guest = await joinAsGuest('Lena Wolf');
+    const guest = await asMember('Lena Wolf');
 
     const res = await ctx.request(`/api/comments/${root.id}`, {
       method: 'PATCH',
@@ -313,7 +331,7 @@ describe('updating and deleting', () => {
 
   it('only lets the author edit the text', async () => {
     const root = await create(pinComment(slide(0)));
-    const guest = await joinAsGuest('Max Kern');
+    const guest = await asMember('Max Kern');
 
     const byGuest = await ctx.request(`/api/comments/${root.id}`, {
       method: 'PATCH',
@@ -353,8 +371,8 @@ describe('updating and deleting', () => {
     expect(resolve.status).toBe(200);
   });
 
-  it('lets guests delete only their own comments; deleting a root removes its replies', async () => {
-    const guest = await joinAsGuest('Anna Becker');
+  it('lets members delete only their own comments; deleting a root removes its replies', async () => {
+    const guest = await asMember('Anna Becker');
     const ownerRoot = await create(pinComment(slide(0)));
     const guestRoot = await create(pinComment(slide(1), 'Von Anna'), guest);
     await create({
@@ -380,7 +398,7 @@ describe('updating and deleting', () => {
   });
 
   it('lets the owner delete any comment', async () => {
-    const guest = await joinAsGuest('Anna Becker');
+    const guest = await asMember('Anna Becker');
     const guestRoot = await create(pinComment(slide(1)), guest);
     expect((await ctx.request(`/api/comments/${guestRoot.id}`, { method: 'DELETE' })).status).toBe(
       204,
@@ -392,15 +410,45 @@ describe('updating and deleting', () => {
   });
 });
 
-describe('view-only guests', () => {
+describe('guests only look (BER-130)', () => {
   it('can read but not comment', async () => {
-    const viewer = await joinAsGuest('Gast', 'view');
+    const viewer = await joinAsGuest('Gast');
     expect(
       (await ctx.request(`/api/decks/${deck.deckId}/comments`, { cookie: viewer })).status,
     ).toBe(200);
     const res = await post(pinComment(slide(0)), viewer);
     expect(res.status).toBe(403);
-    expect(await res.json()).toMatchObject({ error: { code: 'forbidden' } });
+    expect(await res.json()).toMatchObject({
+      error: { code: 'forbidden', message: expect.stringMatching(/Konto in dieser Organisation/) },
+    });
+  });
+
+  it('treats an old comment link like a view link', async () => {
+    const token = newReviewToken();
+    await ctx.deps.db
+      .insert(reviewLinks)
+      .values({ id: crypto.randomUUID(), deckId: deck.deckId, token, role: 'comment' });
+    const info = (await (await ctx.request(`/api/invites/${token}`)).json()) as { role: string };
+    expect(info.role).toBe('view');
+    const guest = await joinWithToken(token, 'Alter Gast');
+    const me = meResponse(await (await ctx.request('/api/me', { cookie: guest })).json());
+    expect(me).toMatchObject({ kind: 'guest', role: 'view' });
+
+    const root = await create(pinComment(slide(0)));
+    expect((await post(pinComment(slide(0)), guest)).status).toBe(403);
+    const patch = await ctx.request(`/api/comments/${root.id}`, {
+      method: 'PATCH',
+      json: { status: 'done' },
+      cookie: guest,
+    });
+    expect(patch.status).toBe(403);
+    expect(
+      (await ctx.request(`/api/comments/${root.id}`, { method: 'DELETE', cookie: guest })).status,
+    ).toBe(403);
+    const deckRes = (await (
+      await ctx.request(`/api/decks/${deck.deckId}`, { cookie: guest })
+    ).json()) as { permissions: unknown };
+    expect(deckRes.permissions).toEqual({ canManage: false, canComment: false });
   });
 });
 
@@ -413,7 +461,7 @@ describe('own colour (PATCH /me)', () => {
       .parse(await (await ctx.request(`/api/decks/${deck.deckId}/comments`, { cookie })).json());
 
   it('recolours the owner and their existing comments, not other people’s', async () => {
-    const guest = await joinAsGuest('Lena');
+    const guest = await asMember('Lena');
     const own = await create(pinComment(slide(0)));
     const guestComment = await create(pinComment(slide(1)), guest);
 
@@ -431,10 +479,17 @@ describe('own colour (PATCH /me)', () => {
 
   it('lets a guest pick their colour', async () => {
     const guest = await joinAsGuest('Lena');
-    const own = await create(pinComment(slide(0)), guest);
     const res = await patchMe('yellow', guest);
     expect(meResponse(await res.json()).author.color).toBe('yellow');
-    expect((await listed(guest)).find((c) => c.id === own.id)?.author.color).toBe('yellow');
+    expect((await listed(guest)).length).toBe(0);
+  });
+
+  it('lets a member recolour their comments', async () => {
+    const member = await asMember('Lena');
+    const own = await create(pinComment(slide(0)), member);
+    const res = await patchMe('yellow', member);
+    expect(meResponse(await res.json()).author.color).toBe('yellow');
+    expect((await listed(member)).find((c) => c.id === own.id)?.author.color).toBe('yellow');
   });
 
   it('rejects unknown colours', async () => {
