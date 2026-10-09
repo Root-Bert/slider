@@ -66,7 +66,7 @@ export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen:
         break;
       case 'b':
       case 'B':
-        dispatch({ type: 'showShapesToggled' });
+        dispatch({ type: 'boxModeToggled' });
         break;
       case 'g':
       case 'G':
@@ -83,4 +83,27 @@ export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen:
     window.addEventListener('keydown', listener);
     return () => window.removeEventListener('keydown', listener);
   }, []);
+
+  // Holding ⌥ flips box mode for one quick comment: a free spot while box mode is on, a box
+  // while it is off. Any other key with ⌥ (a shortcut, a typed character) or leaving the window
+  // ends it.
+  useEffect(() => {
+    const flip = (flipped: boolean) => dispatch({ type: 'boxModeFlipped', flipped });
+    const down = (event: KeyboardEvent) => {
+      if (event.key === 'Alt') flip(true);
+      else if (event.altKey) flip(false);
+    };
+    const up = (event: KeyboardEvent) => {
+      if (event.key === 'Alt') flip(false);
+    };
+    const reset = () => flip(false);
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    window.addEventListener('blur', reset);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+      window.removeEventListener('blur', reset);
+    };
+  }, [dispatch]);
 }

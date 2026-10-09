@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ReactNode } from 'react';
+import { loadStoredBoxMode, storeBoxMode } from '../lib/box-mode';
 import { loadStoredSplit, storeSplit } from '../lib/split';
 import { createStageRegistry, StageRegistryContext } from './stage-registry';
 import { ViewerDataContext, type ViewerData } from './viewer-data';
@@ -26,6 +27,7 @@ export function ViewerStoreProvider({ data, initialSlideId, children }: ViewerSt
           : (data.slides[0]?.id ?? null),
       color: data.viewer.author.color,
       split: loadStoredSplit(),
+      boxMode: loadStoredBoxMode(),
     },
     createInitialState,
   );
@@ -33,6 +35,7 @@ export function ViewerStoreProvider({ data, initialSlideId, children }: ViewerSt
 
   // The split is a per-browser preference, not per deck.
   useEffect(() => storeSplit(state.split), [state.split]);
+  useEffect(() => storeBoxMode(state.boxMode), [state.boxMode]);
 
   // A new revision keeps the active slide by its stable id. When that slide is gone, the slide
   // that now stands at its old place takes over (before paint, so nothing points into the void).

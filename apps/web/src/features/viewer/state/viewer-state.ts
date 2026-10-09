@@ -72,8 +72,13 @@ export interface ViewerState {
   showChanges: boolean;
   /** Side panel with the slides deleted in later revisions and their comments (BER-109). */
   deletedPanelOpen: boolean;
-  /** "Boxen zeigen": outlines of the PowerPoint shapes comments can attach to. */
-  showShapes: boolean;
+  /**
+   * Box mode (B): a click comments on the PowerPoint box under the pointer, which is outlined
+   * while hovered. Off: a click places a free comment and boxes never show.
+   */
+  boxMode: boolean;
+  /** ⌥ held: box mode is flipped for as long as the key is down. */
+  boxModeFlipped: boolean;
   /** "Hilfslinien zeigen": PowerPoint's drawing guides, and the boxes that cross them. */
   showGuides: boolean;
 }
@@ -110,7 +115,8 @@ export type ViewerAction =
   | { type: 'splitChanged'; split: number | null }
   | { type: 'showChangesSet'; show: boolean }
   | { type: 'deletedPanelSet'; open: boolean }
-  | { type: 'showShapesToggled' }
+  | { type: 'boxModeToggled' }
+  | { type: 'boxModeFlipped'; flipped: boolean }
   | { type: 'showGuidesToggled' }
   /** A new revision arrived: drop what points at slides that are gone (BER-107). */
   | { type: 'slidesReplaced'; slideIds: readonly string[]; fallbackSlideId: string | null };
@@ -121,6 +127,7 @@ export function createInitialState(options: {
   /** Restored split; `null` / missing is the default (Desktop-1 proportions). */
   split?: number | null;
   showChanges?: boolean;
+  boxMode?: boolean;
 }): ViewerState {
   return {
     activeSlideId: options.activeSlideId,
@@ -138,7 +145,8 @@ export function createInitialState(options: {
     split: options.split == null ? null : clampSplit(options.split),
     showChanges: options.showChanges ?? true,
     deletedPanelOpen: false,
-    showShapes: false,
+    boxMode: options.boxMode ?? true,
+    boxModeFlipped: false,
     showGuides: false,
   };
 }
@@ -345,8 +353,12 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
     }
     case 'showChangesSet':
       return next.showChanges === action.show ? next : { ...next, showChanges: action.show };
-    case 'showShapesToggled':
-      return { ...next, showShapes: !next.showShapes };
+    case 'boxModeToggled':
+      return { ...next, boxMode: !next.boxMode };
+    case 'boxModeFlipped':
+      return next.boxModeFlipped === action.flipped
+        ? next
+        : { ...next, boxModeFlipped: action.flipped };
     case 'showGuidesToggled':
       return { ...next, showGuides: !next.showGuides };
     case 'deletedPanelSet':
@@ -371,6 +383,10 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
 
 export const ViewerStateContext = createContext<ViewerState | null>(null);
 export const ViewerDispatchContext = createContext<Dispatch<ViewerAction> | null>(null);
+
+/** Box mode as it applies right now – the stored mode, flipped while ⌥ is held. */
+export const isBoxModeActive = (state: Pick<ViewerState, 'boxMode' | 'boxModeFlipped'>) =>
+  state.boxMode !== state.boxModeFlipped;
 
 export function useViewerState(): ViewerState {
   const state = useContext(ViewerStateContext);

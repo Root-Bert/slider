@@ -40,6 +40,7 @@ export function useDraftDrawing({
   tool,
   color,
   hasText = false,
+  boxes = true,
 }: {
   slide: Slide;
   boxRef: RefObject<HTMLElement | null>;
@@ -47,6 +48,8 @@ export function useDraftDrawing({
   color: AccentColor;
   /** The draft's text box on this slide holds text. */
   hasText?: boolean;
+  /** Box mode: marks attach to the PowerPoint box under them; off, they stay free. */
+  boxes?: boolean;
 }) {
   const dispatch = useViewerDispatch();
   const [gesture, setGesture] = useState<Gesture | null>(null);
@@ -112,14 +115,22 @@ export function useDraftDrawing({
         dispatch({
           type: 'anchorPlaced',
           slideId: slide.id,
-          anchor: { type: 'point', point: start, shapeRef: shapeRefAt(slide.shapes, start) },
+          anchor: {
+            type: 'point',
+            point: start,
+            shapeRef: boxes ? shapeRefAt(slide.shapes, start) : null,
+          },
         });
       } else {
         const rect = rectFromPoints(start, end);
         dispatch({
           type: 'anchorPlaced',
           slideId: slide.id,
-          anchor: { type: 'rect', rect, shapeRef: shapeRefAt(slide.shapes, rectCenter(rect)) },
+          anchor: {
+            type: 'rect',
+            rect,
+            shapeRef: boxes ? shapeRefAt(slide.shapes, rectCenter(rect)) : null,
+          },
         });
       }
       return;
@@ -169,7 +180,8 @@ export function useDraftDrawing({
         : gesture
           ? null
           : hover;
-  const targetShape: Shape | null = targetPoint ? hitTestShapes(slide.shapes, targetPoint) : null;
+  const targetShape: Shape | null =
+    boxes && targetPoint ? hitTestShapes(slide.shapes, targetPoint) : null;
 
   return {
     handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onPointerLeave },

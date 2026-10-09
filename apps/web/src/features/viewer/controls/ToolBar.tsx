@@ -2,7 +2,12 @@ import type { MediaKind } from '@slider/shared';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { cn, GlassPanel, Icon, IconButton } from '@/ui';
 import { useViewerData } from '../state/viewer-data';
-import { isPenTool, useViewerDispatch, useViewerState } from '../state/viewer-state';
+import {
+  isBoxModeActive,
+  isPenTool,
+  useViewerDispatch,
+  useViewerState,
+} from '../state/viewer-state';
 import { GUEST_COMMENT_HINT, useSignInFromGuest } from '../hooks/useSignInFromGuest';
 import { ToolOptions } from './ToolOptions';
 
@@ -107,7 +112,10 @@ function GuestViewOnly({ deckId, className }: { deckId: string; className?: stri
 }
 
 function ToolButtons() {
-  const { tool, lastPenTool, activeSlideId, draft, showShapes, showGuides } = useViewerState();
+  const state = useViewerState();
+  const { tool, lastPenTool, activeSlideId, draft, boxMode, showGuides } = state;
+  // Lit while box mode applies – also while ⌥ flips it on for a moment.
+  const boxes = isBoxModeActive(state);
   const dispatch = useViewerDispatch();
   const drawing = isPenTool(tool);
   const record = (kind: MediaKind) => {
@@ -116,10 +124,14 @@ function ToolButtons() {
 
   return (
     <GlassPanel role="toolbar" aria-label="Werkzeuge" className="flex items-center gap-1 p-1">
-      {/* The default: click a PowerPoint box to comment on it – typed, voice or video. */}
+      {/* The default: click the slide to comment – on a PowerPoint box in box mode. */}
       <IconButton
         icon="cursor"
-        label="Zeiger: Box anklicken und kommentieren"
+        label={
+          boxes
+            ? 'Zeiger: Box anklicken und kommentieren'
+            : 'Zeiger: Stelle anklicken und kommentieren'
+        }
         size="sm"
         active={tool === null}
         onClick={() => dispatch({ type: 'toolSelected', tool: null })}
@@ -155,10 +167,10 @@ function ToolButtons() {
       <span aria-hidden className="mx-0.5 h-5 w-px bg-white/15" />
       <IconButton
         icon="gridView"
-        label={showShapes ? 'PowerPoint-Boxen ausblenden (B)' : 'PowerPoint-Boxen zeigen (B)'}
+        label={`Box-Modus ${boxMode ? 'aus' : 'an'} (B) – ⌥ halten wechselt kurz`}
         size="sm"
-        active={showShapes}
-        onClick={() => dispatch({ type: 'showShapesToggled' })}
+        active={boxes}
+        onClick={() => dispatch({ type: 'boxModeToggled' })}
       />
       <IconButton
         icon="guides"

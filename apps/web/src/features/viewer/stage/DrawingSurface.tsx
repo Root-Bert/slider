@@ -11,6 +11,8 @@ interface DrawingSurfaceProps {
   slide: Slide;
   boxRef: RefObject<HTMLElement | null>;
   tool: Tool;
+  /** Box mode: the mark tool attaches to (and outlines) the PowerPoint box under it. */
+  boxes: boolean;
   color: AccentColor;
   /** The draft's text box on this slide holds text. */
   hasText: boolean;
@@ -21,13 +23,21 @@ interface DrawingSurfaceProps {
  * mark tool it outlines the PowerPoint shape the comment would attach to.
  * `touch-action: none` only here, so the stage stays swipeable when no tool is selected.
  */
-export function DrawingSurface({ slide, boxRef, tool, color, hasText }: DrawingSurfaceProps) {
+export function DrawingSurface({
+  slide,
+  boxRef,
+  tool,
+  boxes,
+  color,
+  hasText,
+}: DrawingSurfaceProps) {
   const { handlers, previewRect, previewStroke, targetShape } = useDraftDrawing({
     slide,
     boxRef,
     tool,
     color,
     hasText,
+    boxes,
   });
 
   return (

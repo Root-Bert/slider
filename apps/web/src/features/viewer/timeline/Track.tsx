@@ -7,7 +7,7 @@ import { GapDivider } from '../stage/GapDivider';
 import { SlideFrame } from '../stage/SlideFrame';
 import { useRevisionData } from '../state/revision-data';
 import { useViewerData } from '../state/viewer-data';
-import { useViewerState } from '../state/viewer-state';
+import { isBoxModeActive, useViewerState } from '../state/viewer-state';
 
 interface TrackProps {
   layout: TrackLayout;
@@ -24,7 +24,7 @@ interface TrackProps {
  * deck doesn't re-render it.
  */
 export function Track({ layout, range, snap }: TrackProps) {
-  const { slides, gapThreads, canComment, canInsertSlides } = useViewerData();
+  const { slides, gapThreads, canComment } = useViewerData();
   const {
     activeSlideId,
     tool,
@@ -33,9 +33,11 @@ export function Track({ layout, range, snap }: TrackProps) {
     focusedThreadId,
     hoveredThreadId,
     showChanges,
-    showShapes,
+    boxMode,
+    boxModeFlipped,
     showGuides,
   } = useViewerState();
+  const boxes = isBoxModeActive({ boxMode, boxModeFlipped });
   const { badges, deletedSlides, deletedThreads, revisionNumber } = useRevisionData();
   const { bySlide } = useCommentThreads();
   const emphasisId = focusedThreadId ?? hoveredThreadId;
@@ -76,7 +78,7 @@ export function Track({ layout, range, snap }: TrackProps) {
           color={color}
           badge={showChanges ? (badges.get(slide.id) ?? null) : null}
           badgeVersion={revisionNumber}
-          showShapes={showShapes}
+          boxMode={boxes}
           showGuides={showGuides}
         />
         <GapDivider
@@ -90,7 +92,6 @@ export function Track({ layout, range, snap }: TrackProps) {
           threads={gapThreads.get(key)}
           isDrafting={draftGapKey === key}
           canComment={canComment}
-          canInsert={canInsertSlides}
         />
       </Fragment>,
     );

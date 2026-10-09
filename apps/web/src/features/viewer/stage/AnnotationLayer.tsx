@@ -34,10 +34,10 @@ interface AnnotationLayerProps {
   threads: Thread[];
   emphasisId: string | null;
   draft: Draft | null;
-  /** "Boxen zeigen": outline every PowerPoint shape. */
-  showShapes?: boolean;
-  /** Shape under the pointer while all boxes are shown – it gets its name. */
-  hoveredShapeId?: string | null;
+  /** Box mode: the box a hovered/focused comment or the draft attaches to is outlined. */
+  boxes?: boolean;
+  /** Pointer mode: a click on the slide starts a comment, so frames let it through. */
+  selecting?: boolean;
 }
 
 interface Mark {
@@ -54,16 +54,16 @@ interface Mark {
  * on its point, at a frame's top-left corner, or where a drawing starts. Frames, drawings and badge
  * share the author's colour, like the connector line. Text on the slide ("Text auf Folie")
  * is HTML in container units (`container-type: size`) and follows the same visibility as drawings.
- * Below the marks: the PowerPoint shape the hovered/focused comment (or the draft) is attached to,
- * and with "Boxen zeigen" every shape – the raster image does not show them.
+ * Below the marks, in box mode: the PowerPoint shape the hovered/focused comment (or the draft) is
+ * attached to – the raster image does not show them.
  */
 export const AnnotationLayer = memo(function AnnotationLayer({
   slide,
   threads,
   emphasisId,
   draft,
-  showShapes = false,
-  hoveredShapeId = null,
+  boxes = false,
+  selecting = false,
 }: AnnotationLayerProps) {
   const dispatch = useViewerDispatch();
   const { viewer, deck, canComment } = useViewerData();
@@ -82,11 +82,9 @@ export const AnnotationLayer = memo(function AnnotationLayer({
   }, [threads, slide.shapes, emphasisId]);
 
   const emphasized = marks.find((mark) => mark.state === 'emphasized');
-  const emphasizedShape = emphasized
-    ? anchoredShape(emphasized.thread.root.anchor, slide.shapes)
-    : null;
-  const draftShape = draft ? anchoredShape(draft.anchor, slide.shapes) : null;
-  const highlighted = new Set([emphasizedShape?.id, draftShape?.id]);
+  const emphasizedShape =
+    boxes && emphasized ? anchoredShape(emphasized.thread.root.anchor, slide.shapes) : null;
+  const draftShape = boxes && draft ? anchoredShape(draft.anchor, slide.shapes) : null;
 
   // While composing, existing marks step back (B2).
   const composing = draft !== null;
@@ -101,17 +99,6 @@ export const AnnotationLayer = memo(function AnnotationLayer({
 
   return (
     <div className="pointer-events-none absolute inset-0 [container-type:size]">
-      {showShapes &&
-        slide.shapes
-          .filter((shape) => !highlighted.has(shape.id))
-          .map((shape) => (
-            <ShapeOutline
-              key={shape.id}
-              shape={shape}
-              variant="faint"
-              labelled={shape.id === hoveredShapeId}
-            />
-          ))}
       {emphasizedShape && emphasized && !draftShape && (
         <ShapeOutline
           shape={emphasizedShape}
@@ -231,7 +218,9 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                 onPointerLeave={() => hover(mark, false)}
                 className={cn(
                   'absolute rounded-thumb',
-                  composing ? 'pointer-events-none' : 'pointer-events-auto cursor-pointer',
+                  composing || selecting
+                    ? 'pointer-events-none'
+                    : 'pointer-events-auto cursor-pointer',
                 )}
                 style={{
                   left: `${area.x * 100}%`,

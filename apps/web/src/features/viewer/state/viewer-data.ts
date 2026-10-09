@@ -20,11 +20,6 @@ export interface ViewerData {
   canManage: boolean;
   /** Write comments, reply and resolve; guests with a "view" link can only look (BER-102). */
   canComment: boolean;
-  /**
-   * The ⊕ between slides inserts a slide into the PowerPoint (BER-128): owner only, and only for
-   * decks linked from OneDrive/SharePoint – Slider can write nowhere else.
-   */
-  canInsertSlides: boolean;
   threads: Thread[];
   threadById: ReadonlyMap<string, Thread>;
   /** All threads per home slide, unfiltered. */
@@ -54,8 +49,6 @@ export function deriveViewerData(
     isGuest: viewer.kind === 'guest',
     canManage: deck.permissions.canManage,
     canComment: deck.permissions.canComment,
-    canInsertSlides:
-      deck.permissions.canManage && (deck.source === 'onedrive' || deck.source === 'sharepoint'),
     threads,
     threadById: new Map(threads.map((thread) => [thread.id, thread])),
     threadsBySlide: groupThreadsBySlide(threads, slides),
