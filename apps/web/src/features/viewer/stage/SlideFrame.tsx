@@ -1,4 +1,15 @@
-import { hitTestShapes, type AccentColor, type Shape, type Slide } from '@slider/shared';
+import {
+  distance,
+  hitTestShapes,
+  MIN_DRAG_DISTANCE,
+  rectCenter,
+  rectFromPoints,
+  shapeRefAt,
+  type AccentColor,
+  type Point,
+  type Shape,
+  type Slide,
+} from '@slider/shared';
 import { memo, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
 import { accentColor } from '@/lib/accent';
 import { Badge, cn, Icon } from '@/ui';
@@ -12,6 +23,7 @@ import { useViewerDispatch, type Draft, type Tool } from '../state/viewer-state'
 import { AnnotationLayer } from './AnnotationLayer';
 import { DrawingSurface } from './DrawingSurface';
 import { GuideLayer } from './GuideLayer';
+import { RectFrame } from './RectFrame';
 import { ShapeOutline } from './ShapeOutline';
 import { TextBoxEditor } from './TextBox';
 
@@ -102,13 +114,60 @@ export const SlideFrame = memo(function SlideFrame({
   // The box under the pointer: in box mode what a click comments on.
   const [hoveredShape, setHoveredShape] = useState<Shape | null>(null);
   const trackShapes = selecting && boxes;
+  // Pointer drag: a dragged area becomes the comment's frame (mouse and pen – touch scrolls).
+  const [drag, setDrag] = useState<{ start: Point; end: Point } | null>(null);
+  const dragged = drag !== null && distance(drag.start, drag.end) >= MIN_DRAG_DISTANCE;
+  const dragRect = drag && dragged ? rectFromPoints(drag.start, drag.end) : null;
+  // The click that ends a drag must not also place a pin.
+  const skipClick = useRef(false);
+
+  const onBoxPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (!selecting || event.button !== 0 || event.pointerType === 'touch' || !boxRef.current) {
+      return;
+    }
+    // Pins, badges and text boxes keep their own clicks.
+    if ((event.target as Element).closest('button, textarea, input, [contenteditable]')) return;
+    const point = toSlidePoint(event, boxRef.current);
+    setDrag({ start: point, end: point });
+  };
   const onBoxPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    if (!trackShapes || event.pointerType === 'touch' || !boxRef.current) return;
-    const shape = hitTestShapes(slide.shapes, toSlidePoint(event, boxRef.current));
+    if (event.pointerType === 'touch' || !boxRef.current) return;
+    const point = toSlidePoint(event, boxRef.current);
+    if (drag) {
+      setDrag({ ...drag, end: point });
+      // Captured only once it is a real drag, so a plain click still reaches what it hits.
+      if (!event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
+    }
+    if (!trackShapes) return;
+    // While dragging, the box under the area's centre is the one it would attach to.
+    const probe = drag ? rectCenter(rectFromPoints(drag.start, point)) : point;
+    const shape = hitTestShapes(slide.shapes, probe);
     if (shape?.id !== hoveredShape?.id) setHoveredShape(shape);
+  };
+  const onBoxPointerUp = () => {
+    if (!drag) return;
+    setDrag(null);
+    if (!dragRect) return;
+    skipClick.current = true;
+    dispatch({ type: 'activeSlideChanged', slideId: slide.id });
+    dispatch({
+      type: 'anchorPlaced',
+      slideId: slide.id,
+      anchor: {
+        type: 'rect',
+        rect: dragRect,
+        shapeRef: boxes ? shapeRefAt(slide.shapes, rectCenter(dragRect)) : null,
+      },
+    });
   };
 
   const activate = (event: MouseEvent) => {
+    if (skipClick.current) {
+      skipClick.current = false;
+      return;
+    }
     dispatch({ type: 'activeSlideChanged', slideId: slide.id });
     registry.revealSlide(slide.id, { align: 'nearest' });
     if (!selecting || !boxRef.current) return;
@@ -159,7 +218,10 @@ export const SlideFrame = memo(function SlideFrame({
           selecting && !boxes && 'cursor-crosshair',
         )}
         onClick={drawing ? undefined : activate}
+        onPointerDown={onBoxPointerDown}
         onPointerMove={onBoxPointerMove}
+        onPointerUp={onBoxPointerUp}
+        onPointerCancel={() => setDrag(null)}
         onPointerLeave={() => setHoveredShape(null)}
       >
         <div
@@ -225,6 +287,7 @@ export const SlideFrame = memo(function SlideFrame({
           boxes={boxes}
           selecting={selecting}
         />
+        {dragRect && <RectFrame rect={dragRect} color={accentColor(color)} dashed />}
         {pointerTarget && (
           <ShapeOutline
             shape={pointerTarget}

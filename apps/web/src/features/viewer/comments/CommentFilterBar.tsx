@@ -1,12 +1,11 @@
-import { pluralize } from '@/lib/format';
 import { FilterChip, GlassPanel, SegmentedControl } from '@/ui';
 import { useCommentThreads } from '../hooks/useCommentThreads';
 import type { StatusFilter } from '../lib/comment-selectors';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
 
 /**
- * Filter pill (B1): "12 Kommentare", Alle / Offen / Erledigt, "aus PowerPoint". Every slide's
- * comments are always on screen in the timeline, so the counts are deck-wide.
+ * Filter pill (B1): Alle / Offen / Erledigt, "aus PowerPoint". Every slide's comments are
+ * always on screen in the timeline, so the counts are deck-wide – "Alle" carries the total.
  */
 export function CommentFilterBar() {
   const { statusFilter, pptxOnly } = useViewerState();
@@ -14,13 +13,7 @@ export function CommentFilterBar() {
   const { counts } = useCommentThreads();
 
   return (
-    <GlassPanel className="scrollbar-none flex max-w-full min-w-0 items-center gap-3 overflow-x-auto py-1 pr-1 pl-3">
-      <span
-        className="shrink-0 text-xs whitespace-nowrap text-fg-muted md:@max-[1100px]:hidden"
-        aria-live="polite"
-      >
-        {pluralize(counts.all, 'Kommentar', 'Kommentare')}
-      </span>
+    <GlassPanel className="scrollbar-none flex max-w-full min-w-0 items-center gap-3 overflow-x-auto p-1">
       <SegmentedControl<StatusFilter>
         label="Kommentare nach Status filtern"
         value={statusFilter}
