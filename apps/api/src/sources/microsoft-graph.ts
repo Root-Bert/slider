@@ -2,14 +2,11 @@ import type { ParsedShareLink } from '@slider/shared';
 import type { MicrosoftConfig } from '../config';
 import { ApiError, notAPowerPoint } from '../http/errors';
 import { downloadPptx, type DirectUrlAdapter } from './direct-url';
-import type { MicrosoftAccess } from '../auth/microsoft';
 import {
   LINK_NOT_A_POWERPOINT_MESSAGE,
   microsoftLoginRequired,
   microsoftNotConfigured,
   sourceForbidden,
-  SourceChangedError,
-  sourceLocked,
   sourceNotFound,
   sourceUnreachable,
 } from './errors';
@@ -22,7 +19,7 @@ import {
   safeFetch,
   type SafeFetchOptions,
 } from './safe-fetch';
-import type { EditableFile, RemoteFile, SourceAdapter, SourceContext } from './source-adapter';
+import type { RemoteFile, SourceAdapter, SourceContext } from './source-adapter';
 
 /**
  * OneDrive and SharePoint links through Microsoft Graph (BER-88 spike, BER-92).
@@ -38,14 +35,8 @@ const GRAPH = 'https://graph.microsoft.com/v1.0';
 const GRAPH_TIMEOUT_MS = 30_000;
 /** Office converts the deck before it answers; large decks take a while. */
 const PDF_EXPORT_TIMEOUT_MS = 120_000;
-const GRAPH_UPLOAD_TIMEOUT_MS = 120_000;
-const PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 
 interface GraphRequest {
-  method?: 'GET' | 'PUT';
-  body?: RequestInit['body'];
-  headers?: Record<string, string>;
-  access?: MicrosoftAccess;
   redirect?: RequestInit['redirect'];
   timeoutMs?: number;
 }
@@ -123,10 +114,7 @@ export async function extractOneDriveItem(
 export interface GraphClientDeps {
   http: SafeFetchOptions;
   tokens: {
-    getAccessToken(
-      userId: string,
-      options?: { forceRefresh?: boolean; access?: MicrosoftAccess },
-    ): Promise<string | null>;
+    getAccessToken(userId: string, options?: { forceRefresh?: boolean }): Promise<string | null>;
   };
   microsoft: MicrosoftConfig | null;
 }
@@ -177,52 +165,25 @@ export class GraphClient {
   }
 
   /** One Graph request; a 401 (revoked or expired early) is retried once with a fresh token. */
-  private async call(
-    path: string,
-    context: SourceContext,
-    resumeLink: string,
-    { access = 'read', ...init }: GraphRequest = {},
-  ): Promise<Response> {
-    const token = (forceRefresh: boolean) =>
-      access === 'write'
-        ? this.requireWriteToken(context, forceRefresh)
-        : this.requireToken(context, resumeLink, forceRefresh);
-    let response = await this.send(path, await token(false), init);
+  private async call(path: string, context: SourceContext, resumeLink: string): Promise<Response> {
+    let response = await this.send(path, await this.requireToken(context, resumeLink));
     if (response.status === 401) {
       await response.body?.cancel();
-      response = await this.send(path, await token(true), init);
+      response = await this.send(path, await this.requireToken(context, resumeLink, true));
     }
     return response;
-  }
-
-  /**
-   * A token with write scopes (BER-128). Without one, a write login is needed: the caller turns
-   * `microsoft_login_required` into a login link back to the deck.
-   */
-  private async requireWriteToken(context: SourceContext, forceRefresh: boolean): Promise<string> {
-    if (!this.deps.microsoft) throw microsoftNotConfigured();
-    const token = await this.deps.tokens.getAccessToken(context.userId, {
-      forceRefresh,
-      access: 'write',
-    });
-    if (!token) throw microsoftLoginRequired('');
-    return token;
   }
 
   private async send(
     path: string,
     token: string,
-    { method = 'GET', body, headers, redirect, timeoutMs }: Omit<GraphRequest, 'access'> = {},
+    { redirect, timeoutMs = GRAPH_TIMEOUT_MS }: GraphRequest = {},
   ): Promise<Response> {
     try {
       return await this.deps.http.fetch(`${GRAPH}/${path}`, {
-        method,
-        body,
-        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', ...headers },
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
         redirect,
-        signal: AbortSignal.timeout(
-          timeoutMs ?? (method === 'GET' ? GRAPH_TIMEOUT_MS : GRAPH_UPLOAD_TIMEOUT_MS),
-        ),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch {
       throw sourceUnreachable('Microsoft Graph ist gerade nicht erreichbar.');
@@ -302,64 +263,6 @@ export class GraphClient {
     );
     return item.cTag ?? item.eTag ?? '';
   }
-
-  /**
-   * The newest content of a file plus the eTag it belongs to – the base of an edit (BER-128).
-   * Sharing links (anonymous SharePoint imports) are resolved to their drive item first.
-   */
-  async openForEdit(ref: string, context: SourceContext): Promise<EditableFile> {
-    const itemRef = isGraphRef(ref)
-      ? ref
-      : this.toRemoteFile(await this.getShare(ref, context)).ref;
-    const item = await this.get<DriveItem>(itemRef, context, '');
-    const downloadUrl = item['@microsoft.graph.downloadUrl'];
-    if (!item.eTag || !downloadUrl) {
-      throw sourceUnreachable('Microsoft Graph liefert diese Datei nicht zum Bearbeiten.');
-    }
-    // The download may already be newer than this eTag; then the guarded upload fails with 412.
-    const { bytes } = await downloadPptx(new URL(downloadUrl), this.deps.http);
-    return { ref: itemRef, eTag: item.eTag, bytes };
-  }
-
-  /**
-   * Replaces the file, but only while it is still at `file.eTag` (`If-Match`): a save by anyone
-   * else in between makes Graph answer 412, nothing is overwritten and this throws
-   * {@link SourceChangedError}. Returns the new change token (cTag, like `getChangeToken`).
-   */
-  async replaceContent(
-    file: EditableFile,
-    bytes: Uint8Array,
-    context: SourceContext,
-  ): Promise<string> {
-    const response = await this.call(`${file.ref}/content`, context, '', {
-      method: 'PUT',
-      body: new Blob([new Uint8Array(bytes)], { type: PPTX_MIME }),
-      headers: { 'If-Match': file.eTag, 'Content-Type': PPTX_MIME },
-      access: 'write',
-    });
-    if (response.ok) {
-      const item = (await response.json()) as Pick<DriveItem, 'cTag' | 'eTag'>;
-      return item.cTag ?? item.eTag ?? '';
-    }
-    await response.body?.cancel();
-    switch (response.status) {
-      case 412:
-        throw new SourceChangedError();
-      case 401:
-        throw microsoftLoginRequired('');
-      case 403:
-        throw sourceForbidden('Dein Microsoft-Konto darf diese PowerPoint nicht bearbeiten.');
-      case 423:
-        throw sourceLocked();
-      case 404:
-      case 410:
-        throw sourceNotFound();
-      default:
-        throw sourceUnreachable(
-          `Microsoft Graph antwortet beim Speichern mit einem Fehler (HTTP ${response.status}).`,
-        );
-    }
-  }
 }
 
 /** OneDrive (personal) links. Always need a Microsoft login. */
@@ -403,14 +306,6 @@ export class OneDriveAdapter implements SourceAdapter {
 
   exportPdf(file: RemoteFile, context: SourceContext): Promise<Uint8Array> {
     return this.graph.exportPdf(file, context);
-  }
-
-  openForEdit(file: RemoteFile, context: SourceContext): Promise<EditableFile> {
-    return this.graph.openForEdit(file.ref, context);
-  }
-
-  replace(file: EditableFile, bytes: Uint8Array, context: SourceContext): Promise<string> {
-    return this.graph.replaceContent(file, bytes, context);
   }
 }
 
@@ -554,14 +449,5 @@ export class SharePointAdapter implements SourceAdapter {
       const item = await this.graph.getShare(file.ref, context);
       return item.cTag ?? item.eTag ?? '';
     }
-  }
-
-  /** Edits always go through Graph – anonymous access can read but never write. */
-  openForEdit(file: RemoteFile, context: SourceContext): Promise<EditableFile> {
-    return this.graph.openForEdit(file.ref, context);
-  }
-
-  replace(file: EditableFile, bytes: Uint8Array, context: SourceContext): Promise<string> {
-    return this.graph.replaceContent(file, bytes, context);
   }
 }

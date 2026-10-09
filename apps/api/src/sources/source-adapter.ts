@@ -28,14 +28,6 @@ export interface RemoteFile {
   bytes?: Uint8Array;
 }
 
-/** A file read for editing: its newest bytes and the eTag a guarded upload must match. */
-export interface EditableFile {
-  /** Graph drive item path. */
-  ref: string;
-  eTag: string;
-  bytes: Uint8Array;
-}
-
 /** Who is importing – Microsoft tokens are stored per user. */
 export interface SourceContext {
   userId: string;
@@ -53,13 +45,6 @@ export interface SourceAdapter {
   getChangeToken(file: RemoteFile, context: SourceContext): Promise<string>;
   /** The file rendered to PDF by its provider (Office), for faithful slide images (BER-94). */
   exportPdf?(file: RemoteFile, context: SourceContext): Promise<Uint8Array>;
-  /** Writable sources only (OneDrive, SharePoint – BER-128): the file to edit. */
-  openForEdit?(file: RemoteFile, context: SourceContext): Promise<EditableFile>;
-  /**
-   * Replaces the file if nobody saved it since {@link openForEdit} (else `SourceChangedError`).
-   * Returns the new change token.
-   */
-  replace?(file: EditableFile, bytes: Uint8Array, context: SourceContext): Promise<string>;
 }
 
 export type SourceAdapters = Record<ShareLinkKind, SourceAdapter> & {

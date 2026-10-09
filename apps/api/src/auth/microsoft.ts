@@ -16,12 +16,6 @@ import { decryptToken, encryptToken, toBase64Url } from './token-crypto';
  */
 
 export const MICROSOFT_SCOPES = 'openid profile email offline_access User.Read Files.Read.All';
-/**
- * Asked for only when the owner first edits a linked PowerPoint (BER-128): reading never needs
- * more, and a write consent is a bigger ask (in companies often one for an admin).
- */
-export const MICROSOFT_WRITE_SCOPES =
-  'openid profile email offline_access User.Read Files.ReadWrite.All';
 
 /**
  * The OneDrive file picker for personal accounts takes `OneDrive.ReadOnly` tokens – a scope only
@@ -31,10 +25,6 @@ export const PICKER_CONSUMER_SCOPE = 'OneDrive.ReadOnly';
 export const CONSUMERS_TENANT = 'consumers';
 const PICKER_CONSENT_SCOPES = `openid offline_access ${PICKER_CONSUMER_SCOPE}`;
 
-/** `read` for importing and syncing, `write` for changing the PowerPoint itself. */
-export type MicrosoftAccess = 'read' | 'write';
-const scopesFor = (access: MicrosoftAccess) =>
-  access === 'write' ? MICROSOFT_WRITE_SCOPES : MICROSOFT_SCOPES;
 const GRAPH_ME_URL = 'https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName';
 /** Refresh a little early so a token never expires between check and use. */
 const EXPIRY_SKEW_MS = 60_000;
@@ -105,7 +95,7 @@ export async function createPkce(): Promise<Pkce> {
 export function buildAuthorizeUrl(
   config: MicrosoftConfig,
   pkce: Pkce,
-  access: MicrosoftAccess | 'picker' = 'read',
+  access: 'read' | 'picker' = 'read',
 ): string {
   const picker = access === 'picker';
   const url = new URL(`${authority(config, picker ? CONSUMERS_TENANT : undefined)}/authorize`);
@@ -114,7 +104,7 @@ export function buildAuthorizeUrl(
     response_type: 'code',
     redirect_uri: config.redirectUri,
     response_mode: 'query',
-    scope: picker ? PICKER_CONSENT_SCOPES : scopesFor(access),
+    scope: picker ? PICKER_CONSENT_SCOPES : MICROSOFT_SCOPES,
     state: pkce.state,
     nonce: pkce.nonce,
     code_challenge: pkce.challenge,
@@ -193,12 +183,8 @@ export const exchangeCode = (
     tenant,
   );
 
-export const refreshAccessToken = (
-  config: MicrosoftConfig,
-  fetch: Fetch,
-  refreshToken: string,
-  access: MicrosoftAccess = 'read',
-) => refreshForScope(config, fetch, refreshToken, scopesFor(access));
+export const refreshAccessToken = (config: MicrosoftConfig, fetch: Fetch, refreshToken: string) =>
+  refreshForScope(config, fetch, refreshToken, MICROSOFT_SCOPES);
 
 /** Trades the refresh token for a token of another resource, e.g. SharePoint for the file picker. */
 export const refreshForScope = (
@@ -326,28 +312,15 @@ export class MicrosoftTokens {
   /**
    * A valid access token for `userId`, refreshed when needed; `null` when the person has never
    * signed in (or their sign-in was revoked). `forceRefresh` after Graph answered 401.
-   *
-   * `access: 'write'` trades the same refresh token for a token with write scopes. Without that
-   * consent yet it returns `null` (the caller asks for a write login) and keeps the sign-in, so
-   * reading goes on working.
    */
   async getAccessToken(
     userId: string,
-    {
-      forceRefresh = false,
-      access = 'read',
-    }: { forceRefresh?: boolean; access?: MicrosoftAccess } = {},
+    { forceRefresh = false }: { forceRefresh?: boolean } = {},
   ): Promise<string | null> {
-    const cacheKey = `${userId}:${access}`;
     try {
-      return await this.refreshed(userId, cacheKey, scopesFor(access), forceRefresh);
+      return await this.refreshed(userId, `${userId}:read`, MICROSOFT_SCOPES, forceRefresh);
     } catch (error) {
       if (!(error instanceof MicrosoftAuthError)) throw error;
-      if (access === 'write') {
-        // Most likely no write consent yet (AADSTS65001): a write login fixes it.
-        this.deps.log.warn(`Microsoft write token refused for user ${userId}: ${error.message}`);
-        return null;
-      }
       if (error.kind === 'admin_consent') throw microsoftConsentRequired();
       this.deps.log.warn(`Microsoft token refresh failed for user ${userId}: ${error.message}`);
       // invalid_grant (revoked, expired, password changed) and friends: sign in again.

@@ -91,7 +91,10 @@ export type SlideDiff = z.infer<typeof slideDiffSchema>;
 export const revisionStatusSchema = z.enum(['pending', 'ready', 'failed']);
 export type RevisionStatus = z.infer<typeof revisionStatusSchema>;
 
-/** `edit`: Slider changed the PowerPoint itself, e.g. inserted a slide (BER-128). */
+/**
+ * `edit`: Slider changed the PowerPoint itself (the removed slide insert, BER-128). No longer
+ * written, but older revisions may still carry it.
+ */
 export const revisionTriggerSchema = z.enum(['initial', 'poll', 'manual', 'upload', 'edit']);
 export type RevisionTrigger = z.infer<typeof revisionTriggerSchema>;
 
@@ -160,14 +163,3 @@ export const toSyncSummary = (counts: SyncCounts): SyncSummary => ({
   ...counts,
   text: formatSyncSummary(counts),
 });
-
-/** `POST /decks/:deckId/slides`: an empty slide right after `afterSlideId` (BER-128). */
-export const insertSlideInputSchema = z.object({ afterSlideId: z.string().min(1) });
-export type InsertSlideInput = z.infer<typeof insertSlideInputSchema>;
-
-export const insertSlideResultSchema = z.object({
-  result: syncResultSchema,
-  /** The new slide, once its revision is imported; `null` while that is still running. */
-  slideId: z.string().nullable(),
-});
-export type InsertSlideResult = z.infer<typeof insertSlideResultSchema>;

@@ -67,7 +67,7 @@ const oauthStateSchema = z.object({
   mode: z.enum(['login', 'connect']).default('connect'),
   userId: z.string().optional(),
   /** `picker`: the one-time consent to the personal-account file picker (BER-131). */
-  access: z.enum(['read', 'write', 'picker']).optional(),
+  access: z.enum(['read', 'picker']).optional(),
 });
 type OAuthState = z.infer<typeof oauthStateSchema>;
 
@@ -135,14 +135,12 @@ export function authRoutes(deps: AppDeps) {
   };
 
   /**
-   * Back to the start page with the link prefilled and the reason, so A3 can explain it. A write
-   * login started in a deck (BER-128) goes back to that deck instead – without `insertAfter`, so
-   * nothing is inserted – and the viewer explains it.
+   * Back to the start page with the link prefilled and the reason, so A3 can explain it. A login
+   * started in a deck (the sync banner's "sign in again") goes back to that deck instead.
    */
   const connectFailed = (c: Context, returnTo: string, kind: MicrosoftErrorKind) => {
     const back = new URL(returnTo, config.webOrigin);
     if (back.pathname.startsWith('/d/')) {
-      back.searchParams.delete('insertAfter');
       back.searchParams.set('msError', kind);
       return toWeb(c, back.pathname + back.search);
     }
@@ -384,8 +382,7 @@ export function authRoutes(deps: AppDeps) {
         const pkce = await createPkce();
         const requested = c.req.query('access');
         // The picker consent only adds to a signed-in account's Microsoft connection.
-        const access =
-          requested === 'write' ? 'write' : requested === 'picker' && signedIn ? 'picker' : 'read';
+        const access = requested === 'picker' && signedIn ? 'picker' : 'read';
         await writeState(c, MS_OAUTH_COOKIE, MS_COOKIE_PATH, {
           state: pkce.state,
           verifier: pkce.verifier,

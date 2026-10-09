@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { mapMicrosoftError, MICROSOFT_SCOPES, MICROSOFT_WRITE_SCOPES } from '../src/auth/microsoft';
+import { mapMicrosoftError, MICROSOFT_SCOPES } from '../src/auth/microsoft';
 import { decryptToken, encryptToken } from '../src/auth/token-crypto';
 import { users } from '../src/db/schema';
 import type { FetchLike } from '../src/sources/safe-fetch';
@@ -118,9 +118,9 @@ describe('Microsoft login routes', () => {
     expect(location.searchParams.get('link')).toBe('https://1drv.ms/p/c/x');
   });
 
-  it('sends a failed write login back to its deck, without inserting (BER-128)', async () => {
+  it('sends a failed login started in a deck back to that deck', async () => {
     ctx = await configured();
-    const { state, cookie } = await startLogin('/d/deck-1?slide=s1&insertAfter=s1');
+    const { state, cookie } = await startLogin('/d/deck-1?slide=s1');
     const res = await ctx.request(
       `/api/auth/microsoft/callback?state=${state}&error=access_denied`,
       { cookie },
@@ -128,7 +128,6 @@ describe('Microsoft login routes', () => {
     const location = new URL(res.headers.get('location') ?? '');
     expect(location.pathname).toBe('/d/deck-1');
     expect(location.searchParams.get('slide')).toBe('s1');
-    expect(location.searchParams.get('insertAfter')).toBeNull();
     expect(location.searchParams.get('msError')).toBe('denied');
   });
 
@@ -220,39 +219,12 @@ describe('Microsoft login routes', () => {
     expect(forgotten?.msRefreshToken).toBeNull();
   });
 
-  it('asks Microsoft for write scopes only on a write login (BER-128)', async () => {
+  it('never asks Microsoft for write scopes, even when `access=write` is requested', async () => {
     ctx = await configured();
     const res = await ctx.request(
       `/api/auth/microsoft/login?access=write&returnTo=${encodeURIComponent('/d/deck-1')}`,
     );
     const location = new URL(res.headers.get('location') ?? '');
-    expect(location.searchParams.get('scope')).toBe(MICROSOFT_WRITE_SCOPES);
-  });
-
-  it('without write consent yet, a write token is null but the sign-in stays (BER-128)', async () => {
-    const scopes: string[] = [];
-    ctx = await configured(async (input, init) => {
-      const body = new URLSearchParams(String(init?.body));
-      if (String(input).endsWith('/token')) {
-        scopes.push(body.get('scope') ?? '');
-        return body.get('scope')?.includes('ReadWrite')
-          ? Response.json(
-              { error: 'invalid_grant', error_description: 'AADSTS65001: no consent' },
-              { status: 400 },
-            )
-          : Response.json({ access_token: 'at-read', expires_in: 3600 });
-      }
-      throw new Error(`Unexpected request: ${String(input)}`);
-    });
-    await ctx.deps.db
-      .update(users)
-      .set({ msRefreshToken: await encryptToken(SECRET, 'rt-1') })
-      .where(eq(users.id, ctx.ownerId));
-
-    expect(await ctx.deps.microsoft.getAccessToken(ctx.ownerId, { access: 'write' })).toBeNull();
-    expect(await ctx.deps.microsoft.getAccessToken(ctx.ownerId)).toBe('at-read');
-    expect(scopes).toEqual([MICROSOFT_WRITE_SCOPES, MICROSOFT_SCOPES]);
-    const [owner] = await ctx.deps.db.select().from(users).where(eq(users.id, ctx.ownerId));
-    expect(owner?.msRefreshToken).not.toBeNull();
+    expect(location.searchParams.get('scope')).toBe(MICROSOFT_SCOPES);
   });
 });

@@ -1,13 +1,11 @@
 import { and, desc, eq, max } from 'drizzle-orm';
-import { insertSlide, SlideInsertError } from '@slider/pptx';
-import type { InsertSlideResult, SyncError, SyncResult } from '@slider/shared';
+import type { SyncError, SyncResult } from '@slider/shared';
 import type { Clock } from '../clock';
 import { DEFAULT_SYNC_POLL_INTERVAL_MS, type Config } from '../config';
 import type { Database } from '../db/client';
 import {
   decks,
   revisions,
-  slideVersions,
   type DeckRow,
   type DeckSyncStateRow,
   type RevisionRow,
@@ -17,7 +15,6 @@ import { sha256Hex } from '../import/common';
 import type { ImportJob, JobQueue } from '../import/queue';
 import type { Logger } from '../logger';
 import { isSyncEnabled } from '../services/deck-sync';
-import { microsoftWriteLoginRequired, SourceChangedError } from '../sources/errors';
 import type {
   RemoteFile,
   SourceAdapter,
@@ -40,8 +37,6 @@ export const SYNC_TRANSIENT_ERROR_THRESHOLD = 3;
 export const SYNC_CONTENT_CHECK_FACTOR = 5;
 /** A manual sync waits this long for the import before answering `queued`. */
 export const SYNC_MANUAL_WAIT_MS = 25_000;
-/** Saves by others between reading and writing the file: read again this often, then give up. */
-export const EDIT_MAX_ATTEMPTS = 3;
 
 const CONTENT_TOKEN_PREFIX = 'sha256:';
 
@@ -53,8 +48,6 @@ export interface SyncServiceDeps {
   clock: Clock;
   log: Logger;
   config: Pick<Config, 'sync'>;
-  /** The PPTX edit behind the ⊕ (BER-128); injected so tests can run without real files. */
-  insertSlide?: typeof insertSlide;
 }
 
 export interface CheckOptions {
@@ -119,118 +112,6 @@ export class SyncService {
       },
       { join: false },
     );
-  }
-
-  /**
-   * Inserts an empty slide after `afterSlideId` straight into the linked PowerPoint (BER-128):
-   * reads the newest file, adds the slide and uploads it guarded by its eTag, so a save by
-   * someone else in between is never overwritten (the edit is redone on top of it instead).
-   * The uploaded file becomes the next revision right away, with the new cTag as its token,
-   * so polling does not import Slider's own write a second time.
-   */
-  async insertSlide(deckId: string, afterSlideId: string): Promise<InsertSlideResult> {
-    let sldId: number | null = null;
-    const result = await this.exclusive(
-      deckId,
-      true,
-      async () => {
-        const pending = await this.pendingRevision(deckId);
-        if (pending) {
-          throw new ApiError(
-            409,
-            'conflict',
-            'Gerade wird noch eine neue Version verarbeitet. Versuche es gleich noch einmal.',
-          );
-        }
-        const { deck, current } = await this.load(deckId);
-        const adapter = deck.source === 'upload' ? undefined : this.deps.sources[deck.source];
-        if (
-          !current ||
-          !deck.sourceRef ||
-          deck.importState.status !== 'ready' ||
-          !adapter?.openForEdit ||
-          !adapter.replace
-        ) {
-          throw new ApiError(
-            400,
-            'bad_request',
-            'Folien lassen sich nur in PowerPoints einfügen, die per OneDrive- oder SharePoint-Link verbunden sind.',
-          );
-        }
-        const [after] = await this.deps.db
-          .select({ sldId: slideVersions.pptxSldId })
-          .from(slideVersions)
-          .where(
-            and(eq(slideVersions.revisionId, current.id), eq(slideVersions.slideId, afterSlideId)),
-          );
-        const afterSldId = after?.sldId;
-        if (afterSldId === undefined || afterSldId === null) {
-          throw notFound('Diese Folie gibt es in der aktuellen Version nicht mehr.');
-        }
-
-        const file: RemoteFile = {
-          ref: deck.sourceRef,
-          fileName: deck.fileName,
-          sizeBytes: 0,
-          changeToken: null,
-        };
-        const context: SourceContext = { userId: deck.ownerId };
-        try {
-          for (let attempt = 1; ; attempt++) {
-            const source = await adapter.openForEdit(file, context);
-            const edited = await (this.deps.insertSlide ?? insertSlide)(source.bytes, {
-              afterSldId,
-            });
-            try {
-              const token = await adapter.replace(source, edited.bytes, context);
-              sldId = edited.sldId;
-              return await this.createRevision(deck, edited.bytes, token || null, 'edit', true);
-            } catch (error) {
-              if (!(error instanceof SourceChangedError) || attempt >= EDIT_MAX_ATTEMPTS) {
-                throw error;
-              }
-            }
-          }
-        } catch (error) {
-          throw this.editError(error, deckId, afterSlideId);
-        }
-      },
-      { join: false },
-    );
-
-    const revisionId = result.status === 'updated' ? result.revisionId : undefined;
-    if (!revisionId || sldId === null) return { result, slideId: null };
-    const [inserted] = await this.deps.db
-      .select({ slideId: slideVersions.slideId })
-      .from(slideVersions)
-      .where(and(eq(slideVersions.revisionId, revisionId), eq(slideVersions.pptxSldId, sldId)));
-    return { result, slideId: inserted?.slideId ?? null };
-  }
-
-  /**
-   * Edit failures as the web app needs them, in plain words. A missing write login comes back to
-   * the deck with `insertAfter`, so the viewer finishes the insert right after consenting.
-   */
-  private editError(error: unknown, deckId: string, afterSlideId: string): unknown {
-    if (error instanceof ApiError && error.code === 'microsoft_login_required') {
-      const slide = encodeURIComponent(afterSlideId);
-      return microsoftWriteLoginRequired(`/d/${deckId}?slide=${slide}&insertAfter=${slide}`);
-    }
-    if (error instanceof SourceChangedError) {
-      return new ApiError(
-        409,
-        'conflict',
-        'Die PowerPoint wird gerade laufend gespeichert. Versuche es in einem Moment noch einmal.',
-      );
-    }
-    if (error instanceof SlideInsertError) {
-      return new ApiError(
-        409,
-        'conflict',
-        'Diese Folie wurde in der PowerPoint inzwischen gelöscht. Aktualisiere die Präsentation und versuche es noch einmal.',
-      );
-    }
-    return error;
   }
 
   /**
@@ -406,7 +287,7 @@ export class SyncService {
     deck: DeckRow,
     bytes: Uint8Array,
     token: string | null,
-    trigger: 'poll' | 'manual' | 'upload' | 'edit',
+    trigger: 'poll' | 'manual' | 'upload',
     wait: boolean,
   ): Promise<SyncResult> {
     const { db, storage, clock, queue } = this.deps;

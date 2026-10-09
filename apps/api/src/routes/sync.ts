@@ -1,11 +1,10 @@
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
-import { insertSlideInputSchema, type RerenderResult } from '@slider/shared';
+import type { RerenderResult } from '@slider/shared';
 import { requireDeckAccess } from '../auth/access';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import type { AppDeps } from '../deps';
 import { badRequest, fileTooLarge, notAPowerPoint } from '../http/errors';
-import { readJson } from '../http/validate';
 import { hasPdfRenderer } from '../import/office-pages';
 import { isSyncEnabled } from '../services/deck-sync';
 import {
@@ -90,13 +89,6 @@ export function syncRoutes(deps: AppDeps) {
           );
         }
         return c.json(await deps.sync.checkDeck(deck.id, { manual: true }));
-      })
-
-      /** ⊕ between slides: an empty slide, written straight into the linked PowerPoint (BER-128). */
-      .post('/decks/:deckId/slides', viewer, async (c) => {
-        const deck = await requireDeckAccess(deps.db, c.var.viewer, c.req.param('deckId'), 'own');
-        const { afterSlideId } = await readJson(c, insertSlideInputSchema);
-        return c.json(await deps.sync.insertSlide(deck.id, afterSlideId));
       })
 
       .get('/decks/:deckId/revisions', viewer, async (c) => {

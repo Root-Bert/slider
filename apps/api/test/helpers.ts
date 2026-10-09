@@ -29,7 +29,7 @@ import type { FetchLike, LookupAll } from '../src/sources/safe-fetch';
 import { createSourceAdapters, type SourceAdapters } from '../src/sources/source-adapter';
 import { blobKeys } from '../src/storage/blob-storage';
 import { FsBlobStorage } from '../src/storage/fs-blob-storage';
-import { SyncService, type SyncServiceDeps } from '../src/sync/sync-service';
+import { SyncService } from '../src/sync/sync-service';
 
 export class TestClock implements Clock {
   private offsetMs = 0;
@@ -160,8 +160,6 @@ export async function createTestContext(
     mailer?: Mailer;
     /** Fake passkey verification (no real authenticator in tests). */
     webauthn?: WebAuthn;
-    /** Replaces the PPTX edit behind the ⊕, for decks made of fake bytes. */
-    insertSlide?: SyncServiceDeps['insertSlide'];
   } = {},
 ): Promise<TestContext> {
   const { db, close } = await openDatabase();
@@ -205,16 +203,7 @@ export async function createTestContext(
     }),
     ...options.sources,
   };
-  const sync = new SyncService({
-    db,
-    storage,
-    sources,
-    queue,
-    clock,
-    log: silentLogger,
-    config,
-    insertSlide: options.insertSlide,
-  });
+  const sync = new SyncService({ db, storage, sources, queue, clock, log: silentLogger, config });
   const deps: AppDeps = {
     config,
     db,

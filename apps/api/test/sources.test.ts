@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parseShareLink, type ParsedShareLink } from '@slider/shared';
 import { ApiError } from '../src/http/errors';
-import { SourceChangedError } from '../src/sources/errors';
 import { extractOneDriveItem, parseOneDriveItem, shareIdFor } from '../src/sources/microsoft-graph';
 import {
   isPptxBytes,
@@ -621,84 +620,5 @@ describe('Office PDF export (BER-94)', () => {
         )
       ).code,
     ).toBe('source_unreachable');
-  });
-});
-
-describe('editing through Graph (BER-128)', () => {
-  const file = { ref: 'drives/d1/items/i1', fileName: 'Q4.pptx', sizeBytes: 0, changeToken: null };
-  const item = {
-    id: 'i1',
-    name: 'Q4.pptx',
-    eTag: '"{ETAG},3"',
-    cTag: '"c:{ETAG},3"',
-    file: {},
-    parentReference: { driveId: 'd1' },
-    '@microsoft.graph.downloadUrl': 'https://public.files.1drv.com/y4m-edit',
-  };
-
-  it('reads the newest file with its eTag and uploads guarded by If-Match with a write token', async () => {
-    const { fetch, calls } = mockFetch({
-      'https://graph.microsoft.com/v1.0/drives/d1/items/i1/content': () =>
-        json({ ...item, eTag: '"{ETAG},4"', cTag: '"c:{ETAG},4"' }),
-      'https://graph.microsoft.com/v1.0/drives/d1/items/i1': () => json(item),
-      'https://public.files.1drv.com/': () => new Response(PPTX),
-    });
-    const { sources, getAccessToken } = adapters({ fetch });
-
-    const editable = await sources.onedrive.openForEdit!(file, context);
-    expect(editable).toEqual({ ref: 'drives/d1/items/i1', eTag: '"{ETAG},3"', bytes: PPTX });
-
-    const edited = new Uint8Array([...PPTX, 0x01]);
-    expect(await sources.onedrive.replace!(editable, edited, context)).toBe('"c:{ETAG},4"');
-    const upload = calls.at(-1)!;
-    expect(upload.init?.method).toBe('PUT');
-    expect(new Headers(upload.init?.headers).get('if-match')).toBe('"{ETAG},3"');
-    expect(new Uint8Array(await new Response(upload.init?.body).arrayBuffer())).toEqual(edited);
-    expect(getAccessToken).toHaveBeenLastCalledWith('user-1', {
-      forceRefresh: false,
-      access: 'write',
-    });
-  });
-
-  it('refuses to overwrite a newer save (412) and reports a missing write right', async () => {
-    let status = 412;
-    const { fetch } = mockFetch({
-      'https://graph.microsoft.com/v1.0/drives/d1/items/i1/content': () => json({}, status),
-    });
-    const { sources } = adapters({ fetch });
-    const editable = { ref: 'drives/d1/items/i1', eTag: '"old"', bytes: PPTX };
-
-    await expect(sources.onedrive.replace!(editable, PPTX, context)).rejects.toBeInstanceOf(
-      SourceChangedError,
-    );
-    status = 403;
-    expect((await apiErrorOf(sources.onedrive.replace!(editable, PPTX, context))).code).toBe(
-      'source_forbidden',
-    );
-  });
-
-  it('asks for a login when there is no write token', async () => {
-    const { fetch } = mockFetch({});
-    const { sources } = adapters({ fetch, token: null });
-    const editable = { ref: 'drives/d1/items/i1', eTag: '"e"', bytes: PPTX };
-    expect((await apiErrorOf(sources.onedrive.replace!(editable, PPTX, context))).code).toBe(
-      'microsoft_login_required',
-    );
-  });
-
-  it('resolves an anonymous SharePoint ref to its drive item before editing', async () => {
-    const sharingUrl = 'https://contoso.sharepoint.com/:p:/s/team/EabcDEF?e=x1';
-    const { fetch, calls } = mockFetch({
-      [`https://graph.microsoft.com/v1.0/shares/${shareIdFor(sharingUrl)}/driveItem`]: () =>
-        json({ ...item, name: 'Team.pptx' }),
-      'https://graph.microsoft.com/v1.0/drives/d1/items/i1': () => json(item),
-      'https://public.files.1drv.com/': () => new Response(PPTX),
-    });
-    const { sources } = adapters({ fetch });
-
-    const editable = await sources.sharepoint.openForEdit!({ ...file, ref: sharingUrl }, context);
-
-    expect(editable.ref).toBe('drives/d1/items/i1');
-    expect(calls.map((call) => new URL(call.url).hostname)).not.toContain('contoso.sharepoint.com');
   });
 });
