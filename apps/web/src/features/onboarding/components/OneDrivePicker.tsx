@@ -146,6 +146,11 @@ export function OneDrivePicker({
           </div>
         )}
       </div>
+      {/* The glass edge is an inset shadow, which the opaque frame would cover: draw it on top. */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]"
+      />
     </section>
   );
 }

@@ -72,6 +72,8 @@
   --animate-pop-in: pop-in 180ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
   --animate-shimmer: shimmer 1.6s linear infinite;
   --animate-slide-in-x: slide-in-x 220ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  /* Content coming back after something gave it room (e.g. the OneDrive picker closing). */
+  --animate-rise-in: rise-in 320ms cubic-bezier(0.2, 0.9, 0.3, 1) backwards;
   /* Countdown bar of a transient notice; the user sets the duration (`animation-duration`). */
   --animate-countdown: shrink-x 6s linear forwards;
 
@@ -84,6 +86,12 @@
     from {
       opacity: 0;
       transform: translateY(4px) scale(0.98);
+    }
+  }
+  @keyframes rise-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
     }
   }
   @keyframes slide-in-x {

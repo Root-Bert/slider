@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router';
 import type { Deck, Workspace } from '@slider/shared';
 import { AppHeader } from '@/app/AppHeader';
@@ -40,6 +40,17 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
   // step aside.
   const [pickerShown, setPickerShown] = useState(false);
   const picking = picker.dialog.open || pickerShown;
+  // Once the picker has closed, the other ways in rise back in one after the other instead of
+  // popping up (not on the first load).
+  const [returned, setReturned] = useState(false);
+  const wasShown = useRef(false);
+  const onPickerShown = useCallback((shown: boolean) => {
+    setPickerShown(shown);
+    if (!shown && wasShown.current) setReturned(true);
+    wasShown.current = shown;
+  }, []);
+  const riseIn = (step: number): { className?: string; style?: CSSProperties } =>
+    returned ? { className: 'animate-rise-in', style: { animationDelay: `${step * 60}ms` } } : {};
 
   // Back from the Microsoft login only `?link=` survives – the last workspace stands in.
   useEffect(() => rememberWorkspace(workspace.id), [workspace.id]);
@@ -87,10 +98,16 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
                   onClose={picker.close}
                   pending={picker.pending}
                   error={picker.error}
-                  onShownChange={setPickerShown}
+                  onShownChange={onPickerShown}
                 />
                 {!picking && (
-                  <p className="flex items-center gap-3 text-xs text-fg-subtle">
+                  <p
+                    {...riseIn(0)}
+                    className={cn(
+                      'flex items-center gap-3 text-xs text-fg-subtle',
+                      riseIn(0).className,
+                    )}
+                  >
                     oder
                     <span aria-hidden className="h-px flex-1 bg-hairline" />
                   </p>
@@ -99,16 +116,18 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
             )}
 
             {!picking && (
-              <LinkImportForm
-                url={link.url}
-                onChange={link.change}
-                onBlur={link.blur}
-                onSubmit={link.submit}
-                error={link.error}
-                pending={link.pending}
-                emphasis={link.noAccess ? 'secondary' : 'primary'}
-                label={link.noAccess ? undefined : 'Link einfügen'}
-              />
+              <div {...riseIn(1)}>
+                <LinkImportForm
+                  url={link.url}
+                  onChange={link.change}
+                  onBlur={link.blur}
+                  onSubmit={link.submit}
+                  error={link.error}
+                  pending={link.pending}
+                  emphasis={link.noAccess ? 'secondary' : 'primary'}
+                  label={link.noAccess ? undefined : 'Link einfügen'}
+                />
+              </div>
             )}
           </div>
 
@@ -121,11 +140,13 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
               onCancel={upload.cancel}
             />
           ) : (
-            <UploadDropzone
-              onFile={uploadFile}
-              onBrowse={pickFile}
-              error={upload.state.status === 'error' ? upload.state.message : null}
-            />
+            <div {...riseIn(2)}>
+              <UploadDropzone
+                onFile={uploadFile}
+                onBrowse={pickFile}
+                error={upload.state.status === 'error' ? upload.state.message : null}
+              />
+            </div>
           )}
 
           <input
