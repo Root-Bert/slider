@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import type { Deck, Workspace } from '@slider/shared';
 import { AppHeader } from '@/app/AppHeader';
@@ -9,8 +9,7 @@ import { useAuthProviders } from '@/lib/workspace-queries';
 import { cn } from '@/ui';
 import { LinkImportForm } from './components/LinkImportForm';
 import { NoAccessCard } from './components/NoAccessCard';
-import { OneDrivePickerButton } from './components/OneDrivePickerButton';
-import { OneDrivePickerDialog } from './components/OneDrivePickerDialog';
+import { OneDrivePicker } from './components/OneDrivePicker';
 import { UploadDropzone } from './components/UploadDropzone';
 import { UploadProgressCard } from './components/UploadProgressCard';
 import { useDeckUpload } from './hooks/useDeckUpload';
@@ -25,7 +24,6 @@ import { PPTX_ACCEPT } from './lib/upload-validation';
 export function NewReview({ workspace }: { workspace: Workspace }) {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const pickerButtonRef = useRef<HTMLButtonElement>(null);
   const openDeck = (deck: Deck) => void navigate(routes.deck(deck.id));
 
   const link = useLinkImport(workspace.id, openDeck);
@@ -37,6 +35,11 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
   const oneDriveAvailable =
     Boolean(me?.user?.microsoftConnected) ||
     Boolean(providers.data?.providers.some((p) => p.id === 'microsoft'));
+
+  // While the picker is open (and until it has shrunk back) it is the page: the other ways in
+  // step aside.
+  const [pickerShown, setPickerShown] = useState(false);
+  const picking = picker.dialog.open || pickerShown;
 
   // Back from the Microsoft login only `?link=` survives – the last workspace stands in.
   useEffect(() => rememberWorkspace(workspace.id), [workspace.id]);
@@ -73,40 +76,41 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
           )}
 
           <div className="flex flex-col gap-3">
-            <LinkImportForm
-              url={link.url}
-              onChange={link.change}
-              onBlur={link.blur}
-              onSubmit={link.submit}
-              error={link.error}
-              pending={link.pending}
-              emphasis={link.noAccess ? 'secondary' : 'primary'}
-              label={link.noAccess ? undefined : 'Link einfügen'}
-            />
+            {!picking && (
+              <LinkImportForm
+                url={link.url}
+                onChange={link.change}
+                onBlur={link.blur}
+                onSubmit={link.submit}
+                error={link.error}
+                pending={link.pending}
+                emphasis={link.noAccess ? 'secondary' : 'primary'}
+                label={link.noAccess ? undefined : 'Link einfügen'}
+              />
+            )}
 
-            {!link.noAccess && oneDriveAvailable && (
+            {/* Also while `me` still loads: back from the Microsoft consent it opens right away. */}
+            {!link.noAccess && (oneDriveAvailable || picking) && (
               <>
-                <p className="flex items-center gap-3 text-xs text-fg-subtle">
-                  oder
-                  <span aria-hidden className="h-px flex-1 bg-hairline" />
-                </p>
-                <OneDrivePickerButton
-                  ref={pickerButtonRef}
+                {!picking && (
+                  <p className="flex items-center gap-3 text-xs text-fg-subtle">
+                    oder
+                    <span aria-hidden className="h-px flex-1 bg-hairline" />
+                  </p>
+                )}
+                <OneDrivePicker
+                  {...picker.dialog}
                   onOpen={picker.open}
+                  onClose={picker.close}
                   pending={picker.pending}
                   error={picker.error}
+                  onShownChange={setPickerShown}
                 />
               </>
             )}
           </div>
-          {/* Always mounted: back from the Microsoft consent it opens before the rest loads. */}
-          <OneDrivePickerDialog
-            {...picker.dialog}
-            onClose={picker.close}
-            anchorRef={pickerButtonRef}
-          />
 
-          {link.noAccess ? (
+          {picking ? null : link.noAccess ? (
             <NoAccessCard info={link.noAccess} onUploadInstead={pickFile} />
           ) : upload.state.status === 'uploading' ? (
             <UploadProgressCard
