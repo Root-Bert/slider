@@ -112,7 +112,7 @@ export function OneDrivePicker({
         'relative left-1/2 flex -translate-x-1/2 flex-col overflow-hidden outline-none',
         'transition-[width,height,border-radius,background-color] ease-[cubic-bezier(0.32,0.72,0,1)]',
         expanded
-          ? 'glass-elevated h-[min(720px,max(420px,calc(100dvh-340px)))] w-[min(1080px,calc(100vw-32px))] rounded-panel'
+          ? 'glass-elevated h-[min(760px,max(420px,calc(100dvh-300px)))] w-[min(1080px,calc(100vw-32px))] rounded-panel'
           : 'glass h-11 w-full rounded-control',
       )}
       style={{ transitionDuration: `${EXPAND_MS}ms` }}

@@ -55,27 +55,49 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
       <title>Neuer Review · Slider</title>
       <AppHeader />
 
+      {!link.noAccess && (
+        // Same place and type as "Meine Reviews".
+        <hgroup className="flex flex-col gap-1 px-4 pt-2 md:px-14">
+          <h1 className="text-[28px] leading-tight font-semibold tracking-tight text-fg">
+            Neuer Review
+          </h1>
+          <p className="text-[13px] text-fg-subtle">
+            Präsentation aus OneDrive oder SharePoint öffnen und Feedback direkt auf den Folien
+            sammeln.
+          </p>
+        </hgroup>
+      )}
+
       <main
         className={cn(
           'flex flex-1 justify-center px-4 pb-16',
           // A3 drops the heading; the field moves down to where the card reads centred (Figma 92:2472).
-          link.noAccess ? 'pt-[clamp(8px,19vh,190px)]' : 'pt-[clamp(24px,12vh,128px)]',
+          link.noAccess ? 'pt-[clamp(8px,19vh,190px)]' : 'pt-[clamp(24px,7vh,72px)]',
         )}
       >
         <div className="flex w-full max-w-[560px] flex-col gap-8">
-          {!link.noAccess && (
-            <hgroup className="flex flex-col gap-1.5">
-              <h1 className="text-2xl leading-tight font-semibold tracking-tight text-fg">
-                Neuer Review
-              </h1>
-              <p className="text-sm text-fg-subtle">
-                Präsentation aus OneDrive oder SharePoint öffnen und Feedback direkt auf den Folien
-                sammeln.
-              </p>
-            </hgroup>
-          )}
-
           <div className="flex flex-col gap-3">
+            {/* First, so it opens up right under the heading. Also while `me` still loads: back
+                from the Microsoft consent it opens right away. */}
+            {!link.noAccess && (oneDriveAvailable || picking) && (
+              <>
+                <OneDrivePicker
+                  {...picker.dialog}
+                  onOpen={picker.open}
+                  onClose={picker.close}
+                  pending={picker.pending}
+                  error={picker.error}
+                  onShownChange={setPickerShown}
+                />
+                {!picking && (
+                  <p className="flex items-center gap-3 text-xs text-fg-subtle">
+                    oder
+                    <span aria-hidden className="h-px flex-1 bg-hairline" />
+                  </p>
+                )}
+              </>
+            )}
+
             {!picking && (
               <LinkImportForm
                 url={link.url}
@@ -87,26 +109,6 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
                 emphasis={link.noAccess ? 'secondary' : 'primary'}
                 label={link.noAccess ? undefined : 'Link einfügen'}
               />
-            )}
-
-            {/* Also while `me` still loads: back from the Microsoft consent it opens right away. */}
-            {!link.noAccess && (oneDriveAvailable || picking) && (
-              <>
-                {!picking && (
-                  <p className="flex items-center gap-3 text-xs text-fg-subtle">
-                    oder
-                    <span aria-hidden className="h-px flex-1 bg-hairline" />
-                  </p>
-                )}
-                <OneDrivePicker
-                  {...picker.dialog}
-                  onOpen={picker.open}
-                  onClose={picker.close}
-                  pending={picker.pending}
-                  error={picker.error}
-                  onShownChange={setPickerShown}
-                />
-              </>
             )}
           </div>
 
