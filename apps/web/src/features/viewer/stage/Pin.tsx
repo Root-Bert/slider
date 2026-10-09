@@ -12,14 +12,13 @@ interface PinProps {
   at: Point;
   state: MarkState;
   onActivate: () => void;
-  onHover: (hovering: boolean) => void;
 }
 
 /**
  * Interactive marker of a comment on the slide: an accent dot with a white ring, or the orange
  * "P" square for comments imported from PowerPoint (F1). Positioned in percent of the slide box.
  */
-export function Pin({ comment, at, state, onActivate, onHover }: PinProps) {
+export function Pin({ comment, at, state, onActivate }: PinProps) {
   const fromPowerPoint = comment.source === 'pptx';
   const removed = isRemovedInPowerPoint(comment);
   const label = `${markLabel(comment)}${removed ? ' (in PowerPoint entfernt)' : ''}`;
@@ -35,10 +34,6 @@ export function Pin({ comment, at, state, onActivate, onHover }: PinProps) {
         event.stopPropagation();
         onActivate();
       }}
-      onPointerEnter={() => onHover(true)}
-      onPointerLeave={() => onHover(false)}
-      onFocus={() => onHover(true)}
-      onBlur={() => onHover(false)}
       className={cn(
         'pointer-events-auto absolute flex size-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center transition-[opacity,transform] duration-200',
         state === 'dimmed' && 'opacity-30',

@@ -74,8 +74,6 @@ export const CommentCard = memo(function CommentCard({
     <article
       data-comment-card={thread.id}
       data-hover-thread={thread.id}
-      onPointerEnter={() => dispatch({ type: 'threadHovered', threadId: thread.id })}
-      onPointerLeave={() => dispatch({ type: 'threadHovered', threadId: null })}
       className={cn(
         // Raised while hovered or focused, so the reply bar overlaps the cards below.
         'group relative transition-opacity duration-200 focus-within:z-20 hover:z-20',

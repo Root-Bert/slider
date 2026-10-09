@@ -43,7 +43,6 @@ interface TextMarkProps {
   emphasized: boolean;
   interactive: boolean;
   onActivate: () => void;
-  onHover: (hovering: boolean) => void;
   /**
    * Own text: dragging the box moves it, its corner handle resizes it. Called with the new box
    * (normalised, as rendered) when the drag ends; `done` once it is stored (or failed).
@@ -77,7 +76,6 @@ export function TextMark({
   emphasized,
   interactive,
   onActivate,
-  onHover,
   onPlace,
 }: TextMarkProps) {
   const ref = useRef<HTMLButtonElement>(null);
@@ -192,10 +190,6 @@ export function TextMark({
       onPointerMove={onDrag}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
-      onPointerEnter={() => onHover(true)}
-      onPointerLeave={() => onHover(false)}
-      onFocus={() => onHover(true)}
-      onBlur={() => onHover(false)}
       className={cn(
         TEXT_CLASS,
         'absolute rounded-[0.25em] outline-offset-2 transition-[opacity,box-shadow] duration-200',

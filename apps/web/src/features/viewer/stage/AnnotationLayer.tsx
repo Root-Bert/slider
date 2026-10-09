@@ -94,8 +94,6 @@ export const AnnotationLayer = memo(function AnnotationLayer({
   };
   const activate = (mark: Mark) =>
     dispatch({ type: 'threadFocused', threadId: mark.thread.id, openPanel: true });
-  const hover = (mark: Mark, hovering: boolean) =>
-    dispatch({ type: 'threadHovered', threadId: hovering ? mark.thread.id : null });
 
   return (
     <div className="pointer-events-none absolute inset-0 [container-type:size]">
@@ -146,8 +144,6 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                   event.stopPropagation();
                   activate(mark);
                 }}
-                onPointerEnter={() => hover(mark, true)}
-                onPointerLeave={() => hover(mark, false)}
               />
             </g>
           )),
@@ -187,7 +183,6 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                 emphasized={mark.state === 'emphasized'}
                 interactive={!composing}
                 onActivate={() => activate(mark)}
-                onHover={(hovering) => hover(mark, hovering)}
                 onPlace={
                   canComment && root.source === 'app' && root.author.id === viewer.author.id
                     ? (textBox, done) =>
@@ -201,7 +196,6 @@ export const AnnotationLayer = memo(function AnnotationLayer({
               at={badgePoint(root, area)}
               state={mark.state}
               onActivate={() => activate(mark)}
-              onHover={(hovering) => hover(mark, hovering)}
             />
             {root.anchor.type === 'rect' && !text && (
               // The whole frame is a pointer target; keyboard users reach it through the badge.
@@ -214,8 +208,6 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                   event.stopPropagation();
                   activate(mark);
                 }}
-                onPointerEnter={() => hover(mark, true)}
-                onPointerLeave={() => hover(mark, false)}
                 className={cn(
                   'absolute rounded-thumb',
                   composing || selecting

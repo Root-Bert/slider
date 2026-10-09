@@ -342,8 +342,6 @@ const GapColumn = memo(function GapColumn({
         data-gap-bubble={key}
         data-hover-thread={first.id}
         onClick={() => dispatch({ type: 'threadFocused', threadId: first.id, openPanel: true })}
-        onPointerEnter={() => dispatch({ type: 'threadHovered', threadId: first.id })}
-        onPointerLeave={() => dispatch({ type: 'threadHovered', threadId: null })}
         aria-label={label}
         title={label}
         className="flex h-6 max-w-full min-w-6 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold text-white ring-2 ring-canvas transition-[filter] hover:brightness-125"

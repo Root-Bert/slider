@@ -88,8 +88,6 @@ export const GapDivider = memo(function GapDivider({
             data-gap-marker
             data-hover-thread={first.id}
             onClick={() => dispatch({ type: 'threadFocused', threadId: first.id, openPanel: true })}
-            onPointerEnter={() => dispatch({ type: 'threadHovered', threadId: first.id })}
-            onPointerLeave={() => dispatch({ type: 'threadHovered', threadId: null })}
             aria-label={`${threads.length} Kommentar${threads.length === 1 ? '' : 'e'} zwischen den Folien`}
             className="flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold text-white ring-2 ring-canvas"
             style={{
