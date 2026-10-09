@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "ms_subject" text;

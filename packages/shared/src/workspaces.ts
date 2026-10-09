@@ -44,7 +44,8 @@ export type AuthProviders = z.infer<typeof authProvidersSchema>;
  * `?error=` on `/login` after a failed sign-in:
  * `signup_closed` (no account and no invitation), `account_exists` (the e-mail belongs to an
  * account that signs in another way), `no_email`/`email_unverified` (the provider sent no usable
- * address), `link_invalid`/`link_expired` (magic link), `admin_consent`/`denied`/`failed`.
+ * address), `link_invalid`/`link_expired` (magic link), `admin_consent`/`denied`/`failed`,
+ * `account_limit` (the Microsoft account is already connected to two Slider accounts).
  */
 export const LOGIN_ERRORS = [
   'signup_closed',
@@ -56,6 +57,7 @@ export const LOGIN_ERRORS = [
   'admin_consent',
   'denied',
   'failed',
+  'account_limit',
 ] as const;
 export type LoginError = (typeof LOGIN_ERRORS)[number];
 

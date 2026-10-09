@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { mapMicrosoftError, MICROSOFT_SCOPES } from '../src/auth/microsoft';
 import { decryptToken, encryptToken } from '../src/auth/token-crypto';
 import { users } from '../src/db/schema';
+import { upsertUser } from '../src/services/users';
 import type { FetchLike } from '../src/sources/safe-fetch';
 import { createTestContext, MICROSOFT_TEST_CONFIG, type TestContext } from './helpers';
 
@@ -188,6 +189,36 @@ describe('Microsoft login routes', () => {
     expect(owner?.msRefreshToken).toMatch(/^v1\./);
     expect(await decryptToken(SECRET, owner?.msRefreshToken ?? '')).toBe('rt-1');
     expect(await ctx.deps.microsoft.getAccessToken(ctx.ownerId)).toBe('at-1');
+  });
+
+  it('connects one Microsoft account to at most two Slider accounts', async () => {
+    ctx = await configured(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/oauth2/v2.0/token'))
+        return Response.json({ access_token: 'at-1', refresh_token: 'rt-1', expires_in: 3600 });
+      if (url.startsWith('https://graph.microsoft.com/v1.0/me'))
+        return Response.json({ id: 'ms-1', mail: 'shared@contoso.com' });
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const others = await Promise.all(
+      ['a', 'b'].map((name) => upsertUser(ctx.deps.db, { name, email: `${name}@example.com` })),
+    );
+    for (const other of others)
+      await ctx.deps.db.update(users).set({ msSubject: 'ms-1' }).where(eq(users.id, other.id));
+    const owner = async () =>
+      (await ctx.deps.db.select().from(users).where(eq(users.id, ctx.ownerId)))[0];
+
+    let { state, cookie } = await startLogin();
+    let res = await ctx.request(`/api/auth/microsoft/callback?state=${state}&code=c`, { cookie });
+    expect(res.headers.get('location')).toContain('msError=account_limit');
+    expect((await owner())?.msRefreshToken).toBeNull();
+
+    // One of them lets go: the slot is free again.
+    await ctx.deps.microsoft.forget(others[0]!.id);
+    ({ state, cookie } = await startLogin());
+    res = await ctx.request(`/api/auth/microsoft/callback?state=${state}&code=c`, { cookie });
+    expect(res.headers.get('location')).not.toContain('msError');
+    expect((await owner())?.msSubject).toBe('ms-1');
   });
 
   it('refreshes expired access tokens and forgets revoked refresh tokens', async () => {

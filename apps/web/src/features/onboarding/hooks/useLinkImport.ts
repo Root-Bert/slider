@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { parseShareLink, type Deck, type ParsedShareLink } from '@slider/shared';
 import { ApiError } from '@/lib/api-client';
 import { queryKeys, useImportLink } from '@/lib/queries';
+import { ACCOUNT_LIMIT_MESSAGE } from '@/features/auth/lib/return-to';
 
 export const INVALID_LINK_MESSAGE = 'Kein gültiger OneDrive-, SharePoint- oder PPTX-Link';
 const EMPTY_LINK_MESSAGE = 'Füge einen OneDrive-, SharePoint- oder PPTX-Link ein.';
@@ -61,6 +62,8 @@ function noAccessFromLoginError(kind: string, host: string, link: string): NoAcc
   if (kind === 'admin_consent')
     return { host, kind: 'consent', message: CONSENT_MESSAGE, loginUrl };
   if (kind === 'denied') return { host, kind: 'denied', message: LOGIN_DENIED_MESSAGE, loginUrl };
+  if (kind === 'account_limit')
+    return { host, kind: 'denied', message: ACCOUNT_LIMIT_MESSAGE, loginUrl };
   return { host, kind: 'denied', message: LOGIN_FAILED_MESSAGE, loginUrl };
 }
 

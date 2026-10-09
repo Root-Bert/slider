@@ -86,6 +86,8 @@ export const users = pgTable('users', {
   msRefreshToken: text('ms_refresh_token'),
   /** The Microsoft account it belongs to (mail or UPN), for display. */
   msAccount: text('ms_account'),
+  /** Microsoft Graph id of that account – at most {@link MAX_ACCOUNTS_PER_MICROSOFT} share one. */
+  msSubject: text('ms_subject'),
   /** The first account of the instance (BER-129). */
   isInstanceAdmin: boolean('is_instance_admin').notNull().default(false),
   createdAt: createdAt(),

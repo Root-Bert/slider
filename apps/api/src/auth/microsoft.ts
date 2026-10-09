@@ -1,7 +1,7 @@
-import { eq } from 'drizzle-orm';
+import { and, count, eq, ne } from 'drizzle-orm';
 import type { Clock } from '../clock';
 import type { MicrosoftConfig } from '../config';
-import type { Executor } from '../db/client';
+import { advisoryXactLock, type Executor } from '../db/client';
 import { users } from '../db/schema';
 import type { Logger } from '../logger';
 import { microsoftConsentRequired, sourceUnreachable } from '../sources/errors';
@@ -25,7 +25,10 @@ export const PICKER_CONSUMER_SCOPE = 'OneDrive.ReadOnly';
 export const CONSUMERS_TENANT = 'consumers';
 const PICKER_CONSENT_SCOPES = `openid offline_access ${PICKER_CONSUMER_SCOPE}`;
 
-const GRAPH_ME_URL = 'https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName';
+const GRAPH_ME_URL = 'https://graph.microsoft.com/v1.0/me?$select=id,mail,userPrincipalName';
+
+/** One Microsoft account connects to at most this many Slider accounts – no endless sign-ups. */
+export const MAX_ACCOUNTS_PER_MICROSOFT = 2;
 /** Refresh a little early so a token never expires between check and use. */
 const EXPIRY_SKEW_MS = 60_000;
 
@@ -36,7 +39,7 @@ export const authority = (config: MicrosoftConfig, tenant = config.tenant) =>
   `https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0`;
 
 /** What went wrong at Microsoft, as far as the web app needs to know (`?msError=`). */
-export type MicrosoftErrorKind = 'admin_consent' | 'denied' | 'failed';
+export type MicrosoftErrorKind = 'admin_consent' | 'denied' | 'failed' | 'account_limit';
 
 /** Thrown for error responses of the authorize and token endpoints. */
 export class MicrosoftAuthError extends Error {
@@ -299,13 +302,29 @@ export class MicrosoftTokens {
       throw new MicrosoftAuthError('failed', 'no_refresh_token', 'offline_access was not granted');
     }
     const account = await this.fetchAccount(tokens.access_token);
-    await this.deps.db
-      .update(users)
-      .set({
-        msRefreshToken: await encryptToken(this.deps.secret, tokens.refresh_token),
-        msAccount: account,
-      })
-      .where(eq(users.id, userId));
+    const subject = account?.id ?? null;
+    const refreshToken = await encryptToken(this.deps.secret, tokens.refresh_token);
+    await this.deps.db.transaction(async (tx) => {
+      if (subject) {
+        // Two connects of the same Microsoft account at once must not both pass the count.
+        await advisoryXactLock(tx, `ms-subject:${subject}`);
+        const [others] = await tx
+          .select({ n: count() })
+          .from(users)
+          .where(and(eq(users.msSubject, subject), ne(users.id, userId)));
+        if ((others?.n ?? 0) >= MAX_ACCOUNTS_PER_MICROSOFT) {
+          throw new MicrosoftAuthError(
+            'account_limit',
+            'account_limit',
+            `already connected to ${MAX_ACCOUNTS_PER_MICROSOFT} accounts`,
+          );
+        }
+      }
+      await tx
+        .update(users)
+        .set({ msRefreshToken: refreshToken, msAccount: account?.name ?? null, msSubject: subject })
+        .where(eq(users.id, userId));
+    });
     this.remember(`${userId}:read`, tokens);
   }
 
@@ -389,7 +408,7 @@ export class MicrosoftTokens {
     }
     await this.deps.db
       .update(users)
-      .set({ msRefreshToken: null, msAccount: null })
+      .set({ msRefreshToken: null, msAccount: null, msSubject: null })
       .where(eq(users.id, userId));
   }
 
@@ -402,15 +421,22 @@ export class MicrosoftTokens {
   }
 
   /** The signed-in account's address, for display; `null` if Graph does not tell. */
-  private async fetchAccount(accessToken: string): Promise<string | null> {
+  /** The Microsoft account behind a token: Graph id and mail/UPN for display. */
+  private async fetchAccount(
+    accessToken: string,
+  ): Promise<{ id: string | null; name: string | null } | null> {
     try {
       const response = await this.fetch(GRAPH_ME_URL, {
         headers: { Authorization: `Bearer ${accessToken}` },
         signal: AbortSignal.timeout(15_000),
       });
       if (!response.ok) return null;
-      const me = (await response.json()) as { mail?: string | null; userPrincipalName?: string };
-      return me.mail ?? me.userPrincipalName ?? null;
+      const me = (await response.json()) as {
+        id?: string;
+        mail?: string | null;
+        userPrincipalName?: string;
+      };
+      return { id: me.id || null, name: me.mail ?? me.userPrincipalName ?? null };
     } catch {
       return null;
     }

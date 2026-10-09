@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import type { Deck, Workspace } from '@slider/shared';
 import { AppHeader } from '@/app/AppHeader';
 import { routes } from '@/app/routes';
+import { LoginErrorBanner } from '@/features/auth/components/LoginBits';
 import { rememberWorkspace } from '@/features/workspaces/lib/last-workspace';
 import { useMe } from '@/lib/queries';
 import { useAuthProviders } from '@/lib/workspace-queries';
@@ -51,6 +52,23 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
   // Back from the Microsoft login only `?link=` survives – the last workspace stands in.
   useEffect(() => rememberWorkspace(workspace.id), [workspace.id]);
 
+  // "Verbinden" or the picker came back refused: this Microsoft account already serves two
+  // Slider accounts. (With `?link=`, the link form explains it.) Read once, then off the URL.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [accountLimit] = useState(
+    () => searchParams.get('msError') === 'account_limit' && !searchParams.get('link'),
+  );
+  useEffect(() => {
+    if (!accountLimit) return;
+    setSearchParams(
+      (params) => {
+        params.delete('msError');
+        return params;
+      },
+      { replace: true },
+    );
+  }, [accountLimit, setSearchParams]);
+
   const pickFile = () => fileInputRef.current?.click();
   const uploadFile = (file: File) => {
     link.reset();
@@ -73,6 +91,13 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
             sammeln.
           </p>
         </hgroup>
+      )}
+      {accountLimit && (
+        <div className="px-4 pt-4 md:px-14">
+          <div className="max-w-[640px]">
+            <LoginErrorBanner code="account_limit" />
+          </div>
+        </div>
       )}
 
       <main
