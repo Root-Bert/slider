@@ -35,7 +35,7 @@ const rank = (role: WorkspaceRole) => WORKSPACE_ROLES.indexOf(role);
 
 export const atLeast = (role: WorkspaceRole, min: WorkspaceRole) => rank(role) <= rank(min);
 
-/** "Neuer Review": members and up. */
+/** "Neue Review": members and up. */
 export const canCreateDecks = (role: WorkspaceRole) => atLeast(role, 'member');
 export const canRenameWorkspace = (role: WorkspaceRole) => atLeast(role, 'admin');
 export const canManageMembers = (role: WorkspaceRole) => atLeast(role, 'admin');

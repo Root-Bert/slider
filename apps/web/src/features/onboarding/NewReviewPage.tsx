@@ -7,7 +7,7 @@ import { useActiveWorkspace } from '@/features/workspaces/useWorkspace';
 import { NewReview } from './NewReview';
 
 /**
- * A1 "Neuer Review" (BER-91, BER-92) with the A3 "no access" state.
+ * A1 "Neue Review" (BER-91, BER-92) with the A3 "no access" state.
  * Both paths end on the deck page, which shows the import progress (BER-97).
  * The deck goes into `?workspace=` (else the last used workspace).
  */

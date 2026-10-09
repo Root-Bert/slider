@@ -82,13 +82,13 @@ export function Component() {
             <Button
               size="sm"
               icon="add"
-              aria-label="Neuer Review"
+              aria-label="Neue Review"
               disabled={decksFull}
               title={decksFull ? deckLimitMessage(workspace) : undefined}
               aria-describedby={decksFull ? limitNoticeId : undefined}
               onClick={goToNew}
             >
-              <span className="max-sm:hidden">Neuer Review</span>
+              <span className="max-sm:hidden">Neue Review</span>
             </Button>
           )
         }

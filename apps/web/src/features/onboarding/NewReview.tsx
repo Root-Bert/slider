@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router';
 import type { Deck, Workspace } from '@slider/shared';
 import { AppHeader } from '@/app/AppHeader';
@@ -18,7 +18,7 @@ import { useOneDrivePicker } from './hooks/useOneDrivePicker';
 import { PPTX_ACCEPT } from './lib/upload-validation';
 
 /**
- * A1 "Neuer Review" (BER-91, BER-92) with the A3 "no access" state, for one workspace.
+ * A1 "Neue Review" (BER-91, BER-92) with the A3 "no access" state, for one workspace.
  * Both paths end on the deck page, which shows the import progress (BER-97).
  */
 export function NewReview({ workspace }: { workspace: Workspace }) {
@@ -36,21 +36,17 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
     Boolean(me?.user?.microsoftConnected) ||
     Boolean(providers.data?.providers.some((p) => p.id === 'microsoft'));
 
-  // While the picker is open (and until it has shrunk back) it is the page: the other ways in
-  // step aside.
+  // While the picker is open it is the page: the other ways in step aside. As soon as it starts
+  // to close they rise back in, one after the other, and ride up with the shrinking panel (not
+  // on the first load). `pickerShown` keeps the panel's place until it has shrunk back.
+  const picking = picker.dialog.open;
   const [pickerShown, setPickerShown] = useState(false);
-  const picking = picker.dialog.open || pickerShown;
-  // Once the picker has closed, the other ways in rise back in one after the other instead of
-  // popping up (not on the first load).
-  const [returned, setReturned] = useState(false);
-  const wasShown = useRef(false);
-  const onPickerShown = useCallback((shown: boolean) => {
-    setPickerShown(shown);
-    if (!shown && wasShown.current) setReturned(true);
-    wasShown.current = shown;
-  }, []);
+  const [hasPicked, setHasPicked] = useState(false);
+  if (picking && !hasPicked) setHasPicked(true);
   const riseIn = (step: number): { className?: string; style?: CSSProperties } =>
-    returned ? { className: 'animate-rise-in', style: { animationDelay: `${step * 60}ms` } } : {};
+    hasPicked
+      ? { className: 'animate-rise-in', style: { animationDelay: `${60 + step * 70}ms` } }
+      : {};
 
   // Back from the Microsoft login only `?link=` survives – the last workspace stands in.
   useEffect(() => rememberWorkspace(workspace.id), [workspace.id]);
@@ -63,14 +59,14 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
 
   return (
     <div className="dot-grid flex min-h-full flex-col">
-      <title>Neuer Review · Slider</title>
+      <title>Neue Review · Slider</title>
       <AppHeader />
 
       {!link.noAccess && (
         // Same place and type as "Meine Reviews".
         <hgroup className="flex flex-col gap-1 px-4 pt-2 md:px-14">
           <h1 className="text-[28px] leading-tight font-semibold tracking-tight text-fg">
-            Neuer Review
+            Neue Review
           </h1>
           <p className="text-[13px] text-fg-subtle">
             Präsentation aus OneDrive oder SharePoint öffnen und Feedback direkt auf den Folien
@@ -90,7 +86,7 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
           <div className="flex flex-col gap-3">
             {/* First, so it opens up right under the heading. Also while `me` still loads: back
                 from the Microsoft consent it opens right away. */}
-            {!link.noAccess && (oneDriveAvailable || picking) && (
+            {!link.noAccess && (oneDriveAvailable || picking || pickerShown) && (
               <>
                 <OneDrivePicker
                   {...picker.dialog}
@@ -98,7 +94,7 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
                   onClose={picker.close}
                   pending={picker.pending}
                   error={picker.error}
-                  onShownChange={onPickerShown}
+                  onShownChange={setPickerShown}
                 />
                 {!picking && (
                   <p

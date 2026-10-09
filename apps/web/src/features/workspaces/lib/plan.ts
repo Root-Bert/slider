@@ -52,7 +52,7 @@ export function formatDeckUsage(usage: WorkspaceUsage): string {
   return max === null ? `${used} ${decksWord(used)}` : `${used} von ${max} ${decksWord(max)}`;
 }
 
-/** Why "Neuer Review" is off, matching the API's `plan_limit` message. */
+/** Why "Neue Review" is off, matching the API's `plan_limit` message. */
 export function deckLimitMessage(workspace: Pick<Workspace, 'plan' | 'usage'>): string {
   const max = workspace.usage.maxDecks ?? 0;
   return `Im ${planLabel(workspace.plan)} ${max === 1 ? 'ist eine Präsentation' : `sind ${max} Präsentationen`} pro Organisation möglich. Lösche eine, um Platz zu schaffen.`;
