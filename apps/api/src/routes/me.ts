@@ -1,12 +1,18 @@
 import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
-import { updateMeInputSchema, type MeResponse, type Viewer } from '@slider/shared';
+import {
+  updateAvatarInputSchema,
+  updateMeInputSchema,
+  type MeResponse,
+  type Viewer,
+} from '@slider/shared';
 import { clearGuestCookie, viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import { users } from '../db/schema';
 import type { AppDeps } from '../deps';
+import { forbidden } from '../http/errors';
 import { readJson } from '../http/validate';
 import { fileUrl } from '../storage/blob-storage';
-import { updateViewerColor } from '../services/users';
+import { updateUserAvatar, updateViewerColor } from '../services/users';
 import { canCreateWorkspace } from '../services/plans';
 import { listWorkspaces, pendingInvitesFor } from '../services/workspaces';
 
@@ -28,6 +34,7 @@ async function meResponse(deps: AppDeps, viewer: Viewer): Promise<MeResponse> {
       email: user.email,
       color: user.color,
       avatarUrl: user.avatarKey ? fileUrl(user.avatarKey) : null,
+      avatarSeed: user.avatarSeed,
       isInstanceAdmin: user.isInstanceAdmin,
       microsoftConnected: user.msRefreshToken !== null,
     },
@@ -46,6 +53,15 @@ export function meRoutes(deps: AppDeps) {
       const { color } = await readJson(c, updateMeInputSchema);
       const viewer = await updateViewerColor(deps.db, c.var.viewer, color);
       return c.json<MeResponse>(await meResponse(deps, viewer));
+    })
+    .put('/me/avatar', viewerMiddleware(deps), async (c) => {
+      const { seed } = await readJson(c, updateAvatarInputSchema);
+      const { viewer } = c.var;
+      if (viewer.kind !== 'owner') throw forbidden('Ein eigenes Avatar gibt es nur mit Konto.');
+      await updateUserAvatar(deps.db, viewer.author.id, seed);
+      return c.json<MeResponse>(
+        await meResponse(deps, { ...viewer, author: { ...viewer.author, avatarSeed: seed } }),
+      );
     })
     .post('/session/leave', (c) => {
       clearGuestCookie(c);

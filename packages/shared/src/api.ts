@@ -145,6 +145,12 @@ export interface MeResponse {
 export const updateMeInputSchema = z.object({ color: accentColorSchema });
 export type UpdateMeInput = z.infer<typeof updateMeInputSchema>;
 
+/** `PUT /me/avatar`: a re-rolled avatar's seed, or `null` back to the photo / name-seeded one. */
+export const updateAvatarInputSchema = z.object({
+  seed: z.string().trim().min(1).max(64).nullable(),
+});
+export type UpdateAvatarInput = z.infer<typeof updateAvatarInputSchema>;
+
 export const importLinkInputSchema = z.object({ url: z.url() });
 export type ImportLinkInput = z.infer<typeof importLinkInputSchema>;
 

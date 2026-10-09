@@ -81,6 +81,8 @@ export const users = pgTable('users', {
   email: text('email').notNull().unique(),
   color: text('color').$type<AccentColor>().notNull(),
   avatarKey: text('avatar_key'),
+  /** Seed of a re-rolled generated avatar; it replaces the photo and the name-seeded default. */
+  avatarSeed: text('avatar_seed'),
   /** Microsoft refresh token for OneDrive/SharePoint links, AES-GCM encrypted (`auth/token-crypto`). */
   msRefreshToken: text('ms_refresh_token'),
   /** The Microsoft account it belongs to (mail or UPN), for display. */

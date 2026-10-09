@@ -527,4 +527,34 @@ describe('own colour (PATCH /me)', () => {
   });
 });
 
+describe('re-rolled avatar (PUT /me/avatar)', () => {
+  const putAvatar = (seed: string | null, cookie?: string) =>
+    ctx.request('/api/me/avatar', { method: 'PUT', json: { seed }, cookie });
+  const listed = async () =>
+    commentSchema
+      .array()
+      .parse(await (await ctx.request(`/api/decks/${deck.deckId}/comments`)).json());
+
+  it('sets and resets the seed on the account and its comments', async () => {
+    const own = await create(pinComment(slide(0)));
+
+    const res = await putAvatar('abc123');
+    expect(res.status).toBe(200);
+    expect(meResponse(await res.json()).author.avatarSeed).toBe('abc123');
+    expect(meResponse(await (await ctx.request('/api/me')).json()).author.avatarSeed).toBe(
+      'abc123',
+    );
+    expect((await listed()).find((c) => c.id === own.id)?.author.avatarSeed).toBe('abc123');
+
+    await putAvatar(null);
+    expect(meResponse(await (await ctx.request('/api/me')).json()).author.avatarSeed).toBeNull();
+    expect((await listed()).find((c) => c.id === own.id)?.author.avatarSeed).toBeNull();
+  });
+
+  it('is only for accounts, not guests', async () => {
+    const guest = await joinAsGuest('Lena');
+    expect((await putAvatar('abc123', guest)).status).toBe(403);
+  });
+});
+
 const meResponse = (json: unknown) => viewerSchema.parse((json as { viewer: unknown }).viewer);

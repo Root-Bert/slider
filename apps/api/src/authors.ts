@@ -18,6 +18,7 @@ export const ownerAuthor = (user: UserRow): Author => ({
   type: 'owner',
   color: user.color,
   avatarUrl: user.avatarKey ? fileUrl(user.avatarKey) : null,
+  avatarSeed: user.avatarSeed,
 });
 
 export const guestAuthor = (session: GuestSessionRow): Author => ({

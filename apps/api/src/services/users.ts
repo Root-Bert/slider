@@ -54,3 +54,16 @@ export async function updateViewerColor(
   });
   return { ...viewer, author: { ...viewer.author, color } };
 }
+
+/** Sets an account's re-rolled avatar (or clears it); its comment snapshots follow, like the colour. */
+export async function updateUserAvatar(db: Database, userId: string, seed: string | null) {
+  await db.transaction(async (tx) => {
+    await tx.update(users).set({ avatarSeed: seed }).where(eq(users.id, userId));
+    await tx
+      .update(comments)
+      .set({
+        author: sql`jsonb_set(${comments.author}, '{avatarSeed}', coalesce(to_jsonb(${seed}::text), 'null'::jsonb))`,
+      })
+      .where(sql`${comments.author}->>'id' = ${userId}`);
+  });
+}

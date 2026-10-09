@@ -327,6 +327,7 @@ const toMemberDto = (
   email: user.email,
   color: user.color,
   avatarUrl: user.avatarKey ? fileUrl(user.avatarKey) : null,
+  avatarSeed: user.avatarSeed,
   role: member.role,
   joinedAt: member.createdAt.toISOString(),
 });

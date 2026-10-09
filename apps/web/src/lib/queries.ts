@@ -77,6 +77,19 @@ export function useUpdateMe() {
   });
 }
 
+/** Re-rolls the account's avatar (`null` resets it); comments and member lists show it too. */
+export function useUpdateAvatar() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (seed: string | null) => api.put<MeResponse>('/me/avatar', { seed }),
+    onSuccess: (me) => {
+      queryClient.setQueryData(queryKeys.me, me);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.decks });
+      void queryClient.invalidateQueries({ queryKey: ['workspaces'] });
+    },
+  });
+}
+
 // ── Decks ───────────────────────────────────────────────────────────────────
 
 /** The decks of one workspace (BER-129). */

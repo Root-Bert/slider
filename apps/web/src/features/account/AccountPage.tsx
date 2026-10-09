@@ -7,6 +7,7 @@ import { useAccount } from '@/features/auth/useAccount';
 import { Avatar, Icon, TextField, Toast, useToast } from '@/ui';
 import { SettingsSection } from '@/features/workspaces/components/SettingsSection';
 import { LoginsSection, PasskeysSection } from './components/AccountSections';
+import { AvatarPicker } from './components/AvatarPicker';
 
 /**
  * `/konto` – "Konto & Anmeldung": who you are, how you sign in (Microsoft, Google, SSO, e-mail)
@@ -49,6 +50,11 @@ export function Component() {
             title="Profil"
             description="Name und Adresse kommen von deiner ersten Anmeldung."
           >
+            <AvatarPicker
+              author={viewer.author}
+              seeded={Boolean(user.avatarSeed)}
+              onNotify={showToast}
+            />
             <div className="grid gap-3 sm:grid-cols-2">
               <TextField label="Name" value={user.name} readOnly />
               <TextField label="E-Mail" value={user.email} readOnly />
