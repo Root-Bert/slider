@@ -106,7 +106,7 @@ export function OneDrivePicker({
     <section
       ref={panelRef}
       tabIndex={-1}
-      aria-label="Aus OneDrive auswählen"
+      aria-label="Aus OneDrive oder SharePoint auswählen"
       // Centred on the column, free to grow past it.
       className={cn(
         'relative left-1/2 flex -translate-x-1/2 flex-col overflow-hidden outline-none',
@@ -117,17 +117,30 @@ export function OneDrivePicker({
       )}
       style={{ transitionDuration: `${EXPAND_MS}ms` }}
     >
-      <header
-        className={cn(
-          'flex shrink-0 items-center justify-between gap-4 py-1.5 pr-1.5 pl-5 transition-opacity duration-200',
-          expanded ? 'opacity-100 delay-100' : 'opacity-0',
-        )}
-      >
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-fg">
+      {/* The button's own label, gliding from the middle to the top left (and back) – the same
+          words and type, so the button reads as the panel's title bar. */}
+      <header className="relative h-11 shrink-0">
+        <h2
+          className={cn(
+            'absolute top-1/2 flex -translate-y-1/2 items-center gap-2 text-sm font-medium whitespace-nowrap text-fg',
+            'transition-[left,translate] ease-[cubic-bezier(0.32,0.72,0,1)]',
+            expanded ? 'left-5 translate-x-0' : 'left-1/2 -translate-x-1/2',
+          )}
+          style={{ transitionDuration: `${EXPAND_MS}ms` }}
+        >
           <MicrosoftMark size={16} />
-          Aus OneDrive auswählen
+          Aus OneDrive oder SharePoint auswählen
         </h2>
-        <IconButton icon="close" label="Schließen (Esc)" size="sm" onClick={onClose} />
+        <IconButton
+          icon="close"
+          label="Schließen (Esc)"
+          size="sm"
+          onClick={onClose}
+          className={cn(
+            'absolute top-1/2 right-1.5 -translate-y-1/2 transition-opacity duration-200',
+            expanded ? 'opacity-100 delay-150' : 'pointer-events-none opacity-0',
+          )}
+        />
       </header>
       <div className="relative min-h-0 flex-1 border-t border-hairline">
         <iframe
