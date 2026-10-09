@@ -3,6 +3,7 @@ import {
   applyTransform,
   groupTransform,
   IDENTITY,
+  readOrientation,
   readXfrm,
   type EmuRect,
   type Transform,
@@ -82,7 +83,7 @@ function toShapeNode(element: XmlElement, transform: Transform): ShapeNode {
     kind: shapeKind(element),
     id: attr(properties, 'id') ?? '',
     name: attr(properties, 'name') ?? '',
-    box: box && applyTransform(transform, box),
+    box: box && applyTransform(transform, box, readOrientation(xfrm).rotation),
     placeholder: readPlaceholderRef(child(child(nonVisual, 'p:nvPr'), 'p:ph')),
   };
 }

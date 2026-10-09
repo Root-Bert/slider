@@ -305,6 +305,40 @@ describe('members', () => {
       (await ctx.request(`/api/workspaces/${ctx.workspaceId}`, { cookie: memberA.cookie })).status,
     ).toBe(404);
   });
+
+  const owners = async () =>
+    (
+      await ctx.deps.db
+        .select()
+        .from(workspaceMembers)
+        .where(eq(workspaceMembers.workspaceId, ctx.workspaceId))
+    ).filter((row) => row.role === 'owner');
+
+  it('two owners demoting each other at once leave one owner', async () => {
+    const other = await member('Olga', 'owner');
+    const base = `/api/workspaces/${ctx.workspaceId}/members`;
+    const results = await Promise.all([
+      ctx.request(`${base}/${other.user.id}`, { method: 'PATCH', json: { role: 'admin' } }),
+      ctx.request(`${base}/${ctx.ownerId}`, {
+        method: 'PATCH',
+        json: { role: 'admin' },
+        cookie: other.cookie,
+      }),
+    ]);
+    expect(results.map((res) => res.status).sort()).toEqual([200, 403]); // the loser is no owner any more
+    expect(await owners()).toHaveLength(1);
+  });
+
+  it('two owners leaving at once leave one owner', async () => {
+    const other = await member('Olga', 'owner');
+    const base = `/api/workspaces/${ctx.workspaceId}/members`;
+    const results = await Promise.all([
+      ctx.request(`${base}/${ctx.ownerId}`, { method: 'DELETE' }),
+      ctx.request(`${base}/${other.user.id}`, { method: 'DELETE', cookie: other.cookie }),
+    ]);
+    expect(results.map((res) => res.status).sort()).toEqual([204, 400]);
+    expect(await owners()).toHaveLength(1);
+  });
 });
 
 describe('invitations', () => {

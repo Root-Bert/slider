@@ -78,6 +78,13 @@
       "when": 1791498469414,
       "tag": "0010_slide_guides",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791505225656,
+      "tag": "0011_deleted_pptx_comments",
+      "breakpoints": true
     }
   ]
 }

@@ -10,7 +10,7 @@ import {
 } from '@slider/shared';
 import type { z } from 'zod';
 import { requireDeckAccess } from '../auth/access';
-import type { Executor } from '../db/client';
+import { advisoryXactLock, type Executor } from '../db/client';
 import { comments, media, type MediaRow } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { ApiError, badRequest, fileTooLarge, forbidden, notFound } from '../http/errors';
@@ -134,10 +134,13 @@ export async function createMediaComment(
   if (!mimeType || !isAllowedMediaMimeType(kind, mimeType)) throw unsupportedMedia();
 
   const { quotaBytes } = deps.config.media;
-  if (quotaBytes !== null) {
-    const used = await usedMediaBytes(deps.db, deck.ownerId);
+  const assertQuota = async (db: Executor) => {
+    if (quotaBytes === null) return;
+    const used = await usedMediaBytes(db, deck.ownerId);
     if (used + file.bytes.byteLength > quotaBytes) throw quotaExceeded(quotaBytes);
-  }
+  };
+  // Early and cheap, before the blob is stored; the binding check runs again under the lock.
+  await assertQuota(deps.db);
 
   const mediaId = crypto.randomUUID();
   const storageKey = blobKeys.media(deckId, mediaId, container);
@@ -145,6 +148,11 @@ export async function createMediaComment(
   await deps.media.put(storageKey, file.bytes);
   try {
     return await deps.db.transaction(async (tx) => {
+      // One upload per owner at a time between count and insert, so two can't share the rest.
+      if (quotaBytes !== null) {
+        await advisoryXactLock(tx, `media-quota:${deck.ownerId}`);
+        await assertQuota(tx);
+      }
       const row = await insertComment(tx, deps, viewer, deck, input, { hasMedia: true });
       const [mediaRow] = await tx
         .insert(media)

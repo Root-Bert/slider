@@ -32,6 +32,7 @@ import {
   assertSeatForInvite,
   assertSeatForJoin,
   canCreateWorkspace,
+  lockWorkspaceRow,
   OWN_WORKSPACE_LIMIT_MESSAGE,
   planLimit,
   workspaceUsages,
@@ -358,7 +359,10 @@ async function ownerCount(db: Executor, workspaceId: string): Promise<number> {
 const lastOwner = () =>
   badRequest('Eine Organisation braucht mindestens einen Owner. Ernenne zuerst jemand anderen.');
 
-/** Admins change roles below owner; only owners appoint or demote owners. */
+/**
+ * Admins change roles below owner; only owners appoint or demote owners. Check and write run
+ * under the workspace lock, so two owners demoting each other can't leave none.
+ */
 export async function updateMemberRole(
   db: Executor,
   actorId: string,
@@ -366,35 +370,39 @@ export async function updateMemberRole(
   targetId: string,
   role: WorkspaceRole,
 ): Promise<WorkspaceMember> {
-  const actorRole = await requireRole(db, workspaceId, actorId, 'admin');
-  const current = await getRole(db, workspaceId, targetId);
-  if (!current) throw notFound('Diese Person ist nicht Mitglied der Organisation.');
-  if ((current === 'owner' || role === 'owner') && actorRole !== 'owner') {
-    throw forbidden('Nur Owner können Owner ernennen oder ändern.');
-  }
-  if (current === 'owner' && role !== 'owner' && (await ownerCount(db, workspaceId)) <= 1) {
-    throw lastOwner();
-  }
-  await db
-    .update(workspaceMembers)
-    .set({ role })
-    .where(
-      and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, targetId)),
-    );
-  const [row] = await db
-    .select({ user: users, member: workspaceMembers })
-    .from(workspaceMembers)
-    .innerJoin(users, eq(users.id, workspaceMembers.userId))
-    .where(
-      and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, targetId)),
-    );
-  if (!row) throw notFound();
-  return toMemberDto(row.user, row.member);
+  return db.transaction(async (tx) => {
+    await lockWorkspaceRow(tx, workspaceId);
+    const actorRole = await requireRole(tx, workspaceId, actorId, 'admin');
+    const current = await getRole(tx, workspaceId, targetId);
+    if (!current) throw notFound('Diese Person ist nicht Mitglied der Organisation.');
+    if ((current === 'owner' || role === 'owner') && actorRole !== 'owner') {
+      throw forbidden('Nur Owner können Owner ernennen oder ändern.');
+    }
+    if (current === 'owner' && role !== 'owner' && (await ownerCount(tx, workspaceId)) <= 1) {
+      throw lastOwner();
+    }
+    await tx
+      .update(workspaceMembers)
+      .set({ role })
+      .where(
+        and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, targetId)),
+      );
+    const [row] = await tx
+      .select({ user: users, member: workspaceMembers })
+      .from(workspaceMembers)
+      .innerJoin(users, eq(users.id, workspaceMembers.userId))
+      .where(
+        and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, targetId)),
+      );
+    if (!row) throw notFound();
+    return toMemberDto(row.user, row.member);
+  });
 }
 
 /**
  * Removes a member (admin or more; owners only by owners) or lets someone leave. Their decks
- * stay in the workspace. The last owner can neither leave nor be removed.
+ * stay in the workspace. The last owner can neither leave nor be removed – checked under the
+ * workspace lock, so two owners removing each other can't leave none.
  */
 export async function removeMember(
   db: Executor,
@@ -402,21 +410,24 @@ export async function removeMember(
   workspaceId: string,
   targetId: string,
 ): Promise<void> {
-  const actorRole = await requireRole(db, workspaceId, actorId);
-  const target = actorId === targetId ? actorRole : await getRole(db, workspaceId, targetId);
-  if (!target) throw notFound('Diese Person ist nicht Mitglied der Organisation.');
-  if (actorId !== targetId) {
-    if (!atLeast(actorRole, 'admin')) throw forbidden('Nur Admins können Mitglieder entfernen.');
-    if (target === 'owner' && actorRole !== 'owner') {
-      throw forbidden('Nur Owner können Owner entfernen.');
+  await db.transaction(async (tx) => {
+    await lockWorkspaceRow(tx, workspaceId);
+    const actorRole = await requireRole(tx, workspaceId, actorId);
+    const target = actorId === targetId ? actorRole : await getRole(tx, workspaceId, targetId);
+    if (!target) throw notFound('Diese Person ist nicht Mitglied der Organisation.');
+    if (actorId !== targetId) {
+      if (!atLeast(actorRole, 'admin')) throw forbidden('Nur Admins können Mitglieder entfernen.');
+      if (target === 'owner' && actorRole !== 'owner') {
+        throw forbidden('Nur Owner können Owner entfernen.');
+      }
     }
-  }
-  if (target === 'owner' && (await ownerCount(db, workspaceId)) <= 1) throw lastOwner();
-  await db
-    .delete(workspaceMembers)
-    .where(
-      and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, targetId)),
-    );
+    if (target === 'owner' && (await ownerCount(tx, workspaceId)) <= 1) throw lastOwner();
+    await tx
+      .delete(workspaceMembers)
+      .where(
+        and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, targetId)),
+      );
+  });
 }
 
 // ── Invitations ─────────────────────────────────────────────────────────────

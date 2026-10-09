@@ -143,6 +143,29 @@ describe('PowerPoint comments across revisions (BER-114)', () => {
     expect(await revisionRows(ctx, deckId)).toHaveLength(4);
   });
 
+  it('comments deleted in Slider stay deleted though the file still has them', async () => {
+    const source = new FakeSource();
+    const pptx = versionedPptx({
+      v1: presentation(BASE_SLIDES, [A('Reihenfolge ändern?'), B(), C()]),
+      v2: presentation(BASE_SLIDES, [A('Reihenfolge jetzt ändern?'), B(), C()]),
+    });
+    ctx = await createTestContext({ openPptx: pptx.open, sources: { onedrive: source } });
+    const deckId = await createLinkDeck(ctx, source);
+    const v1 = await listComments(ctx, deckId);
+    const id = (body: string) => v1.find((c) => c.body === body)!.id;
+    // Two roots and a reply on its own.
+    for (const body of ['Reihenfolge ändern?', 'Stimmt.', 'Neues Bild verwenden.']) {
+      expect((await ctx.request(`/api/comments/${id(body)}`, { method: 'DELETE' })).status).toBe(
+        204,
+      );
+    }
+
+    const r2 = await syncTo(ctx, source, deckId, 'v2');
+    expect(r2.summary).toMatchObject({ commentsNew: 0, commentsUpdated: 0, commentsRemoved: 0 });
+    const v2 = await listComments(ctx, deckId);
+    expect(v2.map((c) => c.body)).toEqual(['Quelle fehlt.']);
+  });
+
   it('takes over a status changed in PowerPoint, but not an unchanged one', async () => {
     const source = new FakeSource();
     const pptx = versionedPptx({

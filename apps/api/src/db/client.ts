@@ -1,6 +1,7 @@
 import { mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
+import { sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { drizzle as drizzlePglite } from 'drizzle-orm/pglite';
 import { migrate as migratePglite } from 'drizzle-orm/pglite/migrator';
@@ -17,6 +18,14 @@ export type Database = PgDatabase<PgQueryResultHKT, typeof schema>;
 export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 /** Anything queries can run on: the database or an open transaction. */
 export type Executor = Database | Transaction;
+
+/**
+ * Serialises everyone who takes the same `key` until the transaction ends (Postgres advisory
+ * lock; works on PGlite too). For check-then-write races that have no single row to lock.
+ */
+export async function advisoryXactLock(tx: Transaction, key: string): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
+}
 
 const MIGRATIONS_DIR = fileURLToPath(new URL('../../drizzle', import.meta.url));
 

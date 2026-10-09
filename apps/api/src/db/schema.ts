@@ -405,6 +405,22 @@ export const comments = pgTable(
   ],
 );
 
+/**
+ * PowerPoint comments deleted in Slider (tombstones): the next import of the file must not bring
+ * them back, though they are still in it. Replies are keyed `<root>/<reply>` like `external_id`.
+ */
+export const deletedPptxComments = pgTable(
+  'deleted_pptx_comments',
+  {
+    deckId: text('deck_id')
+      .notNull()
+      .references(() => decks.id, { onDelete: 'cascade' }),
+    externalId: text('external_id').notNull(),
+    deletedAt: timestamptz('deleted_at').notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.deckId, t.externalId] })],
+);
+
 /** A voice or video recording attached to a comment (BER-116). The bytes live in the media store. */
 export const media = pgTable(
   'media',

@@ -26,6 +26,12 @@ export function RecordReplyDialog({
   const create = useCreateMediaComment(deckId);
   const showToast = useViewerToast();
 
+  // Cancelling (button, Esc, backdrop) also aborts a running upload: nothing is sent.
+  const cancel = () => {
+    create.cancel();
+    onClose();
+  };
+
   const send = () => {
     if (!recording || create.isPending) return;
     create.mutate(
@@ -42,11 +48,11 @@ export function RecordReplyDialog({
   return (
     <Dialog
       open
-      onClose={() => !create.isPending && onClose()}
+      onClose={cancel}
       title={`${MEDIA_LABELS[kind].noun} an ${root.author.name}`}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={create.isPending}>
+          <Button variant="ghost" onClick={cancel}>
             Abbrechen
           </Button>
           <Button onClick={send} disabled={!recording} loading={create.isPending}>
@@ -73,7 +79,7 @@ export function RecordReplyDialog({
             />
           </div>
         )}
-        {create.isError && (
+        {create.error && (
           <p role="alert" className="text-xs text-danger">
             {create.error.message}
           </p>

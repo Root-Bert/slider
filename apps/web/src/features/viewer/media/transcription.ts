@@ -72,10 +72,33 @@ export function useTranscriptionProgress(mediaId: string): TranscriptionProgress
 
 let worker: Worker | null = null;
 let queue: Promise<void> = Promise.resolve();
+/** Transcriptions queued or running; the worker is closed once none are left for a while. */
+let pending = 0;
+let idleTimer: number | undefined;
+
+/** An idle worker holds the Whisper model in memory – let it go after a minute without work. */
+const IDLE_TIMEOUT_MS = 60_000;
+/**
+ * Model download and start-up may stall without the worker ever answering again; each progress
+ * message restarts this, so only a download that stops moving fails.
+ */
+const LOADING_TIMEOUT_MS = 10 * 60_000;
 
 function getWorker(): Worker {
   worker ??= new Worker(new URL('./transcribe.worker.ts', import.meta.url), { type: 'module' });
   return worker;
+}
+
+function closeWorker() {
+  worker?.terminate();
+  worker = null;
+}
+
+function scheduleIdleClose() {
+  window.clearTimeout(idleTimer);
+  idleTimer = window.setTimeout(() => {
+    if (pending === 0) closeWorker();
+  }, IDLE_TIMEOUT_MS);
 }
 
 /** Transcribing (not downloading the model) may take this long before the worker is restarted. */
@@ -88,9 +111,14 @@ function runInWorker(mediaId: string, audio: Float32Array): Promise<string> {
   const timeoutMs = transcribeTimeoutMs(audio);
   return new Promise((resolve, reject) => {
     let timer: number | undefined;
+    const arm = (ms: number, reason: string) => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => finish(new Error(reason)), ms);
+    };
     const finish = (error: Error | null, text = '') => {
       window.clearTimeout(timer);
       target.removeEventListener('message', onMessage);
+      target.removeEventListener('messageerror', onMessageError);
       target.removeEventListener('error', onError);
       if (error) {
         // A crashed or stuck worker would block the queue for good: start a fresh one next time.
@@ -101,19 +129,24 @@ function runInWorker(mediaId: string, audio: Float32Array): Promise<string> {
     };
     const onError = (event: ErrorEvent) =>
       finish(new Error(event.message || 'Transcription worker crashed'));
+    const onMessageError = () =>
+      finish(new Error('Unreadable message from the transcription worker'));
     const onMessage = (event: MessageEvent<TranscribeResponse>) => {
       const message = event.data;
       if (message.id !== id) return;
       if (message.type === 'loading') {
         setProgress(mediaId, { phase: 'loading', progress: message.progress });
+        arm(LOADING_TIMEOUT_MS, 'Loading the transcription model timed out');
       } else if (message.type === 'transcribing') {
         setProgress(mediaId, { phase: 'transcribing' });
-        timer = window.setTimeout(() => finish(new Error('Transcription timed out')), timeoutMs);
+        arm(timeoutMs, 'Transcription timed out');
       } else if (message.type === 'done') finish(null, message.text);
       else finish(new Error(message.message));
     };
     target.addEventListener('message', onMessage);
+    target.addEventListener('messageerror', onMessageError);
     target.addEventListener('error', onError);
+    arm(LOADING_TIMEOUT_MS, 'Loading the transcription model timed out');
     const request: TranscribeRequest = { id, audio };
     target.postMessage(request, [audio.buffer]);
   });
@@ -138,6 +171,8 @@ export function transcribeInBackground(options: {
 }): void {
   const { queryClient, deckId, mediaId, audio } = options;
   setProgress(mediaId, { phase: 'queued' });
+  pending += 1;
+  window.clearTimeout(idleTimer);
   queue = queue.then(async () => {
     let input: UpdateTranscriptInput;
     try {
@@ -158,6 +193,8 @@ export function transcribeInBackground(options: {
       console.warn('Could not save the transcript', error);
     } finally {
       setProgress(mediaId, null);
+      pending -= 1;
+      if (pending === 0) scheduleIdleClose();
     }
   });
 }

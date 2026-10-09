@@ -360,6 +360,21 @@ describe('e-mail login code', () => {
     expect(sessionCookieFrom(late)).toBeNull();
   });
 
+  it('concurrent guesses never compare more than 5 codes', async () => {
+    await mailContext();
+    await start('robert@q4-team.de');
+    const code = codeFrom();
+    const guesses = Array.from({ length: 12 }, (_, i) =>
+      String((Number(code) + 1 + i) % 1_000_000).padStart(6, '0'),
+    );
+    const results = await Promise.all(guesses.map((guess) => enter(guess)));
+    expect(results.every((res) => res.status === 400)).toBe(true);
+    const [row] = await ctx.deps.db.select().from(loginTokens);
+    expect(row).toMatchObject({ codeAttempts: 5 });
+    expect(row?.usedAt).not.toBeNull();
+    expect(sessionCookieFrom(await enter(code))).toBeNull();
+  });
+
   it('4 wrong codes still leave the right one working', async () => {
     await mailContext();
     await start('robert@q4-team.de');

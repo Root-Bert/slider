@@ -163,7 +163,15 @@ function ComposerPopover({ draft }: { draft: Draft }) {
           ⌘↵ zum Senden
         </span>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" onClick={() => dispatch({ type: 'draftCancelled' })}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              // Unmounting aborts the upload too; Esc relies on that (BER-116).
+              createMediaComment.cancel();
+              dispatch({ type: 'draftCancelled' });
+            }}
+          >
             Abbrechen
           </Button>
           <Button type="submit" size="sm" disabled={!canSend} loading={pending}>

@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, or } from 'drizzle-orm';
 import type { createCommentInputSchema } from '@slider/shared';
 import {
   isTextStroke,
@@ -11,7 +11,7 @@ import {
 import type { z } from 'zod';
 import { deckAccess, requireDeckAccess } from '../auth/access';
 import type { Executor } from '../db/client';
-import { comments, type CommentRow, type DeckRow } from '../db/schema';
+import { comments, deletedPptxComments, type CommentRow, type DeckRow } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { badRequest, forbidden, notFound } from '../http/errors';
 import { touchDeck } from './decks';
@@ -260,7 +260,33 @@ export async function deleteComment(
     throw forbidden('Nur eigene Kommentare können gelöscht werden.');
   }
   const mediaKeys = await mediaKeysOfThread(deps.db, commentId);
-  await deps.db.delete(comments).where(eq(comments.id, commentId));
+  const now = deps.clock.now();
+  await deps.db.transaction(async (tx) => {
+    // PowerPoint comments in the thread stay deleted: the next import of the file skips them.
+    const fromPptx = await tx
+      .select({ externalId: comments.externalId })
+      .from(comments)
+      .where(
+        and(
+          or(eq(comments.id, commentId), eq(comments.parentId, commentId)),
+          eq(comments.source, 'pptx'),
+          isNotNull(comments.externalId),
+        ),
+      );
+    if (fromPptx.length > 0) {
+      await tx
+        .insert(deletedPptxComments)
+        .values(
+          fromPptx.map((row) => ({
+            deckId: comment.deckId,
+            externalId: row.externalId ?? '',
+            deletedAt: now,
+          })),
+        )
+        .onConflictDoNothing();
+    }
+    await tx.delete(comments).where(eq(comments.id, commentId));
+  });
   await deleteMediaBlobs(deps, mediaKeys);
-  await touchDeck(deps.db, comment.deckId, deps.clock.now());
+  await touchDeck(deps.db, comment.deckId, now);
 }

@@ -1,6 +1,6 @@
 import { and, count, eq, sql } from 'drizzle-orm';
 import { ACCENT_COLORS, type LoginError } from '@slider/shared';
-import type { Executor } from '../db/client';
+import { advisoryXactLock, type Executor } from '../db/client';
 import { userIdentities, users, type IdentityProvider, type UserRow } from '../db/schema';
 import type { AppDeps } from '../deps';
 import {
@@ -157,8 +157,8 @@ export async function signInWithIdentity(
   }
 
   if (!email) return { ok: false, error: 'no_email' };
-  const attach = async (user: UserRow) => {
-    await db.insert(userIdentities).values({
+  const attach = async (user: UserRow, executor: Executor = db) => {
+    await executor.insert(userIdentities).values({
       provider: input.provider,
       subject: input.subject,
       userId: user.id,
@@ -168,19 +168,26 @@ export async function signInWithIdentity(
     return { ok: true as const, user };
   };
 
-  // Bootstrap: the first login of the instance claims the dev owner's account and decks.
+  // Bootstrap: the first login of the instance claims the dev owner's account and decks. Checked
+  // again under a lock, so two simultaneous first logins can't both become instance admin – the
+  // later one finds an identity and follows the usual rules.
   if ((await identityCount(db)) === 0) {
-    if (!mayBootstrap(deps, email, input.emailVerified)) {
-      deps.log.warn(`Bootstrap refused for ${email}: not allowed to claim this instance`);
-      return {
-        ok: false,
-        error:
-          !input.emailVerified && mayBootstrap(deps, email, true)
-            ? 'email_unverified'
-            : 'signup_closed',
-      };
-    }
-    return attach(await bootstrapAccount(deps, input, email));
+    const bootstrapped = await db.transaction(async (tx): Promise<SignInResult | null> => {
+      await advisoryXactLock(tx, 'instance-bootstrap');
+      if ((await identityCount(tx)) > 0) return null;
+      if (!mayBootstrap(deps, email, input.emailVerified)) {
+        deps.log.warn(`Bootstrap refused for ${email}: not allowed to claim this instance`);
+        return {
+          ok: false,
+          error:
+            !input.emailVerified && mayBootstrap(deps, email, true)
+              ? 'email_unverified'
+              : 'signup_closed',
+        };
+      }
+      return attach(await bootstrapAccount(deps, tx, input, email), tx);
+    });
+    if (bootstrapped) return bootstrapped;
   }
 
   if (!input.emailVerified) return { ok: false, error: 'email_unverified' };
@@ -219,10 +226,10 @@ export async function signInWithIdentity(
  */
 async function bootstrapAccount(
   deps: AppDeps,
+  db: Executor,
   input: IdentityInput,
   email: string,
 ): Promise<UserRow> {
-  const { db } = deps;
   const now = deps.clock.now();
   const devOwner = await findUserByEmail(db, normalizeEmail(deps.config.devOwner.email));
   if (devOwner) {

@@ -8,8 +8,6 @@ import {
   type DeckStatus,
   type DeletedSlide,
   type ImportDriveItemInput,
-  type InsertSlideInput,
-  type InsertSlideResult,
   type InviteInfo,
   type JoinInviteInput,
   type MeResponse,
@@ -251,24 +249,36 @@ export function useUpdateComment(deckId: string) {
     onMutate: async ({ commentId, ...input }) => {
       const key = queryKeys.comments(deckId);
       await queryClient.cancelQueries({ queryKey: key });
-      const previous = queryClient.getQueryData<Comment[]>(key);
+      const previous = queryClient
+        .getQueryData<Comment[]>(key)
+        ?.find((comment) => comment.id === commentId);
       queryClient.setQueryData<Comment[]>(key, (current = []) =>
         current.map((comment) => (comment.id === commentId ? withUpdate(comment, input) : comment)),
       );
       return { previous };
     },
-    onError: (_error, _input, context) => {
-      if (context?.previous) queryClient.setQueryData(queryKeys.comments(deckId), context.previous);
+    // Roll back only this comment: other optimistic updates running meanwhile stay.
+    onError: (_error, { commentId }, context) => {
+      const previous = context?.previous;
+      if (!previous) return;
+      queryClient.setQueryData<Comment[]>(queryKeys.comments(deckId), (current = []) =>
+        current.map((comment) => (comment.id === commentId ? previous : comment)),
+      );
     },
     onSettled: invalidate,
   });
 }
 
 export function useDeleteComment(deckId: string) {
+  const queryClient = useQueryClient();
   const invalidate = useInvalidateDeckFeedback(deckId);
   return useMutation({
     mutationFn: (commentId: string) => api.delete(`/comments/${commentId}`),
-    onSuccess: invalidate,
+    onSuccess: async () => {
+      // Deleting a voice or video comment (or a thread with some) frees recording storage.
+      void queryClient.invalidateQueries({ queryKey: [...queryKeys.deck(deckId), 'media-usage'] });
+      await invalidate();
+    },
   });
 }
 
@@ -365,19 +375,6 @@ export function useSyncDeck(deckId: string) {
   const invalidate = useInvalidateRevision(deckId);
   return useMutation({
     mutationFn: () => api.post<SyncResult>(`/decks/${deckId}/sync`),
-    onSettled: invalidate,
-  });
-}
-
-/**
- * ⊕ between slides: an empty slide, written straight into the linked PowerPoint (owner only,
- * BER-128). The new revision is loaded before `mutate`'s own callbacks run.
- */
-export function useInsertSlide(deckId: string) {
-  const invalidate = useInvalidateRevision(deckId);
-  return useMutation({
-    mutationFn: (input: InsertSlideInput) =>
-      api.post<InsertSlideResult>(`/decks/${deckId}/slides`, input),
     onSettled: invalidate,
   });
 }

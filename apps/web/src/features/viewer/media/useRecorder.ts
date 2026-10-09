@@ -163,6 +163,12 @@ export function useRecorder(kind: MediaKind, { autoStart = false }: { autoStart?
       const samples = new Float32Array(analyser.fftSize);
       const allLevels: number[] = [];
       const startedAt = performance.now();
+      const reachedLimit = () => performance.now() - startedAt >= MAX_MEDIA_DURATION_MS;
+      // Background tabs throttle timers; the recorder's one-second chunks still arrive, so the
+      // five-minute limit is checked there too.
+      recorder.addEventListener('dataavailable', () => {
+        if (reachedLimit()) stopRecording();
+      });
       const timer = window.setInterval(() => {
         analyser.getFloatTimeDomainData(samples);
         let sum = 0;
@@ -172,7 +178,7 @@ export function useRecorder(kind: MediaKind, { autoStart = false }: { autoStart?
         setLevels(allLevels.slice(-LIVE_BARS));
         const elapsed = performance.now() - startedAt;
         setElapsedMs(elapsed);
-        if (elapsed >= MAX_MEDIA_DURATION_MS) stopRef.current?.();
+        if (elapsed >= MAX_MEDIA_DURATION_MS) stopRecording();
       }, LEVEL_INTERVAL_MS);
 
       const cleanup = () => {
@@ -181,20 +187,23 @@ export function useRecorder(kind: MediaKind, { autoStart = false }: { autoStart?
       };
       cleanupRef.current = cleanup;
 
-      stopRef.current = () => {
-        stopRef.current = null;
+      let stopped = false;
+      function stopRecording() {
+        if (stopped) return;
+        stopped = true;
+        if (stopRef.current === stopRecording) stopRef.current = null;
         cleanup();
-        cleanupRef.current = null;
-        const durationMs = Math.min(
-          Math.round(performance.now() - startedAt),
-          MAX_MEDIA_DURATION_MS,
-        );
+        if (cleanupRef.current === cleanup) cleanupRef.current = null;
+        // The real length – the limit may be overshot by up to a chunk; the server allows that.
+        const durationMs = Math.round(performance.now() - startedAt);
         if (recorder.state !== 'inactive') recorder.stop();
         if (voiceRecorder && voiceRecorder.state !== 'inactive') voiceRecorder.stop();
         void (async () => {
           const raw = await done;
           const blob = await withDuration(raw, durationMs);
           const voice = voiceDone ? await voiceDone : blob;
+          // Unmounted meanwhile (sent, cancelled): no object URL nobody would revoke.
+          if (!mountedRef.current) return;
           releaseStream();
           if (blob.size === 0) {
             setState({
@@ -218,7 +227,8 @@ export function useRecorder(kind: MediaKind, { autoStart = false }: { autoStart?
             },
           });
         })();
-      };
+      }
+      stopRef.current = stopRecording;
 
       recorder.start(1000);
       voiceRecorder?.start(1000);
@@ -251,12 +261,15 @@ export function useRecorder(kind: MediaKind, { autoStart = false }: { autoStart?
   // (tab switch, cancel, sent) turns camera and microphone off, so nothing keeps recording.
   useEffect(() => {
     mountedRef.current = true;
+    // Per run: under StrictMode the effect runs twice and both runs share one pending request.
+    let cancelled = false;
     if (kind === 'video' || autoStart) {
       void acquire().then((media) => {
-        if (media && autoStart && mountedRef.current) beginRecording(media);
+        if (media && autoStart && !cancelled) beginRecording(media);
       });
     }
     return () => {
+      cancelled = true;
       mountedRef.current = false;
       stopRef.current = null;
       cleanupRef.current?.();

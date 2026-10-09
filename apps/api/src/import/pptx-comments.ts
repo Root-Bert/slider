@@ -10,7 +10,7 @@ import {
 import type { ParsedComment, ParsedCommentAnchor } from '@slider/pptx';
 import { externalAuthor } from '../authors';
 import type { Executor } from '../db/client';
-import { comments, type CommentRow } from '../db/schema';
+import { comments, deletedPptxComments, type CommentRow } from '../db/schema';
 
 /** The slide a PowerPoint comment belongs to, looked up by its `sldId`. */
 export interface ImportedSlide {
@@ -52,6 +52,7 @@ interface Desired {
  *   a comment resolved in Slider stays resolved while the file still says "open".
  * - Comments missing from the file are flagged `removed_in_source_at` – never deleted, so app
  *   replies on them survive. A comment that reappears is unflagged.
+ * - Comments deleted in Slider leave a tombstone (`deleted_pptx_comments`) and stay deleted.
  *
  * `slidesBySldId` maps the file's `sldId`s to Slider slides (after slide matching). Call it only
  * after the whole file parsed, ideally in the transaction that publishes the new revision.
@@ -63,7 +64,16 @@ export async function upsertPptxComments(
   slidesBySldId: ReadonlyMap<number, ImportedSlide>,
   now: Date,
 ): Promise<PptxCommentCounts> {
-  const desired = toDesired(parsed, slidesBySldId, now);
+  // Deleted in Slider: never brought back, though the file still has them (replies of a deleted
+  // root are skipped below, as their parent is missing).
+  const tombstones = await db
+    .select({ externalId: deletedPptxComments.externalId })
+    .from(deletedPptxComments)
+    .where(eq(deletedPptxComments.deckId, deckId));
+  const deleted = new Set(tombstones.map((row) => row.externalId));
+  const desired = toDesired(parsed, slidesBySldId, now).filter(
+    (item) => !deleted.has(item.externalId),
+  );
   const existing = await db
     .select()
     .from(comments)

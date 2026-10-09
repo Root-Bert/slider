@@ -165,6 +165,16 @@ describe('voice and video comments', () => {
     expect(usage).toEqual({ usedBytes: 2500, limitBytes: 4096 });
   });
 
+  it('two uploads at once cannot share the last of the quota', async () => {
+    const results = await Promise.all([
+      upload(voiceComment(), webm(2500)),
+      upload(voiceComment(), webm(2500)),
+    ]);
+    expect(results.map((res) => res.status).sort()).toEqual([201, 413]);
+    const usage = await (await ctx.request(`/api/decks/${deck.deckId}/media-usage`)).json();
+    expect(usage).toEqual({ usedBytes: 2500, limitBytes: 4096 });
+  });
+
   it('lets only the recording person set the transcript', async () => {
     const guest = await joinAsMember('Mara');
     const res = await upload(voiceComment(), webm(), 'audio/webm', guest);

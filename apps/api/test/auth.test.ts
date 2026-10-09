@@ -7,6 +7,7 @@ import {
   type MeResponse,
 } from '@slider/shared';
 import { decryptToken } from '../src/auth/token-crypto';
+import { signInWithIdentity } from '../src/services/accounts';
 import type { Config, OidcConfig } from '../src/config';
 import { loginTokens, sessions, userIdentities, users, workspaceMembers } from '../src/db/schema';
 import { RecordingMailer } from '../src/mail/mailer';
@@ -721,6 +722,29 @@ describe('bootstrap (first account of the instance)', () => {
     await oidcInstance(idp, { env: 'production' }, { signup: 'open' });
     const cookie = sessionCookieFrom(await redirectLogin('oidc', idp)) ?? '';
     expect((await me(cookie)).body.user).toMatchObject({ isInstanceAdmin: true });
+  });
+
+  it('two simultaneous first logins: only one claims the instance', async () => {
+    ctx = await createTestContext({ config: authConfig({ signup: 'open' }) });
+    const login = (subject: string, email: string) =>
+      signInWithIdentity(ctx.deps, {
+        provider: 'oidc',
+        subject,
+        email,
+        emailVerified: true,
+        name: null,
+        inviteToken: null,
+      });
+    const results = await Promise.all([
+      login('anna', 'anna@firma.de'),
+      login('bert', 'bert@firma.de'),
+    ]);
+    const signedIn = results.map((result) => (result.ok ? result.user : null));
+    expect(signedIn.every(Boolean)).toBe(true);
+    expect(new Set(signedIn.map((user) => user?.id)).size).toBe(2);
+    const admins = await ctx.deps.db.select().from(users).where(eq(users.isInstanceAdmin, true));
+    expect(admins).toHaveLength(1);
+    expect(await identities()).toHaveLength(2);
   });
 
   it('sends no magic link to strangers before the instance has an account', async () => {

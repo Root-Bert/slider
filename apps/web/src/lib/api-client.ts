@@ -97,8 +97,10 @@ export function uploadWithProgress<T>(
       );
     };
     xhr.onerror = () => reject(new ApiError(0, 'internal', 'Keine Verbindung zum Server.'));
-    signal?.addEventListener('abort', () => xhr.abort());
-    xhr.onabort = () => reject(new DOMException('Upload abgebrochen', 'AbortError'));
+    const aborted = () => new DOMException('Upload abgebrochen', 'AbortError');
+    xhr.onabort = () => reject(aborted());
+    if (signal?.aborted) return reject(aborted());
+    signal?.addEventListener('abort', () => xhr.abort(), { once: true });
     xhr.send(formData);
   });
 }

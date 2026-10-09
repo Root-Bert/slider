@@ -118,18 +118,29 @@ export async function workspaceUsages(
 
 /**
  * Locks the workspace row until the transaction ends (Postgres `FOR UPDATE`; PGlite runs one
- * transaction at a time anyway), so two requests can't both take the last slot. Returns its limits.
+ * transaction at a time anyway). Everything that checks a count and then writes against the
+ * workspace (seats, decks, owners, media quota) takes this first, so two requests serialise.
+ * Returns the row's plan, or null when the workspace is gone.
  */
-async function lockWorkspace(
+export async function lockWorkspaceRow(
   tx: Executor,
-  config: Pick<Config, 'plans'>,
   workspaceId: string,
-): Promise<PlanLimits | null> {
+): Promise<{ plan: string } | null> {
   const [row] = await tx
     .select({ plan: workspaces.plan })
     .from(workspaces)
     .where(eq(workspaces.id, workspaceId))
     .for('update');
+  return row ?? null;
+}
+
+/** {@link lockWorkspaceRow}, returning the workspace's limits – so two requests can't both take the last slot. */
+async function lockWorkspace(
+  tx: Executor,
+  config: Pick<Config, 'plans'>,
+  workspaceId: string,
+): Promise<PlanLimits | null> {
+  const row = await lockWorkspaceRow(tx, workspaceId);
   return row ? planLimits(config, row.plan) : null;
 }
 

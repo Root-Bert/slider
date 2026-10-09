@@ -1,5 +1,5 @@
 import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
-import { and, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, eq, gt, gte, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { deleteCookie, getSignedCookie, setSignedCookie } from 'hono/cookie';
@@ -558,35 +558,37 @@ export function authRoutes(deps: AppDeps) {
         const input = await readJson(c, verifyEmailCodeInputSchema);
         const email = normalizeEmail(input.email);
         const now = deps.clock.now();
+        // Count the attempt before comparing, in one statement: concurrent guesses each take a
+        // slot under the row lock, so no more than MAX_CODE_ATTEMPTS codes are ever compared.
         const open = await deps.db
-          .select()
-          .from(loginTokens)
+          .update(loginTokens)
+          .set({ codeAttempts: sql`${loginTokens.codeAttempts} + 1` })
           .where(
             and(
               eq(loginTokens.email, email),
               isNull(loginTokens.usedAt),
               isNotNull(loginTokens.codeHash),
               gt(loginTokens.expiresAt, now),
+              lt(loginTokens.codeAttempts, MAX_CODE_ATTEMPTS),
             ),
-          );
+          )
+          .returning();
         const match = open.find((row) =>
           sameHash(row.codeHash ?? '', codeHash(config.secret, row.id, input.code)),
         );
         if (!match) {
           if (open.length > 0) {
-            const ids = open.map((row) => row.id);
-            await deps.db
-              .update(loginTokens)
-              .set({ codeAttempts: sql`${loginTokens.codeAttempts} + 1` })
-              .where(inArray(loginTokens.id, ids));
             const burned = await deps.db
               .update(loginTokens)
               .set({ usedAt: now })
               .where(
                 and(
-                  inArray(loginTokens.id, ids),
+                  inArray(
+                    loginTokens.id,
+                    open.map((row) => row.id),
+                  ),
                   isNull(loginTokens.usedAt),
-                  sql`${loginTokens.codeAttempts} >= ${MAX_CODE_ATTEMPTS}`,
+                  gte(loginTokens.codeAttempts, MAX_CODE_ATTEMPTS),
                 ),
               )
               .returning({ id: loginTokens.id });
