@@ -1,5 +1,6 @@
 import {
   isPathStroke,
+  shapeRefAt,
   type Anchor,
   type Comment,
   type Point,
@@ -7,7 +8,7 @@ import {
   type Shape,
   type Slide,
 } from '@slider/shared';
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useRef } from 'react';
 import { useUpdateComment } from '@/lib/queries';
 import { cn } from '@/ui';
 import {
@@ -22,7 +23,9 @@ import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, type Draft } from '../state/viewer-state';
 import { markLabel } from '../lib/labels';
 import { strokePath, strokesBounds } from '../lib/stroke-path';
+import { dragTextBox, startFontSize } from '../lib/text-box';
 import { DraftMark } from './DraftMark';
+import { EditableFrame } from './EditableFrame';
 import { Pin, type MarkState } from './Pin';
 import { RectFrame } from './RectFrame';
 import { ShapeOutline } from './ShapeOutline';
@@ -68,6 +71,17 @@ export const AnnotationLayer = memo(function AnnotationLayer({
   const dispatch = useViewerDispatch();
   const { viewer, deck, canComment } = useViewerData();
   const update = useUpdateComment(deck.id);
+  const layerRef = useRef<HTMLDivElement>(null);
+  // A box keeps to the PowerPoint shape under its centre while box mode is on.
+  const rectAnchor = (rect: Rect): Extract<Anchor, { type: 'rect' }> => ({
+    type: 'rect',
+    rect,
+    shapeRef: boxes
+      ? shapeRefAt(slide.shapes, { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 })
+      : null,
+  });
+  const isOwn = (comment: Comment) =>
+    canComment && comment.source === 'app' && comment.author.id === viewer.author.id;
 
   const marks = useMemo<Mark[]>(() => {
     const result: Mark[] = [];
@@ -96,7 +110,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
     dispatch({ type: 'threadFocused', threadId: mark.thread.id, openPanel: true });
 
   return (
-    <div className="pointer-events-none absolute inset-0 [container-type:size]">
+    <div ref={layerRef} className="pointer-events-none absolute inset-0 [container-type:size]">
       {emphasizedShape && emphasized && !draftShape && (
         <ShapeOutline
           shape={emphasizedShape}
@@ -161,19 +175,43 @@ export const AnnotationLayer = memo(function AnnotationLayer({
             data-hover-thread={mark.thread.id}
             className={cn(composing && 'opacity-30')}
           >
-            {root.anchor.type === 'rect' && !isImplicitFrame(root) && (
-              <RectFrame
-                rect={mark.rect}
-                color={accentColor(root.author.color)}
-                className={cn(
-                  'transition-opacity duration-200',
-                  mark.state === 'dimmed' && 'opacity-30',
-                  root.status === 'done' && 'opacity-50',
-                )}
-                emphasized={mark.state === 'emphasized'}
-                isMark
-              />
-            )}
+            {root.anchor.type === 'rect' &&
+              !isImplicitFrame(root) &&
+              (isOwn(root) && !composing ? (
+                // One's own box moves and resizes; a click opens its thread.
+                <EditableFrame
+                  rect={mark.rect}
+                  color={accentColor(root.author.color)}
+                  handles={mark.state === 'emphasized'}
+                  emphasized={mark.state === 'emphasized'}
+                  isMark
+                  title={`${markLabel(root)} – ziehen zum Verschieben`}
+                  className={cn(
+                    'transition-opacity duration-200',
+                    mark.state === 'dimmed' && 'opacity-30',
+                    root.status === 'done' && 'opacity-50',
+                  )}
+                  onActivate={() => activate(mark)}
+                  onCommit={(rect, done) =>
+                    update.mutate(
+                      { commentId: root.id, anchor: rectAnchor(rect) },
+                      { onSettled: done },
+                    )
+                  }
+                />
+              ) : (
+                <RectFrame
+                  rect={mark.rect}
+                  color={accentColor(root.author.color)}
+                  className={cn(
+                    'transition-opacity duration-200',
+                    mark.state === 'dimmed' && 'opacity-30',
+                    root.status === 'done' && 'opacity-50',
+                  )}
+                  emphasized={mark.state === 'emphasized'}
+                  isMark
+                />
+              ))}
             {text ? (
               // The text box is the mark and the click target.
               <TextMark
@@ -184,7 +222,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                 interactive={!composing}
                 onActivate={() => activate(mark)}
                 onPlace={
-                  canComment && root.source === 'app' && root.author.id === viewer.author.id
+                  isOwn(root)
                     ? (textBox, done) =>
                         update.mutate({ commentId: root.id, textBox }, { onSettled: done })
                     : undefined
@@ -197,7 +235,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
               state={mark.state}
               onActivate={() => activate(mark)}
             />
-            {root.anchor.type === 'rect' && !text && (
+            {root.anchor.type === 'rect' && !text && !(isOwn(root) && !isImplicitFrame(root)) && (
               // The whole frame is a pointer target; keyboard users reach it through the badge.
               <button
                 type="button"
@@ -239,6 +277,19 @@ export const AnnotationLayer = memo(function AnnotationLayer({
               rectsMatch(draft.anchor.rect, draftShape.bbox)
             )
           }
+          onRectChange={(rect) => {
+            if (draft.slideId)
+              dispatch({ type: 'anchorPlaced', slideId: draft.slideId, anchor: rectAnchor(rect) });
+          }}
+          onWriteInside={(rect) => {
+            if (!draft.slideId) return;
+            const fontSize = startFontSize(layerRef.current?.offsetHeight ?? 0);
+            dispatch({
+              type: 'textBoxPlaced',
+              slideId: draft.slideId,
+              box: dragTextBox(rect, fontSize),
+            });
+          }}
         />
       )}
     </div>

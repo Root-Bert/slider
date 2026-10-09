@@ -107,15 +107,15 @@ describe('viewerReducer', () => {
     ).toBeNull();
   });
 
-  it('remembers pen variants but not the text tool', () => {
+  it('remembers the last pen variant, also when back on the pointer', () => {
     let state = run(
       { type: 'toolSelected', tool: 'ellipse' },
-      { type: 'toolSelected', tool: 'text' },
+      { type: 'toolSelected', tool: null },
     );
-    expect(state.tool).toBe('text');
+    expect(state.tool).toBeNull();
     expect(state.lastPenTool).toBe('ellipse');
-    state = viewerReducer(state, { type: 'toolSelected', tool: 'mark' });
-    expect(state.lastPenTool).toBe('mark');
+    state = viewerReducer(state, { type: 'toolSelected', tool: 'arrow' });
+    expect(state.lastPenTool).toBe('arrow');
   });
 
   it('starts gap drafts without a slide and clears focus', () => {
@@ -141,7 +141,7 @@ describe('viewerReducer', () => {
 
   it('clears the draft and the tool after sending', () => {
     const state = run(
-      { type: 'toolSelected', tool: 'mark' },
+      { type: 'toolSelected', tool: 'pen' },
       { type: 'anchorPlaced', slideId: 's1', anchor: { type: 'slide' } },
       { type: 'draftSubmitted' },
     );

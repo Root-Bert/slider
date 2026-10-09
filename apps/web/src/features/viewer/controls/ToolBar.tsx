@@ -15,11 +15,10 @@ import { ToolOptions } from './ToolOptions';
 const OPTIONS_ROOM = 48;
 
 /**
- * Tool bar at the left of the controls row (Figma D1): pointer (the default), draw, voice, text,
- * video, and the switch for the PowerPoint boxes comments attach to and for the guides – a compact pill
+ * Tool bar at the left of the controls row (Figma D1): pointer (the default – pins, boxes and
+ * text on the slide), draw, voice, video, and the switch for the PowerPoint boxes comments attach to and for the guides – a compact pill
  * as tall as the filter pill. While the pen is picked, its options (variant, colour, undo/redo)
  * open anchored to it: above, over the minimap, or below when there is no room above.
- * "Text auf Folie" has no options: it writes in the author's colour.
  */
 export function ToolBar({ className }: { className?: string }) {
   const { canComment, isGuest, deck } = useViewerData();
@@ -149,13 +148,6 @@ function ToolButtons() {
         size="sm"
         active={draft?.recordKind === 'audio'}
         onClick={() => record('audio')}
-      />
-      <IconButton
-        icon="formatShapes"
-        label="Text auf Folie"
-        size="sm"
-        active={tool === 'text'}
-        onClick={() => dispatch({ type: 'toolSelected', tool: 'text' })}
       />
       <IconButton
         icon="cameraVideo"

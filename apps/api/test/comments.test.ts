@@ -292,6 +292,47 @@ describe('text on the slide ("Text auf Folie")', () => {
   });
 });
 
+describe('moving a box afterwards', () => {
+  const box = (rect: object) => ({ type: 'rect', rect, shapeRef: null });
+  const boxComment = () =>
+    create({
+      slideId: slide(0),
+      body: 'Hier',
+      anchor: box({ x: 0.1, y: 0.1, w: 0.2, h: 0.2 }),
+    } as CreateCommentInput);
+  const patch = (id: string, anchor: object, cookie?: string) =>
+    ctx.request(`/api/comments/${id}`, { method: 'PATCH', json: { anchor }, cookie });
+
+  it('moves and resizes the author’s box', async () => {
+    const comment = await boxComment();
+    const res = await patch(comment.id, box({ x: 0.5, y: 0.4, w: 0.3, h: 0.1 }));
+    expect(res.status).toBe(200);
+    expect(commentSchema.parse(await res.json()).anchor).toEqual(
+      box({ x: 0.5, y: 0.4, w: 0.3, h: 0.1 }),
+    );
+  });
+
+  it('only for the author, on the slide, and only boxes', async () => {
+    const comment = await boxComment();
+    const member = await asMember('Max Kern');
+    expect((await patch(comment.id, box({ x: 0.2, y: 0.2, w: 0.2, h: 0.2 }), member)).status).toBe(
+      403,
+    );
+    expect((await patch(comment.id, box({ x: 0.9, y: 0.2, w: 0.2, h: 0.2 }))).status).toBe(400);
+    const pin = await create(pinComment(slide(0)));
+    expect((await patch(pin.id, box({ x: 0.2, y: 0.2, w: 0.2, h: 0.2 }))).status).toBe(400);
+    // A box that is the text on the slide moves with the text box instead.
+    const rect = { x: 0.1, y: 0.2, w: 0.3, h: 0.1 };
+    const text = await create({
+      slideId: slide(0),
+      body: '',
+      anchor: box(rect),
+      strokes: [{ tool: 'text', color: 'red', ...rect, text: 'Logo', fontSize: 0.04 }],
+    } as CreateCommentInput);
+    expect((await patch(text.id, box({ x: 0.2, y: 0.2, w: 0.2, h: 0.2 }))).status).toBe(400);
+  });
+});
+
 describe('replies', () => {
   it('inherit the parent’s slide', async () => {
     const root = await create(pinComment(slide(1)));

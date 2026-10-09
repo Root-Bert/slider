@@ -4,15 +4,12 @@ import type { StatusFilter } from '../lib/comment-selectors';
 import { strokesBounds } from '../lib/stroke-path';
 import { clampSplit } from '../lib/split';
 
-/**
- * Variants of the pen ("Zeichnen"): `mark` places pins (click) and frames (drag) – "Punkt/Bereich" –,
- * the stroke tools draw lines and shapes (BER-98, BER-99).
- */
-export type PenTool = 'mark' | PathStrokeTool;
-/** `text` writes directly on the slide ("Text auf Folie"). */
-export type Tool = PenTool | 'text';
+/** Variants of the pen ("Zeichnen"): lines and shapes (BER-98, BER-99). */
+export type PenTool = PathStrokeTool;
+/** A picked pen; `null` is the pointer – click = pin, drag = box, or a PowerPoint box in box mode. */
+export type Tool = PenTool;
 
-export const isPenTool = (tool: Tool | null): tool is PenTool => tool !== null && tool !== 'text';
+export const isPenTool = (tool: Tool | null): tool is PenTool => tool !== null;
 
 /** The text box of an unsent "Text auf Folie" comment. Normalised to the slide box. */
 export interface TextBoxDraft {

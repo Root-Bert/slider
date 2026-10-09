@@ -1,7 +1,8 @@
-import { isPathStroke, type Author } from '@slider/shared';
+import { isPathStroke, type Author, type Rect } from '@slider/shared';
 import { accentColor } from '@/lib/accent';
+import { Icon } from '@/ui';
 import type { Draft } from '../state/viewer-state';
-import { RectFrame } from './RectFrame';
+import { EditableFrame } from './EditableFrame';
 import { StrokePath } from './StrokePath';
 
 interface DraftMarkProps {
@@ -10,20 +11,24 @@ interface DraftMarkProps {
   aspectRatio: number;
   /** Draw the frame of a rect anchor (off when the anchor is a picked PowerPoint box). */
   frame?: boolean;
+  /** The box was moved or resized. */
+  onRectChange: (rect: Rect) => void;
+  /** "In die Box schreiben": the box becomes a text box on the slide. */
+  onWriteInside: (rect: Rect) => void;
 }
 
-const HANDLE_POSITIONS = [
-  '-top-1 -left-1',
-  '-top-1 -right-1',
-  '-bottom-1 -left-1',
-  '-bottom-1 -right-1',
-];
-
 /**
- * The unsent comment's mark: frame with corner handles and name tag (B2), pin, or drawing.
- * A text box is its own mark (`TextBoxEditor`, above the drawing surface).
+ * The unsent comment's mark: a box (B2) that moves and resizes, with name tag and the way to
+ * write into it; a pin; or a drawing. A text box is its own mark (`TextBoxEditor`).
  */
-export function DraftMark({ draft, author, aspectRatio, frame = true }: DraftMarkProps) {
+export function DraftMark({
+  draft,
+  author,
+  aspectRatio,
+  frame = true,
+  onRectChange,
+  onWriteInside,
+}: DraftMarkProps) {
   const color = accentColor(author.color);
   const { anchor } = draft;
 
@@ -41,21 +46,38 @@ export function DraftMark({ draft, author, aspectRatio, frame = true }: DraftMar
       </svg>
 
       {frame && anchor.type === 'rect' && !draft.anchorFromStrokes && !draft.textBox && (
-        <RectFrame rect={anchor.rect} color={color} className="bg-white/5">
+        <EditableFrame
+          rect={anchor.rect}
+          color={color}
+          handles
+          className="bg-white/5"
+          title="Ziehen zum Verschieben, Ecken zum Ändern der Größe"
+          onCommit={(rect, done) => {
+            onRectChange(rect);
+            done();
+          }}
+        >
           <span
             className="absolute -top-6 left-[-2px] rounded-t-thumb rounded-br-thumb px-1.5 py-0.5 text-[11px] leading-4 font-medium whitespace-nowrap text-white"
             style={{ backgroundColor: color }}
           >
             {author.name.split(' ')[0]}
           </span>
-          {HANDLE_POSITIONS.map((position) => (
-            <span
-              key={position}
-              aria-hidden
-              className={`absolute size-2 rounded-[2px] bg-white ${position}`}
-            />
-          ))}
-        </RectFrame>
+          <button
+            type="button"
+            title="In die Box schreiben"
+            aria-label="In die Box schreiben"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              onWriteInside(anchor.rect);
+            }}
+            className="absolute -top-7 right-[-2px] flex size-6 cursor-pointer items-center justify-center rounded-control-sm text-white shadow-[0_1px_4px_rgb(0_0_0/0.35)] hover:brightness-110"
+            style={{ backgroundColor: color }}
+          >
+            <Icon name="edit" size={14} />
+          </button>
+        </EditableFrame>
       )}
 
       {anchor.type === 'point' && (

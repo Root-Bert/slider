@@ -6,6 +6,7 @@ import {
   MAX_MEDIA_PEAKS,
   mediaKindSchema,
   rectSchema,
+  shapeRefSchema,
   strokeSchema,
   type Comment,
   type Deck,
@@ -251,6 +252,16 @@ export const updateCommentInputSchema = z
       .refine((box) => box.x + box.w <= 1 + 1e-6 && box.y + box.h <= 1 + 1e-6, {
         message: 'Das Textfeld muss auf der Folie liegen.',
       }),
+    /** Moves / resizes the comment's box on the slide; author only, rect anchors only. */
+    anchor: z.object({
+      type: z.literal('rect'),
+      rect: rectSchema
+        .refine((box) => box.w > 0 && box.h > 0, { message: 'Die Box braucht eine Größe.' })
+        .refine((box) => box.x + box.w <= 1 + 1e-6 && box.y + box.h <= 1 + 1e-6, {
+          message: 'Die Box muss auf der Folie liegen.',
+        }),
+      shapeRef: shapeRefSchema.nullable(),
+    }),
   })
   .partial();
 export type UpdateCommentInput = z.infer<typeof updateCommentInputSchema>;

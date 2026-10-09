@@ -237,8 +237,11 @@ export function useCreateReply(deckId: string, author: Author) {
 }
 
 /** The comment as the server will return it after `input` (mirrors `updateComment`). */
-function withUpdate(comment: Comment, { textBox, ...input }: UpdateCommentInput): Comment {
-  const next = { ...comment, ...input };
+function withUpdate(
+  comment: Comment,
+  { textBox, anchor: box, ...input }: UpdateCommentInput,
+): Comment {
+  const next = { ...comment, ...input, ...(box ? { anchor: box } : {}) };
   const text = textBox && comment.strokes.find(isTextStroke);
   if (!textBox || !text) return next;
   const { anchor } = comment;

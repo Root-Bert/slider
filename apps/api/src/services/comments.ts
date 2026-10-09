@@ -2,6 +2,7 @@ import { and, asc, eq, isNotNull, or } from 'drizzle-orm';
 import type { createCommentInputSchema } from '@slider/shared';
 import {
   isTextStroke,
+  type Anchor,
   type Comment,
   type CommentMedia,
   type Rect,
@@ -191,13 +192,17 @@ export async function updateComment(
   const comment = await loadComment(deps, commentId);
   await requireDeckAccess(deps.db, viewer, comment.deckId, 'comment');
 
-  if (input.body !== undefined || input.textBox !== undefined) {
+  if (input.body !== undefined || input.textBox !== undefined || input.anchor !== undefined) {
     if (comment.source === 'pptx')
       throw forbidden('Kommentare aus PowerPoint können nicht bearbeitet werden.');
     if (comment.author.id !== viewer.author.id)
       throw forbidden('Nur die Autorin oder der Autor kann den Text ändern.');
   }
-  const placement = input.textBox ? moveTextBox(comment, input.textBox) : {};
+  const placement = input.textBox
+    ? moveTextBox(comment, input.textBox)
+    : input.anchor
+      ? moveBox(comment, input.anchor)
+      : {};
 
   const now = deps.clock.now();
   const statusChange =
@@ -242,6 +247,18 @@ function moveTextBox(comment: CommentRow, box: Rect): Pick<CommentRow, 'strokes'
     strokes: comment.strokes.map((stroke) => (stroke === text ? { ...text, ...box } : stroke)),
     anchor: followsText ? { ...anchor, rect: box } : anchor,
   };
+}
+
+/** Moves / resizes the comment's own box; a box that is its text on the slide moves with it. */
+function moveBox(
+  comment: CommentRow,
+  anchor: Extract<Anchor, { type: 'rect' }>,
+): Pick<CommentRow, 'anchor'> {
+  if (comment.anchor.type !== 'rect') throw badRequest('Dieser Kommentar hat keine Box.');
+  const text = comment.strokes.find(isTextStroke);
+  if (text && sameRect(comment.anchor.rect, text))
+    throw badRequest('Diese Box ist das Textfeld – verschiebe das Textfeld.');
+  return { anchor };
 }
 
 /**
