@@ -1,5 +1,6 @@
 import type { Author } from '@slider/shared';
 import { ringColor } from '@/lib/accent';
+import { generatedAvatar } from '@/lib/generated-avatar';
 import { cn } from './cn';
 
 type AvatarSize = 16 | 18 | 20 | 24 | 32;
@@ -12,15 +13,10 @@ interface AvatarProps {
   className?: string;
 }
 
-const initials = (name: string) =>
-  name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join('');
-
-/** UI kit "Avatar": circle with a pastel presence ring. Falls back to initials. */
+/**
+ * UI kit "Avatar": circle with a pastel presence ring. Without a photo, a DiceBear avatar
+ * seeded by the name.
+ */
 export function Avatar({ author, size = 24, showPowerPointBadge = false, className }: AvatarProps) {
   return (
     <span
@@ -29,22 +25,15 @@ export function Avatar({ author, size = 24, showPowerPointBadge = false, classNa
       title={author.name}
     >
       <span
-        className="flex size-full items-center justify-center overflow-hidden rounded-full bg-placeholder font-medium text-fg"
-        style={{
-          boxShadow: `inset 0 0 0 ${size >= 32 ? 2 : 1.5}px ${ringColor(author.color)}`,
-          fontSize: size * 0.4,
-        }}
+        className="flex size-full items-center justify-center overflow-hidden rounded-full bg-placeholder"
+        style={{ boxShadow: `inset 0 0 0 ${size >= 32 ? 2 : 1.5}px ${ringColor(author.color)}` }}
       >
-        {author.avatarUrl ? (
-          <img
-            src={author.avatarUrl}
-            alt=""
-            className="size-full rounded-full object-cover p-px"
-            draggable={false}
-          />
-        ) : (
-          <span aria-hidden>{initials(author.name)}</span>
-        )}
+        <img
+          src={author.avatarUrl ?? generatedAvatar(author.name)}
+          alt=""
+          className="size-full rounded-full object-cover p-px"
+          draggable={false}
+        />
       </span>
       {showPowerPointBadge && (
         <span
