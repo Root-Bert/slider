@@ -1,6 +1,6 @@
 import {
   isPathStroke,
-  shapeRefAt,
+  rectShapeRefAt,
   type Anchor,
   type Comment,
   type Point,
@@ -76,9 +76,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
   const rectAnchor = (rect: Rect): Extract<Anchor, { type: 'rect' }> => ({
     type: 'rect',
     rect,
-    shapeRef: boxes
-      ? shapeRefAt(slide.shapes, { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 })
-      : null,
+    shapeRef: boxes ? rectShapeRefAt(slide.shapes, rect) : null,
   });
   const isOwn = (comment: Comment) =>
     canComment && comment.source === 'app' && comment.author.id === viewer.author.id;

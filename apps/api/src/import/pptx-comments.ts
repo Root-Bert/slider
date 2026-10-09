@@ -2,6 +2,7 @@ import { and, eq, isNull, notInArray } from 'drizzle-orm';
 import {
   clamp01,
   shapeRefAt,
+  shapeRefForRect,
   type Anchor,
   type Author,
   type CommentStatus,
@@ -267,7 +268,7 @@ export function toAnchor(anchor: ParsedCommentAnchor, shapes: readonly Shape[]):
       return {
         type: 'rect',
         rect: shape.bbox,
-        shapeRef: { shapeId: shape.id, offset: { x: 0.5, y: 0.5 } },
+        shapeRef: shapeRefForRect(shape, shape.bbox),
       };
     }
   }

@@ -1,5 +1,6 @@
 import {
   isTextStroke,
+  resolveRectAnchor,
   resolveShapeRef,
   type Anchor,
   type Author,
@@ -150,8 +151,8 @@ export function gapThreadsByGap(threads: readonly Thread[]): Map<string, Thread[
 }
 
 /**
- * Where a comment sits on its slide, in normalised coordinates. Point anchors follow their shape
- * when it still exists; stroke-only comments use the bounds of their strokes.
+ * Where a comment sits on its slide, in normalised coordinates. Point and box anchors follow
+ * their shape while it exists (BER-111); stroke-only comments use the bounds of their strokes.
  * `null` for slide-level and gap comments.
  */
 export function anchorRect(
@@ -165,7 +166,9 @@ export function anchorRect(
       return { x: point.x, y: point.y, w: 0, h: 0 };
     }
     case 'rect':
-      return anchor.rect;
+      return anchor.shapeRef
+        ? resolveRectAnchor(shapes, anchor.rect, anchor.shapeRef)
+        : anchor.rect;
     case 'slide':
       return comment.strokes.length > 0 ? strokesBounds(comment.strokes) : null;
     case 'gap':
@@ -217,7 +220,7 @@ export function connectorAnchor(
 ): ConnectorAnchor | null {
   const { anchor, strokes } = comment;
   if (anchor.type === 'rect') {
-    const { x, y, w, h } = anchor.rect;
+    const { x, y, w, h } = anchorRect(comment, shapes) ?? anchor.rect;
     const mid = y + h / 2;
     return {
       left: x,

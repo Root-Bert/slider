@@ -4,7 +4,8 @@ import {
   MIN_DRAG_DISTANCE,
   rectCenter,
   rectFromPoints,
-  shapeRefAt,
+  rectShapeRefAt,
+  shapeRefForRect,
   type AccentColor,
   type Point,
   type Shape,
@@ -158,7 +159,7 @@ export const SlideFrame = memo(function SlideFrame({
       anchor: {
         type: 'rect',
         rect: dragRect,
-        shapeRef: boxes ? shapeRefAt(slide.shapes, rectCenter(dragRect)) : null,
+        shapeRef: boxes ? rectShapeRefAt(slide.shapes, dragRect) : null,
       },
     });
   };
@@ -180,7 +181,7 @@ export const SlideFrame = memo(function SlideFrame({
         ? {
             type: 'rect',
             rect: shape.bbox,
-            shapeRef: { shapeId: shape.id, offset: { x: 0.5, y: 0.5 } },
+            shapeRef: shapeRefForRect(shape, shape.bbox),
           }
         : // Outside box mode (or beside every box) the comment sits where the click was.
           { type: 'point', point, shapeRef: null },

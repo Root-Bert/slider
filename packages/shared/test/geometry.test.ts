@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { offsetInRect, pointInRect, rectContains, rectFromPoints } from '../src/geometry';
-import { guideOverflows, hitTestShapes, resolveShapeRef, shapeRefAt } from '../src/shapes';
+import {
+  guideOverflows,
+  hitTestShapes,
+  rectShapeRefAt,
+  resolveRectAnchor,
+  resolveShapeRef,
+  shapeRefAt,
+  shapeRefForRect,
+} from '../src/shapes';
 import type { Guide, Shape } from '../src/model';
 
 describe('rectFromPoints', () => {
@@ -73,6 +81,46 @@ describe('shape hit-testing', () => {
       y: expect.closeTo(0.55),
     });
     expect(resolveShapeRef([], ref!)).toBeNull();
+  });
+});
+
+describe('boxes bound to a shape (BER-111)', () => {
+  const title: Shape = {
+    id: '2',
+    name: 'Titel',
+    bbox: { x: 0.1, y: 0.1, w: 0.4, h: 0.2 },
+    text: '',
+  };
+  const close = (rect: { x: number; y: number; w: number; h: number }) => ({
+    x: expect.closeTo(rect.x),
+    y: expect.closeTo(rect.y),
+    w: expect.closeTo(rect.w),
+    h: expect.closeTo(rect.h),
+  });
+
+  it('a box around the shape follows it when it moves and grows', () => {
+    const ref = shapeRefForRect(title, title.bbox);
+    const moved = { ...title, bbox: { x: 0.5, y: 0.6, w: 0.3, h: 0.3 } };
+    expect(resolveRectAnchor([moved], title.bbox, ref)).toEqual(close(moved.bbox));
+  });
+
+  it('a box inside the shape keeps its place and share of it', () => {
+    const box = { x: 0.2, y: 0.15, w: 0.1, h: 0.1 };
+    const ref = rectShapeRefAt([title], box)!;
+    const grown = { ...title, bbox: { x: 0.3, y: 0.1, w: 0.8, h: 0.2 } };
+    expect(resolveRectAnchor([grown], box, ref)).toEqual(
+      close({ x: 0.5, y: 0.15, w: 0.2, h: 0.1 }),
+    );
+  });
+
+  it('older boxes only move along; the stored box while the shape is gone', () => {
+    const box = { x: 0.1, y: 0.1, w: 0.4, h: 0.2 };
+    const legacy = { shapeId: '2', offset: { x: 0.5, y: 0.5 } };
+    const moved = { ...title, bbox: { x: 0.3, y: 0.3, w: 0.2, h: 0.1 } };
+    expect(resolveRectAnchor([moved], box, legacy)).toEqual(
+      close({ x: 0.2, y: 0.25, w: 0.4, h: 0.2 }),
+    );
+    expect(resolveRectAnchor([], box, legacy)).toBe(box);
   });
 });
 

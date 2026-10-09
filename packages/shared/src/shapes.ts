@@ -2,6 +2,7 @@ import {
   offsetInRect,
   pointInRect,
   rectArea,
+  rectCenter,
   rectContains,
   type Point,
   type Rect,
@@ -30,6 +31,41 @@ export function shapeRefAt(shapes: readonly Shape[], point: Point): ShapeRef | n
 export function resolveShapeRef(shapes: readonly Shape[], ref: ShapeRef): Point | null {
   const shape = shapes.find((candidate) => candidate.id === ref.shapeId);
   return shape ? pointInRect(shape.bbox, ref.offset) : null;
+}
+
+/** Binds a box to `shape`: its centre and size relative to the shape's bounds. */
+export function shapeRefForRect(shape: Shape, rect: Rect): ShapeRef {
+  const { bbox } = shape;
+  return {
+    shapeId: shape.id,
+    offset: offsetInRect(bbox, rectCenter(rect)),
+    size: { w: bbox.w > 0 ? rect.w / bbox.w : 1, h: bbox.h > 0 ? rect.h / bbox.h : 1 },
+  };
+}
+
+/** Binds a box to the shape under its centre, or `null` when there is none. */
+export function rectShapeRefAt(shapes: readonly Shape[], rect: Rect): ShapeRef | null {
+  const shape = hitTestShapes(shapes, rectCenter(rect));
+  return shape ? shapeRefForRect(shape, rect) : null;
+}
+
+/**
+ * Where a bound box sits now: around its shape's current place, scaled with it (with `size`) or
+ * just moved along (older boxes). The stored `rect` while the shape is gone.
+ */
+export function resolveRectAnchor(shapes: readonly Shape[], rect: Rect, ref: ShapeRef): Rect {
+  const shape = shapes.find((candidate) => candidate.id === ref.shapeId);
+  if (!shape) return rect;
+  const { bbox } = shape;
+  const center = pointInRect(bbox, ref.offset);
+  const w = Math.min(1, ref.size ? ref.size.w * bbox.w : rect.w);
+  const h = Math.min(1, ref.size ? ref.size.h * bbox.h : rect.h);
+  return {
+    x: Math.min(Math.max(0, center.x - w / 2), 1 - w),
+    y: Math.min(Math.max(0, center.y - h / 2), 1 - h),
+    w,
+    h,
+  };
 }
 
 /** Shapes may sit this close past a guide (normalised, ≈ 3 px on a 1280 px slide). */
