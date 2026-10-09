@@ -109,11 +109,11 @@ export function OneDrivePicker({
       aria-label="Aus OneDrive oder SharePoint auswählen"
       // Centred on the column, free to grow past it.
       className={cn(
-        'relative left-1/2 flex -translate-x-1/2 flex-col overflow-hidden outline-none',
+        'glass relative left-1/2 flex -translate-x-1/2 flex-col overflow-hidden outline-none',
         'transition-[width,height,border-radius,background-color] ease-[cubic-bezier(0.32,0.72,0,1)]',
         expanded
-          ? 'glass-elevated h-[min(760px,max(420px,calc(100dvh-300px)))] w-[min(1080px,calc(100vw-32px))] rounded-panel'
-          : 'glass h-11 w-full rounded-control',
+          ? 'h-[min(760px,max(420px,calc(100dvh-300px)))] w-[min(1080px,calc(100vw-32px))] rounded-panel bg-[rgb(20_20_20/0.86)]! shadow-(--shadow-float)!'
+          : 'h-11 w-full rounded-control shadow-none!',
       )}
       style={{ transitionDuration: `${EXPAND_MS}ms` }}
     >
@@ -159,10 +159,11 @@ export function OneDrivePicker({
           </div>
         )}
       </div>
-      {/* The glass edge is an inset shadow, which the opaque frame would cover: draw it on top. */}
+      {/* The edge – the same hairline as the button's – drawn above everything: as the glass's own
+          inset shadow the opaque frame would cover it at the sides and bottom. */}
       <span
         aria-hidden
-        className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]"
+        className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_0_0_1px_var(--color-hairline)]"
       />
     </section>
   );
