@@ -1,7 +1,7 @@
 import { and, asc, count, desc, eq, inArray, isNull, max, min } from 'drizzle-orm';
 import type { Author, Deck, DeckSource } from '@slider/shared';
 import { permissionsFor, type DeckViewerAccess } from '../auth/access';
-import { ownerAuthor } from '../authors';
+import { externalAuthor, ownerAuthor } from '../authors';
 import type { Executor } from '../db/client';
 import { comments, decks, revisions, slideVersions, users, type DeckRow } from '../db/schema';
 import type { AppDeps } from '../deps';
@@ -41,6 +41,7 @@ export async function toDeckDtos(
               number: revisions.number,
               summary: revisions.summary,
               officeFailure: revisions.officeFailure,
+              fileAuthor: revisions.fileAuthor,
             })
             .from(revisions)
             .where(inArray(revisions.id, revisionIds))
@@ -104,6 +105,7 @@ export async function toDeckDtos(
   const slideCountByRevision = new Map(slideCounts.map((row) => [row.revisionId, row.count]));
   const thumbnailByRevision = new Map(thumbnails.map((row) => [row.revisionId, row]));
   const openCountByDeck = new Map(openCounts.map((row) => [row.deckId, row.count]));
+  const fileAuthorByRevision = new Map(revisionNumbers.map((row) => [row.id, row.fileAuthor]));
   const participantsByDeck = groupParticipants(authors);
 
   return rows.map((row) => {
@@ -127,7 +129,11 @@ export async function toDeckDtos(
       thumbnailUrl: thumbnail ? fileUrl(thumbnail.key) : null,
       thumbnailRenderer: thumbnail?.renderer ?? null,
       officeFailure: officeFailureByRevision.get(revisionId) ?? null,
-      participants: participantsByDeck.get(row.id) ?? [],
+      participants: participantsOf(
+        owner,
+        fileAuthorByRevision.get(revisionId) || null,
+        participantsByDeck.get(row.id) ?? [],
+      ),
       import: row.importState,
       currentRevisionId: row.currentRevisionId,
       sync: toDeckSync(row, {
@@ -148,8 +154,6 @@ function groupParticipants(
   rows: readonly { deckId: string; author: Author }[],
 ): Map<string, Author[]> {
   const byDeck = new Map<string, Author[]>();
-  const samePerson = (a: Author, b: Author) =>
-    a.id === b.id || a.name.toLowerCase() === b.name.toLowerCase();
   for (const { deckId, author } of rows) {
     const list = byDeck.get(deckId) ?? [];
     if (list.length < MAX_PARTICIPANTS && !list.some((known) => samePerson(known, author)))
@@ -157,6 +161,26 @@ function groupParticipants(
     byDeck.set(deckId, list);
   }
   return byDeck;
+}
+
+const samePerson = (a: Author, b: Author) =>
+  a.id === b.id || a.name.toLowerCase() === b.name.toLowerCase();
+
+/**
+ * Everyone on a deck gets an avatar: whoever last saved the file (often a colleague without a
+ * Slider account) first, then the commenters; the owner when there is nobody else.
+ */
+function participantsOf(owner: Author, fileAuthor: string | null, commenters: Author[]): Author[] {
+  const fromFile = fileAuthor ? externalAuthor(fileAuthor) : null;
+  const list: Author[] = [];
+  for (const author of [
+    ...(fromFile ? [samePerson(fromFile, owner) ? owner : fromFile] : []),
+    ...commenters,
+  ]) {
+    if (list.length < MAX_PARTICIPANTS && !list.some((known) => samePerson(known, author)))
+      list.push(author);
+  }
+  return list.length ? list : [owner];
 }
 
 export async function toDeckDto(

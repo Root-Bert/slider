@@ -68,6 +68,7 @@ export const presentation = (
   slides: slides.map(slide),
   sections: [],
   comments: pptComments,
+  author: null,
 });
 
 /** Six slides with sldIds 256…261. */

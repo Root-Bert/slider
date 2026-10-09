@@ -11,6 +11,7 @@ import { createOfficePdf } from './import/office-pages';
 import { createLibreOfficePdf, findSoffice } from './import/libreoffice';
 import { InProcessQueue, type ImportJob } from './import/queue';
 import { RenderProgress } from './import/render-progress';
+import { scheduleFileAuthorBackfill } from './import/file-author-backfill';
 import { scheduleRerenderBackfill } from './import/rerender';
 import { consoleLogger as log } from './logger';
 import { createMailer } from './mail/mailer';
@@ -108,6 +109,8 @@ async function main(): Promise<void> {
     progress: renderProgress,
     log,
   });
+
+  scheduleFileAuthorBackfill({ db, storage, openPptx, log });
 
   const sync = new SyncService({ db, storage, sources, queue, clock, log, config });
   const app = createApp({

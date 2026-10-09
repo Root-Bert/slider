@@ -14,6 +14,11 @@ export interface ParsedPresentation {
   sections: { name: string; slideIds: number[] }[];
   /** PowerPoint comments (modern and legacy) across all slides. */
   comments: ParsedComment[];
+  /**
+   * Who last saved the file, else who created it (`docProps/core.xml`); `null` if neither is set.
+   * Usually the colleague who sent it – they need no Slider account to be shown.
+   */
+  author: string | null;
 }
 
 export interface ParsedSlide {

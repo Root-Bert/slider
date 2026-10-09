@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { ApiError } from '@/lib/api-client';
 import { accountGate, isSignedOutError } from './gate';
 
-const author = { id: 'u', name: 'A', type: 'owner', color: 'red', avatarUrl: null } as const;
+const author = { id: 'u', name: 'A', type: 'owner', color: 'red' } as const;
 
 describe('accountGate', () => {
   it('waits while /me loads', () => {

@@ -104,7 +104,11 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
     await clearRevisionSlides(tx, deckId, revisionId);
     await tx
       .update(revisions)
-      .set({ slideWidthEmu: presentation.size.cx, slideHeightEmu: presentation.size.cy })
+      .set({
+        slideWidthEmu: presentation.size.cx,
+        slideHeightEmu: presentation.size.cy,
+        fileAuthor: presentation.author,
+      })
       .where(eq(revisions.id, revisionId));
     if (planned.length === 0) return;
     await tx.insert(slides).values(planned.map(({ slideId }) => ({ id: slideId, deckId })));

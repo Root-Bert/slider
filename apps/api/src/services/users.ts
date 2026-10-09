@@ -7,7 +7,6 @@ export interface PersonInput {
   name: string;
   email: string;
   color?: AccentColor;
-  avatarKey?: string | null;
 }
 
 /** Finds a user by e-mail or creates them. Existing rows are updated with any given fields. */
@@ -19,14 +18,12 @@ export async function upsertUser(db: Executor, person: PersonInput): Promise<Use
       name: person.name,
       email: person.email,
       color: person.color ?? 'red',
-      avatarKey: person.avatarKey ?? null,
     })
     .onConflictDoUpdate({
       target: users.email,
       set: {
         name: person.name,
         ...(person.color ? { color: person.color } : {}),
-        ...(person.avatarKey !== undefined ? { avatarKey: person.avatarKey } : {}),
       },
     })
     .returning();

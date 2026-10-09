@@ -43,14 +43,12 @@ export function AccountMenu() {
       label={`Konto: ${user.name}`}
       align="right"
       triggerClassName="flex rounded-full transition-opacity hover:opacity-85"
-      trigger={() => (
-        <Avatar author={{ ...me.viewer.author, avatarUrl: user.avatarUrl }} size={32} />
-      )}
+      trigger={() => <Avatar author={me.viewer.author} size={32} />}
     >
       {(close) => (
         <>
           <div className="flex items-center gap-3 px-2.5 pt-2 pb-2.5">
-            <Avatar author={{ ...me.viewer.author, avatarUrl: user.avatarUrl }} size={32} />
+            <Avatar author={me.viewer.author} size={32} />
             <span className="flex min-w-0 flex-col">
               <span className="truncate text-[13px] font-medium text-fg">{user.name}</span>
               <span className="truncate text-xs text-fg-subtle">{user.email}</span>

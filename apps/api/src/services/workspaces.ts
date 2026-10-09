@@ -26,7 +26,6 @@ import {
 import type { AppDeps } from '../deps';
 import { ApiError, badRequest, forbidden, notFound } from '../http/errors';
 import { buttonMail } from '../mail/mailer';
-import { fileUrl } from '../storage/blob-storage';
 import { deleteDeck } from './decks';
 import {
   assertSeatForInvite,
@@ -326,7 +325,6 @@ const toMemberDto = (
   name: user.name,
   email: user.email,
   color: user.color,
-  avatarUrl: user.avatarKey ? fileUrl(user.avatarKey) : null,
   avatarSeed: user.avatarSeed,
   role: member.role,
   joinedAt: member.createdAt.toISOString(),

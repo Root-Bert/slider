@@ -1,6 +1,5 @@
 import { ACCENT_COLORS, type AccentColor, type Author } from '@slider/shared';
 import type { GuestSessionRow, UserRow } from './db/schema';
-import { fileUrl } from './storage/blob-storage';
 
 /** Deterministic accent colour for a name, so a PowerPoint author keeps their colour across imports. */
 export function colorForName(name: string): AccentColor {
@@ -17,7 +16,6 @@ export const ownerAuthor = (user: UserRow): Author => ({
   name: user.name,
   type: 'owner',
   color: user.color,
-  avatarUrl: user.avatarKey ? fileUrl(user.avatarKey) : null,
   avatarSeed: user.avatarSeed,
 });
 
@@ -26,7 +24,6 @@ export const guestAuthor = (session: GuestSessionRow): Author => ({
   name: session.name,
   type: 'guest',
   color: session.color,
-  avatarUrl: null,
 });
 
 /** Someone who commented in PowerPoint; identified by name only. */
@@ -35,5 +32,4 @@ export const externalAuthor = (name: string): Author => ({
   name: name.trim() || 'Unbekannt',
   type: 'external',
   color: colorForName(name),
-  avatarUrl: null,
 });

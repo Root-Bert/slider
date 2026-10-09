@@ -6,7 +6,6 @@ export const owner: Author = {
   name: 'Robert Hofmann',
   type: 'owner',
   color: 'blue',
-  avatarUrl: null,
 };
 
 export function makeDeck(overrides: Partial<Deck> = {}): Deck {

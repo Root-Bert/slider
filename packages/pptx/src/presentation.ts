@@ -31,7 +31,14 @@ export async function parsePresentation(archive: Archive): Promise<ParsedPresent
     slides,
     sections: readSections(presentation),
     comments: await readComments(archive, slideRefs, size),
+    author: await readFileAuthor(archive),
   };
+}
+
+async function readFileAuthor(archive: Archive): Promise<string | null> {
+  const core = await archive.readXml('docProps/core.xml').catch(() => null);
+  const name = (tag: string) => child(core, tag)?.text.trim() || null;
+  return name('cp:lastModifiedBy') ?? name('dc:creator');
 }
 
 function readSlideSize(presentation: XmlElement): { cx: number; cy: number } {

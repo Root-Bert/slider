@@ -92,6 +92,20 @@
       "when": 1791540370823,
       "tag": "0012_avatar_seed",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791541085514,
+      "tag": "0013_drop_avatar_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791541244925,
+      "tag": "0014_file_author",
+      "breakpoints": true
     }
   ]
 }

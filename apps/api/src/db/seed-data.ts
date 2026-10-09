@@ -25,31 +25,27 @@ export interface PersonSeed {
   name: string;
   email: string;
   color: AccentColor;
-  avatar: string;
 }
 
 /** Robert's name and e-mail come from the dev-owner config, so the seeded decks are "yours". */
 export const PEOPLE: Record<Exclude<PersonKey, 'robert'>, PersonSeed> & {
   robert: Omit<PersonSeed, 'name' | 'email'>;
 } = {
-  robert: { color: 'red', avatar: 'avatar-orange.png' },
+  robert: { color: 'red' },
   lena: {
     name: 'Lena Wolf',
     email: 'lena.wolf@q4-team.de',
     color: 'blue',
-    avatar: 'avatar-blau.png',
   },
   max: {
     name: 'Max Kern',
     email: 'max.kern@q4-team.de',
     color: 'violet',
-    avatar: 'avatar-lila.png',
   },
   anna: {
     name: 'Anna Becker',
     email: 'anna.becker@q4-team.de',
     color: 'yellow',
-    avatar: 'avatar-gelb.png',
   },
 };
 

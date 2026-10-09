@@ -60,17 +60,10 @@ export async function seedDemoData(deps: SeedDeps): Promise<UserRow> {
     4: await copyAsset(deps.storage, 'slide-4.png'),
   };
 
-  const robert = await upsertUser(deps.db, {
-    ...deps.owner,
-    color: PEOPLE.robert.color,
-    avatarKey: await copyAsset(deps.storage, PEOPLE.robert.avatar),
-  });
+  const robert = await upsertUser(deps.db, { ...deps.owner, color: PEOPLE.robert.color });
   const reviewer = async (key: Exclude<PersonKey, 'robert'>): Promise<Author> => {
     const person = PEOPLE[key];
-    const user = await upsertUser(deps.db, {
-      ...person,
-      avatarKey: await copyAsset(deps.storage, person.avatar),
-    });
+    const user = await upsertUser(deps.db, person);
     // Reviewers join through review links, so they comment as guests.
     return { ...ownerAuthor(user), type: 'guest' };
   };
@@ -232,9 +225,7 @@ function toAnchor(anchor: SeedAnchor, slideAt: (position: number) => string): An
 }
 
 async function copyAsset(storage: BlobStorage, fileName: string): Promise<string> {
-  const key = fileName.startsWith('avatar-')
-    ? blobKeys.avatar('png')
-    : blobKeys.demoAsset(fileName);
+  const key = blobKeys.demoAsset(fileName);
   await storage.put(key, await readFile(path.join(ASSETS_DIR, fileName)));
   return key;
 }

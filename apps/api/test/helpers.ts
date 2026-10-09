@@ -78,6 +78,7 @@ export function stubPptx(presentation: Partial<ParsedPresentation> = {}, slideCo
     slides: Array.from({ length: slideCount }, (_, i) => parsedSlide(256 + i, i)),
     sections: [],
     comments: [],
+    author: null,
     ...presentation,
   };
   return async () => ({

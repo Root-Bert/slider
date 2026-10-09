@@ -8,6 +8,7 @@ import {
   createTestContext,
   MICROSOFT_TEST_CONFIG,
   pinComment,
+  stubPptx,
   type TestContext,
 } from './helpers';
 
@@ -57,7 +58,27 @@ describe('decks', () => {
       thumbnailRenderer: null,
       participants: [{ name: 'Robert Hofmann' }],
     });
-    expect(list[1]).toMatchObject({ id: older.deckId, openCommentCount: 0, participants: [] });
+    // Nobody commented on the older deck: the owner stands in, so every deck has an avatar.
+    expect(list[1]).toMatchObject({
+      id: older.deckId,
+      openCommentCount: 0,
+      participants: [{ name: 'Robert Hofmann', type: 'owner' }],
+    });
+  });
+
+  it('shows whoever last saved the file first, even without a Slider account', async () => {
+    await ctx.cleanup();
+    ctx = await createTestContext({ openPptx: stubPptx({ author: 'Kim Kollege' }) });
+    const res = await ctx.request('/api/decks/upload', {
+      method: 'POST',
+      body: uploadForm('Von Kim.pptx', new Uint8Array([1, 2, 3])),
+    });
+    const { id } = deckSchema.parse(await res.json());
+    await ctx.deps.queue.idle();
+    const deck = deckSchema.parse(await (await ctx.request(`/api/decks/${id}`)).json());
+    expect(deck.participants).toEqual([
+      expect.objectContaining({ name: 'Kim Kollege', type: 'external' }),
+    ]);
   });
 
   it('gets, renames and archives a deck', async () => {

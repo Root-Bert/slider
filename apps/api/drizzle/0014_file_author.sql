@@ -1,0 +1,1 @@
+ALTER TABLE "revisions" ADD COLUMN "file_author" text;

@@ -28,8 +28,7 @@ export const authorSchema = z.object({
   name: z.string(),
   type: authorTypeSchema,
   color: accentColorSchema,
-  avatarUrl: z.string().nullable(),
-  /** A re-rolled generated avatar; wins over the photo. Absent in older comment snapshots. */
+  /** A re-rolled generated avatar (else seeded by the name). Absent in older comment snapshots. */
   avatarSeed: z.string().nullable().optional(),
 });
 export type Author = z.infer<typeof authorSchema>;

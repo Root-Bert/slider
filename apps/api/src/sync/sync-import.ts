@@ -255,6 +255,7 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
           summary,
           slideWidthEmu: presentation.size.cx,
           slideHeightEmu: presentation.size.cy,
+          fileAuthor: presentation.author,
           officeFailure: rendered.officeFailure,
         })
         .where(eq(revisions.id, revisionId));

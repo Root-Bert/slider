@@ -67,7 +67,6 @@ export const blobKeys = {
   /** In the media store; same deck prefix, so deleting a deck clears its recordings too. */
   media: (deckId: string, mediaId: string, extension: string) =>
     `decks/${deckId}/media/${mediaId}.${extension}`,
-  avatar: (extension: string) => `avatars/${crypto.randomUUID()}.${extension}`,
   demoAsset: (fileName: string) => `demo/${crypto.randomUUID()}/${fileName}`,
 };
 

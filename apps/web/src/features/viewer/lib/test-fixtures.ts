@@ -7,7 +7,6 @@ export const author = (id: string, overrides: Partial<Author> = {}): Author => (
   name: `Person ${id}`,
   type: 'guest',
   color: 'blue',
-  avatarUrl: null,
   ...overrides,
 });
 

@@ -134,7 +134,6 @@ export const meUserSchema = z.object({
   name: z.string(),
   email: z.string(),
   color: accentColorSchema,
-  avatarUrl: z.string().nullable(),
   avatarSeed: z.string().nullable(),
   isInstanceAdmin: z.boolean(),
   /** A Microsoft refresh token is stored – OneDrive/SharePoint links can be imported. */
@@ -196,7 +195,6 @@ export const workspaceMemberSchema = z.object({
   name: z.string(),
   email: z.string(),
   color: accentColorSchema,
-  avatarUrl: z.string().nullable(),
   avatarSeed: z.string().nullable(),
   role: workspaceRoleSchema,
   joinedAt: z.iso.datetime(),

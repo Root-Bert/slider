@@ -80,8 +80,7 @@ export const users = pgTable('users', {
   name: text('name').notNull(),
   email: text('email').notNull().unique(),
   color: text('color').$type<AccentColor>().notNull(),
-  avatarKey: text('avatar_key'),
-  /** Seed of a re-rolled generated avatar; it replaces the photo and the name-seeded default. */
+  /** Seed of a re-rolled generated avatar; without one, the avatar is seeded by the name. */
   avatarSeed: text('avatar_seed'),
   /** Microsoft refresh token for OneDrive/SharePoint links, AES-GCM encrypted (`auth/token-crypto`). */
   msRefreshToken: text('ms_refresh_token'),
@@ -306,6 +305,8 @@ export const revisions = pgTable(
     trigger: text('trigger').$type<RevisionTrigger>(),
     /** SHA-256 (hex) of the original file, to skip re-imports of identical bytes. */
     contentSha256: text('content_sha256'),
+    /** Who last saved the file, else its creator (PPTX core properties) – shown as a participant. */
+    fileAuthor: text('file_author'),
     /** Slide diff against the previous revision; `null` for revision 1. */
     diff: jsonb('diff').$type<RevisionDiffRecord>(),
     summary: jsonb('summary').$type<SyncSummary>(),

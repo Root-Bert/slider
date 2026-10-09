@@ -6,7 +6,7 @@ import { cn } from './cn';
 type AvatarSize = 16 | 18 | 20 | 24 | 32 | 64;
 
 interface AvatarProps {
-  author: Pick<Author, 'name' | 'color' | 'avatarUrl' | 'avatarSeed' | 'type'>;
+  author: Pick<Author, 'name' | 'color' | 'avatarSeed' | 'type'>;
   size?: AvatarSize;
   /** Shows the small PowerPoint badge for comments imported from the PPTX (BER-115). */
   showPowerPointBadge?: boolean;
@@ -14,8 +14,8 @@ interface AvatarProps {
 }
 
 /**
- * UI kit "Avatar": circle with a pastel presence ring. A re-rolled avatar wins; otherwise the
- * photo, and without one a DiceBear avatar seeded by the name.
+ * UI kit "Avatar": circle with a pastel presence ring around a DiceBear avatar – the account's
+ * re-rolled one, else seeded by the name, so everyone has one (guests, PowerPoint authors too).
  */
 export function Avatar({ author, size = 24, showPowerPointBadge = false, className }: AvatarProps) {
   return (
@@ -29,11 +29,7 @@ export function Avatar({ author, size = 24, showPowerPointBadge = false, classNa
         style={{ boxShadow: `inset 0 0 0 ${size >= 32 ? 2 : 1.5}px ${ringColor(author.color)}` }}
       >
         <img
-          src={
-            author.avatarSeed
-              ? generatedAvatar(author.avatarSeed)
-              : (author.avatarUrl ?? generatedAvatar(author.name))
-          }
+          src={generatedAvatar(author.avatarSeed ?? author.name)}
           alt=""
           className="size-full rounded-full object-cover p-px"
           draggable={false}

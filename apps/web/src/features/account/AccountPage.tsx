@@ -34,7 +34,7 @@ export function Component() {
               Zurück zu den Reviews
             </Link>
             <div className="flex items-center gap-3">
-              <Avatar author={{ ...viewer.author, avatarUrl: user.avatarUrl }} size={32} />
+              <Avatar author={viewer.author} size={32} />
               <div className="flex min-w-0 flex-col">
                 <h1 className="truncate text-[28px] leading-tight font-semibold tracking-tight text-fg">
                   Konto & Anmeldung

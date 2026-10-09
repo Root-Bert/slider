@@ -11,7 +11,6 @@ import { users } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { forbidden } from '../http/errors';
 import { readJson } from '../http/validate';
-import { fileUrl } from '../storage/blob-storage';
 import { updateUserAvatar, updateViewerColor } from '../services/users';
 import { canCreateWorkspace } from '../services/plans';
 import { listWorkspaces, pendingInvitesFor } from '../services/workspaces';
@@ -33,7 +32,6 @@ async function meResponse(deps: AppDeps, viewer: Viewer): Promise<MeResponse> {
       name: user.name,
       email: user.email,
       color: user.color,
-      avatarUrl: user.avatarKey ? fileUrl(user.avatarKey) : null,
       avatarSeed: user.avatarSeed,
       isInstanceAdmin: user.isInstanceAdmin,
       microsoftConnected: user.msRefreshToken !== null,
