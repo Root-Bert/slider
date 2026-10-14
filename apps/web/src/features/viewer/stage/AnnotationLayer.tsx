@@ -19,6 +19,7 @@ import {
   type Thread,
 } from '../lib/comment-selectors';
 import { accentColor } from '@/lib/accent';
+import { useMarkPreview, useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, type Draft } from '../state/viewer-state';
 import { markLabel } from '../lib/labels';
@@ -72,6 +73,9 @@ export const AnnotationLayer = memo(function AnnotationLayer({
   const { viewer, deck, canComment } = useViewerData();
   const update = useUpdateComment(deck.id);
   const layerRef = useRef<HTMLDivElement>(null);
+  const registry = useStageRegistry();
+  // A box being dragged: its badge follows it live.
+  const preview = useMarkPreview();
   // A box keeps to the PowerPoint shape under its centre while box mode is on.
   const rectAnchor = (rect: Rect): Extract<Anchor, { type: 'rect' }> => ({
     type: 'rect',
@@ -84,14 +88,15 @@ export const AnnotationLayer = memo(function AnnotationLayer({
   const marks = useMemo<Mark[]>(() => {
     const result: Mark[] = [];
     for (const thread of threads) {
-      const rect = anchorRect(thread.root, slide.shapes);
+      const rect =
+        preview?.threadId === thread.id ? preview.rect : anchorRect(thread.root, slide.shapes);
       if (!rect) continue;
       const state: MarkState =
         emphasisId === null ? 'normal' : thread.id === emphasisId ? 'emphasized' : 'dimmed';
       result.push({ thread, rect, state });
     }
     return result;
-  }, [threads, slide.shapes, emphasisId]);
+  }, [threads, slide.shapes, emphasisId, preview]);
 
   const emphasized = marks.find((mark) => mark.state === 'emphasized');
   const emphasizedShape =
@@ -190,6 +195,9 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                     root.status === 'done' && 'opacity-50',
                   )}
                   onActivate={() => activate(mark)}
+                  onPreview={(rect) =>
+                    registry.setMarkPreview(rect ? { threadId: mark.thread.id, rect } : null)
+                  }
                   onCommit={(rect, done) =>
                     update.mutate(
                       { commentId: root.id, anchor: rectAnchor(rect) },

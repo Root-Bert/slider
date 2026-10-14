@@ -1,5 +1,11 @@
 import type { Rect } from '@slider/shared';
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 
 export type RectCorner = 'nw' | 'ne' | 'sw' | 'se';
 
@@ -51,16 +57,33 @@ function resized(start: Rect, corner: RectCorner, px: number, py: number): Rect 
  * Moving (drag the box) and resizing (drag a corner) a box on the slide, in normalised slide
  * coordinates. Shows the box as dragged until `onCommit`'s `done` – so it doesn't jump back
  * while the new place is stored. A press without a drag stays a click (`wasDragged` is false).
+ * `onPreview` follows the box as shown (`null` once it is back to `rect`).
  */
-export function useRectEdit(rect: Rect, onCommit: (rect: Rect, done: () => void) => void) {
+export function useRectEdit(
+  rect: Rect,
+  onCommit: (rect: Rect, done: () => void) => void,
+  onPreview?: (rect: Rect | null) => void,
+) {
   const dragRef = useRef<Drag | null>(null);
   const draggedRef = useRef(false);
   const [preview, setPreviewState] = useState<Rect | null>(null);
   const previewRef = useRef<Rect | null>(null);
+  const onPreviewRef = useRef(onPreview);
+  useLayoutEffect(() => {
+    onPreviewRef.current = onPreview;
+  });
   const setPreview = (next: Rect | null) => {
     previewRef.current = next;
     setPreviewState(next);
+    onPreviewRef.current?.(next);
   };
+  // Unmounted mid-drag (or before the commit settled): nothing is shown as dragged any more.
+  useEffect(
+    () => () => {
+      if (previewRef.current) onPreviewRef.current?.(null);
+    },
+    [],
+  );
 
   const start = (event: ReactPointerEvent<HTMLElement>, kind: Drag['kind']) => {
     if (event.button !== 0) return;

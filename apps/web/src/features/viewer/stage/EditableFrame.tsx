@@ -15,6 +15,8 @@ interface EditableFrameProps {
   color: string;
   /** The new place after a move or resize; call `done` once it is stored. */
   onCommit: (rect: Rect, done: () => void) => void;
+  /** The box as shown while dragged, `null` once it is back to `rect`. */
+  onPreview?: (rect: Rect | null) => void;
   /** A click (not a drag) on the box. */
   onActivate?: () => void;
   /** Show the corner handles (always for the draft, on hover/focus for a sent box). */
@@ -35,6 +37,7 @@ export function EditableFrame({
   rect,
   color,
   onCommit,
+  onPreview,
   onActivate,
   handles,
   emphasized = false,
@@ -43,7 +46,7 @@ export function EditableFrame({
   className,
   children,
 }: EditableFrameProps) {
-  const edit = useRectEdit(rect, onCommit);
+  const edit = useRectEdit(rect, onCommit, onPreview);
   const shown = edit.rect;
   const lit = emphasized || edit.dragging;
 

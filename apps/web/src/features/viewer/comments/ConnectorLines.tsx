@@ -15,6 +15,7 @@ import {
   sortThreadsClockwise,
   type Thread,
 } from '../lib/comment-selectors';
+import { useMarkPreview } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerState } from '../state/viewer-state';
 
@@ -50,6 +51,8 @@ export function ConnectorLines({ wrapperRef, layer }: ConnectorLinesProps) {
     threadPanelOpen,
   } = useViewerState();
   const { bySlide, byGap } = useCommentThreads();
+  // A box being dragged: its line leaves it where it is shown, not where it is stored.
+  const preview = useMarkPreview();
   const narrow = useIsNarrow();
   const maskId = `connector-fade-${useId().replace(/[^\w-]/g, '')}`;
   const enabled = !narrow;
@@ -77,7 +80,14 @@ export function ConnectorLines({ wrapperRef, layer }: ConnectorLinesProps) {
       const prev = slides[index - 1];
       const items: ConnectorItem[] = [];
       for (const thread of sortThreadsClockwise(threadsOf(bySlide, slide.id), slide.shapes)) {
-        const mark = connectorAnchor(thread.root, slide.shapes);
+        const root =
+          preview?.threadId === thread.id
+            ? {
+                ...thread.root,
+                anchor: { type: 'rect' as const, rect: preview.rect, shapeRef: null },
+              }
+            : thread.root;
+        const mark = connectorAnchor(root, slide.shapes);
         byId.set(thread.id, thread);
         if (mark)
           items.push({
@@ -106,7 +116,7 @@ export function ConnectorLines({ wrapperRef, layer }: ConnectorLinesProps) {
       });
     }
     return { routes: result, threadMap: byId, slideOf: owner };
-  }, [slides, bySlide, byGap]);
+  }, [slides, bySlide, byGap, preview]);
 
   const panelThreadId = threadPanelOpen ? focusedThreadId : null;
   const layout = useConnectorLayout({

@@ -1,4 +1,5 @@
-import { createContext, useContext } from 'react';
+import type { Rect } from '@slider/shared';
+import { createContext, useContext, useSyncExternalStore } from 'react';
 import { revealScrollLeft, type RevealAlign, type TrackLayout } from '../lib/timeline-layout';
 
 /** The published track layout plus what's needed to address slides in it. */
@@ -7,6 +8,12 @@ export interface PublishedLayout {
   slideIndex: ReadonlyMap<string, number>;
   /** Phones snap slide by slide: `nearest` reveals align the slide to the start instead. */
   snap: boolean;
+}
+
+/** A box being dragged: where it is shown until its new place is stored. */
+export interface MarkPreview {
+  threadId: string;
+  rect: Rect;
 }
 
 export interface RevealOptions {
@@ -45,6 +52,14 @@ export interface StageRegistry {
   settleProgrammaticScroll: () => void;
   /** The user takes over (wheel, touch, scrollbar, minimap bracket). */
   endProgrammaticScroll: () => void;
+  /**
+   * The box of a comment while it is dragged (`null` when none is): its badge and connector line
+   * follow it live, not only once the new place is stored. Outside React state, so a drag doesn't
+   * re-render the whole viewer per pointer move.
+   */
+  setMarkPreview: (preview: MarkPreview | null) => void;
+  getMarkPreview: () => MarkPreview | null;
+  subscribeMarkPreview: (listener: () => void) => () => void;
 }
 
 /** Room kept between a revealed slide and a side panel floating over the track. */
@@ -65,6 +80,8 @@ export function createStageRegistry(): StageRegistry {
   let until = 0;
   let deadline = 0;
   let target = 0;
+  let markPreview: MarkPreview | null = null;
+  const markListeners = new Set<() => void>();
 
   const scrollTrackTo = (left: number, behavior: ScrollBehavior = 'instant') => {
     if (!scroller || Math.abs(left - scroller.scrollLeft) < 0.5) return;
@@ -125,6 +142,16 @@ export function createStageRegistry(): StageRegistry {
     endProgrammaticScroll: () => {
       until = 0;
     },
+    setMarkPreview: (preview) => {
+      if (preview === markPreview) return;
+      markPreview = preview;
+      for (const listener of markListeners) listener();
+    },
+    getMarkPreview: () => markPreview,
+    subscribeMarkPreview: (listener) => {
+      markListeners.add(listener);
+      return () => markListeners.delete(listener);
+    },
   };
 }
 
@@ -134,4 +161,10 @@ export function useStageRegistry(): StageRegistry {
   const registry = useContext(StageRegistryContext);
   if (!registry) throw new Error('useStageRegistry must be used inside <ViewerStoreProvider>');
   return registry;
+}
+
+/** The comment box being dragged right now, if any (see `StageRegistry.setMarkPreview`). */
+export function useMarkPreview(): MarkPreview | null {
+  const registry = useStageRegistry();
+  return useSyncExternalStore(registry.subscribeMarkPreview, registry.getMarkPreview);
 }
