@@ -99,8 +99,9 @@ export function CommentColumns({ layout, range, narrow }: CommentColumnsProps) {
     <section
       data-comment-area
       aria-label="Kommentare"
-      // Own stacking context: raised (hovered) cards stay below the sticky header.
-      className="relative isolate grid items-start pb-48"
+      // Own stacking context: raised (hovered) cards stay below the sticky header. Only a small
+      // margin below the cards: the area scrolls vertically only once the comments overflow.
+      className="relative isolate grid items-start pb-6"
       style={{ width: layout.contentW, gridTemplateColumns: '100%' }}
     >
       {columns}

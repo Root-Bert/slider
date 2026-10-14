@@ -10,7 +10,7 @@ import {
   syncResultSchema,
   type SyncResult,
 } from '@slider/shared';
-import { decks, revisions, users } from '../src/db/schema';
+import { decks, revisions } from '../src/db/schema';
 import { findInterruptedImports, importDeck } from '../src/import/import-deck';
 import { silentLogger } from '../src/logger';
 import {
@@ -20,9 +20,7 @@ import {
   sourceUnreachable,
 } from '../src/sources/errors';
 import { SyncScheduler, syncTickMs } from '../src/sync/scheduler';
-import { createDeckFromFile } from '../src/services/decks';
-import { createWorkspace } from '../src/services/workspaces';
-import { cookieFrom, createTestContext, pinComment, type TestContext } from './helpers';
+import { createTestContext, pinComment, type TestContext } from './helpers';
 import {
   BASE_SLIDES,
   commentRows,
@@ -71,10 +69,9 @@ async function setup(
   return { ctx, source, pptx, deckId };
 }
 
-async function sync(context: TestContext, deckId: string, cookie?: string): Promise<SyncResult> {
-  const res = await context.request(`/api/decks/${deckId}/sync`, { method: 'POST', cookie });
-  expect(res.status).toBe(200);
-  return syncResultSchema.parse(await res.json());
+/** A check without debounce, as "Neu rendern" runs it. */
+async function sync(context: TestContext, deckId: string): Promise<SyncResult> {
+  return syncResultSchema.parse(await context.deps.sync.checkDeck(deckId, { manual: true }));
 }
 
 async function getJson<T>(
@@ -93,7 +90,7 @@ const slidesOf = (context: TestContext, deckId: string) =>
 const deckOf = (context: TestContext, deckId: string) =>
   getJson(context, `/api/decks/${deckId}`, deckSchema);
 
-describe('manual sync (POST /decks/:id/sync)', () => {
+describe('manual check', () => {
   it('is idempotent: the same token 10× creates no revision and downloads nothing', async () => {
     const { ctx, source, deckId } = await setup();
     const before = await deckRow(ctx, deckId);
@@ -180,55 +177,6 @@ describe('manual sync (POST /decks/:id/sync)', () => {
     await ctx.deps.sync.checkDeck(deckId);
     expect(source.download).toHaveBeenCalledTimes(1);
     expect(await revisionRows(ctx, deckId)).toHaveLength(2);
-  });
-
-  it('only lets the owner sync, and not upload decks', async () => {
-    const { ctx, deckId } = await setup();
-    const link = (await (
-      await ctx.request(`/api/decks/${deckId}/review-links`, {
-        method: 'POST',
-        json: { role: 'view' },
-      })
-    ).json()) as { token: string };
-    const guest = cookieFrom(
-      await ctx.request(`/api/invites/${link.token}/join`, {
-        method: 'POST',
-        json: { name: 'Gast' },
-      }),
-    );
-    expect(
-      (await ctx.request(`/api/decks/${deckId}/sync`, { method: 'POST', cookie: guest })).status,
-    ).toBe(403);
-    // Guests may poll the status, but never see the owner's login link.
-    const status = await getJson(ctx, `/api/decks/${deckId}/status`, deckStatusSchema, guest);
-    expect(status.revisionNumber).toBe(1);
-
-    const [stranger] = await ctx.deps.db
-      .insert(users)
-      .values({ id: crypto.randomUUID(), name: 'Fremd', email: 'fremd@example.com', color: 'blue' })
-      .returning();
-    const strangers = await createWorkspace(ctx.deps.db, stranger!.id, 'Fremd');
-    await ctx.deps.db
-      .update(decks)
-      .set({ ownerId: stranger!.id, workspaceId: strangers.id })
-      .where(eq(decks.id, deckId));
-    expect((await ctx.request(`/api/decks/${deckId}/sync`, { method: 'POST' })).status).toBe(404);
-
-    const upload = await createDeckFromFile(ctx.deps, ctx, {
-      fileName: 'Upload.pptx',
-      bytes: pptxBytes('v1'),
-      source: 'upload',
-    });
-    await ctx.deps.queue.idle();
-    const res = await ctx.request(`/api/decks/${upload.id}/sync`, { method: 'POST' });
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({
-      error: {
-        code: 'bad_request',
-        message:
-          'Hochgeladene Präsentationen werden nicht automatisch aktualisiert. Lade eine neue Version hoch.',
-      },
-    });
   });
 });
 

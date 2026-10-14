@@ -62,7 +62,7 @@ describe('workspaces', () => {
   it('the dev owner has "Meine Organisation"; others found their own', async () => {
     const me = (await (await ctx.request('/api/me')).json()) as MeResponse;
     expect(me.workspaces).toEqual([
-      expect.objectContaining({ id: ctx.workspaceId, name: 'Meine Organisation', role: 'owner' }),
+      expect.objectContaining({ id: ctx.workspaceId, name: 'Meine Organisation', role: 'admin' }),
     ]);
     // One self-founded organisation per account (BER-130).
     expect(me.limits).toEqual({ canCreateWorkspace: false });
@@ -78,7 +78,7 @@ describe('workspaces', () => {
     expect(created).toMatchObject({
       name: 'Q4 Team',
       slug: 'q4-team',
-      role: 'owner',
+      role: 'admin',
       memberCount: 1,
       plan: 'free',
       usage: { members: 1, seatsUsed: 1, maxMembers: 5, decks: 0, maxDecks: 3 },
@@ -101,7 +101,7 @@ describe('workspaces', () => {
     ).toHaveLength(1);
   });
 
-  it('renames (admin+), deletes (owner only, with decks and files) and hides from outsiders', async () => {
+  it('renames and deletes (admins, with decks and files) and hides from outsiders', async () => {
     const admin = await member('Ada', 'admin');
     const reviewer = await member('Rita', 'reviewer');
     const outsider = await signedInUser(ctx, { name: 'Otto', email: 'otto@example.com' });
@@ -124,8 +124,11 @@ describe('workspaces', () => {
     });
 
     const { deckId, imageKeys } = await createReadyDeck(ctx);
-    expect((await ctx.request(path, { method: 'DELETE', cookie: admin.cookie })).status).toBe(403);
-    expect((await ctx.request(path, { method: 'DELETE' })).status).toBe(204);
+    expect((await ctx.request(path, { method: 'DELETE', cookie: reviewer.cookie })).status).toBe(
+      403,
+    );
+    // Any admin may delete it, not only its creator.
+    expect((await ctx.request(path, { method: 'DELETE', cookie: admin.cookie })).status).toBe(204);
     expect(await ctx.deps.db.select().from(decks).where(eq(decks.id, deckId))).toEqual([]);
     expect(await ctx.deps.storage.get(imageKeys[0] ?? '')).toBeNull();
     expect((await ctx.request(path)).status).toBe(404);
@@ -160,7 +163,7 @@ describe('deck rights by role', () => {
     ).toBe(403);
     expect((await upload(reviewer.cookie, ctx.workspaceId)).status).toBe(403);
     expect(
-      (await ctx.request(`/api/decks/${deckId}/review-links`, { cookie: reviewer.cookie })).status,
+      (await ctx.request(`/api/decks/${deckId}/share`, { cookie: reviewer.cookie })).status,
     ).toBe(403);
   });
 
@@ -186,7 +189,7 @@ describe('deck rights by role', () => {
     expect((await rename(ownersDeck)).status).toBe(403);
     expect(
       (
-        await ctx.request(`/api/decks/${ownersDeck}/review-links`, {
+        await ctx.request(`/api/decks/${ownersDeck}/share`, {
           method: 'POST',
           json: {},
           cookie: memberA.cookie,
@@ -259,7 +262,7 @@ describe('deck rights by role', () => {
 });
 
 describe('members', () => {
-  it('lists members; admins change roles below owner; only owners appoint owners', async () => {
+  it('lists members with the creator; admins change every role', async () => {
     const admin = await member('Ada', 'admin');
     const memberA = await member('Mia', 'member');
     const base = `/api/workspaces/${ctx.workspaceId}/members`;
@@ -269,27 +272,27 @@ describe('members', () => {
     const list = workspaceMemberSchema
       .array()
       .parse(await (await ctx.request(base, { cookie: memberA.cookie })).json());
-    expect(list.map((m) => [m.name, m.role])).toEqual([
-      ['Robert Hofmann', 'owner'],
-      ['Ada', 'admin'],
-      ['Mia', 'member'],
+    expect(list.map((m) => [m.name, m.role, m.isCreator])).toEqual([
+      ['Robert Hofmann', 'admin', true],
+      ['Ada', 'admin', false],
+      ['Mia', 'member', false],
     ]);
 
     expect((await setRole(memberA.user.id, 'reviewer', memberA.cookie)).status).toBe(403);
     expect((await setRole(memberA.user.id, 'admin', admin.cookie)).status).toBe(200);
-    expect((await setRole(memberA.user.id, 'owner', admin.cookie)).status).toBe(403);
-    expect((await setRole(ctx.ownerId, 'member', admin.cookie)).status).toBe(403);
-    // The last owner cannot step down …
-    const last = await setRole(ctx.ownerId, 'admin');
+    // Admins may demote other admins, the creator too.
+    expect((await setRole(ctx.ownerId, 'member', admin.cookie)).status).toBe(200);
+    expect((await setRole(memberA.user.id, 'member', admin.cookie)).status).toBe(200);
+    // The last admin cannot step down …
+    const last = await setRole(admin.user.id, 'member', admin.cookie);
     expect(last.status).toBe(400);
     expect(await json(last)).toMatchObject({ error: { code: 'bad_request' } });
     // … until there is another one.
-    expect((await setRole(admin.user.id, 'owner')).status).toBe(200);
-    expect((await setRole(ctx.ownerId, 'admin')).status).toBe(200);
+    expect((await setRole(memberA.user.id, 'admin', admin.cookie)).status).toBe(200);
+    expect((await setRole(admin.user.id, 'member', admin.cookie)).status).toBe(200);
   });
 
-  it('admins remove members; everyone may leave except the last owner', async () => {
-    const admin = await member('Ada', 'admin');
+  it('admins remove members; everyone may leave except the last admin', async () => {
     const reviewer = await member('Rita', 'reviewer');
     const memberA = await member('Mia', 'member');
     const base = `/api/workspaces/${ctx.workspaceId}/members`;
@@ -297,8 +300,7 @@ describe('members', () => {
       ctx.request(`${base}/${userId}`, { method: 'DELETE', cookie });
 
     expect((await remove(reviewer.user.id, memberA.cookie)).status).toBe(403);
-    expect((await remove(reviewer.user.id, admin.cookie)).status).toBe(204);
-    expect((await remove(ctx.ownerId, admin.cookie)).status).toBe(403);
+    expect((await remove(reviewer.user.id)).status).toBe(204);
     expect((await remove(memberA.user.id, memberA.cookie)).status).toBe(204);
     expect((await remove(ctx.ownerId)).status).toBe(400);
     expect(
@@ -306,38 +308,64 @@ describe('members', () => {
     ).toBe(404);
   });
 
-  const owners = async () =>
+  it('the last admin leaves by handing the organisation to a successor', async () => {
+    const memberA = await member('Mia', 'member');
+    const reviewer = await member('Rita', 'reviewer');
+    const base = `/api/workspaces/${ctx.workspaceId}/members`;
+    const leave = (successor: string, cookie?: string, who = ctx.ownerId) =>
+      ctx.request(`${base}/${who}?successor=${successor}`, { method: 'DELETE', cookie });
+
+    expect((await leave('nobody')).status).toBe(404);
+    expect((await leave(ctx.ownerId)).status).toBe(400);
+    // Only admins appoint admins, and only for themselves.
+    expect((await leave(reviewer.user.id, memberA.cookie, memberA.user.id)).status).toBe(403);
+    expect((await leave(memberA.user.id, undefined, reviewer.user.id)).status).toBe(400);
+
+    expect((await leave(memberA.user.id)).status).toBe(204);
+    const rows = await ctx.deps.db
+      .select()
+      .from(workspaceMembers)
+      .where(eq(workspaceMembers.workspaceId, ctx.workspaceId));
+    expect(rows.map((row) => [row.userId, row.role]).sort()).toEqual(
+      [
+        [memberA.user.id, 'admin'],
+        [reviewer.user.id, 'reviewer'],
+      ].sort(),
+    );
+  });
+
+  const admins = async () =>
     (
       await ctx.deps.db
         .select()
         .from(workspaceMembers)
         .where(eq(workspaceMembers.workspaceId, ctx.workspaceId))
-    ).filter((row) => row.role === 'owner');
+    ).filter((row) => row.role === 'admin');
 
-  it('two owners demoting each other at once leave one owner', async () => {
-    const other = await member('Olga', 'owner');
+  it('two admins demoting each other at once leave one admin', async () => {
+    const other = await member('Olga', 'admin');
     const base = `/api/workspaces/${ctx.workspaceId}/members`;
     const results = await Promise.all([
-      ctx.request(`${base}/${other.user.id}`, { method: 'PATCH', json: { role: 'admin' } }),
+      ctx.request(`${base}/${other.user.id}`, { method: 'PATCH', json: { role: 'member' } }),
       ctx.request(`${base}/${ctx.ownerId}`, {
         method: 'PATCH',
-        json: { role: 'admin' },
+        json: { role: 'member' },
         cookie: other.cookie,
       }),
     ]);
-    expect(results.map((res) => res.status).sort()).toEqual([200, 403]); // the loser is no owner any more
-    expect(await owners()).toHaveLength(1);
+    expect(results.map((res) => res.status).sort()).toEqual([200, 403]); // the loser is no admin any more
+    expect(await admins()).toHaveLength(1);
   });
 
-  it('two owners leaving at once leave one owner', async () => {
-    const other = await member('Olga', 'owner');
+  it('two admins leaving at once leave one admin', async () => {
+    const other = await member('Olga', 'admin');
     const base = `/api/workspaces/${ctx.workspaceId}/members`;
     const results = await Promise.all([
       ctx.request(`${base}/${ctx.ownerId}`, { method: 'DELETE' }),
       ctx.request(`${base}/${other.user.id}`, { method: 'DELETE', cookie: other.cookie }),
     ]);
     expect(results.map((res) => res.status).sort()).toEqual([204, 400]);
-    expect(await owners()).toHaveLength(1);
+    expect(await admins()).toHaveLength(1);
   });
 });
 
@@ -367,6 +395,7 @@ describe('invitations', () => {
       role: 'reviewer',
       email: 'l…a@firma.de',
       state: 'valid',
+      deck: null,
     });
 
     const max = await signedInUser(ctx, { name: 'Max', email: 'max@firma.de' });
@@ -490,5 +519,71 @@ describe('invitations', () => {
     expect(after.workspaces).toEqual([
       expect.objectContaining({ id: ctx.workspaceId, role: 'member' }),
     ]);
+  });
+});
+
+describe('sharing a deck (no guests)', () => {
+  const share = (deckId: string, body: { email?: string }, cookie?: string) =>
+    ctx.request(`/api/decks/${deckId}/share`, { method: 'POST', json: body, cookie });
+
+  it('invites into the organisation as viewer and leads to the deck', async () => {
+    const { deckId, slideIds } = await createReadyDeck(ctx);
+    const res = await share(deckId, {});
+    expect(res.status).toBe(201);
+    const created = createdWorkspaceInviteSchema.parse(await res.json());
+    expect(created.invite).toMatchObject({ role: 'viewer', deck: { id: deckId } });
+    const token = new URL(created.url).pathname.split('/').pop() ?? '';
+
+    const preview = joinPreviewSchema.parse(await json(await ctx.request(`/api/join/${token}`)));
+    expect(preview).toMatchObject({ role: 'viewer', deck: { id: deckId } });
+
+    const gesa = await signedInUser(ctx, { name: 'Gesa', email: 'gesa@extern.de' });
+    // Without joining, the deck does not exist for her.
+    expect((await ctx.request(`/api/decks/${deckId}`, { cookie: gesa.cookie })).status).toBe(404);
+    const joined = await ctx.request(`/api/join/${token}`, { method: 'POST', cookie: gesa.cookie });
+    expect(await json(joined)).toMatchObject({ deckId, workspace: { role: 'viewer' } });
+
+    const deck = deckSchema.parse(
+      await json(await ctx.request(`/api/decks/${deckId}`, { cookie: gesa.cookie })),
+    );
+    expect(deck.permissions).toEqual({ canManage: false, canComment: false });
+    const comment = await ctx.request(`/api/decks/${deckId}/comments`, {
+      method: 'POST',
+      json: pinComment(slideIds[0] ?? ''),
+      cookie: gesa.cookie,
+    });
+    expect(comment.status).toBe(403);
+
+    const shares = await json(await ctx.request(`/api/decks/${deckId}/share`));
+    expect(shares).toEqual([expect.objectContaining({ useCount: 1, deck: expect.anything() })]);
+  });
+
+  it('members share their own decks, reviewers and viewers none', async () => {
+    const mia = await member('Mia', 'member');
+    const res = await upload(mia.cookie, ctx.workspaceId);
+    const own = deckSchema.parse(await res.json());
+    await ctx.deps.queue.idle();
+    const { deckId: ownersDeck } = await createReadyDeck(ctx);
+
+    expect((await share(own.id, {}, mia.cookie)).status).toBe(201);
+    expect((await share(ownersDeck, {}, mia.cookie)).status).toBe(403);
+    const reviewer = await member('Rita', 'reviewer');
+    expect((await share(ownersDeck, {}, reviewer.cookie)).status).toBe(403);
+    const viewer = await member('Vera', 'viewer');
+    expect((await share(ownersDeck, {}, viewer.cookie)).status).toBe(403);
+  });
+
+  it('lets the person who shared revoke the invite', async () => {
+    const mia = await member('Mia', 'member');
+    const own = deckSchema.parse(await (await upload(mia.cookie, ctx.workspaceId)).json());
+    await ctx.deps.queue.idle();
+    const created = createdWorkspaceInviteSchema.parse(
+      await json(await share(own.id, { email: 'neu@extern.de' }, mia.cookie)),
+    );
+    const revoke = await ctx.request(`/api/workspace-invites/${created.invite.id}`, {
+      method: 'DELETE',
+      cookie: mia.cookie,
+    });
+    expect(revoke.status).toBe(204);
   });
 });

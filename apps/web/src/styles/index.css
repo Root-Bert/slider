@@ -33,6 +33,8 @@
   --color-danger: #ff3b30;
   --color-powerpoint: #d35230;
   --color-libreoffice: #18a303;
+  --color-onedrive: #0078d4;
+  --color-sharepoint: #038387;
   --color-mention: #5c8aff;
 
   /* Reviewer accents – pins, connector lines, drawings (BER-99) */
@@ -46,6 +48,7 @@
   --color-ring-blue: #c8f1ff;
   --color-ring-violet: #dad0fc;
   --color-ring-yellow: #fff7b8;
+  --color-ring-powerpoint: #f6c9b8;
 
   /*
    * Corner radii – one small scale, slightly boxy throughout (no capsules for controls). Nested
@@ -76,6 +79,8 @@
   --animate-rise-in: rise-in 320ms cubic-bezier(0.2, 0.9, 0.3, 1) backwards;
   /* Countdown bar of a transient notice; the user sets the duration (`animation-duration`). */
   --animate-countdown: shrink-x 6s linear forwards;
+  /* Friendly little jump, e.g. the logo when clicked while already home. */
+  --animate-hop: hop 420ms cubic-bezier(0.3, 0.7, 0.4, 1);
 
   @keyframes fade-in {
     from {
@@ -98,6 +103,17 @@
     from {
       opacity: 0;
       transform: translateX(-8px);
+    }
+  }
+  @keyframes hop {
+    30% {
+      transform: translateY(-5px) rotate(-4deg);
+    }
+    55% {
+      transform: translateY(0) rotate(0);
+    }
+    72% {
+      transform: translateY(-1.5px);
     }
   }
   @keyframes shrink-x {
@@ -129,6 +145,15 @@
   background-color: rgb(30 30 30 / 0.5);
   backdrop-filter: blur(24px) saturate(140%);
   -webkit-backdrop-filter: blur(24px) saturate(140%);
+}
+
+/* Buttons and control pills: the side panel's tint, but a light blur, so connector lines and the
+   dot grid stay faintly visible behind them. */
+@utility glass-control {
+  background-color: rgb(40 40 40 / 0.25);
+  backdrop-filter: blur(4px) saturate(140%);
+  -webkit-backdrop-filter: blur(4px) saturate(140%);
+  box-shadow: inset 0 0 0 1px var(--color-hairline);
 }
 
 /* Opaque variant for overlays that sit above busy content (dialogs, popovers, panels). */
@@ -204,5 +229,121 @@
       transition-duration: 0.01ms !important;
       scroll-behavior: auto !important;
     }
+  }
+}
+
+/* ── Import stage (deck page while a deck imports, BER-97) ─────────────────────
+   Placeholder slides are dealt onto the track, riffle while the slides are being found, fill in
+   as they render and dissolve into the real viewer at the end. Loops only run with motion allowed
+   (the stage checks `prefers-reduced-motion`); one-shot animations are cut short by the rule above. */
+@keyframes import-deal {
+  from {
+    opacity: 0;
+    transform: translate3d(min(64vw, 820px), 48px, 0) rotate(9deg) scale(0.86);
+  }
+  45% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes import-riffle {
+  0%,
+  56% {
+    opacity: 1;
+    transform: none;
+  }
+  66% {
+    opacity: 0;
+    transform: translate3d(0, -40px, 0) rotate(-4deg) scale(0.92);
+  }
+  67% {
+    opacity: 0;
+    transform: translate3d(96px, 24px, 0) rotate(6deg) scale(0.92);
+  }
+  82%,
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes import-leave {
+  to {
+    opacity: 0;
+    transform: translate3d(48px, -56px, 0) rotate(7deg) scale(0.85);
+  }
+}
+@keyframes import-grow-y {
+  from {
+    transform: scaleY(0);
+  }
+}
+@keyframes import-pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.6);
+  }
+}
+@keyframes import-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+@keyframes import-print {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes import-scan {
+  from {
+    opacity: 0;
+    transform: translateY(0);
+  }
+  12%,
+  88% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+}
+@keyframes import-glow {
+  50% {
+    box-shadow:
+      inset 0 0 0 1px rgb(255 255 255 / 0.32),
+      0 0 40px rgb(255 255 255 / 0.07);
+  }
+}
+@keyframes import-sheen {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(110%);
+  }
+}
+@keyframes import-dissolve {
+  to {
+    opacity: 0;
+    filter: blur(8px);
+    transform: scale(1.02);
+  }
+}
+@keyframes import-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes import-card-out {
+  to {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
   }
 }

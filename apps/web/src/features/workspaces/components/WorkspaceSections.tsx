@@ -2,9 +2,14 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { workspaceNameSchema, type Workspace } from '@slider/shared';
 import { routes } from '@/app/routes';
-import { useDeleteWorkspace, useRemoveMember, useRenameWorkspace } from '@/lib/workspace-queries';
-import { Badge, Button, Dialog, TextField, type ShowToast } from '@/ui';
-import { canRenameWorkspace, ROLE_HINTS, ROLE_LABELS } from '../lib/roles';
+import {
+  useDeleteWorkspace,
+  useMembers,
+  useRemoveMember,
+  useRenameWorkspace,
+} from '@/lib/workspace-queries';
+import { Badge, Button, Dialog, Select, TextField, type ShowToast } from '@/ui';
+import { canRenameWorkspace, isLastAdmin, ROLE_HINTS, ROLE_LABELS } from '../lib/roles';
 import { SettingsSection } from './SettingsSection';
 
 export function GeneralSection({
@@ -24,9 +29,7 @@ export function GeneralSection({
     <SettingsSection
       title="Allgemein"
       description={
-        editable
-          ? 'Den Namen sehen alle Mitglieder.'
-          : 'Nur Admins und Owner können den Namen ändern.'
+        editable ? 'Den Namen sehen alle Mitglieder.' : 'Nur Admins können den Namen ändern.'
       }
     >
       <form
@@ -69,6 +72,10 @@ export function GeneralSection({
   );
 }
 
+/**
+ * Leaving. The last admin hands the organisation to another member first – picked right in the
+ * dialog, they become admin in the same step. Alone in it, only deleting is left.
+ */
 export function LeaveSection({
   workspace,
   userId,
@@ -80,14 +87,36 @@ export function LeaveSection({
 }) {
   const [confirming, setConfirming] = useState(false);
   const leave = useRemoveMember(workspace.id);
+  const members = useMembers(workspace.id);
   const navigate = useNavigate();
+  const list = members.data ?? [];
+  // Viewers only look – they cannot take the organisation over (the API refuses too).
+  const others = list.filter((member) => member.userId !== userId && member.role !== 'viewer');
+  const mustHandOver = isLastAdmin(
+    workspace.role,
+    list.filter((member) => member.role === 'admin').length,
+  );
+  const [picked, setPicked] = useState<string | null>(null);
+  const successor = others.find((member) => member.userId === picked) ?? others[0];
+  const alone = mustHandOver && members.isSuccess && others.length === 0;
 
   return (
     <SettingsSection
       title="Organisation verlassen"
-      description="Du verlierst den Zugriff auf die Präsentationen dieser Organisation. Deine Präsentationen und Kommentare bleiben hier. Als einziger Owner ernenne zuerst jemand anderen."
+      description={
+        alone
+          ? 'Du bist allein in dieser Organisation. Lade jemanden ein und übergib sie, oder lösche sie.'
+          : mustHandOver
+            ? 'Du verlierst den Zugriff auf die Präsentationen dieser Organisation. Als einziger Admin übergibst du sie beim Verlassen an ein anderes Mitglied – danach kannst du eine neue eigene gründen.'
+            : 'Du verlierst den Zugriff auf die Präsentationen dieser Organisation. Deine Präsentationen und Kommentare bleiben hier.'
+      }
       aside={
-        <Button variant="secondary" icon="logout" onClick={() => setConfirming(true)}>
+        <Button
+          variant="secondary"
+          icon="logout"
+          disabled={alone || (mustHandOver && !members.isSuccess)}
+          onClick={() => setConfirming(true)}
+        >
           Verlassen
         </Button>
       }
@@ -96,7 +125,11 @@ export function LeaveSection({
         open={confirming}
         onClose={() => setConfirming(false)}
         title={`„${workspace.name}“ verlassen?`}
-        description="Zurück kommst du nur mit einer neuen Einladung."
+        description={
+          mustHandOver && successor
+            ? `${successor.name} wird Admin und verwaltet die Organisation weiter. Zurück kommst du nur mit einer neuen Einladung.`
+            : 'Zurück kommst du nur mit einer neuen Einladung.'
+        }
         footer={
           <>
             <Button variant="ghost" onClick={() => setConfirming(false)}>
@@ -106,20 +139,37 @@ export function LeaveSection({
               variant="danger"
               loading={leave.isPending}
               onClick={() =>
-                leave.mutate(userId, {
-                  onSuccess: () => void navigate(routes.reviews(), { replace: true }),
-                  onError: (error) => {
-                    setConfirming(false);
-                    onNotify(error.message, 'danger');
+                leave.mutate(
+                  { userId, successor: mustHandOver ? successor?.userId : undefined },
+                  {
+                    onSuccess: () => void navigate(routes.reviews(), { replace: true }),
+                    onError: (error) => {
+                      setConfirming(false);
+                      onNotify(error.message, 'danger');
+                    },
                   },
-                })
+                )
               }
             >
-              Verlassen
+              {mustHandOver ? 'Übergeben & verlassen' : 'Verlassen'}
             </Button>
           </>
         }
-      />
+      >
+        {mustHandOver && successor && (
+          <label className="flex flex-col gap-1.5 text-[13px] text-fg-muted">
+            Neuer Admin
+            <Select<string>
+              value={successor.userId}
+              onChange={setPicked}
+              options={others.map((member) => ({
+                value: member.userId,
+                label: `${member.name} · ${ROLE_LABELS[member.role]}`,
+              }))}
+            />
+          </label>
+        )}
+      </Dialog>
     </SettingsSection>
   );
 }

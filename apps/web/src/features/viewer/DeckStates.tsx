@@ -43,12 +43,3 @@ export function DeckLoading() {
     </main>
   );
 }
-
-export function SessionEnded() {
-  return (
-    <CenteredMessage
-      title="Danke für dein Feedback"
-      message="Deine Kommentare sind gespeichert. Du kannst dieses Fenster jetzt schließen."
-    />
-  );
-}

@@ -12,11 +12,9 @@ import { commentsRoutes } from './routes/comments';
 import { decksRoutes } from './routes/decks';
 import { filePickerRoutes } from './routes/file-picker';
 import { filesRoutes } from './routes/files';
-import { invitesRoutes } from './routes/invites';
 import { mediaRoutes } from './routes/media';
 import { meRoutes } from './routes/me';
 import { passkeysRoutes } from './routes/passkeys';
-import { reviewLinksRoutes } from './routes/review-links';
 import { setupRoutes } from './routes/setup';
 import { syncRoutes } from './routes/sync';
 import { workspacesRoutes } from './routes/workspaces';
@@ -44,8 +42,6 @@ export function createApp(deps: AppDeps) {
     .route('/', syncRoutes(deps))
     .route('/', commentsRoutes(deps))
     .route('/', mediaRoutes(deps))
-    .route('/', reviewLinksRoutes(deps))
-    .route('/', invitesRoutes(deps))
     .route('/', workspacesRoutes(deps))
     .route('/', authRoutes(deps))
     .route('/', passkeysRoutes(deps))

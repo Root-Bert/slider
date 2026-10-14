@@ -18,6 +18,7 @@ import {
   usePasskeys,
   useRegisterPasskey,
   useRenamePasskey,
+  useUnlinkIdentity,
 } from '@/lib/workspace-queries';
 import { Badge, Button, Dialog, Icon, Menu, Spinner, TextField, type ShowToast } from '@/ui';
 
@@ -41,15 +42,19 @@ const providerIcon = (provider: LoginIdentity['provider']): ReactNode =>
     <Icon name={provider === 'email' ? 'at' : 'key'} size={20} className="text-fg-muted" />
   );
 
-export function LoginsSection({ microsoftConnected }: { microsoftConnected: boolean }) {
+export function LoginsSection({
+  microsoftConnected,
+  onNotify,
+}: {
+  microsoftConnected: boolean;
+  onNotify: ShowToast;
+}) {
   const identities = useIdentities();
   const providers = useAuthProviders();
+  const [unlinking, setUnlinking] = useState<LoginIdentity | null>(null);
   const connected = new Set(identities.data?.map((identity) => identity.provider));
-  // Google and SSO can be added while signed in; Microsoft links itself on its first login.
   const linkable =
-    providers.data?.providers.filter(
-      (provider) => provider.id !== 'microsoft' && !connected.has(provider.id),
-    ) ?? [];
+    providers.data?.providers.filter((provider) => !connected.has(provider.id)) ?? [];
 
   return (
     <SettingsSection
@@ -75,20 +80,34 @@ export function LoginsSection({ microsoftConnected }: { microsoftConnected: bool
                   {PROVIDER_LABELS[identity.provider]}
                 </span>
                 <span className="truncate text-xs text-fg-subtle">
-                  {identity.email ?? '–'} · seit{' '}
-                  <span title={formatDateTime(identity.createdAt)}>
-                    {formatRelativeTime(identity.createdAt)}
-                  </span>
+                  {identity.email ?? '–'}
                 </span>
               </span>
               {identity.provider === 'microsoft' && microsoftConnected && (
-                <Badge tone="success">Dateizugriff</Badge>
+                <span title="Verbunden mit OneDrive & SharePoint" className="text-fg-subtle">
+                  <Icon name="cloud" size={18} label="Verbunden mit OneDrive & SharePoint" />
+                </span>
+              )}
+              {identity.provider !== 'email' && (
+                <Menu
+                  label={`Aktionen für ${PROVIDER_LABELS[identity.provider]}`}
+                  actions={[
+                    {
+                      label: 'Trennen',
+                      icon: 'delete',
+                      tone: 'danger',
+                      onSelect: () => setUnlinking(identity),
+                    },
+                  ]}
+                />
               )}
             </li>
           ))}
           {identities.data.length === 0 && (
             <li className="text-[13px] text-fg-subtle">
-              Noch keine Anmeldung verknüpft (Entwicklungsmodus).
+              {providers.data?.devLogin
+                ? 'Entwicklungsmodus: Du bist ohne Anmeldung drin.'
+                : 'Noch keine Anmeldung verknüpft.'}
             </li>
           )}
           {linkable.map((provider) => (
@@ -117,7 +136,57 @@ export function LoginsSection({ microsoftConnected }: { microsoftConnected: bool
           ))}
         </ul>
       )}
+      {unlinking && (
+        <UnlinkDialog identity={unlinking} onClose={() => setUnlinking(null)} onNotify={onNotify} />
+      )}
     </SettingsSection>
+  );
+}
+
+function UnlinkDialog({
+  identity,
+  onClose,
+  onNotify,
+}: {
+  identity: LoginIdentity;
+  onClose: () => void;
+  onNotify: ShowToast;
+}) {
+  const unlink = useUnlinkIdentity();
+  const label = PROVIDER_LABELS[identity.provider];
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={`${label} trennen?`}
+      description={
+        identity.provider === 'microsoft'
+          ? `Mit ${identity.email ?? 'diesem Microsoft-Konto'} kommst du dann nicht mehr in dieses Konto, und Slider verliert den Zugriff auf deine OneDrive- und SharePoint-Dateien. Du kannst Microsoft jederzeit wieder verbinden.`
+          : `Mit ${identity.email ?? `diesem ${label}-Konto`} kommst du dann nicht mehr in dieses Konto. Du kannst es jederzeit wieder verbinden.`
+      }
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Abbrechen
+          </Button>
+          <Button
+            variant="danger"
+            loading={unlink.isPending}
+            onClick={() =>
+              unlink.mutate(identity.id, {
+                onSuccess: () => {
+                  onNotify(`${label} getrennt`);
+                  onClose();
+                },
+                onError: (error) => onNotify(error.message, 'danger'),
+              })
+            }
+          >
+            Trennen
+          </Button>
+        </>
+      }
+    />
   );
 }
 

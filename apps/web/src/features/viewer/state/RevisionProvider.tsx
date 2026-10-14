@@ -44,7 +44,7 @@ export function RevisionProvider({ children }: { children: ReactNode }) {
   const statusRevision = status.data?.revisionNumber;
   const reloadedFor = useRef(deck.revisionNumber);
   useEffect(() => {
-    // Reloaded by other means already (e.g. after "Neu laden").
+    // Reloaded by other means already (e.g. after uploading a new version).
     reloadedFor.current = Math.max(reloadedFor.current, deck.revisionNumber);
   }, [deck.revisionNumber]);
   useEffect(() => {

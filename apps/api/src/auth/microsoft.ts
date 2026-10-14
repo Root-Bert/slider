@@ -233,9 +233,23 @@ export class MicrosoftTokens {
   }
 
   /** "Connect for file access" of a signed-in account: trades the code and stores the tokens. */
-  async completeLogin(userId: string, code: string, verifier: string): Promise<void> {
-    const tokens = await exchangeCode(this.requireConfig(), this.fetch, code, verifier);
+  async completeLogin(
+    userId: string,
+    code: string,
+    verifier: string,
+    nonce: string,
+  ): Promise<IdTokenClaims | null> {
+    const config = this.requireConfig();
+    const tokens = await exchangeCode(config, this.fetch, code, verifier);
     await this.saveTokens(userId, tokens);
+    if (!tokens.id_token) return null;
+    try {
+      return this.validateLoginToken(config, tokens.id_token, nonce);
+    } catch (error) {
+      // File access stands on its own; only the login link is skipped.
+      this.deps.log.warn('Microsoft ID token on connect not valid', error);
+      return null;
+    }
   }
 
   /**
@@ -284,7 +298,11 @@ export class MicrosoftTokens {
     if (!tokens.id_token) {
       throw new MicrosoftAuthError('failed', 'no_id_token', 'openid was not granted');
     }
-    const claims = validateIdToken(tokens.id_token, {
+    return { claims: this.validateLoginToken(config, tokens.id_token, nonce), tokens };
+  }
+
+  private validateLoginToken(config: MicrosoftConfig, idToken: string, nonce: string) {
+    return validateIdToken(idToken, {
       // Multi-tenant (`common`): the issuer names the tenant of the account.
       issuer: (iss, all) =>
         typeof all['tid'] === 'string' &&
@@ -293,7 +311,6 @@ export class MicrosoftTokens {
       nonce,
       now: this.deps.clock.now(),
     });
-    return { claims, tokens };
   }
 
   /** Stores the refresh token (encrypted) for `userId` and caches the access token. */

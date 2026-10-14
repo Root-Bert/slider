@@ -12,13 +12,13 @@ interface DeckCollectionProps {
 }
 
 const GRID_CLASSES =
-  'grid grid-cols-1 gap-x-7 gap-y-8 min-[700px]:grid-cols-2 min-[1200px]:grid-cols-3';
+  'grid grid-cols-1 gap-x-14 gap-y-16 min-[700px]:grid-cols-2 min-[1200px]:grid-cols-3';
 
 export function DeckCollection({ decks, view, isUnseen, onNotify }: DeckCollectionProps) {
   const Item = view === 'grid' ? DeckCard : DeckRow;
   return (
     <ul
-      className={view === 'grid' ? GRID_CLASSES : 'glass flex flex-col gap-0.5 rounded-panel p-1.5'}
+      className={view === 'grid' ? GRID_CLASSES : 'glass flex flex-col gap-1 rounded-panel p-1.5'}
     >
       {decks.map((deck) => (
         <li key={deck.id} className="min-w-0">
@@ -33,7 +33,7 @@ export function DeckCollectionSkeleton({ view, count = 6 }: { view: DeckView; co
   const items = Array.from({ length: count }, (_, index) => index);
   if (view === 'list') {
     return (
-      <div className="glass flex flex-col gap-0.5 rounded-panel p-1.5" aria-hidden>
+      <div className="glass flex flex-col gap-1 rounded-panel p-1.5" aria-hidden>
         {items.map((index) => (
           <div key={index} className="flex items-center gap-4 px-3 py-2.5">
             <div className="skeleton aspect-video w-24 rounded-badge" />

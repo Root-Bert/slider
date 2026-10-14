@@ -7,7 +7,7 @@ type GlassPanelProps<T extends ElementType> = {
   tone?: 'default' | 'elevated';
 } & Omit<ComponentPropsWithoutRef<T>, 'as'>;
 
-/** UI kit "Pill / Glass": the frosted container used for every floating control. */
+/** UI kit "Pill / Glass": the frosted container used for every floating control (`glass-control`). */
 export function GlassPanel<T extends ElementType = 'div'>({
   as,
   tone = 'default',
@@ -17,7 +17,7 @@ export function GlassPanel<T extends ElementType = 'div'>({
   const Component: ElementType = as ?? 'div';
   return (
     <Component
-      className={cn(tone === 'elevated' ? 'glass-elevated' : 'glass', 'rounded-panel', className)}
+      className={cn(tone === 'elevated' ? 'glass-elevated' : 'glass-control', 'rounded-panel', className)}
       {...props}
     />
   );

@@ -110,7 +110,7 @@ export const revisionSchema = z.object({
 });
 export type Revision = z.infer<typeof revisionSchema>;
 
-/** Response of `POST /decks/:deckId/sync`. Failures come back here, never as HTTP errors. */
+/** Result of a sync check or of `POST /decks/:deckId/revisions`. Failures come back here, never as HTTP errors. */
 export const syncResultSchema = z.object({
   status: z.enum(['unchanged', 'updated', 'queued', 'error']),
   revisionId: z.string().optional(),

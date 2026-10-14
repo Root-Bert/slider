@@ -2,12 +2,12 @@ import { createBrowserRouter } from 'react-router';
 import { RouteError } from './RouteError';
 
 /**
- * Feature pages are lazy-loaded so the guest entry and the viewer don't ship the whole app.
+ * Feature pages are lazy-loaded so the viewer doesn't ship the whole app.
  * Each page module exports `Component` (React Router lazy-route convention).
  *
  * Member pages sit below `AccountGate` (signed-out visitors go to `/login?returnTo=…`); the
- * guest entry `/r/:token`, the deck viewer (guests and members), login and the invitation
- * page stay outside it.
+ * deck viewer (sends signed-out visitors to the login itself), login and the invitation page
+ * stay outside it. There are no guests: sharing invites into the organisation.
  */
 export const router = createBrowserRouter([
   {
@@ -21,13 +21,13 @@ export const router = createBrowserRouter([
       { path: 'einrichtung', lazy: () => import('@/features/setup/SetupPage') },
       { path: 'join/:token', lazy: () => import('@/features/workspaces/JoinPage') },
       { path: 'd/:deckId', lazy: () => import('@/features/viewer/DeckPage') },
-      { path: 'r/:token', lazy: () => import('@/features/sharing/GuestEntryPage') },
       {
         lazy: () => import('@/features/auth/AccountGate'),
         children: [
           { index: true, lazy: () => import('@/features/workspaces/HomePage') },
           { path: 'neu', lazy: () => import('@/features/onboarding/NewReviewPage') },
           { path: 'konto', lazy: () => import('@/features/account/AccountPage') },
+          { path: 'einstellungen', lazy: () => import('@/features/account/PreferencesPage') },
           {
             path: 'w/:workspaceId',
             lazy: () => import('@/features/workspaces/WorkspaceLayout'),

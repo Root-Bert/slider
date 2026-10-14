@@ -1,6 +1,7 @@
 import type { Rect } from '@slider/shared';
 import type { ReactNode } from 'react';
 import { cn } from '@/ui';
+import { FrameEdges } from './RectFrame';
 import { FRAME_ATTR, useRectEdit, type RectCorner } from '../hooks/useRectEdit';
 
 const CORNERS: { corner: RectCorner; className: string }[] = [
@@ -19,11 +20,15 @@ interface EditableFrameProps {
   onPreview?: (rect: Rect | null) => void;
   /** A click (not a drag) on the box. */
   onActivate?: () => void;
+  /** A double click on the box. */
+  onDoubleClick?: () => void;
   /** Show the corner handles (always for the draft, on hover/focus for a sent box). */
   handles: boolean;
   emphasized?: boolean;
   /** A comment's mark: connector lines pass behind it. */
   isMark?: boolean;
+  /** Only the border takes the pointer; what lies inside the box stays reachable. */
+  edgesOnly?: boolean;
   title?: string;
   className?: string;
   children?: ReactNode;
@@ -39,9 +44,11 @@ export function EditableFrame({
   onCommit,
   onPreview,
   onActivate,
+  onDoubleClick,
   handles,
   emphasized = false,
   isMark = false,
+  edgesOnly = false,
   title,
   className,
   children,
@@ -60,8 +67,16 @@ export function EditableFrame({
         event.stopPropagation();
         if (!edit.wasDragged()) onActivate?.();
       }}
+      onDoubleClick={
+        onDoubleClick &&
+        ((event) => {
+          event.stopPropagation();
+          onDoubleClick();
+        })
+      }
       className={cn(
-        'pointer-events-auto absolute cursor-move touch-none rounded-thumb border-2',
+        'absolute cursor-move touch-none rounded-thumb border-2',
+        edgesOnly ? 'pointer-events-none' : 'pointer-events-auto',
         lit && 'z-10',
         className,
       )}
@@ -74,6 +89,7 @@ export function EditableFrame({
         boxShadow: lit ? `0 0 0 3px color-mix(in srgb, ${color} 30%, transparent)` : undefined,
       }}
     >
+      {edgesOnly && <FrameEdges />}
       {children}
       {(handles || edit.dragging) &&
         CORNERS.map(({ corner, className: position }) => (
@@ -82,7 +98,10 @@ export function EditableFrame({
             role="presentation"
             title="Größe ändern"
             {...edit.cornerProps(corner)}
-            className={cn('absolute size-3 touch-none rounded-[3px] bg-white', position)}
+            className={cn(
+              'pointer-events-auto absolute size-3 touch-none rounded-[3px] bg-white',
+              position,
+            )}
             style={{ boxShadow: `0 0 0 1.5px ${color}` }}
           />
         ))}

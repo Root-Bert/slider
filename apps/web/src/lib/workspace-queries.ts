@@ -92,6 +92,19 @@ export function useDeletePasskey() {
   });
 }
 
+/** Unlinking Microsoft also drops its file access, which `/me` reports. */
+export function useUnlinkIdentity() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/me/identities/${encodeURIComponent(id)}`),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: workspaceKeys.identities }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.me }),
+      ]),
+  });
+}
+
 /** Signs out. The caller then loads the login page fresh, which also drops every cached response. */
 export const useLogout = () => useMutation({ mutationFn: () => api.post<void>('/auth/logout') });
 
@@ -163,7 +176,11 @@ export function useRemoveMember(workspaceId: string) {
   const queryClient = useQueryClient();
   const reloadMembership = useReloadMembership();
   return useMutation({
-    mutationFn: (userId: string) => api.delete(`/workspaces/${workspaceId}/members/${userId}`),
+    /** `successor`: the last owner leaves and hands the organisation to this member. */
+    mutationFn: ({ userId, successor }: { userId: string; successor?: string }) =>
+      api.delete(
+        `/workspaces/${workspaceId}/members/${userId}${successor ? `?successor=${encodeURIComponent(successor)}` : ''}`,
+      ),
     // Awaited: after leaving, the start page must not pick the workspace just left.
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: workspaceKeys.members(workspaceId) });

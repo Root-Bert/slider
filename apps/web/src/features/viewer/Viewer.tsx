@@ -1,10 +1,10 @@
 import { useRef } from 'react';
-import { AvatarStack, cn, Toast, useToast } from '@/ui';
+import { cn, Toast, useToast } from '@/ui';
 import { CommentFilterBar } from './comments/CommentFilterBar';
 import { Composer } from './comments/Composer';
 import { ThreadPanel } from './comments/ThreadPanel';
-import { ColorPicker } from './controls/ColorPicker';
-import { RevisionControls } from './controls/RevisionControls';
+import { ParticipantAvatars } from './controls/ParticipantAvatars';
+import { RevisionControls, UploadRevisionControl } from './controls/RevisionControls';
 import { SessionControls } from './controls/SessionControls';
 import { SlideCounter } from './controls/SlideCounter';
 import { ToolBar } from './controls/ToolBar';
@@ -26,10 +26,9 @@ import { Timeline } from './timeline/Timeline';
  * behaviour lives in the hooks and the components. The root is the fullscreen target, so
  * floating controls and panels stay visible in fullscreen.
  */
-export function Viewer({ onLeave }: { onLeave: () => void }) {
+export function Viewer() {
   const rootRef = useRef<HTMLDivElement>(null);
-  const { deck, viewer } = useViewerData();
-  const others = deck.participants.filter((person) => person.id !== viewer.author.id);
+  const { deck } = useViewerData();
   const { activeSlideId, threadPanelOpen: threadOpen, deletedPanelOpen } = useViewerState();
   // Thread panel and deleted slides panel share the right side.
   const threadPanelOpen = threadOpen || deletedPanelOpen;
@@ -59,27 +58,25 @@ export function Viewer({ onLeave }: { onLeave: () => void }) {
             <div className="flex flex-wrap items-center gap-3 md:flex-nowrap">
               <ToolBar />
               <CommentFilterBar />
+              <UploadRevisionControl />
               {/* Figma 87:359: right-aligned, 10px apart. */}
               <div className="ml-auto flex shrink-0 items-center gap-2.5">
                 <RevisionControls />
                 <SlideCounter className="md:@max-[740px]:hidden" />
-                <SessionControls onLeave={onLeave} />
+                <SessionControls />
               </div>
             </div>
           }
         />
 
-        {/* Bottom right: who else is here, then you – click yourself to pick your colour. Moves left of the side panel when that opens. */}
+        {/* Bottom right: who else is here, then you – hover for the name, click to pick a colour. Moves left of the side panel when that opens. */}
         <div
           className={cn(
             'fixed right-4 bottom-4 z-30 transition-[right] duration-300 md:right-6 md:bottom-6',
             threadPanelOpen && 'max-md:hidden md:right-[424px]',
           )}
         >
-          <div role="group" aria-label="Teilnehmende" className="flex items-center gap-1.5">
-            <AvatarStack authors={others} size={32} max={5} />
-            <ColorPicker />
-          </div>
+          <ParticipantAvatars />
         </div>
 
         <Composer />

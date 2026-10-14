@@ -1,18 +1,11 @@
 import type { DeckSync, SyncError } from '@slider/shared';
 import { useState } from 'react';
 import { formatDateTime, formatRelativeTime } from '@/lib/format';
-import { useSyncDeck } from '@/lib/queries';
 import { Button, cn, Icon, IconButton, Spinner, type IconName } from '@/ui';
-import {
-  bannerSyncError,
-  isLoginError,
-  syncErrorTitle,
-  syncResultMessage,
-} from '../lib/revision-changes';
+import { bannerSyncError, isLoginError, syncErrorTitle } from '../lib/revision-changes';
 import { dismissSyncError, isSyncErrorDismissed } from '../lib/seen-revisions';
 import { useRevisionData } from '../state/revision-data';
 import { useViewerData } from '../state/viewer-data';
-import { useViewerToast } from '../state/viewer-toast';
 
 const relativeOrJustNow = (iso: string) => {
   const text = formatRelativeTime(iso);
@@ -22,7 +15,7 @@ const relativeOrJustNow = (iso: string) => {
 /**
  * Status banners at the top of the viewer, above the slide track: a change is being taken over,
  * or the automatic update failed (Figma A3). A new version that loaded fine is no banner – it is
- * a short notice next to "Neu laden" (`RevisionNotice`).
+ * a short notice in the controls row (`RevisionNotice`).
  *
  * They take their own room in the layout instead of floating over the track: the track gets
  * that much shorter while a banner shows, so no slide title or comment pin is ever hidden or
@@ -66,9 +59,7 @@ function PendingBanner({ sync }: { sync: DeckSync }) {
 
 function ErrorBanner({ error }: { error: SyncError }) {
   const { deck, canManage } = useViewerData();
-  const { revisionNumber, isLinked } = useRevisionData();
-  const syncDeck = useSyncDeck(deck.id);
-  const showToast = useViewerToast();
+  const { revisionNumber } = useRevisionData();
   const [dismissed, setDismissed] = useState(() => isSyncErrorDismissed(deck.id, error.at));
   const [expanded, setExpanded] = useState(false);
   if (dismissed) return null;
@@ -77,39 +68,17 @@ function ErrorBanner({ error }: { error: SyncError }) {
     dismissSyncError(deck.id, error.at);
     setDismissed(true);
   };
-  const retry = () =>
-    syncDeck.mutate(undefined, {
-      onSuccess: (result) => {
-        const message = syncResultMessage(result);
-        if (message) showToast(message.text, message.tone);
-      },
-      onError: (failure) => showToast(failure.message, 'danger'),
-    });
   const login = canManage && isLoginError(error.code) && error.loginUrl;
-  // Only link imports can be checked again; uploads get a new version by hand.
-  const canRetry = canManage && isLinked;
   const icon: IconName =
     isLoginError(error.code) || error.code === 'access_revoked' ? 'lock' : 'warning';
   const title = syncErrorTitle(error.code);
   const signIn = () => window.location.assign(error.loginUrl!);
 
-  const actions = (login || canRetry) && (
+  const actions = login && (
     <div className={cn('flex flex-wrap items-center gap-2 pt-2', !expanded && 'max-sm:hidden')}>
-      {login && (
-        <Button size="sm" onClick={signIn}>
-          Mit Microsoft anmelden
-        </Button>
-      )}
-      {canRetry && (
-        <Button
-          size="sm"
-          variant={login ? 'secondary' : 'primary'}
-          loading={syncDeck.isPending}
-          onClick={retry}
-        >
-          Erneut versuchen
-        </Button>
-      )}
+      <Button size="sm" onClick={signIn}>
+        Mit Microsoft anmelden
+      </Button>
     </div>
   );
 
@@ -163,21 +132,11 @@ function ErrorBanner({ error }: { error: SyncError }) {
         {actions}
       </div>
       {/* Phones, collapsed: the one action that fixes it, next to the title. */}
-      {!expanded && (login || canRetry) && (
+      {!expanded && login && (
         <div className="shrink-0 sm:hidden">
-          {login ? (
-            <Button size="sm" onClick={signIn}>
-              Anmelden
-            </Button>
-          ) : (
-            <IconButton
-              icon="sync"
-              label="Erneut versuchen"
-              size="sm"
-              disabled={syncDeck.isPending}
-              onClick={retry}
-            />
-          )}
+          <Button size="sm" onClick={signIn}>
+            Anmelden
+          </Button>
         </div>
       )}
       <IconButton icon="close" label="Hinweis schließen" size="sm" onClick={dismiss} />

@@ -276,6 +276,65 @@ describe('Google login', () => {
     ctx = await createTestContext({ config: authConfig() });
     expect((await ctx.request('/api/auth/google/login')).status).toBe(404);
   });
+
+  const identitiesOf = async (cookie: string) =>
+    (await (await ctx.request('/api/me/identities', { cookie })).json()) as LoginIdentity[];
+  const unlink = (cookie: string, id: string) =>
+    ctx.request(`/api/me/identities/${encodeURIComponent(id)}`, { method: 'DELETE', cookie });
+
+  it('can be unlinked again; then Google no longer signs into the account', async () => {
+    const idp = fakeGoogle({ email: 'robert.privat@gmail.com' });
+    await googleContext(idp);
+    const owner = await signedInUser(ctx, { name: 'Robert', email: 'robert@q4-team.de' });
+    await googleLogin(idp, { returnTo: '/konto', cookie: owner.cookie, intent: 'connect' });
+    const google = (await identitiesOf(owner.cookie)).find((i) => i.provider === 'google');
+    expect(google?.id).toBe('google:109876543210');
+
+    // Only one's own logins, and never the e-mail login.
+    const lena = await signedInUser(ctx, { name: 'Lena', email: 'lena@firma.de' });
+    expect((await unlink(lena.cookie, google?.id ?? '')).status).toBe(404);
+    expect((await unlink(owner.cookie, 'email:robert@q4-team.de')).status).toBe(400);
+    expect((await unlink(owner.cookie, 'nonsense')).status).toBe(404);
+
+    expect((await unlink(owner.cookie, google?.id ?? '')).status).toBe(204);
+    expect((await identitiesOf(owner.cookie)).map((i) => i.provider)).toEqual(['email']);
+    const cookie = sessionCookieFrom(await googleLogin(idp)) ?? '';
+    expect((await me(cookie)).body.user?.id).not.toBe(owner.user.id);
+  });
+
+  it('never unlinks the last way in – a passkey or the magic link counts as one', async () => {
+    const idp = fakeGoogle();
+    await googleContext(idp);
+    const lena = sessionCookieFrom(await googleLogin(idp)) ?? '';
+    const [google] = await identitiesOf(lena);
+    const refused = await unlink(lena, google?.id ?? '');
+    expect(refused.status).toBe(400);
+    expect(await refused.text()).toContain('letzte Anmeldung');
+
+    const userId = (await me(lena)).body.user?.id ?? '';
+    await ctx.deps.db.insert(passkeys).values({
+      id: 'pk-1',
+      userId,
+      credentialId: 'cred-1',
+      publicKey: 'key',
+      deviceType: 'singleDevice',
+      name: 'YubiKey',
+    });
+    expect((await unlink(lena, google?.id ?? '')).status).toBe(204);
+  });
+
+  it('with the magic link set up, the last provider login may go', async () => {
+    const idp = fakeGoogle();
+    ctx = await createTestContext({
+      config: authConfig({ google: GOOGLE, signup: 'open' }),
+      fetch: idp.fetch,
+      mailer: new RecordingMailer(),
+    });
+    await finishBootstrap();
+    const lena = sessionCookieFrom(await googleLogin(idp)) ?? '';
+    const [google] = await identitiesOf(lena);
+    expect((await unlink(lena, google?.id ?? '')).status).toBe(204);
+  });
 });
 
 // ── E-mail code ──────────────────────────────────────────────────────────────

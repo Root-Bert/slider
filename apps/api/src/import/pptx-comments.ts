@@ -9,9 +9,9 @@ import {
   type Shape,
 } from '@slider/shared';
 import type { ParsedComment, ParsedCommentAnchor } from '@slider/pptx';
-import { externalAuthor } from '../authors';
 import type { Executor } from '../db/client';
 import { comments, deletedPptxComments, type CommentRow } from '../db/schema';
+import { pptxAuthorResolver, type PptxAuthorResolver } from './pptx-authors';
 
 /** The slide a PowerPoint comment belongs to, looked up by its `sldId`. */
 export interface ImportedSlide {
@@ -54,6 +54,8 @@ interface Desired {
  * - Comments missing from the file are flagged `removed_in_source_at` – never deleted, so app
  *   replies on them survive. A comment that reappears is unflagged.
  * - Comments deleted in Slider leave a tombstone (`deleted_pptx_comments`) and stay deleted.
+ * - Authors whose Microsoft account belongs to a workspace member show as that member
+ *   (`pptx-authors`); a re-import links comments imported before.
  *
  * `slidesBySldId` maps the file's `sldId`s to Slider slides (after slide matching). Call it only
  * after the whole file parsed, ideally in the transaction that publishes the new revision.
@@ -72,7 +74,8 @@ export async function upsertPptxComments(
     .from(deletedPptxComments)
     .where(eq(deletedPptxComments.deckId, deckId));
   const deleted = new Set(tombstones.map((row) => row.externalId));
-  const desired = toDesired(parsed, slidesBySldId, now).filter(
+  const resolveAuthor = await pptxAuthorResolver(db, deckId);
+  const desired = toDesired(parsed, slidesBySldId, resolveAuthor, now).filter(
     (item) => !deleted.has(item.externalId),
   );
   const existing = await db
@@ -128,6 +131,7 @@ export async function upsertPptxComments(
 function toDesired(
   parsed: readonly ParsedComment[],
   slidesBySldId: ReadonlyMap<number, ImportedSlide>,
+  resolveAuthor: PptxAuthorResolver,
   now: Date,
 ): Desired[] {
   const result: Desired[] = [];
@@ -145,7 +149,7 @@ function toDesired(
       externalId: comment.externalId,
       slideId: slide.slideId,
       parentExternalId: null,
-      author: externalAuthor(comment.author.name),
+      author: resolveAuthor(comment.author),
       body: comment.text,
       anchor: toAnchor(comment.anchor, slide.shapes),
       externalStatus: comment.status,
@@ -156,7 +160,7 @@ function toDesired(
         externalId: `${comment.externalId}/${reply.externalId}`,
         slideId: slide.slideId,
         parentExternalId: comment.externalId,
-        author: externalAuthor(reply.author.name),
+        author: resolveAuthor(reply.author),
         body: reply.text,
         anchor: { type: 'slide' },
         externalStatus: 'open',

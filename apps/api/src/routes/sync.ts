@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import type { RerenderResult } from '@slider/shared';
-import { requireDeckAccess } from '../auth/access';
+import { deckAccess, requireDeckAccess } from '../auth/access';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import type { AppDeps } from '../deps';
 import { badRequest, fileTooLarge, notAPowerPoint } from '../http/errors';
@@ -16,9 +16,6 @@ import {
 
 const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
 
-const UPLOAD_DECK_NOT_SYNCED =
-  'Hochgeladene Präsentationen werden nicht automatisch aktualisiert. Lade eine neue Version hoch.';
-
 /** Versions and automatic updates of a deck (BER-107, BER-108, BER-109 API). */
 export function syncRoutes(deps: AppDeps) {
   const viewer = viewerMiddleware(deps);
@@ -28,10 +25,15 @@ export function syncRoutes(deps: AppDeps) {
     new Hono<ViewerEnv>()
       /** Cheap poll for the viewer: reload slides and comments when `revisionNumber` changes. */
       .get('/decks/:deckId/status', viewer, async (c) => {
-        const deck = await requireDeckAccess(deps.db, c.var.viewer, c.req.param('deckId'), 'view');
+        const { deck, permissions } = await deckAccess(
+          deps.db,
+          c.var.viewer,
+          c.req.param('deckId'),
+          'view',
+        );
         return c.json(
           await getDeckStatus(deps.db, deck, {
-            forGuest: c.var.viewer.kind === 'guest',
+            hideLoginUrl: !permissions.canManage,
             progress: deps.rendering?.progress,
           }),
         );
@@ -75,20 +77,6 @@ export function syncRoutes(deps: AppDeps) {
           kind: 'rerender',
         });
         return c.json({ status: 'queued', renderedAt } satisfies RerenderResult, 202);
-      })
-
-      /** "Jetzt aktualisieren": check the source now and import a change without debounce. */
-      .post('/decks/:deckId/sync', viewer, async (c) => {
-        const deck = await requireDeckAccess(deps.db, c.var.viewer, c.req.param('deckId'), 'own');
-        if (!isSyncEnabled(deck)) throw badRequest(UPLOAD_DECK_NOT_SYNCED);
-        if (deck.importState.status !== 'ready') {
-          throw badRequest(
-            deck.importState.status === 'failed'
-              ? 'Der erste Import ist fehlgeschlagen – füge den Link bitte erneut ein.'
-              : 'Die Präsentation wird gerade noch importiert.',
-          );
-        }
-        return c.json(await deps.sync.checkDeck(deck.id, { manual: true }));
       })
 
       .get('/decks/:deckId/revisions', viewer, async (c) => {

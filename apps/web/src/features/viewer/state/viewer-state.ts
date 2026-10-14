@@ -1,15 +1,21 @@
-import type { AccentColor, Anchor, MediaKind, PathStrokeTool, Rect, Stroke } from '@slider/shared';
+import type { AccentColor, Anchor, PathStrokeTool, Rect, Stroke } from '@slider/shared';
 import { createContext, useContext, type Dispatch } from 'react';
 import type { StatusFilter } from '../lib/comment-selectors';
 import { strokesBounds } from '../lib/stroke-path';
 import { clampSplit } from '../lib/split';
 
-/** Variants of the pen ("Zeichnen"): lines and shapes (BER-98, BER-99). */
-export type PenTool = PathStrokeTool;
-/** A picked pen; `null` is the pointer – click = pin, drag = box, or a PowerPoint box in box mode. */
-export type Tool = PenTool;
+/**
+ * Drawing tools of the tool bar: freehand, arrow, marker (BER-98). Boxes are the pointer's
+ * (drag); stored `rect`/`ellipse` strokes from earlier still render.
+ */
+export type PenTool = Exclude<PathStrokeTool, 'rect' | 'ellipse'>;
+/**
+ * A picked pen or the eraser (removes one's own freehand and marker strokes); `null` is the
+ * pointer – click = pin, drag = box, or a PowerPoint box in box mode.
+ */
+export type Tool = PenTool | 'eraser';
 
-export const isPenTool = (tool: Tool | null): tool is PenTool => tool !== null;
+export const isPenTool = (tool: Tool | null): tool is PenTool => tool !== null && tool !== 'eraser';
 
 /** The text box of an unsent "Text auf Folie" comment. Normalised to the slide box. */
 export interface TextBoxDraft {
@@ -40,15 +46,16 @@ export interface Draft {
   undone: Stroke[];
   /** Text written on the slide; while present, its box is the anchor. */
   textBox: TextBoxDraft | null;
-  /** Started from the tool bar's mic or camera: the composer opens recording (BER-116). */
-  recordKind?: MediaKind;
+  /**
+   * The bare drawing (freehand, arrow, marker) this comment is written for: sending replaces it
+   * with a comment carrying its strokes. Its strokes are fixed – no undo/redo.
+   */
+  commentId: string | null;
 }
 
 export interface ViewerState {
   activeSlideId: string | null;
   tool: Tool | null;
-  /** Remembered so the `draw` button returns to the last pen variant. */
-  lastPenTool: PenTool;
   /** The viewer's own colour – drawings match their comment's connector line. */
   color: AccentColor;
   draft: Draft | null;
@@ -86,13 +93,23 @@ export type ViewerAction =
   | { type: 'anchorPlaced'; slideId: string; anchor: Anchor }
   | { type: 'strokeAdded'; slideId: string; stroke: Stroke }
   | { type: 'gapDraftStarted'; afterSlideId: string | null; beforeSlideId: string | null }
-  /** Mic or camera in the tool bar: a voice/video comment on the slide (BER-116). */
-  | { type: 'mediaDraftStarted'; slideId: string; kind: MediaKind }
-  /** A text box was clicked or dragged open on a slide; on the same slide it keeps its text. */
+  /** A click on a bare drawing's badge: the composer opens to comment on it. */
+  | {
+      type: 'drawingCommentStarted';
+      slideId: string;
+      commentId: string;
+      anchor: Anchor;
+      strokes: Stroke[];
+    }
+  /**
+   * A text box was clicked or dragged open on a slide; on the same slide it keeps its text –
+   * unless `text` starts it (typing right after drawing a box).
+   */
   | {
       type: 'textBoxPlaced';
       slideId: string;
       box: Pick<TextBoxDraft, 'x' | 'y' | 'width' | 'minHeight' | 'fontSize'>;
+      text?: string;
     }
   | { type: 'textBoxChanged'; patch: TextBoxPatch }
   | { type: 'textBoxMeasured'; rect: Rect }
@@ -125,11 +142,12 @@ export function createInitialState(options: {
   split?: number | null;
   showChanges?: boolean;
   boxMode?: boolean;
+  showGuides?: boolean;
+  statusFilter?: StatusFilter;
 }): ViewerState {
   return {
     activeSlideId: options.activeSlideId,
     tool: null,
-    lastPenTool: 'pen',
     color: options.color,
     draft: null,
     focusedThreadId: null,
@@ -137,14 +155,14 @@ export function createInitialState(options: {
     hoveredSlideId: null,
     threadPanelOpen: false,
     // BER-101: done comments are hidden by default.
-    statusFilter: 'open',
+    statusFilter: options.statusFilter ?? 'open',
     pptxOnly: false,
     split: options.split == null ? null : clampSplit(options.split),
     showChanges: options.showChanges ?? true,
     deletedPanelOpen: false,
     boxMode: options.boxMode ?? true,
     boxModeFlipped: false,
-    showGuides: false,
+    showGuides: options.showGuides ?? false,
   };
 }
 
@@ -184,12 +202,13 @@ function draftReducer(draft: Draft | null, action: ViewerAction): Draft | null {
         strokes: [],
         undone: [],
         textBox: null,
+        commentId: null,
       };
     case 'textBoxPlaced': {
       const same = draft?.slideId === action.slideId ? draft : null;
       const textBox: TextBoxDraft = {
         ...action.box,
-        text: same?.textBox?.text ?? '',
+        text: action.text ?? same?.textBox?.text ?? '',
         measured: null,
       };
       return {
@@ -199,6 +218,7 @@ function draftReducer(draft: Draft | null, action: ViewerAction): Draft | null {
         strokes: same?.strokes ?? [],
         undone: same?.undone ?? [],
         textBox,
+        commentId: null,
       };
     }
     case 'textBoxChanged': {
@@ -234,9 +254,20 @@ function draftReducer(draft: Draft | null, action: ViewerAction): Draft | null {
               strokes: [],
               undone: [],
               textBox: null,
+              commentId: null,
             };
       return withStrokes(base, [...base.strokes, action.stroke], []);
     }
+    case 'drawingCommentStarted':
+      return {
+        slideId: action.slideId,
+        anchor: action.anchor,
+        anchorFromStrokes: false,
+        strokes: action.strokes,
+        undone: [],
+        textBox: null,
+        commentId: action.commentId,
+      };
     case 'gapDraftStarted':
       return {
         slideId: null,
@@ -249,30 +280,16 @@ function draftReducer(draft: Draft | null, action: ViewerAction): Draft | null {
         strokes: [],
         undone: [],
         textBox: null,
+        commentId: null,
       };
-    case 'mediaDraftStarted': {
-      // A mark or drawing already on that slide stays; otherwise the comment is about the slide.
-      const base: Draft =
-        draft?.slideId === action.slideId
-          ? draft
-          : {
-              slideId: action.slideId,
-              anchor: { type: 'slide' },
-              anchorFromStrokes: false,
-              strokes: [],
-              undone: [],
-              textBox: null,
-            };
-      return { ...base, recordKind: action.kind };
-    }
     case 'undo': {
       const last = draft?.strokes.at(-1);
-      if (!draft || !last) return draft;
+      if (!draft || !last || draft.commentId) return draft;
       return withStrokes(draft, draft.strokes.slice(0, -1), [...draft.undone, last]);
     }
     case 'redo': {
       const next = draft?.undone.at(-1);
-      if (!draft || !next) return draft;
+      if (!draft || !next || draft.commentId) return draft;
       return withStrokes(draft, [...draft.strokes, next], draft.undone.slice(0, -1));
     }
     case 'draftCancelled':
@@ -302,16 +319,13 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
       return next.activeSlideId === action.slideId
         ? next
         : { ...next, activeSlideId: action.slideId };
-    case 'toolSelected': {
-      const tool = action.tool === next.tool ? null : action.tool;
-      const lastPenTool = isPenTool(tool) ? tool : next.lastPenTool;
-      return { ...next, tool, lastPenTool };
-    }
+    case 'toolSelected':
+      return { ...next, tool: action.tool === next.tool ? null : action.tool };
     case 'anchorPlaced':
     case 'strokeAdded':
     case 'gapDraftStarted':
     case 'textBoxPlaced':
-    case 'mediaDraftStarted':
+    case 'drawingCommentStarted':
       // Composing a new comment takes over the focus.
       return { ...next, focusedThreadId: null, threadPanelOpen: false };
     case 'draftSubmitted':

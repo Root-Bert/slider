@@ -6,13 +6,18 @@ import { Avatar, Badge, Button, Dialog, IconButton, Select, Spinner, type ShowTo
 import {
   assignableRoles,
   canRemoveMember,
-  isLastOwner,
+  CREATOR_HINT,
+  CREATOR_LABEL,
+  canManageMembers,
+  isLastAdmin,
   ROLE_HINTS,
   ROLE_LABELS,
 } from '../lib/roles';
+import { formatRatio, INVITE_SECTION_ID, seatState } from '../lib/plan';
+import { InviteForm, InviteList } from './Invites';
 import { SettingsSection } from './SettingsSection';
 
-/** Members with their roles; admins change roles and remove people. */
+/** Members with their roles; admins invite (first row), change roles and remove people. */
 export function MembersSection({
   workspace,
   userId,
@@ -27,7 +32,9 @@ export function MembersSection({
   const remove = useRemoveMember(workspace.id);
   const [removing, setRemoving] = useState<WorkspaceMember | null>(null);
   const list = members.data ?? [];
-  const ownerCount = list.filter((member) => member.role === 'owner').length;
+  const adminCount = list.filter((member) => member.role === 'admin').length;
+  const canInvite = canManageMembers(workspace.role);
+  const seats = seatState(workspace.usage);
 
   const changeRole = (member: WorkspaceMember, role: WorkspaceRole) =>
     updateRole.mutate(
@@ -40,14 +47,21 @@ export function MembersSection({
 
   return (
     <SettingsSection
+      id={canInvite ? INVITE_SECTION_ID : undefined}
       title="Mitglieder"
-      description="Wer in dieser Organisation Präsentationen sieht und kommentiert."
+      description={
+        canInvite
+          ? 'Wer in dieser Organisation Präsentationen sieht und kommentiert. Einladungen per E-Mail gelten 7 Tage, Links 30 Tage.'
+          : 'Wer in dieser Organisation Präsentationen sieht und kommentiert.'
+      }
       aside={
-        members.isSuccess && (
-          <span className="pt-0.5 text-[13px] text-fg-subtle">{list.length}</span>
+        canInvite &&
+        seats.max !== null && (
+          <Badge tone={seats.full ? 'warning' : 'neutral'}>{formatRatio(seats)} Plätze</Badge>
         )
       }
     >
+      {canInvite && <InviteForm workspace={workspace} onNotify={onNotify} />}
       {members.isPending ? (
         <div className="flex justify-center py-6">
           <Spinner className="text-fg-subtle" />
@@ -58,8 +72,8 @@ export function MembersSection({
         <ul className="-mx-2 flex flex-col">
           {list.map((member) => {
             const self = member.userId === userId;
-            const lastOwner = isLastOwner(member.role, ownerCount);
-            const roles = lastOwner ? [] : assignableRoles(workspace.role, member.role);
+            const lastAdmin = isLastAdmin(member.role, adminCount);
+            const roles = lastAdmin ? [] : assignableRoles(workspace.role);
             return (
               <li
                 key={member.userId}
@@ -67,9 +81,16 @@ export function MembersSection({
               >
                 <Avatar author={{ ...member, type: 'owner' }} size={32} />
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-[13px] font-medium text-fg">
-                    {member.name}
-                    {self && <span className="font-normal text-fg-subtle"> (Du)</span>}
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate text-[13px] font-medium text-fg">
+                      {member.name}
+                      {self && <span className="font-normal text-fg-subtle"> (Du)</span>}
+                    </span>
+                    {member.isCreator && (
+                      <span title={CREATOR_HINT} className="flex">
+                        <Badge tone="info">{CREATOR_LABEL}</Badge>
+                      </span>
+                    )}
                   </span>
                   <span className="truncate text-xs text-fg-subtle">{member.email}</span>
                 </span>
@@ -92,14 +113,14 @@ export function MembersSection({
                   <span
                     className="flex w-[120px] shrink-0 justify-end"
                     title={
-                      lastOwner ? 'Der einzige Owner – ernenne zuerst jemand anderen.' : undefined
+                      lastAdmin ? 'Der einzige Admin – ernenne zuerst jemand anderen.' : undefined
                     }
                   >
                     <Badge>{ROLE_LABELS[member.role]}</Badge>
                   </span>
                 )}
                 <span className="flex w-8 shrink-0 justify-end">
-                  {!self && canRemoveMember(workspace.role, member.role) && (
+                  {!self && canRemoveMember(workspace.role) && (
                     <IconButton
                       icon="close"
                       size="sm"
@@ -115,6 +136,8 @@ export function MembersSection({
         </ul>
       )}
 
+      {canInvite && <InviteList workspace={workspace} onNotify={onNotify} />}
+
       <dl className="grid gap-x-4 gap-y-2 rounded-control bg-white/4 px-4 py-3 text-xs sm:grid-cols-[auto_1fr]">
         {WORKSPACE_ROLES.toReversed().map((role) => (
           <div key={role} className="contents">
@@ -122,6 +145,8 @@ export function MembersSection({
             <dd className="text-fg-subtle max-sm:mb-1">{ROLE_HINTS[role]}</dd>
           </div>
         ))}
+        <dt className="font-medium text-fg-muted">{CREATOR_LABEL}</dt>
+        <dd className="text-fg-subtle">{CREATOR_HINT}</dd>
       </dl>
 
       <Dialog
@@ -139,13 +164,16 @@ export function MembersSection({
               loading={remove.isPending}
               onClick={() =>
                 removing &&
-                remove.mutate(removing.userId, {
-                  onSuccess: () => {
-                    onNotify(`${removing.name} entfernt`);
-                    setRemoving(null);
+                remove.mutate(
+                  { userId: removing.userId },
+                  {
+                    onSuccess: () => {
+                      onNotify(`${removing.name} entfernt`);
+                      setRemoving(null);
+                    },
+                    onError: (error) => onNotify(error.message, 'danger'),
                   },
-                  onError: (error) => onNotify(error.message, 'danger'),
-                })
+                )
               }
             >
               Entfernen

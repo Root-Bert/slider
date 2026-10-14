@@ -35,7 +35,7 @@ export const SYNC_MAX_BACKOFF_MS = 6 * 60 * 60 * 1000;
 export const SYNC_TRANSIENT_ERROR_THRESHOLD = 3;
 /** Sources without ETag/cTag are downloaded and hashed – at most every 5 poll intervals. */
 export const SYNC_CONTENT_CHECK_FACTOR = 5;
-/** A manual sync waits this long for the import before answering `queued`. */
+/** A manual check waits this long for the import before answering `queued`. */
 export const SYNC_MANUAL_WAIT_MS = 25_000;
 
 const CONTENT_TOKEN_PREFIX = 'sha256:';
@@ -51,7 +51,7 @@ export interface SyncServiceDeps {
 }
 
 export interface CheckOptions {
-  /** Owner pressed "Jetzt aktualisieren": no debounce, no throttling, wait for the import. */
+  /** Owner pressed "Neu rendern": no debounce, no throttling, wait for the import. */
   manual?: boolean;
 }
 

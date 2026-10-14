@@ -1,6 +1,9 @@
 import { isPathStroke, type Author, type Rect } from '@slider/shared';
+import { useEffect, useEffectEvent } from 'react';
 import { accentColor } from '@/lib/accent';
-import { Icon } from '@/ui';
+import { focusCommentField } from '../lib/composer-focus';
+import { isTypingTarget } from '../lib/dom';
+import { useStageRegistry } from '../state/stage-registry';
 import type { Draft } from '../state/viewer-state';
 import { EditableFrame } from './EditableFrame';
 import { StrokePath } from './StrokePath';
@@ -13,13 +16,14 @@ interface DraftMarkProps {
   frame?: boolean;
   /** The box was moved or resized. */
   onRectChange: (rect: Rect) => void;
-  /** "In die Box schreiben": the box becomes a text box on the slide. */
-  onWriteInside: (rect: Rect) => void;
+  /** Double click into the box (or typing right after drawing it): it becomes a text box on the slide. */
+  onWriteInside: (rect: Rect, text?: string) => void;
 }
 
 /**
- * The unsent comment's mark: a box (B2) that moves and resizes, with name tag and the way to
- * write into it; a pin; or a drawing. A text box is its own mark (`TextBoxEditor`).
+ * The unsent comment's mark: a box (B2) that moves and resizes, with name tag – a double click
+ * or simply typing writes into it, ↵ / Tab go to the comment instead; a pin; or a drawing. A text
+ * box is its own mark (`TextBoxEditor`).
  */
 export function DraftMark({
   draft,
@@ -30,7 +34,41 @@ export function DraftMark({
   onWriteInside,
 }: DraftMarkProps) {
   const color = accentColor(author.color);
+  const registry = useStageRegistry();
   const { anchor } = draft;
+  const box =
+    anchor.type === 'rect' && !draft.anchorFromStrokes && !draft.textBox && !draft.commentId
+      ? anchor
+      : null;
+  const framed = frame && box !== null;
+
+  // Right after drawing a box nothing has focus: the first key decides where the text goes.
+  const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
+    if (!box || event.defaultPrevented || isTypingTarget(event.target)) return;
+    // The composer (its recorder takes Space and ↵) and dialogs keep their keys.
+    if (event.target instanceof Element && event.target.closest('dialog, form[data-composer]'))
+      return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if ((event.key === 'Enter' || event.key === 'Tab') && !event.shiftKey) {
+      if (focusCommentField()) event.preventDefault();
+      return;
+    }
+    if (event.key.length !== 1) return;
+    if (framed) {
+      event.preventDefault();
+      onWriteInside(box.rect, event.key);
+    } else {
+      // A picked PowerPoint box: the key goes on into the comment field.
+      focusCommentField();
+    }
+  });
+  useEffect(() => {
+    if (!box) return;
+    const listener = (event: KeyboardEvent) => onKeyDown(event);
+    // Capture: before the viewer's single-key shortcuts (F, B, G).
+    window.addEventListener('keydown', listener, true);
+    return () => window.removeEventListener('keydown', listener, true);
+  }, [box]);
 
   return (
     <>
@@ -45,13 +83,16 @@ export function DraftMark({
         ))}
       </svg>
 
-      {frame && anchor.type === 'rect' && !draft.anchorFromStrokes && !draft.textBox && (
+      {framed && (
         <EditableFrame
-          rect={anchor.rect}
+          rect={box.rect}
           color={color}
           handles
           className="bg-white/5"
-          title="Ziehen zum Verschieben, Ecken zum Ändern der Größe"
+          title="Ziehen zum Verschieben, Ecken zum Ändern der Größe, Tippen schreibt hinein, ↵ zum Kommentar"
+          onDoubleClick={() => onWriteInside(box.rect)}
+          // The composer next to the box follows it live.
+          onPreview={(rect) => registry.setMarkPreview(rect ? { threadId: null, rect } : null)}
           onCommit={(rect, done) => {
             onRectChange(rect);
             done();
@@ -63,20 +104,6 @@ export function DraftMark({
           >
             {author.name.split(' ')[0]}
           </span>
-          <button
-            type="button"
-            title="In die Box schreiben"
-            aria-label="In die Box schreiben"
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.stopPropagation();
-              onWriteInside(anchor.rect);
-            }}
-            className="absolute -top-7 right-[-2px] flex size-6 cursor-pointer items-center justify-center rounded-control-sm text-white shadow-[0_1px_4px_rgb(0_0_0/0.35)] hover:brightness-110"
-            style={{ backgroundColor: color }}
-          >
-            <Icon name="edit" size={14} />
-          </button>
         </EditableFrame>
       )}
 

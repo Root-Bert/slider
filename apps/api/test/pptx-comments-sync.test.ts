@@ -31,8 +31,7 @@ afterEach(async () => {
 async function syncTo(context: TestContext, source: FakeSource, deckId: string, version: string) {
   source.token = `token-${version}`;
   source.bytes = pptxBytes(version);
-  const res = await context.request(`/api/decks/${deckId}/sync`, { method: 'POST' });
-  return syncResultSchema.parse(await res.json());
+  return syncResultSchema.parse(await context.deps.sync.checkDeck(deckId, { manual: true }));
 }
 
 async function listComments(context: TestContext, deckId: string): Promise<Comment[]> {
@@ -136,8 +135,8 @@ describe('PowerPoint comments across revisions (BER-114)', () => {
 
     // Ten more identical syncs: same count, no new revision.
     for (let i = 0; i < 10; i++) {
-      const again = await ctx.request(`/api/decks/${deckId}/sync`, { method: 'POST' });
-      expect(syncResultSchema.parse(await again.json()).status).toBe('unchanged');
+      const again = await ctx.deps.sync.checkDeck(deckId, { manual: true });
+      expect(again.status).toBe('unchanged');
     }
     expect(await listComments(ctx, deckId)).toHaveLength(5);
     expect(await revisionRows(ctx, deckId)).toHaveLength(4);
@@ -225,8 +224,7 @@ describe('real PPTX end to end', () => {
 
     source.token = 'c2';
     source.bytes = files.v2!;
-    const res = await ctx.request(`/api/decks/${deckId}/sync`, { method: 'POST' });
-    const result = syncResultSchema.parse(await res.json());
+    const result = await ctx.deps.sync.checkDeck(deckId, { manual: true });
     expect(result).toMatchObject({
       status: 'updated',
       summary: { slidesModified: 1, slidesNew: 1, slidesDeleted: 1, slidesMoved: 0 },

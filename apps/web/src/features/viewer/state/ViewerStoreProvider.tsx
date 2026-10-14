@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ReactNode } from 'react';
 import { loadStoredBoxMode, storeBoxMode } from '../lib/box-mode';
 import { loadStoredSplit, storeSplit } from '../lib/split';
+import { loadWorkPreferences } from '../lib/work-preferences';
 import { createStageRegistry, StageRegistryContext } from './stage-registry';
 import { ViewerDataContext, type ViewerData } from './viewer-data';
 import {
@@ -28,6 +29,7 @@ export function ViewerStoreProvider({ data, initialSlideId, children }: ViewerSt
       color: data.viewer.author.color,
       split: loadStoredSplit(),
       boxMode: loadStoredBoxMode(),
+      ...loadWorkPreferences(),
     },
     createInitialState,
   );

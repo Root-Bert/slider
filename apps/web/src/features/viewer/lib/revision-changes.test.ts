@@ -8,7 +8,6 @@ import {
   revisionsToCheck,
   isChangedSinceComment,
   isLoginError,
-  lastCheckedLabel,
   revisionNoticeText,
   slideBadge,
   slideBadges,
@@ -216,7 +215,7 @@ describe('copy', () => {
     expect(revisionNoticeText(5, null)).toBe('V5 geladen');
   });
 
-  it('words the result of "Neu laden"', () => {
+  it('words the result of a new upload', () => {
     expect(syncResultMessage({ status: 'unchanged' })).toEqual({
       text: 'Keine Änderungen',
       tone: 'neutral',
@@ -234,17 +233,6 @@ describe('copy', () => {
       text: 'Bitte melde dich erneut an.',
       tone: 'danger',
     });
-  });
-
-  it('says when the source was last checked', () => {
-    const now = new Date('2026-10-05T12:00:00.000Z');
-    expect(lastCheckedLabel({ lastCheckedAt: '2026-10-05T11:55:00.000Z' }, now)).toBe(
-      'Zuletzt geprüft vor 5 Min.',
-    );
-    expect(lastCheckedLabel({ lastCheckedAt: '2026-10-05T11:59:50.000Z' }, now)).toBe(
-      'Gerade eben geprüft',
-    );
-    expect(lastCheckedLabel({ lastCheckedAt: null }, now)).toBe('Noch nicht geprüft');
   });
 
   it('knows which errors a new sign-in fixes', () => {

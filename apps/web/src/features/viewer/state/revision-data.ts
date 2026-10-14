@@ -3,7 +3,7 @@ import { createContext, useContext } from 'react';
 import type { Thread } from '../lib/comment-selectors';
 import type { SlideBadge } from '../lib/revision-changes';
 
-/** A new revision the viewer should be told about (notice next to "Neu laden"). */
+/** A new revision the viewer should be told about (notice in the version pill). */
 export interface RevisionAnnouncement {
   revisionNumber: number;
   summary: SyncSummary | null;

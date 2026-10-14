@@ -10,7 +10,6 @@ import {
   strokeSchema,
   type Comment,
   type Deck,
-  type ReviewLink,
   type Slide,
   type Viewer,
 } from './model';
@@ -45,12 +44,8 @@ import type { MeLimits, MeUser, PendingInvite, Workspace } from './workspaces';
  * | GET    | /decks/:deckId/media-usage             |                            | MediaUsage            |
  * | GET    | /media/:mediaId                        | (Range supported)          | audio/video bytes     |
  * | PUT    | /media/:mediaId/transcript             | UpdateTranscriptInput      | Comment               |
- * | GET    | /decks/:deckId/review-links            |                            | ReviewLink[]          |
- * | POST   | /decks/:deckId/review-links            | CreateReviewLinkInput      | ReviewLink (201)      |
- * | DELETE | /review-links/:linkId                  |                            | 204 (revokes)         |
- * | GET    | /invites/:token                        |                            | InviteInfo            |
- * | POST   | /invites/:token/join                   | JoinInviteInput            | MeResponse (sets cookie) |
- * | POST   | /session/leave                         |                            | 204 (clears guest cookie) |
+ * | GET    | /decks/:deckId/share                   |                            | WorkspaceInvite[]     |
+ * | POST   | /decks/:deckId/share                   | ShareDeckInput             | CreatedWorkspaceInvite (201) |
  * | GET    | /microsoft/file-picker                 |                            | FilePickerSession     |
  * | POST   | /microsoft/file-picker/token           | FilePickerTokenInput       | { token }             |
  * | POST   | /decks/drive-item                      | ImportDriveItemInput       | Deck (201)            |
@@ -67,6 +62,7 @@ import type { MeLimits, MeUser, PendingInvite, Workspace } from './workspaces';
  * | POST   | /auth/passkey/options                  |                            | WebAuthn request options |
  * | POST   | /auth/passkey/verify                   | VerifyPasskeyLoginInput    | LoginResult (sets cookie) |
  * | GET    | /me/identities                         |                            | LoginIdentity[]       |
+ * | DELETE | /me/identities/:id                     | (never the last way in)    | 204                   |
  * | GET    | /passkeys                              |                            | Passkey[]             |
  * | POST   | /passkeys/register/options             |                            | WebAuthn creation options |
  * | POST   | /passkeys/register/verify              | VerifyPasskeyRegistrationInput | Passkey (201)     |
@@ -81,7 +77,7 @@ import type { MeLimits, MeUser, PendingInvite, Workspace } from './workspaces';
  * | DELETE | /workspaces/:id                        |                            | 204 (owner)           |
  * | GET    | /workspaces/:id/members                |                            | WorkspaceMember[]     |
  * | PATCH  | /workspaces/:id/members/:userId        | UpdateMemberInput          | WorkspaceMember       |
- * | DELETE | /workspaces/:id/members/:userId        |                            | 204 (admin+ or self)  |
+ * | DELETE | /workspaces/:id/members/:userId        | ?successor=<userId>        | 204 (admin+ or self)  |
  * | GET    | /workspaces/:id/invites                |                            | WorkspaceInvite[]     |
  * | POST   | /workspaces/:id/invites                | CreateWorkspaceInviteInput | CreatedWorkspaceInvite (201) |
  * | DELETE | /workspace-invites/:inviteId           |                            | 204 (revokes)         |
@@ -134,7 +130,7 @@ export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
 
 export interface MeResponse {
   viewer: Viewer;
-  /** Signed-in accounts only (BER-129); guests get just `viewer`. */
+  /** Absent only if the account vanished mid-request. */
   user?: MeUser;
   workspaces?: Workspace[];
   pendingInvites?: PendingInvite[];
@@ -145,12 +141,6 @@ export interface MeResponse {
 /** The viewer's own settings: their accent colour (pins, lines, drawings). */
 export const updateMeInputSchema = z.object({ color: accentColorSchema });
 export type UpdateMeInput = z.infer<typeof updateMeInputSchema>;
-
-/** `PUT /me/avatar`: a re-rolled avatar's seed, or `null` back to the photo / name-seeded one. */
-export const updateAvatarInputSchema = z.object({
-  seed: z.string().trim().min(1).max(64).nullable(),
-});
-export type UpdateAvatarInput = z.infer<typeof updateAvatarInputSchema>;
 
 export const importLinkInputSchema = z.object({ url: z.url() });
 export type ImportLinkInput = z.infer<typeof importLinkInputSchema>;
@@ -200,7 +190,7 @@ export type CreateCommentInput = z.input<typeof createCommentInputSchema>;
 export const MAX_MEDIA_DURATION_MS = 5 * 60_000;
 /** Per recording. Five minutes of the recorder's video settings are ~20 MB; this leaves room. */
 export const MAX_MEDIA_BYTES = 100 * 1024 * 1024;
-/** Storage per account (the deck owner – guests' recordings count towards the deck's owner). */
+/** Storage per account (the deck owner – everyone's recordings in a deck count towards its owner). */
 export const DEFAULT_MEDIA_QUOTA_BYTES = 5 * 1024 ** 3;
 
 /** What browsers' MediaRecorder produces: WebM/Opus (Chrome, Firefox), MP4/AAC (Safari), Ogg. */
@@ -262,39 +252,11 @@ export const updateCommentInputSchema = z
         }),
       shapeRef: shapeRefSchema.nullable(),
     }),
+    /** Moves a drawing (strokes and anchor) by this shift, kept on the slide; author only. */
+    move: z.object({ dx: z.number().min(-1).max(1), dy: z.number().min(-1).max(1) }),
   })
   .partial();
 export type UpdateCommentInput = z.infer<typeof updateCommentInputSchema>;
-
-/**
- * Review links are view-only (BER-130): commenting is for members of the organisation. Old
- * `comment` links still exist in the database but behave like `view`.
- */
-export const createReviewLinkInputSchema = z.object({
-  role: z
-    .literal('view', {
-      error:
-        'Links zum Teilen sind nur zum Ansehen. Zum Kommentieren lade die Person in die Organisation ein.',
-    })
-    .default('view'),
-  expiresInDays: z.number().int().min(1).max(365).nullable().default(null),
-});
-export type CreateReviewLinkInput = z.input<typeof createReviewLinkInputSchema>;
-
-export interface InviteInfo {
-  deckTitle: string;
-  slideCount: number;
-  thumbnailUrl: string | null;
-  ownerName: string;
-  role: ReviewLink['role'];
-  participants: Deck['participants'];
-}
-
-export const joinInviteInputSchema = z.object({
-  name: z.string().trim().min(1).max(80),
-  email: z.email().optional(),
-});
-export type JoinInviteInput = z.infer<typeof joinInviteInputSchema>;
 
 /** Convenience aliases so consumers import everything from one place. */
 export type DeckResponse = Deck;

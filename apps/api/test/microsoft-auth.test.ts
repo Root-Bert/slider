@@ -5,7 +5,9 @@ import { decryptToken, encryptToken } from '../src/auth/token-crypto';
 import { users } from '../src/db/schema';
 import { upsertUser } from '../src/services/users';
 import type { FetchLike } from '../src/sources/safe-fetch';
-import { createTestContext, MICROSOFT_TEST_CONFIG, type TestContext } from './helpers';
+import type { LoginIdentity } from '@slider/shared';
+import { RecordingMailer } from '../src/mail/mailer';
+import { createTestContext, fakeJwt, MICROSOFT_TEST_CONFIG, type TestContext } from './helpers';
 
 const SECRET = 'test-secret-test-secret-test-secret!';
 
@@ -189,6 +191,60 @@ describe('Microsoft login routes', () => {
     expect(owner?.msRefreshToken).toMatch(/^v1\./);
     expect(await decryptToken(SECRET, owner?.msRefreshToken ?? '')).toBe('rt-1');
     expect(await ctx.deps.microsoft.getAccessToken(ctx.ownerId)).toBe('at-1');
+  });
+
+  it('signed in, the connect also links Microsoft as a login – which can be unlinked again', async () => {
+    let nonce = '';
+    ctx = await createTestContext({
+      config: { microsoft: MICROSOFT_TEST_CONFIG },
+      mailer: new RecordingMailer(),
+      fetch: async (input) => {
+        const url = String(input);
+        if (url.endsWith('/oauth2/v2.0/token'))
+          return Response.json({
+            access_token: 'at-1',
+            refresh_token: 'rt-1',
+            expires_in: 3600,
+            id_token: fakeJwt({
+              iss: 'https://login.microsoftonline.com/tenant-1/v2.0',
+              aud: MICROSOFT_TEST_CONFIG.clientId,
+              exp: Math.floor(Date.now() / 1000) + 300,
+              nonce,
+              tid: 'tenant-1',
+              oid: 'oid-1',
+              sub: 'pairwise-sub',
+              preferred_username: 'robert@contoso.com',
+            }),
+          });
+        if (url.startsWith('https://graph.microsoft.com/v1.0/me'))
+          return Response.json({ id: 'ms-1', mail: 'robert@contoso.com' });
+        throw new Error(`Unexpected request: ${url}`);
+      },
+    });
+    const start = await ctx.request('/api/auth/microsoft/login?returnTo=%2Fkonto');
+    const authorize = new URL(start.headers.get('location') ?? '');
+    nonce = authorize.searchParams.get('nonce') ?? '';
+    const cookie = (start.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
+    const res = await ctx.request(
+      `/api/auth/microsoft/callback?state=${authorize.searchParams.get('state')}&code=c`,
+      { cookie },
+    );
+    expect(res.headers.get('location')).toBe('http://localhost:5173/konto');
+
+    const identities = (await (await ctx.request('/api/me/identities')).json()) as LoginIdentity[];
+    expect(identities.map((i) => [i.id, i.email])).toEqual([
+      ['microsoft:tenant-1:oid-1', 'robert@contoso.com'],
+    ]);
+
+    const unlinked = await ctx.request('/api/me/identities/microsoft%3Atenant-1%3Aoid-1', {
+      method: 'DELETE',
+    });
+    expect(unlinked.status).toBe(204);
+    expect(await (await ctx.request('/api/me/identities')).json()).toEqual([]);
+    // File access goes with it.
+    const [owner] = await ctx.deps.db.select().from(users).where(eq(users.id, ctx.ownerId));
+    expect(owner?.msRefreshToken).toBeNull();
+    expect(owner?.msSubject).toBeNull();
   });
 
   it('connects one Microsoft account to at most two Slider accounts', async () => {

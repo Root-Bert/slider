@@ -6,7 +6,6 @@ import type { Anchor, Author } from '@slider/shared';
 import { externalAuthor, ownerAuthor } from '../authors';
 import type { Clock } from '../clock';
 import { dataPaths, loadConfig } from '../config';
-import { newReviewToken } from '../services/review-links';
 import { upsertUser } from '../services/users';
 import { ensurePersonalWorkspace } from '../services/workspaces';
 import { blobKeys, type BlobStorage } from '../storage/blob-storage';
@@ -16,9 +15,9 @@ import {
   comments,
   decks,
   revisions,
-  reviewLinks,
   slides,
   slideVersions,
+  workspaceMembers,
   type UserRow,
 } from './schema';
 import {
@@ -52,6 +51,13 @@ interface SeedContext extends SeedDeps {
 
 /** Fills an empty database with the demo decks from the design. Returns the owner. */
 export async function seedDemoData(deps: SeedDeps): Promise<UserRow> {
+  const robert = await upsertUser(deps.db, { ...deps.owner, color: PEOPLE.robert.color });
+  const context = await seedContext(deps, robert);
+  for (const deck of demoDecks(context.now)) await seedDeck(context, deck);
+  return robert;
+}
+
+async function seedContext(deps: SeedDeps, robert: UserRow): Promise<SeedContext> {
   const now = deps.clock.now();
   const slideImageKeys = {
     1: await copyAsset(deps.storage, 'slide-1.png'),
@@ -60,12 +66,15 @@ export async function seedDemoData(deps: SeedDeps): Promise<UserRow> {
     4: await copyAsset(deps.storage, 'slide-4.png'),
   };
 
-  const robert = await upsertUser(deps.db, { ...deps.owner, color: PEOPLE.robert.color });
+  const workspaceId = await ensurePersonalWorkspace(deps.db, robert.id, now);
+  // Reviewers are members of Robert's organisation – there are no guests.
   const reviewer = async (key: Exclude<PersonKey, 'robert'>): Promise<Author> => {
-    const person = PEOPLE[key];
-    const user = await upsertUser(deps.db, person);
-    // Reviewers join through review links, so they comment as guests.
-    return { ...ownerAuthor(user), type: 'guest' };
+    const user = await upsertUser(deps.db, PEOPLE[key]);
+    await deps.db
+      .insert(workspaceMembers)
+      .values({ workspaceId, userId: user.id, role: 'reviewer', createdAt: now })
+      .onConflictDoNothing();
+    return ownerAuthor(user);
   };
   const authors: Record<PersonKey, Author> = {
     robert: ownerAuthor(robert),
@@ -74,16 +83,7 @@ export async function seedDemoData(deps: SeedDeps): Promise<UserRow> {
     anna: await reviewer('anna'),
   };
 
-  const context: SeedContext = {
-    ...deps,
-    now,
-    authors,
-    slideImageKeys,
-    ownerId: robert.id,
-    workspaceId: await ensurePersonalWorkspace(deps.db, robert.id, now),
-  };
-  for (const deck of demoDecks(now)) await seedDeck(context, deck);
-  return robert;
+  return { ...deps, now, authors, slideImageKeys, ownerId: robert.id, workspaceId };
 }
 
 async function seedDeck(ctx: SeedContext, seed: DeckSeed): Promise<void> {
@@ -147,16 +147,6 @@ async function seedDeck(ctx: SeedContext, seed: DeckSeed): Promise<void> {
       return id;
     };
     for (const comment of seed.comments) await seedComment(ctx, tx, deckId, comment, slideAt);
-
-    if (seed.withReviewLink) {
-      await tx.insert(reviewLinks).values({
-        id: crypto.randomUUID(),
-        deckId,
-        token: newReviewToken(),
-        role: 'comment',
-        createdAt: new Date(now.getTime() - 3 * 60 * 60 * 1000),
-      });
-    }
   });
 }
 

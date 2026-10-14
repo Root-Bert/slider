@@ -1,4 +1,5 @@
 import {
+  isPathStroke,
   isTextStroke,
   resolveRectAnchor,
   resolveShapeRef,
@@ -10,7 +11,7 @@ import {
   type Shape,
   type Slide,
 } from '@slider/shared';
-import { isShapeTool, STROKE_STYLE, strokeOutline, strokesBounds, textBox } from './stroke-path';
+import { STROKE_STYLE, strokeOutline, strokesBounds, textBox } from './stroke-path';
 
 /** A root comment together with its replies – the unit shown as a card and in the thread panel. */
 export interface Thread {
@@ -207,9 +208,8 @@ export interface ConnectorAnchor {
   inset: { left: number; right: number; bottom: number };
 }
 
-/** Radius of an accent pin and half the PowerPoint "P" square (incl. its ring), in px. */
+/** Radius of a pin (PowerPoint ones too: their "P" badge sits beside the dot), in px. */
 const PIN_RADIUS = 7;
-const POWERPOINT_PIN_RADIUS = 12;
 
 /**
  * Start of the connector line for a comment: the edge of its pin, the middle of its frame's
@@ -256,13 +256,12 @@ export function connectorAnchor(
   if (anchor.type !== 'point') return null;
   const rect = anchorRect(comment, shapes)!;
   const point = { x: rect.x, y: rect.y };
-  const radius = comment.source === 'pptx' ? POWERPOINT_PIN_RADIUS : PIN_RADIUS;
   return {
     left: point.x,
     right: point.x,
     start: { left: point, right: point },
     bottom: point,
-    inset: { left: radius, right: radius, bottom: radius },
+    inset: { left: PIN_RADIUS, right: PIN_RADIUS, bottom: PIN_RADIUS },
   };
 }
 
@@ -335,20 +334,17 @@ export const rectsMatch = (a: Rect, b: Rect) =>
   Math.abs(a.h - b.h) < 1e-6;
 
 /**
- * The rect anchor only repeats what is drawn – a text box or the bounds of shapes – so no extra
- * frame is drawn around it: the text box or shape is the mark itself.
+ * The rect anchor only repeats what is drawn – a text box or the bounds of the drawing – so no
+ * extra frame is drawn around it: the text box or drawing is the mark itself.
  */
 export function isImplicitFrame(comment: Pick<Comment, 'anchor' | 'strokes'>): boolean {
   const { anchor, strokes } = comment;
   if (anchor.type !== 'rect' || strokes.length === 0) return false;
   if (strokes.some((stroke) => stroke.tool === 'text' && rectsMatch(textBox(stroke), anchor.rect)))
     return true;
+  // Drawn without a box (freehand, arrow, marker, shapes): the box is the drawing's own bounds.
   const bounds = strokesBounds(strokes);
-  return (
-    bounds !== null &&
-    strokes.some((stroke) => stroke.tool === 'text' || isShapeTool(stroke.tool)) &&
-    rectsMatch(bounds, anchor.rect)
-  );
+  return bounds !== null && rectsMatch(bounds, anchor.rect);
 }
 
 /** The text written on the slide, if the comment has one ("Text auf Folie"). */
@@ -358,6 +354,17 @@ export const textAnnotation = (comment: Pick<Comment, 'strokes'>) =>
 /** True when the body only consists of a drawing (shown as "✏️ Markierung"). */
 export const isStrokeOnly = (comment: Comment) =>
   comment.body.trim() === '' && comment.strokes.length > 0;
+
+/**
+ * A drawing made without a comment: lines only, no text, recording or replies. It stays on the
+ * slide but gets no card or connector line – a click on it opens the thread panel.
+ */
+export const isBareDrawing = ({ root, replies }: Thread) =>
+  replies.length === 0 &&
+  !root.media &&
+  root.body.trim() === '' &&
+  root.strokes.length > 0 &&
+  root.strokes.every(isPathStroke);
 
 /** Stand-in for an empty body: the text on the slide, if any, else "✏️ Markierung". */
 export const strokeOnlyLabel = (comment: Pick<Comment, 'strokes'>) => {

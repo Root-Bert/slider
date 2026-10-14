@@ -27,6 +27,7 @@ const draft = (overrides: Partial<Draft> = {}): Draft => ({
   strokes: [],
   undone: [],
   textBox: textBox(),
+  commentId: null,
   ...overrides,
 });
 

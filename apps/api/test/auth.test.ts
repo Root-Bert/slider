@@ -1,11 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
-import {
-  authProvidersSchema,
-  createdWorkspaceInviteSchema,
-  reviewLinkSchema,
-  type MeResponse,
-} from '@slider/shared';
+import { authProvidersSchema, createdWorkspaceInviteSchema, type MeResponse } from '@slider/shared';
 import { decryptToken } from '../src/auth/token-crypto';
 import { signInWithIdentity } from '../src/services/accounts';
 import type { Config, OidcConfig } from '../src/config';
@@ -207,27 +202,14 @@ describe('GET /api/auth/providers', () => {
 });
 
 describe('sessions', () => {
-  it('answers 401 to anonymous callers without dev login, but keeps guest links working', async () => {
+  it('answers 401 to anonymous callers without dev login, decks included (no guests)', async () => {
     ctx = await createTestContext({ config: authConfig() });
     expect((await me()).status).toBe(401);
     expect(await (await ctx.request('/api/decks')).json()).toMatchObject({
       error: { code: 'unauthorized' },
     });
-
-    const { cookie } = await signedInUser(ctx, { name: 'Robert', email: 'robert@q4-team.de' });
     const { deckId } = await createReadyDeck(ctx);
-    const link = reviewLinkSchema.parse(
-      await (
-        await ctx.request(`/api/decks/${deckId}/review-links`, { method: 'POST', json: {}, cookie })
-      ).json(),
-    );
-    const join = await ctx.request(`/api/invites/${link.token}/join`, {
-      method: 'POST',
-      json: { name: 'Gast' },
-    });
-    expect(join.status).toBe(200);
-    const guest = (join.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
-    expect((await ctx.request(`/api/decks/${deckId}`, { cookie: guest })).status).toBe(200);
+    expect((await ctx.request(`/api/decks/${deckId}`)).status).toBe(401);
   });
 
   it('signs in with the cookie, renews at most daily, expires and logs out', async () => {
@@ -247,7 +229,7 @@ describe('sessions', () => {
       microsoftConnected: false,
     });
     expect(body.workspaces).toEqual([
-      expect.objectContaining({ name: 'Meine Organisation', role: 'owner', memberCount: 1 }),
+      expect.objectContaining({ name: 'Meine Organisation', role: 'admin', memberCount: 1 }),
     ]);
 
     // Only the hash is stored.
@@ -465,7 +447,7 @@ describe('Microsoft login', () => {
     expect(body.workspaces).toEqual([]);
   });
 
-  it('only connects file access for someone already signed in – no new session', async () => {
+  it('signed in, connects file access and links the login – no new session', async () => {
     const idp = fakeMicrosoft({ oid: 'oid-lena', preferred_username: 'lena@firma.de' });
     await msContext(idp);
     await finishBootstrap();
@@ -477,12 +459,19 @@ describe('Microsoft login', () => {
       id: lena.user.id,
       microsoftConnected: true,
     });
-    expect(
-      await ctx.deps.db
-        .select()
+    const loginsOf = (userId: string) =>
+      ctx.deps.db
+        .select({ provider: userIdentities.provider })
         .from(userIdentities)
-        .where(eq(userIdentities.userId, lena.user.id)),
-    ).toEqual([]);
+        .where(eq(userIdentities.userId, userId));
+    expect(await loginsOf(lena.user.id)).toEqual([{ provider: 'microsoft' }]);
+
+    // Someone else may get files through the same Microsoft account, but not its login.
+    const max = await signedInUser(ctx, { name: 'Max', email: 'max@firma.de' });
+    await redirectLogin('microsoft', idp, { returnTo: '/neu', cookie: max.cookie });
+    expect((await me(max.cookie)).body.user?.microsoftConnected).toBe(true);
+    expect(await loginsOf(max.user.id)).toEqual([]);
+    expect(await loginsOf(lena.user.id)).toEqual([{ provider: 'microsoft' }]);
   });
 
   it('does not take an unverified e-mail claim for sign-up', async () => {

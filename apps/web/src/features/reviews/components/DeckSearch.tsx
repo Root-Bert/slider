@@ -1,29 +1,26 @@
 import { useRef } from 'react';
-import { cn, TextField } from '@/ui';
+import { TextField } from '@/ui';
 import { isApplePlatform, useSearchShortcut } from '../hooks/useSearchShortcut';
 import { Kbd } from '@/ui';
 
 interface DeckSearchProps {
   value: string;
   onChange: (value: string) => void;
-  /**
-   * `header` (≥ sm): compact field in the app header with the ⌘K / Ctrl K shortcut.
-   * `inline` (< sm): full-width field below the title, where the header has no room.
-   */
-  placement: 'header' | 'inline';
 }
 
-/** Deck search (G1). Filters client-side by title; Escape clears it. */
-export function DeckSearch({ value, onChange, placement }: DeckSearchProps) {
+/**
+ * Deck search (G1), in the toolbar left of the sort select. Filters client-side by title;
+ * ⌘K / Ctrl K focuses it, Escape clears it.
+ */
+export function DeckSearch({ value, onChange }: DeckSearchProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const isHeader = placement === 'header';
   useSearchShortcut(() => {
     inputRef.current?.focus();
     inputRef.current?.select();
-  }, isHeader);
+  }, true);
 
   return (
-    <search className={cn('w-full', isHeader ? 'max-w-[312px] max-sm:hidden' : 'sm:hidden')}>
+    <search className="w-[260px] max-sm:min-w-0 max-sm:flex-1">
       <TextField
         ref={inputRef}
         type="search"
@@ -38,7 +35,7 @@ export function DeckSearch({ value, onChange, placement }: DeckSearchProps) {
             onChange('');
           }
         }}
-        trailing={isHeader && <Kbd>{isApplePlatform() ? '⌘K' : 'Strg K'}</Kbd>}
+        trailing={<Kbd className="max-sm:hidden">{isApplePlatform() ? '⌘K' : 'Strg K'}</Kbd>}
         className="[&_input::-webkit-search-cancel-button]:hidden"
       />
     </search>

@@ -14,19 +14,20 @@ export const routes = {
   /** Deep links use the stable slide id, never the slide number (BER-95). */
   deck: (deckId: string, slideId?: string | null) =>
     slideId ? `/d/${deckId}?slide=${encodeURIComponent(slideId)}` : `/d/${deckId}`,
-  invite: (token: string) => `/r/${token}`,
   /** Workspace invitation link (BER-129). */
   join: (token: string) => `/join/${token}`,
   login: (returnTo?: string | null) => loginPath(returnTo),
   /** "Konto & Anmeldung": connected logins and passkeys. */
   account: () => '/konto',
+  /** "Einstellungen": your colour and how decks open – kept apart from the account. */
+  preferences: () => '/einstellungen',
   /** Logins, mail and sign-up of a self-hosted instance (instance admin). */
   setup: () => '/einrichtung',
   /** Same page as the login – the first login creates the account (BER-130). */
   register: () => '/registrieren',
 };
 
-/** Absolute URL for sharing (review links). */
+/** Absolute URL for sharing. */
 export const absoluteUrl = (path: string) => new URL(path, window.location.origin).toString();
 
 /** The current location as a `returnTo` value. */

@@ -166,7 +166,7 @@ replaces a list of our own: Graph's `/me/drive/sharedWithMe` stops returning dat
 Decks imported from a link follow their source (BER-107/108/114). Uploaded decks stay as they
 are; a new version can be uploaded with `POST /api/decks/:id/revisions`.
 
-- **Polling.** Every `SYNC_POLL_INTERVAL_MS` (default 2 min, `0` = off) the API process checks
+- **Polling.** Every `SYNC_POLL_INTERVAL_MS` (default 1 min, `0` = off) the API process checks
   linked decks that someone opened or changed in the last 7 days. It asks only for the change
   token – Graph `cTag`/`eTag` for OneDrive/SharePoint, `ETag`/`Last-Modified` via `HEAD` for
   direct URLs; sources without either are downloaded and hashed at most every 5 intervals.
@@ -174,7 +174,6 @@ are; a new version can be uploaded with `POST /api/decks/:id/revisions`.
   records the token.
 - **Debounce.** PowerPoint Online autosaves constantly, so a change is imported only after
   `SYNC_DEBOUNCE_MS` (default 1 min) without a further change – at the latest after 10 × that.
-  The owner can skip the wait with "Jetzt aktualisieren" (`POST /api/decks/:id/sync`).
 - **Slide matching.** The new revision is matched to the previous one (`@slider/pptx`
   `matchSlides`): same PowerPoint `sldId` first – even when the slide was completely rewritten –
   unless most ids disagree with the content (deck rebuilt/renumbered), then text, title, layout,
@@ -284,7 +283,7 @@ Tracked in Linear (project _Slider_). This prototype covers:
 | BER-112/113/115 | PowerPoint comments (modern + legacy) imported and labelled   | ✅                                            |
 | BER-121         | Owner overview "Meine Reviews"                                | ✅ (login via Microsoft/magic link pending)   |
 | BER-88/92       | Import by link: OneDrive, SharePoint, direct `.pptx` URL      | ✅                                            |
-| BER-107/108/114 | Change detection, slide matching, PPT comment re-import       | ✅ API (polling, debounce, diff, manual sync) |
+| BER-107/108/114 | Change detection, slide matching, PPT comment re-import       | ✅ API (polling, debounce, diff) |
 | BER-109–111     | Version UI: change badges, deleted slides, version history    | ⏳ API ready, UI pending                      |
 | BER-116         | Voice and video comments, on-device transcription             | ✅                                            |
 | BER-129         | Login (Microsoft, OIDC, magic link), organisations, invites   | ✅                                            |

@@ -69,8 +69,9 @@ describe('migration 0004_workspaces', () => {
       'SELECT user_id, role FROM workspace_members ORDER BY user_id',
     );
     expect(members).toEqual([
-      { user_id: 'u-lena', role: 'owner' },
-      { user_id: 'u-robert', role: 'owner' },
+      // Founded as owners; 0019 made every owner an admin.
+      { user_id: 'u-lena', role: 'admin' },
+      { user_id: 'u-robert', role: 'admin' },
     ]);
     const byCreator = new Map(workspaces.map((w) => [w.created_by, w.id]));
     const { rows: decks } = await client.query<{ id: string; workspace_id: string }>(

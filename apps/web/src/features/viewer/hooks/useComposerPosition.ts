@@ -2,11 +2,15 @@ import { useLayoutEffect, useState, type RefObject } from 'react';
 import { gapKey } from '../lib/comment-selectors';
 import { rafThrottle } from '../lib/dom';
 import { denormalizeRect, placePopover, type Placement } from '../lib/geometry';
-import { useStageRegistry } from '../state/stage-registry';
+import { useMarkPreview, useStageRegistry, type MarkPreview } from '../state/stage-registry';
 import type { Draft } from '../state/viewer-state';
 
 /** Viewport box of the draft's mark (or of the gap divider for gap comments). */
-function draftTargetBox(draft: Draft, registry: ReturnType<typeof useStageRegistry>) {
+function draftTargetBox(
+  draft: Draft,
+  registry: ReturnType<typeof useStageRegistry>,
+  preview: MarkPreview | null,
+) {
   const { anchor } = draft;
   if (anchor.type === 'gap') {
     const element = registry.getGapElement(gapKey(anchor.afterSlideId, anchor.beforeSlideId));
@@ -22,7 +26,8 @@ function draftTargetBox(draft: Draft, registry: ReturnType<typeof useStageRegist
     case 'point':
       return denormalizeRect({ ...anchor.point, w: 0, h: 0 }, box);
     case 'rect':
-      return denormalizeRect(anchor.rect, box);
+      // While the box is dragged, its shown place – not the stored one.
+      return denormalizeRect(preview?.threadId === null ? preview.rect : anchor.rect, box);
     case 'slide':
       return { left: box.left, top: box.top, right: box.right, bottom: box.bottom };
   }
@@ -35,11 +40,12 @@ export function useComposerPosition(
 ) {
   const registry = useStageRegistry();
   const [placement, setPlacement] = useState<Placement | null>(null);
+  const preview = useMarkPreview();
 
   useLayoutEffect(() => {
     if (!draft) return;
     const measure = () => {
-      const target = draftTargetBox(draft, registry);
+      const target = draftTargetBox(draft, registry, preview);
       const popover = popoverRef.current;
       if (!target || !popover) return;
       setPlacement(
@@ -66,7 +72,7 @@ export function useComposerPosition(
       window.removeEventListener('scroll', throttled.schedule, { capture: true });
       window.removeEventListener('resize', throttled.schedule);
     };
-  }, [draft, registry, popoverRef]);
+  }, [draft, registry, popoverRef, preview]);
 
   return draft ? placement : null;
 }

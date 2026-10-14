@@ -14,7 +14,8 @@ interface SelectProps<T extends string> extends Omit<
   value: T;
   onChange: (value: T) => void;
   options: readonly SelectOption<T>[];
-  size?: 'sm' | 'md';
+  /** `toolbar` matches a glass toolbar pill (`p-1` around `h-8` segments). */
+  size?: 'sm' | 'md' | 'toolbar';
 }
 
 /**
@@ -40,9 +41,11 @@ export function Select<T extends string>({
         className={cn(
           'glass w-full cursor-pointer appearance-none pr-8 text-fg-muted transition-colors hover:text-fg',
           'disabled:cursor-default disabled:opacity-50 disabled:hover:text-fg-muted',
-          size === 'md'
-            ? 'h-9 rounded-control pl-3.5 text-[13px]'
-            : 'h-7 rounded-chip pl-2.5 text-xs',
+          size === 'sm'
+            ? 'h-7 rounded-chip pl-2.5 text-xs'
+            : size === 'toolbar'
+              ? 'h-10 rounded-panel pl-3.5 text-[13px]'
+              : 'h-9 rounded-control pl-3.5 text-[13px]',
         )}
         {...props}
       >
@@ -54,7 +57,7 @@ export function Select<T extends string>({
       </select>
       <Icon
         name="expandMore"
-        size={size === 'md' ? 18 : 16}
+        size={size === 'sm' ? 16 : 18}
         className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-fg-subtle"
       />
     </span>

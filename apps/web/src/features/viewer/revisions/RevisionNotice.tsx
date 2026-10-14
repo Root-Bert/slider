@@ -8,7 +8,7 @@ const NOTICE_DURATION_MS = 6000;
 const FADE_OUT_MS = 200;
 
 /**
- * "V5 geladen · 2 Folien geändert, 1 neu" next to "Neu laden" in the version pill, for a few
+ * "V5 geladen · 2 Folien geändert, 1 neu" in the version pill, for a few
  * seconds after a new revision arrived (replaces the "Neue Version" banner). Slides in, a thin
  * bar counts down – paused while the pointer is on it – then it fades out and `onDone` drops the
  * announcement. Reduced motion: no slide, no bar, it just goes after the same time.

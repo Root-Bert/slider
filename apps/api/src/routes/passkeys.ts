@@ -20,18 +20,13 @@ import {
   simpleWebAuthn,
 } from '../auth/passkeys';
 import { startSession } from '../auth/session';
-import {
-  clearGuestCookie,
-  optionalViewerMiddleware,
-  unauthorized,
-  type OptionalViewerEnv,
-} from '../auth/viewer';
+import { optionalViewerMiddleware, unauthorized, type OptionalViewerEnv } from '../auth/viewer';
 import { authChallenges, passkeys, users } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { badRequest, notFound } from '../http/errors';
 import { rateLimit } from '../http/rate-limit';
 import { readJson } from '../http/validate';
-import { listIdentities } from '../services/accounts';
+import { listIdentities, unlinkIdentity } from '../services/accounts';
 import { safeReturnTo } from './auth';
 
 type Purpose = (typeof authChallenges.$inferSelect)['purpose'];
@@ -64,7 +59,7 @@ export function passkeysRoutes(deps: AppDeps) {
   const optionsLimit = rateLimit({ limit: 60, windowMs: 60_000, clock: deps.clock });
   const verifyLimit = rateLimit({ limit: 30, windowMs: 60_000, clock: deps.clock });
 
-  /** The signed-in account (session or dev login); guests and anonymous callers get 401. */
+  /** The signed-in account (session or dev login); anonymous callers get 401. */
   const accountId = (c: Context<OptionalViewerEnv>) => {
     const current = c.var.viewer;
     if (current?.kind !== 'owner') throw unauthorized();
@@ -135,6 +130,17 @@ export function passkeysRoutes(deps: AppDeps) {
           rows.map((row) =>
             loginIdentitySchema.parse({ ...row, createdAt: row.createdAt.toISOString() }),
           ),
+        );
+      })
+
+      .delete('/me/identities/:id', viewer, async (c) => {
+        const result = await unlinkIdentity(deps, accountId(c), c.req.param('id'));
+        if (result.ok) return c.body(null, 204);
+        if (result.error === 'not_found') throw notFound('Diese Anmeldung gibt es nicht (mehr).');
+        throw badRequest(
+          result.error === 'email'
+            ? 'Die Anmeldung per E-Mail lässt sich nicht trennen.'
+            : 'Das ist deine letzte Anmeldung. Verbinde vorher eine andere oder lege einen Passkey an.',
         );
       })
 
@@ -300,7 +306,6 @@ export function passkeysRoutes(deps: AppDeps) {
           .update(passkeys)
           .set({ counter: newCounter, backedUp: credentialBackedUp, lastUsedAt: deps.clock.now() })
           .where(eq(passkeys.id, row.id));
-        clearGuestCookie(c);
         await startSession(c, deps, row.userId);
         return c.json<LoginResult>({
           redirectTo: safeReturnTo(input.returnTo, '/'),

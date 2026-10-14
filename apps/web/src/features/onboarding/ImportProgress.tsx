@@ -1,29 +1,107 @@
+import { useEffect, useEffectEvent, useState } from 'react';
 import { useNavigate } from 'react-router';
 import type { Deck } from '@slider/shared';
 import { routes } from '@/app/routes';
 import { useDeleteDeck } from '@/lib/queries';
-import { Button, cn, Icon, ProgressBar } from '@/ui';
+import { Button, cn, GlassPanel, Icon, ProgressBar } from '@/ui';
 import { slidesLabel, sourceLabel } from '@/features/reviews/lib/deck-labels';
+import { ImportStage, type StagePhase } from './components/ImportStage';
+import { importPicture, INTRO_MS, REVEAL_MS } from './lib/import-skeleton';
 import { importStatusText, importStepViews, type ImportStepView } from './lib/import-steps';
 
+interface ImportProgressProps {
+  deck: Deck;
+  /** The real slides' aspect ratios once the deck is ready and the viewer has its data: starts the morph. */
+  aspectRatios?: readonly number[] | null;
+  /** The morph has finished – the real viewer underneath is all that is left. */
+  onRevealed?: () => void;
+}
+
 /**
- * A2: shown by the deck page while the import is queued, running or failed (BER-97).
- * Purely presentational – the deck page polls `useDeck` and re-renders this with fresh state.
+ * A2: shown by the deck page while the import is queued, running or failed (BER-97) – the
+ * viewer's layout building itself in placeholders, the progress docked where the first comment
+ * would be. Once the deck is ready the deck page mounts the viewer underneath and passes the
+ * slides' aspect ratios: the placeholders settle onto the real slides and dissolve into them.
  */
-export function ImportProgress({ deck }: { deck: Deck }) {
+export function ImportProgress({ deck, aspectRatios = null, onRevealed }: ImportProgressProps) {
+  const phase = useMorph(aspectRatios !== null, onRevealed);
   return (
-    <div className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-canvas p-4">
-      <title>{`${deck.title} wird importiert · Slider`}</title>
-      <ViewerSkeleton />
-      <div className="glass-elevated relative w-full max-w-[420px] animate-pop-in rounded-panel p-5">
-        {deck.import.status === 'failed' ? (
-          <ImportFailed deck={deck} error={deck.import.error} />
-        ) : (
-          <ImportRunning deck={deck} />
-        )}
-      </div>
-    </div>
+    <>
+      {phase === 'import' && <title>{`${deck.title} wird importiert · Slider`}</title>}
+      <ImportStage
+        picture={importPicture(deck.import, deck.slideCount)}
+        phase={phase}
+        aspectRatios={aspectRatios}
+      >
+        <GlassPanel tone="elevated" className="p-5">
+          {deck.import.status === 'failed' ? (
+            <ImportFailed deck={deck} error={deck.import.error} />
+          ) : (
+            <ImportRunning deck={deck} />
+          )}
+        </GlassPanel>
+      </ImportStage>
+    </>
   );
+}
+
+const SETTLE_MS = 560;
+/** Longest wait for the real slide images before dissolving into them anyway. */
+const IMAGE_WAIT_MS = 2000;
+/** The viewer fades a slide image in once it has loaded. */
+const IMAGE_FADE_MS = 300;
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** Resolves once the real track's slide images in view have loaded (or failed), at most `IMAGE_WAIT_MS`. */
+async function slideImagesLoaded(): Promise<void> {
+  // The track lays its slides out once it has measured itself: give it a frame.
+  await sleep(32);
+  const images = [...document.querySelectorAll<HTMLImageElement>('[data-track] img')].filter(
+    (image) => image.getBoundingClientRect().left < window.innerWidth,
+  );
+  const pending = images
+    .filter((image) => !image.complete)
+    .map(
+      (image) =>
+        new Promise<void>((resolve) => {
+          image.addEventListener('load', () => resolve(), { once: true });
+          image.addEventListener('error', () => resolve(), { once: true });
+        }),
+    );
+  return Promise.race([
+    Promise.all(pending).then(() => sleep(pending.length > 0 ? IMAGE_FADE_MS : 0)),
+    sleep(IMAGE_WAIT_MS),
+  ]);
+}
+
+/**
+ * `import` until `ready`; then `settle` – at least until the intro has played and the real
+ * slides have loaded – then `reveal`, and `onRevealed` once the placeholders are gone.
+ */
+function useMorph(ready: boolean, onRevealed?: () => void): StagePhase {
+  const [mountedAt] = useState(() => performance.now());
+  const [revealing, setRevealing] = useState(false);
+  const revealed = useEffectEvent(() => onRevealed?.());
+
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    const run = async () => {
+      const introLeft = Math.max(0, mountedAt + INTRO_MS - performance.now());
+      await Promise.all([sleep(Math.max(SETTLE_MS, introLeft)), slideImagesLoaded()]);
+      if (cancelled) return;
+      setRevealing(true);
+      await sleep(REVEAL_MS);
+      if (!cancelled) revealed();
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, mountedAt]);
+
+  return !ready ? 'import' : revealing ? 'reveal' : 'settle';
 }
 
 function DeckHeading({ deck, failed = false }: { deck: Deck; failed?: boolean }) {
@@ -160,34 +238,6 @@ function ImportFailed({ deck, error }: { deck: Deck; error: string }) {
         <Button size="sm" icon="upload" onClick={() => void navigate(routes.newReview())}>
           Andere Datei hochladen
         </Button>
-      </div>
-    </div>
-  );
-}
-
-/** Dimmed outline of the viewer (stage, side panel, filmstrip) so the page doesn't jump once ready. */
-function ViewerSkeleton() {
-  return (
-    <div
-      aria-hidden
-      className="pointer-events-none absolute inset-0 flex flex-col gap-4 p-4 opacity-60 md:p-6"
-    >
-      <div className="flex min-h-0 flex-1 gap-4">
-        <div className="flex flex-1 flex-col gap-4 rounded-panel bg-[#111] p-8">
-          <div className="skeleton h-8 w-1/3 rounded-chip" />
-          <div className="skeleton h-3 w-1/4 rounded-thumb" />
-          <div className="mt-auto grid grid-cols-3 gap-4">
-            <div className="skeleton h-20 rounded-chip" />
-            <div className="skeleton h-20 rounded-chip" />
-            <div className="skeleton h-20 rounded-chip" />
-          </div>
-        </div>
-        <div className="hidden w-60 rounded-panel bg-[#111] lg:block" />
-      </div>
-      <div className="flex gap-2 overflow-hidden">
-        {Array.from({ length: 10 }, (_, index) => (
-          <div key={index} className="skeleton aspect-video w-20 shrink-0 rounded-thumb md:w-24" />
-        ))}
       </div>
     </div>
   );

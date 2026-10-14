@@ -4,8 +4,8 @@ import { ApiError } from '@/lib/api-client';
 export type GateState = 'loading' | 'login' | 'error' | 'ready';
 
 /**
- * What a member page shows for the `GET /me` state: signed out (401) or a review-link guest
- * without an account goes to the login page; other failures show an error.
+ * What a member page shows for the `GET /me` state: signed out (401) goes to the login page;
+ * other failures show an error.
  */
 export function accountGate(me: { data?: MeResponse; error: Error | null }): GateState {
   if (me.data) return me.data.user ? 'ready' : 'login';

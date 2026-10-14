@@ -12,7 +12,8 @@ export interface PublishedLayout {
 
 /** A box being dragged: where it is shown until its new place is stored. */
 export interface MarkPreview {
-  threadId: string;
+  /** `null` for the unsent comment's box. */
+  threadId: string | null;
   rect: Rect;
 }
 

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { bandCapacity, brickLayout, planBands } from './card-layout';
 import {
   assignLanes,
-  fadeStops,
   findGutter,
   layoutBlobConnectors,
   layoutConnectors,
@@ -424,23 +423,5 @@ describe('roundedPath', () => {
         { x: 100, y: 10 },
       ]),
     ).toBe('M0 0L45 0Q50 0 50 5L50 5Q50 10 55 10L100 10');
-  });
-});
-
-describe('fadeStops', () => {
-  it('hides the lines through the whole band, without a glint between its rows', () => {
-    expect(fadeStops({ top: 350, bottom: 496 })).toEqual([
-      { y: 322, opacity: 1 },
-      { y: 340, opacity: 0 },
-      { y: 496, opacity: 0 },
-      { y: 508, opacity: 1 },
-    ]);
-  });
-
-  it('keeps the stops ascending for a degenerate band and hides nothing without one', () => {
-    const stops = fadeStops({ top: 100, bottom: 80 });
-    for (let i = 1; i < stops.length; i++)
-      expect(stops[i]!.y).toBeGreaterThanOrEqual(stops[i - 1]!.y);
-    expect(fadeStops(null)).toEqual([]);
   });
 });

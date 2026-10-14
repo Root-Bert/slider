@@ -4,7 +4,7 @@ import { Icon, type IconName } from './Icon';
 import { Spinner } from './Spinner';
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
-type ButtonSize = 'sm' | 'md' | 'lg';
+type ButtonSize = 'sm' | 'md' | 'lg' | 'toolbar';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -15,10 +15,10 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   ref?: Ref<HTMLButtonElement>;
 }
 
-/** UI kit "Button": Primary = white 90 % / black text, Secondary = glass, Ghost = text only. */
+/** UI kit "Button": Primary = white 90 % / black text, Secondary = glass-control, Ghost = text only. */
 const variantClasses: Record<ButtonVariant, string> = {
   primary: 'bg-primary text-on-primary hover:bg-white',
-  secondary: 'glass text-fg hover:bg-white/15',
+  secondary: 'glass-control text-fg hover:bg-white/15',
   ghost: 'text-fg-muted hover:text-fg hover:bg-white/5',
   danger: 'bg-danger/15 text-danger hover:bg-danger/25',
 };
@@ -27,6 +27,8 @@ const sizeClasses: Record<ButtonSize, string> = {
   sm: 'h-8 px-3 text-[13px] gap-1.5 rounded-control-sm',
   md: 'h-9 px-4 text-sm gap-2 rounded-control',
   lg: 'h-11 px-5 text-sm gap-2 rounded-control',
+  /** Matches a glass toolbar pill (`p-1` around `h-8` segments). */
+  toolbar: 'h-10 px-3.5 text-[13px] gap-1.5 rounded-panel',
 };
 
 export function Button({

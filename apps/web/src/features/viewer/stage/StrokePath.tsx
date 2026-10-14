@@ -1,9 +1,10 @@
-import type { PathStroke } from '@slider/shared';
+import type { AuthorColor, PathStroke } from '@slider/shared';
 import { accentColor } from '@/lib/accent';
 import { STROKE_STYLE, strokePath } from '../lib/stroke-path';
 
 interface StrokePathProps {
-  stroke: Pick<PathStroke, 'tool' | 'color' | 'points'>;
+  /** Drawn in the comment author's colour, which may be PowerPoint orange. */
+  stroke: Pick<PathStroke, 'tool' | 'points'> & { color: AuthorColor };
   aspectRatio: number;
   /** Multiplies the tool's own opacity (dimming). */
   opacity?: number;

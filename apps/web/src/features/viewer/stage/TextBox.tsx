@@ -1,4 +1,4 @@
-import type { AccentColor, Rect, TextStroke } from '@slider/shared';
+import type { AuthorColor, Rect, TextStroke } from '@slider/shared';
 import {
   useEffect,
   useLayoutEffect,
@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { accentAlpha, accentColor } from '@/lib/accent';
 import { cn, Icon } from '@/ui';
+import { focusCommentField } from '../lib/composer-focus';
 import { MIN_TEXT_WIDTH, normalizeTextRect } from '../lib/text-box';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, type TextBoxDraft } from '../state/viewer-state';
@@ -16,16 +17,17 @@ import { useViewerDispatch, type TextBoxDraft } from '../state/viewer-state';
 /**
  * "Text auf Folie": text written on the slide. Sizes are in container units of the slide box
  * (the parent sets `container-type: size`), so position, width and font size scale with the slide.
- * Editor and stored text share one box style – the text wraps the same way in both.
+ * Editor and stored text share one box style – the text wraps the same way in both, centred
+ * horizontally and vertically in the box.
  */
 const TEXT_CLASS =
-  'whitespace-pre-wrap [overflow-wrap:anywhere] px-[0.35em] py-[0.15em] text-left leading-[1.25] font-semibold';
+  'whitespace-pre-wrap [overflow-wrap:anywhere] px-[0.35em] py-[0.15em] text-center leading-[1.25] font-semibold';
 
 /**
  * Dark like the rest of the app, readable on light and dark slides. The text is the author's
  * accent lifted towards white – pure blue or red alone is too dark on the dark backdrop.
  */
-const textSurface = (color: AccentColor): CSSProperties => ({
+const textSurface = (color: AuthorColor): CSSProperties => ({
   color: `color-mix(in srgb, ${accentColor(color)} 75%, white)`,
   backgroundColor: 'color-mix(in srgb, var(--color-glass-solid) 75%, transparent)',
 });
@@ -37,7 +39,8 @@ const boxPosition = (x: number, y: number, fontSize: number): CSSProperties => (
 });
 
 interface TextMarkProps {
-  stroke: TextStroke;
+  /** In the comment author's colour, which may be PowerPoint orange. */
+  stroke: Omit<TextStroke, 'color'> & { color: AuthorColor };
   label: string;
   opacity: number;
   emphasized: boolean;
@@ -192,7 +195,7 @@ export function TextMark({
       onPointerCancel={endDrag}
       className={cn(
         TEXT_CLASS,
-        'absolute rounded-[0.25em] outline-offset-2 transition-[opacity,box-shadow] duration-200',
+        'absolute flex flex-col justify-center rounded-[0.25em] outline-offset-2 transition-[opacity,box-shadow] duration-200',
         interactive ? 'pointer-events-auto cursor-pointer' : 'pointer-events-none',
         editable && 'cursor-move touch-none',
         (emphasized || preview) && 'z-10',
@@ -234,7 +237,8 @@ type Drag =
 /**
  * The draft's text box, typed into directly on the slide. It grows with its text (to the slide's
  * right edge, then it wraps), moves by its edge or name tag and resizes by its corner handle.
- * ↵ = new line, ⌘↵ / Ctrl↵ sends (through the composer), Esc cancels (global shortcut).
+ * ↵ / Tab = on to the comment, ⇧↵ = new line, ⌘↵ / Ctrl↵ sends (through the composer), Esc
+ * cancels (global shortcut).
  */
 export function TextBoxEditor({ box }: TextBoxEditorProps) {
   const dispatch = useViewerDispatch();
@@ -245,9 +249,13 @@ export function TextBoxEditor({ box }: TextBoxEditorProps) {
   const dragRef = useRef<Drag | null>(null);
   const color = accentColor(author.color);
 
-  // Focus on opening and whenever the box is placed somewhere else.
+  // Focus on opening and whenever the box is placed somewhere else – after the text, which may
+  // already hold the first typed key.
   useEffect(() => {
-    textareaRef.current?.focus({ preventScroll: true });
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.focus({ preventScroll: true });
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
   }, [box.x, box.y]);
 
   // Report the rendered box (normalised) – it is the anchor and what gets stored.
@@ -332,7 +340,7 @@ export function TextBoxEditor({ box }: TextBoxEditorProps) {
       <div
         ref={boxRef}
         data-text-editor
-        className="pointer-events-auto absolute animate-pop-in rounded-[0.25em]"
+        className="pointer-events-auto absolute flex animate-pop-in flex-col justify-center rounded-[0.25em]"
         style={{
           ...boxPosition(box.x, box.y, box.fontSize),
           ...textSurface(author.color),
@@ -352,42 +360,53 @@ export function TextBoxEditor({ box }: TextBoxEditorProps) {
           {...dragHandlers}
           className="absolute -inset-1.5 cursor-move touch-none rounded-[0.4em]"
         />
-        {/* Sizes the box: same text and style as the textarea on top of it. */}
-        <div aria-hidden className={cn(TEXT_CLASS, 'invisible')}>
-          {box.text}
-          {'​'}
-        </div>
-        <textarea
-          ref={textareaRef}
-          aria-label="Text auf der Folie"
-          value={box.text}
-          maxLength={2000}
-          rows={1}
-          cols={1}
-          spellCheck
-          onChange={(event) =>
-            dispatch({ type: 'textBoxChanged', patch: { text: event.target.value } })
-          }
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-              event.preventDefault();
-              document.querySelector<HTMLFormElement>('form[data-composer]')?.requestSubmit();
-            }
-            // Tab jumps to the composer's comment field (Shift+Tab there comes back).
-            if (event.key === 'Tab' && !event.shiftKey) {
-              const comment = document.querySelector<HTMLTextAreaElement>(
-                'form[data-composer] textarea[aria-label="Kommentar"]',
-              );
-              if (!comment) return;
-              event.preventDefault();
-              comment.focus();
-            }
+        {/* The inside: a press next to the text keeps typing in it. */}
+        <span
+          role="presentation"
+          onPointerDown={(event) => {
+            event.preventDefault();
+            textareaRef.current?.focus({ preventScroll: true });
           }}
-          className={cn(
-            TEXT_CLASS,
-            'absolute inset-0 size-full resize-none overflow-hidden bg-transparent outline-none',
-          )}
+          className="absolute inset-0 cursor-text"
         />
+        {/* The text, centred in the box: the hidden copy sizes it, the textarea lies on top. */}
+        <div className="relative">
+          <div aria-hidden className={cn(TEXT_CLASS, 'invisible')}>
+            {box.text}
+            {'​'}
+          </div>
+          <textarea
+            ref={textareaRef}
+            aria-label="Text auf der Folie"
+            value={box.text}
+            maxLength={2000}
+            rows={1}
+            cols={1}
+            spellCheck
+            onChange={(event) =>
+              dispatch({ type: 'textBoxChanged', patch: { text: event.target.value } })
+            }
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                event.preventDefault();
+                document.querySelector<HTMLFormElement>('form[data-composer]')?.requestSubmit();
+              }
+              // ↵ and Tab jump to the composer's comment field (Shift+Tab there comes back);
+              // ⇧↵ is a new line.
+              const toComment =
+                (event.key === 'Tab' || event.key === 'Enter') &&
+                !event.shiftKey &&
+                !event.metaKey &&
+                !event.ctrlKey &&
+                !event.nativeEvent.isComposing;
+              if (toComment && focusCommentField()) event.preventDefault();
+            }}
+            className={cn(
+              TEXT_CLASS,
+              'absolute inset-0 size-full resize-none overflow-hidden bg-transparent outline-none',
+            )}
+          />
+        </div>
 
         {/* Name tag – also the move handle. */}
         <span

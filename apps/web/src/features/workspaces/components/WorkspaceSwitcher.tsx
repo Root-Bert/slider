@@ -6,16 +6,20 @@ import { Icon, Toast, useToast } from '@/ui';
 import { ROLE_LABELS } from '../lib/roles';
 import { useActiveWorkspace } from '../useWorkspace';
 import { CreateWorkspaceDialog } from './CreateWorkspaceDialog';
+import { JoinWorkspaceDialog } from './JoinWorkspaceDialog';
 import { HeaderPopover, PopoverDivider, PopoverHeading, PopoverItem } from './HeaderPopover';
 import { PendingInvites } from './PendingInvites';
 import { WorkspaceMark } from './WorkspaceMark';
 
-/** Header: current organisation with a menu to switch, found one, open its settings and join invites. */
+/**
+ * Header: current organisation with a menu to switch, found one or join one by link, open its
+ * settings and accept pending invites.
+ */
 export function WorkspaceSwitcher() {
   const { data: me } = useMe();
   const current = useActiveWorkspace();
   const navigate = useNavigate();
-  const [creating, setCreating] = useState(false);
+  const [dialog, setDialog] = useState<'create' | 'join' | null>(null);
   const [toast, showToast] = useToast();
   const workspaces = me?.workspaces ?? [];
   const invites = me?.pendingInvites ?? [];
@@ -73,37 +77,49 @@ export function WorkspaceSwitcher() {
               ))}
             </div>
             <PopoverDivider />
+            <PopoverHeading>Neue Organisation</PopoverHeading>
             {canCreate ? (
               <PopoverItem
                 icon={<Icon name="add" size={18} className="text-fg-subtle" />}
                 onSelect={() => {
                   close();
-                  setCreating(true);
+                  setDialog('create');
                 }}
               >
-                Neue Organisation
+                Eigene erstellen
               </PopoverItem>
             ) : (
-              // One self-founded organisation per account (BER-130).
+              // One own organisation per account (BER-130) – handing it over frees the slot.
               <div className="flex items-start gap-2.5 px-2.5 py-1.5 text-[13px] text-fg-subtle">
                 <Icon name="add" size={18} className="shrink-0 opacity-50" />
                 <span className="flex flex-col gap-0.5">
-                  <span>Neue Organisation</span>
+                  <span>Eigene erstellen</span>
                   <span className="text-xs leading-4">
-                    Du hast bereits eine eigene Organisation. Weiteren trittst du per Einladung bei.
+                    Du hast bereits eine eigene. Übergib sie an jemand anderen, um eine neue zu
+                    gründen.
                   </span>
                 </span>
               </div>
             )}
+            <PopoverItem
+              icon={<Icon name="personAdd" size={18} className="text-fg-subtle" />}
+              onSelect={() => {
+                close();
+                setDialog('join');
+              }}
+            >
+              Mit Einladung beitreten
+            </PopoverItem>
+            <PopoverDivider />
             {current && (
               <PopoverItem
-                icon={<Icon name="person" size={18} className="text-fg-subtle" />}
+                icon={<Icon name="settings" size={18} className="text-fg-subtle" />}
                 onSelect={() => {
                   close();
                   void navigate(routes.workspaceSettings(current.id));
                 }}
               >
-                Einstellungen & Mitglieder
+                Organisation verwalten
               </PopoverItem>
             )}
             {invites.length > 0 && (
@@ -116,7 +132,8 @@ export function WorkspaceSwitcher() {
           </>
         )}
       </HeaderPopover>
-      <CreateWorkspaceDialog open={creating} onClose={() => setCreating(false)} />
+      <CreateWorkspaceDialog open={dialog === 'create'} onClose={() => setDialog(null)} />
+      <JoinWorkspaceDialog open={dialog === 'join'} onClose={() => setDialog(null)} />
       <Toast toast={toast} />
     </>
   );

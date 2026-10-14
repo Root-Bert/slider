@@ -20,18 +20,32 @@ export const ACCENT_COLORS = ['red', 'blue', 'violet', 'yellow'] as const;
 export const accentColorSchema = z.enum(ACCENT_COLORS);
 export type AccentColor = z.infer<typeof accentColorSchema>;
 
-export const authorTypeSchema = z.enum(['owner', 'guest', 'external']);
+/**
+ * Colours an author can show in: an accent, or PowerPoint orange for whoever commented in the
+ * file without being matched to a Slider account. Nobody picks orange.
+ */
+export const AUTHOR_COLORS = [...ACCENT_COLORS, 'powerpoint'] as const;
+export const authorColorSchema = z.enum(AUTHOR_COLORS);
+export type AuthorColor = z.infer<typeof authorColorSchema>;
+
+/** `owner`: someone with a Slider account (possibly no longer a member); `external`: PowerPoint. */
+export const authorTypeSchema = z.enum(['owner', 'external']);
 export type AuthorType = z.infer<typeof authorTypeSchema>;
 
 export const authorSchema = z.object({
   id: z.string(),
   name: z.string(),
   type: authorTypeSchema,
-  color: accentColorSchema,
-  /** A re-rolled generated avatar (else seeded by the name). Absent in older comment snapshots. */
-  avatarSeed: z.string().nullable().optional(),
+  color: authorColorSchema,
 });
 export type Author = z.infer<typeof authorSchema>;
+
+/** An author with a Slider account: always in a colour they picked. */
+export const accountAuthorSchema = authorSchema.extend({
+  type: z.literal('owner'),
+  color: accentColorSchema,
+});
+export type AccountAuthor = z.infer<typeof accountAuthorSchema>;
 
 // ── Decks, revisions, slides ────────────────────────────────────────────────
 
@@ -58,11 +72,13 @@ export type ImportState = z.infer<typeof importStateSchema>;
 // ── Workspaces and rights (BER-129) ─────────────────────────────────────────
 
 /**
- * Role in a workspace, strongest first. `reviewer` views and comments; `member` also creates
- * decks and manages its own; `admin` manages every deck, the members and invites; `owner` may
- * also rename/delete the workspace and appoint owners.
+ * Role in a workspace, strongest first. `viewer` only looks (people a deck was shared with);
+ * `reviewer` views and comments; `member` also creates
+ * decks and manages its own; `admin` may do everything: every deck, members, invites, renaming
+ * and deleting the workspace. Who founded it (its creator) is no role but a fact – see
+ * `WorkspaceMember.isCreator`.
  */
-export const WORKSPACE_ROLES = ['owner', 'admin', 'member', 'reviewer'] as const;
+export const WORKSPACE_ROLES = ['admin', 'member', 'reviewer', 'viewer'] as const;
 export const workspaceRoleSchema = z.enum(WORKSPACE_ROLES);
 export type WorkspaceRole = z.infer<typeof workspaceRoleSchema>;
 
@@ -233,6 +249,63 @@ export type StrokeTool = Stroke['tool'];
 export const isTextStroke = (stroke: Stroke): stroke is TextStroke => stroke.tool === 'text';
 export const isPathStroke = (stroke: Stroke): stroke is PathStroke => stroke.tool !== 'text';
 
+/** A comment that is only a drawing (freehand, arrow, marker, shapes): it moves as a whole. */
+export const isDrawing = (comment: { strokes: readonly Stroke[] }): boolean =>
+  comment.strokes.length > 0 && comment.strokes.every(isPathStroke);
+
+type Placed = { anchor: Anchor; strokes: Stroke[] };
+
+/**
+ * The shift by (`dx`, `dy`) cut down so the drawing and its anchor stay on the slide.
+ */
+export function clampDrawingShift(
+  { anchor, strokes }: Placed,
+  dx: number,
+  dy: number,
+): { dx: number; dy: number } {
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (const stroke of strokes)
+    if (isPathStroke(stroke))
+      for (const point of stroke.points) {
+        xs.push(point.x);
+        ys.push(point.y);
+      }
+  if (anchor.type === 'point') {
+    xs.push(anchor.point.x);
+    ys.push(anchor.point.y);
+  } else if (anchor.type === 'rect') {
+    xs.push(anchor.rect.x, anchor.rect.x + anchor.rect.w);
+    ys.push(anchor.rect.y, anchor.rect.y + anchor.rect.h);
+  }
+  if (xs.length === 0) return { dx: 0, dy: 0 };
+  const within = (value: number, values: number[]) =>
+    Math.min(1 - Math.max(...values), Math.max(-Math.min(...values), value));
+  return { dx: within(dx, xs), dy: within(dy, ys) };
+}
+
+/** Moves a comment's drawn strokes and its point/box anchor by (`dx`, `dy`), kept on the slide. */
+export function moveDrawing<T extends Placed>(comment: T, dx: number, dy: number): T {
+  const shift = clampDrawingShift(comment, dx, dy);
+  const move = ({ x, y }: { x: number; y: number }) => ({
+    x: Math.min(1, Math.max(0, x + shift.dx)),
+    y: Math.min(1, Math.max(0, y + shift.dy)),
+  });
+  const { anchor } = comment;
+  return {
+    ...comment,
+    strokes: comment.strokes.map((stroke) =>
+      isPathStroke(stroke) ? { ...stroke, points: stroke.points.map(move) } : stroke,
+    ),
+    anchor:
+      anchor.type === 'point'
+        ? { ...anchor, point: move(anchor.point) }
+        : anchor.type === 'rect'
+          ? { ...anchor, rect: { ...anchor.rect, ...move(anchor.rect) } }
+          : anchor,
+  };
+}
+
 export const commentStatusSchema = z.enum(['open', 'done']);
 export type CommentStatus = z.infer<typeof commentStatusSchema>;
 
@@ -296,33 +369,10 @@ export const commentSchema = z.object({
 });
 export type Comment = z.infer<typeof commentSchema>;
 
-// ── Sharing ─────────────────────────────────────────────────────────────────
-
-export const reviewLinkRoleSchema = z.enum(['view', 'comment']);
-export type ReviewLinkRole = z.infer<typeof reviewLinkRoleSchema>;
-
-export const reviewLinkSchema = z.object({
-  id: z.string(),
-  deckId: z.string(),
-  token: z.string(),
-  role: reviewLinkRoleSchema,
-  expiresAt: z.iso.datetime().nullable(),
-  revokedAt: z.iso.datetime().nullable(),
-  createdAt: z.iso.datetime(),
-});
-export type ReviewLink = z.infer<typeof reviewLinkSchema>;
-
 /**
- * Who is making a request: `owner` is a signed-in account (BER-129 – the name is historical; what
- * the account may do with a deck is in `Deck.permissions`), `guest` joined through a review link.
+ * Who is making a request: always a signed-in account (BER-129 – `owner` is historical; what the
+ * account may do with a deck is in `Deck.permissions`). There are no guests: sharing a deck
+ * invites the person into the organisation as `viewer`.
  */
-export const viewerSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('owner'), author: authorSchema }),
-  z.object({
-    kind: z.literal('guest'),
-    author: authorSchema,
-    deckId: z.string(),
-    role: reviewLinkRoleSchema,
-  }),
-]);
+export const viewerSchema = z.object({ kind: z.literal('owner'), author: accountAuthorSchema });
 export type Viewer = z.infer<typeof viewerSchema>;

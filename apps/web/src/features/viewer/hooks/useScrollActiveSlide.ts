@@ -12,7 +12,7 @@ import { useViewerDispatch, useViewerState } from '../state/viewer-state';
  * - while a programmatic scroll (click, ←/→, counter, deep link, thread panel) is in flight, so a
  *   reveal lands on its target instead of passing through other slides,
  * - while a drawing tool or a draft is active, so a draft stays on its slide,
- * - when only the comment area scrolls (vertically).
+ * - when only the comment area scrolls (vertically: Shift + wheel or a drag).
  */
 export function useScrollActiveSlide(scrollerRef: RefObject<HTMLElement | null>) {
   const { slides } = useViewerData();
@@ -57,14 +57,13 @@ export function useScrollActiveSlide(scrollerRef: RefObject<HTMLElement | null>)
       update.schedule();
     };
     const onScrollEnd = () => registry.settleProgrammaticScroll();
-    // The user takes over a programmatic scroll: sideways wheel (or any wheel over the header,
-    // which scrolls the track), a swipe, or the scrollbar.
+    // The user takes over a programmatic scroll: any wheel without Shift (it scrolls the track
+    // sideways, `useTimelineWheel`), a swipe, or the scrollbar.
     const onWheel = (event: WheelEvent) => {
       if (event.ctrlKey || event.metaKey) return;
       const overHeader =
         event.target instanceof Element && event.target.closest('[data-timeline-header]');
-      if (overHeader || event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY))
-        registry.endProgrammaticScroll();
+      if (overHeader || !event.shiftKey) registry.endProgrammaticScroll();
     };
     const onTouchStart = () => registry.endProgrammaticScroll();
     const onPointerDown = (event: PointerEvent) => {

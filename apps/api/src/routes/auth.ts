@@ -21,7 +21,7 @@ import {
   type MicrosoftErrorKind,
 } from '../auth/microsoft';
 import { endSession, hashToken, newSecretToken, startSession } from '../auth/session';
-import { clearGuestCookie, optionalViewerMiddleware, type OptionalViewerEnv } from '../auth/viewer';
+import { optionalViewerMiddleware, type OptionalViewerEnv } from '../auth/viewer';
 import { loginTokens } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { badRequest, notFound } from '../http/errors';
@@ -109,7 +109,7 @@ function microsoftIdentity(
 /**
  * Login (BER-129) and Microsoft file access (BER-92).
  * - Microsoft: `/login` → Microsoft → `/callback`. Signed out it signs in (identity + Graph token
- *   in one go); signed in it only connects file access to the current account.
+ *   in one go); signed in it connects file access and links the login to the current account.
  * - Google and OIDC: the same for Google and the configured SSO provider; signed in with
  *   `intent=connect` they link the provider to the account instead.
  * - E-mail: `/email/start` mails a one-time link to `/email/verify` and a 6-digit code for
@@ -154,21 +154,19 @@ export function authRoutes(deps: AppDeps) {
   const loginFailed = (c: Context, error: LoginError, returnTo?: string, status: 302 | 303 = 302) =>
     toWeb(c, loginErrorPath(error, returnTo), status);
 
-  /** Signs the account in on this browser and leaves any guest session. */
+  /** Signs the account in on this browser. */
   const loggedIn = async (
     c: Context,
     userId: string,
     returnTo: string,
     status: 302 | 303 = 302,
   ) => {
-    clearGuestCookie(c);
     await startSession(c, deps, userId);
     return toWeb(c, returnTo, status);
   };
 
   /** JSON logins (code, passkey): the session cookie plus where the web app navigates next. */
   const loggedInJson = async (c: Context, userId: string, returnTo: string) => {
-    clearGuestCookie(c);
     await startSession(c, deps, userId);
     return c.json<LoginResult>({ redirectTo: safeReturnTo(returnTo, DEFAULT_LOGIN_RETURN_TO) });
   };
@@ -366,7 +364,6 @@ export function authRoutes(deps: AppDeps) {
 
       .post('/auth/logout', async (c) => {
         await endSession(c, deps);
-        clearGuestCookie(c);
         return c.body(null, 204);
       })
 
@@ -425,7 +422,16 @@ export function authRoutes(deps: AppDeps) {
             if (saved.access === 'picker') {
               await deps.microsoft.completePickerConsent(current.author.id, code, saved.verifier);
             } else {
-              await deps.microsoft.completeLogin(current.author.id, code, saved.verifier);
+              const claims = await deps.microsoft.completeLogin(
+                current.author.id,
+                code,
+                saved.verifier,
+                saved.nonce ?? '',
+              );
+              // Also a login from now on – unless it already signs into another account (one
+              // Microsoft account may give files to two accounts, but logs into only one).
+              const identity = claims && microsoftIdentity(claims, null);
+              if (identity) await linkIdentity(deps, current.author.id, identity);
             }
           } catch (error) {
             deps.log.warn('Microsoft token exchange failed', error);

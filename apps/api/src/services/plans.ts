@@ -190,8 +190,9 @@ export async function assertSeatForJoin(
 }
 
 /**
- * Whether the user still may found an organisation: one of their own that still exists – only on
- * a limited instance (the demo); self-hosted, anyone may found as many as they like.
+ * Whether the user still may found an organisation – only limited on a limited instance (the
+ * demo); self-hosted, anyone may found as many as they like. "Own" means founded by the user
+ * (`createdBy`), whoever owns it now: handing it over doesn't free the slot, only deleting it does.
  */
 export async function canCreateWorkspace(
   db: Executor,

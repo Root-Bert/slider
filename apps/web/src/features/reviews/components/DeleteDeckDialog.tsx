@@ -18,7 +18,17 @@ export function DeleteDeckDialog({
       open
       onClose={onClose}
       title={`„${deck.title}“ löschen?`}
-      description="Der Review wird mit allen Kommentaren, Zeichnungen, Folienbildern und der hochgeladenen Datei entfernt. Das lässt sich nicht rückgängig machen. Die Original-PowerPoint in OneDrive oder SharePoint bleibt unberührt."
+      description={
+        <div className="flex flex-col gap-2">
+          <span>Wird endgültig entfernt:</span>
+          <ul className="list-disc pl-5">
+            <li>Kommentare und Zeichnungen</li>
+            <li>Folienbilder</li>
+            <li>Hochgeladene Datei</li>
+          </ul>
+          <span>Original in OneDrive/SharePoint bleibt.</span>
+        </div>
+      }
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>

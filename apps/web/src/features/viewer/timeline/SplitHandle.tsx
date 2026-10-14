@@ -25,9 +25,9 @@ interface SplitHandleProps {
 }
 
 /**
- * Grabber between the slide area (track, minimap, controls row) and the comment area. Dragging it
- * down makes the slides bigger and the comment area smaller, up the other way round; the slides
- * always fill the track. Double click resets the default split. As a focusable separator, ↑ / ↓
+ * Grabber between the slide area (track, minimap, controls row) and the comment area, centred in
+ * the controls row. Dragging it down makes the slides bigger and the comment area smaller, up the
+ * other way round; the slides always fill the track. Double click resets the default split. As a focusable separator, ↑ / ↓
  * (with Shift: larger steps) move it, Home / End jump to the smallest / largest slides.
  */
 export function SplitHandle({ geometry, slideH }: SplitHandleProps) {
@@ -120,23 +120,14 @@ export function SplitHandle({ geometry, slideH }: SplitHandleProps) {
       onLostPointerCapture={onPointerEnd}
       onDoubleClick={() => dispatch({ type: 'splitChanged', split: null })}
       onKeyDown={onKeyDown}
-      className="group relative flex h-3 cursor-row-resize touch-none items-center justify-center outline-none select-none"
+      className="group flex h-8 w-28 cursor-row-resize touch-none items-center justify-center rounded-full outline-none select-none"
     >
-      {/* Hairline across the width while the handle is hovered, focused or dragged. */}
       <span
         aria-hidden
         className={cn(
-          'pointer-events-none absolute inset-x-4 top-1/2 h-px -translate-y-1/2 bg-white/0 transition-colors md:inset-x-[clamp(16px,3vw,32px)]',
-          'group-hover:bg-white/10 group-focus-visible:bg-white/15',
-          dragging && 'bg-white/15',
-        )}
-      />
-      <span
-        aria-hidden
-        className={cn(
-          'relative h-1 w-10 rounded-full bg-white/25 transition-[background-color,width] duration-150',
-          'group-hover:w-14 group-hover:bg-white/60 group-focus-visible:w-14 group-focus-visible:bg-white/70 group-focus-visible:outline-2 group-focus-visible:outline-offset-2 group-focus-visible:outline-mention',
-          dragging && 'w-14 bg-white/80',
+          'h-1 w-16 rounded-full bg-white/25 transition-[background-color,width] duration-150',
+          'group-hover:w-20 group-hover:bg-white/60 group-focus-visible:w-20 group-focus-visible:bg-white/70 group-focus-visible:outline-2 group-focus-visible:outline-offset-2 group-focus-visible:outline-mention',
+          dragging && 'w-20 bg-white/80',
         )}
       />
     </div>

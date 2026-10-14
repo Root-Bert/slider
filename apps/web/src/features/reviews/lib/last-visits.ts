@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import type { Deck } from '@slider/shared';
 
 /**
- * Remembers when the user last opened each deck, so "Meine Reviews" can flag decks that
+ * Remembers when the user last opened each deck, so "Reviews" can flag decks that
  * changed since (badge "Neu", notifications). Purely client-side until the API tracks
  * read state per user (BER-120 / BER-124).
  *

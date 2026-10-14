@@ -165,7 +165,7 @@ async function loadDeletedSlides(
 export async function getDeckStatus(
   db: Executor,
   deck: DeckRow,
-  options: { forGuest: boolean; progress?: RenderProgress },
+  options: { hideLoginUrl: boolean; progress?: RenderProgress },
 ): Promise<DeckStatus> {
   const [[current], [pending]] = await Promise.all([
     deck.currentRevisionId
@@ -190,7 +190,7 @@ export async function getDeckStatus(
     sync: toDeckSync(deck, {
       pendingRevisionAt: pending?.createdAt ?? null,
       summary: current?.summary ?? null,
-      forGuest: options.forGuest,
+      hideLoginUrl: options.hideLoginUrl,
     }),
     rendering: options.progress?.get(deck.id) ?? null,
     renderedAt: options.progress?.renderedAt(deck.id) ?? null,

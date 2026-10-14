@@ -8,7 +8,10 @@ export function PlanBadge({ plan }: { plan: string }) {
   return <Badge tone="info">{planLabel(plan)}</Badge>;
 }
 
-/** "Mitglieder 3/5" with a small meter; amber when full. */
+/** Up to this many slots, the meter shows one segment per slot. */
+const MAX_SEGMENTS = 10;
+
+/** One tile: big count, label, and – with a limit – a meter and what is left. */
 export function UsageMeter({
   label,
   state,
@@ -18,40 +21,56 @@ export function UsageMeter({
   state: LimitState;
   hint?: string;
 }) {
-  const percent = state.ratio === null ? null : Math.round(state.ratio * 100);
+  const { used, max, full, remaining } = state;
+  const status = max === null ? 'Kein Limit' : full ? 'Limit erreicht' : `Noch ${remaining} frei`;
   return (
-    <div className="flex min-w-0 flex-1 flex-col gap-2">
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-[13px] text-fg-muted">{label}</span>
+    <div className="flex min-w-0 flex-1 flex-col gap-3 rounded-2xl bg-white/[0.04] p-4">
+      <div className="flex items-baseline gap-1.5">
         <span
           className={cn(
-            'text-sm font-semibold tabular-nums',
-            state.full ? 'text-warning' : 'text-fg',
+            'text-[28px] leading-none font-semibold tabular-nums',
+            full ? 'text-warning' : 'text-fg',
           )}
         >
-          {formatRatio(state)}
-          {state.max === null && (
-            <span className="ml-1 font-normal text-fg-subtle">· unbegrenzt</span>
-          )}
+          {used}
         </span>
+        {max !== null && <span className="text-sm text-fg-subtle tabular-nums">von {max}</span>}
       </div>
-      {percent !== null && (
+      <span className="text-[13px] text-fg-muted">{label}</span>
+      {max !== null && (
         <div
           role="meter"
           aria-label={label}
           aria-valuemin={0}
-          aria-valuemax={state.max ?? 0}
-          aria-valuenow={state.used}
+          aria-valuemax={max}
+          aria-valuenow={used}
           aria-valuetext={formatRatio(state)}
-          className="h-1.5 overflow-hidden rounded-full bg-white/10"
+          className="flex h-1.5 gap-1"
         >
-          <div
-            className={cn('h-full rounded-full', state.full ? 'bg-warning' : 'bg-fg')}
-            style={{ width: `${percent}%` }}
-          />
+          {max > 0 && max <= MAX_SEGMENTS ? (
+            Array.from({ length: max }, (_, i) => (
+              <div
+                key={i}
+                className={cn(
+                  'flex-1 rounded-full',
+                  i < used ? (full ? 'bg-warning' : 'bg-fg') : 'bg-white/10',
+                )}
+              />
+            ))
+          ) : (
+            <div className="flex-1 overflow-hidden rounded-full bg-white/10">
+              <div
+                className={cn('h-full rounded-full', full ? 'bg-warning' : 'bg-fg')}
+                style={{ width: `${Math.round((state.ratio ?? 0) * 100)}%` }}
+              />
+            </div>
+          )}
         </div>
       )}
-      {hint && <p className="text-xs text-fg-subtle">{hint}</p>}
+      <p className={cn('text-xs', full ? 'text-warning' : 'text-fg-subtle')}>
+        {status}
+        {hint && <span className="text-fg-subtle"> · {hint}</span>}
+      </p>
     </div>
   );
 }
@@ -65,16 +84,20 @@ export function UsageSection({ workspace }: { workspace: Workspace }) {
   return (
     <SettingsSection
       title="Plan & Nutzung"
-      description="Zusammenarbeit und Kommentare gibt es innerhalb der Organisation. Offene E-Mail-Einladungen halten einen Platz frei."
+      description={
+        unlimited
+          ? 'Zusammenarbeit und Kommentare gibt es innerhalb der Organisation.'
+          : 'Zusammenarbeit und Kommentare gibt es innerhalb der Organisation. Offene E-Mail-Einladungen halten einen Platz frei.'
+      }
       aside={unlimited ? undefined : <PlanBadge plan={workspace.plan} />}
     >
-      <div className="flex flex-col gap-5 sm:flex-row sm:gap-8">
+      <div className="flex flex-col gap-3 sm:flex-row">
         <UsageMeter
           label="Mitglieder"
           state={seatState(usage)}
           hint={
             pending > 0
-              ? `${usage.members} Mitglieder + ${pending} offene ${pending === 1 ? 'Einladung' : 'Einladungen'}`
+              ? `${pending} ${pending === 1 ? 'offene Einladung' : 'offene Einladungen'}`
               : undefined
           }
         />

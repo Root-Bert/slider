@@ -328,8 +328,6 @@ export interface DeckSeed {
   importState: ImportState;
   updatedAgo: number;
   comments: CommentSeed[];
-  /** Adds an active comment link, so the share dialog has something to show. */
-  withReviewLink?: boolean;
 }
 
 export function demoDecks(now: Date): DeckSeed[] {
@@ -343,7 +341,6 @@ export function demoDecks(now: Date): DeckSeed[] {
       importState: ready,
       updatedAgo: 4 * MINUTE,
       comments: Q4_COMMENTS(now),
-      withReviewLink: true,
     },
     {
       title: 'Produkt-Roadmap 2027',

@@ -1,10 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { commentSchema, viewerSchema, type Comment, type CreateCommentInput } from '@slider/shared';
-import { comments, reviewLinks, workspaceMembers } from '../src/db/schema';
-import { newReviewToken } from '../src/services/review-links';
+import { comments, workspaceMembers } from '../src/db/schema';
 import { externalAuthor } from '../src/authors';
 import {
-  cookieFrom,
   createReadyDeck,
   createTestContext,
   pinComment,
@@ -33,31 +31,15 @@ async function create(input: CreateCommentInput, cookie?: string): Promise<Comme
   return commentSchema.parse(await res.json());
 }
 
-/** Joins the deck as a guest through a fresh (view-only) review link and returns the cookie. */
-async function joinAsGuest(name: string): Promise<string> {
-  const link = (await (
-    await ctx.request(`/api/decks/${deck.deckId}/review-links`, {
-      method: 'POST',
-      json: { role: 'view' },
-    })
-  ).json()) as { token: string };
-  return joinWithToken(link.token, name);
-}
-
-async function joinWithToken(token: string, name: string): Promise<string> {
-  const res = await ctx.request(`/api/invites/${token}/join`, { method: 'POST', json: { name } });
-  return cookieFrom(res);
-}
-
-/** A reviewer in the deck's organisation – commenting is for members (BER-130). */
-async function asMember(name: string): Promise<string> {
+/** A member of the deck's organisation – `reviewer` comments, `viewer` (shared with) only looks. */
+async function asMember(name: string, role: 'reviewer' | 'viewer' = 'reviewer'): Promise<string> {
   const person = await signedInUser(ctx, {
     name,
     email: `${name.split(' ')[0]?.toLowerCase()}@firma.de`,
   });
   await ctx.deps.db
     .insert(workspaceMembers)
-    .values({ workspaceId: ctx.workspaceId, userId: person.user.id, role: 'reviewer' });
+    .values({ workspaceId: ctx.workspaceId, userId: person.user.id, role });
   return person.cookie;
 }
 
@@ -481,43 +463,30 @@ describe('updating and deleting', () => {
   });
 });
 
-describe('guests only look (BER-130)', () => {
-  it('can read but not comment', async () => {
-    const viewer = await joinAsGuest('Gast');
+describe('viewers only look', () => {
+  it('can read but not comment, resolve or delete', async () => {
+    const viewer = await asMember('Gesa Teil', 'viewer');
     expect(
       (await ctx.request(`/api/decks/${deck.deckId}/comments`, { cookie: viewer })).status,
     ).toBe(200);
     const res = await post(pinComment(slide(0)), viewer);
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({
-      error: { code: 'forbidden', message: expect.stringMatching(/Konto in dieser Organisation/) },
+      error: { code: 'forbidden', message: expect.stringMatching(/Betrachter/) },
     });
-  });
-
-  it('treats an old comment link like a view link', async () => {
-    const token = newReviewToken();
-    await ctx.deps.db
-      .insert(reviewLinks)
-      .values({ id: crypto.randomUUID(), deckId: deck.deckId, token, role: 'comment' });
-    const info = (await (await ctx.request(`/api/invites/${token}`)).json()) as { role: string };
-    expect(info.role).toBe('view');
-    const guest = await joinWithToken(token, 'Alter Gast');
-    const me = meResponse(await (await ctx.request('/api/me', { cookie: guest })).json());
-    expect(me).toMatchObject({ kind: 'guest', role: 'view' });
 
     const root = await create(pinComment(slide(0)));
-    expect((await post(pinComment(slide(0)), guest)).status).toBe(403);
     const patch = await ctx.request(`/api/comments/${root.id}`, {
       method: 'PATCH',
       json: { status: 'done' },
-      cookie: guest,
+      cookie: viewer,
     });
     expect(patch.status).toBe(403);
     expect(
-      (await ctx.request(`/api/comments/${root.id}`, { method: 'DELETE', cookie: guest })).status,
+      (await ctx.request(`/api/comments/${root.id}`, { method: 'DELETE', cookie: viewer })).status,
     ).toBe(403);
     const deckRes = (await (
-      await ctx.request(`/api/decks/${deck.deckId}`, { cookie: guest })
+      await ctx.request(`/api/decks/${deck.deckId}`, { cookie: viewer })
     ).json()) as { permissions: unknown };
     expect(deckRes.permissions).toEqual({ canManage: false, canComment: false });
   });
@@ -548,13 +517,6 @@ describe('own colour (PATCH /me)', () => {
     );
   });
 
-  it('lets a guest pick their colour', async () => {
-    const guest = await joinAsGuest('Lena');
-    const res = await patchMe('yellow', guest);
-    expect(meResponse(await res.json()).author.color).toBe('yellow');
-    expect((await listed(guest)).length).toBe(0);
-  });
-
   it('lets a member recolour their comments', async () => {
     const member = await asMember('Lena');
     const own = await create(pinComment(slide(0)), member);
@@ -565,36 +527,6 @@ describe('own colour (PATCH /me)', () => {
 
   it('rejects unknown colours', async () => {
     expect((await patchMe('green')).status).toBe(400);
-  });
-});
-
-describe('re-rolled avatar (PUT /me/avatar)', () => {
-  const putAvatar = (seed: string | null, cookie?: string) =>
-    ctx.request('/api/me/avatar', { method: 'PUT', json: { seed }, cookie });
-  const listed = async () =>
-    commentSchema
-      .array()
-      .parse(await (await ctx.request(`/api/decks/${deck.deckId}/comments`)).json());
-
-  it('sets and resets the seed on the account and its comments', async () => {
-    const own = await create(pinComment(slide(0)));
-
-    const res = await putAvatar('abc123');
-    expect(res.status).toBe(200);
-    expect(meResponse(await res.json()).author.avatarSeed).toBe('abc123');
-    expect(meResponse(await (await ctx.request('/api/me')).json()).author.avatarSeed).toBe(
-      'abc123',
-    );
-    expect((await listed()).find((c) => c.id === own.id)?.author.avatarSeed).toBe('abc123');
-
-    await putAvatar(null);
-    expect(meResponse(await (await ctx.request('/api/me')).json()).author.avatarSeed).toBeNull();
-    expect((await listed()).find((c) => c.id === own.id)?.author.avatarSeed).toBeNull();
-  });
-
-  it('is only for accounts, not guests', async () => {
-    const guest = await joinAsGuest('Lena');
-    expect((await putAvatar('abc123', guest)).status).toBe(403);
   });
 });
 

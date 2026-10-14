@@ -28,7 +28,7 @@ export interface Config {
   webOrigin: string;
   maxUploadBytes: number;
   /**
-   * With `auth.devLogin`, every request without a guest or session cookie acts as this person.
+   * With `auth.devLogin`, every request without a session cookie acts as this person.
    * The first real login adopts this account (and its decks) – see `services/accounts`.
    */
   devOwner: { name: string; email: string };
@@ -68,7 +68,7 @@ export interface MediaConfig {
    */
   dir: string;
   /**
-   * Storage per deck owner; recordings by guests count towards the owner of the deck. `null` =
+   * Storage per deck owner; everyone's recordings count towards the owner of the deck. `null` =
    * unlimited.
    */
   quotaBytes: number | null;
@@ -131,7 +131,7 @@ export interface SyncConfig {
   debounceMs: number;
 }
 
-export const DEFAULT_SYNC_POLL_INTERVAL_MS = 120_000;
+export const DEFAULT_SYNC_POLL_INTERVAL_MS = 60_000;
 export const DEFAULT_SYNC_DEBOUNCE_MS = 60_000;
 export const MIN_SYNC_POLL_INTERVAL_MS = 10_000;
 

@@ -1,8 +1,8 @@
 import type { SyncResult } from '@slider/shared';
 import { useRef } from 'react';
-import { useSyncDeck, useUploadRevision } from '@/lib/queries';
+import { useUploadRevision } from '@/lib/queries';
 import { cn, GlassPanel, Icon, IconButton, Spinner } from '@/ui';
-import { lastCheckedLabel, revisionNoticeText, syncResultMessage } from '../lib/revision-changes';
+import { revisionNoticeText, syncResultMessage } from '../lib/revision-changes';
 import { RevisionNotice } from '../revisions/RevisionNotice';
 import { useRevisionData } from '../state/revision-data';
 import { useViewerData } from '../state/viewer-data';
@@ -10,20 +10,16 @@ import { useViewerDispatch, useViewerState } from '../state/viewer-state';
 import { useViewerToast } from '../state/viewer-toast';
 
 /**
- * Version pill in the controls row: owners reload a linked deck ("Neu laden") or upload a new
- * version of an uploaded one; linked decks say that they update themselves ("Auto-Sync"); the
- * change markers of the latest version (Figma D2 "Änderungen", on by default) can be switched
+ * Version pill in the controls row. Linked decks update themselves (polling); the upload of a
+ * new version of an uploaded deck sits left, next to the filter pill (`UploadRevisionControl`).
+ * The change markers of the latest version (Figma D2 "Änderungen", on by default) can be switched
  * on and off only when that version actually added, changed or moved slides. After a new
- * version arrived, a short notice next to the button says what changed (`RevisionNotice`).
+ * version arrived, a short notice says what changed (`RevisionNotice`).
  */
 export function RevisionControls({ className }: { className?: string }) {
-  const { canManage } = useViewerData();
-  const { revisionNumber, isLinked, sync, badges, announcement, dismissAnnouncement } =
-    useRevisionData();
-  const showUpdate = canManage;
-  const showAutoSync = isLinked && Boolean(sync?.enabled);
+  const { revisionNumber, badges, announcement, dismissAnnouncement } = useRevisionData();
   const showToggle = revisionNumber > 1 && badges.size > 0;
-  const showPill = showUpdate || showAutoSync || showToggle || announcement !== null;
+  const showPill = showToggle || announcement !== null;
 
   return (
     <>
@@ -35,7 +31,6 @@ export function RevisionControls({ className }: { className?: string }) {
       </span>
       {showPill && (
         <GlassPanel className={cn('flex shrink-0 items-center gap-1 p-1', className)}>
-          {showUpdate && (isLinked ? <ReloadButton /> : <UploadButton />)}
           {announcement && (
             // Keyed by number: a newer version restarts the notice.
             <RevisionNotice
@@ -44,38 +39,13 @@ export function RevisionControls({ className }: { className?: string }) {
               onDone={dismissAnnouncement}
             />
           )}
-          {/* Phones: the notice takes the status dot's room while it shows. */}
-          {showAutoSync && <AutoSyncStatus className={cn(announcement && 'max-sm:hidden')} />}
-          {(showUpdate || showAutoSync || announcement) && showToggle && (
+          {announcement && showToggle && (
             <span aria-hidden className="mx-0.5 h-5 w-px bg-white/15" />
           )}
           {showToggle && <ChangesToggle revisionNumber={revisionNumber} />}
         </GlassPanel>
       )}
     </>
-  );
-}
-
-/** "Auto-Sync" next to the reload button: linked decks are checked for changes by the server. */
-function AutoSyncStatus({ className }: { className?: string }) {
-  const { sync } = useRevisionData();
-  const failing = Boolean(sync?.lastSyncError);
-  const label = failing
-    ? 'Auto-Sync gestört – die PowerPoint konnte zuletzt nicht geprüft werden'
-    : `Auto-Sync an – Slider prüft die PowerPoint automatisch auf Änderungen · ${lastCheckedLabel(sync)}`;
-  return (
-    <span
-      role="status"
-      aria-label={label}
-      title={label}
-      className={cn('flex h-8 items-center gap-1.5 pr-1.5 pl-1 text-xs text-fg-muted', className)}
-    >
-      <span
-        aria-hidden
-        className={cn('size-1.5 shrink-0 rounded-full', failing ? 'bg-warning' : 'bg-success')}
-      />
-      <span className="md:@max-[900px]:hidden max-md:hidden">Auto-Sync</span>
-    </span>
   );
 }
 
@@ -90,35 +60,15 @@ function useResultToast() {
   };
 }
 
-function ReloadButton() {
-  const { deck } = useViewerData();
-  const { sync } = useRevisionData();
-  const syncDeck = useSyncDeck(deck.id);
-  const toast = useResultToast();
-  const busy = syncDeck.isPending;
-  const pending = !busy && Boolean(sync?.pending);
-  const label = busy
-    ? 'Wird geprüft …'
-    : pending
-      ? 'Änderung erkannt – wird übernommen …'
-      : `Neu laden · ${lastCheckedLabel(sync)}`;
-
+/** Owners of an uploaded (not linked) deck: upload a new version – own pill next to the filter. */
+export function UploadRevisionControl({ className }: { className?: string }) {
+  const { canManage } = useViewerData();
+  const { isLinked } = useRevisionData();
+  if (!canManage || isLinked) return null;
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      aria-busy={busy || pending || undefined}
-      disabled={busy}
-      onClick={() => syncDeck.mutate(undefined, toast)}
-      className="inline-flex size-8 shrink-0 items-center justify-center rounded-control text-fg-muted transition-colors hover:bg-white/10 hover:text-fg disabled:cursor-progress disabled:hover:bg-transparent disabled:hover:text-fg-muted"
-    >
-      {busy || pending ? (
-        <Spinner size={18} className="text-fg-muted" />
-      ) : (
-        <Icon name="refresh" size={20} />
-      )}
-    </button>
+    <GlassPanel className={cn('flex shrink-0 items-center p-1', className)}>
+      <UploadButton />
+    </GlassPanel>
   );
 }
 

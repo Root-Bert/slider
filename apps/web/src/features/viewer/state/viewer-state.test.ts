@@ -24,12 +24,13 @@ describe('viewerReducer', () => {
     expect(initial.statusFilter).toBe('open');
   });
 
-  it('toggles tools and remembers the last pen variant', () => {
+  it('toggles tools', () => {
     let state = run({ type: 'toolSelected', tool: 'arrow' });
     expect(state.tool).toBe('arrow');
-    state = viewerReducer(state, { type: 'toolSelected', tool: 'arrow' });
+    state = viewerReducer(state, { type: 'toolSelected', tool: 'highlighter' });
+    expect(state.tool).toBe('highlighter');
+    state = viewerReducer(state, { type: 'toolSelected', tool: 'highlighter' });
     expect(state.tool).toBeNull();
-    expect(state.lastPenTool).toBe('arrow');
   });
 
   it('collects strokes into one draft whose anchor follows them, with undo/redo', () => {
@@ -105,17 +106,6 @@ describe('viewerReducer', () => {
     expect(
       viewerReducer(state, { type: 'anchorPlaced', slideId: 's1', anchor }).draft?.textBox,
     ).toBeNull();
-  });
-
-  it('remembers the last pen variant, also when back on the pointer', () => {
-    let state = run(
-      { type: 'toolSelected', tool: 'ellipse' },
-      { type: 'toolSelected', tool: null },
-    );
-    expect(state.tool).toBeNull();
-    expect(state.lastPenTool).toBe('ellipse');
-    state = viewerReducer(state, { type: 'toolSelected', tool: 'arrow' });
-    expect(state.lastPenTool).toBe('arrow');
   });
 
   it('starts gap drafts without a slide and clears focus', () => {

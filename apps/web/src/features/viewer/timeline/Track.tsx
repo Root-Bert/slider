@@ -39,7 +39,7 @@ export function Track({ layout, range, snap }: TrackProps) {
   } = useViewerState();
   const boxes = isBoxModeActive({ boxMode, boxModeFlipped });
   const { badges, deletedSlides, deletedThreads, revisionNumber } = useRevisionData();
-  const { bySlide } = useCommentThreads();
+  const { marksBySlide } = useCommentThreads();
   const emphasisId = focusedThreadId ?? hoveredThreadId;
   const draftGapKey =
     draft?.anchor.type === 'gap'
@@ -57,7 +57,7 @@ export function Track({ layout, range, snap }: TrackProps) {
     if (!slide || !box || !gap) continue;
     const next = slides[index + 1] ?? null;
     const key = gapKey(slide.id, next?.id ?? null);
-    const threads = threadsOf(bySlide, slide.id);
+    const threads = threadsOf(marksBySlide, slide.id);
     const ownsEmphasis = emphasisId !== null && threads.some((t) => t.id === emphasisId);
     items.push(
       <Fragment key={slide.id}>

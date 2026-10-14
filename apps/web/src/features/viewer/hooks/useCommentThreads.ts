@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import {
   countByStatus,
   filterThreads,
+  isBareDrawing,
   type StatusCounts,
   type Thread,
   threadsOnCurrentSlides,
@@ -18,6 +19,8 @@ export interface VisibleThreads {
    * until data or filter change.
    */
   bySlide: ReadonlyMap<string, Thread[]>;
+  /** Like `bySlide`, plus drawings without a comment – everything marked on the slides. */
+  marksBySlide: ReadonlyMap<string, Thread[]>;
   /** Gap threads that pass the filter, keyed by `gapKey` – they live under their ⊕ divider. */
   byGap: ReadonlyMap<string, Thread[]>;
   /** Counts for the whole deck (current slides only). */
@@ -36,7 +39,7 @@ export function useCommentThreads(): VisibleThreads {
     [statusFilter, pptxOnly],
   );
 
-  const bySlide = useMemo(
+  const marksBySlide = useMemo(
     () =>
       new Map(
         [...threadsBySlide].map(([slideId, list]) => [
@@ -52,6 +55,17 @@ export function useCommentThreads(): VisibleThreads {
     [threadsBySlide, filter],
   );
 
+  const bySlide = useMemo(
+    () =>
+      new Map(
+        [...marksBySlide].map(([slideId, list]) => [
+          slideId,
+          list.some(isBareDrawing) ? list.filter((thread) => !isBareDrawing(thread)) : list,
+        ]),
+      ),
+    [marksBySlide],
+  );
+
   const byGap = useMemo(() => {
     const result = new Map<string, Thread[]>();
     for (const [key, list] of gapThreads) {
@@ -63,12 +77,17 @@ export function useCommentThreads(): VisibleThreads {
   }, [gapThreads, filter]);
 
   // Threads on deleted slides are only reachable through "Gelöschte Folien": not counted here.
+  // Drawings without a comment are no comments either.
   const counts = useMemo(
-    () => countByStatus(threadsOnCurrentSlides(threads, slideIndex), pptxOnly),
+    () =>
+      countByStatus(
+        threadsOnCurrentSlides(threads, slideIndex).filter((thread) => !isBareDrawing(thread)),
+        pptxOnly,
+      ),
     [threads, slideIndex, pptxOnly],
   );
 
-  return { filter, bySlide, byGap, counts };
+  return { filter, bySlide, marksBySlide, byGap, counts };
 }
 
 export const threadsOf = (bySlide: ReadonlyMap<string, Thread[]>, key: string | null): Thread[] =>

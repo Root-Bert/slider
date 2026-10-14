@@ -16,13 +16,6 @@ describe('accountGate', () => {
     expect(isSignedOutError(new ApiError(404, 'not_found', 'x'))).toBe(false);
   });
 
-  it('sends review-link guests without an account to the login page', () => {
-    const guest: MeResponse = {
-      viewer: { kind: 'guest', author: { ...author, type: 'guest' }, deckId: 'd', role: 'comment' },
-    };
-    expect(accountGate({ data: guest, error: null })).toBe('login');
-  });
-
   it('lets accounts in (also the dev login)', () => {
     const me = {
       viewer: { kind: 'owner', author },

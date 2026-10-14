@@ -64,7 +64,7 @@ export function RecordReplyDialog({
       }
     >
       <div className="flex flex-col gap-3">
-        <RecorderPanel kind={kind} deckId={deckId} onChange={setRecording} autoStart />
+        <RecorderPanel kind={kind} deckId={deckId} onChange={setRecording} autoStart autoFocus />
         {recording && (
           <div className="rounded-control-sm bg-white/5 px-3 py-2 shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]">
             <AutosizeTextarea

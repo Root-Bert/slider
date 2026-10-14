@@ -176,9 +176,9 @@ describe('connectorAnchor', () => {
       inset: { left: 7, right: 7, bottom: 7 },
     });
     expect(connectorAnchor({ ...pin, source: 'pptx' }, [])!.inset).toEqual({
-      left: 12,
-      right: 12,
-      bottom: 12,
+      left: 7,
+      right: 7,
+      bottom: 7,
     });
   });
 
@@ -292,16 +292,19 @@ describe('isImplicitFrame', () => {
   };
   const pen = { ...ellipse, tool: 'pen' as const };
 
-  it('hides the frame of text boxes and shapes – they are the mark', () => {
+  it('hides the frame of text boxes and drawings – they are the mark', () => {
     expect(
       isImplicitFrame({ anchor: { type: 'rect', rect, shapeRef: null }, strokes: [text] }),
     ).toBe(true);
     expect(
       isImplicitFrame({ anchor: { type: 'rect', rect, shapeRef: null }, strokes: [ellipse] }),
     ).toBe(true);
+    expect(
+      isImplicitFrame({ anchor: { type: 'rect', rect, shapeRef: null }, strokes: [pen] }),
+    ).toBe(true);
   });
 
-  it('keeps explicit frames and the frames of freehand drawings', () => {
+  it('keeps explicit frames', () => {
     const wider = { ...rect, w: 0.5 };
     expect(
       isImplicitFrame({
@@ -310,7 +313,7 @@ describe('isImplicitFrame', () => {
       }),
     ).toBe(false);
     expect(
-      isImplicitFrame({ anchor: { type: 'rect', rect, shapeRef: null }, strokes: [pen] }),
+      isImplicitFrame({ anchor: { type: 'rect', rect: wider, shapeRef: null }, strokes: [pen] }),
     ).toBe(false);
     expect(isImplicitFrame({ anchor: { type: 'rect', rect, shapeRef: null }, strokes: [] })).toBe(
       false,

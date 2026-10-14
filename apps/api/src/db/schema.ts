@@ -21,7 +21,6 @@ import type {
   Guide,
   ImportState,
   MediaKind,
-  ReviewLinkRole,
   RevisionStatus,
   RevisionTrigger,
   Shape,
@@ -74,14 +73,12 @@ export interface RevisionDiffRecord {
 const timestamptz = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 const createdAt = () => timestamptz('created_at').notNull().defaultNow();
 
-/** The owner and other known people. Guests and PowerPoint authors don't need a row. */
+/** Everyone with an account. PowerPoint authors don't need a row. */
 export const users = pgTable('users', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   email: text('email').notNull().unique(),
   color: text('color').$type<AccentColor>().notNull(),
-  /** Seed of a re-rolled generated avatar; without one, the avatar is seeded by the name. */
-  avatarSeed: text('avatar_seed'),
   /** Microsoft refresh token for OneDrive/SharePoint links, AES-GCM encrypted (`auth/token-crypto`). */
   msRefreshToken: text('ms_refresh_token'),
   /** The Microsoft account it belongs to (mail or UPN), for display. */
@@ -228,7 +225,10 @@ export const workspaceMembers = pgTable(
   ],
 );
 
-/** E-mail invites (`email` set, single use) and invite links (`email` null, multi use). */
+/**
+ * E-mail invites (`email` set, single use) and invite links (`email` null, multi use). Sharing a
+ * deck is an invite too (`deck_id` set, role `viewer`): joining leads to that deck.
+ */
 export const workspaceInvites = pgTable(
   'workspace_invites',
   {
@@ -237,7 +237,7 @@ export const workspaceInvites = pgTable(
       .notNull()
       .references(() => workspaces.id, { onDelete: 'cascade' }),
     email: text('email'),
-    role: text('role').$type<Exclude<WorkspaceRole, 'owner'>>().notNull(),
+    role: text('role').$type<WorkspaceRole>().notNull(),
     tokenHash: text('token_hash').notNull().unique(),
     createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
@@ -245,8 +245,13 @@ export const workspaceInvites = pgTable(
     acceptedAt: timestamptz('accepted_at'),
     revokedAt: timestamptz('revoked_at'),
     useCount: integer('use_count').notNull().default(0),
+    /** The deck that was shared; `null` for plain organisation invites. */
+    deckId: text('deck_id').references(() => decks.id, { onDelete: 'set null' }),
   },
-  (t) => [index('workspace_invites_workspace_idx').on(t.workspaceId)],
+  (t) => [
+    index('workspace_invites_workspace_idx').on(t.workspaceId),
+    index('workspace_invites_deck_idx').on(t.deckId),
+  ],
 );
 
 export const decks = pgTable(
@@ -385,7 +390,7 @@ export const comments = pgTable(
     /** `null` for gap comments. */
     slideId: text('slide_id').references(() => slides.id, { onDelete: 'cascade' }),
     parentId: text('parent_id').references((): AnyPgColumn => comments.id, { onDelete: 'cascade' }),
-    /** Snapshot of the author at write time; guests and PowerPoint authors have no `users` row. */
+    /** Snapshot of the author at write time; PowerPoint authors have no `users` row. */
     author: jsonb('author').$type<Author>().notNull(),
     body: text('body').notNull(),
     anchor: jsonb('anchor').$type<Anchor>().notNull(),
@@ -459,37 +464,6 @@ export const media = pgTable(
   (t) => [index('media_owner_idx').on(t.ownerId), index('media_deck_idx').on(t.deckId)],
 );
 
-export const reviewLinks = pgTable(
-  'review_links',
-  {
-    id: text('id').primaryKey(),
-    deckId: text('deck_id')
-      .notNull()
-      .references(() => decks.id, { onDelete: 'cascade' }),
-    token: text('token').notNull().unique(),
-    role: text('role').$type<ReviewLinkRole>().notNull(),
-    expiresAt: timestamptz('expires_at'),
-    revokedAt: timestamptz('revoked_at'),
-    createdAt: createdAt(),
-  },
-  (t) => [index('review_links_deck_idx').on(t.deckId)],
-);
-
-export const guestSessions = pgTable(
-  'guest_sessions',
-  {
-    id: text('id').primaryKey(),
-    reviewLinkId: text('review_link_id')
-      .notNull()
-      .references(() => reviewLinks.id, { onDelete: 'cascade' }),
-    name: text('name').notNull(),
-    email: text('email'),
-    color: text('color').$type<AccentColor>().notNull(),
-    createdAt: createdAt(),
-  },
-  (t) => [index('guest_sessions_review_link_idx').on(t.reviewLinkId)],
-);
-
 export type UserRow = typeof users.$inferSelect;
 export type SessionRow = typeof sessions.$inferSelect;
 /**
@@ -514,5 +488,3 @@ export type { SlideRenderer };
 export type CommentRow = typeof comments.$inferSelect;
 export type NewCommentRow = typeof comments.$inferInsert;
 export type MediaRow = typeof media.$inferSelect;
-export type ReviewLinkRow = typeof reviewLinks.$inferSelect;
-export type GuestSessionRow = typeof guestSessions.$inferSelect;

@@ -4,7 +4,6 @@ import { workspaceMembers } from '../src/db/schema';
 import { parseRange } from '../src/http/range';
 import { sniffMediaContainer } from '../src/services/media';
 import {
-  cookieFrom,
   createReadyDeck,
   createTestContext,
   signedInUser,
@@ -61,7 +60,7 @@ async function create(input = voiceComment(), bytes = webm()): Promise<Comment> 
   return commentSchema.parse(await res.json());
 }
 
-/** Another member of the organisation – guests only look (BER-130). */
+/** Another member of the organisation who may comment. */
 async function joinAsMember(name: string): Promise<string> {
   const person = await signedInUser(ctx, { name, email: `${name.toLowerCase()}@firma.de` });
   await ctx.deps.db
@@ -200,16 +199,9 @@ describe('voice and video comments', () => {
 
   it('keeps recordings private to people with access to the deck', async () => {
     const { media } = await create();
-    const other = await createReadyDeck(ctx, { slideCount: 1 });
-    const link = (await (
-      await ctx.request(`/api/decks/${other.deckId}/review-links`, { method: 'POST', json: {} })
-    ).json()) as { token: string };
-    const join = await ctx.request(`/api/invites/${link.token}/join`, {
-      method: 'POST',
-      json: { name: 'Fremd' },
-    });
-    const res = await ctx.request(media!.url, { cookie: cookieFrom(join) });
-    expect(res.status).toBe(403);
+    const outsider = await signedInUser(ctx, { name: 'Fremd', email: 'fremd@example.com' });
+    const res = await ctx.request(media!.url, { cookie: outsider.cookie });
+    expect(res.status).toBe(404);
   });
 
   it('deletes the recordings with their thread', async () => {

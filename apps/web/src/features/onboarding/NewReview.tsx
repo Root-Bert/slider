@@ -81,7 +81,7 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
       <AppHeader />
 
       {!link.noAccess && (
-        // Same place and type as "Meine Reviews".
+        // Same place and type as "Reviews".
         <hgroup className="flex flex-col gap-1 px-4 pt-2 md:px-14">
           <h1 className="text-[28px] leading-tight font-semibold tracking-tight text-fg">
             Neue Review

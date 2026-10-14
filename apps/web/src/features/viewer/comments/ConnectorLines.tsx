@@ -35,8 +35,8 @@ interface ConnectorLinesProps {
  * Lines are drawn for every slide. Those of the active slide, the hovered slide and the slide of
  * the hovered or focused thread are full strength; the others step back half-way, like the lines
  * of the other threads while one is open.
- * Lines take the author's accent, fade out behind the minimap and the control row, and pass
- * behind cards and marks. Hidden on narrow screens.
+ * Lines take the author's accent and pass behind cards and marks, the minimap's thumbnails and
+ * the glass controls row. Hidden on narrow screens.
  *
  * The lines live inside the scrolled content (the connector layer), so horizontal scrolling
  * moves them natively.
@@ -55,7 +55,7 @@ export function ConnectorLines({ wrapperRef, layer }: ConnectorLinesProps) {
   // A box being dragged: its line leaves it where it is shown, not where it is stored.
   const preview = useMarkPreview();
   const narrow = useIsNarrow();
-  const maskId = `connector-fade-${useId().replace(/[^\w-]/g, '')}`;
+  const maskId = `connector-mask-${useId().replace(/[^\w-]/g, '')}`;
   const enabled = !narrow;
 
   const ownerOf = (threadId: string | null) => {
@@ -187,35 +187,13 @@ export function ConnectorLines({ wrapperRef, layer }: ConnectorLinesProps) {
 const MASK_EXTENT = 1e6;
 
 /**
- * The lines' mask: the fade behind the minimap and controls band, with the marks on the slides
- * and the visible cards cut out, so lines pass behind them.
+ * The lines' mask: the marks on the slides and the visible cards cut out, so lines pass behind
+ * them. Minimap and controls band cover the lines themselves, above the connector layer.
  */
 function ConnectorMask({ id, layout }: { id: string; layout: ConnectorLayout }) {
-  const { fade, cutouts } = layout;
-  const first = fade[0];
-  const last = fade.at(-1);
-  const span = first && last ? Math.max(1, last.y - first.y) : 1;
+  const { cutouts } = layout;
   return (
     <defs>
-      {first && (
-        <linearGradient
-          id={`${id}-gradient`}
-          gradientUnits="userSpaceOnUse"
-          x1="0"
-          y1={first.y}
-          x2="0"
-          y2={first.y + span}
-        >
-          {fade.map((stop, index) => (
-            <stop
-              key={index}
-              offset={(stop.y - first.y) / span}
-              stopColor="white"
-              stopOpacity={stop.opacity}
-            />
-          ))}
-        </linearGradient>
-      )}
       <mask
         id={id}
         maskUnits="userSpaceOnUse"
@@ -229,7 +207,7 @@ function ConnectorMask({ id, layout }: { id: string; layout: ConnectorLayout }) 
           y={-MASK_EXTENT}
           width={2 * MASK_EXTENT}
           height={2 * MASK_EXTENT}
-          fill={first ? `url(#${id}-gradient)` : 'white'}
+          fill="white"
         />
         {/* Lines pass behind the marks on the slide. */}
         {cutouts.map((cutout, index) =>

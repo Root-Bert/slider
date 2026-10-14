@@ -1,7 +1,7 @@
 import { and, count, eq, sql } from 'drizzle-orm';
 import { ACCENT_COLORS, type LoginError } from '@slider/shared';
 import { advisoryXactLock, type Executor } from '../db/client';
-import { userIdentities, users, type IdentityProvider, type UserRow } from '../db/schema';
+import { passkeys, userIdentities, users, type IdentityProvider, type UserRow } from '../db/schema';
 import type { AppDeps } from '../deps';
 import {
   ensurePersonalWorkspace,
@@ -296,14 +296,58 @@ export async function linkIdentity(
 }
 
 /** How the account signs in, oldest first (`GET /me/identities`). */
-export function listIdentities(db: Executor, userId: string) {
-  return db
+export async function listIdentities(db: Executor, userId: string) {
+  const rows = await db
     .select({
       provider: userIdentities.provider,
+      subject: userIdentities.subject,
       email: userIdentities.email,
       createdAt: userIdentities.createdAt,
     })
     .from(userIdentities)
     .where(eq(userIdentities.userId, userId))
     .orderBy(userIdentities.createdAt);
+  return rows.map(({ subject, ...row }) => ({ id: `${row.provider}:${subject}`, ...row }));
+}
+
+export type UnlinkResult =
+  { ok: true } | { ok: false; error: 'not_found' | 'email' | 'last_login' };
+
+/**
+ * Removes a provider login from the account ("Trennen" on /konto). The e-mail login can't go – a
+ * magic link would add it right back. Nor can the last way in: some other identity, a passkey or
+ * the magic link must remain. Unlinking Microsoft also drops its file access.
+ */
+export async function unlinkIdentity(
+  deps: AppDeps,
+  userId: string,
+  id: string,
+): Promise<UnlinkResult> {
+  const split = id.indexOf(':');
+  if (split <= 0) return { ok: false, error: 'not_found' };
+  const provider = id.slice(0, split) as IdentityProvider;
+  const subject = id.slice(split + 1);
+  const result = await deps.db.transaction(async (tx): Promise<UnlinkResult> => {
+    // Two unlinks at once must not both see the other as the remaining login.
+    await advisoryXactLock(tx, `identities:${userId}`);
+    const own = await tx
+      .select({ provider: userIdentities.provider, subject: userIdentities.subject })
+      .from(userIdentities)
+      .where(eq(userIdentities.userId, userId));
+    const target = own.find((row) => row.provider === provider && row.subject === subject);
+    if (!target) return { ok: false, error: 'not_found' };
+    if (target.provider === 'email') return { ok: false, error: 'email' };
+    const [keys] = await tx
+      .select({ count: count() })
+      .from(passkeys)
+      .where(eq(passkeys.userId, userId));
+    const remaining = own.length - 1 + (keys?.count ?? 0);
+    if (remaining === 0 && !deps.mailer.configured) return { ok: false, error: 'last_login' };
+    await tx
+      .delete(userIdentities)
+      .where(and(eq(userIdentities.provider, provider), eq(userIdentities.subject, subject)));
+    return { ok: true };
+  });
+  if (result.ok && provider === 'microsoft') await deps.microsoft.forget(userId);
+  return result;
 }

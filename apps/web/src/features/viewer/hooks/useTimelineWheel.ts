@@ -16,8 +16,9 @@ interface GestureEvent extends UIEvent {
  * - Pinch and Ctrl/⌘ + wheel move the split handle – bigger or smaller slides, like zooming a
  *   video timeline – anchored horizontally at the pointer. Chrome, Firefox and Edge report
  *   trackpad pinch as a wheel event with `ctrlKey`; Safari sends `gesture*` events.
- * - A plain vertical wheel over the track and the controls scrolls the timeline sideways (as long
- *   as it can still move that way); over the comments it scrolls them as usual.
+ * - A plain vertical wheel scrolls the timeline sideways, like the slides – over the track and the
+ *   controls as long as it can still move that way, over the comments always. Shift + wheel (or
+ *   dragging the background, `useCanvasPan`) scrolls the comments up and down.
  */
 export function useTimelineWheel({
   scrollerRef,
@@ -66,13 +67,29 @@ export function useTimelineWheel({
         flush.schedule();
         return;
       }
-      const overHeader =
-        event.target instanceof Element && event.target.closest('[data-timeline-header]');
-      if (!overHeader || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
-      const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
-      const max = scroller.scrollWidth - scroller.clientWidth;
-      if ((delta > 0 && scroller.scrollLeft >= max - 1) || (delta < 0 && scroller.scrollLeft <= 1))
+      const target = event.target instanceof Element ? event.target : null;
+      // Text fields scroll their own text.
+      if (target?.closest('textarea, [contenteditable]')) return;
+      const overHeader = target?.closest('[data-timeline-header]');
+      const scale = event.deltaMode === 1 ? 16 : 1;
+      if (!overHeader && event.shiftKey) {
+        // Shift scrolls the comments up and down (macOS reports Shift + wheel as sideways).
+        const delta =
+          Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+        event.preventDefault();
+        scroller.scrollBy({ top: delta * scale });
         return;
+      }
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      const delta = event.deltaY * scale;
+      if (overHeader) {
+        const max = scroller.scrollWidth - scroller.clientWidth;
+        if (
+          (delta > 0 && scroller.scrollLeft >= max - 1) ||
+          (delta < 0 && scroller.scrollLeft <= 1)
+        )
+          return;
+      }
       event.preventDefault();
       scroller.scrollBy({ left: delta });
     };

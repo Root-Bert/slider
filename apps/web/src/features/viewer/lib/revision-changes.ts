@@ -11,7 +11,6 @@ import type {
   SyncResult,
   SyncSummary,
 } from '@slider/shared';
-import { formatRelativeTime } from '@/lib/format';
 
 /**
  * What a new revision changed, in the words of the viewer (BER-107, BER-108, BER-109, BER-114):
@@ -192,7 +191,7 @@ export const currentRevision = (revisions: readonly Revision[] | undefined) =>
 // ── Copy ────────────────────────────────────────────────────────────────────
 
 /**
- * Short notice next to "Neu laden" after a new revision arrived: "V5 geladen · 3 Folien
+ * Short notice in the version pill after a new revision arrived: "V5 geladen · 3 Folien
  * geändert, 1 neu" (the summary text comes from the server, see `formatSyncSummary`).
  */
 export function revisionNoticeText(
@@ -206,7 +205,7 @@ export function revisionNoticeText(
 export type ToastTone = 'neutral' | 'danger';
 
 /**
- * Toast after "Neu laden" / "Neue Version hochladen". `null` for a new version: that one is
+ * Toast after "Neue Version hochladen". `null` for a new version: that one is
  * announced by the notice next to the button (`RevisionNotice`), for everybody watching.
  */
 export function syncResultMessage(result: SyncResult): { text: string; tone: ToastTone } | null {
@@ -223,16 +222,6 @@ export function syncResultMessage(result: SyncResult): { text: string; tone: Toa
         tone: 'danger',
       };
   }
-}
-
-/** Tooltip line of the "Neu laden" button. */
-export function lastCheckedLabel(
-  sync: Pick<DeckSync, 'lastCheckedAt'> | null | undefined,
-  now?: Date,
-) {
-  if (!sync?.lastCheckedAt) return 'Noch nicht geprüft';
-  const relative = formatRelativeTime(sync.lastCheckedAt, now);
-  return relative === 'jetzt' ? 'Gerade eben geprüft' : `Zuletzt geprüft ${relative}`;
 }
 
 /**

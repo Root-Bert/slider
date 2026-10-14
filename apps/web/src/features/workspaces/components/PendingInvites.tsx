@@ -38,7 +38,8 @@ function PendingInviteRow({
   const accept = useAcceptInvite();
   const join = () =>
     accept.mutate(invite.id, {
-      onSuccess: ({ workspace }) => void navigate(routes.workspace(workspace.id)),
+      onSuccess: ({ workspace, deckId }) =>
+        void navigate(deckId ? routes.deck(deckId) : routes.workspace(workspace.id)),
       onError: (error) => onError(error.message, 'danger'),
     });
 
@@ -59,6 +60,7 @@ function PendingInviteRow({
           <Badge>{ROLE_LABELS[invite.role]}</Badge>
         </span>
         <span className="truncate text-xs text-fg-subtle">
+          {invite.deck ? `„${invite.deck.title}“ · ` : ''}
           {invite.inviterName ? `Von ${invite.inviterName} · ` : ''}
           {formatExpiry(invite.expiresAt)}
         </span>

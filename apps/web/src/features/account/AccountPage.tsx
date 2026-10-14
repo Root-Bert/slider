@@ -7,11 +7,11 @@ import { useAccount } from '@/features/auth/useAccount';
 import { Avatar, Icon, TextField, Toast, useToast } from '@/ui';
 import { SettingsSection } from '@/features/workspaces/components/SettingsSection';
 import { LoginsSection, PasskeysSection } from './components/AccountSections';
-import { AvatarPicker } from './components/AvatarPicker';
 
 /**
  * `/konto` – "Konto & Anmeldung": who you are, how you sign in (Microsoft, Google, SSO, e-mail)
- * and your passkeys. `?linkError=` after a failed "Verbinden".
+ * and your passkeys. `?linkError=` after a failed "Verbinden". Your colour and how decks open
+ * live on `/einstellungen`.
  */
 export function Component() {
   const { user, viewer } = useAccount();
@@ -35,12 +35,9 @@ export function Component() {
             </Link>
             <div className="flex items-center gap-3">
               <Avatar author={viewer.author} size={32} />
-              <div className="flex min-w-0 flex-col">
-                <h1 className="truncate text-[28px] leading-tight font-semibold tracking-tight text-fg">
-                  Konto & Anmeldung
-                </h1>
-                <p className="truncate text-[13px] text-fg-subtle">{user.email}</p>
-              </div>
+              <h1 className="min-w-0 truncate text-[28px] leading-tight font-semibold tracking-tight text-fg">
+                Konto & Anmeldung
+              </h1>
             </div>
           </div>
 
@@ -50,18 +47,13 @@ export function Component() {
             title="Profil"
             description="Name und Adresse kommen von deiner ersten Anmeldung."
           >
-            <AvatarPicker
-              author={viewer.author}
-              seeded={Boolean(user.avatarSeed)}
-              onNotify={showToast}
-            />
             <div className="grid gap-3 sm:grid-cols-2">
               <TextField label="Name" value={user.name} readOnly />
               <TextField label="E-Mail" value={user.email} readOnly />
             </div>
           </SettingsSection>
 
-          <LoginsSection microsoftConnected={user.microsoftConnected} />
+          <LoginsSection microsoftConnected={user.microsoftConnected} onNotify={showToast} />
           <PasskeysSection onNotify={showToast} />
 
           {user.isInstanceAdmin && (
@@ -71,7 +63,7 @@ export function Component() {
               aside={
                 <Link
                   to={routes.setup()}
-                  className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-control-sm px-3 text-[13px] text-fg glass hover:bg-white/15"
+                  className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-control-sm px-3 text-[13px] text-fg glass-control hover:bg-white/15"
                 >
                   Einrichtung
                   <Icon name="arrowForward" size={16} />

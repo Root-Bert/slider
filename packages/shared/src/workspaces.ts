@@ -122,6 +122,8 @@ export type VerifyPasskeyLoginInput = z.infer<typeof verifyPasskeyLoginInputSche
 
 /** `GET /me/identities` – how the account signs in (besides passkeys). */
 export const loginIdentitySchema = z.object({
+  /** `<provider>:<subject>` – for `DELETE /me/identities/:id`. */
+  id: z.string(),
   provider: z.enum(['microsoft', 'google', 'oidc', 'email']),
   /** The address the provider reported at the last login. */
   email: z.string().nullable(),
@@ -136,7 +138,6 @@ export const meUserSchema = z.object({
   name: z.string(),
   email: z.string(),
   color: accentColorSchema,
-  avatarSeed: z.string().nullable(),
   isInstanceAdmin: z.boolean(),
   /** A Microsoft refresh token is stored – OneDrive/SharePoint links can be imported. */
   microsoftConnected: z.boolean(),
@@ -197,8 +198,9 @@ export const workspaceMemberSchema = z.object({
   name: z.string(),
   email: z.string(),
   color: accentColorSchema,
-  avatarSeed: z.string().nullable(),
   role: workspaceRoleSchema,
+  /** Founded the workspace – can't be given or taken, only shown. */
+  isCreator: z.boolean(),
   joinedAt: z.iso.datetime(),
 });
 export type WorkspaceMember = z.infer<typeof workspaceMemberSchema>;
@@ -206,8 +208,11 @@ export type WorkspaceMember = z.infer<typeof workspaceMemberSchema>;
 export const updateMemberInputSchema = z.object({ role: workspaceRoleSchema });
 export type UpdateMemberInput = z.infer<typeof updateMemberInputSchema>;
 
-/** Invitations hand out every role but `owner` – owners are appointed among members. */
-export const inviteRoleSchema = z.enum(['admin', 'member', 'reviewer']);
+/**
+ * Invitations hand out every role. `viewer` is what sharing a deck hands out: there are no
+ * guests, everyone looking is a member.
+ */
+export const inviteRoleSchema = workspaceRoleSchema;
 export type InviteRole = z.infer<typeof inviteRoleSchema>;
 
 export const INVITE_STATES = ['valid', 'expired', 'revoked', 'used'] as const;
@@ -227,6 +232,8 @@ export const workspaceInviteSchema = z.object({
   acceptedAt: z.iso.datetime().nullable(),
   revokedAt: z.iso.datetime().nullable(),
   useCount: z.number().int(),
+  /** Sharing a deck (`POST /decks/:deckId/share`): joining leads to this deck. */
+  deck: z.object({ id: z.string(), title: z.string() }).nullable(),
 });
 export type WorkspaceInvite = z.infer<typeof workspaceInviteSchema>;
 
@@ -236,6 +243,13 @@ export const createWorkspaceInviteInputSchema = z.object({
   role: inviteRoleSchema.default('member'),
 });
 export type CreateWorkspaceInviteInput = z.input<typeof createWorkspaceInviteInputSchema>;
+
+/**
+ * `POST /decks/:deckId/share` – sharing a deck is always an invitation into its organisation as
+ * `viewer` (only looks). Omit `email` for a link anyone may use.
+ */
+export const shareDeckInputSchema = z.object({ email: z.email().max(320).optional() });
+export type ShareDeckInput = z.input<typeof shareDeckInputSchema>;
 
 /** `POST /workspaces/:id/invites` – the only time the plain link is visible. */
 export const createdWorkspaceInviteSchema = z.object({
@@ -255,6 +269,8 @@ export const joinPreviewSchema = z.object({
   /** E-mail invites: the address, masked (`r…t@firma.de`); `null` for link invites. */
   email: z.string().nullable(),
   state: inviteStateSchema,
+  /** The shared deck, for invites created by sharing one. */
+  deck: z.object({ id: z.string(), title: z.string() }).nullable(),
 });
 export type JoinPreview = z.infer<typeof joinPreviewSchema>;
 
@@ -266,9 +282,15 @@ export const pendingInviteSchema = z.object({
   inviterName: z.string().nullable(),
   role: inviteRoleSchema,
   expiresAt: z.iso.datetime(),
+  /** The shared deck, for invites created by sharing one. */
+  deck: z.object({ id: z.string(), title: z.string() }).nullable(),
 });
 export type PendingInvite = z.infer<typeof pendingInviteSchema>;
 
 /** Response of `POST /join/:token` and `POST /workspace-invites/:id/accept`. */
-export const joinResultSchema = z.object({ workspace: workspaceSchema });
+export const joinResultSchema = z.object({
+  workspace: workspaceSchema,
+  /** Set when the invite shared a deck that still exists: open it next. */
+  deckId: z.string().nullable(),
+});
 export type JoinResult = z.infer<typeof joinResultSchema>;

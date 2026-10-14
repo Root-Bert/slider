@@ -9,16 +9,16 @@ import {
   canRemoveMember,
   canRenameWorkspace,
   formatExpiry,
-  isLastOwner,
+  isLastAdmin,
   sortInvites,
 } from './roles';
 
 describe('role ranks', () => {
-  it('orders owner > admin > member > reviewer', () => {
-    expect(atLeast('owner', 'admin')).toBe(true);
+  it('orders admin > member > reviewer > viewer', () => {
     expect(atLeast('admin', 'admin')).toBe(true);
     expect(atLeast('member', 'admin')).toBe(false);
     expect(atLeast('reviewer', 'member')).toBe(false);
+    expect(atLeast('reviewer', 'viewer')).toBe(true);
   });
 
   it('gates workspace actions', () => {
@@ -26,41 +26,32 @@ describe('role ranks', () => {
     expect(canCreateDecks('reviewer')).toBe(false);
     expect(canRenameWorkspace('admin')).toBe(true);
     expect(canRenameWorkspace('member')).toBe(false);
-    expect(canDeleteWorkspace('owner')).toBe(true);
-    expect(canDeleteWorkspace('admin')).toBe(false);
+    expect(canDeleteWorkspace('admin')).toBe(true);
+    expect(canDeleteWorkspace('member')).toBe(false);
   });
 });
 
 describe('assignableRoles', () => {
-  it('lets owners give every role', () => {
-    expect(assignableRoles('owner', 'member')).toEqual(['owner', 'admin', 'member', 'reviewer']);
-    expect(assignableRoles('owner', 'owner')).toEqual(['owner', 'admin', 'member', 'reviewer']);
-  });
-
-  it('keeps admins below owner and away from owners', () => {
-    expect(assignableRoles('admin', 'reviewer')).toEqual(['admin', 'member', 'reviewer']);
-    expect(assignableRoles('admin', 'owner')).toEqual([]);
+  it('lets admins give every role', () => {
+    expect(assignableRoles('admin')).toEqual(['admin', 'member', 'reviewer', 'viewer']);
   });
 
   it('gives members and reviewers nothing', () => {
-    expect(assignableRoles('member', 'reviewer')).toEqual([]);
-    expect(assignableRoles('reviewer', 'reviewer')).toEqual([]);
+    expect(assignableRoles('member')).toEqual([]);
+    expect(assignableRoles('reviewer')).toEqual([]);
   });
 });
 
 describe('member removal', () => {
   it('follows the API rules', () => {
-    expect(canRemoveMember('admin', 'member')).toBe(true);
-    expect(canRemoveMember('admin', 'admin')).toBe(true);
-    expect(canRemoveMember('admin', 'owner')).toBe(false);
-    expect(canRemoveMember('owner', 'owner')).toBe(true);
-    expect(canRemoveMember('member', 'reviewer')).toBe(false);
+    expect(canRemoveMember('admin')).toBe(true);
+    expect(canRemoveMember('member')).toBe(false);
   });
 
-  it('knows the last owner', () => {
-    expect(isLastOwner('owner', 1)).toBe(true);
-    expect(isLastOwner('owner', 2)).toBe(false);
-    expect(isLastOwner('admin', 1)).toBe(false);
+  it('knows the last admin', () => {
+    expect(isLastAdmin('admin', 1)).toBe(true);
+    expect(isLastAdmin('admin', 2)).toBe(false);
+    expect(isLastAdmin('member', 1)).toBe(false);
   });
 });
 

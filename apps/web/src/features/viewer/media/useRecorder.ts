@@ -29,6 +29,8 @@ export type RecorderState =
   /** Video: the camera preview runs, recording has not started. */
   | { status: 'ready' }
   | { status: 'recording' }
+  /** Recording, held by the user; resumes into the same recording. */
+  | { status: 'paused' }
   | { status: 'recorded'; recording: Recording }
   | { status: 'error'; message: string };
 
@@ -79,7 +81,7 @@ async function withDuration(blob: Blob, durationMs: number): Promise<Blob> {
 
 /**
  * Voice or video recording with MediaRecorder (BER-116): compressed while recording, live level
- * meter, stops by itself after five minutes. Video opens the camera right away for a preview.
+ * meter, pauses and resumes, stops by itself after five minutes. Video opens the camera right away for a preview.
  */
 export function useRecorder(kind: MediaKind, { autoStart = false }: { autoStart?: boolean } = {}) {
   const [state, setState] = useState<RecorderState>(() =>
@@ -99,6 +101,7 @@ export function useRecorder(kind: MediaKind, { autoStart = false }: { autoStart?
   const streamRef = useRef<MediaStream | null>(null);
   const urlRef = useRef<string | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
+  const pauseRef = useRef<((paused: boolean) => void) | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
   const pendingRef = useRef<Promise<MediaStream | null> | null>(null);
   const mountedRef = useRef(false);
@@ -163,20 +166,29 @@ export function useRecorder(kind: MediaKind, { autoStart = false }: { autoStart?
       const samples = new Float32Array(analyser.fftSize);
       const allLevels: number[] = [];
       const startedAt = performance.now();
-      const reachedLimit = () => performance.now() - startedAt >= MAX_MEDIA_DURATION_MS;
+      // Time spent paused does not count – neither towards the length nor the limit.
+      let pausedMs = 0;
+      let pausedAt: number | null = null;
+      const elapsedNow = () =>
+        performance.now() -
+        startedAt -
+        pausedMs -
+        (pausedAt === null ? 0 : performance.now() - pausedAt);
+      const reachedLimit = () => elapsedNow() >= MAX_MEDIA_DURATION_MS;
       // Background tabs throttle timers; the recorder's one-second chunks still arrive, so the
       // five-minute limit is checked there too.
       recorder.addEventListener('dataavailable', () => {
         if (reachedLimit()) stopRecording();
       });
       const timer = window.setInterval(() => {
+        if (pausedAt !== null) return;
         analyser.getFloatTimeDomainData(samples);
         let sum = 0;
         for (const sample of samples) sum += sample * sample;
         const level = Math.min(1, Math.sqrt(sum / samples.length) * 4);
         allLevels.push(level);
         setLevels(allLevels.slice(-LIVE_BARS));
-        const elapsed = performance.now() - startedAt;
+        const elapsed = elapsedNow();
         setElapsedMs(elapsed);
         if (elapsed >= MAX_MEDIA_DURATION_MS) stopRecording();
       }, LEVEL_INTERVAL_MS);
@@ -192,10 +204,11 @@ export function useRecorder(kind: MediaKind, { autoStart = false }: { autoStart?
         if (stopped) return;
         stopped = true;
         if (stopRef.current === stopRecording) stopRef.current = null;
+        if (pauseRef.current === setPaused) pauseRef.current = null;
         cleanup();
         if (cleanupRef.current === cleanup) cleanupRef.current = null;
         // The real length – the limit may be overshot by up to a chunk; the server allows that.
-        const durationMs = Math.round(performance.now() - startedAt);
+        const durationMs = Math.round(elapsedNow());
         if (recorder.state !== 'inactive') recorder.stop();
         if (voiceRecorder && voiceRecorder.state !== 'inactive') voiceRecorder.stop();
         void (async () => {
@@ -230,6 +243,22 @@ export function useRecorder(kind: MediaKind, { autoStart = false }: { autoStart?
       }
       stopRef.current = stopRecording;
 
+      function setPaused(paused: boolean) {
+        if (stopped || paused === (pausedAt !== null)) return;
+        if (paused) {
+          pausedAt = performance.now();
+          recorder.pause();
+          voiceRecorder?.pause();
+        } else {
+          pausedMs += performance.now() - (pausedAt ?? performance.now());
+          pausedAt = null;
+          recorder.resume();
+          voiceRecorder?.resume();
+        }
+        setState({ status: paused ? 'paused' : 'recording' });
+      }
+      pauseRef.current = setPaused;
+
       recorder.start(1000);
       voiceRecorder?.start(1000);
       setLevels([]);
@@ -246,6 +275,8 @@ export function useRecorder(kind: MediaKind, { autoStart = false }: { autoStart?
   }, [acquire, beginRecording]);
 
   const stop = useCallback(() => stopRef.current?.(), []);
+  const pause = useCallback(() => pauseRef.current?.(true), []);
+  const resume = useCallback(() => pauseRef.current?.(false), []);
 
   /** Throws the recording away; video goes back to the camera preview. */
   const reset = useCallback(() => {
@@ -272,6 +303,7 @@ export function useRecorder(kind: MediaKind, { autoStart = false }: { autoStart?
       cancelled = true;
       mountedRef.current = false;
       stopRef.current = null;
+      pauseRef.current = null;
       cleanupRef.current?.();
       cleanupRef.current = null;
       streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -281,5 +313,5 @@ export function useRecorder(kind: MediaKind, { autoStart = false }: { autoStart?
     };
   }, [acquire, autoStart, beginRecording, kind]);
 
-  return { state, stream, levels, elapsedMs, start, stop, reset };
+  return { state, stream, levels, elapsedMs, start, stop, pause, resume, reset };
 }

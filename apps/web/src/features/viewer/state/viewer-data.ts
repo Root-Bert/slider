@@ -1,4 +1,4 @@
-import type { Comment, Deck, Slide, Viewer } from '@slider/shared';
+import type { AccentColor, Comment, Deck, Slide, Viewer } from '@slider/shared';
 import { createContext, useContext } from 'react';
 import {
   buildThreads,
@@ -6,6 +6,7 @@ import {
   groupThreadsBySlide,
   type Thread,
 } from '../lib/comment-selectors';
+import { withColorOverride } from '../lib/color-overrides';
 
 /** Server data of the open deck plus everything derived from it once per fetch. */
 export interface ViewerData {
@@ -14,11 +15,9 @@ export interface ViewerData {
   slides: Slide[];
   slideIndex: ReadonlyMap<string, number>;
   viewer: Viewer;
-  /** Joined through a review link (no account): leaves the session instead of closing the deck. */
-  isGuest: boolean;
   /** Rename, share, new versions, sync – from `deck.permissions` (BER-129). */
   canManage: boolean;
-  /** Write comments, reply and resolve; guests with a "view" link can only look (BER-102). */
+  /** Write comments, reply and resolve; `viewer`s (a deck was shared with them) only look. */
   canComment: boolean;
   threads: Thread[];
   threadById: ReadonlyMap<string, Thread>;
@@ -31,11 +30,29 @@ export interface ViewerData {
 }
 
 export function deriveViewerData(
-  deck: Deck,
+  rawDeck: Deck,
   rawSlides: readonly Slide[],
-  comments: readonly Comment[],
+  rawComments: readonly Comment[],
   viewer: Viewer,
+  /** Colours the viewer picked for others (`color-overrides`); never applied to the viewer. */
+  colorOverrides: Readonly<Record<string, AccentColor>> = {},
 ): ViewerData {
+  const { [viewer.author.id]: _, ...overrides } = colorOverrides;
+  const recolor = Object.keys(overrides).length > 0;
+  const deck: Deck = recolor
+    ? {
+        ...rawDeck,
+        owner: withColorOverride(rawDeck.owner, overrides),
+        participants: rawDeck.participants.map((person) => withColorOverride(person, overrides)),
+      }
+    : rawDeck;
+  const comments = recolor
+    ? rawComments.map((comment) =>
+        overrides[comment.author.id]
+          ? { ...comment, author: withColorOverride(comment.author, overrides) }
+          : comment,
+      )
+    : rawComments;
   const slides = [...rawSlides].sort((a, b) => a.position - b.position);
   const threads = buildThreads(comments);
   const names = new Set(
@@ -46,7 +63,6 @@ export function deriveViewerData(
     slides,
     slideIndex: new Map(slides.map((slide, index) => [slide.id, index])),
     viewer,
-    isGuest: viewer.kind === 'guest',
     canManage: deck.permissions.canManage,
     canComment: deck.permissions.canComment,
     threads,

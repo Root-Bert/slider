@@ -80,7 +80,6 @@ export function decksRoutes(deps: AppDeps) {
         const { viewer } = c.var;
         requireOwner(viewer);
         const access = await viewerAccess(deps.db, viewer);
-        if (access.kind !== 'user') throw new Error('unreachable');
         const workspaceId = c.req.query('workspaceId');
         if (workspaceId) await requireRole(deps.db, workspaceId, viewer.author.id);
         const workspaceIds = workspaceId ? [workspaceId] : [...access.roles.keys()];

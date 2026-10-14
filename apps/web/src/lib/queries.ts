@@ -1,25 +1,25 @@
 import {
   isTextStroke,
+  moveDrawing,
   type Author,
   type Comment,
+  type CreatedWorkspaceInvite,
   type CreateCommentInput,
-  type CreateReviewLinkInput,
   type Deck,
   type DeckStatus,
   type DeletedSlide,
   type ImportDriveItemInput,
-  type InviteInfo,
-  type JoinInviteInput,
   type MeResponse,
   type RerenderResult,
   type Revision,
   type RevisionDiff,
-  type ReviewLink,
   type Slide,
+  type ShareDeckInput,
   type SyncResult,
   type UpdateCommentInput,
   type UpdateDeckInput,
   type UpdateMeInput,
+  type WorkspaceInvite,
 } from '@slider/shared';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api-client';
@@ -37,7 +37,7 @@ export const queryKeys = {
   deck: (deckId: string) => ['decks', deckId] as const,
   slides: (deckId: string) => ['decks', deckId, 'slides'] as const,
   comments: (deckId: string) => ['decks', deckId, 'comments'] as const,
-  reviewLinks: (deckId: string) => ['decks', deckId, 'review-links'] as const,
+  shares: (deckId: string) => ['decks', deckId, 'shares'] as const,
   status: (deckId: string) => ['decks', deckId, 'status'] as const,
   revisions: (deckId: string) => ['decks', deckId, 'revisions'] as const,
   /**
@@ -49,7 +49,6 @@ export const queryKeys = {
     ['decks', deckId, 'revision-diff', revisionId] as const,
   deletedSlides: (deckId: string, revisionId: string | null) =>
     ['decks', deckId, 'deleted-slides', revisionId] as const,
-  invite: (token: string) => ['invites', token] as const,
 };
 
 const IMPORT_POLL_MS = 1000;
@@ -73,19 +72,6 @@ export function useUpdateMe() {
     onSuccess: (me) => {
       queryClient.setQueryData(queryKeys.me, me);
       void queryClient.invalidateQueries({ queryKey: queryKeys.decks });
-    },
-  });
-}
-
-/** Re-rolls the account's avatar (`null` resets it); comments and member lists show it too. */
-export function useUpdateAvatar() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (seed: string | null) => api.put<MeResponse>('/me/avatar', { seed }),
-    onSuccess: (me) => {
-      queryClient.setQueryData(queryKeys.me, me);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.decks });
-      void queryClient.invalidateQueries({ queryKey: ['workspaces'] });
     },
   });
 }
@@ -239,8 +225,24 @@ export function useCreateReply(deckId: string, author: Author) {
 /** The comment as the server will return it after `input` (mirrors `updateComment`). */
 function withUpdate(
   comment: Comment,
-  { textBox, anchor: box, ...input }: UpdateCommentInput,
+  { textBox, anchor: box, move, ...input }: UpdateCommentInput,
 ): Comment {
+  if (move) return { ...moveDrawing(comment, move.dx, move.dy), ...input };
+  const current = comment.anchor;
+  // A box moved without resizing takes its drawing along (like the API).
+  if (
+    box &&
+    current.type === 'rect' &&
+    Math.abs(box.rect.w - current.rect.w) < 1e-6 &&
+    Math.abs(box.rect.h - current.rect.h) < 1e-6
+  ) {
+    const { strokes } = moveDrawing(
+      comment,
+      box.rect.x - current.rect.x,
+      box.rect.y - current.rect.y,
+    );
+    return { ...comment, ...input, anchor: box, strokes };
+  }
   const next = { ...comment, ...input, ...(box ? { anchor: box } : {}) };
   const text = textBox && comment.strokes.find(isTextStroke);
   if (!textBox || !text) return next;
@@ -280,6 +282,32 @@ export function useUpdateComment(deckId: string) {
       queryClient.setQueryData<Comment[]>(queryKeys.comments(deckId), (current = []) =>
         current.map((comment) => (comment.id === commentId ? previous : comment)),
       );
+    },
+    onSettled: invalidate,
+  });
+}
+
+/** Deletes a drawing the eraser touched: it leaves the slide at once, and comes back on errors. */
+export function useEraseDrawing(deckId: string) {
+  const queryClient = useQueryClient();
+  const invalidate = useInvalidateDeckFeedback(deckId);
+  const key = queryKeys.comments(deckId);
+  return useMutation({
+    mutationFn: (commentId: string) => api.delete(`/comments/${commentId}`),
+    onMutate: async (commentId) => {
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient
+        .getQueryData<Comment[]>(key)
+        ?.find((comment) => comment.id === commentId);
+      queryClient.setQueryData<Comment[]>(key, (current = []) =>
+        current.filter((comment) => comment.id !== commentId),
+      );
+      return { previous };
+    },
+    onError: (_error, _commentId, context) => {
+      const previous = context?.previous;
+      if (previous)
+        queryClient.setQueryData<Comment[]>(key, (current = []) => [...current, previous]);
     },
     onSettled: invalidate,
   });
@@ -386,15 +414,6 @@ export function useInvalidateRevision(deckId: string) {
     ]);
 }
 
-/** "Neu laden" for link imports: checks the source now (owner only). */
-export function useSyncDeck(deckId: string) {
-  const invalidate = useInvalidateRevision(deckId);
-  return useMutation({
-    mutationFn: () => api.post<SyncResult>(`/decks/${deckId}/sync`),
-    onSettled: invalidate,
-  });
-}
-
 /** "Neue Version hochladen" for uploaded decks (owner only). */
 export function useUploadRevision(deckId: string) {
   const invalidate = useInvalidateRevision(deckId);
@@ -438,52 +457,28 @@ export function useInvalidateSlideImages(deckId: string) {
 
 // ── Sharing ─────────────────────────────────────────────────────────────────
 
-export const useReviewLinks = (deckId: string, enabled = true) =>
+/** Invitations created by sharing this deck – each invites into the organisation as `viewer`. */
+export const useDeckShares = (deckId: string, enabled = true) =>
   useQuery({
-    queryKey: queryKeys.reviewLinks(deckId),
-    queryFn: () => api.get<ReviewLink[]>(`/decks/${deckId}/review-links`),
+    queryKey: queryKeys.shares(deckId),
+    queryFn: () => api.get<WorkspaceInvite[]>(`/decks/${deckId}/share`),
     enabled,
   });
 
-export function useCreateReviewLink(deckId: string) {
+/** Sharing a deck = inviting into its organisation as `viewer` (there are no guests). */
+export function useShareDeck(deckId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateReviewLinkInput) =>
-      api.post<ReviewLink>(`/decks/${deckId}/review-links`, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.reviewLinks(deckId) }),
+    mutationFn: (input: ShareDeckInput) =>
+      api.post<CreatedWorkspaceInvite>(`/decks/${deckId}/share`, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.shares(deckId) }),
   });
 }
 
-export function useRevokeReviewLink(deckId: string) {
+export function useRevokeDeckShare(deckId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (linkId: string) => api.delete(`/review-links/${linkId}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.reviewLinks(deckId) }),
-  });
-}
-
-export const useInvite = (token: string) =>
-  useQuery({
-    queryKey: queryKeys.invite(token),
-    queryFn: () => api.get<InviteInfo>(`/invites/${token}`),
-    retry: false,
-  });
-
-export function useJoinInvite(token: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (input: JoinInviteInput) => api.post<MeResponse>(`/invites/${token}/join`, input),
-    onSuccess: (me) => {
-      queryClient.setQueryData(queryKeys.me, me);
-      void queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] !== 'me' });
-    },
-  });
-}
-
-export function useLeaveSession() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => api.post<void>('/session/leave'),
-    onSuccess: () => queryClient.invalidateQueries(),
+    mutationFn: (inviteId: string) => api.delete(`/workspace-invites/${inviteId}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.shares(deckId) }),
   });
 }

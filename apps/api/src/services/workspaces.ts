@@ -5,6 +5,7 @@ import type {
   InviteRole,
   InviteState,
   JoinPreview,
+  JoinResult,
   PendingInvite,
   Workspace,
   WorkspaceInvite,
@@ -50,7 +51,12 @@ const EMAIL_INVITE_DAYS = 7;
 const LINK_INVITE_DAYS = 30;
 export const PERSONAL_WORKSPACE_NAME = 'Meine Organisation';
 
-const RANK: Record<WorkspaceRole, number> = { owner: 4, admin: 3, member: 2, reviewer: 1 };
+const RANK: Record<WorkspaceRole, number> = {
+  admin: 3,
+  member: 2,
+  reviewer: 1,
+  viewer: 0,
+};
 export const atLeast = (role: WorkspaceRole, min: WorkspaceRole) => RANK[role] >= RANK[min];
 const stronger = (a: WorkspaceRole, b: WorkspaceRole) => (RANK[a] >= RANK[b] ? a : b);
 
@@ -58,8 +64,8 @@ export const workspaceNotFound = () => notFound('Diese Organisation gibt es nich
 const inviteNotFound = () => notFound('Diese Einladung gibt es nicht.');
 
 /**
- * What a member may do with a deck: reviewers view and comment, members also manage the decks
- * they created, admins and owners manage every deck.
+ * What a member may do with a deck: viewers only look, reviewers also comment, members also
+ * manage the decks they created, admins manage every deck.
  */
 export function deckPermissions(
   role: WorkspaceRole | null,
@@ -68,7 +74,7 @@ export function deckPermissions(
 ): DeckPermissions {
   if (!role) return { canManage: false, canComment: false };
   const canManage = atLeast(role, 'admin') || (role === 'member' && deckOwnerId === userId);
-  return { canManage, canComment: true };
+  return { canManage, canComment: atLeast(role, 'reviewer') };
 }
 
 export async function getRole(
@@ -100,7 +106,7 @@ export async function requireRole(
   db: Executor,
   workspaceId: string,
   userId: string,
-  min: WorkspaceRole = 'reviewer',
+  min: WorkspaceRole = 'viewer',
   message = 'Dafür brauchst du mehr Rechte in dieser Organisation.',
 ): Promise<WorkspaceRole> {
   const role = await getRole(db, workspaceId, userId);
@@ -154,7 +160,7 @@ export async function foundWorkspace(
   });
 }
 
-/** Creates a workspace with `userId` as its owner – no limits; see {@link foundWorkspace}. */
+/** Creates a workspace with `userId` as its creator and admin – no limits; see {@link foundWorkspace}. */
 export async function createWorkspace(
   db: Executor,
   userId: string,
@@ -174,7 +180,7 @@ export async function createWorkspace(
   if (!row) throw new Error('Workspace insert returned no row');
   await db
     .insert(workspaceMembers)
-    .values({ workspaceId: row.id, userId, role: 'owner', createdAt: now });
+    .values({ workspaceId: row.id, userId, role: 'admin', createdAt: now });
   return row;
 }
 
@@ -221,10 +227,7 @@ export async function resolveUploadWorkspace(
     .select({ id: workspaceMembers.workspaceId })
     .from(workspaceMembers)
     .where(
-      and(
-        eq(workspaceMembers.userId, userId),
-        inArray(workspaceMembers.role, ['owner', 'admin', 'member']),
-      ),
+      and(eq(workspaceMembers.userId, userId), inArray(workspaceMembers.role, ['admin', 'member'])),
     )
     .orderBy(asc(workspaceMembers.createdAt))
     .limit(1);
@@ -294,7 +297,7 @@ export async function renameWorkspace(
   return getWorkspace(deps, userId, workspaceId);
 }
 
-/** Owners only. Deletes every deck with its files, then the workspace (members, invites). */
+/** Admins only. Deletes every deck with its files, then the workspace (members, invites). */
 export async function deleteWorkspace(
   deps: AppDeps,
   userId: string,
@@ -304,8 +307,8 @@ export async function deleteWorkspace(
     deps.db,
     workspaceId,
     userId,
-    'owner',
-    'Nur Owner können eine Organisation löschen.',
+    'admin',
+    'Nur Admins können eine Organisation löschen.',
   );
   const deckRows = await deps.db
     .select({ id: decks.id })
@@ -320,13 +323,14 @@ export async function deleteWorkspace(
 const toMemberDto = (
   user: UserRow,
   member: { role: WorkspaceRole; createdAt: Date },
+  creatorId: string | null,
 ): WorkspaceMember => ({
   userId: user.id,
   name: user.name,
   email: user.email,
   color: user.color,
-  avatarSeed: user.avatarSeed,
   role: member.role,
+  isCreator: user.id === creatorId,
   joinedAt: member.createdAt.toISOString(),
 });
 
@@ -337,30 +341,31 @@ export async function listMembers(
 ): Promise<WorkspaceMember[]> {
   await requireRole(db, workspaceId, userId);
   const rows = await db
-    .select({ user: users, member: workspaceMembers })
+    .select({ user: users, member: workspaceMembers, creatorId: workspaces.createdBy })
     .from(workspaceMembers)
     .innerJoin(users, eq(users.id, workspaceMembers.userId))
+    .innerJoin(workspaces, eq(workspaces.id, workspaceMembers.workspaceId))
     .where(eq(workspaceMembers.workspaceId, workspaceId))
     .orderBy(asc(workspaceMembers.createdAt));
   return rows
-    .map((row) => toMemberDto(row.user, row.member))
+    .map((row) => toMemberDto(row.user, row.member, row.creatorId))
     .sort((a, b) => RANK[b.role] - RANK[a.role]);
 }
 
-async function ownerCount(db: Executor, workspaceId: string): Promise<number> {
+async function adminCount(db: Executor, workspaceId: string): Promise<number> {
   const [row] = await db
     .select({ count: count() })
     .from(workspaceMembers)
-    .where(and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.role, 'owner')));
+    .where(and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.role, 'admin')));
   return row?.count ?? 0;
 }
 
-const lastOwner = () =>
-  badRequest('Eine Organisation braucht mindestens einen Owner. Ernenne zuerst jemand anderen.');
+const lastAdmin = () =>
+  badRequest('Eine Organisation braucht mindestens einen Admin. Ernenne zuerst jemand anderen.');
 
 /**
- * Admins change roles below owner; only owners appoint or demote owners. Check and write run
- * under the workspace lock, so two owners demoting each other can't leave none.
+ * Admins change every role, their own and other admins' too. Check and write run under the
+ * workspace lock, so two admins demoting each other can't leave none.
  */
 export async function updateMemberRole(
   db: Executor,
@@ -371,14 +376,11 @@ export async function updateMemberRole(
 ): Promise<WorkspaceMember> {
   return db.transaction(async (tx) => {
     await lockWorkspaceRow(tx, workspaceId);
-    const actorRole = await requireRole(tx, workspaceId, actorId, 'admin');
+    await requireRole(tx, workspaceId, actorId, 'admin');
     const current = await getRole(tx, workspaceId, targetId);
     if (!current) throw notFound('Diese Person ist nicht Mitglied der Organisation.');
-    if ((current === 'owner' || role === 'owner') && actorRole !== 'owner') {
-      throw forbidden('Nur Owner können Owner ernennen oder ändern.');
-    }
-    if (current === 'owner' && role !== 'owner' && (await ownerCount(tx, workspaceId)) <= 1) {
-      throw lastOwner();
+    if (current === 'admin' && role !== 'admin' && (await adminCount(tx, workspaceId)) <= 1) {
+      throw lastAdmin();
     }
     await tx
       .update(workspaceMembers)
@@ -387,27 +389,30 @@ export async function updateMemberRole(
         and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, targetId)),
       );
     const [row] = await tx
-      .select({ user: users, member: workspaceMembers })
+      .select({ user: users, member: workspaceMembers, creatorId: workspaces.createdBy })
       .from(workspaceMembers)
       .innerJoin(users, eq(users.id, workspaceMembers.userId))
+      .innerJoin(workspaces, eq(workspaces.id, workspaceMembers.workspaceId))
       .where(
         and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, targetId)),
       );
     if (!row) throw notFound();
-    return toMemberDto(row.user, row.member);
+    return toMemberDto(row.user, row.member, row.creatorId);
   });
 }
 
 /**
- * Removes a member (admin or more; owners only by owners) or lets someone leave. Their decks
- * stay in the workspace. The last owner can neither leave nor be removed – checked under the
- * workspace lock, so two owners removing each other can't leave none.
+ * Removes a member (admins only) or lets someone leave. Their decks stay in the workspace. The
+ * last admin can neither leave nor be removed – unless they leave and name a `successorId`,
+ * another member who becomes admin in the same step. Checked under the workspace lock, so two
+ * admins removing each other can't leave none.
  */
 export async function removeMember(
   db: Executor,
   actorId: string,
   workspaceId: string,
   targetId: string,
+  successorId?: string,
 ): Promise<void> {
   await db.transaction(async (tx) => {
     await lockWorkspaceRow(tx, workspaceId);
@@ -416,11 +421,28 @@ export async function removeMember(
     if (!target) throw notFound('Diese Person ist nicht Mitglied der Organisation.');
     if (actorId !== targetId) {
       if (!atLeast(actorRole, 'admin')) throw forbidden('Nur Admins können Mitglieder entfernen.');
-      if (target === 'owner' && actorRole !== 'owner') {
-        throw forbidden('Nur Owner können Owner entfernen.');
-      }
+      if (successorId) throw badRequest('Einen Nachfolger ernennt nur, wer selbst geht.');
     }
-    if (target === 'owner' && (await ownerCount(tx, workspaceId)) <= 1) throw lastOwner();
+    if (successorId && actorRole === 'admin') {
+      if (successorId === actorId) throw badRequest('Wähle jemand anderen als Nachfolger.');
+      const successorRole = await getRole(tx, workspaceId, successorId);
+      if (!successorRole) throw notFound('Der Nachfolger ist nicht Mitglied der Organisation.');
+      if (successorRole === 'viewer') {
+        throw badRequest('Betrachter können die Organisation nicht übernehmen.');
+      }
+      await tx
+        .update(workspaceMembers)
+        .set({ role: 'admin' })
+        .where(
+          and(
+            eq(workspaceMembers.workspaceId, workspaceId),
+            eq(workspaceMembers.userId, successorId),
+          ),
+        );
+    } else if (successorId) {
+      throw forbidden('Nur Admins können Admins ernennen.');
+    }
+    if (target === 'admin' && (await adminCount(tx, workspaceId)) <= 1) throw lastAdmin();
     await tx
       .delete(workspaceMembers)
       .where(
@@ -447,10 +469,13 @@ export function maskEmail(email: string): string {
 
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
+type DeckRef = { id: string; title: string } | null;
+
 function toInviteDto(
   row: WorkspaceInviteRow,
   creator: { id: string; name: string } | null,
   now: Date,
+  deck: DeckRef,
 ): WorkspaceInvite {
   return {
     id: row.id,
@@ -464,6 +489,7 @@ function toInviteDto(
     acceptedAt: row.acceptedAt?.toISOString() ?? null,
     revokedAt: row.revokedAt?.toISOString() ?? null,
     useCount: row.useCount,
+    deck,
   };
 }
 
@@ -474,17 +500,19 @@ export async function listInvites(
 ): Promise<WorkspaceInvite[]> {
   await requireRole(deps.db, workspaceId, userId, 'admin');
   const rows = await deps.db
-    .select({ invite: workspaceInvites, creatorName: users.name })
+    .select({ invite: workspaceInvites, creatorName: users.name, deckTitle: decks.title })
     .from(workspaceInvites)
     .leftJoin(users, eq(users.id, workspaceInvites.createdBy))
+    .leftJoin(decks, eq(decks.id, workspaceInvites.deckId))
     .where(eq(workspaceInvites.workspaceId, workspaceId))
     .orderBy(sql`${workspaceInvites.createdAt} desc`);
   const now = deps.clock.now();
-  return rows.map(({ invite, creatorName }) =>
+  return rows.map(({ invite, creatorName, deckTitle }) =>
     toInviteDto(
       invite,
       invite.createdBy && creatorName ? { id: invite.createdBy, name: creatorName } : null,
       now,
+      invite.deckId && deckTitle !== null ? { id: invite.deckId, title: deckTitle } : null,
     ),
   );
 }
@@ -500,6 +528,76 @@ export async function createInvite(
   input: { email?: string; role: InviteRole },
 ): Promise<CreatedWorkspaceInvite> {
   await requireRole(deps.db, workspaceId, actor.id, 'admin', 'Nur Admins können einladen.');
+  return insertInvite(deps, actor, workspaceId, { ...input, deck: null });
+}
+
+/**
+ * Sharing a deck: always an invitation into its organisation as `viewer` – there are no guests.
+ * Whoever manages the deck may share it (admins, and members their own decks).
+ */
+export async function shareDeck(
+  deps: AppDeps,
+  actor: UserRow,
+  deckId: string,
+  input: { email?: string },
+): Promise<CreatedWorkspaceInvite> {
+  const deck = await requireDeckManager(deps.db, actor.id, deckId);
+  return insertInvite(deps, actor, deck.workspaceId, {
+    email: input.email,
+    role: 'viewer',
+    deck: { id: deck.id, title: deck.title },
+  });
+}
+
+/** Open share invites of a deck, newest first. */
+export async function listDeckShares(
+  deps: AppDeps,
+  userId: string,
+  deckId: string,
+): Promise<WorkspaceInvite[]> {
+  const deck = await requireDeckManager(deps.db, userId, deckId);
+  const rows = await deps.db
+    .select({ invite: workspaceInvites, creatorName: users.name })
+    .from(workspaceInvites)
+    .leftJoin(users, eq(users.id, workspaceInvites.createdBy))
+    .where(eq(workspaceInvites.deckId, deckId))
+    .orderBy(sql`${workspaceInvites.createdAt} desc`);
+  const now = deps.clock.now();
+  return rows.map(({ invite, creatorName }) =>
+    toInviteDto(
+      invite,
+      invite.createdBy && creatorName ? { id: invite.createdBy, name: creatorName } : null,
+      now,
+      { id: deck.id, title: deck.title },
+    ),
+  );
+}
+
+/** Like `deckAccess(…, 'own')` in `auth/access` (which imports this module). */
+async function requireDeckManager(db: Executor, userId: string, deckId: string) {
+  const [deck] = await db
+    .select({
+      id: decks.id,
+      title: decks.title,
+      workspaceId: decks.workspaceId,
+      ownerId: decks.ownerId,
+    })
+    .from(decks)
+    .where(eq(decks.id, deckId));
+  const role = deck ? await getRole(db, deck.workspaceId, userId) : null;
+  if (!deck || !role) throw notFound('Diese Präsentation gibt es nicht (mehr).');
+  if (!deckPermissions(role, deck.ownerId, userId).canManage) {
+    throw forbidden('Teilen dürfen nur die Person, die die Präsentation angelegt hat, und Admins.');
+  }
+  return deck;
+}
+
+async function insertInvite(
+  deps: AppDeps,
+  actor: UserRow,
+  workspaceId: string,
+  input: { email?: string; role: InviteRole; deck: DeckRef },
+): Promise<CreatedWorkspaceInvite> {
   const email = input.email ? normalizeEmail(input.email) : null;
   if (email) {
     const [member] = await deps.db
@@ -509,7 +607,13 @@ export async function createInvite(
       .where(
         and(eq(workspaceMembers.workspaceId, workspaceId), sql`lower(${users.email}) = ${email}`),
       );
-    if (member) throw badRequest('Diese Person ist schon Mitglied der Organisation.');
+    if (member) {
+      throw badRequest(
+        input.deck
+          ? 'Diese Person ist schon in der Organisation und sieht die Präsentation bereits.'
+          : 'Diese Person ist schon Mitglied der Organisation.',
+      );
+    }
   }
   const token = newSecretToken();
   const now = deps.clock.now();
@@ -530,6 +634,7 @@ export async function createInvite(
         createdBy: actor.id,
         createdAt: now,
         expiresAt: new Date(now.getTime() + days * DAY_MS),
+        deckId: input.deck?.id ?? null,
       })
       .returning();
   });
@@ -544,14 +649,25 @@ export async function createInvite(
       .where(eq(workspaces.id, workspaceId));
     try {
       await deps.mailer.send(
-        buttonMail({
-          to: email,
-          subject: `${actor.name} lädt dich zu „${workspace?.name ?? 'Slider'}“ ein`,
-          intro: `${actor.name} hat dich in die Slider-Organisation „${workspace?.name ?? ''}“ eingeladen, um Präsentationen zu prüfen und zu kommentieren.`,
-          button: 'Einladung annehmen',
-          url,
-          outro: `Die Einladung gilt ${EMAIL_INVITE_DAYS} Tage und nur für ${email}.`,
-        }),
+        buttonMail(
+          input.deck
+            ? {
+                to: email,
+                subject: `${actor.name} teilt „${input.deck.title}“ mit dir`,
+                intro: `${actor.name} hat die Präsentation „${input.deck.title}“ mit dir geteilt. Du trittst dafür der Slider-Organisation „${workspace?.name ?? ''}“ als Betrachter bei.`,
+                button: 'Präsentation ansehen',
+                url,
+                outro: `Die Einladung gilt ${EMAIL_INVITE_DAYS} Tage und nur für ${email}.`,
+              }
+            : {
+                to: email,
+                subject: `${actor.name} lädt dich zu „${workspace?.name ?? 'Slider'}“ ein`,
+                intro: `${actor.name} hat dich in die Slider-Organisation „${workspace?.name ?? ''}“ eingeladen, um Präsentationen zu prüfen und zu kommentieren.`,
+                button: 'Einladung annehmen',
+                url,
+                outro: `Die Einladung gilt ${EMAIL_INVITE_DAYS} Tage und nur für ${email}.`,
+              },
+        ),
       );
       emailSent = true;
     } catch (error) {
@@ -559,26 +675,32 @@ export async function createInvite(
     }
   }
   return {
-    invite: toInviteDto(row, { id: actor.id, name: actor.name }, now),
+    invite: toInviteDto(row, { id: actor.id, name: actor.name }, now, input.deck),
     url,
     emailSent,
   };
 }
 
-/** Revoking is idempotent; admins of the invite's workspace only. */
+/**
+ * Revoking is idempotent; admins of the invite's workspace, and for a shared deck also whoever
+ * manages that deck.
+ */
 export async function revokeInvite(deps: AppDeps, userId: string, inviteId: string): Promise<void> {
   const [invite] = await deps.db
     .select()
     .from(workspaceInvites)
     .where(eq(workspaceInvites.id, inviteId));
   if (!invite) throw inviteNotFound();
-  await requireRole(
-    deps.db,
-    invite.workspaceId,
-    userId,
-    'admin',
-    'Nur Admins können Einladungen zurückziehen.',
-  );
+  if (invite.deckId) await requireDeckManager(deps.db, userId, invite.deckId);
+  else {
+    await requireRole(
+      deps.db,
+      invite.workspaceId,
+      userId,
+      'admin',
+      'Nur Admins können Einladungen zurückziehen.',
+    );
+  }
   if (invite.revokedAt) return;
   await deps.db
     .update(workspaceInvites)
@@ -613,7 +735,18 @@ export async function previewInvite(deps: AppDeps, token: string): Promise<JoinP
     role: invite.role,
     email: invite.email ? maskEmail(invite.email) : null,
     state: inviteState(invite, deps.clock.now()),
+    deck: await deckRef(deps.db, invite.deckId),
   };
+}
+
+/** The shared deck of an invite, if it still exists. */
+async function deckRef(db: Executor, deckId: string | null): Promise<DeckRef> {
+  if (!deckId) return null;
+  const [deck] = await db
+    .select({ id: decks.id, title: decks.title })
+    .from(decks)
+    .where(eq(decks.id, deckId));
+  return deck ?? null;
 }
 
 function requireValidInvite(invite: WorkspaceInviteRow, now: Date): void {
@@ -689,10 +822,21 @@ async function acceptInvite(
   return getWorkspace(deps, user.id, invite.workspaceId);
 }
 
-export async function joinByToken(deps: AppDeps, user: UserRow, token: string): Promise<Workspace> {
+/** Joins and says where to go next: the shared deck, if the invite came from sharing one. */
+async function join(deps: AppDeps, user: UserRow, invite: WorkspaceInviteRow): Promise<JoinResult> {
+  const workspace = await acceptInvite(deps, user, invite);
+  const deck = await deckRef(deps.db, invite.deckId);
+  return { workspace, deckId: deck?.id ?? null };
+}
+
+export async function joinByToken(
+  deps: AppDeps,
+  user: UserRow,
+  token: string,
+): Promise<JoinResult> {
   const invite = await findInviteByToken(deps.db, token);
   if (!invite) throw inviteNotFound();
-  return acceptInvite(deps, user, invite);
+  return join(deps, user, invite);
 }
 
 /** Accepting an invite shown in `/me` (`pendingInvites`). */
@@ -700,13 +844,13 @@ export async function acceptInviteById(
   deps: AppDeps,
   user: UserRow,
   inviteId: string,
-): Promise<Workspace> {
+): Promise<JoinResult> {
   const [invite] = await deps.db
     .select()
     .from(workspaceInvites)
     .where(eq(workspaceInvites.id, inviteId));
   if (!invite?.email || invite.email !== normalizeEmail(user.email)) throw inviteNotFound();
-  return acceptInvite(deps, user, invite);
+  return join(deps, user, invite);
 }
 
 /** Valid e-mail invites for this address, in workspaces the user is not in yet. */
@@ -716,10 +860,16 @@ export async function pendingInvitesFor(
   now: Date,
 ): Promise<PendingInvite[]> {
   const rows = await db
-    .select({ invite: workspaceInvites, workspaceName: workspaces.name, inviterName: users.name })
+    .select({
+      invite: workspaceInvites,
+      workspaceName: workspaces.name,
+      inviterName: users.name,
+      deckTitle: decks.title,
+    })
     .from(workspaceInvites)
     .innerJoin(workspaces, eq(workspaces.id, workspaceInvites.workspaceId))
     .leftJoin(users, eq(users.id, workspaceInvites.createdBy))
+    .leftJoin(decks, eq(decks.id, workspaceInvites.deckId))
     .where(
       and(
         eq(workspaceInvites.email, normalizeEmail(user.email)),
@@ -730,13 +880,14 @@ export async function pendingInvitesFor(
       ),
     )
     .orderBy(asc(workspaceInvites.createdAt));
-  return rows.map(({ invite, workspaceName, inviterName }) => ({
+  return rows.map(({ invite, workspaceName, inviterName, deckTitle }) => ({
     id: invite.id,
     workspaceId: invite.workspaceId,
     workspaceName,
     inviterName: inviterName ?? null,
     role: invite.role,
     expiresAt: invite.expiresAt.toISOString(),
+    deck: invite.deckId && deckTitle !== null ? { id: invite.deckId, title: deckTitle } : null,
   }));
 }
 

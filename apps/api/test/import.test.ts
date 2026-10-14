@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { commentSchema, deckSchema, slideSchema, type Deck } from '@slider/shared';
 import { PptxError, type ParsedComment } from '@slider/pptx';
-import { comments } from '../src/db/schema';
+import { comments, userIdentities, users } from '../src/db/schema';
 import { importDeck } from '../src/import/import-deck';
 import type { OpenPptx } from '../src/import/pptx';
 import { toAnchor, upsertPptxComments } from '../src/import/pptx-comments';
@@ -222,6 +222,64 @@ describe('upsertPptxComments', () => {
       .from(comments)
       .where(eq(comments.externalId, 'author1:1'));
     expect(row?.status).toBe('done');
+  });
+
+  it('shows authors with a member’s Microsoft account as that member, others in orange', async () => {
+    ctx = await createTestContext();
+    const { deckId, slideIds } = await createReadyDeck(ctx, { slideCount: 1 });
+    const slides = new Map([[7, { slideId: slideIds[0] ?? '', shapes: [] }]]);
+    const oid = '6f1c2d3e-4b5a-4c6d-8e7f-901a2b3c4d5e';
+    await ctx.deps.db.update(users).set({ msSubject: oid }).where(eq(users.id, ctx.ownerId));
+    await ctx.deps.db.insert(userIdentities).values({
+      provider: 'microsoft',
+      subject: '9188040d-6c67-4c5b-b112-36a304b66dad:00000000-0000-0000-1a2b-3c4d5e6f7a8b',
+      userId: ctx.ownerId,
+    });
+    const comment = (externalId: string, author: ParsedComment['author']): ParsedComment => ({
+      ...emptyComment(),
+      externalId,
+      sldId: 7,
+      author,
+      text: externalId,
+    });
+
+    await upsertPptxComments(
+      ctx.deps.db,
+      deckId,
+      [
+        comment('work', {
+          name: 'R. Hofmann',
+          initials: null,
+          userId: `S::r.hofmann@firma.de::${oid.toUpperCase()}`,
+          providerId: 'AD',
+        }),
+        comment('personal', {
+          name: 'Robert',
+          initials: null,
+          userId: '1a2b3c4d5e6f7a8b',
+          providerId: 'Windows Live',
+        }),
+        comment('stranger', {
+          name: 'Lena Wolf',
+          initials: null,
+          userId: 'S::lena@firma.de::00000000-1111-2222-3333-444444444444',
+          providerId: 'AD',
+        }),
+      ],
+      slides,
+      new Date(),
+    );
+
+    const rows = await ctx.deps.db.select().from(comments).where(eq(comments.deckId, deckId));
+    const authorOf = (id: string) => rows.find((row) => row.externalId === id)?.author;
+    expect(authorOf('work')).toMatchObject({ id: ctx.ownerId, type: 'owner' });
+    expect(authorOf('personal')).toMatchObject({ id: ctx.ownerId, type: 'owner' });
+    expect(authorOf('stranger')).toEqual({
+      id: 'pptx:lena wolf',
+      name: 'Lena Wolf',
+      type: 'external',
+      color: 'powerpoint',
+    });
   });
 });
 

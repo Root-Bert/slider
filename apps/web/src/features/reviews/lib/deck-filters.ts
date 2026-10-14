@@ -1,7 +1,6 @@
 import type { Deck } from '@slider/shared';
 
-/** `shared` lists other people's decks from all my organisations, not just this workspace's. */
-export const REVIEW_TABS = ['all', 'open', 'archive', 'shared'] as const;
+export const REVIEW_TABS = ['all', 'open', 'archive'] as const;
 export type ReviewTab = (typeof REVIEW_TABS)[number];
 
 export const DECK_SORTS = ['opened', 'updated', 'name', 'comments'] as const;
@@ -20,7 +19,6 @@ const TAB_PREDICATES: Record<ReviewTab, (deck: Deck) => boolean> = {
   all: (deck) => !isArchived(deck),
   open: (deck) => !isArchived(deck) && deck.openCommentCount > 0,
   archive: isArchived,
-  shared: (deck) => !isArchived(deck),
 };
 
 const byUpdated = (a: Deck, b: Deck) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
@@ -43,16 +41,11 @@ const comparators = (openedAt: OpenedAt): Record<DeckSort, (a: Deck, b: Deck) =>
 const neverOpened: OpenedAt = () => undefined;
 const nonePinned = () => false;
 
-/** `shared` counts the shared decks (see {@link sharedWith}), the other tabs the workspace's. */
-export function countByTab(
-  decks: readonly Deck[],
-  shared: readonly Deck[] = [],
-): Record<ReviewTab, number> {
+export function countByTab(decks: readonly Deck[]): Record<ReviewTab, number> {
   return {
     all: decks.filter(TAB_PREDICATES.all).length,
     open: decks.filter(TAB_PREDICATES.open).length,
     archive: decks.filter(TAB_PREDICATES.archive).length,
-    shared: shared.filter(TAB_PREDICATES.shared).length,
   };
 }
 
@@ -84,7 +77,7 @@ export function selectDecks(
     .sort((a, b) => Number(isPinned(b.id)) - Number(isPinned(a.id)) || bySort(a, b));
 }
 
-/** Totals for the page subline ("6 Reviews · 30 offene Kommentare"), excluding the archive. */
+/** Totals for the page subline ("6 Reviews | 30 offene Kommentare"), excluding the archive. */
 export function activeTotals(decks: readonly Deck[]) {
   const active = decks.filter(TAB_PREDICATES.all);
   return {
@@ -92,7 +85,3 @@ export function activeTotals(decks: readonly Deck[]) {
     openComments: active.reduce((sum, deck) => sum + deck.openCommentCount, 0),
   };
 }
-
-/** Tab "Geteilt": the decks someone else added to one of my organisations. */
-export const sharedWith = (decks: readonly Deck[], userId: string): Deck[] =>
-  decks.filter((deck) => deck.owner.id !== userId);

@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import type { AccentColor, Viewer } from '@slider/shared';
 import type { Database, Executor } from '../db/client';
-import { comments, guestSessions, users, type UserRow } from '../db/schema';
+import { comments, users, type UserRow } from '../db/schema';
 
 export interface PersonInput {
   name: string;
@@ -42,25 +42,11 @@ export async function updateViewerColor(
 ): Promise<Viewer> {
   const { id } = viewer.author;
   await db.transaction(async (tx) => {
-    if (viewer.kind === 'owner') await tx.update(users).set({ color }).where(eq(users.id, id));
-    else await tx.update(guestSessions).set({ color }).where(eq(guestSessions.id, id));
+    await tx.update(users).set({ color }).where(eq(users.id, id));
     await tx
       .update(comments)
       .set({ author: sql`jsonb_set(${comments.author}, '{color}', to_jsonb(${color}::text))` })
       .where(sql`${comments.author}->>'id' = ${id}`);
   });
   return { ...viewer, author: { ...viewer.author, color } };
-}
-
-/** Sets an account's re-rolled avatar (or clears it); its comment snapshots follow, like the colour. */
-export async function updateUserAvatar(db: Database, userId: string, seed: string | null) {
-  await db.transaction(async (tx) => {
-    await tx.update(users).set({ avatarSeed: seed }).where(eq(users.id, userId));
-    await tx
-      .update(comments)
-      .set({
-        author: sql`jsonb_set(${comments.author}, '{avatarSeed}', coalesce(to_jsonb(${seed}::text), 'null'::jsonb))`,
-      })
-      .where(sql`${comments.author}->>'id' = ${userId}`);
-  });
 }

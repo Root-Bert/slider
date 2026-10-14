@@ -297,7 +297,15 @@ export const SlideFrame = memo(function SlideFrame({
             labelled
           />
         )}
-        {drawing && <DrawingSurface slide={slide} boxRef={boxRef} tool={tool} color={color} />}
+        {drawing && (
+          <DrawingSurface
+            slide={slide}
+            boxRef={boxRef}
+            tool={tool}
+            color={color}
+            threads={threads}
+          />
+        )}
         {textBox && <TextBoxEditor box={textBox} />}
       </div>
     </div>

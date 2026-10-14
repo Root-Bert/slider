@@ -1,7 +1,7 @@
 import { and, asc, count, desc, eq, inArray, isNull, max, min } from 'drizzle-orm';
 import type { Author, Deck, DeckSource } from '@slider/shared';
 import { permissionsFor, type DeckViewerAccess } from '../auth/access';
-import { externalAuthor, ownerAuthor } from '../authors';
+import { displayAuthor, externalAuthor, ownerAuthor } from '../authors';
 import type { Executor } from '../db/client';
 import { comments, decks, revisions, slideVersions, users, type DeckRow } from '../db/schema';
 import type { AppDeps } from '../deps';
@@ -11,11 +11,7 @@ import { toDeckSync } from './deck-sync';
 import { assertDeckSlot } from './plans';
 import { rolesOf } from './workspaces';
 
-const MAX_PARTICIPANTS = 5;
-
 export interface DeckDtoOptions {
-  /** Guests get no owner-only details (the Microsoft login link of a sync error). */
-  forGuest?: boolean;
   /** Who is asking, for `permissions`; without it every permission is `false`. */
   access?: DeckViewerAccess;
 }
@@ -113,6 +109,7 @@ export async function toDeckDtos(
     if (!owner) throw new Error(`Owner ${row.ownerId} of deck ${row.id} is missing`);
     const revisionId = row.currentRevisionId ?? '';
     const thumbnail = thumbnailByRevision.get(revisionId);
+    const permissions = permissionsFor(options.access, row);
     return {
       id: row.id,
       workspaceId: row.workspaceId,
@@ -139,16 +136,16 @@ export async function toDeckDtos(
       sync: toDeckSync(row, {
         pendingRevisionAt: pendingByDeck.get(row.id) ?? null,
         summary: summaryByRevision.get(revisionId) ?? null,
-        forGuest: options.forGuest ?? options.access?.kind === 'guest',
+        hideLoginUrl: !permissions.canManage,
       }),
-      permissions: permissionsFor(options.access, row),
+      permissions,
     };
   });
 }
 
 /**
  * Most recent commenters first, one entry per person. Matched by name as well as id, because
- * someone who commented in PowerPoint and later as a guest has two ids but is one participant.
+ * someone who commented in PowerPoint and later in Slider has two ids but is one participant.
  */
 function groupParticipants(
   rows: readonly { deckId: string; author: Author }[],
@@ -156,8 +153,7 @@ function groupParticipants(
   const byDeck = new Map<string, Author[]>();
   for (const { deckId, author } of rows) {
     const list = byDeck.get(deckId) ?? [];
-    if (list.length < MAX_PARTICIPANTS && !list.some((known) => samePerson(known, author)))
-      list.push(author);
+    addParticipant(list, displayAuthor(author));
     byDeck.set(deckId, list);
   }
   return byDeck;
@@ -165,6 +161,19 @@ function groupParticipants(
 
 const samePerson = (a: Author, b: Author) =>
   a.id === b.id || a.name.toLowerCase() === b.name.toLowerCase();
+
+/**
+ * Adds `author` unless they are listed already. A Slider account replaces a PowerPoint entry of
+ * the same name, so the viewer recognises themselves among the participants.
+ */
+function addParticipant(list: Author[], author: Author): void {
+  const index = list.findIndex((known) => samePerson(known, author));
+  if (index === -1) {
+    list.push(author);
+  } else if (list[index]?.type === 'external' && author.type !== 'external') {
+    list[index] = author;
+  }
+}
 
 /**
  * Everyone on a deck gets an avatar: whoever last saved the file (often a colleague without a
@@ -177,8 +186,7 @@ function participantsOf(owner: Author, fileAuthor: string | null, commenters: Au
     ...(fromFile ? [samePerson(fromFile, owner) ? owner : fromFile] : []),
     ...commenters,
   ]) {
-    if (list.length < MAX_PARTICIPANTS && !list.some((known) => samePerson(known, author)))
-      list.push(author);
+    addParticipant(list, author);
   }
   return list.length ? list : [owner];
 }

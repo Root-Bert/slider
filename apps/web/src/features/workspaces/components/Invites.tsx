@@ -20,26 +20,22 @@ import {
   ROLE_LABELS,
   sortInvites,
 } from '../lib/roles';
-import { formatRatio, INVITE_SECTION_ID, seatsLine, seatState } from '../lib/plan';
-import { SettingsSection } from './SettingsSection';
+import { seatsLine, seatState } from '../lib/plan';
 
 const ROLE_OPTIONS = INVITE_ROLES.map((role) => ({ value: role, label: ROLE_LABELS[role] }));
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** Admins invite by e-mail or create a link, and see / revoke the invitations. */
-export function InvitesSection({
+/** The first row of the members card: invite by e-mail or create a link, one role for both. */
+export function InviteForm({
   workspace,
   onNotify,
 }: {
   workspace: Workspace;
   onNotify: ShowToast;
 }) {
-  const invites = useWorkspaceInvites(workspace.id);
   const create = useCreateWorkspaceInvite(workspace.id);
-  const revoke = useRevokeWorkspaceInvite(workspace.id);
   const [email, setEmail] = useState('');
-  const [emailRole, setEmailRole] = useState<InviteRole>('member');
-  const [linkRole, setLinkRole] = useState<InviteRole>('member');
+  const [role, setRole] = useState<InviteRole>('member');
   const [emailTouched, setEmailTouched] = useState(false);
   const [created, setCreated] = useState<CreatedWorkspaceInvite | null>(null);
   const emailValid = EMAIL_PATTERN.test(email.trim());
@@ -52,7 +48,7 @@ export function InvitesSection({
     if (!emailValid) return;
     const address = email.trim();
     create.mutate(
-      { email: address, role: emailRole },
+      { email: address, role },
       {
         onSuccess: (result) => {
           setEmail('');
@@ -71,7 +67,7 @@ export function InvitesSection({
 
   const createLink = () =>
     create.mutate(
-      { role: linkRole },
+      { role },
       {
         onSuccess: setCreated,
         onError: (error) => onNotify(error.message, 'danger'),
@@ -79,16 +75,7 @@ export function InvitesSection({
     );
 
   return (
-    <SettingsSection
-      id={INVITE_SECTION_ID}
-      title="Einladen"
-      description="Per E-Mail für eine bestimmte Adresse (7 Tage gültig) oder als Link für mehrere Personen (30 Tage)."
-      aside={
-        seats.max !== null && (
-          <Badge tone={seats.full ? 'warning' : 'neutral'}>{formatRatio(seats)} Plätze</Badge>
-        )
-      }
-    >
+    <div className="flex flex-col gap-3">
       {seatsHint && (
         <p
           className={
@@ -101,13 +88,13 @@ export function InvitesSection({
           <span>
             {seatsHint}
             {seats.full &&
-              ' Entferne ein Mitglied oder ziehe eine Einladung zurück, um jemanden per E-Mail einzuladen.'}
+              ' Entferne ein Mitglied oder ziehe eine Einladung zurück, um jemanden einzuladen. Über einen Link beitreten klappt erst wieder, wenn ein Platz frei ist.'}
           </span>
         </p>
       )}
       <form
         noValidate
-        className="flex flex-col gap-2 sm:flex-row sm:items-start"
+        className="flex flex-wrap items-start gap-2"
         onSubmit={(event) => {
           event.preventDefault();
           inviteByEmail();
@@ -122,80 +109,74 @@ export function InvitesSection({
           value={email}
           error={emailTouched && !emailValid ? 'Gib eine gültige E-Mail-Adresse ein.' : null}
           onChange={(event) => setEmail(event.target.value)}
-          className="min-w-0 flex-1"
+          className="min-w-[200px] flex-1"
         />
-        <div className="flex gap-2">
-          <Select<InviteRole>
-            aria-label="Rolle der eingeladenen Person"
-            value={emailRole}
-            onChange={setEmailRole}
-            options={ROLE_OPTIONS}
-            className="h-10 flex-1 sm:w-[132px] [&>select]:h-10"
-          />
-          <Button
-            type="submit"
-            className="h-10"
-            icon="send"
-            disabled={seats.full}
-            loading={pendingKind === 'email'}
-          >
-            Einladen
-          </Button>
-        </div>
+        <Select<InviteRole>
+          aria-label="Rolle der eingeladenen Person"
+          value={role}
+          onChange={setRole}
+          options={ROLE_OPTIONS}
+          className="h-10 w-[120px] [&>select]:h-10"
+        />
+        <Button
+          type="submit"
+          className="h-10"
+          icon="send"
+          disabled={seats.full}
+          loading={pendingKind === 'email'}
+        >
+          Einladen
+        </Button>
+        <Button
+          variant="secondary"
+          className="h-10"
+          icon="link"
+          title="Einladungslink für alle, die ihn bekommen (30 Tage gültig)"
+          loading={pendingKind === 'link'}
+          onClick={createLink}
+        >
+          Link
+        </Button>
       </form>
 
-      <div className="flex flex-col gap-2 rounded-control bg-white/4 p-3 sm:flex-row sm:items-center">
-        <p className="flex flex-1 items-center gap-2 text-[13px] text-fg-muted">
-          <Icon name="link" size={18} className="shrink-0 text-fg-subtle" />
-          {seats.full
-            ? 'Einladungslink – Beitreten klappt erst wieder, wenn ein Platz frei ist'
-            : 'Einladungslink für alle, die ihn bekommen'}
-        </p>
-        <div className="flex gap-2">
-          <Select<InviteRole>
-            aria-label="Rolle für den Einladungslink"
-            value={linkRole}
-            onChange={setLinkRole}
-            options={ROLE_OPTIONS}
-            className="flex-1 sm:w-[132px]"
-          />
-          <Button variant="secondary" loading={pendingKind === 'link'} onClick={createLink}>
-            Link erstellen
-          </Button>
-        </div>
-      </div>
-
       {created && <CreatedInvite created={created} onDismiss={() => setCreated(null)} />}
+    </div>
+  );
+}
 
-      <div className="flex flex-col gap-2">
-        <h3 className="text-xs text-fg-subtle">Einladungen</h3>
-        {invites.isPending ? (
-          <div className="flex justify-center py-4">
-            <Spinner className="text-fg-subtle" />
-          </div>
-        ) : invites.isError ? (
-          <p className="text-[13px] text-danger">{invites.error.message}</p>
-        ) : invites.data.length === 0 ? (
-          <p className="text-[13px] text-fg-subtle">Noch keine Einladungen.</p>
-        ) : (
-          <ul className="-mx-2 flex flex-col">
-            {sortInvites(invites.data).map((invite) => (
-              <InviteRow
-                key={invite.id}
-                invite={invite}
-                revoking={revoke.isPending && revoke.variables === invite.id}
-                onRevoke={() =>
-                  revoke.mutate(invite.id, {
-                    onSuccess: () => onNotify('Einladung zurückgezogen'),
-                    onError: (error) => onNotify(error.message, 'danger'),
-                  })
-                }
-              />
-            ))}
-          </ul>
-        )}
-      </div>
-    </SettingsSection>
+/** Open and past invitations; admins revoke open ones. */
+export function InviteList({ workspace, onNotify }: { workspace: Workspace; onNotify: ShowToast }) {
+  const invites = useWorkspaceInvites(workspace.id);
+  const revoke = useRevokeWorkspaceInvite(workspace.id);
+
+  if (invites.isSuccess && invites.data.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="text-xs text-fg-subtle">Einladungen</h3>
+      {invites.isPending ? (
+        <div className="flex justify-center py-4">
+          <Spinner className="text-fg-subtle" />
+        </div>
+      ) : invites.isError ? (
+        <p className="text-[13px] text-danger">{invites.error.message}</p>
+      ) : (
+        <ul className="-mx-2 flex flex-col">
+          {sortInvites(invites.data).map((invite) => (
+            <InviteRow
+              key={invite.id}
+              invite={invite}
+              revoking={revoke.isPending && revoke.variables === invite.id}
+              onRevoke={() =>
+                revoke.mutate(invite.id, {
+                  onSuccess: () => onNotify('Einladung zurückgezogen'),
+                  onError: (error) => onNotify(error.message, 'danger'),
+                })
+              }
+            />
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

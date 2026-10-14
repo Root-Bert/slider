@@ -513,36 +513,3 @@ function towards(from: Px, to: Px, distance: number, length: number): Px {
     y: from.y + ((to.y - from.y) / length) * distance,
   };
 }
-
-export interface Band {
-  top: number;
-  bottom: number;
-}
-
-export interface FadeStop {
-  y: number;
-  opacity: number;
-}
-
-/** Lines fade out over this distance above the band and back in below it. */
-const FADE_ABOVE_FROM = 28;
-const FADE_ABOVE_TO = 10;
-const FADE_BELOW = 12;
-
-/**
- * Vertical opacity profile shared by all lines: they fade out just above the band between the
- * slides and the comments (minimap, controls row and split handle), stay hidden through the
- * whole band – no stubs between its rows – and fade back in below it. `null` (nothing measured)
- * hides nothing. Stops are ascending in y.
- */
-export function fadeStops(band: Band | null): FadeStop[] {
-  if (!band) return [];
-  const top = band.top - FADE_ABOVE_TO;
-  const bottom = Math.max(top, band.bottom);
-  return [
-    { y: Math.min(top, band.top - FADE_ABOVE_FROM), opacity: 1 },
-    { y: top, opacity: 0 },
-    { y: bottom, opacity: 0 },
-    { y: bottom + FADE_BELOW, opacity: 1 },
-  ];
-}

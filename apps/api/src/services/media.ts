@@ -65,7 +65,7 @@ const unsupportedMedia = () =>
     'Diese Aufnahme kann Slider nicht speichern (erlaubt: WebM, MP4, Ogg).',
   );
 
-/** Bytes of recordings in all decks of this owner – guests' recordings included. */
+/** Bytes of recordings in all decks of this owner – everyone's recordings included. */
 export async function usedMediaBytes(db: Executor, ownerId: string): Promise<number> {
   const [row] = await db
     .select({ total: sum(media.sizeBytes) })

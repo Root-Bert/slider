@@ -8,7 +8,7 @@ import { useViewerDispatch, useViewerState } from '../state/viewer-state';
  * Global keyboard shortcuts of the viewer:
  * ←/→ previous/next slide, Home/End first/last, F fullscreen, B PowerPoint boxes on/off,
  * G PowerPoint guides on/off,
- * ⌘Z / ⇧⌘Z undo/redo while drawing, Esc cancels the draft → drops the tool → closes the thread (or the deleted slides panel).
+ * ⌘Z / ⇧⌘Z undo/redo while drawing, ⌘↵ sends the draft, Esc cancels the draft → drops the tool → closes the thread (or the deleted slides panel).
  */
 export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen: () => void }) {
   const { slides, slideIndex } = useViewerData();
@@ -38,6 +38,11 @@ export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen:
     if (isTypingTarget(event.target)) return;
     const mod = event.metaKey || event.ctrlKey;
 
+    if (mod && event.key === 'Enter' && draft) {
+      event.preventDefault();
+      document.querySelector<HTMLFormElement>('form[data-composer]')?.requestSubmit();
+      return;
+    }
     if (mod && event.key.toLowerCase() === 'z' && draft) {
       event.preventDefault();
       dispatch({ type: event.shiftKey ? 'redo' : 'undo' });

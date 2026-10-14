@@ -1,4 +1,6 @@
 import {
+  clampDrawingShift,
+  isDrawing,
   isPathStroke,
   rectShapeRefAt,
   type Anchor,
@@ -8,11 +10,12 @@ import {
   type Shape,
   type Slide,
 } from '@slider/shared';
-import { memo, useMemo, useRef } from 'react';
+import { memo, useMemo, useRef, type PointerEvent } from 'react';
 import { useUpdateComment } from '@/lib/queries';
 import { cn } from '@/ui';
 import {
   anchorRect,
+  isBareDrawing,
   isImplicitFrame,
   rectsMatch,
   textAnnotation,
@@ -28,7 +31,7 @@ import { dragTextBox, startFontSize } from '../lib/text-box';
 import { DraftMark } from './DraftMark';
 import { EditableFrame } from './EditableFrame';
 import { Pin, type MarkState } from './Pin';
-import { RectFrame } from './RectFrame';
+import { FrameEdges, RectFrame } from './RectFrame';
 import { ShapeOutline } from './ShapeOutline';
 import { StrokePath } from './StrokePath';
 import { TextMark } from './TextBox';
@@ -48,7 +51,18 @@ interface Mark {
   thread: Thread;
   rect: Rect;
   state: MarkState;
+  /** How far the drawing is shown away from where it is stored, while it (or its box) is dragged. */
+  shift: Shift;
 }
+
+interface Shift {
+  dx: number;
+  dy: number;
+}
+
+const NO_SHIFT: Shift = { dx: 0, dy: 0 };
+/** Pointer travel (px) before a press on a drawing counts as a drag, not a click. */
+const DRAG_THRESHOLD = 3;
 
 /**
  * Renders the marks of all visible comments on a slide (BER-98): pins, frames and drawings.
@@ -88,15 +102,21 @@ export const AnnotationLayer = memo(function AnnotationLayer({
   const marks = useMemo<Mark[]>(() => {
     const result: Mark[] = [];
     for (const thread of threads) {
-      const rect =
-        preview?.threadId === thread.id ? preview.rect : anchorRect(thread.root, slide.shapes);
-      if (!rect) continue;
+      // The drawing being commented on is shown by the draft.
+      if (thread.id === draft?.commentId) continue;
+      const stored = anchorRect(thread.root, slide.shapes);
+      const rect = preview?.threadId === thread.id ? preview.rect : stored;
+      if (!rect || !stored) continue;
       const state: MarkState =
         emphasisId === null ? 'normal' : thread.id === emphasisId ? 'emphasized' : 'dimmed';
-      result.push({ thread, rect, state });
+      // Moved, not resized: the drawing goes along (as it will once stored).
+      const moved =
+        rect !== stored && Math.abs(rect.w - stored.w) < 1e-6 && Math.abs(rect.h - stored.h) < 1e-6;
+      const shift = moved ? { dx: rect.x - stored.x, dy: rect.y - stored.y } : NO_SHIFT;
+      result.push({ thread, rect, state, shift });
     }
     return result;
-  }, [threads, slide.shapes, emphasisId, preview]);
+  }, [threads, slide.shapes, emphasisId, preview, draft?.commentId]);
 
   const emphasized = marks.find((mark) => mark.state === 'emphasized');
   const emphasizedShape =
@@ -109,8 +129,23 @@ export const AnnotationLayer = memo(function AnnotationLayer({
     if (composing || mark.state === 'dimmed') return 0.3;
     return mark.thread.root.status === 'done' ? 0.5 : 1;
   };
-  const activate = (mark: Mark) =>
-    dispatch({ type: 'threadFocused', threadId: mark.thread.id, openPanel: true });
+  // One's own freehand, arrow or marker drawing takes its comment in the composer.
+  const commentable = (mark: Mark) =>
+    isOwn(mark.thread.root) &&
+    isBareDrawing(mark.thread) &&
+    mark.thread.root.anchor.type !== 'gap';
+  const activate = (mark: Mark) => {
+    const { root } = mark.thread;
+    if (commentable(mark))
+      dispatch({
+        type: 'drawingCommentStarted',
+        slideId: slide.id,
+        commentId: root.id,
+        anchor: root.anchor,
+        strokes: root.strokes,
+      });
+    else dispatch({ type: 'threadFocused', threadId: mark.thread.id, openPanel: true });
+  };
 
   return (
     <div ref={layerRef} className="pointer-events-none absolute inset-0 [container-type:size]">
@@ -136,35 +171,34 @@ export const AnnotationLayer = memo(function AnnotationLayer({
         preserveAspectRatio="none"
         aria-hidden
       >
-        {marks.map((mark) =>
-          mark.thread.root.strokes.filter(isPathStroke).map((stroke, index) => (
-            <g key={`${mark.thread.id}-${index}`} data-hover-thread={mark.thread.id}>
-              <StrokePath
-                // Drawings always take the author's colour, like the connector line.
-                stroke={{ ...stroke, color: mark.thread.root.author.color }}
-                aspectRatio={slide.aspectRatio}
-                opacity={opacityOf(mark)}
-                emphasized={mark.state === 'emphasized'}
-                isMark
-              />
-              {/* Wide invisible hit area along the drawing. */}
-              <path
-                d={strokePath(stroke, slide.aspectRatio)}
-                fill="none"
-                stroke="transparent"
-                strokeWidth={16}
-                strokeLinecap="round"
-                vectorEffect="non-scaling-stroke"
-                pointerEvents={composing ? 'none' : 'stroke'}
-                className="cursor-pointer"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  activate(mark);
-                }}
-              />
-            </g>
-          )),
-        )}
+        {marks.map((mark) => {
+          const { root } = mark.thread;
+          return (
+            <DrawingStrokes
+              key={mark.thread.id}
+              mark={mark}
+              aspectRatio={slide.aspectRatio}
+              opacity={opacityOf(mark)}
+              interactive={!composing}
+              movable={isOwn(root) && isDrawing(root)}
+              onActivate={() => activate(mark)}
+              onPreview={(shift) => {
+                const stored = anchorRect(root, slide.shapes);
+                registry.setMarkPreview(
+                  shift && stored
+                    ? {
+                        threadId: mark.thread.id,
+                        rect: { ...stored, x: stored.x + shift.dx, y: stored.y + shift.dy },
+                      }
+                    : null,
+                );
+              }}
+              onMove={(shift, done) =>
+                update.mutate({ commentId: root.id, move: shift }, { onSettled: done })
+              }
+            />
+          );
+        })}
       </svg>
 
       {marks.map((mark) => {
@@ -172,6 +206,9 @@ export const AnnotationLayer = memo(function AnnotationLayer({
         // A drawing is its own mark, wherever the comment is anchored.
         const area = (root.strokes.length > 0 && strokesBounds(root.strokes)) || mark.rect;
         const text = textAnnotation(root);
+        // Freehand, arrow and marker stay themselves: no box; the strokes take the clicks.
+        const bareStrokes =
+          isDrawing(root) && (root.anchor.type !== 'rect' || isImplicitFrame(root));
         return (
           <div
             key={mark.thread.id}
@@ -188,6 +225,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                   handles={mark.state === 'emphasized'}
                   emphasized={mark.state === 'emphasized'}
                   isMark
+                  edgesOnly
                   title={`${markLabel(root)} – ziehen zum Verschieben`}
                   className={cn(
                     'transition-opacity duration-200',
@@ -237,35 +275,36 @@ export const AnnotationLayer = memo(function AnnotationLayer({
             ) : null}
             <Pin
               comment={root}
-              at={badgePoint(root, area)}
+              at={badgePoint(root, area, mark.shift)}
               state={mark.state}
               onActivate={() => activate(mark)}
+              aboveTools={!composing && commentable(mark)}
             />
-            {root.anchor.type === 'rect' && !text && !(isOwn(root) && !isImplicitFrame(root)) && (
-              // The whole frame is a pointer target; keyboard users reach it through the badge.
-              <button
-                type="button"
-                tabIndex={-1}
-                aria-hidden
-                title={markLabel(root)}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  activate(mark);
-                }}
-                className={cn(
-                  'absolute rounded-thumb',
-                  composing || selecting
-                    ? 'pointer-events-none'
-                    : 'pointer-events-auto cursor-pointer',
-                )}
-                style={{
-                  left: `${area.x * 100}%`,
-                  top: `${area.y * 100}%`,
-                  width: `${area.w * 100}%`,
-                  height: `${area.h * 100}%`,
-                }}
-              />
-            )}
+            {root.anchor.type === 'rect' &&
+              !text &&
+              !bareStrokes &&
+              !(isOwn(root) && !isImplicitFrame(root)) && (
+                // The frame's border is a pointer target; keyboard users reach it through the badge.
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  aria-hidden
+                  title={markLabel(root)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    activate(mark);
+                  }}
+                  className="pointer-events-none absolute cursor-pointer rounded-thumb"
+                  style={{
+                    left: `${area.x * 100}%`,
+                    top: `${area.y * 100}%`,
+                    width: `${area.w * 100}%`,
+                    height: `${area.h * 100}%`,
+                  }}
+                >
+                  <FrameEdges active={!composing && !selecting} />
+                </button>
+              )}
           </div>
         );
       })}
@@ -287,13 +326,14 @@ export const AnnotationLayer = memo(function AnnotationLayer({
             if (draft.slideId)
               dispatch({ type: 'anchorPlaced', slideId: draft.slideId, anchor: rectAnchor(rect) });
           }}
-          onWriteInside={(rect) => {
+          onWriteInside={(rect, text) => {
             if (!draft.slideId) return;
             const fontSize = startFontSize(layerRef.current?.offsetHeight ?? 0);
             dispatch({
               type: 'textBoxPlaced',
               slideId: draft.slideId,
               box: dragTextBox(rect, fontSize),
+              text,
             });
           }}
         />
@@ -310,8 +350,108 @@ function anchoredShape(anchor: Anchor, shapes: readonly Shape[]): Shape | null {
 }
 
 /** Where a comment's badge sits: its point, the start of its drawing, or the area's corner. */
-function badgePoint(comment: Comment, area: Rect): Point {
-  const drawing = comment.strokes.find(isPathStroke);
-  if (drawing?.points[0]) return drawing.points[0];
+function badgePoint(comment: Comment, area: Rect, shift: Shift): Point {
+  const start = comment.strokes.find(isPathStroke)?.points[0];
+  if (start) return { x: start.x + shift.dx, y: start.y + shift.dy };
   return { x: area.x, y: area.y };
+}
+
+interface DrawingStrokesProps {
+  mark: Mark;
+  aspectRatio: number;
+  opacity: number;
+  interactive: boolean;
+  /** One's own drawing: dragging a stroke moves the whole drawing. */
+  movable: boolean;
+  onActivate: () => void;
+  /** The drawing as shown while dragged, `null` once it is back in place. */
+  onPreview: (shift: Shift | null) => void;
+  /** Dropped somewhere else; call `done` once it is stored. */
+  onMove: (shift: Shift, done: () => void) => void;
+}
+
+/** A comment's strokes in the slide's SVG, each with a wide invisible hit area along it. */
+function DrawingStrokes({
+  mark,
+  aspectRatio,
+  opacity,
+  interactive,
+  movable,
+  onActivate,
+  onPreview,
+  onMove,
+}: DrawingStrokesProps) {
+  const { root } = mark.thread;
+  const drag = useRef<{ x: number; y: number; box: DOMRect; shift: Shift | null } | null>(null);
+  const dragged = useRef(false);
+
+  const onPointerDown = (event: PointerEvent<SVGPathElement>) => {
+    if (!movable || event.button !== 0) return;
+    const box = event.currentTarget.ownerSVGElement?.getBoundingClientRect();
+    if (!box || box.width === 0 || box.height === 0) return;
+    // The slide below must not start a box or a pin.
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    drag.current = { x: event.clientX, y: event.clientY, box, shift: null };
+    dragged.current = false;
+  };
+  const onPointerMove = (event: PointerEvent<SVGPathElement>) => {
+    const current = drag.current;
+    if (!current) return;
+    const px = event.clientX - current.x;
+    const py = event.clientY - current.y;
+    if (!current.shift && Math.hypot(px, py) < DRAG_THRESHOLD) return;
+    current.shift = clampDrawingShift(root, px / current.box.width, py / current.box.height);
+    dragged.current = true;
+    onPreview(current.shift);
+  };
+  const onPointerUp = () => {
+    const shift = drag.current?.shift;
+    drag.current = null;
+    if (shift) onMove(shift, () => onPreview(null));
+  };
+  const onPointerCancel = () => {
+    if (drag.current?.shift) onPreview(null);
+    drag.current = null;
+  };
+
+  const { dx, dy } = mark.shift;
+  return (
+    <g
+      data-hover-thread={mark.thread.id}
+      transform={dx || dy ? `translate(${dx} ${dy})` : undefined}
+    >
+      {root.strokes.filter(isPathStroke).map((stroke, index) => (
+        <g key={index}>
+          <StrokePath
+            // Drawings always take the author's colour, like the connector line.
+            stroke={{ ...stroke, color: root.author.color }}
+            aspectRatio={aspectRatio}
+            opacity={opacity}
+            emphasized={mark.state === 'emphasized'}
+            isMark
+          />
+          <path
+            d={strokePath(stroke, aspectRatio)}
+            fill="none"
+            stroke="transparent"
+            strokeWidth={16}
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+            pointerEvents={interactive ? 'stroke' : 'none'}
+            className={cn('touch-none', movable ? 'cursor-move' : 'cursor-pointer')}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerCancel}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (!dragged.current) onActivate();
+              dragged.current = false;
+            }}
+          />
+        </g>
+      ))}
+    </g>
+  );
 }

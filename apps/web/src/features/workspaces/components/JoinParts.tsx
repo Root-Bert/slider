@@ -37,7 +37,12 @@ export function Invitation({
   signedIn: boolean;
 }) {
   const role = <span className="font-medium text-fg">{ROLE_LABELS[preview.role]}</span>;
-  const roleLine = preview.inviterName ? (
+  const roleLine = preview.deck ? (
+    <>
+      {preview.inviterName ?? 'Jemand'} teilt „{preview.deck.title}“ mit dir. Du trittst der
+      Organisation als {role} bei.
+    </>
+  ) : preview.inviterName ? (
     <>
       {preview.inviterName} lädt dich als {role} ein.
     </>
@@ -131,7 +136,8 @@ export function JoinButton({ token }: { token: string }) {
           loading={join.isPending}
           onClick={() =>
             join.mutate(undefined, {
-              onSuccess: ({ workspace }) => void navigate(routes.workspace(workspace.id)),
+              onSuccess: ({ workspace, deckId }) =>
+                void navigate(deckId ? routes.deck(deckId) : routes.workspace(workspace.id)),
             })
           }
         >

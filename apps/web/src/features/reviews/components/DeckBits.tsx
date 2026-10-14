@@ -1,12 +1,11 @@
-import type { Deck, SlideRenderer } from '@slider/shared';
-import { formatDateTime, formatRelativeTime } from '@/lib/format';
+import type { ReactNode } from 'react';
+import type { Deck, DeckSource, SlideRenderer } from '@slider/shared';
 import { Badge, cn, Icon, ProgressBar } from '@/ui';
 import {
   importActivityLabel,
   importFraction,
   isImporting,
   slidesLabel,
-  sourceLabel,
 } from '../lib/deck-labels';
 
 /** Right-hand status badge next to the title. Import state wins over "Neu", "Neu" over the version. */
@@ -18,28 +17,12 @@ export function DeckStatusBadge({ deck, unseen }: { deck: Deck; unseen: boolean 
   return null;
 }
 
-/** "OneDrive · aktualisiert vor 1 Std." */
-export function DeckMeta({ deck, className }: { deck: Deck; className?: string }) {
+/** Top-left "Neu" on the grid card's thumbnail; import state still wins (shown next to the title). */
+export function NewChip({ deck, unseen }: { deck: Deck; unseen: boolean }) {
+  if (!unseen || isImporting(deck) || deck.import.status === 'failed') return null;
   return (
-    <p className={cn('truncate text-xs text-fg-subtle', className)}>
-      {sourceLabel(deck.source)} · aktualisiert{' '}
-      <time dateTime={deck.updatedAt} title={formatDateTime(deck.updatedAt)}>
-        {formatRelativeTime(deck.updatedAt)}
-      </time>
-    </p>
-  );
-}
-
-export function OpenCommentsChip({ count }: { count: number }) {
-  const done = count === 0;
-  return (
-    <span className="glass inline-flex h-7 items-center gap-1.5 rounded-chip px-2.5 text-xs text-fg-muted">
-      <Icon
-        name={done ? 'checkCircle' : 'chatBubble'}
-        size={16}
-        className={done ? 'text-fg-muted' : undefined}
-      />
-      {done ? 'Alles erledigt' : `${count} offen`}
+    <span className="absolute top-2 left-2 rounded-chip bg-black/55 px-2 py-0.5 text-[11px] leading-5 font-medium text-success backdrop-blur-md">
+      Neu
     </span>
   );
 }
@@ -57,11 +40,87 @@ const RENDERER_LABELS: Partial<Record<SlideRenderer, string>> = {
   libreoffice: 'Gerendert mit LibreOffice',
 };
 
+const CHIP_CLASSES =
+  'flex size-6 items-center justify-center rounded-chip bg-black/55 backdrop-blur-md';
+
 /**
- * Bottom-left logo on the thumbnail: who drew the slide images (BER-94). Nothing for the built-in
- * SVG preview. When PowerPoint was tried and failed, the tooltip says why.
+ * Bottom-left logos on the thumbnail: where the deck comes from and – once there are slides –
+ * who drew the slide images. `compact` (list rows) shows only the source.
+ *
+ * Laid over the thumbnail instead of inside it: above the card's stretched title link (so the
+ * chips get hover) and outside the frame's overflow clip (so their tooltips show). `className`
+ * mirrors the frame's hover transform so the chips move with it.
  */
-export function RendererChip({
+export function OriginChips({
+  deck,
+  compact = false,
+  className,
+}: {
+  deck: Deck;
+  compact?: boolean;
+  className?: string;
+}) {
+  return (
+    <div className={cn('pointer-events-none absolute inset-0 z-10', className)}>
+      <div
+        className={cn(
+          'pointer-events-auto absolute flex gap-1',
+          compact ? 'bottom-1 left-1' : 'bottom-2 left-2',
+        )}
+      >
+        <SourceChip source={deck.source} />
+        {!compact && deck.slideCount > 0 && (
+          <RendererChip renderer={deck.thumbnailRenderer} officeFailure={deck.officeFailure} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Logo tile with its explanation as a tooltip above it on hover. */
+function OriginChip({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <span className={cn(CHIP_CLASSES, 'group/chip relative')} role="img" aria-label={label}>
+      {children}
+      <span
+        aria-hidden
+        className={cn(
+          'pointer-events-none absolute bottom-full left-0 mb-1.5 w-max max-w-64 translate-y-1 rounded-badge',
+          'bg-glass-solid px-2 py-1 text-[11px] leading-4 text-fg opacity-0 shadow-lg ring-1 ring-white/10',
+          'transition-[opacity,translate] duration-150 group-hover/chip:translate-y-0 group-hover/chip:opacity-100',
+        )}
+      >
+        {label}
+      </span>
+    </span>
+  );
+}
+
+const SOURCE_TITLES: Record<DeckSource, string> = {
+  onedrive: 'Aus OneDrive',
+  sharepoint: 'Aus SharePoint',
+  url: 'Aus einem Link',
+  upload: 'Hochgeladen',
+};
+
+/** Where the deck comes from, instead of the old "OneDrive · …" text line. */
+function SourceChip({ source }: { source: DeckSource }) {
+  const label = SOURCE_TITLES[source];
+  return (
+    <OriginChip label={label}>
+      {source === 'onedrive' && <Icon name="cloud" size={16} className="text-onedrive" />}
+      {source === 'sharepoint' && <LetterMark letter="S" className="bg-sharepoint" />}
+      {source === 'url' && <Icon name="link" size={16} className="text-fg" />}
+      {source === 'upload' && <Icon name="upload" size={16} className="text-fg" />}
+    </OriginChip>
+  );
+}
+
+/**
+ * Who drew the slide images (BER-94). Nothing for the built-in SVG preview. When PowerPoint was
+ * tried and failed, the tooltip says why.
+ */
+function RendererChip({
   renderer,
   officeFailure,
 }: {
@@ -75,22 +134,26 @@ export function RendererChip({
       ? `${name} – PowerPoint ging nicht: ${officeFailure}`
       : name;
   return (
-    <span
-      className="absolute bottom-2 left-2 flex size-6 items-center justify-center rounded-chip bg-black/55 backdrop-blur-md"
-      role="img"
-      aria-label={label}
-      title={label}
-    >
-      {renderer === 'office' ? <PowerPointMark /> : <LibreOfficeMark />}
-    </span>
+    <OriginChip label={label}>
+      {renderer === 'office' ? (
+        <LetterMark letter="P" className="bg-powerpoint" />
+      ) : (
+        <LibreOfficeMark />
+      )}
+    </OriginChip>
   );
 }
 
-/** PowerPoint's orange "P" tile, as on imported PowerPoint comments. */
-function PowerPointMark() {
+/** Office-style letter tile: PowerPoint's orange "P" (as on imported comments), SharePoint's "S". */
+function LetterMark({ letter, className }: { letter: string; className: string }) {
   return (
-    <span className="flex size-4 items-center justify-center rounded-thumb bg-powerpoint text-[10px] leading-none font-semibold text-white">
-      P
+    <span
+      className={cn(
+        'flex size-4 items-center justify-center rounded-thumb text-[10px] leading-none font-semibold text-white',
+        className,
+      )}
+    >
+      {letter}
     </span>
   );
 }

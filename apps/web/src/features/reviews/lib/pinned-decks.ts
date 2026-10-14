@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
 /**
- * Decks pinned to the top of "Meine Reviews", whatever the sort. Like the last visits kept per
+ * Decks pinned to the top of "Reviews", whatever the sort. Like the last visits kept per
  * browser in localStorage; at most {@link MAX_PINNED}, in the order they were pinned.
  */
 export const MAX_PINNED = 3;

@@ -111,6 +111,32 @@ describe('own organisations', () => {
   });
 });
 
+describe('handing over the own organisation', () => {
+  beforeEach(() => setup());
+
+  it('does not free the account to found a new one', async () => {
+    const anna = await signedInUser(ctx, { name: 'Anna', email: 'anna@firma.de' });
+    const ben = await signedInUser(ctx, { name: 'Ben', email: 'ben@firma.de' });
+    const me = async () =>
+      (await (await ctx.request('/api/me', { cookie: anna.cookie })).json()) as MeResponse;
+    const found = (name: string) =>
+      ctx.request('/api/workspaces', { method: 'POST', json: { name }, cookie: anna.cookie });
+    const { id } = workspaceSchema.parse(await (await found('Anna GmbH')).json());
+    await ctx.deps.db
+      .insert(workspaceMembers)
+      .values({ workspaceId: id, userId: ben.user.id, role: 'admin' });
+    expect((await me()).limits).toEqual({ canCreateWorkspace: false });
+
+    const left = await ctx.request(
+      `/api/workspaces/${id}/members/${anna.user.id}?successor=${ben.user.id}`,
+      { method: 'DELETE', cookie: anna.cookie },
+    );
+    expect(left.status).toBe(204);
+    expect((await me()).limits).toEqual({ canCreateWorkspace: false });
+    expect((await found('Neustart')).status).toBe(403);
+  });
+});
+
 describe('self-hosted (no limits)', () => {
   beforeEach(() => setup({ limited: false }));
 

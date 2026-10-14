@@ -14,7 +14,7 @@ import { ReplyComposer } from './ReplyComposer';
 import { ResolveButton } from './ResolveButton';
 import { ChangedSinceCommentNote } from './RevisionNotes';
 import { ThreadMessage } from './ThreadMessage';
-import { GuestCommentHint } from '../components/GuestCommentHint';
+import { VIEW_ONLY_HINT } from '../lib/view-only';
 
 /** Thread side panel (B4) – a bottom sheet on phones. */
 export function ThreadPanel() {
@@ -164,7 +164,10 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
       {canComment ? (
         <ReplyComposer root={root} deckId={deck.id} />
       ) : (
-        viewer.kind === 'guest' && <GuestCommentHint deckId={deck.id} className="m-3 mt-0" />
+        <p className="m-3 mt-0 flex items-start gap-2 rounded-control bg-white/5 px-3 py-2.5 text-[13px] leading-5 text-fg-muted">
+          <Icon name="visibility" size={18} className="mt-px shrink-0 text-fg-subtle" />
+          {VIEW_ONLY_HINT}
+        </p>
       )}
     </aside>
   );

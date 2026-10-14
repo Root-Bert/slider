@@ -11,24 +11,25 @@ import {
  */
 
 export const ROLE_LABELS: Record<WorkspaceRole, string> = {
-  owner: 'Owner',
   admin: 'Admin',
   member: 'Mitglied',
   reviewer: 'Reviewer',
+  viewer: 'Betrachter',
 };
 
 export const ROLE_HINTS: Record<WorkspaceRole, string> = {
+  viewer: 'Präsentationen nur ansehen – so teilst du eine Präsentation.',
   reviewer: 'Präsentationen ansehen und kommentieren.',
   member: 'Zusätzlich eigene Präsentationen anlegen.',
-  admin: 'Zusätzlich Mitglieder, Einladungen und alle Präsentationen verwalten.',
-  owner: 'Alles, auch die Organisation umbenennen, löschen und Owner ernennen.',
+  admin:
+    'Alles: Mitglieder, Einladungen, alle Präsentationen, die Organisation umbenennen und löschen.',
 };
 
-export const INVITE_ROLES = [
-  'admin',
-  'member',
-  'reviewer',
-] as const satisfies readonly InviteRole[];
+/** Not a role – who founded the organisation. Nobody becomes creator, you are or aren't. */
+export const CREATOR_LABEL = 'Creator';
+export const CREATOR_HINT = 'Hat die Organisation gegründet. Keine Rolle, die man vergeben kann.';
+
+export const INVITE_ROLES = WORKSPACE_ROLES satisfies readonly InviteRole[];
 
 /** Lower index = stronger role. */
 const rank = (role: WorkspaceRole) => WORKSPACE_ROLES.indexOf(role);
@@ -39,25 +40,18 @@ export const atLeast = (role: WorkspaceRole, min: WorkspaceRole) => rank(role) <
 export const canCreateDecks = (role: WorkspaceRole) => atLeast(role, 'member');
 export const canRenameWorkspace = (role: WorkspaceRole) => atLeast(role, 'admin');
 export const canManageMembers = (role: WorkspaceRole) => atLeast(role, 'admin');
-export const canDeleteWorkspace = (role: WorkspaceRole) => role === 'owner';
+export const canDeleteWorkspace = (role: WorkspaceRole) => atLeast(role, 'admin');
 
-/**
- * Roles the actor may give the target. Empty when the actor can't change the target's role:
- * below admin, or an admin facing an owner. Only owners appoint owners. Includes the current role.
- */
-export function assignableRoles(actor: WorkspaceRole, target: WorkspaceRole): WorkspaceRole[] {
-  if (!canManageMembers(actor)) return [];
-  if (target === 'owner' && actor !== 'owner') return [];
-  return actor === 'owner' ? [...WORKSPACE_ROLES] : ['admin', 'member', 'reviewer'];
-}
+/** Roles the actor may give anyone: all of them for admins, none below. Includes the current one. */
+export const assignableRoles = (actor: WorkspaceRole): WorkspaceRole[] =>
+  canManageMembers(actor) ? [...WORKSPACE_ROLES] : [];
 
-/** Removing someone else: admins remove non-owners, owners remove anyone. (Leaving is separate.) */
-export const canRemoveMember = (actor: WorkspaceRole, target: WorkspaceRole) =>
-  canManageMembers(actor) && (target !== 'owner' || actor === 'owner');
+/** Removing someone else: admins remove anyone. (Leaving is separate.) */
+export const canRemoveMember = (actor: WorkspaceRole) => canManageMembers(actor);
 
-/** The last owner can neither leave nor be demoted – the API refuses, the UI says why upfront. */
-export const isLastOwner = (role: WorkspaceRole, ownerCount: number) =>
-  role === 'owner' && ownerCount <= 1;
+/** The last admin can neither leave nor be demoted – the API refuses, the UI says why upfront. */
+export const isLastAdmin = (role: WorkspaceRole, adminCount: number) =>
+  role === 'admin' && adminCount <= 1;
 
 export const INVITE_STATE_LABELS: Record<WorkspaceInvite['state'], string> = {
   valid: 'Offen',

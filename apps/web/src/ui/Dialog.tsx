@@ -45,7 +45,11 @@ export function Dialog({
     <dialog
       ref={ref}
       aria-labelledby={titleId}
-      onClose={onClose}
+      onClose={(event) => {
+        // The `close` event is queued: one left over from closing (e.g. StrictMode's effect
+        // re-run, close + showModal) arrives while the dialog is open again – ignore it.
+        if (!event.currentTarget.open) onClose();
+      }}
       onClick={(event) => {
         // Clicks on the backdrop land on the <dialog> element itself.
         if (event.target === event.currentTarget) onClose();

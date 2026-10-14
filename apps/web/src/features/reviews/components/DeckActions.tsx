@@ -11,16 +11,19 @@ import { markDeckVisited } from '../lib/last-visits';
 import { MAX_PINNED, pinDeck, unpinDeck, usePinnedDecks } from '../lib/pinned-decks';
 import { DeleteDeckDialog } from './DeleteDeckDialog';
 import { ContextMenu, Menu, type MenuAction } from '@/ui';
-import { RenameDeckDialog } from './RenameDeckDialog';
 
 interface DeckActionsProps {
   deck: Deck;
   onNotify: ShowToast;
   className?: string;
   triggerClassName?: string;
+  /** Without the ⋯ button: the actions only open on a right click (grid card). */
+  hideTrigger?: boolean;
   /** Where the card was right-clicked: the same actions open there as a context menu. */
   contextAt?: { x: number; y: number } | null;
   onContextClose?: () => void;
+  /** "Umbenennen": the card/row turns its title into an input. */
+  onRename: () => void;
 }
 
 /**
@@ -85,16 +88,17 @@ export function DeckActions({
   onNotify,
   className,
   triggerClassName,
+  hideTrigger = false,
   contextAt,
   onContextClose,
+  onRename,
 }: DeckActionsProps) {
-  const [dialog, setDialog] = useState<'rename' | 'delete' | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const update = useUpdateDeck(deck.id);
   const rerender = useRerender(deck, onNotify);
   const pins = usePinnedDecks();
   const pinned = pins.isPinned(deck.id);
   const archived = deck.archivedAt !== null;
-  const close = () => setDialog(null);
 
   const toggleArchived = () =>
     update.mutate(
@@ -123,25 +127,27 @@ export function DeckActions({
 
   // Reviewers and members on other people's decks can only pin them (BER-129).
   const manageActions: MenuAction[] = [
-    { label: 'Umbenennen', icon: 'edit', onSelect: () => setDialog('rename') },
+    { label: 'Umbenennen', icon: 'edit', onSelect: onRename },
     ...(deck.import.status === 'ready'
       ? [{ label: rerender.label, icon: 'image', onSelect: rerender.start } satisfies MenuAction]
       : []),
     archived
       ? { label: 'Wiederherstellen', icon: 'history', onSelect: toggleArchived }
       : { label: 'Archivieren', icon: 'archive', onSelect: toggleArchived },
-    { label: 'Löschen', icon: 'delete', tone: 'danger', onSelect: () => setDialog('delete') },
+    { label: 'Löschen', icon: 'delete', tone: 'danger', onSelect: () => setDeleting(true) },
   ];
   const actions = deck.permissions.canManage ? [pinAction, ...manageActions] : [pinAction];
 
   return (
     <>
-      <Menu
-        label={`Aktionen für „${deck.title}“`}
-        actions={actions}
-        className={className}
-        triggerClassName={triggerClassName}
-      />
+      {!hideTrigger && (
+        <Menu
+          label={`Aktionen für „${deck.title}“`}
+          actions={actions}
+          className={className}
+          triggerClassName={triggerClassName}
+        />
+      )}
       {contextAt && onContextClose && (
         <ContextMenu
           label={`Aktionen für „${deck.title}“`}
@@ -150,24 +156,13 @@ export function DeckActions({
           onClose={onContextClose}
         />
       )}
-      {dialog === 'rename' && (
-        <RenameDeckDialog
-          deck={deck}
-          onClose={close}
-          onRenamed={() => {
-            markDeckVisited(deck.id);
-            close();
-            onNotify('Review umbenannt');
-          }}
-        />
-      )}
-      {dialog === 'delete' && (
+      {deleting && (
         <DeleteDeckDialog
           deck={deck}
-          onClose={close}
+          onClose={() => setDeleting(false)}
           onDeleted={() => {
             unpinDeck(deck.id);
-            close();
+            setDeleting(false);
             onNotify(`„${deck.title}“ gelöscht`);
           }}
         />

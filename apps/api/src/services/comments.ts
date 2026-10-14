@@ -1,7 +1,9 @@
 import { and, asc, eq, isNotNull, or } from 'drizzle-orm';
 import type { createCommentInputSchema } from '@slider/shared';
 import {
+  isDrawing,
   isTextStroke,
+  moveDrawing,
   type Anchor,
   type Comment,
   type CommentMedia,
@@ -11,6 +13,7 @@ import {
 } from '@slider/shared';
 import type { z } from 'zod';
 import { deckAccess, requireDeckAccess } from '../auth/access';
+import { displayAuthor } from '../authors';
 import type { Executor } from '../db/client';
 import { comments, deletedPptxComments, type CommentRow, type DeckRow } from '../db/schema';
 import type { AppDeps } from '../deps';
@@ -27,7 +30,7 @@ export function toCommentDto(row: CommentRow, media: CommentMedia | null = null)
     deckId: row.deckId,
     slideId: row.slideId,
     parentId: row.parentId,
-    author: row.author,
+    author: displayAuthor(row.author),
     body: row.body,
     anchor: row.anchor,
     strokes: row.strokes,
@@ -192,7 +195,12 @@ export async function updateComment(
   const comment = await loadComment(deps, commentId);
   await requireDeckAccess(deps.db, viewer, comment.deckId, 'comment');
 
-  if (input.body !== undefined || input.textBox !== undefined || input.anchor !== undefined) {
+  if (
+    input.body !== undefined ||
+    input.textBox !== undefined ||
+    input.anchor !== undefined ||
+    input.move !== undefined
+  ) {
     if (comment.source === 'pptx')
       throw forbidden('Kommentare aus PowerPoint können nicht bearbeitet werden.');
     if (comment.author.id !== viewer.author.id)
@@ -202,7 +210,9 @@ export async function updateComment(
     ? moveTextBox(comment, input.textBox)
     : input.anchor
       ? moveBox(comment, input.anchor)
-      : {};
+      : input.move
+        ? moveDrawingOf(comment, input.move)
+        : {};
 
   const now = deps.clock.now();
   const statusChange =
@@ -249,16 +259,40 @@ function moveTextBox(comment: CommentRow, box: Rect): Pick<CommentRow, 'strokes'
   };
 }
 
-/** Moves / resizes the comment's own box; a box that is its text on the slide moves with it. */
+/**
+ * Moves / resizes the comment's own box; a box that is its text on the slide moves with it.
+ * Moved without resizing, the drawing in it goes along.
+ */
 function moveBox(
   comment: CommentRow,
   anchor: Extract<Anchor, { type: 'rect' }>,
-): Pick<CommentRow, 'anchor'> {
-  if (comment.anchor.type !== 'rect') throw badRequest('Dieser Kommentar hat keine Box.');
+): Pick<CommentRow, 'anchor' | 'strokes'> {
+  const current = comment.anchor;
+  if (current.type !== 'rect') throw badRequest('Dieser Kommentar hat keine Box.');
   const text = comment.strokes.find(isTextStroke);
-  if (text && sameRect(comment.anchor.rect, text))
+  if (text && sameRect(current.rect, text))
     throw badRequest('Diese Box ist das Textfeld – verschiebe das Textfeld.');
-  return { anchor };
+  const { rect } = anchor;
+  const resized =
+    Math.abs(rect.w - current.rect.w) > 1e-6 || Math.abs(rect.h - current.rect.h) > 1e-6;
+  const strokes = resized
+    ? comment.strokes
+    : moveDrawing(
+        { anchor: current, strokes: comment.strokes },
+        rect.x - current.rect.x,
+        rect.y - current.rect.y,
+      ).strokes;
+  return { anchor, strokes };
+}
+
+/** Moves a drawing – its strokes and its anchor – as a whole. */
+function moveDrawingOf(
+  comment: CommentRow,
+  { dx, dy }: { dx: number; dy: number },
+): Pick<CommentRow, 'anchor' | 'strokes'> {
+  if (!isDrawing(comment)) throw badRequest('Dieser Kommentar ist keine Zeichnung.');
+  const { anchor, strokes } = moveDrawing(comment, dx, dy);
+  return { anchor, strokes };
 }
 
 /**

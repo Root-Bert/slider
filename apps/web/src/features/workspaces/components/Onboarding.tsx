@@ -1,11 +1,11 @@
-import { useId, useState } from 'react';
+import { useId } from 'react';
 import { useNavigate } from 'react-router';
 import { AppHeader } from '@/app/AppHeader';
 import { routes } from '@/app/routes';
-import { Button, cn, Icon, TextField, Toast, useToast } from '@/ui';
+import { cn, Icon, Toast, useToast } from '@/ui';
 import { useAccount } from '../../auth/useAccount';
-import { parseInviteToken } from '../lib/plan';
 import { CreateWorkspaceForm } from './CreateWorkspaceForm';
+import { JoinByCodeForm } from './JoinByCodeForm';
 import { PendingInvites } from './PendingInvites';
 
 /**
@@ -89,8 +89,8 @@ export function Onboarding() {
                 </h2>
                 <p className="text-[13px] text-fg-subtle">
                   {canCreateWorkspace
-                    ? 'Du bist Owner und kannst danach dein Team einladen. Neue Organisationen starten im Free-Plan.'
-                    : 'Du hast bereits eine eigene Organisation. Jedes Konto kann eine Organisation gründen – weiteren trittst du per Einladung bei.'}
+                    ? 'Du bist Admin und kannst danach dein Team einladen. Neue Organisationen starten im Free-Plan.'
+                    : 'Du hast bereits eine eigene Organisation. Übergib sie an jemand anderen, um eine neue zu gründen – weiteren trittst du per Einladung bei.'}
                 </p>
               </div>
               {canCreateWorkspace && (
@@ -105,43 +105,5 @@ export function Onboarding() {
       </main>
       <Toast toast={toast} />
     </div>
-  );
-}
-
-/** Paste an invite link or code → the `/join/:token` page with its preview and "Beitreten". */
-function JoinByCodeForm({ onJoin }: { onJoin: (token: string) => void }) {
-  const [value, setValue] = useState('');
-  const [touched, setTouched] = useState(false);
-  const token = parseInviteToken(value);
-  const error =
-    touched && value.trim() !== '' && !token
-      ? 'Das ist kein Einladungslink. Er sieht so aus: …/join/abc123…'
-      : null;
-
-  return (
-    <form
-      noValidate
-      className="flex flex-col gap-2 sm:flex-row sm:items-start"
-      onSubmit={(event) => {
-        event.preventDefault();
-        setTouched(true);
-        if (token) onJoin(token);
-      }}
-    >
-      <TextField
-        aria-label="Einladungslink oder Code"
-        icon="link"
-        size="lg"
-        placeholder="Einladungslink oder Code"
-        autoComplete="off"
-        value={value}
-        error={error}
-        onChange={(event) => setValue(event.target.value)}
-        className="min-w-0 flex-1"
-      />
-      <Button type="submit" size="lg" variant="secondary" disabled={value.trim() === ''}>
-        Beitreten
-      </Button>
-    </form>
   );
 }

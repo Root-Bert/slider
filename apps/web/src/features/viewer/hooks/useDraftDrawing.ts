@@ -6,16 +6,19 @@ import {
   type Slide,
 } from '@slider/shared';
 import { useState, type PointerEvent, type RefObject } from 'react';
+import { useCreateComment } from '@/lib/queries';
 import { toSlidePoint } from '../lib/geometry';
-import { appendPoint, isShapeTool } from '../lib/stroke-path';
-import { useViewerDispatch, type Tool } from '../state/viewer-state';
+import { appendPoint, isShapeTool, strokesBounds } from '../lib/stroke-path';
+import { useViewerData } from '../state/viewer-data';
+import { useViewerDispatch, type PenTool } from '../state/viewer-state';
 
 const MAX_POINTS = 2000;
 
 /**
- * Turns pointer input on a slide into draft strokes (BER-98, BER-99): shapes span the dragged
- * box, the other pens draw one stroke per press. Works for mouse, pen and touch. Pins, boxes and
- * text on the slide come from the pointer itself (`SlideFrame`).
+ * Turns pointer input on a slide into strokes (BER-98, BER-99): shapes span the dragged box, the
+ * other pens draw one stroke per press. Freehand, arrow and marker strokes are saved right away as
+ * bare drawings – a click on their badge adds the comment later; shapes open the composer. Works
+ * for mouse, pen and touch. Pins, boxes and text on the slide come from the pointer itself (`SlideFrame`).
  */
 export function useDraftDrawing({
   slide,
@@ -25,11 +28,31 @@ export function useDraftDrawing({
 }: {
   slide: Slide;
   boxRef: RefObject<HTMLElement | null>;
-  tool: Tool | null;
+  tool: PenTool | null;
   color: AccentColor;
 }) {
   const dispatch = useViewerDispatch();
+  const { deck } = useViewerData();
+  const createComment = useCreateComment(deck.id);
   const [stroke, setStroke] = useState<PathStroke | null>(null);
+  // Saved strokes stay on screen until the stored drawing replaces them.
+  const [saving, setSaving] = useState<PathStroke[]>([]);
+
+  const save = (saved: PathStroke) => {
+    const rect = strokesBounds([saved]);
+    if (!rect) return;
+    setSaving((current) => [...current, saved]);
+    createComment.mutate(
+      {
+        slideId: slide.id,
+        parentId: null,
+        body: '',
+        anchor: { type: 'rect', rect, shapeRef: null },
+        strokes: [saved],
+      },
+      { onSettled: () => setSaving((current) => current.filter((item) => item !== saved)) },
+    );
+  };
 
   const pointOf = (event: PointerEvent) =>
     boxRef.current ? toSlidePoint(event, boxRef.current) : null;
@@ -67,13 +90,13 @@ export function useDraftDrawing({
     // A single tap with a pen still leaves a dot: the API needs at least two points.
     const points =
       stroke.points.length >= 2 ? stroke.points : [stroke.points[0]!, stroke.points[0]!];
-    dispatch({ type: 'strokeAdded', slideId: slide.id, stroke: { ...stroke, points } });
+    save({ ...stroke, points });
   };
 
   const onPointerCancel = () => setStroke(null);
 
   return {
     handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel },
-    previewStroke: stroke,
+    previewStrokes: stroke ? [...saving, stroke] : saving,
   };
 }

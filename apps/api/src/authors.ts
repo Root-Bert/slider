@@ -1,35 +1,26 @@
-import { ACCENT_COLORS, type AccentColor, type Author } from '@slider/shared';
-import type { GuestSessionRow, UserRow } from './db/schema';
+import type { AccountAuthor, Author } from '@slider/shared';
+import type { UserRow } from './db/schema';
 
-/** Deterministic accent colour for a name, so a PowerPoint author keeps their colour across imports. */
-export function colorForName(name: string): AccentColor {
-  let hash = 0x811c9dc5;
-  for (const char of name.trim().toLowerCase()) {
-    hash ^= char.codePointAt(0) ?? 0;
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return ACCENT_COLORS[(hash >>> 0) % ACCENT_COLORS.length] ?? 'blue';
-}
-
-export const ownerAuthor = (user: UserRow): Author => ({
+export const ownerAuthor = (user: UserRow): AccountAuthor => ({
   id: user.id,
   name: user.name,
   type: 'owner',
   color: user.color,
-  avatarSeed: user.avatarSeed,
 });
 
-export const guestAuthor = (session: GuestSessionRow): Author => ({
-  id: session.id,
-  name: session.name,
-  type: 'guest',
-  color: session.color,
-});
-
-/** Someone who commented in PowerPoint; identified by name only. */
+/** Someone who commented in PowerPoint without a matching Slider account; identified by name only. */
 export const externalAuthor = (name: string): Author => ({
   id: `pptx:${name.trim().toLowerCase()}`,
   name: name.trim() || 'Unbekannt',
   type: 'external',
-  color: colorForName(name),
+  color: 'powerpoint',
 });
+
+/**
+ * An author snapshot as shown: PowerPoint authors are always orange. Older imports stored them
+ * with a colour hashed from the name.
+ */
+export const displayAuthor = (author: Author): Author =>
+  author.type === 'external' && author.color !== 'powerpoint'
+    ? { ...author, color: 'powerpoint' }
+    : author;

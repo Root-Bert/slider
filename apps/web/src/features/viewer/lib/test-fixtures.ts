@@ -5,7 +5,7 @@ import type { Author, Comment, Slide } from '@slider/shared';
 export const author = (id: string, overrides: Partial<Author> = {}): Author => ({
   id,
   name: `Person ${id}`,
-  type: 'guest',
+  type: 'owner',
   color: 'blue',
   ...overrides,
 });

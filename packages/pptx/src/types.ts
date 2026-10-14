@@ -89,7 +89,7 @@ export interface ParsedComment {
   format: 'modern' | 'legacy';
   /** `sldId` of the slide the comment belongs to. */
   sldId: number;
-  author: { name: string; initials: string | null };
+  author: CommentAuthor;
   createdAt: string | null;
   text: string;
   status: 'open' | 'done';
@@ -98,9 +98,21 @@ export interface ParsedComment {
   replies: ParsedReply[];
 }
 
+/**
+ * Who wrote a comment. Modern comments (`ppt/authors.xml`) also name the account: `providerId`
+ * `AD` with `userId` `S::<upn>::<object id>` (work account), `Windows Live` with the account's
+ * CID (personal). Legacy comments carry the name only.
+ */
+export interface CommentAuthor {
+  name: string;
+  initials: string | null;
+  userId?: string;
+  providerId?: string;
+}
+
 export interface ParsedReply {
   externalId: string;
-  author: { name: string; initials: string | null };
+  author: CommentAuthor;
   createdAt: string | null;
   text: string;
 }

@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { cn } from '@/ui';
 import { ConnectorLines } from '../comments/ConnectorLines';
+import { useCanvasPan } from '../hooks/useCanvasPan';
 import { useIsNarrow } from '../hooks/useMediaQuery';
 import { useScrollActiveSlide } from '../hooks/useScrollActiveSlide';
 import { useTimelineMetrics } from '../hooks/useTimelineMetrics';
@@ -93,6 +94,7 @@ export function Timeline({ controls }: { controls: ReactNode }) {
   );
 
   useTimelineWheel({ scrollerRef, geometry, anchorRef, enabled: !narrow });
+  useCanvasPan({ scrollerRef, ignore: KEEPS_PANEL, enabled: !narrow });
 
   useLayoutEffect(() => {
     registry.setScroller(scrollerRef.current);
@@ -235,7 +237,11 @@ export function Timeline({ controls }: { controls: ReactNode }) {
           narrow && 'snap-x snap-mandatory [scroll-padding-inline:16px]',
         )}
       >
-        <div className="relative min-w-full" style={{ width: layout?.contentW }}>
+        {/* The dot grid lives on the content, so it scrolls (and pans) with the cards. */}
+        <div
+          className="dot-grid relative min-h-full min-w-full"
+          style={{ width: layout?.contentW }}
+        >
           {/* Connector lines: in the content, so they scroll sideways with slides and cards in
               the same frame; sticky, so vertically they stay with the header's marks. */}
           <div
@@ -243,7 +249,9 @@ export function Timeline({ controls }: { controls: ReactNode }) {
             data-connector-layer
             className="pointer-events-none sticky top-0 z-[25] h-0"
           />
-          {/* Sticky header: the comment area starts where the split handle puts it. */}
+          {/* Sticky header in two parts: the opaque track under the connector lines, and the
+              see-through band over them – lines, cards and the dot grid show behind its glass
+              controls and thumbnails. The comment area starts where the split handle puts it. */}
           <div
             data-timeline-header
             className="sticky top-0 z-20 bg-canvas"
@@ -256,30 +264,38 @@ export function Timeline({ controls }: { controls: ReactNode }) {
             ) : (
               <div style={{ height: slideH ?? 0 }} />
             )}
-            {/* Minimap, controls row and split handle: one band of fixed height right under the
-                track, part of where the comment area starts. Connector lines hide behind all of it.
-                Slides and comments run on behind a side panel; this band makes room for it (its
-                own container, so the controls row's container queries see the narrowed width). */}
-            <div
-              ref={controlsRef}
-              data-connector-occluder
-              className={cn(
-                'sticky left-0 w-[100cqw] pt-2 transition-[padding] duration-300 @container max-md:pb-2',
-                (threadPanelOpen || deletedPanelOpen) && 'md:pr-[412px]',
-              )}
-            >
-              {/* Thumbnails line up with the big track's slides (TRACK_PAD_X minus MINIMAP_PAD). */}
-              <div className="px-3">
-                <Minimap layout={layout} scrollerRef={scrollerRef} narrow={narrow} />
-              </div>
-              {/* Same gap below the thumbnails as above them (track to minimap), and the same
-                  edges: TRACK_PAD_X, like the slides and thumbnails. */}
-              <div className="px-4 pt-2">{controls}</div>
+          </div>
+          {/* Minimap, controls row and split handle: one band of fixed height right under the
+              track, part of where the comment area starts. Connector lines pass behind all of it.
+              Slides and comments run on behind a side panel; this band makes room for it (its
+              own container, so the controls row's container queries see the narrowed width). */}
+          <div
+            ref={controlsRef}
+            data-timeline-header
+            data-connector-occluder
+            className={cn(
+              'sticky left-0 z-30 w-[100cqw] pt-2 pb-2 transition-[padding] duration-300 @container',
+              (threadPanelOpen || deletedPanelOpen) && 'md:pr-[412px]',
+            )}
+            style={{ top: TRACK_PAD_TOP + (slideH ?? 0) }}
+          >
+            {/* Thumbnails line up with the big track's slides (TRACK_PAD_X minus MINIMAP_PAD). */}
+            <div className="px-3">
+              <Minimap layout={layout} scrollerRef={scrollerRef} narrow={narrow} />
+            </div>
+            {/* Same gap below the thumbnails as above them (track to minimap), and the same
+                edges: TRACK_PAD_X, like the slides and thumbnails. The split handle sits centred
+                in the controls row, behind it: the row lets the pointer through except on its
+                controls, so where they would overlap on a narrow band the controls win. */}
+            <div className="relative px-4 pt-2">
               {geometry && slideH && !narrow && (
-                <div className="pt-1">
+                <div className="absolute inset-x-0 top-2 bottom-0 flex items-center justify-center">
                   <SplitHandle geometry={geometry} slideH={slideH} />
                 </div>
               )}
+              <div className="pointer-events-none relative [&>*>*]:pointer-events-auto">
+                {controls}
+              </div>
             </div>
           </div>
           {layout && context && (
@@ -290,12 +306,6 @@ export function Timeline({ controls }: { controls: ReactNode }) {
         </div>
       </div>
       <ConnectorLines wrapperRef={wrapperRef} layer={connectorLayer} />
-      {/* The floating avatar dock and session controls sit on a scrim, not on top of card text:
-          cards scrolling under them fade out (the comment area has room to scroll them clear). */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 bottom-0 z-[28] h-28 bg-linear-to-b from-transparent via-canvas/85 via-40% to-canvas"
-      />
     </main>
   );
 }

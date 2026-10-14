@@ -1,9 +1,16 @@
-import { useId, useRef, useState, type CSSProperties, type FormEvent } from 'react';
-import { useCreateComment } from '@/lib/queries';
-import { Avatar, Button, cn } from '@/ui';
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+} from 'react';
+import { useCreateComment, useDeleteComment } from '@/lib/queries';
+import { Avatar, Button, cn, Icon } from '@/ui';
 import { AutosizeTextarea } from '../components/AutosizeTextarea';
 import { MediaTabs } from '../components/MediaTabs';
-import type { MediaKindId } from '../lib/media-kinds';
+import { MEDIA_KINDS, MEDIA_SOON, type MediaKindId } from '../lib/media-kinds';
 import { RecorderPanel } from '../media/RecorderPanel';
 import { useCreateMediaComment } from '../media/useMediaComment';
 import type { Recording } from '../media/useRecorder';
@@ -19,11 +26,8 @@ import { useViewerDispatch, useViewerState, type Draft } from '../state/viewer-s
 export function Composer() {
   const { draft } = useViewerState();
   if (!draft) return null;
-  // Remount per slide (or for gaps) so text and errors do not leak between drafts; the tool bar's
-  // mic and camera reopen it in their tab.
-  return (
-    <ComposerPopover key={`${draft.slideId ?? 'gap'}:${draft.recordKind ?? ''}`} draft={draft} />
-  );
+  // Remount per slide (or for gaps, or per drawing) so text and errors do not leak between drafts.
+  return <ComposerPopover key={draft.commentId ?? draft.slideId ?? 'gap'} draft={draft} />;
 }
 
 function ComposerPopover({ draft }: { draft: Draft }) {
@@ -31,12 +35,12 @@ function ComposerPopover({ draft }: { draft: Draft }) {
   const dispatch = useViewerDispatch();
   const createComment = useCreateComment(deck.id);
   const createMediaComment = useCreateMediaComment(deck.id);
+  const deleteComment = useDeleteComment(deck.id);
   const [body, setBody] = useState('');
-  const [tab, setTab] = useState<MediaKindId>(draft.recordKind ?? 'text');
-  // Opened from the tool bar's mic: recording starts right away.
-  const [autoStart, setAutoStart] = useState(draft.recordKind === 'audio');
+  const [tab, setTab] = useState<MediaKindId>('text');
   const [recording, setRecording] = useState<Recording | null>(null);
   const popoverRef = useRef<HTMLFormElement>(null);
+  const commentRef = useRef<HTMLTextAreaElement>(null);
   const narrow = useIsNarrow();
   const placement = useComposerPosition(narrow ? null : draft, popoverRef);
   const titleId = useId();
@@ -45,7 +49,13 @@ function ComposerPopover({ draft }: { draft: Draft }) {
   // "Text auf Folie": the text is typed on the slide; the composer adds an optional comment.
   const onSlideText = draft.textBox !== null;
   const recordingTab = tab === 'audio' || tab === 'video';
-  const textSubmission = draftSubmission(draft, body, author.color);
+  // A box just drawn: the first keys are typed into it on the slide (`DraftMark`), not here.
+  const freshBox =
+    draft.anchor.type === 'rect' && !draft.anchorFromStrokes && draft.strokes.length === 0;
+  // Commenting on a saved drawing: the drawing alone is already there, so it needs text.
+  const forDrawing = draft.commentId !== null;
+  const textSubmission =
+    forDrawing && body.trim() === '' ? null : draftSubmission(draft, body, author.color);
   // With a recording, text and drawing are optional: the recording is the comment (BER-116).
   const submission =
     recordingTab && recording
@@ -59,13 +69,31 @@ function ComposerPopover({ draft }: { draft: Draft }) {
   const subtitle =
     draft.anchor.type === 'gap'
       ? locationLabel(draft.anchor, null, (id) => slideIndex.get(id))
-      : `Neuer Kommentar · ${locationLabel(draft.anchor, draft.slideId, (id) => slideIndex.get(id))}`;
+      : `${forDrawing ? 'Kommentar zur Zeichnung' : 'Neuer Kommentar'} · ${locationLabel(draft.anchor, draft.slideId, (id) => slideIndex.get(id))}`;
+
+  const switchTab = (next: MediaKindId) => {
+    setTab(next);
+    setRecording(null);
+  };
+
+  /** Tab / Shift+Tab: Text → Audio → Video → Bild → Text; the recorder takes the keys (Space, ↵). */
+  const cycleTab = (backwards: boolean) => {
+    const kinds = MEDIA_KINDS.map((kind) => kind.id);
+    const index = kinds.indexOf(tab);
+    const next = kinds[(index + (backwards ? kinds.length - 1 : 1)) % kinds.length] ?? 'text';
+    switchTab(next);
+    if (next === 'text') commentRef.current?.focus();
+  };
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
     if (!submission || pending) return;
     const input = { slideId: draft.slideId, parentId: null, ...submission };
-    const onSuccess = () => dispatch({ type: 'draftSubmitted' });
+    const onSuccess = () => {
+      // The comment carries the drawing now; the bare one goes.
+      if (draft.commentId) deleteComment.mutate(draft.commentId);
+      dispatch({ type: 'draftSubmitted' });
+    };
     if (recordingTab && recording) createMediaComment.mutate({ input, recording }, { onSuccess });
     else createComment.mutate(input, { onSuccess });
   };
@@ -100,14 +128,7 @@ function ComposerPopover({ draft }: { draft: Draft }) {
         </div>
       </header>
 
-      <MediaTabs
-        value={tab}
-        onChange={(next) => {
-          setTab(next);
-          setRecording(null);
-          setAutoStart(false);
-        }}
-      />
+      <MediaTabs value={tab} onChange={switchTab} />
 
       {recordingTab && (
         // Remount per kind: switching tabs turns the previous device off.
@@ -116,37 +137,45 @@ function ComposerPopover({ draft }: { draft: Draft }) {
           kind={tab}
           deckId={deck.id}
           onChange={setRecording}
-          autoStart={autoStart}
+          autoFocus
+          onTab={cycleTab}
         />
       )}
 
+      {tab === 'image' && <ImageSoonPanel onTab={cycleTab} />}
+
       <div className="rounded-control-sm bg-white/5 px-3 py-2 shadow-[inset_0_0_0_1px_var(--color-hairline-strong)] focus-within:shadow-[inset_0_0_0_1px_rgb(255_255_255/0.35)]">
         <AutosizeTextarea
+          ref={commentRef}
           // While drawing or writing on the slide, keep focus there (⌘Z undoes strokes).
-          autoFocus={draft.strokes.length === 0 && !onSlideText && !recordingTab}
+          // A saved drawing's comment is typed right away.
+          autoFocus={
+            forDrawing ||
+            (draft.strokes.length === 0 && !onSlideText && !recordingTab && !freshBox)
+          }
           aria-label="Kommentar"
           placeholder={
             recordingTab
               ? 'Optional: Notiz zur Aufnahme'
               : onSlideText
                 ? 'Optional: Kommentar zum Text auf der Folie'
-                : draft.strokes.length > 0
-                  ? 'Optional: Was soll sich ändern?'
+                : draft.strokes.length > 0 && !forDrawing
+                  ? 'Optional: Kommentar zur Zeichnung'
                   : 'Was fällt dir auf?'
           }
           value={body}
           onChange={(event) => setBody(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit();
+            if (event.key !== 'Tab' || event.metaKey || event.ctrlKey || event.altKey) return;
             // Shift+Tab goes back to the text on the slide.
-            if (event.key === 'Tab' && event.shiftKey && onSlideText) {
-              const slideText = document.querySelector<HTMLTextAreaElement>(
-                '[data-text-editor] textarea',
-              );
-              if (!slideText) return;
-              event.preventDefault();
-              slideText.focus();
-            }
+            const slideText =
+              event.shiftKey && tab === 'text'
+                ? document.querySelector<HTMLTextAreaElement>('[data-text-editor] textarea')
+                : null;
+            event.preventDefault();
+            if (slideText) slideText.focus();
+            else cycleTab(event.shiftKey);
           }}
           className="text-[13px] leading-5 text-fg"
         />
@@ -174,7 +203,7 @@ function ComposerPopover({ draft }: { draft: Draft }) {
           >
             Abbrechen
           </Button>
-          <Button type="submit" size="sm" disabled={!canSend} loading={pending}>
+          <Button type="submit" size="sm" icon="send" disabled={!canSend} loading={pending}>
             {createMediaComment.isPending && createMediaComment.progress < 1
               ? `${Math.round(createMediaComment.progress * 100)} %`
               : 'Senden'}
@@ -182,5 +211,27 @@ function ComposerPopover({ draft }: { draft: Draft }) {
         </div>
       </footer>
     </form>
+  );
+}
+
+/** The Bild tab until image comments land: keeps the Tab cycle going. */
+function ImageSoonPanel({ onTab }: { onTab: (backwards: boolean) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => ref.current?.focus({ preventScroll: true }), []);
+  return (
+    <div
+      ref={ref}
+      tabIndex={0}
+      role="note"
+      onKeyDown={(event) => {
+        if (event.key !== 'Tab' || event.metaKey || event.ctrlKey || event.altKey) return;
+        event.preventDefault();
+        onTab(event.shiftKey);
+      }}
+      className="flex items-center gap-2 rounded-control-sm bg-white/5 px-3 py-4 text-xs text-fg-subtle outline-none focus-visible:shadow-[inset_0_0_0_1px_rgb(255_255_255/0.35)]"
+    >
+      <Icon name="image" size={18} />
+      Bild-Kommentare – {MEDIA_SOON}
+    </div>
   );
 }

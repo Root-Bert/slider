@@ -17,8 +17,9 @@ import { HeaderPopover, PopoverDivider, PopoverItem } from './HeaderPopover';
 const MICROSOFT_CONNECT_URL = '/api/auth/microsoft/login';
 
 /**
- * Header avatar with the account menu: who is signed in, "Konto & Anmeldung", Microsoft
- * connection, sign out – and once, until dismissed, a nudge to add a passkey.
+ * Header avatar with the account menu: who is signed in, "Konto & Anmeldung", "Einstellungen"
+ * (its own page, kept apart from the account), Microsoft connection, sign out – and once, until
+ * dismissed, a nudge to add a passkey.
  */
 export function AccountMenu() {
   const { data: me } = useMe();
@@ -90,6 +91,15 @@ export function AccountMenu() {
             }}
           >
             Konto & Anmeldung
+          </PopoverItem>
+          <PopoverItem
+            icon={<Icon name="settings" size={18} className="text-fg-subtle" />}
+            onSelect={() => {
+              close();
+              void navigate(routes.preferences());
+            }}
+          >
+            Einstellungen
           </PopoverItem>
           {microsoftAvailable && (
             <>

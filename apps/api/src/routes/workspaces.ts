@@ -4,6 +4,7 @@ import {
   createWorkspaceInputSchema,
   createWorkspaceInviteInputSchema,
   updateMemberInputSchema,
+  shareDeckInputSchema,
   updateWorkspaceInputSchema,
   type JoinResult,
   type Viewer,
@@ -21,6 +22,7 @@ import {
   foundWorkspace,
   getWorkspace,
   joinByToken,
+  listDeckShares,
   listInvites,
   listMembers,
   listWorkspaces,
@@ -28,10 +30,11 @@ import {
   removeMember,
   renameWorkspace,
   revokeInvite,
+  shareDeck,
   updateMemberRole,
 } from '../services/workspaces';
 
-/** The signed-in account behind the viewer; guests are not members of anything (403). */
+/** The signed-in account behind the viewer. */
 async function requireUser(deps: AppDeps, viewer: Viewer): Promise<UserRow> {
   requireOwner(viewer);
   const [user] = await deps.db.select().from(users).where(eq(users.id, viewer.author.id));
@@ -91,7 +94,14 @@ export function workspacesRoutes(deps: AppDeps) {
         );
       })
       .delete('/workspaces/:id/members/:userId', viewer, async (c) => {
-        await removeMember(deps.db, userId(c.var.viewer), c.req.param('id'), c.req.param('userId'));
+        // `?successor=<userId>`: the last owner leaves and hands the organisation to them.
+        await removeMember(
+          deps.db,
+          userId(c.var.viewer),
+          c.req.param('id'),
+          c.req.param('userId'),
+          c.req.query('successor') || undefined,
+        );
         return c.body(null, 204);
       })
 
@@ -103,14 +113,22 @@ export function workspacesRoutes(deps: AppDeps) {
         const input = await readJson(c, createWorkspaceInviteInputSchema);
         return c.json(await createInvite(deps, user, c.req.param('id'), input), 201);
       })
+      /** Sharing a deck invites into its organisation as `viewer` (no guests). */
+      .get('/decks/:deckId/share', viewer, async (c) =>
+        c.json(await listDeckShares(deps, userId(c.var.viewer), c.req.param('deckId'))),
+      )
+      .post('/decks/:deckId/share', viewer, async (c) => {
+        const user = await requireUser(deps, c.var.viewer);
+        const input = await readJson(c, shareDeckInputSchema);
+        return c.json(await shareDeck(deps, user, c.req.param('deckId'), input), 201);
+      })
       .delete('/workspace-invites/:inviteId', viewer, async (c) => {
         await revokeInvite(deps, userId(c.var.viewer), c.req.param('inviteId'));
         return c.body(null, 204);
       })
       .post('/workspace-invites/:inviteId/accept', viewer, async (c) => {
         const user = await requireUser(deps, c.var.viewer);
-        const workspace = await acceptInviteById(deps, user, c.req.param('inviteId'));
-        return c.json<JoinResult>({ workspace });
+        return c.json<JoinResult>(await acceptInviteById(deps, user, c.req.param('inviteId')));
       })
 
       /** Public preview of an invite link; joining needs an account (log in first). */
@@ -118,8 +136,7 @@ export function workspacesRoutes(deps: AppDeps) {
       .get('/join/:token', async (c) => c.json(await previewInvite(deps, c.req.param('token'))))
       .post('/join/:token', viewer, async (c) => {
         const user = await requireUser(deps, c.var.viewer);
-        const workspace = await joinByToken(deps, user, c.req.param('token'));
-        return c.json<JoinResult>({ workspace });
+        return c.json<JoinResult>(await joinByToken(deps, user, c.req.param('token')));
       })
   );
 }

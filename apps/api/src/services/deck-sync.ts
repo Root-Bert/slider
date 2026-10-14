@@ -11,8 +11,8 @@ export interface DeckSyncInput {
   pendingRevisionAt: Date | null;
   /** Summary of the current revision. */
   summary: SyncSummary | null;
-  /** Guests never get the owner's login link. */
-  forGuest: boolean;
+  /** Only people who manage the deck get the owner's login link. */
+  hideLoginUrl: boolean;
 }
 
 /** The `sync` block of a deck DTO, from `decks.sync_state`. */
@@ -24,7 +24,7 @@ export function toDeckSync(row: DeckRow, input: DeckSyncInput): DeckSync {
         code: stored.code,
         message: stored.message,
         at: stored.at,
-        ...(stored.code === 'auth_required' && !input.forGuest
+        ...(stored.code === 'auth_required' && !input.hideLoginUrl
           ? { loginUrl: deckLoginUrl(row.id) }
           : {}),
       }
