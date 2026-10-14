@@ -224,8 +224,6 @@ export function TextMark({
   );
 }
 
-const PLACEHOLDER = 'Text eingeben…';
-
 interface TextBoxEditorProps {
   box: TextBoxDraft;
 }
@@ -356,13 +354,12 @@ export function TextBoxEditor({ box }: TextBoxEditorProps) {
         />
         {/* Sizes the box: same text and style as the textarea on top of it. */}
         <div aria-hidden className={cn(TEXT_CLASS, 'invisible')}>
-          {box.text || PLACEHOLDER}
+          {box.text}
           {'​'}
         </div>
         <textarea
           ref={textareaRef}
           aria-label="Text auf der Folie"
-          placeholder={PLACEHOLDER}
           value={box.text}
           maxLength={2000}
           rows={1}
@@ -388,7 +385,7 @@ export function TextBoxEditor({ box }: TextBoxEditorProps) {
           }}
           className={cn(
             TEXT_CLASS,
-            'absolute inset-0 size-full resize-none overflow-hidden bg-transparent outline-none placeholder:text-current placeholder:opacity-45',
+            'absolute inset-0 size-full resize-none overflow-hidden bg-transparent outline-none',
           )}
         />
 
