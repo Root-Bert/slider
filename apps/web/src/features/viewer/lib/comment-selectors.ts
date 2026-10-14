@@ -201,8 +201,10 @@ export interface ConnectorAnchor {
   right: number;
   /** Start point per exit side. */
   start: { left: Point; right: Point };
+  /** Start point when the line leaves downwards: the middle of the mark's bottom. */
+  bottom: Point;
   /** Extra screen pixels outwards from the start: the pin's radius, half a stroke width. */
-  inset: { left: number; right: number };
+  inset: { left: number; right: number; bottom: number };
 }
 
 /** Radius of an accent pin and half the PowerPoint "P" square (incl. its ring), in px. */
@@ -226,25 +228,29 @@ export function connectorAnchor(
       left: x,
       right: x + w,
       start: { left: { x, y: mid }, right: { x: x + w, y: mid } },
-      inset: { left: 0, right: 0 },
+      bottom: { x: x + w / 2, y: y + h },
+      inset: { left: 0, right: 0, bottom: 0 },
     };
   }
   if (strokes.length > 0) {
     let left: { point: Point; pad: number } | null = null;
     let right: { point: Point; pad: number } | null = null;
+    let bottom: { point: Point; pad: number } | null = null;
     for (const stroke of strokes) {
       const pad = stroke.tool === 'text' ? 0 : STROKE_STYLE[stroke.tool].width / 2;
       for (const point of strokeOutline(stroke)) {
         if (!left || point.x < left.point.x) left = { point, pad };
         if (!right || point.x > right.point.x) right = { point, pad };
+        if (!bottom || point.y > bottom.point.y) bottom = { point, pad };
       }
     }
-    if (left && right)
+    if (left && right && bottom)
       return {
         left: left.point.x,
         right: right.point.x,
         start: { left: left.point, right: right.point },
-        inset: { left: left.pad, right: right.pad },
+        bottom: bottom.point,
+        inset: { left: left.pad, right: right.pad, bottom: bottom.pad },
       };
   }
   if (anchor.type !== 'point') return null;
@@ -255,7 +261,8 @@ export function connectorAnchor(
     left: point.x,
     right: point.x,
     start: { left: point, right: point },
-    inset: { left: radius, right: radius },
+    bottom: point,
+    inset: { left: radius, right: radius, bottom: radius },
   };
 }
 
@@ -263,31 +270,63 @@ export function connectorAnchor(
 export const connectorSide = (anchor: Pick<ConnectorAnchor, 'left' | 'right'>) =>
   anchor.left <= 1 - anchor.right ? ('left' as const) : ('right' as const);
 
+/** Where a connector line leaves its mark: sideways to a slide edge, or straight down. */
+export type ConnectorExit = 'left' | 'right' | 'down';
+
+/**
+ * Exits for the marks of one slide (`aspectRatio` = width / height): straight down when the
+ * slide's bottom edge is nearer than its side edge, else sideways. A drop never cuts through a
+ * sideways start: a mark below it that leaves sideways is even nearer its edge, so it starts
+ * outside the drop. Without an aspect ratio every line leaves sideways.
+ */
+export function connectorExits(
+  anchors: readonly (ConnectorAnchor | null)[],
+  aspectRatio?: number,
+): (ConnectorExit | null)[] {
+  return anchors.map((anchor) => {
+    if (!anchor) return null;
+    const side = connectorSide(anchor);
+    if (aspectRatio === undefined) return side;
+    // In slide heights, so both distances are on the same scale.
+    const toSide = (side === 'left' ? anchor.left : 1 - anchor.right) * aspectRatio;
+    return 1 - anchor.bottom.y < toSide ? 'down' : side;
+  });
+}
+
 /**
  * Card order for the active slide (B1): clockwise around the slide – lines leaving to the left
- * from top to bottom, then lines leaving to the right from bottom to top, then comments without
- * a line. Lanes and cards then follow the same order and the lines don't cross.
+ * from top to bottom, lines leaving downwards from left to right, then lines leaving to the right
+ * from bottom to top, then comments without a line. Lanes and cards then follow the same order
+ * and the lines don't cross.
  */
 export function sortThreadsClockwise(
   threads: readonly Thread[],
   shapes: readonly Shape[],
+  aspectRatio?: number,
 ): Thread[] {
+  const anchors = threads.map((thread) => connectorAnchor(thread.root, shapes));
+  const exits = connectorExits(anchors, aspectRatio);
   const keyed = threads.map((thread, index) => {
-    const anchor = connectorAnchor(thread.root, shapes);
-    if (!anchor) return { thread, group: 2, key: index };
-    const side = connectorSide(anchor);
-    const y = anchor.start[side].y;
-    return side === 'left' ? { thread, group: 0, key: y } : { thread, group: 1, key: -y };
+    const anchor = anchors[index];
+    const exit = exits[index];
+    if (!anchor || !exit) return { thread, group: 3, key: index };
+    if (exit === 'down') return { thread, group: 1, key: anchor.bottom.x };
+    const y = anchor.start[exit].y;
+    return exit === 'left' ? { thread, group: 0, key: y } : { thread, group: 2, key: -y };
   });
   return keyed.sort((a, b) => a.group - b.group || a.key - b.key).map(({ thread }) => thread);
 }
 
 /** Number of threads whose line leaves the slide to the left – the head of the clockwise order. */
-export const countLeftExits = (threads: readonly Thread[], shapes: readonly Shape[]) =>
-  threads.filter((thread) => {
-    const anchor = connectorAnchor(thread.root, shapes);
-    return anchor !== null && connectorSide(anchor) === 'left';
-  }).length;
+export const countLeftExits = (
+  threads: readonly Thread[],
+  shapes: readonly Shape[],
+  aspectRatio?: number,
+) =>
+  connectorExits(
+    threads.map((thread) => connectorAnchor(thread.root, shapes)),
+    aspectRatio,
+  ).filter((exit) => exit === 'left').length;
 
 export const rectsMatch = (a: Rect, b: Rect) =>
   Math.abs(a.x - b.x) < 1e-6 &&

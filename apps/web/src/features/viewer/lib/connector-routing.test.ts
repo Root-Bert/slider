@@ -148,6 +148,52 @@ describe('layoutConnectors (card mode, Figma B1)', () => {
     expect(line!.points).toHaveLength(3);
   });
 
+  it('drops a downward line straight out of the bottom of its mark', () => {
+    const [line] = layoutConnectors(
+      [
+        {
+          id: 'down',
+          anchor: { left: 250, right: 290 },
+          start: { ...at(250, 200), down: { x: 270, y: 240 } },
+          exit: 'down',
+          target: { x: 400, y: 580 },
+        },
+      ],
+      frame,
+    );
+    expect(svgOf(line!.points)).toBe('M270 240 V500 H400 V580');
+  });
+
+  it('keeps downward lines between the left and right ones without crossings', () => {
+    const lines = layoutConnectors(
+      [
+        { id: 'l', anchor: { left: 60, right: 80 }, start: at(60, 150), target: { x: 40, y: 600 } },
+        {
+          id: 'd1',
+          anchor: { left: 200, right: 240 },
+          start: { ...at(200, 260), down: { x: 220, y: 280 } },
+          exit: 'down',
+          target: { x: 220, y: 600 },
+        },
+        {
+          id: 'd2',
+          anchor: { left: 300, right: 340 },
+          start: { ...at(300, 260), down: { x: 320, y: 280 } },
+          exit: 'down',
+          target: { x: 400, y: 600 },
+        },
+        {
+          id: 'r',
+          anchor: { left: 480, right: 500 },
+          start: at(500, 150),
+          target: { x: 580, y: 600 },
+        },
+      ],
+      { ...frame, busBottom: 530 },
+    );
+    expect(crossings(lines)).toBe(0);
+  });
+
   it('runs a gap comment down its fixed lane without a stub', () => {
     const [line] = layoutConnectors(
       [

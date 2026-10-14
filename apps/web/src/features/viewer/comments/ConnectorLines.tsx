@@ -11,6 +11,7 @@ import {
 import { useIsNarrow } from '../hooks/useMediaQuery';
 import {
   connectorAnchor,
+  connectorExits,
   gapKey,
   sortThreadsClockwise,
   type Thread,
@@ -79,7 +80,13 @@ export function ConnectorLines({ wrapperRef, layer }: ConnectorLinesProps) {
       const nextGapKey = gapKey(slide.id, slides[index + 1]?.id ?? null);
       const prev = slides[index - 1];
       const items: ConnectorItem[] = [];
-      for (const thread of sortThreadsClockwise(threadsOf(bySlide, slide.id), slide.shapes)) {
+      const threads = sortThreadsClockwise(
+        threadsOf(bySlide, slide.id),
+        slide.shapes,
+        slide.aspectRatio,
+      );
+      const marks = threads.map((thread) => {
+        byId.set(thread.id, thread);
         const root =
           preview?.threadId === thread.id
             ? {
@@ -87,15 +94,19 @@ export function ConnectorLines({ wrapperRef, layer }: ConnectorLinesProps) {
                 anchor: { type: 'rect' as const, rect: preview.rect, shapeRef: null },
               }
             : thread.root;
-        const mark = connectorAnchor(root, slide.shapes);
-        byId.set(thread.id, thread);
-        if (mark)
+        return connectorAnchor(root, slide.shapes);
+      });
+      const exits = connectorExits(marks, slide.aspectRatio);
+      threads.forEach((thread, markIndex) => {
+        const mark = marks[markIndex];
+        const exit = exits[markIndex];
+        if (mark && exit)
           items.push({
             threadId: thread.id,
             color: accentColor(thread.root.author.color),
-            source: { kind: 'mark', anchor: mark },
+            source: { kind: 'mark', anchor: mark, exit },
           });
-      }
+      });
       const gap = byGap.get(nextGapKey);
       const first = gap?.[0];
       if (first) {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { flushSync } from 'react-dom';
-import type { ConnectorAnchor } from '../lib/comment-selectors';
+import type { ConnectorAnchor, ConnectorExit } from '../lib/comment-selectors';
 import {
   fadeStops,
   layoutBlobConnectors,
@@ -17,7 +17,9 @@ export interface ConnectorItem {
   threadId: string;
   color: string;
   /** A mark on the slide, or – for comments in the gap right of the slide – the gap key. */
-  source: { kind: 'mark'; anchor: ConnectorAnchor } | { kind: 'gap'; gapKey: string };
+  source:
+    | { kind: 'mark'; anchor: ConnectorAnchor; exit: ConnectorExit }
+    | { kind: 'gap'; gapKey: string };
 }
 
 /** One slide whose lines are drawn: its marks → its comment column (and its gap's bubble). */
@@ -234,7 +236,9 @@ export function useConnectorLayout({
                 x: x(anchor.start.right.x) + anchor.inset.right,
                 y: y(anchor.start.right.y),
               },
+              down: { x: x(anchor.bottom.x), y: y(anchor.bottom.y) + anchor.inset.bottom },
             },
+            exit: item.source.exit,
             target,
             margin,
           });

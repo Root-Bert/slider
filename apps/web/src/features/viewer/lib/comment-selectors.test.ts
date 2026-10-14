@@ -12,6 +12,7 @@ import {
   isStrokeOnly,
   sortThreadsByAnchor,
   sortThreadsClockwise,
+  connectorExits,
   threadsOnCurrentSlides,
 } from './comment-selectors';
 import { author, comment, slide } from './test-fixtures';
@@ -171,9 +172,14 @@ describe('connectorAnchor', () => {
       left: 0.9,
       right: 0.9,
       start: { left: { x: 0.9, y: 0.1 }, right: { x: 0.9, y: 0.1 } },
-      inset: { left: 7, right: 7 },
+      bottom: { x: 0.9, y: 0.1 },
+      inset: { left: 7, right: 7, bottom: 7 },
     });
-    expect(connectorAnchor({ ...pin, source: 'pptx' }, [])!.inset).toEqual({ left: 12, right: 12 });
+    expect(connectorAnchor({ ...pin, source: 'pptx' }, [])!.inset).toEqual({
+      left: 12,
+      right: 12,
+      bottom: 12,
+    });
   });
 
   it('starts in the middle of a frame edge', () => {
@@ -204,7 +210,8 @@ describe('connectorAnchor', () => {
       left: 0.1,
       right: 0.3,
       start: { left: { x: 0.1, y: 0.5 }, right: { x: 0.3, y: 0.2 } },
-      inset: { left: 1.5, right: 1.5 },
+      bottom: { x: 0.1, y: 0.5 },
+      inset: { left: 1.5, right: 1.5, bottom: 1.5 },
     });
   });
 
@@ -234,6 +241,36 @@ it('orders threads clockwise around the slide, lineless last', () => {
     rightHigh.id,
     slideLevel.id,
   ]);
+});
+
+describe('connectorExits', () => {
+  const frame = (x: number, y: number, w: number, h: number) =>
+    connectorAnchor(
+      comment({ anchor: { type: 'rect', rect: { x, y, w, h }, shapeRef: null } }),
+      [],
+    );
+
+  it('drops straight down when the bottom edge is nearer than a side edge', () => {
+    // 16:9 – the middle of the lower half: 0.4 heights down, 0.7 heights to the side.
+    expect(connectorExits([frame(0.4, 0.4, 0.2, 0.2)], 16 / 9)).toEqual(['down']);
+    // Close to the left edge: sideways.
+    expect(connectorExits([frame(0.02, 0.4, 0.2, 0.2)], 16 / 9)).toEqual(['left']);
+  });
+
+  it('always leaves sideways without an aspect ratio', () => {
+    expect(connectorExits([frame(0.3, 0.4, 0.2, 0.2), null])).toEqual(['left', null]);
+  });
+
+  it('orders downward lines between the left and the right ones', () => {
+    const at = (x: number, y: number) =>
+      comment({ anchor: { type: 'rect', rect: { x, y, w: 0.05, h: 0.05 }, shapeRef: null } });
+    const left = at(0.02, 0.5);
+    const downB = at(0.6, 0.85);
+    const downA = at(0.4, 0.85);
+    const right = at(0.93, 0.5);
+    const sorted = sortThreadsClockwise(buildThreads([right, downB, left, downA]), [], 16 / 9);
+    expect(sorted.map((t) => t.id)).toEqual([left.id, downA.id, downB.id, right.id]);
+  });
 });
 
 describe('isImplicitFrame', () => {

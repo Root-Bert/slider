@@ -3,9 +3,11 @@
  * Pure functions on pixel coordinates; measuring the DOM happens in `useConnectorLayout`.
  * Matches the Figma connector vectors point for point (see the fixtures in the tests).
  *
- * Every line leaves its mark horizontally towards the nearest vertical slide edge, runs down in
+ * A line leaves its mark horizontally towards the nearest vertical slide edge, runs down in
  * its own "lane" beside the slide, turns into its own "bus" row above the cards and drops into
- * the top of its card – or, with the thread panel open, into the stacked thread blob (B4):
+ * the top of its card – or, with the thread panel open, into the stacked thread blob (B4).
+ * Marks nearer the bottom edge than a side edge drop straight down instead: their lane is their
+ * own x, right through the slide below them.
  *
  *   mark ──┐ lane
  *          │
@@ -30,13 +32,17 @@ export interface Box {
 }
 
 export type Side = 'left' | 'right';
+/** Where a line leaves its mark (see `connectorExits`). */
+export type Exit = Side | 'down';
 
 export interface ConnectorRequest {
   id: string;
   /** Horizontal extent of the mark – decides the exit side (nearest slide edge). */
   anchor: { left: number; right: number };
-  /** Where the line leaves the mark, per exit side. */
-  start: Record<Side, Px>;
+  /** Where the line leaves the mark, per exit side (`down`: needed for a downward exit). */
+  start: Record<Side, Px> & { down?: Px };
+  /** Exit chosen for the mark; without it the line leaves towards the nearest slide edge. */
+  exit?: Exit | undefined;
   /** Entry point at the top edge of the card; ignored in blob mode. */
   target: Px;
   /**
@@ -138,10 +144,10 @@ export function assignLanes(
 
 interface Routed {
   id: string;
-  side: Side;
+  side: Exit;
   start: Px;
   laneX: number;
-  /** Rank within its side, 0 = outermost lane. */
+  /** Rank within its side, 0 = outermost lane (downward lines: left to right). */
   rank: number;
   target: Px;
   /** Where the bus row ends: the target x, or a free gutter when the drop would hit a card. */
@@ -161,11 +167,22 @@ function withLanes(
 ): Routed[] {
   const routed: Routed[] = [];
   const fixed = requests.filter((request) => request.fixedLaneX !== undefined);
+  const exitOf = ({ exit, start, anchor }: ConnectorRequest): Exit =>
+    exit === 'down'
+      ? start.down
+        ? 'down'
+        : exitSide(anchor, slide)
+      : (exit ?? exitSide(anchor, slide));
+  // Downward lines are their own lane, straight below the mark.
+  requests
+    .filter((request) => request.fixedLaneX === undefined && exitOf(request) === 'down')
+    .sort((a, b) => a.start.down!.x - b.start.down!.x)
+    .forEach((request, index) => {
+      routed.push(base(request, 'down', request.start.down!, request.start.down!.x, index));
+    });
   for (const side of ['left', 'right'] as const) {
     const group = requests
-      .filter(
-        (request) => request.fixedLaneX === undefined && exitSide(request.anchor, slide) === side,
-      )
+      .filter((request) => request.fixedLaneX === undefined && exitOf(request) === side)
       .sort((a, b) => a.start[side].y - b.start[side].y);
     const lanes = assignLanes(side, group.length, slide, corridor);
     group.forEach((request, index) => {
@@ -189,7 +206,7 @@ function withLanes(
 
 const base = (
   request: ConnectorRequest,
-  side: Side,
+  side: Exit,
   start: Px,
   laneX: number,
   rank: number,
@@ -389,7 +406,7 @@ function routeMargins(routed: Routed[], margins: Record<Side, { from: number; to
 
 /**
  * Blob mode (B4, thread panel open): all lines merge into the stacked thread blob, entering it
- * clockwise (left lanes outer→inner, then right lanes inner→outer).
+ * clockwise (left lanes outer→inner, downward lines left→right, then right lanes inner→outer).
  */
 export function layoutBlobConnectors(
   requests: readonly ConnectorRequest[],
@@ -397,9 +414,9 @@ export function layoutBlobConnectors(
 ): Connector[] {
   const routed = withLanes(requests, frame.slide, frame.corridor);
   const { blob } = frame;
-  const bySide = (side: Side) =>
+  const bySide = (side: Exit) =>
     routed.filter((line) => line.side === side).sort((a, b) => a.rank - b.rank);
-  const clockwise = [...bySide('left'), ...bySide('right').reverse()];
+  const clockwise = [...bySide('left'), ...bySide('down'), ...bySide('right').reverse()];
   const pitch = Math.min(
     BLOB_ENTRY_PITCH,
     (blob.right - blob.left - 2 * BLOB_ENTRY_INSET) / Math.max(1, clockwise.length - 1),
@@ -409,9 +426,11 @@ export function layoutBlobConnectors(
     line.busEndX = Math.abs(line.target.x - line.laneX) < 1 ? line.laneX : line.target.x;
   });
 
-  // Per side, lines that need a jog get rows above the blob, the outermost lane lowest.
-  for (const side of ['left', 'right'] as const) {
-    let row = 0;
+  // Per side, lines that need a jog get rows above the blob, the outermost lane lowest;
+  // downward lines take the rows above the left ones.
+  let row = 0;
+  for (const side of ['left', 'down', 'right'] as const) {
+    if (side === 'right') row = 0;
     for (const line of bySide(side)) {
       if (line.busEndX === line.laneX) line.busY = blob.top;
       else line.busY = blob.top - BLOB_BUS_OFFSET - row++ * BLOB_BUS_PITCH;

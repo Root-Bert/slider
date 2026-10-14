@@ -130,10 +130,13 @@ const SlideColumn = memo(function SlideColumn({
   const dispatch = useViewerDispatch();
   const mode = narrow ? 'full' : cardMode(width);
   const sorted = useMemo(
-    () => sortThreadsClockwise(threads, slide.shapes),
-    [threads, slide.shapes],
+    () => sortThreadsClockwise(threads, slide.shapes, slide.aspectRatio),
+    [threads, slide.shapes, slide.aspectRatio],
   );
-  const leftCount = useMemo(() => countLeftExits(threads, slide.shapes), [threads, slide.shapes]);
+  const leftCount = useMemo(
+    () => countLeftExits(threads, slide.shapes, slide.aspectRatio),
+    [threads, slide.shapes, slide.aspectRatio],
+  );
 
   let content: ReactNode = null;
   if (threads.length > 0) {
