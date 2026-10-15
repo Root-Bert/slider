@@ -1,9 +1,22 @@
-import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { loadStoredBoxMode, storeBoxMode } from '../lib/box-mode';
 import { loadStoredSplit, storeSplit } from '../lib/split';
 import { loadWorkPreferences } from '../lib/work-preferences';
 import { createStageRegistry, StageRegistryContext } from './stage-registry';
-import { ViewerDataContext, type ViewerData } from './viewer-data';
+import {
+  nearestShownSlideId,
+  ViewerDataContext,
+  withoutHiddenSlides,
+  type ViewerData,
+} from './viewer-data';
 import {
   createInitialState,
   ViewerDispatchContext,
@@ -17,21 +30,33 @@ interface ViewerStoreProviderProps {
   children: ReactNode;
 }
 
-/** Provides server data, UI state and the stage registry as three separate contexts. */
-export function ViewerStoreProvider({ data, initialSlideId, children }: ViewerStoreProviderProps) {
-  const [state, dispatch] = useReducer(
-    viewerReducer,
-    {
+/**
+ * Provides server data, UI state and the stage registry as three separate contexts. `data` is
+ * the whole deck; the viewer gets it without the slides hidden in PowerPoint unless they show.
+ */
+export function ViewerStoreProvider({
+  data: all,
+  initialSlideId,
+  children,
+}: ViewerStoreProviderProps) {
+  const [state, dispatch] = useReducer(viewerReducer, null, () => {
+    const preferences = loadWorkPreferences();
+    const initial = initialSlideId && all.slideIndex.has(initialSlideId) ? initialSlideId : null;
+    // A link to a hidden slide shows the hidden slides – else it would point into the void.
+    const linkedHidden = initial !== null && all.slides[all.slideIndex.get(initial)!]!.hidden;
+    return createInitialState({
       activeSlideId:
-        initialSlideId && data.slideIndex.has(initialSlideId)
-          ? initialSlideId
-          : (data.slides[0]?.id ?? null),
-      color: data.viewer.author.color,
+        initial ?? all.slides.find((slide) => !slide.hidden)?.id ?? all.slides[0]?.id ?? null,
+      color: all.viewer.author.color,
       split: loadStoredSplit(),
       boxMode: loadStoredBoxMode(),
-      ...loadWorkPreferences(),
-    },
-    createInitialState,
+      ...preferences,
+      showHiddenSlides: preferences.showHiddenSlides || linkedHidden,
+    });
+  });
+  const data = useMemo(
+    () => (state.showHiddenSlides ? all : withoutHiddenSlides(all)),
+    [all, state.showHiddenSlides],
   );
   const [registry] = useState(createStageRegistry);
 
@@ -46,16 +71,26 @@ export function ViewerStoreProvider({ data, initialSlideId, children }: ViewerSt
   useEffect(() => {
     if (activeIndex !== undefined) lastActiveIndex.current = activeIndex;
   }, [activeIndex]);
+  const activeSlideId = useRef(state.activeSlideId);
+  useEffect(() => {
+    activeSlideId.current = state.activeSlideId;
+  }, [state.activeSlideId]);
   useLayoutEffect(() => {
     const { slides } = data;
+    // Hidden just now: the neighbour still shown. Gone with a new revision: whatever slide now
+    // stands at its old place.
     const fallback =
-      slides[Math.min(lastActiveIndex.current, slides.length - 1)]?.id ?? slides[0]?.id ?? null;
+      (activeSlideId.current &&
+        nearestShownSlideId(all.slides, data.slideIndex, activeSlideId.current)) ??
+      slides[Math.min(lastActiveIndex.current, slides.length - 1)]?.id ??
+      slides[0]?.id ??
+      null;
     dispatch({
       type: 'slidesReplaced',
       slideIds: slides.map((slide) => slide.id),
       fallbackSlideId: fallback,
     });
-  }, [data]);
+  }, [all, data]);
 
   return (
     <ViewerDataContext value={data}>

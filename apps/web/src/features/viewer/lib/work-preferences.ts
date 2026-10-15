@@ -7,6 +7,8 @@ import type { StatusFilter } from './comment-selectors';
 export interface WorkPreferences {
   /** Hilfslinien on when a deck opens (G still toggles them). */
   showGuides: boolean;
+  /** Slides hidden in PowerPoint on when a deck opens (H still toggles them). */
+  showHiddenSlides: boolean;
   /** Badges of the latest revision on track and minimap. */
   showChanges: boolean;
   /** Comment filter a deck opens with; BER-101 hides done comments by default. */
@@ -17,6 +19,7 @@ const STORAGE_KEY = 'slider.workPreferences.v1';
 
 export const DEFAULT_WORK_PREFERENCES: WorkPreferences = {
   showGuides: false,
+  showHiddenSlides: false,
   showChanges: true,
   statusFilter: 'open',
 };
@@ -33,6 +36,10 @@ export function loadWorkPreferences(): WorkPreferences {
         typeof stored.showGuides === 'boolean'
           ? stored.showGuides
           : DEFAULT_WORK_PREFERENCES.showGuides,
+      showHiddenSlides:
+        typeof stored.showHiddenSlides === 'boolean'
+          ? stored.showHiddenSlides
+          : DEFAULT_WORK_PREFERENCES.showHiddenSlides,
       showChanges:
         typeof stored.showChanges === 'boolean'
           ? stored.showChanges

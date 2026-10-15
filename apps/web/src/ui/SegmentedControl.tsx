@@ -7,6 +7,9 @@ export interface Segment<T extends string> {
   count?: number;
   /** Shown before the label. */
   icon?: IconName;
+  /** Not selectable here, e.g. a feature this browser lacks; `title` says why. */
+  disabled?: boolean;
+  title?: string;
 }
 
 interface SegmentedControlProps<T extends string> {
@@ -37,6 +40,8 @@ export function SegmentedControl<T extends string>({
           selected={segment.value === value}
           icon={segment.icon}
           count={segment.count}
+          disabled={segment.disabled}
+          title={segment.title}
           onClick={() => onChange(segment.value)}
           role="radio"
         >
@@ -51,6 +56,8 @@ interface FilterChipProps {
   selected: boolean;
   icon?: IconName | undefined;
   count?: number | undefined;
+  disabled?: boolean | undefined;
+  title?: string | undefined;
   onClick: () => void;
   children: string;
   role?: 'radio' | 'checkbox';
@@ -64,6 +71,8 @@ export function FilterChip({
   selected,
   icon,
   count,
+  disabled = false,
+  title,
   onClick,
   children,
   role = 'checkbox',
@@ -73,12 +82,16 @@ export function FilterChip({
       type="button"
       role={role}
       aria-checked={selected}
+      disabled={disabled}
+      title={title}
       onClick={onClick}
       className={cn(
         'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-control px-2.5 text-[13px] whitespace-nowrap transition-colors',
-        selected
-          ? 'bg-white/15 font-medium text-fg'
-          : 'text-fg-muted hover:bg-white/10 hover:text-fg',
+        disabled
+          ? 'cursor-not-allowed text-fg-faint'
+          : selected
+            ? 'bg-white/15 font-medium text-fg'
+            : 'text-fg-muted hover:bg-white/10 hover:text-fg',
       )}
     >
       {icon && <Icon name={icon} size={18} />}

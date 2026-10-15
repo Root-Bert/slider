@@ -364,7 +364,9 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
           ref={bracketRef}
           aria-hidden
           data-minimap-bracket
-          className="pointer-events-none absolute top-0 left-0 rounded-[calc(var(--radius-thumb)+3px)] border border-white/25 bg-white/[0.06] shadow-[0_0_0_1px_rgb(0_0_0/0.6)] will-change-transform"
+          // A window onto the deck: clear inside, everything outside dimmed by the shadow's spread
+          // (the row's overflow clips it), still readable.
+          className="pointer-events-none absolute top-0 left-0 rounded-[calc(var(--radius-thumb)+3px)] border-[1.5px] border-white/70 shadow-[0_0_0_1px_rgb(0_0_0/0.5),0_0_12px_rgb(255_255_255/0.08),0_0_0_9999px_rgb(0_0_0/0.25)] will-change-transform"
           style={{
             top: mini ? (rowH - mini.h) / 2 - BRACKET_OUTSET : 0,
             height: mini ? mini.h + 2 * BRACKET_OUTSET : rowH,
@@ -465,8 +467,7 @@ const Thumbnail = memo(function Thumbnail({
         title={label}
         className={cn(
           'relative block size-full overflow-hidden rounded-thumb bg-placeholder transition-shadow focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-white',
-          // Figma D1: 2px white frame outside the image.
-          isActive ? 'shadow-[0_0_0_2px_white]' : 'hover:shadow-[0_0_0_2px_rgb(255_255_255/0.3)]',
+          'hover:shadow-[0_0_0_2px_rgb(255_255_255/0.3)]',
           slide.hidden && 'opacity-40',
         )}
       >
@@ -478,13 +479,6 @@ const Thumbnail = memo(function Thumbnail({
           draggable={false}
           className="size-full object-cover"
         />
-        {isActive && (
-          // Thin black gap between frame and image.
-          <span
-            aria-hidden
-            className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_0_0_1px_black]"
-          />
-        )}
         {badge && (
           <ChangeBadge
             badge={badge}

@@ -6,7 +6,7 @@ export { Dialog } from './Dialog';
 export { GlassPanel } from './GlassPanel';
 export { Icon, type IconName } from './Icon';
 export { IconButton } from './IconButton';
-export { Kbd } from './Kbd';
+export { Kbd, ReturnKey } from './Kbd';
 export { Logo } from './Logo';
 export { ContextMenu, Menu, type MenuAction } from './Menu';
 export { ProgressBar } from './ProgressBar';

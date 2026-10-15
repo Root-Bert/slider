@@ -183,7 +183,7 @@ function SlideBubble({
 }) {
   const dispatch = useViewerDispatch();
   const registry = useStageRegistry();
-  const { activeSlideId, hoveredSlideId } = useViewerState();
+  const { hoveredSlideId } = useViewerState();
   const { geometry, layout, anchorRef, scrollerRef } = useTimeline();
 
   const activate = () => {
@@ -209,7 +209,7 @@ function SlideBubble({
       slideLabel={slideLabel(index)}
       width={Math.min(width, 104)}
       onActivate={activate}
-      emphasized={slide.id === activeSlideId || slide.id === hoveredSlideId}
+      emphasized={slide.id === hoveredSlideId}
     />
   );
 }
@@ -286,6 +286,7 @@ function BrickCards({
             {compact ? (
               <CompactCard
                 thread={thread}
+                deckId={props.deckId}
                 emphasis={props.emphasis}
                 changedSince={props.changedSince}
               />

@@ -19,7 +19,7 @@ const PEN_TOOLS: { tool: Tool; icon: IconName; label: string }[] = [
 /**
  * Tool bar at the left of the controls row (Figma D1): pointer (the default – pins, boxes and
  * text on the slide), freehand, arrow, marker and the eraser, and the switch for the PowerPoint boxes comments
- * attach to and for the guides – a compact pill as tall as the filter pill.
+ * attach to, for the guides and for the slides hidden in PowerPoint – a compact pill as tall as the filter pill.
  */
 export function ToolBar({ className }: { className?: string }) {
   const { canComment } = useViewerData();
@@ -50,13 +50,20 @@ export function ToolBar({ className }: { className?: string }) {
 
 function ToolButtons() {
   const state = useViewerState();
-  const { tool, boxMode, showGuides } = state;
+  const { tool, boxMode, showGuides, showHiddenSlides } = state;
+  const { hiddenSlideCount } = useViewerData();
   // Lit while box mode applies – also while ⌥ flips it on for a moment.
   const boxes = isBoxModeActive(state);
   const dispatch = useViewerDispatch();
 
   return (
-    <GlassPanel role="toolbar" aria-label="Werkzeuge" className="flex items-center gap-1 p-1">
+    <GlassPanel
+      role="toolbar"
+      aria-label="Werkzeuge (Tab wechselt)"
+      className="flex items-center gap-1 p-1"
+      // A click keeps the focus off the button, so Tab goes on stepping through the tools.
+      onMouseDown={(event) => event.preventDefault()}
+    >
       {/* The default: click the slide to comment – on a PowerPoint box in box mode. */}
       <IconButton
         icon="cursor"
@@ -95,6 +102,19 @@ function ToolButtons() {
         active={showGuides}
         onClick={() => dispatch({ type: 'showGuidesToggled' })}
       />
+      {hiddenSlideCount > 0 && (
+        <IconButton
+          icon={showHiddenSlides ? 'visibility' : 'visibilityOff'}
+          label={
+            showHiddenSlides
+              ? 'Ausgeblendete Folien verbergen (H)'
+              : `${hiddenSlideCount === 1 ? '1 ausgeblendete Folie' : `${hiddenSlideCount} ausgeblendete Folien`} zeigen (H)`
+          }
+          size="sm"
+          active={showHiddenSlides}
+          onClick={() => dispatch({ type: 'showHiddenSlidesToggled' })}
+        />
+      )}
     </GlassPanel>
   );
 }

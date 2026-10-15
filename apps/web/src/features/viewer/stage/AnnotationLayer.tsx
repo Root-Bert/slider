@@ -26,7 +26,7 @@ import { useMarkPreview, useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, type Draft } from '../state/viewer-state';
 import { markLabel } from '../lib/labels';
-import { strokePath, strokesBounds } from '../lib/stroke-path';
+import { strokePath, strokesBounds, textBox } from '../lib/stroke-path';
 import { dragTextBox, startFontSize } from '../lib/text-box';
 import { DraftMark } from './DraftMark';
 import { EditableFrame } from './EditableFrame';
@@ -45,6 +45,11 @@ interface AnnotationLayerProps {
   boxes?: boolean;
   /** Pointer mode: a click on the slide starts a comment, so frames let it through. */
   selecting?: boolean;
+  /**
+   * A pen is picked: the marks sit above its drawing surface, so badges still take their comment
+   * and one's own drawings still move – everywhere else the pen draws.
+   */
+  aboveTools?: boolean;
 }
 
 interface Mark {
@@ -82,6 +87,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
   draft,
   boxes = false,
   selecting = false,
+  aboveTools = false,
 }: AnnotationLayerProps) {
   const dispatch = useViewerDispatch();
   const { viewer, deck, canComment } = useViewerData();
@@ -90,6 +96,10 @@ export const AnnotationLayer = memo(function AnnotationLayer({
   const registry = useStageRegistry();
   // A box being dragged: its badge follows it live.
   const preview = useMarkPreview();
+  // Every box, drawing and text dragged on the slide reports where it is shown through here, so
+  // badge and connector line follow all of them the same way.
+  const showPreview = (threadId: string, rect: Rect | null, textOnly = false) =>
+    registry.setMarkPreview(rect ? { threadId, rect, textOnly } : null);
   // A box keeps to the PowerPoint shape under its centre while box mode is on.
   const rectAnchor = (rect: Rect): Extract<Anchor, { type: 'rect' }> => ({
     type: 'rect',
@@ -109,9 +119,13 @@ export const AnnotationLayer = memo(function AnnotationLayer({
       if (!rect || !stored) continue;
       const state: MarkState =
         emphasisId === null ? 'normal' : thread.id === emphasisId ? 'emphasized' : 'dimmed';
-      // Moved, not resized: the drawing goes along (as it will once stored).
+      // Moved, not resized: the drawing goes along (as it will once stored) – unless only the
+      // text on the slide is moved.
       const moved =
-        rect !== stored && Math.abs(rect.w - stored.w) < 1e-6 && Math.abs(rect.h - stored.h) < 1e-6;
+        rect !== stored &&
+        !(preview?.textOnly ?? false) &&
+        Math.abs(rect.w - stored.w) < 1e-6 &&
+        Math.abs(rect.h - stored.h) < 1e-6;
       const shift = moved ? { dx: rect.x - stored.x, dy: rect.y - stored.y } : NO_SHIFT;
       result.push({ thread, rect, state, shift });
     }
@@ -131,9 +145,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
   };
   // One's own freehand, arrow or marker drawing takes its comment in the composer.
   const commentable = (mark: Mark) =>
-    isOwn(mark.thread.root) &&
-    isBareDrawing(mark.thread) &&
-    mark.thread.root.anchor.type !== 'gap';
+    isOwn(mark.thread.root) && isBareDrawing(mark.thread) && mark.thread.root.anchor.type !== 'gap';
   const activate = (mark: Mark) => {
     const { root } = mark.thread;
     if (commentable(mark))
@@ -148,7 +160,13 @@ export const AnnotationLayer = memo(function AnnotationLayer({
   };
 
   return (
-    <div ref={layerRef} className="pointer-events-none absolute inset-0 [container-type:size]">
+    <div
+      ref={layerRef}
+      className={cn(
+        'pointer-events-none absolute inset-0 [container-type:size]',
+        aboveTools && 'z-30',
+      )}
+    >
       {emphasizedShape && emphasized && !draftShape && (
         <ShapeOutline
           shape={emphasizedShape}
@@ -184,12 +202,10 @@ export const AnnotationLayer = memo(function AnnotationLayer({
               onActivate={() => activate(mark)}
               onPreview={(shift) => {
                 const stored = anchorRect(root, slide.shapes);
-                registry.setMarkPreview(
+                showPreview(
+                  mark.thread.id,
                   shift && stored
-                    ? {
-                        threadId: mark.thread.id,
-                        rect: { ...stored, x: stored.x + shift.dx, y: stored.y + shift.dy },
-                      }
+                    ? { ...stored, x: stored.x + shift.dx, y: stored.y + shift.dy }
                     : null,
                 );
               }}
@@ -203,12 +219,51 @@ export const AnnotationLayer = memo(function AnnotationLayer({
 
       {marks.map((mark) => {
         const { root } = mark.thread;
-        // A drawing is its own mark, wherever the comment is anchored.
-        const area = (root.strokes.length > 0 && strokesBounds(root.strokes)) || mark.rect;
         const text = textAnnotation(root);
+        // The box anchored to the text on the slide: it moves with the text.
+        const followsText =
+          text !== null &&
+          root.anchor.type === 'rect' &&
+          rectsMatch(root.anchor.rect, textBox(text));
+        // A drawing is its own mark, wherever the comment is anchored; text is its own box.
+        const area =
+          (!followsText && root.strokes.length > 0 && strokesBounds(root.strokes)) || mark.rect;
         // Freehand, arrow and marker stay themselves: no box; the strokes take the clicks.
         const bareStrokes =
           isDrawing(root) && (root.anchor.type !== 'rect' || isImplicitFrame(root));
+        // One's own plain box carries its badge on its corner: dragging the badge resizes it.
+        const ownBox =
+          root.anchor.type === 'rect' && !isImplicitFrame(root) && isOwn(root) && !composing;
+        const pin = (inFrame: boolean) => (
+          <Pin
+            comment={root}
+            // In the box: centred on its corner, dimmed with it.
+            at={inFrame ? { x: 0.5, y: 0.5 } : badgePoint(root, area, mark.shift)}
+            state={inFrame && mark.state === 'dimmed' ? 'normal' : mark.state}
+            onActivate={() => activate(mark)}
+            drag={
+              // One's own pin moves (with its drawing, if any).
+              !inFrame && root.anchor.type === 'point' && isOwn(root) && !composing
+                ? {
+                    clamp: (dx, dy) => clampDrawingShift(root, dx, dy),
+                    onPreview: (shift) => {
+                      const stored = anchorRect(root, slide.shapes);
+                      showPreview(
+                        mark.thread.id,
+                        shift && stored
+                          ? { ...stored, x: stored.x + shift.dx, y: stored.y + shift.dy }
+                          : null,
+                      );
+                    },
+                    onDrop: (shift, done) =>
+                      update.mutate({ commentId: root.id, move: shift }, { onSettled: done }),
+                  }
+                : undefined
+            }
+            className={inFrame ? 'cursor-nwse-resize' : undefined}
+          />
+        );
+        const badgeInFrame = ownBox && root.strokes.length === 0;
         return (
           <div
             key={mark.thread.id}
@@ -217,7 +272,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
           >
             {root.anchor.type === 'rect' &&
               !isImplicitFrame(root) &&
-              (isOwn(root) && !composing ? (
+              (ownBox ? (
                 // One's own box moves and resizes; a click opens its thread.
                 <EditableFrame
                   rect={mark.rect}
@@ -232,10 +287,9 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                     mark.state === 'dimmed' && 'opacity-30',
                     root.status === 'done' && 'opacity-50',
                   )}
+                  badge={badgeInFrame ? pin(true) : undefined}
                   onActivate={() => activate(mark)}
-                  onPreview={(rect) =>
-                    registry.setMarkPreview(rect ? { threadId: mark.thread.id, rect } : null)
-                  }
+                  onPreview={(rect) => showPreview(mark.thread.id, rect)}
                   onCommit={(rect, done) =>
                     update.mutate(
                       { commentId: root.id, anchor: rectAnchor(rect) },
@@ -267,19 +321,16 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                 onActivate={() => activate(mark)}
                 onPlace={
                   isOwn(root)
-                    ? (textBox, done) =>
-                        update.mutate({ commentId: root.id, textBox }, { onSettled: done })
+                    ? (box, done) =>
+                        update.mutate({ commentId: root.id, textBox: box }, { onSettled: done })
                     : undefined
+                }
+                onPreview={
+                  followsText ? (rect) => showPreview(mark.thread.id, rect, true) : undefined
                 }
               />
             ) : null}
-            <Pin
-              comment={root}
-              at={badgePoint(root, area, mark.shift)}
-              state={mark.state}
-              onActivate={() => activate(mark)}
-              aboveTools={!composing && commentable(mark)}
-            />
+            {!badgeInFrame && pin(false)}
             {root.anchor.type === 'rect' &&
               !text &&
               !bareStrokes &&
@@ -325,6 +376,14 @@ export const AnnotationLayer = memo(function AnnotationLayer({
           onRectChange={(rect) => {
             if (draft.slideId)
               dispatch({ type: 'anchorPlaced', slideId: draft.slideId, anchor: rectAnchor(rect) });
+          }}
+          onPointChange={(point) => {
+            if (draft.slideId)
+              dispatch({
+                type: 'anchorPlaced',
+                slideId: draft.slideId,
+                anchor: { type: 'point', point, shapeRef: null },
+              });
           }}
           onWriteInside={(rect, text) => {
             if (!draft.slideId) return;

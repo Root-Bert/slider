@@ -109,7 +109,7 @@ export function SplitHandle({ geometry, slideH }: SplitHandleProps) {
       aria-valuemax={100}
       aria-valuenow={Math.round(value * 100)}
       aria-valuetext={`Folien ${Math.round(slideH)} px hoch`}
-      title="Ziehen: Folien größer oder kleiner · Doppelklick: Standard"
+      title={'Ziehen: Folien größer oder kleiner\nDoppelklick: Standard'}
       tabIndex={0}
       data-split-handle
       data-dragging={dragging || undefined}

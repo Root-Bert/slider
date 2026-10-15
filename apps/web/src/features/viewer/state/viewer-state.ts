@@ -17,6 +17,15 @@ export type Tool = PenTool | 'eraser';
 
 export const isPenTool = (tool: Tool | null): tool is PenTool => tool !== null && tool !== 'eraser';
 
+/** The tool bar's order, pointer first – Tab / ⇧Tab steps through it. */
+export const TOOL_CYCLE: readonly (Tool | null)[] = [null, 'pen', 'arrow', 'highlighter', 'eraser'];
+
+/** The tool `step` places after `tool` in the tool bar, wrapping around. */
+export function cycleTool(tool: Tool | null, step: 1 | -1): Tool | null {
+  const index = TOOL_CYCLE.indexOf(tool);
+  return TOOL_CYCLE[(index + step + TOOL_CYCLE.length) % TOOL_CYCLE.length] ?? null;
+}
+
 /** The text box of an unsent "Text auf Folie" comment. Normalised to the slide box. */
 export interface TextBoxDraft {
   x: number;
@@ -51,6 +60,23 @@ export interface Draft {
    * with a comment carrying its strokes. Its strokes are fixed – no undo/redo.
    */
   commentId: string | null;
+  /** The comment's first characters – typed right after drawing, before the composer opened. */
+  initialBody?: string;
+}
+
+/** One's own drawing just saved: typing right away comments on it (`drawingCommentStarted`). */
+export interface SavedDrawing {
+  slideId: string;
+  commentId: string;
+  anchor: Anchor;
+  strokes: Stroke[];
+}
+
+/** A slide shown as it was when a comment was written (`previousView`). */
+export interface PreviousView {
+  slideId: string;
+  /** The thread whose "Alt/Neu" switch set it. */
+  threadId: string;
 }
 
 export interface ViewerState {
@@ -59,13 +85,21 @@ export interface ViewerState {
   /** The viewer's own colour – drawings match their comment's connector line. */
   color: AccentColor;
   draft: Draft | null;
+  /** The latest freehand, arrow or marker drawing while its tool is still picked. */
+  lastDrawing: SavedDrawing | null;
   focusedThreadId: string | null;
   hoveredThreadId: string | null;
   /** Slide (or its comment column) under the pointer – its connector lines are drawn too. */
   hoveredSlideId: string | null;
   threadPanelOpen: boolean;
+  /** "Bearbeiten" from a card's context menu: the thread panel opens with this comment's editor. */
+  editingCommentId: string | null;
   statusFilter: StatusFilter;
-  pptxOnly: boolean;
+  /**
+   * Avatar filter (bottom right): the viewer's own id = threads that @mention them (BER-105),
+   * someone else's = threads they wrote in. `null` = everyone.
+   */
+  personFilter: string | null;
   /** Split handle position `t` ∈ [0, 1] (slide size vs comment area), `null` = default; see `lib/split`. */
   split: number | null;
   /**
@@ -77,6 +111,11 @@ export interface ViewerState {
   /** Side panel with the slides deleted in later revisions and their comments (BER-109). */
   deletedPanelOpen: boolean;
   /**
+   * "Alt" on a comment whose slide changed since (BER-109): that slide shows the version the
+   * comment was written on. One at a time; `null` = every slide as it is now.
+   */
+  previousView: PreviousView | null;
+  /**
    * Box mode (B): a click comments on the PowerPoint box under the pointer, which is outlined
    * while hovered. Off: a click places a free comment and boxes never show.
    */
@@ -85,6 +124,8 @@ export interface ViewerState {
   boxModeFlipped: boolean;
   /** "Hilfslinien zeigen": PowerPoint's drawing guides, and the boxes that cross them. */
   showGuides: boolean;
+  /** Slides hidden in PowerPoint: out of sight by default, H or the toolbar shows them. */
+  showHiddenSlides: boolean;
 }
 
 export type ViewerAction =
@@ -100,7 +141,11 @@ export type ViewerAction =
       commentId: string;
       anchor: Anchor;
       strokes: Stroke[];
+      /** Typed right after drawing: the comment starts with it. */
+      text?: string;
     }
+  /** A freehand, arrow or marker stroke was stored as a bare drawing. */
+  | ({ type: 'drawingSaved' } & SavedDrawing)
   /**
    * A text box was clicked or dragged open on a slide; on the same slide it keeps its text –
    * unless `text` starts it (typing right after drawing a box).
@@ -121,17 +166,23 @@ export type ViewerAction =
   | { type: 'slideHovered'; slideId: string | null }
   | { type: 'threadFocused'; threadId: string; openPanel: boolean }
   | { type: 'threadPanelClosed' }
+  | { type: 'commentEditRequested'; threadId: string; commentId: string }
+  | { type: 'commentEditEnded' }
   /** Inline thread collapsed: drops the focus unless the panel shows that thread. */
   | { type: 'threadUnfocused'; threadId: string }
   | { type: 'statusFilterChanged'; filter: StatusFilter }
-  | { type: 'pptxOnlyToggled' }
+  /** Click on an avatar: filters by that person, a second click clears it. */
+  | { type: 'personFilterToggled'; authorId: string }
   /** `null` resets the split to the default. */
   | { type: 'splitChanged'; split: number | null }
   | { type: 'showChangesSet'; show: boolean }
   | { type: 'deletedPanelSet'; open: boolean }
+  /** "Alt/Neu" on a comment: `null` shows every slide as it is now again. */
+  | { type: 'previousViewSet'; view: PreviousView | null }
   | { type: 'boxModeToggled' }
   | { type: 'boxModeFlipped'; flipped: boolean }
   | { type: 'showGuidesToggled' }
+  | { type: 'showHiddenSlidesToggled' }
   /** A new revision arrived: drop what points at slides that are gone (BER-107). */
   | { type: 'slidesReplaced'; slideIds: readonly string[]; fallbackSlideId: string | null };
 
@@ -143,6 +194,7 @@ export function createInitialState(options: {
   showChanges?: boolean;
   boxMode?: boolean;
   showGuides?: boolean;
+  showHiddenSlides?: boolean;
   statusFilter?: StatusFilter;
 }): ViewerState {
   return {
@@ -150,19 +202,23 @@ export function createInitialState(options: {
     tool: null,
     color: options.color,
     draft: null,
+    lastDrawing: null,
     focusedThreadId: null,
     hoveredThreadId: null,
     hoveredSlideId: null,
     threadPanelOpen: false,
+    editingCommentId: null,
     // BER-101: done comments are hidden by default.
     statusFilter: options.statusFilter ?? 'open',
-    pptxOnly: false,
+    personFilter: null,
     split: options.split == null ? null : clampSplit(options.split),
     showChanges: options.showChanges ?? true,
     deletedPanelOpen: false,
+    previousView: null,
     boxMode: options.boxMode ?? true,
     boxModeFlipped: false,
     showGuides: options.showGuides ?? false,
+    showHiddenSlides: options.showHiddenSlides ?? false,
   };
 }
 
@@ -267,6 +323,7 @@ function draftReducer(draft: Draft | null, action: ViewerAction): Draft | null {
         undone: [],
         textBox: null,
         commentId: action.commentId,
+        initialBody: action.text,
       };
     case 'gapDraftStarted':
       return {
@@ -320,14 +377,22 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
         ? next
         : { ...next, activeSlideId: action.slideId };
     case 'toolSelected':
-      return { ...next, tool: action.tool === next.tool ? null : action.tool };
+      return {
+        ...next,
+        tool: action.tool === next.tool ? null : action.tool,
+        lastDrawing: null,
+      };
+    case 'drawingSaved': {
+      const { type: _type, ...drawing } = action;
+      return { ...next, lastDrawing: drawing };
+    }
     case 'anchorPlaced':
     case 'strokeAdded':
     case 'gapDraftStarted':
     case 'textBoxPlaced':
     case 'drawingCommentStarted':
       // Composing a new comment takes over the focus.
-      return { ...next, focusedThreadId: null, threadPanelOpen: false };
+      return { ...next, focusedThreadId: null, threadPanelOpen: false, lastDrawing: null };
     case 'draftSubmitted':
       return { ...next, tool: null };
     case 'threadHovered':
@@ -344,20 +409,35 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
         ...next,
         focusedThreadId: action.threadId,
         threadPanelOpen,
+        // A pending "Bearbeiten" belongs to the thread it was asked for.
+        editingCommentId: action.threadId === next.focusedThreadId ? next.editingCommentId : null,
         // Both are right side panels: the thread panel takes the deleted slides' place.
         deletedPanelOpen: threadPanelOpen ? false : next.deletedPanelOpen,
       };
     }
     case 'threadPanelClosed':
-      return { ...next, threadPanelOpen: false, focusedThreadId: null };
+      return { ...next, threadPanelOpen: false, focusedThreadId: null, editingCommentId: null };
+    case 'commentEditRequested':
+      return {
+        ...next,
+        focusedThreadId: action.threadId,
+        threadPanelOpen: true,
+        deletedPanelOpen: false,
+        editingCommentId: action.commentId,
+      };
+    case 'commentEditEnded':
+      return next.editingCommentId === null ? next : { ...next, editingCommentId: null };
     case 'threadUnfocused':
       return next.focusedThreadId === action.threadId && !next.threadPanelOpen
         ? { ...next, focusedThreadId: null }
         : next;
     case 'statusFilterChanged':
       return { ...next, statusFilter: action.filter };
-    case 'pptxOnlyToggled':
-      return { ...next, pptxOnly: !next.pptxOnly };
+    case 'personFilterToggled':
+      return {
+        ...next,
+        personFilter: next.personFilter === action.authorId ? null : action.authorId,
+      };
     case 'splitChanged': {
       const split = action.split === null ? null : clampSplit(action.split);
       return split === next.split ? next : { ...next, split };
@@ -372,6 +452,10 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
         : { ...next, boxModeFlipped: action.flipped };
     case 'showGuidesToggled':
       return { ...next, showGuides: !next.showGuides };
+    case 'showHiddenSlidesToggled':
+      return { ...next, showHiddenSlides: !next.showHiddenSlides };
+    case 'previousViewSet':
+      return next.previousView === action.view ? next : { ...next, previousView: action.view };
     case 'deletedPanelSet':
       return action.open
         ? { ...next, deletedPanelOpen: true, threadPanelOpen: false, focusedThreadId: null }
@@ -380,11 +464,13 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
       const ids = new Set(action.slideIds);
       const keepActive = next.activeSlideId !== null && ids.has(next.activeSlideId);
       const keepHover = next.hoveredSlideId === null || ids.has(next.hoveredSlideId);
-      if (keepActive && keepHover) return next;
+      const keepPrevious = next.previousView === null || ids.has(next.previousView.slideId);
+      if (keepActive && keepHover && keepPrevious) return next;
       return {
         ...next,
         activeSlideId: keepActive ? next.activeSlideId : action.fallbackSlideId,
         hoveredSlideId: keepHover ? next.hoveredSlideId : null,
+        previousView: keepPrevious ? next.previousView : null,
       };
     }
     default:

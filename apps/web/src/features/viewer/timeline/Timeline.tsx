@@ -42,7 +42,7 @@ import { Track } from './Track';
 const KEEPS_PANEL =
   'button, a, input, textarea, select, label, [contenteditable], [role="button"], [data-comment-card], [data-connector-blob], [data-gap-bubble]';
 
-/** The active slide grows to at least this width when a drawing tool is picked. */
+/** Slides grow to at least this width when a drawing tool is picked. */
 const DRAW_MIN_W = 640;
 
 type Range = { first: number; last: number };
@@ -187,17 +187,15 @@ export function Timeline({ controls }: { controls: ReactNode }) {
     revealActive();
   }, [slideOrder, layout]);
 
-  // Picking a drawing tool grows a small active slide to a comfortable drawing size.
+  // Picking a drawing tool grows small slides to a comfortable drawing size, around the slide
+  // most in view. No scrolling otherwise: every slide takes the tool.
   const growForDrawing = useEffectEvent(() => {
     if (narrow || !geometry || !layout || !activeSlideId) return;
     const index = slideIndex.get(activeSlideId);
     const box = index === undefined ? undefined : layout.slides[index];
     const slide = index === undefined ? undefined : slides[index];
     if (!box || !slide) return;
-    if (box.w >= DRAW_MIN_W) {
-      registry.revealSlide(activeSlideId, { align: 'nearest' });
-      return;
-    }
+    if (box.w >= DRAW_MIN_W) return;
     const target = splitForWidth(DRAW_MIN_W, slide.aspectRatio, geometry);
     if (slideHeightAt(target, geometry) <= layout.h + 0.5) return;
     const scroller = scrollerRef.current;

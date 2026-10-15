@@ -2,17 +2,25 @@ import { useEffect, useEffectEvent } from 'react';
 import { isTypingTarget } from '../lib/dom';
 import { useGoToSlide } from './useGoToSlide';
 import { useViewerData } from '../state/viewer-data';
-import { useViewerDispatch, useViewerState } from '../state/viewer-state';
+import { cycleTool, useViewerDispatch, useViewerState } from '../state/viewer-state';
 
 /**
  * Global keyboard shortcuts of the viewer:
  * ←/→ previous/next slide, Home/End first/last, F fullscreen, B PowerPoint boxes on/off,
- * G PowerPoint guides on/off,
+ * G PowerPoint guides on/off, typing right after a drawing comments on it, Tab / ⇧Tab next/previous tool while nothing is selected,
  * ⌘Z / ⇧⌘Z undo/redo while drawing, ⌘↵ sends the draft, Esc cancels the draft → drops the tool → closes the thread (or the deleted slides panel).
  */
 export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen: () => void }) {
-  const { slides, slideIndex } = useViewerData();
-  const { activeSlideId, draft, tool, threadPanelOpen, deletedPanelOpen } = useViewerState();
+  const { slides, slideIndex, canComment } = useViewerData();
+  const {
+    activeSlideId,
+    draft,
+    tool,
+    lastDrawing,
+    focusedThreadId,
+    threadPanelOpen,
+    deletedPanelOpen,
+  } = useViewerState();
   const dispatch = useViewerDispatch();
   const goTo = useGoToSlide();
 
@@ -50,6 +58,26 @@ export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen:
     }
     if (mod || event.altKey) return;
 
+    // Typing right after a freehand, arrow or marker drawing writes its comment (the letter
+    // shortcuts wait until the tool is dropped).
+    if (lastDrawing && !draft && event.key.length === 1 && event.key.trim() !== '') {
+      event.preventDefault();
+      dispatch({ type: 'drawingCommentStarted', ...lastDrawing, text: event.key });
+      return;
+    }
+
+    // Tab / ⇧Tab steps through the tools while nothing is selected – with focus on a control,
+    // Tab moves focus as usual.
+    if (event.key === 'Tab') {
+      const onPage = event.target === document.body || event.target === document.documentElement;
+      if (!canComment || draft || focusedThreadId || !onPage) return;
+      event.preventDefault();
+      // `toolSelected` toggles: picking the current tool again would drop it.
+      const next = cycleTool(tool, event.shiftKey ? -1 : 1);
+      dispatch({ type: 'toolSelected', tool: next ?? tool });
+      return;
+    }
+
     // The active slide is explicit, so repeated presses go on from it even mid-scroll.
     const current = activeSlideId ? (slideIndex.get(activeSlideId) ?? 0) : 0;
     switch (event.key) {
@@ -76,6 +104,10 @@ export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen:
       case 'g':
       case 'G':
         dispatch({ type: 'showGuidesToggled' });
+        break;
+      case 'h':
+      case 'H':
+        dispatch({ type: 'showHiddenSlidesToggled' });
         break;
       default:
         return;

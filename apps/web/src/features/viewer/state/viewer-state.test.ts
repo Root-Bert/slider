@@ -24,6 +24,20 @@ describe('viewerReducer', () => {
     expect(initial.statusFilter).toBe('open');
   });
 
+  it('hides slides hidden in PowerPoint by default; H shows them', () => {
+    expect(initial.showHiddenSlides).toBe(false);
+    expect(run({ type: 'showHiddenSlidesToggled' }).showHiddenSlides).toBe(true);
+  });
+
+  it('a hidden active slide hands over to the fallback', () => {
+    const state = run({
+      type: 'slidesReplaced',
+      slideIds: ['s2', 's3'],
+      fallbackSlideId: 's2',
+    });
+    expect(state.activeSlideId).toBe('s2');
+  });
+
   it('toggles tools', () => {
     let state = run({ type: 'toolSelected', tool: 'arrow' });
     expect(state.tool).toBe('arrow');
@@ -31,6 +45,26 @@ describe('viewerReducer', () => {
     expect(state.tool).toBe('highlighter');
     state = viewerReducer(state, { type: 'toolSelected', tool: 'highlighter' });
     expect(state.tool).toBeNull();
+  });
+
+  it('typing right after a drawing comments on it, until the tool changes', () => {
+    const saved: ViewerAction = {
+      type: 'drawingSaved',
+      slideId: 's1',
+      commentId: 'c1',
+      anchor: { type: 'rect', rect: { x: 0.1, y: 0.1, w: 0.1, h: 0.1 }, shapeRef: null },
+      strokes: [stroke(0.1)],
+    };
+    let state = run({ type: 'toolSelected', tool: 'pen' }, saved);
+    expect(state.lastDrawing?.commentId).toBe('c1');
+    state = viewerReducer(state, {
+      type: 'drawingCommentStarted',
+      ...state.lastDrawing!,
+      text: 'a',
+    });
+    expect(state.draft).toMatchObject({ commentId: 'c1', initialBody: 'a' });
+    expect(state.lastDrawing).toBeNull();
+    expect(run(saved, { type: 'toolSelected', tool: 'arrow' }).lastDrawing).toBeNull();
   });
 
   it('collects strokes into one draft whose anchor follows them, with undo/redo', () => {

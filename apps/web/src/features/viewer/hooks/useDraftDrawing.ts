@@ -17,7 +17,7 @@ const MAX_POINTS = 2000;
 /**
  * Turns pointer input on a slide into strokes (BER-98, BER-99): shapes span the dragged box, the
  * other pens draw one stroke per press. Freehand, arrow and marker strokes are saved right away as
- * bare drawings – a click on their badge adds the comment later; shapes open the composer. Works
+ * bare drawings – a click on their badge (or typing right away) adds the comment; shapes open the composer. Works
  * for mouse, pen and touch. Pins, boxes and text on the slide come from the pointer itself (`SlideFrame`).
  */
 export function useDraftDrawing({
@@ -50,7 +50,18 @@ export function useDraftDrawing({
         anchor: { type: 'rect', rect, shapeRef: null },
         strokes: [saved],
       },
-      { onSettled: () => setSaving((current) => current.filter((item) => item !== saved)) },
+      {
+        // Typing right away comments on it (`useViewerShortcuts`).
+        onSuccess: (comment) =>
+          dispatch({
+            type: 'drawingSaved',
+            slideId: slide.id,
+            commentId: comment.id,
+            anchor: comment.anchor,
+            strokes: comment.strokes,
+          }),
+        onSettled: () => setSaving((current) => current.filter((item) => item !== saved)),
+      },
     );
   };
 

@@ -1,12 +1,15 @@
-import { isPathStroke, type Author, type Rect } from '@slider/shared';
-import { useEffect, useEffectEvent } from 'react';
+import { isPathStroke, type Author, type Point, type Rect } from '@slider/shared';
+import { useEffect, useEffectEvent, useState } from 'react';
 import { accentColor } from '@/lib/accent';
+import { textAnnotation } from '../lib/comment-selectors';
 import { focusCommentField } from '../lib/composer-focus';
+import { usePointDrag } from '../hooks/usePointDrag';
 import { isTypingTarget } from '../lib/dom';
 import { useStageRegistry } from '../state/stage-registry';
 import type { Draft } from '../state/viewer-state';
 import { EditableFrame } from './EditableFrame';
 import { StrokePath } from './StrokePath';
+import { TextMark } from './TextBox';
 
 interface DraftMarkProps {
   draft: Draft;
@@ -16,6 +19,8 @@ interface DraftMarkProps {
   frame?: boolean;
   /** The box was moved or resized. */
   onRectChange: (rect: Rect) => void;
+  /** The pin was dragged elsewhere. */
+  onPointChange: (point: Point) => void;
   /** Double click into the box (or typing right after drawing it): it becomes a text box on the slide. */
   onWriteInside: (rect: Rect, text?: string) => void;
 }
@@ -31,6 +36,7 @@ export function DraftMark({
   aspectRatio,
   frame = true,
   onRectChange,
+  onPointChange,
   onWriteInside,
 }: DraftMarkProps) {
   const color = accentColor(author.color);
@@ -41,6 +47,32 @@ export function DraftMark({
       ? anchor
       : null;
   const framed = frame && box !== null;
+  const point = anchor.type === 'point' ? anchor.point : null;
+  // Text already on the slide that the comment is being added to (its own mark steps aside).
+  const storedText = draft.commentId && !draft.textBox ? textAnnotation(draft) : null;
+  const [pinShift, setPinShift] = useState<{ dx: number; dy: number } | null>(null);
+  // The pin moves; the composer next to it follows live.
+  const pinDrag = usePointDrag({
+    clamp: (dx, dy) =>
+      point
+        ? {
+            dx: Math.min(1 - point.x, Math.max(-point.x, dx)),
+            dy: Math.min(1 - point.y, Math.max(-point.y, dy)),
+          }
+        : { dx: 0, dy: 0 },
+    onPreview: (shift) => {
+      setPinShift(shift);
+      registry.setMarkPreview(
+        shift && point
+          ? { threadId: null, rect: { x: point.x + shift.dx, y: point.y + shift.dy, w: 0, h: 0 } }
+          : null,
+      );
+    },
+    onDrop: (shift, done) => {
+      if (point) onPointChange({ x: point.x + shift.dx, y: point.y + shift.dy });
+      done();
+    },
+  });
 
   // Right after drawing a box nothing has focus: the first key decides where the text goes.
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
@@ -83,6 +115,17 @@ export function DraftMark({
         ))}
       </svg>
 
+      {storedText && (
+        <TextMark
+          stroke={{ ...storedText, color: author.color }}
+          label={`„${storedText.text}“`}
+          opacity={1}
+          emphasized
+          interactive={false}
+          onActivate={() => {}}
+        />
+      )}
+
       {framed && (
         <EditableFrame
           rect={box.rect}
@@ -107,13 +150,17 @@ export function DraftMark({
         </EditableFrame>
       )}
 
-      {anchor.type === 'point' && (
+      {point && (
         <span
           aria-hidden
-          className="absolute size-4 -translate-x-1/2 -translate-y-1/2 animate-pop-in rounded-full shadow-[0_0_0_2px_white,0_0_0_6px_rgb(255_255_255/0.2)]"
+          title="Ziehen zum Verschieben"
+          {...pinDrag.pointerProps}
+          // Its click must not place a new pin on the slide below.
+          onClick={(event) => event.stopPropagation()}
+          className="pointer-events-auto absolute size-4 -translate-x-1/2 -translate-y-1/2 animate-pop-in cursor-move touch-none rounded-full shadow-[0_0_0_2px_white,0_0_0_6px_rgb(255_255_255/0.2)]"
           style={{
-            left: `${anchor.point.x * 100}%`,
-            top: `${anchor.point.y * 100}%`,
+            left: `${(point.x + (pinShift?.dx ?? 0)) * 100}%`,
+            top: `${(point.y + (pinShift?.dy ?? 0)) * 100}%`,
             backgroundColor: color,
           }}
         />

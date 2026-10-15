@@ -15,7 +15,7 @@ export const FRAME_ATTR = 'data-editable-frame';
 /** Pointer travel (px) before a press on a box counts as a drag, not a click. */
 const DRAG_THRESHOLD = 3;
 /** Smallest box a resize leaves, relative to the slide. */
-const MIN_SIZE = 0.02;
+const MIN_SIZE = { w: 0.02, h: 0.02 };
 
 type Drag = {
   kind: 'move' | RectCorner;
@@ -40,29 +40,43 @@ function moved(start: Rect, dx: number, dy: number): Rect {
 }
 
 /** `start` with `corner` dragged to (`px`, `py`), the opposite corner fixed. */
-function resized(start: Rect, corner: RectCorner, px: number, py: number): Rect {
+export function resized(
+  start: Rect,
+  corner: RectCorner,
+  px: number,
+  py: number,
+  min: RectEditOptions['minSize'] = MIN_SIZE,
+): Rect {
   const x = clamp(px, 0, 1);
   const y = clamp(py, 0, 1);
   let { x: left, y: top } = start;
   let right = start.x + start.w;
   let bottom = start.y + start.h;
-  if (corner === 'nw' || corner === 'sw') left = Math.min(x, right - MIN_SIZE);
-  else right = Math.max(x, left + MIN_SIZE);
-  if (corner === 'nw' || corner === 'ne') top = Math.min(y, bottom - MIN_SIZE);
-  else bottom = Math.max(y, top + MIN_SIZE);
+  if (corner === 'nw' || corner === 'sw') left = Math.min(x, right - min.w);
+  else right = Math.max(x, left + min.w);
+  if (corner === 'nw' || corner === 'ne') top = Math.min(y, bottom - min.h);
+  else bottom = Math.max(y, top + min.h);
   return { x: left, y: top, w: right - left, h: bottom - top };
+}
+
+export interface RectEditOptions {
+  /** Follows the box as shown while dragged (`null` once it is back to `rect`). */
+  onPreview?: (rect: Rect | null) => void;
+  /** Smallest box a resize leaves, relative to the slide. */
+  minSize?: { w: number; h: number };
 }
 
 /**
  * Moving (drag the box) and resizing (drag a corner) a box on the slide, in normalised slide
  * coordinates. Shows the box as dragged until `onCommit`'s `done` – so it doesn't jump back
  * while the new place is stored. A press without a drag stays a click (`wasDragged` is false).
- * `onPreview` follows the box as shown (`null` once it is back to `rect`).
+ * Every movable box on the slide (frames, the draft's box, text on the slide) goes through here,
+ * so its badge and connector line follow it the same way (`onPreview`).
  */
 export function useRectEdit(
   rect: Rect,
   onCommit: (rect: Rect, done: () => void) => void,
-  onPreview?: (rect: Rect | null) => void,
+  { onPreview, minSize }: RectEditOptions = {},
 ) {
   const dragRef = useRef<Drag | null>(null);
   const draggedRef = useRef(false);
@@ -122,6 +136,7 @@ export function useRectEdit(
             drag.kind,
             (event.clientX - slide.left) / slide.width,
             (event.clientY - slide.top) / slide.height,
+            minSize,
           ),
     );
   };

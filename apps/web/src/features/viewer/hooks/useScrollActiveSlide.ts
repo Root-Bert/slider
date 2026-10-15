@@ -11,19 +11,18 @@ import { useViewerDispatch, useViewerState } from '../state/viewer-state';
  * `useSlideUrlSync`. It stays put
  * - while a programmatic scroll (click, ←/→, counter, deep link, thread panel) is in flight, so a
  *   reveal lands on its target instead of passing through other slides,
- * - while a drawing tool or a draft is active, so a draft stays on its slide,
  * - when only the comment area scrolls (vertically: Shift + wheel or a drag).
  */
 export function useScrollActiveSlide(scrollerRef: RefObject<HTMLElement | null>) {
   const { slides } = useViewerData();
-  const { activeSlideId, tool, draft } = useViewerState();
+  const { activeSlideId } = useViewerState();
   const dispatch = useViewerDispatch();
   const registry = useStageRegistry();
 
   const pick = useEffectEvent(() => {
     const scroller = scrollerRef.current;
     const published = registry.getLayout();
-    if (!scroller || !published || tool !== null || draft !== null) return;
+    if (!scroller || !published) return;
     if (registry.isProgrammaticScroll()) return;
     const current = activeSlideId ? (published.slideIndex.get(activeSlideId) ?? null) : null;
     const index = pickActiveSlide({

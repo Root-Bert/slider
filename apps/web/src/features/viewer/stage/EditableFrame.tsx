@@ -4,7 +4,8 @@ import { cn } from '@/ui';
 import { FrameEdges } from './RectFrame';
 import { FRAME_ATTR, useRectEdit, type RectCorner } from '../hooks/useRectEdit';
 
-const CORNERS: { corner: RectCorner; className: string }[] = [
+/** The four resize handles, placed on a frame's corners. */
+export const CORNERS: { corner: RectCorner; className: string }[] = [
   { corner: 'nw', className: '-top-1.5 -left-1.5 cursor-nwse-resize' },
   { corner: 'ne', className: '-top-1.5 -right-1.5 cursor-nesw-resize' },
   { corner: 'sw', className: '-bottom-1.5 -left-1.5 cursor-nesw-resize' },
@@ -31,6 +32,8 @@ interface EditableFrameProps {
   edgesOnly?: boolean;
   title?: string;
   className?: string;
+  /** The comment's badge, on the top-left corner: dragging it resizes from there. */
+  badge?: ReactNode;
   children?: ReactNode;
 }
 
@@ -51,9 +54,10 @@ export function EditableFrame({
   edgesOnly = false,
   title,
   className,
+  badge,
   children,
 }: EditableFrameProps) {
-  const edit = useRectEdit(rect, onCommit, onPreview);
+  const edit = useRectEdit(rect, onCommit, { onPreview });
   const shown = edit.rect;
   const lit = emphasized || edit.dragging;
 
@@ -91,20 +95,33 @@ export function EditableFrame({
     >
       {edgesOnly && <FrameEdges />}
       {children}
+      {badge && (
+        // Centred on the box's outer corner, where the badge sat on its own.
+        <span
+          role="presentation"
+          title="Ziehen zum Ändern der Größe"
+          {...edit.cornerProps('nw')}
+          className="pointer-events-auto absolute -top-3.5 -left-3.5 z-10 size-6 cursor-nwse-resize touch-none"
+        >
+          {badge}
+        </span>
+      )}
       {(handles || edit.dragging) &&
-        CORNERS.map(({ corner, className: position }) => (
-          <span
-            key={corner}
-            role="presentation"
-            title="Größe ändern"
-            {...edit.cornerProps(corner)}
-            className={cn(
-              'pointer-events-auto absolute size-3 touch-none rounded-[3px] bg-white',
-              position,
-            )}
-            style={{ boxShadow: `0 0 0 1.5px ${color}` }}
-          />
-        ))}
+        CORNERS.filter(({ corner }) => !(badge && corner === 'nw')).map(
+          ({ corner, className: position }) => (
+            <span
+              key={corner}
+              role="presentation"
+              title="Größe ändern"
+              {...edit.cornerProps(corner)}
+              className={cn(
+                'pointer-events-auto absolute size-3 touch-none rounded-[3px] bg-white',
+                position,
+              )}
+              style={{ boxShadow: `0 0 0 1.5px ${color}` }}
+            />
+          ),
+        )}
     </div>
   );
 }

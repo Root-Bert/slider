@@ -15,6 +15,8 @@ export interface MarkPreview {
   /** `null` for the unsent comment's box. */
   threadId: string | null;
   rect: Rect;
+  /** Text on the slide being moved: the rest of the comment's drawing stays where it is. */
+  textOnly?: boolean;
 }
 
 export interface RevealOptions {

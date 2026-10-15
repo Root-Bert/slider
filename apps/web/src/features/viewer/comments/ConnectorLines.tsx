@@ -32,8 +32,8 @@ interface ConnectorLinesProps {
 
 /**
  * The lines between marks and their cards (B1).
- * Lines are drawn for every slide. Those of the active slide, the hovered slide and the slide of
- * the hovered or focused thread are full strength; the others step back half-way, like the lines
+ * Lines are drawn for every slide, all at full strength. While a slide or a thread is hovered or
+ * a thread focused, the lines of that slide stay; the others step back half-way, like the lines
  * of the other threads while one is open.
  * Lines take the author's accent and pass behind cards and marks, the minimap's thumbnails and
  * the glass controls row. Hidden on narrow screens.
@@ -43,14 +43,8 @@ interface ConnectorLinesProps {
  */
 export function ConnectorLines({ wrapperRef, layer }: ConnectorLinesProps) {
   const { slides, threadById } = useViewerData();
-  const {
-    activeSlideId,
-    hoveredSlideId,
-    focusedThreadId,
-    hoveredThreadId,
-    draft,
-    threadPanelOpen,
-  } = useViewerState();
+  const { hoveredSlideId, focusedThreadId, hoveredThreadId, draft, threadPanelOpen } =
+    useViewerState();
   const { bySlide, byGap } = useCommentThreads();
   // A box being dragged: its line leaves it where it is shown, not where it is stored.
   const preview = useMarkPreview();
@@ -68,8 +62,11 @@ export function ConnectorLines({ wrapperRef, layer }: ConnectorLinesProps) {
   const focusedOwner = ownerOf(focusedThreadId);
 
   const emphasized = useMemo(
-    () => new Set([activeSlideId, hoveredSlideId, hoveredOwner, focusedOwner]),
-    [activeSlideId, hoveredSlideId, hoveredOwner, focusedOwner],
+    () =>
+      new Set(
+        [hoveredSlideId, hoveredOwner, focusedOwner].filter((id): id is string => id !== null),
+      ),
+    [hoveredSlideId, hoveredOwner, focusedOwner],
   );
 
   const { routes, threadMap, slideOf } = useMemo(() => {
@@ -144,7 +141,7 @@ export function ConnectorLines({ wrapperRef, layer }: ConnectorLinesProps) {
   const emphasisId = focusedThreadId ?? hoveredThreadId ?? keyboardThreadId;
   const opacityOf = (threadId: string) => {
     const done = threadMap.get(threadId)?.root.status === 'done';
-    const muted = !emphasized.has(slideOf.get(threadId) ?? null);
+    const muted = emphasized.size > 0 && !emphasized.has(slideOf.get(threadId) ?? '');
     // Lines of slides out of focus step back half-way, like the other threads' lines in B4.
     const base = Math.min(done ? 0.5 : 1, muted ? 0.5 : 1);
     if (draft) return 0.3;
@@ -169,6 +166,8 @@ export function ConnectorLines({ wrapperRef, layer }: ConnectorLinesProps) {
             key={line.threadId}
             data-connector-id={line.threadId}
             d={line.d}
+            // Lets the comments' intro draw the line with a dash of length 1 (index.css).
+            pathLength={1}
             fill="none"
             strokeWidth={2}
             strokeLinejoin="round"
