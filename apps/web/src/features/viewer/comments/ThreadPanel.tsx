@@ -26,7 +26,7 @@ export function ThreadPanel() {
 }
 
 function ThreadPanelView({ thread }: { thread: Thread }) {
-  const { deck, viewer, canComment, slideIndex } = useViewerData();
+  const { deck, canComment, slideIndex } = useViewerData();
   const { modifiedAt, deletedSlides } = useRevisionData();
   const dispatch = useViewerDispatch();
   const registry = useStageRegistry();
@@ -41,8 +41,6 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
     ? `Gelöschte Folie ${deletedSlide.previousPosition + 1}`
     : locationLabel(root.anchor, root.slideId, (id) => slideIndex.get(id));
   const changedSince = isChangedSinceComment(root, modifiedAt);
-  const canManage = (comment: Thread['root']) =>
-    comment.source === 'app' && comment.author.id === viewer.author.id;
 
   // Focus moves into the panel; the thread's slide becomes active and comes into view (gap
   // threads: the slide before the gap).
@@ -115,13 +113,7 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
         data-thread-history
         className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-5 pt-3.5 pb-4"
       >
-        <ThreadMessage
-          comment={root}
-          deckId={deck.id}
-          isRoot
-          canManage={canManage(root)}
-          onDeleted={close}
-        />
+        <ThreadMessage comment={root} deckId={deck.id} isRoot onDeleted={close} />
         {hidden > 0 && (
           <div className="mt-2.5 flex items-center gap-1.5 pl-[26px]">
             <button
@@ -144,12 +136,7 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
             />
             {visible.map((reply) => (
               <li key={reply.id}>
-                <ThreadMessage
-                  comment={reply}
-                  deckId={deck.id}
-                  isRoot={false}
-                  canManage={canManage(reply)}
-                />
+                <ThreadMessage comment={reply} deckId={deck.id} isRoot={false} />
               </li>
             ))}
           </ol>

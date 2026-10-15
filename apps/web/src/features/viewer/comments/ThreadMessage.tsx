@@ -1,37 +1,45 @@
 import type { Comment } from '@slider/shared';
 import { useState } from 'react';
 import { isPendingComment } from '@/lib/comment-cache';
-import { useDeleteComment, useUpdateComment } from '@/lib/queries';
-import { Button, cn, Dialog, Menu } from '@/ui';
+import { useUpdateComment } from '@/lib/queries';
+import { Button, cn, Menu } from '@/ui';
 import { AutosizeTextarea } from '../components/AutosizeTextarea';
 import { isRemovedInPowerPoint } from '../lib/comment-selectors';
 import { AuthorLine } from './AuthorLine';
 import { CommentContent } from './CommentContent';
+import { useViewerDispatch, useViewerState } from '../state/viewer-state';
 import { RemovedInPowerPointNote } from './RevisionNotes';
+import { useCommentMenu } from './useCommentMenu';
 
 interface ThreadMessageProps {
   comment: Comment;
   deckId: string;
   isRoot: boolean;
-  /** Own comments written in Slider can be edited and deleted; PowerPoint comments are read-only. */
-  canManage: boolean;
   onDeleted?: () => void;
 }
 
 /**
  * One message in the thread panel (B4): the root spans the panel in the thread's accent
- * (`--card-accent`), replies hug their content. Own messages get a ⋯ menu.
+ * (`--card-accent`), replies hug their content. Actions sit in a ⋯ menu and on right click.
  */
-export function ThreadMessage({
-  comment,
-  deckId,
-  isRoot,
-  canManage,
-  onDeleted,
-}: ThreadMessageProps) {
-  const [editing, setEditing] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const remove = useDeleteComment(deckId);
+export function ThreadMessage({ comment, deckId, isRoot, onDeleted }: ThreadMessageProps) {
+  const [editingHere, setEditingHere] = useState(false);
+  const { editingCommentId } = useViewerState();
+  const dispatch = useViewerDispatch();
+  // "Bearbeiten" from a card's context menu opens the panel with this comment's editor.
+  const requested = editingCommentId === comment.id;
+  const editing = editingHere || requested;
+  const stopEditing = () => {
+    setEditingHere(false);
+    if (requested) dispatch({ type: 'commentEditEnded' });
+  };
+  const menu = useCommentMenu({
+    comment,
+    deckId,
+    isRoot,
+    onEdit: () => setEditingHere(true),
+    onDeleted,
+  });
   // Not saved yet: shown dimmed and without actions until the server confirms it.
   const pending = isPendingComment(comment);
   const removed = isRemovedInPowerPoint(comment);
@@ -39,6 +47,7 @@ export function ThreadMessage({
   return (
     <article
       aria-busy={pending || undefined}
+      onContextMenu={editing ? undefined : menu.onContextMenu}
       className={cn(
         'flex flex-col gap-2 rounded-panel px-3.5 py-3 transition-opacity',
         isRoot
@@ -50,21 +59,12 @@ export function ThreadMessage({
       <AuthorLine
         comment={comment}
         trailing={
-          canManage &&
-          !pending &&
+          menu.actions.length > 0 &&
           !editing && (
             <Menu
               label="Aktionen für diesen Kommentar"
               triggerClassName="size-7"
-              actions={[
-                { label: 'Bearbeiten', icon: 'edit', onSelect: () => setEditing(true) },
-                {
-                  label: 'Löschen',
-                  icon: 'delete',
-                  onSelect: () => setConfirmingDelete(true),
-                  tone: 'danger',
-                },
-              ]}
+              actions={menu.actions}
             />
           )
         }
@@ -73,7 +73,7 @@ export function ThreadMessage({
 
       {removed && <RemovedInPowerPointNote />}
       {editing ? (
-        <EditForm comment={comment} deckId={deckId} onDone={() => setEditing(false)} />
+        <EditForm comment={comment} deckId={deckId} onDone={stopEditing} />
       ) : (
         <CommentContent
           comment={comment}
@@ -84,43 +84,7 @@ export function ThreadMessage({
         />
       )}
 
-      <Dialog
-        open={confirmingDelete}
-        onClose={() => setConfirmingDelete(false)}
-        title="Kommentar löschen?"
-        description={
-          isRoot
-            ? 'Der ganze Thread mit allen Antworten wird gelöscht.'
-            : 'Das lässt sich nicht rückgängig machen.'
-        }
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setConfirmingDelete(false)}>
-              Abbrechen
-            </Button>
-            <Button
-              variant="danger"
-              loading={remove.isPending}
-              onClick={() =>
-                remove.mutate(comment.id, {
-                  onSuccess: () => {
-                    setConfirmingDelete(false);
-                    onDeleted?.();
-                  },
-                })
-              }
-            >
-              Löschen
-            </Button>
-          </>
-        }
-      >
-        {remove.isError && (
-          <p role="alert" className="text-sm text-danger">
-            {remove.error.message}
-          </p>
-        )}
-      </Dialog>
+      {menu.menus}
     </article>
   );
 }

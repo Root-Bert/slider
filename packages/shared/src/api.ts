@@ -267,7 +267,7 @@ export const updateCommentInputSchema = z
         }),
       shapeRef: shapeRefSchema.nullable(),
     }),
-    /** Moves a drawing (strokes and anchor) by this shift, kept on the slide; author only. */
+    /** Moves a drawing (strokes and anchor) or a pin by this shift, kept on the slide; author only. */
     move: z.object({ dx: z.number().min(-1).max(1), dy: z.number().min(-1).max(1) }),
   })
   .partial();

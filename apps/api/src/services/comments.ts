@@ -296,24 +296,27 @@ function moveBox(
   return { anchor, strokes };
 }
 
-/** Moves a drawing – its strokes and its anchor – as a whole. */
+/** Moves a drawing – its strokes and its anchor – as a whole; or a pin to another place. */
 function moveDrawingOf(
   comment: CommentRow,
   { dx, dy }: { dx: number; dy: number },
 ): Pick<CommentRow, 'anchor' | 'strokes'> {
-  if (!isDrawing(comment)) throw badRequest('Dieser Kommentar ist keine Zeichnung.');
+  if (!isDrawing(comment) && comment.anchor.type !== 'point')
+    throw badRequest('Dieser Kommentar lässt sich nicht verschieben.');
   const { anchor, strokes } = moveDrawing(comment, dx, dy);
   return { anchor, strokes };
 }
 
 /**
  * Authors delete their own comments; whoever manages the deck may delete any. Replies go with
- * their root.
+ * their root. `keepDrawing` deletes only the comment of a root with something on the slide: its
+ * replies, text, recording and image go, the drawing / text on the slide stays as a bare drawing.
  */
 export async function deleteComment(
   deps: AppDeps,
   viewer: Viewer,
   commentId: string,
+  { keepDrawing = false }: { keepDrawing?: boolean } = {},
 ): Promise<void> {
   const comment = await loadComment(deps, commentId);
   const { permissions } = await deckAccess(deps.db, viewer, comment.deckId, 'view');
@@ -321,20 +324,18 @@ export async function deleteComment(
   if (!permissions.canManage && !(own && permissions.canComment)) {
     throw forbidden('Nur eigene Kommentare können gelöscht werden.');
   }
+  if (keepDrawing && (comment.parentId !== null || comment.strokes.length === 0))
+    throw badRequest('Dieser Kommentar hat nichts auf der Folie, das stehen bleiben könnte.');
   const mediaKeys = await mediaKeysOfThread(deps.db, commentId);
   const now = deps.clock.now();
+  const replies = eq(comments.parentId, commentId);
+  const deleted = keepDrawing ? replies : or(eq(comments.id, commentId), replies);
   await deps.db.transaction(async (tx) => {
     // PowerPoint comments in the thread stay deleted: the next import of the file skips them.
     const fromPptx = await tx
       .select({ externalId: comments.externalId })
       .from(comments)
-      .where(
-        and(
-          or(eq(comments.id, commentId), eq(comments.parentId, commentId)),
-          eq(comments.source, 'pptx'),
-          isNotNull(comments.externalId),
-        ),
-      );
+      .where(and(deleted, eq(comments.source, 'pptx'), isNotNull(comments.externalId)));
     if (fromPptx.length > 0) {
       await tx
         .insert(deletedPptxComments)
@@ -347,8 +348,18 @@ export async function deleteComment(
         )
         .onConflictDoNothing();
     }
-    await tx.delete(comments).where(eq(comments.id, commentId));
+    if (keepDrawing) {
+      await tx.delete(comments).where(replies);
+      await tx.delete(mediaRows).where(eq(mediaRows.commentId, commentId));
+      await tx
+        .update(comments)
+        .set({ body: '', status: 'open', resolvedBy: null, resolvedAt: null, updatedAt: now })
+        .where(eq(comments.id, commentId));
+    } else {
+      await tx.delete(comments).where(eq(comments.id, commentId));
+    }
   });
   await deleteMediaBlobs(deps, mediaKeys);
   await touchDeck(deps.db, comment.deckId, now);
+  deps.live?.commentsChanged(comment.deckId);
 }

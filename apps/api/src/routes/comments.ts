@@ -21,7 +21,9 @@ export function commentsRoutes(deps: AppDeps) {
       return c.json(await updateComment(deps, c.var.viewer, c.req.param('commentId'), input));
     })
     .delete('/comments/:commentId', viewer, async (c) => {
-      await deleteComment(deps, c.var.viewer, c.req.param('commentId'));
+      await deleteComment(deps, c.var.viewer, c.req.param('commentId'), {
+        keepDrawing: c.req.query('keep') === 'drawing',
+      });
       return c.body(null, 204);
     });
 }

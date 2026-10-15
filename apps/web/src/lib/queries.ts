@@ -357,7 +357,14 @@ export function useEraseDrawing(deckId: string) {
   const invalidate = useInvalidateDeckFeedback(deckId);
   const key = queryKeys.comments(deckId);
   return useMutation({
-    mutationFn: (commentId: string) => api.delete(`/comments/${commentId}`),
+    /** `keepDrawing`: only the comment goes, its drawing / text on the slide stays. */
+    mutationFn: ({
+      commentId,
+      keepDrawing = false,
+    }: {
+      commentId: string;
+      keepDrawing?: boolean;
+    }) => api.delete(`/comments/${commentId}${keepDrawing ? '?keep=drawing' : ''}`),
     onMutate: async (commentId) => {
       await queryClient.cancelQueries({ queryKey: key });
       const previous = queryClient
@@ -381,7 +388,14 @@ export function useDeleteComment(deckId: string) {
   const queryClient = useQueryClient();
   const invalidate = useInvalidateDeckFeedback(deckId);
   return useMutation({
-    mutationFn: (commentId: string) => api.delete(`/comments/${commentId}`),
+    /** `keepDrawing`: only the comment goes, its drawing / text on the slide stays. */
+    mutationFn: ({
+      commentId,
+      keepDrawing = false,
+    }: {
+      commentId: string;
+      keepDrawing?: boolean;
+    }) => api.delete(`/comments/${commentId}${keepDrawing ? '?keep=drawing' : ''}`),
     onSuccess: async () => {
       // Deleting a voice or video comment (or a thread with some) frees recording storage.
       void queryClient.invalidateQueries({ queryKey: [...queryKeys.deck(deckId), 'media-usage'] });

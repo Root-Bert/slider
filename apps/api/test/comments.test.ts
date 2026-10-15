@@ -458,6 +458,42 @@ describe('updating and deleting', () => {
     );
   });
 
+  it('can delete only the comment and leave its drawing on the slide', async () => {
+    const pen = {
+      tool: 'pen',
+      color: 'yellow',
+      points: [
+        { x: 0.1, y: 0.1 },
+        { x: 0.2, y: 0.2 },
+      ],
+    } as const;
+    const root = await create({
+      slideId: slide(0),
+      body: 'Pfeil hier',
+      anchor: { type: 'rect', rect: { x: 0.1, y: 0.1, w: 0.1, h: 0.1 }, shapeRef: null },
+      strokes: [pen],
+    });
+    await ctx.request(`/api/comments/${root.id}`, { method: 'PATCH', json: { status: 'done' } });
+    await create({ slideId: null, parentId: root.id, body: 'Antwort', anchor: { type: 'slide' } });
+    const pin = await create(pinComment(slide(1)));
+
+    const del = (id: string) =>
+      ctx.request(`/api/comments/${id}?keep=drawing`, { method: 'DELETE' });
+    expect((await del(pin.id)).status).toBe(400);
+    expect((await del(root.id)).status).toBe(204);
+
+    const left = commentSchema
+      .array()
+      .parse(await (await ctx.request(`/api/decks/${deck.deckId}/comments`)).json());
+    expect(left.map((c) => c.id).sort()).toEqual([root.id, pin.id].sort());
+    expect(left.find((c) => c.id === root.id)).toMatchObject({
+      body: '',
+      strokes: [pen],
+      status: 'open',
+      media: null,
+    });
+  });
+
   it('returns 404 for unknown comments', async () => {
     expect((await ctx.request('/api/comments/nope', { method: 'DELETE' })).status).toBe(404);
   });
