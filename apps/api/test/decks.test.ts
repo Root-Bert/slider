@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { deckSchema, slideSchema, viewerSchema, type Deck } from '@slider/shared';
 import { z } from 'zod';
 import { decks, revisions } from '../src/db/schema';
+import { fileUrl } from '../src/storage/file-urls';
 import {
   createReadyDeck,
   createTestContext,
@@ -54,7 +55,7 @@ describe('decks', () => {
       slideCount: 4,
       openCommentCount: 1,
       revisionNumber: 1,
-      thumbnailUrl: `/files/${newer.imageKeys[0]}`,
+      thumbnailUrl: fileUrl(newer.imageKeys[0] ?? ''),
       thumbnailRenderer: null,
       participants: [{ name: 'Robert Hofmann' }],
     });
@@ -123,12 +124,12 @@ describe('decks', () => {
   it('deletes a deck together with its files', async () => {
     const { deckId, imageKeys } = await createReadyDeck(ctx);
     const key = imageKeys[0] ?? '';
-    expect((await ctx.request(`/files/${key}`)).status).toBe(200);
+    expect((await ctx.request(fileUrl(key))).status).toBe(200);
 
     expect((await ctx.request(`/api/decks/${deckId}`, { method: 'DELETE' })).status).toBe(204);
     expect((await ctx.request(`/api/decks/${deckId}`)).status).toBe(404);
     expect(await ctx.deps.storage.get(key)).toBeNull();
-    expect((await ctx.request(`/files/${key}`)).status).toBe(404);
+    expect((await ctx.request(fileUrl(key))).status).toBe(404);
   });
 
   it('lists slides of the current revision in order', async () => {

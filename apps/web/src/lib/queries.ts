@@ -368,7 +368,7 @@ export const useLatestDiff = (deckId: string, revisionId: string | null, enabled
     queryKey: queryKeys.revisionDiff(deckId, revisionId),
     queryFn: () => api.get<RevisionDiff>(`/decks/${deckId}/revisions/${revisionId}/diff`),
     enabled: enabled && revisionId !== null,
-    staleTime: Infinity,
+    staleTime: SIGNED_URL_STALE_MS,
   });
 
 /** Stable `combine`, so the result only changes when a diff arrives. */
@@ -383,7 +383,7 @@ export const useRevisionDiffs = (deckId: string, revisionIds: readonly string[])
     queries: revisionIds.map((revisionId) => ({
       queryKey: queryKeys.revisionDiff(deckId, revisionId),
       queryFn: () => api.get<RevisionDiff>(`/decks/${deckId}/revisions/${revisionId}/diff`),
-      staleTime: Infinity,
+      staleTime: SIGNED_URL_STALE_MS,
     })),
     combine: diffData,
   });

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { contentTypeForKey, isValidKey } from '../src/storage/blob-storage';
+import { configureFileUrls, fileUrl, fileUrlAt, verifyFileUrl } from '../src/storage/file-urls';
 import { FsBlobStorage } from '../src/storage/fs-blob-storage';
 import { createTestContext } from './helpers';
 
@@ -63,5 +64,52 @@ describe('GET /files/*', () => {
     } finally {
       await ctx.cleanup();
     }
+  });
+
+  it('serves a file only through a valid, unexpired signed link', async () => {
+    const ctx = await createTestContext();
+    try {
+      const key = 'decks/x/slides/a.svg';
+      await ctx.deps.storage.put(key, new TextEncoder().encode('<svg/>'));
+      const url = fileUrl(key);
+      const ok = await ctx.request(url);
+      expect(ok.status).toBe(200);
+      expect(ok.headers.get('cache-control')).toMatch(/^private, max-age=\d+, immutable$/);
+
+      expect((await ctx.request(`/files/${key}`)).status).toBe(403);
+      expect((await ctx.request(url.replace(/sig=./, 'sig=x'))).status).toBe(403);
+      // A link signed for one file opens no other.
+      expect((await ctx.request(url.replace('a.svg', 'b.svg'))).status).toBe(403);
+    } finally {
+      await ctx.cleanup();
+    }
+  });
+});
+
+describe('signed file links', () => {
+  const params = (url: string) => new URL(url, 'http://x').searchParams;
+
+  it('keeps the same link within a window and lets it expire', () => {
+    configureFileUrls('test-secret');
+    const now = 1_800_000_000;
+    const url = fileUrlAt('a/b.svg', now);
+    expect(fileUrlAt('a/b.svg', now + 60)).toBe(url);
+
+    const exp = params(url).get('exp') ?? '';
+    const sig = params(url).get('sig') ?? '';
+    const validFor = verifyFileUrl('a/b.svg', exp, sig, now) ?? 0;
+    expect(validFor).toBeGreaterThanOrEqual(6 * 3600);
+    expect(validFor).toBeLessThanOrEqual(12 * 3600);
+    expect(verifyFileUrl('a/b.svg', exp, sig, Number(exp))).toBeNull();
+  });
+
+  it('rejects links signed with another secret', () => {
+    configureFileUrls('one');
+    const url = fileUrlAt('a/b.svg', 1_800_000_000);
+    configureFileUrls('two');
+    const p = params(url);
+    expect(
+      verifyFileUrl('a/b.svg', p.get('exp') ?? '', p.get('sig') ?? '', 1_800_000_000),
+    ).toBeNull();
   });
 });

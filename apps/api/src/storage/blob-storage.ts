@@ -52,8 +52,8 @@ export function contentTypeForKey(key: string): string {
 
 /**
  * Key layout. Everything a deck owns lives under `decks/<deckId>/`, so deleting a deck
- * removes its files with one prefix delete (BER-121). Every key contains a random UUID,
- * which is what makes `/files/*` safe to serve without a session check for now.
+ * removes its files with one prefix delete (BER-121). `/files/*` only serves them through
+ * signed, expiring links (`file-urls`).
  */
 export const blobKeys = {
   deckPrefix: (deckId: string) => `decks/${deckId}/`,
@@ -67,7 +67,10 @@ export const blobKeys = {
   /** In the media store; same deck prefix, so deleting a deck clears its recordings too. */
   media: (deckId: string, mediaId: string, extension: string) =>
     `decks/${deckId}/media/${mediaId}.${extension}`,
+  workspacePrefix: (workspaceId: string) => `workspaces/${workspaceId}/`,
+  workspaceLogo: (workspaceId: string, extension: string) =>
+    `workspaces/${workspaceId}/logo-${crypto.randomUUID()}.${extension}`,
   demoAsset: (fileName: string) => `demo/${crypto.randomUUID()}/${fileName}`,
 };
 
-export const fileUrl = (key: string) => `/files/${key}`;
+export { fileUrl } from './file-urls';
