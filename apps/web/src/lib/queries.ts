@@ -206,13 +206,25 @@ export const useSlides = (deckId: string, enabled = true) =>
     enabled,
   });
 
-export const useComments = (deckId: string, enabled = true) =>
+/** Everyone who can open the deck (its workspace's members), for `@` suggestions (BER-105). */
+export const useDeckPeople = (deckId: string, enabled = true) =>
+  useQuery({
+    queryKey: queryKeys.people(deckId),
+    queryFn: () => api.get<Author[]>(`/decks/${deckId}/people`),
+    enabled,
+    staleTime: 5 * 60_000,
+  });
+
+/**
+ * Comments of a deck. Changes by others arrive live (BER-104, the viewer's live stream refetches);
+ * `live` says the stream is up – polling is then only a slow safety net.
+ */
+export const useComments = (deckId: string, enabled = true, live = false) =>
   useQuery({
     queryKey: queryKeys.comments(deckId),
     queryFn: () => api.get<Comment[]>(`/decks/${deckId}/comments`),
     enabled,
-    // Light polling until realtime lands (BER-104): other reviewers' comments show up.
-    refetchInterval: 15_000,
+    refetchInterval: live ? 120_000 : 15_000,
   });
 
 export function useInvalidateDeckFeedback(deckId: string) {

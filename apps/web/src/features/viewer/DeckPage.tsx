@@ -4,9 +4,10 @@ import { routes } from '@/app/routes';
 import { isSignedOutError } from '@/features/auth/lib/gate';
 import { ImportProgress } from '@/features/onboarding/ImportProgress';
 import { markDeckOpened } from '@/features/reviews/lib/last-visits';
-import { useComments, useDeck, useMe, useSlides } from '@/lib/queries';
+import { useComments, useDeck, useDeckPeople, useMe, useSlides } from '@/lib/queries';
 import { DeckError, DeckLoading } from './DeckStates';
 import { useColorOverrides } from './lib/color-overrides';
+import { useLiveSnapshot } from './live/live-store';
 import { useDocumentTitle } from './hooks/usePageSession';
 import { SLIDE_PARAM } from './hooks/useSlideUrlSync';
 import { RevisionProvider } from './state/RevisionProvider';
@@ -25,7 +26,10 @@ export function Component() {
   const me = useMe();
   const ready = deck.data?.import.status === 'ready';
   const slides = useSlides(deckId, ready);
-  const comments = useComments(deckId, ready);
+  const live = useLiveSnapshot().connected;
+  const comments = useComments(deckId, ready, live);
+  // Not awaited: `@` suggests the commenters until the rest arrives.
+  const people = useDeckPeople(deckId, ready);
   const colorOverrides = useColorOverrides();
 
   useDocumentTitle(deck.data?.title);
@@ -39,9 +43,16 @@ export function Component() {
   const data = useMemo(
     () =>
       deck.data && slides.data && comments.data && me.data
-        ? deriveViewerData(deck.data, slides.data, comments.data, me.data.viewer, colorOverrides)
+        ? deriveViewerData(
+            deck.data,
+            slides.data,
+            comments.data,
+            me.data.viewer,
+            colorOverrides,
+            people.data,
+          )
         : null,
-    [deck.data, slides.data, comments.data, me.data, colorOverrides],
+    [deck.data, slides.data, comments.data, me.data, colorOverrides, people.data],
   );
 
   // A deck seen importing morphs into the viewer: the import stage stays on top of the freshly
@@ -49,7 +60,10 @@ export function Component() {
   const importing = deck.data !== undefined && deck.data.import.status !== 'ready';
   const [sawImport, setSawImport] = useState(false);
   const [revealed, setRevealed] = useState(false);
+  // The import stage asks for the viewer once its placeholders have all printed.
+  const [printed, setPrinted] = useState(false);
   if (importing && !sawImport) setSawImport(true);
+  const commentsIntro = useCommentsIntro(sawImport, revealed);
   const aspectRatios = useMemo(
     () => data?.slides.map((slide) => slide.aspectRatio) ?? null,
     [data],
@@ -63,23 +77,45 @@ export function Component() {
   if (error) return <DeckError error={error} />;
   const showImport = deck.data && (importing || (sawImport && !revealed));
   if (!data && !showImport) return <DeckLoading />;
+  const viewerUp = data !== null && (!showImport || printed);
 
   return (
     <>
-      {data && (
-        <ViewerStoreProvider data={data} initialSlideId={initialSlideId}>
-          <RevisionProvider>
-            <Viewer />
-          </RevisionProvider>
-        </ViewerStoreProvider>
+      {viewerUp && (
+        <div className="contents" data-comments-intro={commentsIntro ?? undefined}>
+          <ViewerStoreProvider data={data} initialSlideId={initialSlideId}>
+            <RevisionProvider>
+              <Viewer />
+            </RevisionProvider>
+          </ViewerStoreProvider>
+        </div>
       )}
       {showImport && (
         <ImportProgress
           deck={deck.data}
-          aspectRatios={importing ? null : aspectRatios}
+          aspectRatios={viewerUp ? aspectRatios : null}
+          onPrinted={() => setPrinted(true)}
           onRevealed={() => setRevealed(true)}
         />
       )}
     </>
   );
+}
+
+/** Lines drawn, then cards faded in – keep in step with `comments-draw` / `comments-in` in index.css. */
+const COMMENTS_INTRO_MS = 1600;
+
+/**
+ * Comments of a deck seen importing: hidden while the import stage dissolves into the viewer,
+ * then they come in – the lines are drawn from the slides to the cards, then the cards appear.
+ */
+function useCommentsIntro(sawImport: boolean, revealed: boolean): 'hidden' | 'enter' | null {
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (!revealed) return;
+    const timer = setTimeout(() => setDone(true), COMMENTS_INTRO_MS);
+    return () => clearTimeout(timer);
+  }, [revealed]);
+  if (!sawImport || done) return null;
+  return revealed ? 'enter' : 'hidden';
 }

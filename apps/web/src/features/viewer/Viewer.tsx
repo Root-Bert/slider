@@ -12,6 +12,8 @@ import { useFullscreen } from './hooks/useFullscreen';
 import { useThreadHover } from './hooks/useThreadHover';
 import { useSlideUrlSync } from './hooks/useSlideUrlSync';
 import { useViewerShortcuts } from './hooks/useViewerShortcuts';
+import { CursorLayer } from './live/CursorLayer';
+import { useLive } from './live/useLive';
 import { DeletedSlidesPanel } from './revisions/DeletedSlidesPanel';
 import { RevisionBanners } from './revisions/RevisionBanners';
 import { useViewerData } from './state/viewer-data';
@@ -39,6 +41,7 @@ export function Viewer() {
   useViewerShortcuts({ onToggleFullscreen: toggleFullscreen });
   useSlideUrlSync(activeSlideId);
   useThreadHover();
+  useLive();
 
   return (
     <ViewerToastContext value={showToast}>
@@ -78,6 +81,9 @@ export function Viewer() {
         >
           <ParticipantAvatars />
         </div>
+
+        {/* Other people's pointers (BER-104): above the track, below the floating controls. */}
+        <CursorLayer />
 
         <Composer />
         <ThreadPanel />

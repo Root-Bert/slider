@@ -2,8 +2,10 @@ import { memo, type CSSProperties } from 'react';
 import { accentColor } from '@/lib/accent';
 import { Avatar, cn, Icon } from '@/ui';
 import { commentPreview, isRemovedInPowerPoint, type Thread } from '../lib/comment-selectors';
+import { LiveThreadMarker } from '../live/LiveThreadMarker';
 import { useViewerDispatch } from '../state/viewer-state';
 import type { CardEmphasis } from './CommentCard';
+import { useCommentMenu } from './useCommentMenu';
 
 /**
  * Compact B1 card for narrow comment columns (small slides): avatar, author and two
@@ -11,10 +13,12 @@ import type { CardEmphasis } from './CommentCard';
  */
 export const CompactCard = memo(function CompactCard({
   thread,
+  deckId,
   emphasis,
   changedSince = false,
 }: {
   thread: Thread;
+  deckId: string;
   emphasis: CardEmphasis;
   /** The slide changed after the thread was started: small warning mark. */
   changedSince?: boolean;
@@ -24,6 +28,13 @@ export const CompactCard = memo(function CompactCard({
   const highlighted = emphasis === 'focused' || emphasis === 'hovered';
   const text = commentPreview(root);
   const removed = isRemovedInPowerPoint(root);
+  const menu = useCommentMenu({
+    comment: root,
+    deckId,
+    isRoot: true,
+    onEdit: () =>
+      dispatch({ type: 'commentEditRequested', threadId: thread.id, commentId: root.id }),
+  });
   const flagged = changedSince && root.status === 'open';
   const notes = [
     removed && 'In PowerPoint entfernt',
@@ -40,7 +51,10 @@ export const CompactCard = memo(function CompactCard({
         emphasis === 'dimmed' && root.status === 'done' && 'opacity-30',
       )}
       style={{ '--card-accent': accentColor(root.author.color) } as CSSProperties}
+      onContextMenu={menu.onContextMenu}
     >
+      {menu.menus}
+      <LiveThreadMarker threadId={thread.id} />
       <button
         type="button"
         onClick={() => dispatch({ type: 'threadFocused', threadId: thread.id, openPanel: true })}

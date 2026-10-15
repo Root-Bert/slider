@@ -84,7 +84,9 @@ export async function createComment(
   input: CreateCommentData,
 ): Promise<Comment> {
   const deck = await requireDeckAccess(deps.db, viewer, deckId, 'comment');
-  return toCommentDto(await insertComment(deps.db, deps, viewer, deck, input));
+  const comment = toCommentDto(await insertComment(deps.db, deps, viewer, deck, input));
+  deps.live?.commentsChanged(deck.id);
+  return comment;
 }
 
 /**
@@ -242,6 +244,7 @@ export async function updateComment(
     .returning();
   if (!row) throw notFound('Diesen Kommentar gibt es nicht (mehr).');
   await touchDeck(deps.db, comment.deckId, now);
+  deps.live?.commentsChanged(comment.deckId);
   const [dto] = await withMedia(deps.db, [row]);
   return dto!;
 }

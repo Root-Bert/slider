@@ -16,11 +16,13 @@ import { isRemovedInPowerPoint, type Thread } from '../lib/comment-selectors';
 import { AutosizeTextarea } from '../components/AutosizeTextarea';
 import { MediaReplyButtons } from '../components/MediaTabs';
 import { useReplyDraft } from '../hooks/useReplyDraft';
+import { LiveThreadMarker } from '../live/LiveThreadMarker';
 import { useViewerDispatch } from '../state/viewer-state';
 import { AuthorLine } from './AuthorLine';
 import { CommentContent } from './CommentContent';
 import { ResolveButton } from './ResolveButton';
 import { ChangedSinceCommentNote, RemovedInPowerPointNote } from './RevisionNotes';
+import { useCommentMenu } from './useCommentMenu';
 
 export type CardEmphasis = 'normal' | 'focused' | 'hovered' | 'dimmed';
 
@@ -58,6 +60,13 @@ export const CommentCard = memo(function CommentCard({
   const stacked = replies.length > 0 && !expanded;
   const canReply = canResolve;
   const removed = isRemovedInPowerPoint(root);
+  const menu = useCommentMenu({
+    comment: root,
+    deckId,
+    isRoot: true,
+    onEdit: () =>
+      dispatch({ type: 'commentEditRequested', threadId: thread.id, commentId: root.id }),
+  });
 
   // An expanded thread is the selected one: its line stays lit, the other cards dim (B3).
   const expand = () => {
@@ -83,6 +92,8 @@ export const CommentCard = memo(function CommentCard({
       )}
       style={{ '--card-accent': accentColor(root.author.color) } as CSSProperties}
     >
+      {menu.menus}
+      <LiveThreadMarker threadId={thread.id} />
       {stacked && (
         // Stacked sheets behind the card hint at the thread (B1 "Thread Stack").
         <>
@@ -94,6 +105,7 @@ export const CommentCard = memo(function CommentCard({
         </>
       )}
       <div
+        onContextMenu={menu.onContextMenu}
         className={cn(
           'glass relative flex flex-col gap-2 rounded-panel px-3.5 py-3 transition-[background-color,box-shadow] duration-200 hover:bg-glass-hover',
           highlighted &&
@@ -160,7 +172,7 @@ export const CommentCard = memo(function CommentCard({
         <ol id={repliesId} aria-label="Antworten" className="flex flex-col gap-1.5 pt-1.5 pl-11">
           {replies.map((reply) => (
             <ThreadBranch key={reply.id}>
-              <InlineReply reply={reply} />
+              <InlineReply reply={reply} threadId={thread.id} deckId={deckId} />
             </ThreadBranch>
           ))}
         </ol>
@@ -216,9 +228,25 @@ function ThreadBranch({ children }: { children: ReactNode }) {
   );
 }
 
-function InlineReply({ reply }: { reply: Comment }) {
+function InlineReply({
+  reply,
+  threadId,
+  deckId,
+}: {
+  reply: Comment;
+  threadId: string;
+  deckId: string;
+}) {
+  const dispatch = useViewerDispatch();
+  const menu = useCommentMenu({
+    comment: reply,
+    deckId,
+    isRoot: false,
+    onEdit: () => dispatch({ type: 'commentEditRequested', threadId, commentId: reply.id }),
+  });
   return (
     <article
+      onContextMenu={menu.onContextMenu}
       aria-busy={isPendingComment(reply) || undefined}
       className={cn(
         'glass flex flex-col gap-2 rounded-panel px-3.5 py-3',
@@ -227,6 +255,7 @@ function InlineReply({ reply }: { reply: Comment }) {
     >
       <AuthorLine comment={reply} />
       <CommentContent comment={reply} bodyClassName="text-fg-muted" />
+      {menu.menus}
     </article>
   );
 }
