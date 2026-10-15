@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { cn, Icon } from '@/ui';
 import { MEDIA_KINDS, MEDIA_SOON, type MediaKindId } from '../lib/media-kinds';
 import { RecordReplyDialog } from '../media/RecordReplyDialog';
+import { SketchReplyDialog } from '../media/SketchReplyDialog';
 
 /** Text / Audio / Video / Bild switch of the composers (Figma B2, B4 "Tabs"). */
 export function MediaTabs({
@@ -50,9 +51,15 @@ export function MediaTabs({
   );
 }
 
+const REPLY_LABELS: Record<Exclude<MediaKindId, 'text'>, { label: string; title: string }> = {
+  audio: { label: 'Mit Sprachkommentar antworten', title: 'Sprachkommentar' },
+  video: { label: 'Mit Video antworten', title: 'Video' },
+  image: { label: 'Mit Bild antworten', title: 'Bild zeichnen' },
+};
+
 /**
  * Audio / Video / Bild icons beside a reply field. Text needs no button – typing is the text
- * reply. Mic and camera open the recorder; images stay disabled for now.
+ * reply. Mic and camera open the recorder, Bild the sheet to draw on.
  */
 export function MediaReplyButtons({
   root,
@@ -63,19 +70,18 @@ export function MediaReplyButtons({
   deckId: string;
   size?: 'sm' | 'md';
 }) {
-  const [recording, setRecording] = useState<RecordingKind | null>(null);
+  const [open, setOpen] = useState<Exclude<MediaKindId, 'text'> | null>(null);
   return (
     <>
-      {MEDIA_KINDS.filter((kind) => kind.id !== 'text').map((kind) =>
-        kind.id === 'audio' || kind.id === 'video' ? (
+      {MEDIA_KINDS.filter((kind) => kind.id !== 'text').map((kind) => {
+        const id = kind.id as Exclude<MediaKindId, 'text'>;
+        return (
           <button
-            key={kind.id}
+            key={id}
             type="button"
-            aria-label={
-              kind.id === 'audio' ? 'Mit Sprachkommentar antworten' : 'Mit Video antworten'
-            }
-            title={kind.id === 'audio' ? 'Sprachkommentar' : 'Video'}
-            onClick={() => setRecording(kind.id as RecordingKind)}
+            aria-label={REPLY_LABELS[id].label}
+            title={REPLY_LABELS[id].title}
+            onClick={() => setOpen(id)}
             className={cn(
               'flex shrink-0 items-center justify-center rounded-chip text-fg-subtle hover:bg-white/10 hover:text-fg',
               size === 'sm' ? 'size-7' : 'size-8',
@@ -83,30 +89,18 @@ export function MediaReplyButtons({
           >
             <Icon name={kind.icon} size={18} />
           </button>
-        ) : (
-          <button
-            key={kind.id}
-            type="button"
-            aria-label={`${kind.label} – ${MEDIA_SOON}`}
-            aria-disabled
-            tabIndex={-1}
-            title={MEDIA_SOON}
-            className={cn(
-              'flex shrink-0 cursor-not-allowed items-center justify-center rounded-chip text-fg-faint',
-              size === 'sm' ? 'size-7' : 'size-8',
-            )}
-          >
-            <Icon name={kind.icon} size={18} />
-          </button>
-        ),
-      )}
-      {recording && (
+        );
+      })}
+      {(open === 'audio' || open === 'video') && (
         <RecordReplyDialog
           root={root}
           deckId={deckId}
-          kind={recording}
-          onClose={() => setRecording(null)}
+          kind={open satisfies RecordingKind}
+          onClose={() => setOpen(null)}
         />
+      )}
+      {open === 'image' && (
+        <SketchReplyDialog root={root} deckId={deckId} onClose={() => setOpen(null)} />
       )}
     </>
   );

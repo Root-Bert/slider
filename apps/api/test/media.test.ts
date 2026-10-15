@@ -224,6 +224,72 @@ describe('voice and video comments', () => {
   });
 });
 
+describe('drawn images', () => {
+  /** A tiny "PNG": the signature followed by filler bytes. */
+  const png = (size = 500) => {
+    const bytes = new Uint8Array(size).fill(3);
+    bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    return bytes;
+  };
+
+  function uploadImage(
+    input: CreateMediaCommentInput,
+    image: Uint8Array<ArrayBuffer>,
+    recording?: Uint8Array<ArrayBuffer>,
+  ) {
+    const form = new FormData();
+    form.append('comment', JSON.stringify(input));
+    form.append('image', new File([image], 'bild.png', { type: 'image/png' }));
+    if (recording) form.append('file', new File([recording], 'memo.webm', { type: 'audio/webm' }));
+    return ctx.request(`/api/decks/${deck.deckId}/media-comments`, { method: 'POST', body: form });
+  }
+
+  it('stores an image alone and streams it', async () => {
+    const res = await uploadImage(voiceComment({ media: undefined }), png());
+    expect(res.status).toBe(201);
+    const comment = commentSchema.parse(await res.json());
+    expect(comment.media).toBeNull();
+    expect(comment.image).toMatchObject({ mimeType: 'image/png', sizeBytes: 500 });
+
+    const file = await ctx.request(comment.image!.url);
+    expect(file.status).toBe(200);
+    expect(file.headers.get('content-type')).toBe('image/png');
+  });
+
+  it('stores an image with the voice memo recorded while drawing', async () => {
+    const res = await uploadImage(voiceComment(), png(), webm());
+    expect(res.status).toBe(201);
+    const comment = commentSchema.parse(await res.json());
+    expect(comment.image?.sizeBytes).toBe(500);
+    expect(comment.media).toMatchObject({ kind: 'audio', sizeBytes: 1000 });
+
+    const list = commentSchema
+      .array()
+      .parse(await (await ctx.request(`/api/decks/${deck.deckId}/comments`)).json());
+    expect(list[0]?.image?.id).toBe(comment.image?.id);
+    expect(list[0]?.media?.id).toBe(comment.media?.id);
+
+    // Both count towards the quota.
+    const usage = await (await ctx.request(`/api/decks/${deck.deckId}/media-usage`)).json();
+    expect(usage).toMatchObject({ usedBytes: 1500 });
+  });
+
+  it('rejects images that are not PNG, and memo details without a memo', async () => {
+    expect((await uploadImage(voiceComment({ media: undefined }), webm(500))).status).toBe(415);
+    expect((await uploadImage(voiceComment(), png())).status).toBe(400);
+  });
+
+  it('has no transcript to set', async () => {
+    const res = await uploadImage(voiceComment({ media: undefined }), png());
+    const { image } = commentSchema.parse(await res.json());
+    const put = await ctx.request(`/api/media/${image!.id}/transcript`, {
+      method: 'PUT',
+      json: { status: 'failed' },
+    });
+    expect(put.status).toBe(404);
+  });
+});
+
 describe('parseRange', () => {
   it('handles open, closed, suffix and invalid ranges', () => {
     expect(parseRange(undefined, 100)).toBeNull();

@@ -31,8 +31,17 @@ function fileFor(recording: Recording): File {
 
 const isAbort = (error: unknown) => error instanceof DOMException && error.name === 'AbortError';
 
+export interface MediaCommentUpload {
+  input: CreateCommentInput;
+  /** Voice or video – or the memo recorded while drawing. */
+  recording?: Recording | null;
+  /** The drawn image (Bild tab), exported to PNG when sending. */
+  image?: (() => Promise<Blob>) | null;
+}
+
 /**
- * Sends a voice or video comment – root or reply – with upload progress. Once saved, this
+ * Sends a voice or video comment, or a drawn image with an optional voice memo – root or
+ * reply – with upload progress. Once saved, this
  * browser transcribes the recording in the background (Whisper, on the device).
  *
  * `cancel()` aborts a running upload; leaving (unmount) does too. An aborted upload creates
@@ -51,17 +60,20 @@ export function useCreateMediaComment(deckId: string) {
   useEffect(() => cancel, [cancel]);
 
   const mutation = useMutation({
-    mutationFn: ({ input, recording }: { input: CreateCommentInput; recording: Recording }) => {
+    mutationFn: async ({ input, recording, image }: MediaCommentUpload) => {
       controllerRef.current?.abort();
       const controller = new AbortController();
       controllerRef.current = controller;
       const body: CreateMediaCommentInput = {
         ...input,
-        media: { kind: recording.kind, durationMs: recording.durationMs, peaks: recording.peaks },
+        ...(recording && {
+          media: { kind: recording.kind, durationMs: recording.durationMs, peaks: recording.peaks },
+        }),
       };
       const form = new FormData();
       form.append('comment', JSON.stringify(body));
-      form.append('file', fileFor(recording));
+      if (recording) form.append('file', fileFor(recording));
+      if (image) form.append('image', new File([await image()], 'bild.png', { type: 'image/png' }));
       setProgress(0);
       return uploadWithProgress<Comment>(
         `/decks/${deckId}/media-comments`,
@@ -79,7 +91,7 @@ export function useCreateMediaComment(deckId: string) {
       ]);
       void invalidate();
       void queryClient.invalidateQueries({ queryKey: mediaUsageKey(deckId) });
-      if (comment.media) {
+      if (comment.media && recording) {
         transcribeInBackground({
           queryClient,
           deckId,

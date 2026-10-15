@@ -1,7 +1,9 @@
 import { eq, inArray, or, sum } from 'drizzle-orm';
 import {
   isAllowedMediaMimeType,
+  MAX_IMAGE_BYTES,
   type Comment,
+  type CommentImage,
   type CommentMedia,
   type createMediaCommentInputSchema,
   type MediaUsage,
@@ -22,6 +24,7 @@ type CreateMediaCommentData = z.output<typeof createMediaCommentInputSchema>;
 export const mediaUrl = (mediaId: string) => `/api/media/${mediaId}`;
 
 export function toMediaDto(row: MediaRow): CommentMedia {
+  if (row.kind === 'image') throw new Error('An image is not a recording');
   return {
     id: row.id,
     kind: row.kind,
@@ -35,17 +38,36 @@ export function toMediaDto(row: MediaRow): CommentMedia {
   };
 }
 
-/** The recordings of the given comments, by comment id. */
+export const toImageDto = (row: MediaRow): CommentImage => ({
+  id: row.id,
+  url: mediaUrl(row.id),
+  mimeType: row.mimeType,
+  sizeBytes: row.sizeBytes,
+});
+
+export interface CommentAttachments {
+  media: CommentMedia | null;
+  image: CommentImage | null;
+}
+
+/** Recordings and drawn images of the given comments, by comment id. */
 export async function mediaByComment(
   db: Executor,
   commentIds: readonly string[],
-): Promise<Map<string, CommentMedia>> {
-  if (commentIds.length === 0) return new Map();
+): Promise<Map<string, CommentAttachments>> {
+  const byComment = new Map<string, CommentAttachments>();
+  if (commentIds.length === 0) return byComment;
   const rows = await db
     .select()
     .from(media)
     .where(inArray(media.commentId, [...commentIds]));
-  return new Map(rows.map((row) => [row.commentId, toMediaDto(row)]));
+  for (const row of rows) {
+    const entry = byComment.get(row.commentId) ?? { media: null, image: null };
+    if (row.kind === 'image') entry.image = toImageDto(row);
+    else entry.media = toMediaDto(row);
+    byComment.set(row.commentId, entry);
+  }
+  return byComment;
 }
 
 const formatGigabytes = (bytes: number) =>
@@ -64,6 +86,12 @@ const unsupportedMedia = () =>
     'unsupported_media',
     'Diese Aufnahme kann Slider nicht speichern (erlaubt: WebM, MP4, Ogg).',
   );
+
+const unsupportedImage = () =>
+  new ApiError(415, 'unsupported_media', 'Das Bild muss ein PNG sein.');
+
+const isPng = (bytes: Uint8Array) =>
+  [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((byte, i) => bytes[i] === byte);
 
 /** Bytes of recordings in all decks of this owner – everyone's recordings included. */
 export async function usedMediaBytes(db: Executor, ownerId: string): Promise<number> {
@@ -110,74 +138,130 @@ export interface MediaFile {
   bytes: Uint8Array<ArrayBuffer>;
 }
 
+export interface MediaUpload {
+  /** The voice or video recording (`input.media` describes it). */
+  recording?: MediaFile;
+  /** The image drawn in the Bild tab (PNG). */
+  image?: MediaFile;
+}
+
+interface StoredBlob {
+  row: typeof media.$inferInsert;
+  bytes: Uint8Array<ArrayBuffer>;
+}
+
 /**
- * A comment with a voice or video recording. The recording was compressed on the device
- * (Opus, AV1/VP9 at low bitrates), so it is stored as it is – no server-side transcoding, which
- * keeps the API runnable on Cloudflare Workers. The transcript follows later from the device.
+ * A comment with a voice or video recording, a drawn image, or both (an image with the voice
+ * memo recorded while drawing). The recording was compressed on the device (Opus, AV1/VP9 at
+ * low bitrates), so it is stored as it is – no server-side transcoding, which keeps the API
+ * runnable on Cloudflare Workers. The transcript follows later from the device.
  */
 export async function createMediaComment(
   deps: AppDeps,
   viewer: Viewer,
   deckId: string,
   input: CreateMediaCommentData,
-  file: MediaFile,
+  upload: MediaUpload,
 ): Promise<Comment> {
   const deck = await requireDeckAccess(deps.db, viewer, deckId, 'comment');
-  const { kind } = input.media;
-  if (file.bytes.byteLength === 0) throw badRequest('Die Aufnahme ist leer.');
-  if (file.bytes.byteLength > deps.config.media.maxBytes)
-    throw fileTooLarge(deps.config.media.maxBytes);
-  // The type comes from the bytes, never from the upload: multipart parsers guess it from the
-  // file name (Bun turns any `.webm` into `video/webm`), and a declared type proves nothing.
-  const container = sniffMediaContainer(file.bytes);
-  const mimeType = container && `${kind}/${container}`;
-  if (!mimeType || !isAllowedMediaMimeType(kind, mimeType)) throw unsupportedMedia();
+  const { recording, image } = upload;
+  if (!recording && !image) throw badRequest('Bitte eine Aufnahme oder ein Bild mitsenden.');
+  if (!recording !== !input.media)
+    throw badRequest('Angaben zur Aufnahme und Aufnahme gehören zusammen.');
+
+  const blobs: StoredBlob[] = [];
+  const base = { deckId, ownerId: deck.ownerId, uploaderId: viewer.author.id };
+  if (recording && input.media) {
+    const { kind } = input.media;
+    if (recording.bytes.byteLength === 0) throw badRequest('Die Aufnahme ist leer.');
+    if (recording.bytes.byteLength > deps.config.media.maxBytes)
+      throw fileTooLarge(deps.config.media.maxBytes);
+    // The type comes from the bytes, never from the upload: multipart parsers guess it from the
+    // file name (Bun turns any `.webm` into `video/webm`), and a declared type proves nothing.
+    const container = sniffMediaContainer(recording.bytes);
+    const mimeType = container && `${kind}/${container}`;
+    if (!mimeType || !isAllowedMediaMimeType(kind, mimeType)) throw unsupportedMedia();
+    const id = crypto.randomUUID();
+    blobs.push({
+      bytes: recording.bytes,
+      row: {
+        ...base,
+        id,
+        commentId: '',
+        kind,
+        mimeType,
+        sizeBytes: recording.bytes.byteLength,
+        durationMs: input.media.durationMs,
+        peaks: input.media.peaks,
+        storageKey: blobKeys.media(deckId, id, container),
+        sha256: await sha256Hex(recording.bytes),
+      },
+    });
+  }
+  if (image) {
+    if (image.bytes.byteLength === 0) throw badRequest('Das Bild ist leer.');
+    if (image.bytes.byteLength > MAX_IMAGE_BYTES) throw fileTooLarge(MAX_IMAGE_BYTES);
+    if (!isPng(image.bytes)) throw unsupportedImage();
+    const id = crypto.randomUUID();
+    blobs.push({
+      bytes: image.bytes,
+      row: {
+        ...base,
+        id,
+        commentId: '',
+        kind: 'image',
+        mimeType: 'image/png',
+        sizeBytes: image.bytes.byteLength,
+        durationMs: 0,
+        peaks: [],
+        storageKey: blobKeys.media(deckId, id, 'png'),
+        sha256: await sha256Hex(image.bytes),
+        // Nothing to transcribe.
+        transcriptStatus: 'done',
+      },
+    });
+  }
+  const totalBytes = blobs.reduce((total, blob) => total + blob.bytes.byteLength, 0);
 
   const { quotaBytes } = deps.config.media;
   const assertQuota = async (db: Executor) => {
     if (quotaBytes === null) return;
     const used = await usedMediaBytes(db, deck.ownerId);
-    if (used + file.bytes.byteLength > quotaBytes) throw quotaExceeded(quotaBytes);
+    if (used + totalBytes > quotaBytes) throw quotaExceeded(quotaBytes);
   };
-  // Early and cheap, before the blob is stored; the binding check runs again under the lock.
+  // Early and cheap, before the blobs are stored; the binding check runs again under the lock.
   await assertQuota(deps.db);
 
-  const mediaId = crypto.randomUUID();
-  const storageKey = blobKeys.media(deckId, mediaId, container);
-  const sha256 = await sha256Hex(file.bytes);
-  await deps.media.put(storageKey, file.bytes);
+  const stored: string[] = [];
   try {
-    return await deps.db.transaction(async (tx) => {
+    for (const blob of blobs) {
+      await deps.media.put(blob.row.storageKey, blob.bytes);
+      stored.push(blob.row.storageKey);
+    }
+    const created = await deps.db.transaction(async (tx) => {
       // One upload per owner at a time between count and insert, so two can't share the rest.
       if (quotaBytes !== null) {
         await advisoryXactLock(tx, `media-quota:${deck.ownerId}`);
         await assertQuota(tx);
       }
       const row = await insertComment(tx, deps, viewer, deck, input, { hasMedia: true });
-      const [mediaRow] = await tx
+      const mediaRows = await tx
         .insert(media)
-        .values({
-          id: mediaId,
-          deckId,
-          commentId: row.id,
-          ownerId: deck.ownerId,
-          uploaderId: viewer.author.id,
-          kind,
-          mimeType,
-          sizeBytes: file.bytes.byteLength,
-          durationMs: input.media.durationMs,
-          peaks: input.media.peaks,
-          storageKey,
-          sha256,
-          createdAt: row.createdAt,
-        })
+        .values(blobs.map((blob) => ({ ...blob.row, commentId: row.id, createdAt: row.createdAt })))
         .returning();
-      if (!mediaRow) throw new Error('Media insert returned no row');
-      return toCommentDto(row, toMediaDto(mediaRow));
+      if (mediaRows.length !== blobs.length) throw new Error('Media insert returned no row');
+      const recordingRow = mediaRows.find((mediaRow) => mediaRow.kind !== 'image');
+      const imageRow = mediaRows.find((mediaRow) => mediaRow.kind === 'image');
+      return toCommentDto(row, {
+        media: recordingRow ? toMediaDto(recordingRow) : null,
+        image: imageRow ? toImageDto(imageRow) : null,
+      });
     });
+    deps.live?.commentsChanged(deckId);
+    return created;
   } catch (error) {
-    // Nothing references the blob – don't let it eat the quota.
-    await deps.media.delete(storageKey).catch(() => undefined);
+    // Nothing references the blobs – don't let them eat the quota.
+    await Promise.all(stored.map((key) => deps.media.delete(key).catch(() => undefined)));
     throw error;
   }
 }
@@ -207,6 +291,7 @@ export async function updateTranscript(
   input: UpdateTranscriptInput,
 ): Promise<Comment> {
   const row = await loadMedia(deps.db, mediaId);
+  if (row.kind === 'image') throw notFound('Diese Aufnahme gibt es nicht (mehr).');
   await requireDeckAccess(deps.db, viewer, row.deckId, 'comment');
   if (row.uploaderId !== viewer.author.id)
     throw forbidden('Nur wer aufgenommen hat, kann das Transkript setzen.');
@@ -222,7 +307,9 @@ export async function updateTranscript(
     .returning();
   const [comment] = await deps.db.select().from(comments).where(eq(comments.id, row.commentId));
   if (!updated || !comment) throw notFound('Diese Aufnahme gibt es nicht (mehr).');
-  return toCommentDto(comment, toMediaDto(updated));
+  deps.live?.commentsChanged(row.deckId);
+  const attachments = await mediaByComment(deps.db, [comment.id]);
+  return toCommentDto(comment, attachments.get(comment.id));
 }
 
 /** Storage keys of the recordings on a comment and its replies (the rows go by cascade). */

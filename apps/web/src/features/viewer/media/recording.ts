@@ -46,6 +46,27 @@ export const VIDEO_CONSTRAINTS: MediaTrackConstraints = {
   facingMode: 'user',
 };
 
+/** Where a video comment's picture comes from: the camera, the shared screen, or both. */
+export type VideoSource = 'camera' | 'screen' | 'both';
+
+/** Screens carry text: 720p at 15 fps reads well, and 900 kbit/s ≈ 7 MB per minute. */
+export const SCREEN_MAX_SIZE = { width: 1280, height: 720 } as const;
+export const SCREEN_FRAME_RATE = 15;
+export const SCREEN_BITRATES: MediaRecorderOptions = {
+  videoBitsPerSecond: 900_000,
+  audioBitsPerSecond: 32_000,
+};
+
+export const SCREEN_CONSTRAINTS: DisplayMediaStreamOptions = {
+  video: {
+    width: { ideal: SCREEN_MAX_SIZE.width },
+    height: { ideal: SCREEN_MAX_SIZE.height },
+    frameRate: { ideal: SCREEN_FRAME_RATE, max: 24 },
+  },
+  // The voice comes from the microphone; tab audio would only double it.
+  audio: false,
+};
+
 /** The first format this browser can record, or `null` (then the browser picks). */
 export function pickRecorderFormat(
   kind: MediaKind,
@@ -93,6 +114,10 @@ export const canRecord = () =>
   typeof window !== 'undefined' &&
   typeof MediaRecorder !== 'undefined' &&
   !!navigator.mediaDevices?.getUserMedia;
+
+/** Whether this browser can share a screen (not on phones and tablets). */
+export const canShareScreen = () =>
+  typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia;
 
 export const MEDIA_LABELS: Record<MediaKind, { noun: string; short: string }> = {
   audio: { noun: 'Sprachkommentar', short: 'Audio' },

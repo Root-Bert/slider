@@ -6,7 +6,6 @@ import {
   moveDrawing,
   type Anchor,
   type Comment,
-  type CommentMedia,
   type Rect,
   type UpdateCommentInput,
   type Viewer,
@@ -15,16 +14,24 @@ import type { z } from 'zod';
 import { deckAccess, requireDeckAccess } from '../auth/access';
 import { displayAuthor } from '../authors';
 import type { Executor } from '../db/client';
-import { comments, deletedPptxComments, type CommentRow, type DeckRow } from '../db/schema';
+import { comments, deletedPptxComments, media as mediaRows, type CommentRow, type DeckRow } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { badRequest, forbidden, notFound } from '../http/errors';
 import { touchDeck } from './decks';
-import { deleteMediaBlobs, mediaByComment, mediaKeysOfThread } from './media';
+import {
+  deleteMediaBlobs,
+  mediaByComment,
+  mediaKeysOfThread,
+  type CommentAttachments,
+} from './media';
 import { isSlideInCurrentRevision } from './slides';
 
 type CreateCommentData = z.output<typeof createCommentInputSchema>;
 
-export function toCommentDto(row: CommentRow, media: CommentMedia | null = null): Comment {
+export function toCommentDto(
+  row: CommentRow,
+  { media, image }: CommentAttachments = { media: null, image: null },
+): Comment {
   return {
     id: row.id,
     deckId: row.deckId,
@@ -35,6 +42,7 @@ export function toCommentDto(row: CommentRow, media: CommentMedia | null = null)
     anchor: row.anchor,
     strokes: row.strokes,
     media,
+    image,
     status: row.status,
     resolvedBy: row.resolvedBy,
     resolvedAt: row.resolvedAt?.toISOString() ?? null,
@@ -66,7 +74,7 @@ export async function withMedia(db: Executor, rows: readonly CommentRow[]): Prom
     db,
     rows.map((row) => row.id),
   );
-  return rows.map((row) => toCommentDto(row, media.get(row.id) ?? null));
+  return rows.map((row) => toCommentDto(row, media.get(row.id)));
 }
 
 export async function createComment(

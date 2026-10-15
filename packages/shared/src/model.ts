@@ -346,6 +346,16 @@ export const commentMediaSchema = z.object({
 });
 export type CommentMedia = z.infer<typeof commentMediaSchema>;
 
+/** A sketch drawn in the composer's Bild tab, stored as PNG beside an optional voice memo. */
+export const commentImageSchema = z.object({
+  id: z.string(),
+  /** Same permission-checked route as recordings (`/api/media/:id`). */
+  url: z.string(),
+  mimeType: z.string(),
+  sizeBytes: z.number().int(),
+});
+export type CommentImage = z.infer<typeof commentImageSchema>;
+
 export const commentSchema = z.object({
   id: z.string(),
   deckId: z.string(),
@@ -358,6 +368,8 @@ export const commentSchema = z.object({
   strokes: z.array(strokeSchema),
   /** A voice or video recording (BER-116); `null` for text comments. */
   media: commentMediaSchema.nullable(),
+  /** A drawn image (Bild tab); `media` then holds the voice memo recorded while drawing. */
+  image: commentImageSchema.nullable().optional(),
   status: commentStatusSchema,
   resolvedBy: z.string().nullable(),
   resolvedAt: z.iso.datetime().nullable(),

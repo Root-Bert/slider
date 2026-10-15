@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import {
   createMediaCommentInputSchema,
+  MAX_IMAGE_BYTES,
   updateTranscriptInputSchema,
   type MediaUsage,
 } from '@slider/shared';
@@ -19,7 +20,7 @@ import {
 
 const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
 
-/** Voice and video comments (BER-116). */
+/** Voice and video comments (BER-116) and drawn images with an optional voice memo. */
 export function mediaRoutes(deps: AppDeps) {
   const viewer = viewerMiddleware(deps);
   const maxBytes = deps.config.media.maxBytes;
@@ -30,7 +31,7 @@ export function mediaRoutes(deps: AppDeps) {
         '/decks/:deckId/media-comments',
         viewer,
         bodyLimit({
-          maxSize: maxBytes + MULTIPART_OVERHEAD_BYTES,
+          maxSize: maxBytes + MAX_IMAGE_BYTES + MULTIPART_OVERHEAD_BYTES,
           onError: (c) => c.json(fileTooLarge(maxBytes).toBody(), 413),
         }),
         async (c) => {
@@ -38,9 +39,12 @@ export function mediaRoutes(deps: AppDeps) {
             throw badRequest('Die Aufnahme konnte nicht gelesen werden.');
           });
           const file = body['file'];
+          const image = body['image'];
           const comment = body['comment'];
-          if (!(file instanceof File))
-            throw badRequest('Bitte die Aufnahme im Feld „file“ mitsenden.');
+          if (!(file instanceof File) && !(image instanceof File))
+            throw badRequest(
+              'Bitte die Aufnahme im Feld „file“ oder ein Bild im Feld „image“ mitsenden.',
+            );
           if (typeof comment !== 'string') throw badRequest('Das Feld „comment“ fehlt.');
           let json: unknown;
           try {
@@ -54,7 +58,14 @@ export function mediaRoutes(deps: AppDeps) {
             c.var.viewer,
             c.req.param('deckId'),
             input,
-            { bytes: new Uint8Array(await file.arrayBuffer()) },
+            {
+              ...(file instanceof File && {
+                recording: { bytes: new Uint8Array(await file.arrayBuffer()) },
+              }),
+              ...(image instanceof File && {
+                image: { bytes: new Uint8Array(await image.arrayBuffer()) },
+              }),
+            },
           );
           return c.json(created, 201);
         },

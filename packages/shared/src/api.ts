@@ -36,13 +36,14 @@ import type { MeLimits, MeUser, PendingInvite, Workspace } from './workspaces';
  * | POST   | /decks/:deckId/revisions (multipart `file`, uploads only) |         | SyncResult            |
  * | GET    | /decks/:deckId/revisions/:revisionId/diff (`latest` ok) |           | RevisionDiff          |
  * | GET    | /decks/:deckId/deleted-slides          |                            | DeletedSlide[]        |
+ * | GET    | /decks/:deckId/slides/:slideId/versions |                           | SlideVersionView[] (newest first) |
  * | GET    | /decks/:deckId/comments                |                            | Comment[] (flat)      |
  * | POST   | /decks/:deckId/comments                | CreateCommentInput         | Comment (201)         |
  * | PATCH  | /comments/:commentId                   | UpdateCommentInput         | Comment               |
  * | DELETE | /comments/:commentId                   |                            | 204                   |
- * | POST   | /decks/:deckId/media-comments (multipart `file` + `comment` JSON) | CreateMediaCommentInput | Comment (201) |
+ * | POST   | /decks/:deckId/media-comments (multipart `file` and/or `image` + `comment` JSON) | CreateMediaCommentInput | Comment (201) |
  * | GET    | /decks/:deckId/media-usage             |                            | MediaUsage            |
- * | GET    | /media/:mediaId                        | (Range supported)          | audio/video bytes     |
+ * | GET    | /media/:mediaId                        | (Range supported)          | audio/video/PNG bytes |
  * | PUT    | /media/:mediaId/transcript             | UpdateTranscriptInput      | Comment               |
  * | GET    | /decks/:deckId/share                   |                            | WorkspaceInvite[]     |
  * | POST   | /decks/:deckId/share                   | ShareDeckInput             | CreatedWorkspaceInvite (201) |
@@ -197,24 +198,32 @@ export const MEDIA_MIME_TYPES = {
   video: ['video/webm', 'video/mp4'],
 } as const;
 
+/** A drawn image (PNG from the composer's canvas); a full-screen sketch is well below this. */
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
 /** `audio/webm;codecs=opus` → `audio/webm`. */
 export const baseMimeType = (mimeType: string) => mimeType.split(';')[0]!.trim().toLowerCase();
 
 export const isAllowedMediaMimeType = (kind: 'audio' | 'video', mimeType: string) =>
   (MEDIA_MIME_TYPES[kind] as readonly string[]).includes(baseMimeType(mimeType));
 
-/** The `comment` field of the multipart upload; the recording itself goes in `file`. */
+/**
+ * The `comment` field of the multipart upload; the recording goes in `file`, a drawn image in
+ * `image`. `media` describes the recording – present exactly when `file` is sent.
+ */
 export const createMediaCommentInputSchema = createCommentInputSchema.extend({
-  media: z.object({
-    kind: mediaKindSchema,
-    // A little slack: the recorder stops on a timer, the container may report a few ms more.
-    durationMs: z
-      .number()
-      .int()
-      .min(1)
-      .max(MAX_MEDIA_DURATION_MS + 5_000),
-    peaks: z.array(z.number().min(0).max(1)).max(MAX_MEDIA_PEAKS).default([]),
-  }),
+  media: z
+    .object({
+      kind: mediaKindSchema,
+      // A little slack: the recorder stops on a timer, the container may report a few ms more.
+      durationMs: z
+        .number()
+        .int()
+        .min(1)
+        .max(MAX_MEDIA_DURATION_MS + 5_000),
+      peaks: z.array(z.number().min(0).max(1)).max(MAX_MEDIA_PEAKS).default([]),
+    })
+    .optional(),
 });
 export type CreateMediaCommentInput = z.input<typeof createMediaCommentInputSchema>;
 

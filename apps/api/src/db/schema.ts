@@ -7,6 +7,7 @@ import {
   pgTable,
   primaryKey,
   text,
+  uniqueIndex,
   timestamp,
   unique,
   type AnyPgColumn,
@@ -411,7 +412,10 @@ export const deletedPptxComments = pgTable(
   (t) => [primaryKey({ columns: [t.deckId, t.externalId] })],
 );
 
-/** A voice or video recording attached to a comment (BER-116). The bytes live in the media store. */
+/**
+ * A voice or video recording attached to a comment (BER-116), or the image drawn for it (`image`) –
+ * at most one of each per comment. The bytes live in the media store.
+ */
 export const media = pgTable(
   'media',
   {
@@ -421,13 +425,12 @@ export const media = pgTable(
       .references(() => decks.id, { onDelete: 'cascade' }),
     commentId: text('comment_id')
       .notNull()
-      .unique()
       .references(() => comments.id, { onDelete: 'cascade' }),
     /** The deck owner at upload time – the storage quota is counted per owner. */
     ownerId: text('owner_id').notNull(),
     /** `Author.id` of whoever recorded it; only they may set the transcript. */
     uploaderId: text('uploader_id').notNull(),
-    kind: text('kind').$type<MediaKind>().notNull(),
+    kind: text('kind').$type<MediaKind | 'image'>().notNull(),
     mimeType: text('mime_type').notNull(),
     sizeBytes: integer('size_bytes').notNull(),
     durationMs: integer('duration_ms').notNull(),
@@ -441,14 +444,18 @@ export const media = pgTable(
       .default('pending'),
     createdAt: createdAt(),
   },
-  (t) => [index('media_owner_idx').on(t.ownerId), index('media_deck_idx').on(t.deckId)],
+  (t) => [
+    uniqueIndex('media_comment_kind_idx').on(t.commentId, t.kind),
+    index('media_owner_idx').on(t.ownerId),
+    index('media_deck_idx').on(t.deckId),
+  ],
 );
 
 export type UserRow = typeof users.$inferSelect;
 export type SessionRow = typeof sessions.$inferSelect;
 /**
  * Settings saved on the setup page (`/einrichtung`), keyed by their env name (`MS_CLIENT_ID`, …).
- * Secrets (`*_SECRET`, `SMTP_URL`) are AES-GCM encrypted with SLIDER_SECRET. The environment
+ * Secrets (`*_SECRET`) are AES-GCM encrypted with SLIDER_SECRET. The environment
  * always wins over these rows – see `services/instance-settings`.
  */
 export const instanceSettings = pgTable('instance_settings', {

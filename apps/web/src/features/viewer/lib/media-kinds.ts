@@ -9,7 +9,7 @@ export interface MediaKind {
   enabled: boolean;
 }
 
-/** Comment formats. Voice and video arrived with BER-116; images follow – their tab says so. */
+/** Comment formats. Voice and video arrived with BER-116; images are drawn, with an optional voice memo. */
 export const MEDIA_KINDS: readonly MediaKind[] = [
   { id: 'text', label: 'Text', icon: 'notes', enabled: true },
   { id: 'audio', label: 'Audio', icon: 'mic', enabled: true },

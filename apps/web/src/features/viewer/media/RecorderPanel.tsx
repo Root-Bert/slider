@@ -1,8 +1,15 @@
 import { MAX_MEDIA_DURATION_MS, type MediaKind } from '@slider/shared';
-import { useEffect, useEffectEvent, useRef, type KeyboardEvent } from 'react';
-import { Button, cn, Icon, Spinner } from '@/ui';
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react';
+import { Button, cn, Icon, SegmentedControl, Spinner, type Segment } from '@/ui';
 import { AudioPlayer, VideoPlayer } from './MediaPlayer';
-import { formatBytes, formatDuration } from './recording';
+import { canShareScreen, formatBytes, formatDuration, type VideoSource } from './recording';
 import { useMediaUsage } from './useMediaComment';
 import { useRecorder, type Recording } from './useRecorder';
 
@@ -19,24 +26,65 @@ interface RecorderPanelProps {
   onTab?: (backwards: boolean) => void;
 }
 
+const NO_SCREEN = 'Bildschirm teilen geht in diesem Browser nicht';
+
+const VIDEO_SOURCES = (screen: boolean): readonly Segment<VideoSource>[] => [
+  { value: 'camera', label: 'Kamera', icon: 'cameraVideo' },
+  {
+    value: 'screen',
+    label: 'Bildschirm',
+    icon: 'screenShare',
+    disabled: !screen,
+    title: screen ? undefined : NO_SCREEN,
+  },
+  {
+    value: 'both',
+    label: 'Beides',
+    icon: 'pictureInPicture',
+    disabled: !screen,
+    title: screen ? 'Bildschirm mit Kamera in der Ecke' : NO_SCREEN,
+  },
+];
+
+const IDLE_LABELS: Record<VideoSource, string> = {
+  camera: 'Videokommentar aufnehmen',
+  screen: 'Bildschirm aufnehmen',
+  both: 'Bildschirm und Kamera aufnehmen',
+};
+
 /**
  * Records a voice or video comment (BER-116): record → stop → listen/watch → send or record
  * again. Five minutes at most; compressed while recording, transcribed on this device after
  * sending. Keyboard: Space starts, pauses and resumes (afterwards: plays and pauses the
  * recording), ↵ stops.
+ *
+ * Video picks its picture first: camera, shared screen, or both (camera bubble in the corner).
  */
-export function RecorderPanel({
+export function RecorderPanel(props: RecorderPanelProps) {
+  const [source, setSource] = useState<VideoSource>('camera');
+  if (props.kind !== 'video') return <RecorderBody {...props} source="camera" />;
+  // Remount per source: the previous camera or screen goes off.
+  return <RecorderBody key={source} {...props} source={source} onSourceChange={setSource} />;
+}
+
+function RecorderBody({
   kind,
   deckId,
   onChange,
   autoStart = false,
   autoFocus = false,
   onTab,
-}: RecorderPanelProps) {
+  source,
+  onSourceChange,
+}: RecorderPanelProps & {
+  source: VideoSource;
+  onSourceChange?: (source: VideoSource) => void;
+}) {
   const { state, stream, levels, elapsedMs, start, stop, pause, resume, reset } = useRecorder(
     kind,
-    { autoStart: autoStart && kind === 'audio' },
+    { autoStart: autoStart && kind === 'audio', source },
   );
+  const [screenSupported] = useState(canShareScreen);
   const rootRef = useRef<HTMLDivElement>(null);
   const recordButtonRef = useRef<HTMLButtonElement>(null);
   const recording = state.status === 'recorded' ? state.recording : null;
@@ -96,9 +144,19 @@ export function RecorderPanel({
       onKeyDown={onKeyDown}
       className="flex flex-col gap-2 rounded-control outline-none focus-visible:shadow-[0_0_0_1px_rgb(255_255_255/0.35)]"
     >
+      {onSourceChange && !recording && !recordingNow && (
+        <SegmentedControl
+          label="Bildquelle"
+          segments={VIDEO_SOURCES(screenSupported)}
+          value={source}
+          onChange={onSourceChange}
+        />
+      )}
+
       {kind === 'video' && !recording && (
         <CameraPreview
           stream={stream}
+          source={source}
           recording={recordingNow}
           paused={paused}
           elapsedMs={elapsedMs}
@@ -181,11 +239,15 @@ export function RecorderPanel({
           ) : (
             <span className="text-xs text-fg-muted">
               {state.status === 'requesting'
-                ? `Zugriff auf ${kind === 'audio' ? 'Mikrofon' : 'Kamera'} …`
+                ? kind === 'audio'
+                  ? 'Zugriff auf Mikrofon …'
+                  : source === 'camera'
+                    ? 'Zugriff auf Kamera …'
+                    : 'Bildschirm auswählen …'
                 : kind === 'audio'
                   ? 'Sprachkommentar aufnehmen'
-                  : 'Videokommentar aufnehmen'}
-              {state.status !== 'requesting' && <span className="text-fg-faint"> · Leertaste</span>}
+                  : IDLE_LABELS[source]}
+              {state.status !== 'requesting' && <span className="text-fg-faint"> (Leertaste)</span>}
             </span>
           )}
         </div>
@@ -216,34 +278,62 @@ function LiveLevels({ levels, paused }: { levels: readonly number[]; paused: boo
 
 function CameraPreview({
   stream,
+  source,
   recording,
   paused,
   elapsedMs,
 }: {
   stream: MediaStream | null;
+  source: VideoSource;
   recording: boolean;
   paused: boolean;
   elapsedMs: number;
 }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  useEffect(() => {
-    if (videoRef.current) videoRef.current.srcObject = stream;
-  }, [stream]);
+  // A callback ref: the preview's video element changes between the full frame and the bubble.
+  const videoRef = useCallback(
+    (video: HTMLVideoElement | null) => {
+      if (video && video.srcObject !== stream) video.srcObject = stream;
+    },
+    [stream],
+  );
+  // Before recording, "Beides" shows the layout: the screen to come, the camera as its bubble.
+  const bubbleOnly = source === 'both' && !recording;
+  const showsScreen = source !== 'camera' && recording;
 
   return (
     <div className="relative aspect-video overflow-hidden rounded-control bg-black">
-      {stream ? (
-        // Mirrored like a mirror – the recording itself is not.
+      {bubbleOnly || (source === 'screen' && !recording) ? (
+        <div className="flex size-full flex-col items-center justify-center gap-1.5 bg-white/5 text-fg-faint">
+          <Icon name="screenShare" size={28} />
+          <span className="text-[11px]">Bildschirm wählst du beim Start</span>
+        </div>
+      ) : stream ? (
+        // The camera mirrored like a mirror – the recording itself is not; screens never.
         <video
           ref={videoRef}
           autoPlay
           muted
           playsInline
-          className="size-full -scale-x-100 object-cover"
+          className={cn('size-full', showsScreen ? 'object-contain' : '-scale-x-100 object-cover')}
         />
       ) : (
         <div className="flex size-full items-center justify-center text-fg-faint">
           <Icon name="cameraVideo" size={28} />
+        </div>
+      )}
+      {bubbleOnly && (
+        <div className="absolute right-[4%] bottom-[6%] flex aspect-square h-[46%] items-center justify-center overflow-hidden rounded-full bg-black text-fg-faint shadow-[0_0_0_2px_rgb(255_255_255/0.85)]">
+          {stream ? (
+            <video
+              ref={videoRef}
+              autoPlay
+              muted
+              playsInline
+              className="size-full -scale-x-100 object-cover"
+            />
+          ) : (
+            <Icon name="cameraVideo" size={20} />
+          )}
         </div>
       )}
       {recording && (
@@ -257,17 +347,17 @@ function CameraPreview({
   );
 }
 
-/** "Transkript entsteht auf deinem Gerät · 1,2 GB von 5 GB belegt" – no storage line without a quota. */
+/** "Max. 5 Min., Transkript entsteht auf deinem Gerät. 1,2 GB von 5 GB belegt." – no storage line without a quota. */
 function StorageHint({ deckId }: { deckId: string }) {
   const usage = useMediaUsage(deckId).data;
   const limitBytes = usage?.limitBytes ?? null;
   const nearlyFull = usage && limitBytes !== null && usage.usedBytes / limitBytes > 0.9;
   return (
     <p className={cn('text-[11px]', nearlyFull ? 'text-warning' : 'text-fg-faint')}>
-      Max. 5 Min. · Transkript entsteht auf deinem Gerät
+      Max. 5 Min., Transkript entsteht auf deinem Gerät.
       {usage &&
         limitBytes !== null &&
-        ` · ${formatBytes(usage.usedBytes)} von ${formatBytes(limitBytes)} belegt`}
+        ` ${formatBytes(usage.usedBytes)} von ${formatBytes(limitBytes)} belegt.`}
     </p>
   );
 }
