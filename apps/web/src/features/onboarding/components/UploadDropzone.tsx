@@ -40,7 +40,7 @@ export function UploadDropzone({ onFile, onBrowse, error }: UploadDropzoneProps)
           if (event.target === event.currentTarget) onBrowse();
         }}
         className={cn(
-          'flex cursor-pointer items-center gap-3 rounded-control border border-dashed px-4 py-3 transition-colors',
+          'flex cursor-pointer items-center gap-3 rounded-control border border-dashed px-4 py-8 transition-colors',
           dragOver ? 'border-fg bg-white/5' : 'border-hairline-strong hover:bg-white/[0.03]',
           error && !dragOver && 'border-danger/60',
         )}

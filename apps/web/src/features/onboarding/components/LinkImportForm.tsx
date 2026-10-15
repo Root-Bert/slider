@@ -1,5 +1,5 @@
 import { useId } from 'react';
-import { Button, TextField } from '@/ui';
+import { Button, cn, TextField } from '@/ui';
 
 interface LinkImportFormProps {
   url: string;
@@ -25,6 +25,8 @@ export function LinkImportForm({
   label,
 }: LinkImportFormProps) {
   const labelId = useId();
+  // "Öffnen" only slides in once there is something to open; Enter still submits regardless.
+  const showSubmit = url.trim() !== '' || pending;
   return (
     <form
       noValidate
@@ -39,7 +41,7 @@ export function LinkImportForm({
           {label}
         </p>
       )}
-      <div className="flex items-start gap-2">
+      <div className="flex items-start">
         <TextField
           type="url"
           size="lg"
@@ -55,9 +57,21 @@ export function LinkImportForm({
           error={error}
           className="min-w-0 flex-1"
         />
-        <Button type="submit" size="lg" variant={emphasis} loading={pending}>
-          Öffnen
-        </Button>
+        <div
+          inert={!showSubmit}
+          className={cn(
+            'grid transition-[grid-template-columns,opacity,translate] duration-300 ease-out motion-reduce:transition-none',
+            showSubmit ? 'grid-cols-[1fr] opacity-100' : 'grid-cols-[0fr] translate-x-2 opacity-0',
+          )}
+        >
+          <div className="overflow-hidden">
+            <div className="pl-2">
+              <Button type="submit" size="lg" variant={emphasis} loading={pending}>
+                Öffnen
+              </Button>
+            </div>
+          </div>
+        </div>
       </div>
     </form>
   );

@@ -62,19 +62,42 @@ const BODY_SKETCHES: readonly SlideSketch[] = ['bullets', 'chart', 'bullets', 'c
 export const slideSketch = (index: number): SlideSketch =>
   index === 0 ? 'cover' : BODY_SKETCHES[(index * 7 + 3) % BODY_SKETCHES.length]!;
 
-/** Ghost comment cards appear under these columns (never the first – the status card is there). */
-export const hasGhostComment = (index: number) => index > 0 && index % 3 !== 2;
-
 // ── Timing of the stage's intro and outro ──────────────────────────────────
 
-/** Intro: placeholder slides are dealt onto the track this far apart … */
-export const DEAL_STAGGER = 110;
-export const DEAL_MS = 820;
-/** … the chrome (minimap, controls row, status card) builds up behind them. */
-export const CHROME_DELAY = 260;
-/** Outro: slides dissolve left to right this far apart; `REVEAL_MS` covers the whole outro. */
-export const REVEAL_STAGGER = 80;
+/** Intro: once the slides are counted, the first `DEALT_MAX` placeholders are dealt onto the track this far apart … */
+export const DEAL_STAGGER = 260;
+export const DEALT_MAX = 8;
+export const DEAL_MS = 1700;
+/** … the minimap's thumbnails pop up behind them. */
+export const CHROME_DELAY = 600;
+/** The controls row builds up right away, while the page cross-fades in. */
+export const CONTROLS_DELAY = 180;
+/** A placeholder shows its slide rendered once it has landed (the deal eases out by then) … */
+export const LAND_MS = Math.round(DEAL_MS * 0.55);
+/** … one after another, this far apart at the least, each print fading in over `PRINT_MS`. */
+export const PRINT_STAGGER = 140;
+export const PRINT_MS = 700;
+/** More slides than this rendered at once: the rest print together (they are off-screen anyway). */
+export const PRINT_CASCADE_MAX = 8;
+/** Outro: the real slides appear left to right this far apart; `REVEAL_MS` covers the whole outro. */
+export const REVEAL_STAGGER = 300;
 export const REVEAL_SLOTS_MAX = 6;
-export const REVEAL_MS = 220 + REVEAL_SLOTS_MAX * REVEAL_STAGGER + 560;
+export const REVEAL_MS = 220 + REVEAL_SLOTS_MAX * REVEAL_STAGGER + 640;
 /** The intro's last deal has landed by then; the outro never starts earlier. */
-export const INTRO_MS = 7 * DEAL_STAGGER + DEAL_MS;
+export const INTRO_MS = (DEALT_MAX - 1) * DEAL_STAGGER + DEAL_MS;
+/** After the intro, while the import runs, the minimap's thumbnails bounce in a wave this far apart, once per `WAVE_MS`. */
+export const WAVE_STAGGER = 70;
+export const WAVE_MS = 2600;
+
+/** Ms from the slides being counted until slide `index`'s placeholder has landed on the track. */
+export const landsAt = (index: number) => Math.min(index, DEALT_MAX - 1) * DEAL_STAGGER + LAND_MS;
+
+/**
+ * The picture as the stage shows it: the first `printed` rendered slides only. The stage prints
+ * slides one after another, so a burst of progress (or the import finishing at once) never
+ * flips every placeholder at the same moment; the next slide to print shows as in progress.
+ */
+export function printedPicture(picture: ImportPicture, printed: number): ImportPicture {
+  if (picture.count === null || printed >= picture.rendered) return picture;
+  return { ...picture, rendered: printed, current: printed };
+}

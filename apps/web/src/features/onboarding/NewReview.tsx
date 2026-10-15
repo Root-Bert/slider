@@ -25,7 +25,8 @@ import { PPTX_ACCEPT } from './lib/upload-validation';
 export function NewReview({ workspace }: { workspace: Workspace }) {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const openDeck = (deck: Deck) => void navigate(routes.deck(deck.id));
+  // The page cross-fades into the deck page, where the import stage builds up (index.css).
+  const openDeck = (deck: Deck) => void navigate(routes.deck(deck.id), { viewTransition: true });
 
   const link = useLinkImport(workspace.id, openDeck);
   const upload = useDeckUpload(workspace.id, openDeck);

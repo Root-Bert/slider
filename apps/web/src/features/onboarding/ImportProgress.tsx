@@ -1,51 +1,81 @@
-import { useEffect, useEffectEvent, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import type { Deck } from '@slider/shared';
 import { routes } from '@/app/routes';
 import { useDeleteDeck } from '@/lib/queries';
-import { Button, cn, GlassPanel, Icon, ProgressBar } from '@/ui';
+import { Button, cn, GlassPanel, Icon } from '@/ui';
 import { slidesLabel, sourceLabel } from '@/features/reviews/lib/deck-labels';
 import { ImportStage, type StagePhase } from './components/ImportStage';
-import { importPicture, INTRO_MS, REVEAL_MS } from './lib/import-skeleton';
-import { importStatusText, importStepViews, type ImportStepView } from './lib/import-steps';
+import {
+  importPicture,
+  landsAt,
+  PRINT_CASCADE_MAX,
+  PRINT_MS,
+  PRINT_STAGGER,
+  printedPicture,
+  REVEAL_MS,
+} from './lib/import-skeleton';
+import { importStatusText, importStepViews } from './lib/import-steps';
 
 interface ImportProgressProps {
   deck: Deck;
   /** The real slides' aspect ratios once the deck is ready and the viewer has its data: starts the morph. */
   aspectRatios?: readonly number[] | null;
+  /** The deck is ready and every slide has printed: time to mount the viewer underneath. */
+  onPrinted?: () => void;
   /** The morph has finished – the real viewer underneath is all that is left. */
   onRevealed?: () => void;
 }
 
 /**
  * A2: shown by the deck page while the import is queued, running or failed (BER-97) – the
- * viewer's layout building itself in placeholders, the progress docked where the first comment
- * would be. Once the deck is ready the deck page mounts the viewer underneath and passes the
- * slides' aspect ratios: the placeholders settle onto the real slides and dissolve into them.
+ * viewer's layout building itself in placeholders, one per slide once the import has counted
+ * them; only a failure docks a card where the first comment would be. Once the deck is ready the
+ * deck page mounts the viewer underneath and passes the slides' aspect ratios: the placeholders
+ * settle onto the real slides and dissolve into them, one after another.
  */
-export function ImportProgress({ deck, aspectRatios = null, onRevealed }: ImportProgressProps) {
-  const phase = useMorph(aspectRatios !== null, onRevealed);
+export function ImportProgress({
+  deck,
+  aspectRatios = null,
+  onPrinted,
+  onRevealed,
+}: ImportProgressProps) {
+  const imported = importPicture(deck.import, deck.slideCount);
+  const countedAt = useCountedAt(imported.count !== null);
+  const printed = usePrinted(imported.count === null ? 0 : imported.rendered, countedAt);
+  const picture = printedPicture(imported, printed);
+  const allPrinted = printed >= (imported.count ?? 0);
+  // The viewer mounts only now: its first render and slide images would stall the prints.
+  const printedReady = allPrinted && deck.import.status === 'ready';
+  const notifyPrinted = useEffectEvent(() => onPrinted?.());
+  useEffect(() => {
+    if (printedReady) notifyPrinted();
+  }, [printedReady]);
+  const { phase, dissolved } = useMorph(aspectRatios !== null, allPrinted, onRevealed);
   return (
     <>
       {phase === 'import' && <title>{`${deck.title} wird importiert · Slider`}</title>}
+      <p role="status" aria-live="polite" className="sr-only">
+        {importStatusText(importStepViews(deck.import))}
+      </p>
       <ImportStage
-        picture={importPicture(deck.import, deck.slideCount)}
+        picture={picture}
         phase={phase}
         aspectRatios={aspectRatios}
+        onDissolved={dissolved}
       >
-        <GlassPanel tone="elevated" className="p-5">
-          {deck.import.status === 'failed' ? (
+        {deck.import.status === 'failed' && (
+          <GlassPanel tone="elevated" className="p-5">
             <ImportFailed deck={deck} error={deck.import.error} />
-          ) : (
-            <ImportRunning deck={deck} />
-          )}
-        </GlassPanel>
+          </GlassPanel>
+        )}
       </ImportStage>
     </>
   );
 }
 
-const SETTLE_MS = 560;
+/** Settling: the camera's pan home (900 ms) and the last print (`PRINT_MS`) both end within it. */
+const SETTLE_MS = Math.max(920, PRINT_MS + 200);
 /** Longest wait for the real slide images before dissolving into them anyway. */
 const IMAGE_WAIT_MS = 2000;
 /** The viewer fades a slide image in once it has loaded. */
@@ -75,33 +105,79 @@ async function slideImagesLoaded(): Promise<void> {
   ]);
 }
 
+/** When the import first counted the slides – the moment the placeholders are dealt in. */
+function useCountedAt(counted: boolean): number | null {
+  const [at, setAt] = useState<number | null>(null);
+  useEffect(() => {
+    if (!counted || at !== null) return;
+    const frame = requestAnimationFrame(() => setAt(performance.now()));
+    return () => cancelAnimationFrame(frame);
+  }, [counted, at]);
+  return at;
+}
+
 /**
- * `import` until `ready`; then `settle` – at least until the intro has played and the real
- * slides have loaded – then `reveal`, and `onRevealed` once the placeholders are gone.
+ * How many slides the stage shows rendered: follows `rendered` one slide at a time, each once its
+ * placeholder has landed and at least `PRINT_STAGGER` after the one before – a burst of progress
+ * (or the import finishing at once) prints left to right instead of flipping every placeholder.
  */
-function useMorph(ready: boolean, onRevealed?: () => void): StagePhase {
-  const [mountedAt] = useState(() => performance.now());
+function usePrinted(rendered: number, countedAt: number | null): number {
+  const [printed, setPrinted] = useState(0);
+  useEffect(() => {
+    if (countedAt === null || printed >= rendered) return;
+    // Far behind (a long deck finished at once): catch up to the last few, which still cascade.
+    const next = Math.max(printed + 1, rendered - PRINT_CASCADE_MAX + 1);
+    const wait = Math.max(PRINT_STAGGER, countedAt + landsAt(next - 1) - performance.now());
+    const timer = setTimeout(() => setPrinted(next), wait);
+    return () => clearTimeout(timer);
+  }, [printed, rendered, countedAt]);
+  return Math.min(printed, rendered);
+}
+
+/**
+ * `import` until `ready`; then `settle` – until every slide has printed, the camera is home and
+ * the real slides have loaded – then
+ * `reveal`, and `onRevealed` once the stage reports its placeholders dissolved (`dissolved`).
+ */
+function useMorph(
+  ready: boolean,
+  allPrinted: boolean,
+  onRevealed?: () => void,
+): { phase: StagePhase; dissolved: () => void } {
   const [revealing, setRevealing] = useState(false);
-  const revealed = useEffectEvent(() => onRevealed?.());
+  const latest = useRef(onRevealed);
+  useEffect(() => {
+    latest.current = onRevealed;
+  });
+  // Once only: from the stage's dissolve, or from the fallback timer.
+  const done = useRef(false);
+  const revealed = useCallback(() => {
+    if (done.current) return;
+    done.current = true;
+    latest.current?.();
+  }, []);
 
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || !allPrinted) return;
     let cancelled = false;
     const run = async () => {
-      const introLeft = Math.max(0, mountedAt + INTRO_MS - performance.now());
-      await Promise.all([sleep(Math.max(SETTLE_MS, introLeft)), slideImagesLoaded()]);
+      // The last print fades in and the camera is home (both settle within `SETTLE_MS`), then
+      // the placeholders dissolve – every one of them has landed, it printed only after that.
+      await Promise.all([sleep(SETTLE_MS), slideImagesLoaded()]);
       if (cancelled) return;
       setRevealing(true);
-      await sleep(REVEAL_MS);
+      // The stage reports the dissolve's end; this only guards against a missed event.
+      await sleep(REVEAL_MS + 400);
       if (!cancelled) revealed();
     };
     void run();
     return () => {
       cancelled = true;
     };
-  }, [ready, mountedAt]);
+  }, [ready, allPrinted, revealed]);
 
-  return !ready ? 'import' : revealing ? 'reveal' : 'settle';
+  const phase = !ready ? 'import' : revealing ? 'reveal' : 'settle';
+  return { phase, dissolved: revealed };
 }
 
 function DeckHeading({ deck, failed = false }: { deck: Deck; failed?: boolean }) {
@@ -127,88 +203,6 @@ function DeckHeading({ deck, failed = false }: { deck: Deck; failed?: boolean })
         <p className="truncate text-xs text-fg-subtle">{meta}</p>
       </div>
     </div>
-  );
-}
-
-function ImportRunning({ deck }: { deck: Deck }) {
-  const navigate = useNavigate();
-  const remove = useDeleteDeck();
-  const steps = importStepViews(deck.import);
-
-  return (
-    <div className="flex flex-col gap-4">
-      <DeckHeading deck={deck} />
-      <div className="h-px bg-hairline" />
-      <ol className="flex flex-col gap-3" aria-label="Import-Fortschritt">
-        {steps.map((step) => (
-          <ImportStepRow key={step.step} step={step} />
-        ))}
-      </ol>
-      {/* One concise announcement per step change instead of re-reading the whole list. */}
-      <p role="status" aria-live="polite" className="sr-only">
-        {importStatusText(steps)}
-      </p>
-      {remove.error && (
-        <p role="alert" className="text-xs text-danger">
-          {remove.error.message}
-        </p>
-      )}
-      <div className="flex items-center justify-between gap-3 pt-1">
-        <p className="text-xs text-fg-subtle">Dauert meist unter einer Minute.</p>
-        <Button
-          variant="ghost"
-          size="sm"
-          loading={remove.isPending}
-          onClick={() =>
-            remove.mutate(deck.id, { onSuccess: () => void navigate(routes.newReview()) })
-          }
-        >
-          Abbrechen
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-const STEP_ICONS = {
-  done: 'checkCircle',
-  current: 'sync',
-  pending: 'radioButtonUnchecked',
-} as const;
-
-function ImportStepRow({ step }: { step: ImportStepView }) {
-  const { status, progress } = step;
-  return (
-    <li className="flex flex-col gap-2" aria-current={status === 'current' ? 'step' : undefined}>
-      <div
-        className={cn(
-          'flex items-center gap-3 text-[13px]',
-          status === 'pending' ? 'text-fg-faint' : 'text-fg',
-        )}
-      >
-        <Icon
-          name={STEP_ICONS[status]}
-          size={18}
-          className={cn('shrink-0', status === 'current' && 'animate-spin [animation-duration:2s]')}
-        />
-        <span className={cn('flex-1', status === 'current' && 'font-medium')}>
-          {step.label}
-          {status === 'done' && <span className="sr-only"> – erledigt</span>}
-        </span>
-        {progress && (
-          <span className="text-xs text-fg-subtle tabular-nums">
-            {progress.done} / {progress.total}
-          </span>
-        )}
-      </div>
-      {progress && progress.total > 0 && (
-        <ProgressBar
-          value={progress.done / progress.total}
-          label={step.label}
-          className="ml-[30px]"
-        />
-      )}
-    </li>
   );
 }
 

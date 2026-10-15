@@ -14,14 +14,18 @@ import {
 } from '@/features/viewer/lib/timeline-layout';
 import {
   CHROME_DELAY,
+  CONTROLS_DELAY,
+  DEALT_MAX,
   DEAL_MS,
   DEAL_STAGGER,
-  hasGhostComment,
   INTRO_MS,
+  PRINT_MS,
   REVEAL_SLOTS_MAX,
   REVEAL_STAGGER,
   slideSketch,
   slotState,
+  WAVE_MS,
+  WAVE_STAGGER,
   type ImportPicture,
   type SlideSketch,
   type SlotState,
@@ -35,7 +39,6 @@ import {
 export type StagePhase = 'import' | 'settle' | 'reveal';
 
 const DEFAULT_AR = 16 / 9;
-const GHOST_COUNT = 10;
 const EASE_OUT = 'cubic-bezier(0.2, 0.9, 0.25, 1)';
 const EASE_DEAL = 'cubic-bezier(0.16, 0.92, 0.24, 1.05)';
 const EASE_PAN = 'cubic-bezier(0.65, 0, 0.35, 1)';
@@ -46,18 +49,26 @@ interface ImportStageProps {
   phase: StagePhase;
   /** The real slides' aspect ratios, once loaded – the placeholders settle onto them. */
   aspectRatios: readonly number[] | null;
-  /** The status card, docked in the comment area under the first slide (like a comment card). */
-  children: ReactNode;
+  /** A card docked in the comment area under the first slide (like a comment card) – the error. */
+  children?: ReactNode;
+  /** The outro's last placeholder in view has dissolved. */
+  onDissolved?: () => void;
 }
 
 /**
  * The deck page while a deck imports: the viewer's own layout – track, minimap, controls row,
  * split handle, comment area – in placeholders, laid out with the timeline's geometry so every
- * placeholder sits exactly where its real counterpart will. Slides are dealt in, riffle while
- * the import looks for them, fill in as they render (the camera following along) and finally
- * dissolve into the real viewer mounted underneath.
+ * placeholder sits exactly where its real counterpart will. Once the import has counted the
+ * slides, one placeholder per slide is dealt in; they fill in as they render (the camera
+ * following along) and finally dissolve, one after another, into the real viewer underneath.
  */
-export function ImportStage({ picture, phase, aspectRatios, children }: ImportStageProps) {
+export function ImportStage({
+  picture,
+  phase,
+  aspectRatios,
+  children,
+  onDissolved,
+}: ImportStageProps) {
   const wrapperRef = useRef<HTMLElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
@@ -65,12 +76,13 @@ export function ImportStage({ picture, phase, aspectRatios, children }: ImportSt
   const motion = !useMediaQuery('(prefers-reduced-motion: reduce)');
   const metrics = useTimelineMetrics(wrapperRef, scrollerRef, controlsRef);
   const [split] = useState(loadStoredSplit);
-  const intro = useIntro();
   const morphing = phase !== 'import';
   const real = morphing && aspectRatios !== null;
 
-  // Before the import has counted the slides, ghosts stand in; the extra ones fly off once it has.
-  const n = real ? aspectRatios.length : (picture.count ?? GHOST_COUNT);
+  // Until the import has counted the slides, a single ghost stands in for the first one (dealt
+  // in right away, while the page cross-fades in); then exactly one placeholder per slide.
+  const n = real ? aspectRatios.length : (picture.count ?? 1);
+  const intro = useIntro(real || picture.count !== null);
   const leaving = useLeaving(n);
   const drawn = Math.max(n, leaving?.to ?? 0);
 
@@ -81,35 +93,46 @@ export function ImportStage({ picture, phase, aspectRatios, children }: ImportSt
   const geometry = useMemo(
     () =>
       metrics &&
-      computeTrackGeometry({ aspectRatios: ratios.slice(0, Math.max(1, n)), ...metrics, narrow }),
+      computeTrackGeometry({
+        aspectRatios: n > 0 ? ratios.slice(0, n) : [DEFAULT_AR],
+        ...metrics,
+        narrow,
+      }),
     [metrics, ratios, n, narrow],
   );
   const slideH = geometry && Math.round(slideHeightAt(narrow ? null : split, geometry));
   const layout = useMemo(() => (slideH ? layoutTrack(ratios, slideH) : null), [ratios, slideH]);
   const clientW = metrics?.clientW ?? 0;
 
-  // The camera keeps the slide being rendered centred; it heads home for the comments and the
-  // outro (the real viewer opens at the first slide).
-  const focus = !morphing && picture.current > 0 ? picture.current : 0;
+  // The camera keeps the slide being printed centred; once all have printed it heads home for
+  // the outro (the real viewer opens at the first slide).
+  const focus = Math.max(0, picture.current);
   const pan =
     layout && clientW && focus > 0 ? revealScrollLeft(layout, focus, 0, clientW, 'center') : 0;
 
   const range = layout ? visibleRange(layout, pan, clientW) : { first: 0, last: -1 };
+  // Placeholders stay mounted once the camera has passed them: one mounted again would deal in
+  // (and print) all over again on its way back home.
+  // The dealt hand (the first `DEALT_MAX` slots) is on the track from the start, so each lands on
+  // time; slots further on show up as the camera reaches them, already in place.
+  const reach = useReach(Math.max(range.last, DEALT_MAX - 1), drawn - 1);
   // Outro order: left to right as seen on screen.
   const firstInView = layout ? visibleRange(layout, pan, clientW, 0).first : 0;
   const revealDelay = (index: number) =>
     Math.min(REVEAL_SLOTS_MAX, Math.max(0, index - firstInView)) * REVEAL_STAGGER;
+  // The outro ends when the last placeholder in view has dissolved (later ones share its delay).
+  const lastInView = Math.min(range.last, n - 1);
 
   const slots = [];
   const lines = [];
-  const ghostCards = [];
-  for (let i = range.first; layout && i <= range.last; i++) {
+  for (let i = 0; layout && i <= reach; i++) {
     const box = layout.slides[i];
     const gap = layout.gaps[i];
     if (!box || !gap) continue;
     const isLeaving = i >= n;
-    const dealDelay = intro ? Math.min(i, 7) * DEAL_STAGGER : 0;
-    const state: SlotState = morphing ? 'rendered' : slotState(i, picture);
+    const deals = motion && i < DEALT_MAX;
+    const dealDelay = intro ? i * DEAL_STAGGER : 0;
+    const state = stageSlotState(i, picture, real);
     slots.push(
       <Slot
         key={i}
@@ -118,27 +141,21 @@ export function ImportStage({ picture, phase, aspectRatios, children }: ImportSt
         x={box.x}
         w={box.w}
         h={layout.h}
-        motion={motion}
         settling={morphing}
         outer={
           phase === 'reveal'
-            ? `import-dissolve 560ms ${EASE_OUT} ${revealDelay(i) + 220}ms forwards`
+            ? `import-dissolve 640ms ${EASE_OUT} ${revealDelay(i) + 220}ms forwards`
             : isLeaving
               ? `import-leave 520ms ${EASE_OUT} ${(i - n) * 60}ms forwards`
-              : motion
+              : deals
                 ? `import-deal ${DEAL_MS}ms ${EASE_DEAL} ${dealDelay}ms both`
                 : undefined
-        }
-        riffle={
-          motion && state === 'ghost' && !isLeaving && !picture.failed
-            ? `import-riffle 3.4s ${EASE_OUT} ${INTRO_MS + 300 + i * 420}ms infinite both`
-            : undefined
         }
         sheen={
           phase === 'reveal' ? `import-sheen 760ms ease-in-out ${revealDelay(i)}ms both` : undefined
         }
-        printDelay={morphing ? Math.min(i, REVEAL_SLOTS_MAX) * 60 : 0}
         failed={picture.failed}
+        onDissolved={phase === 'reveal' && i === lastInView ? onDissolved : undefined}
       />,
     );
     {
@@ -155,24 +172,10 @@ export function ImportStage({ picture, phase, aspectRatios, children }: ImportSt
                 ? `import-fade-out 300ms ease-out ${revealDelay(i) + 200}ms forwards`
                 : isLeaving
                   ? 'import-fade-out 200ms ease-out forwards'
-                  : motion
-                    ? `import-grow-y 520ms ${EASE_OUT} ${dealDelay + 480}ms both`
+                  : deals
+                    ? `import-grow-y 680ms ${EASE_OUT} ${dealDelay + 620}ms both`
                     : undefined,
           }}
-        />,
-      );
-    }
-    if ((picture.comments || morphing) && i < n && hasGhostComment(i)) {
-      ghostCards.push(
-        <GhostComment
-          key={i}
-          x={box.x}
-          w={Math.min(280, box.w)}
-          animation={
-            phase === 'reveal'
-              ? `import-fade-out 280ms ease-out ${revealDelay(i) + 160}ms forwards`
-              : `import-pop 420ms ${EASE_DEAL} ${Math.min(i, 6) * 90}ms both`
-          }
         />,
       );
     }
@@ -227,10 +230,11 @@ export function ImportStage({ picture, phase, aspectRatios, children }: ImportSt
                   ratios={ratios}
                   count={n}
                   picture={picture}
-                  morphing={morphing}
                   phase={phase}
                   availableW={clientW - 24}
                   motion={motion}
+                  real={real}
+                  wave={motion && !intro && !picture.failed}
                 />
               </div>
               <div className="px-4 pt-2">
@@ -242,35 +246,27 @@ export function ImportStage({ picture, phase, aspectRatios, children }: ImportSt
                     <span
                       className="h-1 w-10 rounded-full bg-white/25"
                       style={{
-                        animation: `import-pop 400ms ${EASE_OUT} ${CHROME_DELAY + 500}ms both`,
+                        animation: `import-pop 520ms ${EASE_OUT} ${CONTROLS_DELAY + 420}ms both`,
                       }}
                     />
                   </div>
                 </div>
               )}
             </div>
-            {/* Comment area: the status card under the first slide, ghost comments under others. */}
+            {/* Comment area: the status card under the first slide. Comments come in only once the viewer is up. */}
             <div className={cn('relative px-4 pb-6', narrow ? 'pt-4' : 'pt-12')}>
-              <div
-                aria-hidden
-                className={cn('absolute inset-x-0 top-0', narrow ? 'pt-4' : 'pt-12')}
-                style={{
-                  transform: `translateX(${-pan}px)`,
-                  transition: `transform 900ms ${EASE_PAN}`,
-                }}
-              >
-                {ghostCards}
-              </div>
-              <div
-                className="relative w-full md:max-w-[400px]"
-                style={{
-                  animation: morphing
-                    ? `import-card-out 320ms ${EASE_OUT} forwards`
-                    : `import-rise 520ms ${EASE_OUT} ${CHROME_DELAY + 380}ms both`,
-                }}
-              >
-                {children}
-              </div>
+              {children && (
+                <div
+                  className="relative w-full md:max-w-[400px]"
+                  style={{
+                    animation: morphing
+                      ? `import-card-out 320ms ${EASE_OUT} forwards`
+                      : `import-rise 520ms ${EASE_OUT} 120ms both`,
+                  }}
+                >
+                  {children}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -279,14 +275,32 @@ export function ImportStage({ picture, phase, aspectRatios, children }: ImportSt
   );
 }
 
-/** True during the intro – placeholders mounted until then are dealt in one after another. */
-function useIntro() {
-  const [intro, setIntro] = useState(true);
+/**
+ * A slot's state on the stage. Once the viewer's data is in (`real`), slides past the import's
+ * count (it was off) have nothing left to print.
+ */
+function stageSlotState(index: number, picture: ImportPicture, real: boolean): SlotState {
+  if (real && picture.count !== null && index >= picture.count) return 'rendered';
+  return slotState(index, picture);
+}
+
+/** True until the intro, starting once `started`, has played – placeholders mounted until then are dealt in one after another. */
+function useIntro(started: boolean) {
+  const [done, setDone] = useState(false);
   useEffect(() => {
-    const timer = setTimeout(() => setIntro(false), INTRO_MS);
+    if (!started) return;
+    const timer = setTimeout(() => setDone(true), INTRO_MS);
     return () => clearTimeout(timer);
-  }, []);
-  return intro;
+  }, [started]);
+  return !done;
+}
+
+/** The highest index `last` has reached, up to `max` (the track's last slot). */
+function useReach(last: number, max: number) {
+  const [reach, setReach] = useState(-1);
+  const next = Math.min(Math.max(reach, last), max);
+  if (next !== reach) setReach(next);
+  return next;
 }
 
 /** Slots past a shrunken count stay a moment to fly off the track. */
@@ -311,31 +325,15 @@ interface SlotProps {
   x: number;
   w: number;
   h: number;
-  motion: boolean;
   settling: boolean;
   /** Animation of the whole slot: dealt in, flying off, dissolving. */
   outer: string | undefined;
-  /** The ghost loop: lifting off and sliding back in, while the slides are being found. */
-  riffle: string | undefined;
   sheen: string | undefined;
-  printDelay: number;
   failed: boolean;
+  onDissolved: (() => void) | undefined;
 }
 
-function Slot({
-  index,
-  state,
-  x,
-  w,
-  h,
-  motion,
-  settling,
-  outer,
-  riffle,
-  sheen,
-  printDelay,
-  failed,
-}: SlotProps) {
+function Slot({ index, state, x, w, h, settling, outer, sheen, failed, onDissolved }: SlotProps) {
   const current = state === 'current';
   return (
     <div
@@ -347,6 +345,10 @@ function Slot({
         animation: outer,
         transition: settling ? SETTLE_TRANSITION : undefined,
       }}
+      onAnimationEnd={(event) => {
+        if (event.target === event.currentTarget && event.animationName === 'import-dissolve')
+          onDissolved?.();
+      }}
     >
       <div
         className={cn(
@@ -354,14 +356,6 @@ function Slot({
           state === 'ghost' && 'skeleton',
           failed && 'opacity-40 grayscale',
         )}
-        style={{
-          // Inline animations replace the `skeleton` shimmer – a riffling ghost keeps both.
-          animation: riffle
-            ? `shimmer 1.6s linear infinite, ${riffle}`
-            : current && motion
-              ? 'import-glow 1.8s ease-in-out infinite'
-              : undefined,
-        }}
       >
         {current && (
           <div className="absolute inset-0 opacity-25">
@@ -371,23 +365,9 @@ function Slot({
         {state === 'rendered' && (
           <div
             className="absolute inset-0 bg-[#1b1b1b]"
-            style={{ animation: `import-print 640ms ${EASE_OUT} ${printDelay}ms both` }}
+            style={{ animation: `import-print ${PRINT_MS}ms ${EASE_OUT} both` }}
           >
             <Sketch kind={slideSketch(index)} />
-          </div>
-        )}
-        {(current || state === 'rendered') && motion && (
-          // The scan line: loops over the slide being rendered, sweeps once as it fills in.
-          <div
-            key={state}
-            className="pointer-events-none absolute inset-0"
-            style={{
-              animation: current
-                ? 'import-scan 1.6s ease-in-out infinite'
-                : `import-scan 640ms ${EASE_OUT} ${printDelay}ms both`,
-            }}
-          >
-            <div className="h-px w-full bg-white/70 shadow-[0_0_24px_4px_rgb(255_255_255/0.25)]" />
           </div>
         )}
         {sheen && (
@@ -468,10 +448,12 @@ interface GhostMinimapProps {
   /** Thumbnails past the count are leaving. */
   count: number;
   picture: ImportPicture;
-  morphing: boolean;
   phase: StagePhase;
   availableW: number;
   motion: boolean;
+  real: boolean;
+  /** The intro has played: the thumbnails bounce in a wave while the import runs. */
+  wave: boolean;
 }
 
 const THUMB_STYLE: Record<SlotState, string> = {
@@ -486,10 +468,11 @@ function GhostMinimap({
   ratios,
   count,
   picture,
-  morphing,
   phase,
   availableW,
   motion,
+  real,
+  wave,
 }: GhostMinimapProps) {
   const rowH = THUMB_H + 2 * MINIMAP_PAD;
   const mini = layoutMinimap(ratios, Math.max(0, availableW - 2 * MINIMAP_PAD));
@@ -497,7 +480,7 @@ function GhostMinimap({
     <div className="relative overflow-hidden" style={{ height: rowH }}>
       {mini.slides.map((box, i) => {
         if (box.x > availableW) return null;
-        const state: SlotState = morphing ? 'rendered' : slotState(i, picture);
+        const state = stageSlotState(i, picture, real);
         return (
           <span
             key={i}
@@ -515,9 +498,11 @@ function GhostMinimap({
                   ? `import-fade-out 260ms ease-out ${120 + Math.min(i, 16) * 22}ms forwards`
                   : i >= count
                     ? `import-leave 480ms ${EASE_OUT} ${(i - count) * 50}ms forwards`
-                    : motion
-                      ? `import-pop 460ms ${EASE_DEAL} ${CHROME_DELAY + Math.min(i, 16) * 35}ms both`
-                      : undefined,
+                    : wave
+                      ? `import-wave ${WAVE_MS}ms ease-in-out ${(i * WAVE_STAGGER) % WAVE_MS}ms infinite`
+                      : motion
+                        ? `import-pop 600ms ${EASE_DEAL} ${CHROME_DELAY + Math.min(i, 16) * 50}ms both`
+                        : undefined,
             }}
           >
             {state === 'rendered' && (
@@ -535,7 +520,7 @@ function GhostControls({ count, phase }: { count: number | null; phase: StagePha
   const rise = (index: number) =>
     phase === 'reveal'
       ? `import-fade-out 300ms ease-out ${180 + index * 40}ms forwards`
-      : `import-rise 520ms ${EASE_OUT} ${CHROME_DELAY + 140 + index * 70}ms both`;
+      : `import-rise 680ms ${EASE_OUT} ${CONTROLS_DELAY + index * 80}ms both`;
   return (
     <div className="flex flex-wrap items-center gap-3 md:flex-nowrap">
       <GlassPanel
@@ -588,21 +573,5 @@ function GhostIcon({ className }: { className?: string }) {
     <span className={cn('flex size-8 shrink-0 items-center justify-center', className)}>
       <span className="size-4 rounded-[5px] bg-white/10" />
     </span>
-  );
-}
-
-function GhostComment({ x, w, animation }: { x: number; w: number; animation: string }) {
-  return (
-    <div
-      className="glass absolute flex flex-col gap-2.5 rounded-panel p-3.5"
-      style={{ left: x, width: w, animation }}
-    >
-      <div className="flex items-center gap-2">
-        <span className="size-5 rounded-full bg-white/12" />
-        <span className="h-2.5 w-20 rounded-full bg-white/12" />
-      </div>
-      <span className="h-2.5 w-[85%] rounded-full bg-white/8" />
-      <span className="h-2.5 w-[60%] rounded-full bg-white/8" />
-    </div>
   );
 }
