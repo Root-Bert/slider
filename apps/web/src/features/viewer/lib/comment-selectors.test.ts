@@ -63,7 +63,7 @@ describe('threadsOnCurrentSlides', () => {
     ]);
     const kept = threadsOnCurrentSlides(threads, new Set(['s1', 's2']));
     expect(kept.map((thread) => thread.root.slideId)).toEqual(['s1', null]);
-    expect(countByStatus(kept, false).all).toBe(2);
+    expect(countByStatus(kept).all).toBe(2);
   });
 });
 

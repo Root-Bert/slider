@@ -143,11 +143,9 @@ function DeletedSlideItem({ slide, threads }: { slide: DeletedSlide; threads: Th
 
 /** One thread of a deleted slide: root, replies, resolve and an inline reply box. */
 function DeletedThread({ thread }: { thread: Thread }) {
-  const { deck, viewer, canComment } = useViewerData();
+  const { deck, canComment } = useViewerData();
   const [replying, setReplying] = useState(false);
   const { root, replies } = thread;
-  const canManage = (comment: Thread['root']) =>
-    comment.source === 'app' && comment.author.id === viewer.author.id;
 
   return (
     <article
@@ -158,7 +156,7 @@ function DeletedThread({ thread }: { thread: Thread }) {
       )}
       style={{ '--card-accent': accentColor(root.author.color) } as CSSProperties}
     >
-      <ThreadMessage comment={root} deckId={deck.id} isRoot canManage={canManage(root)} />
+      <ThreadMessage comment={root} deckId={deck.id} isRoot />
       {replies.length > 0 && (
         <ol aria-label="Antworten" className="relative flex flex-col gap-2 pl-[39px]">
           <span
@@ -167,12 +165,7 @@ function DeletedThread({ thread }: { thread: Thread }) {
           />
           {replies.map((reply) => (
             <li key={reply.id}>
-              <ThreadMessage
-                comment={reply}
-                deckId={deck.id}
-                isRoot={false}
-                canManage={canManage(reply)}
-              />
+              <ThreadMessage comment={reply} deckId={deck.id} isRoot={false} />
             </li>
           ))}
         </ol>

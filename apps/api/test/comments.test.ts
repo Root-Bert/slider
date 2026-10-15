@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { commentSchema, viewerSchema, type Comment, type CreateCommentInput } from '@slider/shared';
+import {
+  commentSchema,
+  viewerSchema,
+  type Comment,
+  type CreateCommentInput,
+  type Stroke,
+} from '@slider/shared';
 import { comments, workspaceMembers } from '../src/db/schema';
 import { externalAuthor } from '../src/authors';
 import {
@@ -466,7 +472,7 @@ describe('updating and deleting', () => {
         { x: 0.1, y: 0.1 },
         { x: 0.2, y: 0.2 },
       ],
-    } as const;
+    } satisfies Stroke;
     const root = await create({
       slideId: slide(0),
       body: 'Pfeil hier',

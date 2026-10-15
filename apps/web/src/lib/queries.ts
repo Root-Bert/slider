@@ -357,14 +357,7 @@ export function useEraseDrawing(deckId: string) {
   const invalidate = useInvalidateDeckFeedback(deckId);
   const key = queryKeys.comments(deckId);
   return useMutation({
-    /** `keepDrawing`: only the comment goes, its drawing / text on the slide stays. */
-    mutationFn: ({
-      commentId,
-      keepDrawing = false,
-    }: {
-      commentId: string;
-      keepDrawing?: boolean;
-    }) => api.delete(`/comments/${commentId}${keepDrawing ? '?keep=drawing' : ''}`),
+    mutationFn: (commentId: string) => api.delete(`/comments/${commentId}`),
     onMutate: async (commentId) => {
       await queryClient.cancelQueries({ queryKey: key });
       const previous = queryClient
