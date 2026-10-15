@@ -10,7 +10,8 @@ interface CommentBodyProps {
 
 /** Renders a comment body with @mentions, **bold** and links as React nodes (no HTML injection). */
 export function CommentBody({ body, className }: CommentBodyProps) {
-  const { participantNames } = useViewerData();
+  const { participantNames, viewer } = useViewerData();
+  const ownMention = `@${viewer.author.name}`;
   const tokens = useMemo(() => tokenizeBody(body, participantNames), [body, participantNames]);
 
   return (
@@ -31,8 +32,15 @@ export function CommentBody({ body, className }: CommentBodyProps) {
               </strong>
             );
           case 'mention':
+            // The viewer's own name stands out (BER-105).
             return (
-              <span key={index} className="font-medium text-mention">
+              <span
+                key={index}
+                className={cn(
+                  'font-medium text-mention',
+                  token.text === ownMention && 'rounded-[4px] bg-mention/20 px-0.5 text-fg',
+                )}
+              >
                 {token.text}
               </span>
             );

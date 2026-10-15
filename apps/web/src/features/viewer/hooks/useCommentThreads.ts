@@ -29,14 +29,28 @@ export interface VisibleThreads {
 
 const EMPTY: Thread[] = [];
 
-/** Applies the comment filter bar (status, "aus PowerPoint") to the deck's threads. */
+/**
+ * Applies the comment filter bar (status) and the avatar filter (your avatar:
+ * threads that @mention you; someone else's: threads they wrote in) to the deck's threads.
+ */
 export function useCommentThreads(): VisibleThreads {
-  const { threads, threadsBySlide, gapThreads, slideIndex } = useViewerData();
-  const { statusFilter, pptxOnly } = useViewerState();
+  const { threads, threadsBySlide, gapThreads, slideIndex, mentionedThreadIds, viewer } =
+    useViewerData();
+  const { statusFilter, personFilter } = useViewerState();
+
+  const threadIds = useMemo(() => {
+    if (personFilter === null) return null;
+    if (personFilter === viewer.author.id) return mentionedThreadIds;
+    return new Set(
+      threads
+        .filter((thread) => thread.participants.some((author) => author.id === personFilter))
+        .map((thread) => thread.id),
+    );
+  }, [personFilter, viewer.author.id, mentionedThreadIds, threads]);
 
   const filter = useMemo<ThreadFilter>(
-    () => ({ status: statusFilter, pptxOnly }),
-    [statusFilter, pptxOnly],
+    () => ({ status: statusFilter, threadIds }),
+    [statusFilter, threadIds],
   );
 
   const marksBySlide = useMemo(
@@ -82,9 +96,9 @@ export function useCommentThreads(): VisibleThreads {
     () =>
       countByStatus(
         threadsOnCurrentSlides(threads, slideIndex).filter((thread) => !isBareDrawing(thread)),
-        pptxOnly,
+        threadIds,
       ),
-    [threads, slideIndex, pptxOnly],
+    [threads, slideIndex, threadIds],
   );
 
   return { filter, bySlide, marksBySlide, byGap, counts };

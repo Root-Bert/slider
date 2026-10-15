@@ -3,7 +3,15 @@ import type { Author, Deck, DeckSource } from '@slider/shared';
 import { permissionsFor, type DeckViewerAccess } from '../auth/access';
 import { displayAuthor, externalAuthor, ownerAuthor } from '../authors';
 import type { Executor } from '../db/client';
-import { comments, decks, revisions, slideVersions, users, type DeckRow } from '../db/schema';
+import {
+  comments,
+  decks,
+  revisions,
+  slideVersions,
+  users,
+  workspaceMembers,
+  type DeckRow,
+} from '../db/schema';
 import type { AppDeps } from '../deps';
 import { sha256Hex } from '../import/common';
 import { blobKeys, fileUrl } from '../storage/blob-storage';
@@ -190,6 +198,20 @@ function participantsOf(owner: Author, fileAuthor: string | null, commenters: Au
     addParticipant(list, author);
   }
   return list.length ? list : [owner];
+}
+
+/**
+ * Everyone who can open the deck – the members of its workspace, whatever workspace the caller
+ * came from (a deck shared with you lives in the sharer's). `@` suggests them (BER-105).
+ */
+export async function listDeckPeople(db: Executor, deck: DeckRow): Promise<Author[]> {
+  const rows = await db
+    .select({ user: users })
+    .from(workspaceMembers)
+    .innerJoin(users, eq(users.id, workspaceMembers.userId))
+    .where(eq(workspaceMembers.workspaceId, deck.workspaceId))
+    .orderBy(asc(users.name));
+  return rows.map((row) => ownerAuthor(row.user));
 }
 
 export async function toDeckDto(

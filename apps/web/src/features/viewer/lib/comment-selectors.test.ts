@@ -43,15 +43,14 @@ describe('filters and counts', () => {
     comment({ status: 'done', source: 'pptx' }),
   ]);
 
-  it('filters by status and PowerPoint origin', () => {
-    expect(filterThreads(threads, { status: 'open', pptxOnly: false })).toHaveLength(2);
-    expect(filterThreads(threads, { status: 'all', pptxOnly: false })).toHaveLength(4);
-    expect(filterThreads(threads, { status: 'done', pptxOnly: true })).toHaveLength(1);
+  it('filters by status; PowerPoint comments count like any other', () => {
+    expect(filterThreads(threads, { status: 'open' })).toHaveLength(2);
+    expect(filterThreads(threads, { status: 'all' })).toHaveLength(4);
+    expect(filterThreads(threads, { status: 'done' })).toHaveLength(2);
   });
 
-  it('counts per status, respecting only the PowerPoint filter', () => {
-    expect(countByStatus(threads, false)).toEqual({ all: 4, open: 2, done: 2 });
-    expect(countByStatus(threads, true)).toEqual({ all: 2, open: 1, done: 1 });
+  it('counts per status', () => {
+    expect(countByStatus(threads)).toEqual({ all: 4, open: 2, done: 2 });
   });
 });
 

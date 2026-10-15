@@ -1,5 +1,4 @@
 import {
-  isPathStroke,
   isTextStroke,
   resolveRectAnchor,
   resolveShapeRef,
@@ -30,7 +29,8 @@ export type StatusFilter = 'all' | 'open' | 'done';
 
 export interface ThreadFilter {
   status: StatusFilter;
-  pptxOnly: boolean;
+  /** Avatar filter (BER-105): only these thread ids; `null`/absent = no such filter. */
+  threadIds?: ReadonlySet<string> | null;
 }
 
 export interface StatusCounts {
@@ -77,21 +77,22 @@ export function buildThreads(comments: readonly Comment[]): Thread[] {
   });
 }
 
-export const isFromPowerPoint = (comment: Comment) => comment.source === 'pptx';
-
 export function matchesFilter(thread: Thread, filter: ThreadFilter): boolean {
-  if (filter.pptxOnly && !isFromPowerPoint(thread.root)) return false;
+  if (filter.threadIds && !filter.threadIds.has(thread.id)) return false;
   return filter.status === 'all' || thread.root.status === filter.status;
 }
 
 export const filterThreads = (threads: readonly Thread[], filter: ThreadFilter): Thread[] =>
   threads.filter((thread) => matchesFilter(thread, filter));
 
-/** Counts for the Alle / Offen / Erledigt chips; respects the PowerPoint filter but not the status. */
-export function countByStatus(threads: readonly Thread[], pptxOnly: boolean): StatusCounts {
+/** Counts for the Alle / Offen / Erledigt chips; respects the avatar filter but not the status. */
+export function countByStatus(
+  threads: readonly Thread[],
+  threadIds: ReadonlySet<string> | null = null,
+): StatusCounts {
   const counts: StatusCounts = { all: 0, open: 0, done: 0 };
   for (const thread of threads) {
-    if (pptxOnly && !isFromPowerPoint(thread.root)) continue;
+    if (threadIds && !threadIds.has(thread.id)) continue;
     counts.all += 1;
     counts[thread.root.status] += 1;
   }
@@ -356,15 +357,15 @@ export const isStrokeOnly = (comment: Comment) =>
   comment.body.trim() === '' && comment.strokes.length > 0;
 
 /**
- * A drawing made without a comment: lines only, no text, recording or replies. It stays on the
- * slide but gets no card or connector line – a click on it opens the thread panel.
+ * A drawing or text on the slide made without a comment: no body, recording, image or replies. It
+ * stays on the slide but gets no card or connector line – a click on its badge adds the comment.
  */
 export const isBareDrawing = ({ root, replies }: Thread) =>
   replies.length === 0 &&
   !root.media &&
+  !root.image &&
   root.body.trim() === '' &&
-  root.strokes.length > 0 &&
-  root.strokes.every(isPathStroke);
+  root.strokes.length > 0;
 
 /** Stand-in for an empty body: the text on the slide, if any, else "✏️ Markierung". */
 export const strokeOnlyLabel = (comment: Pick<Comment, 'strokes'>) => {

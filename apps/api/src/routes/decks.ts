@@ -224,6 +224,11 @@ export function decksRoutes(deps: AppDeps) {
         return c.body(null, 204);
       })
 
+      .get('/decks/:deckId/people', viewer, async (c) => {
+        const deck = await requireDeckAccess(deps.db, c.var.viewer, c.req.param('deckId'), 'view');
+        return c.json(await listDeckPeople(deps.db, deck));
+      })
+
       .get('/decks/:deckId/slides', viewer, async (c) => {
         const deck = await requireDeckAccess(deps.db, c.var.viewer, c.req.param('deckId'), 'view');
         return c.json(await listSlides(deps.db, deck));

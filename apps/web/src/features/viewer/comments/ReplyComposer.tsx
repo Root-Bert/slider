@@ -2,7 +2,9 @@ import type { Comment } from '@slider/shared';
 import { Avatar, cn, Icon } from '@/ui';
 import { AutosizeTextarea } from '../components/AutosizeTextarea';
 import { MediaReplyButtons } from '../components/MediaTabs';
+import { useMentions } from '../hooks/useMentions';
 import { useReplyDraft } from '../hooks/useReplyDraft';
+import { MentionMenu } from './MentionMenu';
 
 interface ReplyComposerProps {
   root: Comment;
@@ -29,19 +31,28 @@ export function ReplyComposer({
 }: ReplyComposerProps) {
   const draft = useReplyDraft(root, deckId, { onCancel, onSent });
   const { body, setBody, canSend, submit, onKeyDown, textareaRef } = draft;
+  const mentions = useMentions(body, setBody, textareaRef);
 
   const textarea = (
     <AutosizeTextarea
+      {...mentions.fieldProps}
       ref={textareaRef}
       aria-label={`Antwort an ${root.author.name}`}
       placeholder="Antworten …"
       value={body}
       autoFocus={autoFocus}
       maxHeight={variant === 'inline' ? 120 : 160}
-      onChange={(event) => setBody(event.target.value)}
-      onKeyDown={onKeyDown}
+      onKeyDown={(event) => {
+        if (!mentions.onKeyDown(event)) onKeyDown(event);
+      }}
       className="text-[13px] leading-[18px] text-fg placeholder:text-white/40"
     />
+  );
+  const field = (
+    <div className="relative min-w-0 flex-1">
+      <MentionMenu mentions={mentions} />
+      {textarea}
+    </div>
   );
 
   const error = draft.error && (
@@ -65,7 +76,7 @@ export function ReplyComposer({
           <span className="shrink-0 text-[11px] text-fg-subtle">jetzt</span>
         </header>
         <div className="flex items-end gap-2 rounded-control bg-black/25 py-1.5 pr-2 pl-3">
-          <div className="min-w-0 flex-1 py-[3px]">{textarea}</div>
+          <div className="min-w-0 flex-1 py-[3px]">{field}</div>
           <button
             type="button"
             aria-label="Antwort verwerfen"
@@ -97,7 +108,7 @@ export function ReplyComposer({
     >
       <div className="flex items-end gap-2">
         <div className="flex min-h-10 min-w-0 flex-1 items-end gap-0.5 rounded-control border border-white/10 bg-white/[0.06] py-[5px] pr-1 pl-3.5 transition-colors focus-within:border-white/35">
-          <div className="min-w-0 flex-1 py-[5px]">{textarea}</div>
+          <div className="min-w-0 flex-1 py-[5px]">{field}</div>
           <MediaReplyButtons root={root} deckId={deckId} />
         </div>
         <button
