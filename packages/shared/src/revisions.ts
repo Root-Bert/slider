@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { commentSchema, importStateSchema } from './model';
+import { commentSchema, importStateSchema, shapeSchema } from './model';
 import { deckSyncSchema, slideDiffSchema, syncSummarySchema } from './sync';
 
 /** A slide that is no longer in the deck, shown with its last version and its comments. */
@@ -19,6 +19,22 @@ export const deletedSlideSchema = z.object({
   comments: z.array(commentSchema),
 });
 export type DeletedSlide = z.infer<typeof deletedSlideSchema>;
+
+/**
+ * One slide as it looked in a revision – for "Alt/Neu" on a comment whose slide changed since
+ * (BER-109). `GET /decks/:deckId/slides/:slideId/versions`, newest first.
+ */
+export const slideVersionViewSchema = z.object({
+  revisionId: z.string(),
+  revisionNumber: z.number().int(),
+  revisionCreatedAt: z.iso.datetime(),
+  imageUrl: z.string(),
+  thumbnailUrl: z.string(),
+  aspectRatio: z.number().positive(),
+  /** The boxes of that version, so comments bound to a box sit where they sat back then. */
+  shapes: z.array(shapeSchema),
+});
+export type SlideVersionView = z.infer<typeof slideVersionViewSchema>;
 
 /** `GET /decks/:deckId/revisions/:revisionId/diff`: what changed against the revision before. */
 export const revisionDiffSchema = z.object({

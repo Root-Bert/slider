@@ -13,6 +13,7 @@ import {
   listDeletedSlides,
   listRevisions,
 } from '../services/revisions';
+import { listSlideVersions } from '../services/slide-versions';
 
 const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
 
@@ -125,6 +126,12 @@ export function syncRoutes(deps: AppDeps) {
       .get('/decks/:deckId/deleted-slides', viewer, async (c) => {
         const deck = await requireDeckAccess(deps.db, c.var.viewer, c.req.param('deckId'), 'view');
         return c.json(await listDeletedSlides(deps.db, deck));
+      })
+
+      /** One slide in every revision, for "Alt/Neu" on a comment (BER-109). */
+      .get('/decks/:deckId/slides/:slideId/versions', viewer, async (c) => {
+        const deck = await requireDeckAccess(deps.db, c.var.viewer, c.req.param('deckId'), 'view');
+        return c.json(await listSlideVersions(deps.db, deck, c.req.param('slideId')));
       })
   );
 }

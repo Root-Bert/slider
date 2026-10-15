@@ -14,7 +14,7 @@ import { useViewerToast } from '../state/viewer-toast';
  * new version of an uploaded deck sits left, next to the filter pill (`UploadRevisionControl`).
  * The change markers of the latest version (Figma D2 "Änderungen", on by default) can be switched
  * on and off only when that version actually added, changed or moved slides. After a new
- * version arrived, a short notice says what changed (`RevisionNotice`).
+ * version arrived, a notice says what changed until it is closed (`RevisionNotice`).
  */
 export function RevisionControls({ className }: { className?: string }) {
   const { revisionNumber, badges, announcement, dismissAnnouncement } = useRevisionData();

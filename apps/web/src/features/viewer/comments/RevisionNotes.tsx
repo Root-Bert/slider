@@ -1,6 +1,9 @@
 import type { Comment } from '@slider/shared';
+import type { MouseEvent } from 'react';
 import { useUpdateComment } from '@/lib/queries';
 import { cn, Icon } from '@/ui';
+import { useStageRegistry } from '../state/stage-registry';
+import { useViewerDispatch, useViewerState } from '../state/viewer-state';
 
 /** "In PowerPoint entfernt" (Figma F2): the comment was deleted in the file but stays here. */
 export function RemovedInPowerPointNote({ className }: { className?: string }) {
@@ -21,7 +24,8 @@ export function RemovedInPowerPointNote({ className }: { className?: string }) {
 
 /**
  * "Geändert seit Kommentar": the slide changed after the comment was written – maybe it is
- * already taken care of. The quick action resolves the thread.
+ * already taken care of. "Alt/Neu" shows the slide as it was when the comment was written, or
+ * as it is now (BER-109); the quick action resolves the thread.
  */
 export function ChangedSinceCommentNote({
   comment,
@@ -48,6 +52,7 @@ export function ChangedSinceCommentNote({
       <span className="truncate py-0.5" title="Die Folie wurde nach diesem Kommentar geändert.">
         Geändert seit Kommentar
       </span>
+      {comment.slideId && <OldNewSwitch threadId={comment.id} slideId={comment.slideId} />}
       {canResolve && (
         <button
           type="button"
@@ -63,5 +68,55 @@ export function ChangedSinceCommentNote({
         </button>
       )}
     </div>
+  );
+}
+
+/**
+ * Alt | Neu: which version of the slide the stage shows. "Alt" is the one the comment was
+ * written on – one comment at a time; picking it brings the slide into view.
+ */
+function OldNewSwitch({ threadId, slideId }: { threadId: string; slideId: string }) {
+  const { previousView } = useViewerState();
+  const dispatch = useViewerDispatch();
+  const registry = useStageRegistry();
+  const old = previousView?.threadId === threadId;
+  const pick = (showOld: boolean) => (event: MouseEvent) => {
+    event.stopPropagation();
+    if (showOld === old) return;
+    dispatch({ type: 'previousViewSet', view: showOld ? { slideId, threadId } : null });
+    if (showOld) registry.revealSlide(slideId, { align: 'nearest', behavior: 'smooth' });
+  };
+  const segment = (selected: boolean) =>
+    cn(
+      'h-5 rounded-[5px] px-1.5 font-medium transition-colors',
+      selected ? 'bg-warning text-black' : 'text-warning hover:bg-warning/15',
+    );
+  return (
+    <span
+      role="radiogroup"
+      aria-label="Folie zeigen wie"
+      className="ml-1 inline-flex shrink-0 items-center gap-0.5 rounded-badge bg-warning/12 p-0.5"
+    >
+      <button
+        type="button"
+        role="radio"
+        aria-checked={old}
+        title="Folie so zeigen, wie sie beim Kommentar war"
+        onClick={pick(true)}
+        className={segment(old)}
+      >
+        Alt
+      </button>
+      <button
+        type="button"
+        role="radio"
+        aria-checked={!old}
+        title="Folie so zeigen, wie sie jetzt ist"
+        onClick={pick(false)}
+        className={segment(!old)}
+      >
+        Neu
+      </button>
+    </span>
   );
 }

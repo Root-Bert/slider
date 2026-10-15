@@ -1,5 +1,6 @@
 import { Fragment } from 'react';
 import { threadsOf, useCommentThreads } from '../hooks/useCommentThreads';
+import { usePreviousView } from '../hooks/usePreviousView';
 import { gapKey } from '../lib/comment-selectors';
 import type { TrackLayout } from '../lib/timeline-layout';
 import { DeletedSlidesEntry } from '../revisions/DeletedSlidesEntry';
@@ -40,6 +41,8 @@ export function Track({ layout, range, snap }: TrackProps) {
   const boxes = isBoxModeActive({ boxMode, boxModeFlipped });
   const { badges, deletedSlides, deletedThreads, revisionNumber } = useRevisionData();
   const { marksBySlide } = useCommentThreads();
+  // "Alt" on a comment (BER-109): that one slide shows the version the comment was written on.
+  const previous = usePreviousView();
   const emphasisId = focusedThreadId ?? hoveredThreadId;
   const draftGapKey =
     draft?.anchor.type === 'gap'
@@ -80,6 +83,13 @@ export function Track({ layout, range, snap }: TrackProps) {
           badgeVersion={revisionNumber}
           boxMode={boxes}
           showGuides={showGuides}
+          previousVersion={
+            previous?.slideId === slide.id
+              ? previous.version === undefined
+                ? 'loading'
+                : previous.version
+              : null
+          }
         />
         <GapDivider
           gapKey={key}

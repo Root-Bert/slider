@@ -15,6 +15,7 @@ import {
   type Revision,
   type RevisionDiff,
   type Slide,
+  type SlideVersionView,
   type ShareDeckInput,
   type SyncResult,
   type UpdateCommentInput,
@@ -53,7 +54,16 @@ export const queryKeys = {
     ['decks', deckId, 'revision-diff', revisionId] as const,
   deletedSlides: (deckId: string, revisionId: string | null) =>
     ['decks', deckId, 'deleted-slides', revisionId] as const,
+  /** One slide in every revision (Alt/Neu, BER-109) – keyed by the current revision too. */
+  slideVersions: (deckId: string, slideId: string, revisionId: string | null) =>
+    ['decks', deckId, 'slide-versions', slideId, revisionId] as const,
 };
+
+/**
+ * Answers with slide image URLs: signed URLs expire after 6 h at the earliest (BER-94), so
+ * these are fetched again after an hour instead of being kept forever.
+ */
+const SIGNED_URL_STALE_MS = 60 * 60_000;
 
 const IMPORT_POLL_MS = 1000;
 const isImporting = (deck: Deck | undefined) =>
@@ -435,7 +445,20 @@ export const useDeletedSlides = (deckId: string, revisionId: string | null, enab
     queryKey: queryKeys.deletedSlides(deckId, revisionId),
     queryFn: () => api.get<DeletedSlide[]>(`/decks/${deckId}/deleted-slides`),
     enabled: enabled && revisionId !== null,
-    staleTime: Infinity,
+    staleTime: SIGNED_URL_STALE_MS,
+  });
+
+/** One slide in every revision, newest first: "Alt" on a comment shows the one it was made on. */
+export const useSlideVersions = (
+  deckId: string,
+  slideId: string | null,
+  revisionId: string | null,
+) =>
+  useQuery({
+    queryKey: queryKeys.slideVersions(deckId, slideId ?? '', revisionId),
+    queryFn: () => api.get<SlideVersionView[]>(`/decks/${deckId}/slides/${slideId}/versions`),
+    enabled: slideId !== null,
+    staleTime: SIGNED_URL_STALE_MS,
   });
 
 /**

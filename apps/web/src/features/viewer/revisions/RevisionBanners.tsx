@@ -15,7 +15,7 @@ const relativeOrJustNow = (iso: string) => {
 /**
  * Status banners at the top of the viewer, above the slide track: a change is being taken over,
  * or the automatic update failed (Figma A3). A new version that loaded fine is no banner – it is
- * a short notice in the controls row (`RevisionNotice`).
+ * a notice in the controls row (`RevisionNotice`).
  *
  * They take their own room in the layout instead of floating over the track: the track gets
  * that much shorter while a banner shows, so no slide title or comment pin is ever hidden or

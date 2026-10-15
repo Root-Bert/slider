@@ -6,6 +6,7 @@ import type {
   Slide,
   SlideChange,
   SlideDiff,
+  SlideVersionView,
   SyncError,
   SyncErrorCode,
   SyncResult,
@@ -182,6 +183,23 @@ export function isChangedSinceComment(
   if (comment.sourceStatus === 'removed_in_pptx') return false;
   const changed = modifiedAt.get(comment.slideId);
   return changed !== undefined && Date.parse(comment.createdAt) < Date.parse(changed);
+}
+
+/**
+ * The version of a slide a comment was written on: the newest revision made before the
+ * comment (versions newest first). `null` when that is the current one too – nothing older to
+ * show. A comment older than every version (shouldn't happen) gets the oldest one.
+ */
+export function versionAtComment(
+  versions: readonly SlideVersionView[] | undefined,
+  commentCreatedAt: string,
+  currentRevisionId: string | null,
+): SlideVersionView | null {
+  if (!versions || versions.length === 0) return null;
+  const at = Date.parse(commentCreatedAt);
+  const version =
+    versions.find((entry) => Date.parse(entry.revisionCreatedAt) <= at) ?? versions.at(-1)!;
+  return version.revisionId === currentRevisionId ? null : version;
 }
 
 /** The current revision's entry of a revision list (newest first). */

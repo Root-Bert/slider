@@ -13,6 +13,7 @@ import {
   slideBadges,
   slideModifiedAt,
   syncResultMessage,
+  versionAtComment,
 } from './revision-changes';
 import { comment, slide } from './test-fixtures';
 
@@ -282,5 +283,37 @@ describe('currentRevision', () => {
     });
     expect(currentRevision([revision(2, true), revision(1, false)])?.id).toBe('r2');
     expect(currentRevision(undefined)).toBeNull();
+  });
+});
+
+describe('versionAtComment', () => {
+  const version = (number: number, createdAt: string) => ({
+    revisionId: `r${number}`,
+    revisionNumber: number,
+    revisionCreatedAt: createdAt,
+    imageUrl: `/files/v${number}.webp`,
+    thumbnailUrl: `/files/v${number}-thumb.webp`,
+    aspectRatio: 16 / 9,
+    shapes: [],
+  });
+  // Newest first, as the API sends them.
+  const versions = [
+    version(3, '2026-10-03T12:00:00.000Z'),
+    version(2, '2026-10-02T12:00:00.000Z'),
+    version(1, '2026-10-01T12:00:00.000Z'),
+  ];
+
+  it('picks the newest version made before the comment', () => {
+    expect(versionAtComment(versions, '2026-10-02T18:00:00.000Z', 'r3')?.revisionId).toBe('r2');
+    expect(versionAtComment(versions, '2026-10-01T13:00:00.000Z', 'r3')?.revisionId).toBe('r1');
+  });
+
+  it('has nothing to show when the comment is on the current version', () => {
+    expect(versionAtComment(versions, '2026-10-04T12:00:00.000Z', 'r3')).toBeNull();
+    expect(versionAtComment(undefined, '2026-10-02T18:00:00.000Z', 'r3')).toBeNull();
+  });
+
+  it('falls back to the oldest version for a comment older than all of them', () => {
+    expect(versionAtComment(versions, '2026-09-30T12:00:00.000Z', 'r3')?.revisionId).toBe('r1');
   });
 });
