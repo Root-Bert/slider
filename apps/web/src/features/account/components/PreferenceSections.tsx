@@ -8,7 +8,7 @@ import {
   type WorkPreferences,
 } from '@/features/viewer/lib/work-preferences';
 import { SettingsSection } from '@/features/workspaces/components/SettingsSection';
-import { ACCENT_COLOR_NAMES, accentColor } from '@/lib/accent';
+import { ACCENT_COLOR_NAMES, accentColor, isLightAccent } from '@/lib/accent';
 import { useUpdateMe } from '@/lib/queries';
 import { cn, Icon, SegmentedControl, Toggle, type ShowToast } from '@/ui';
 
@@ -40,7 +40,11 @@ export function ColorPicker({ color, onNotify }: { color: AccentColor; onNotify:
           Für deine Markierungen, Linien und Zeichnungen – alle sehen sie so.
         </span>
       </span>
-      <div role="radiogroup" aria-labelledby={labelId} className="flex items-center gap-3">
+      <div
+        role="radiogroup"
+        aria-labelledby={labelId}
+        className="flex flex-wrap items-center gap-3"
+      >
         {ACCENT_COLORS.map((option) => {
           const selected = option === shown;
           return (
@@ -63,7 +67,7 @@ export function ColorPicker({ color, onNotify }: { color: AccentColor; onNotify:
                 <Icon
                   name="check"
                   size={16}
-                  className={option === 'yellow' ? 'text-black' : 'text-white'}
+                  className={isLightAccent(option) ? 'text-black' : 'text-white'}
                 />
               )}
             </button>
@@ -102,6 +106,13 @@ export function WorkSection() {
           description="PowerPoint-Hilfslinien und Boxen, die darüber ragen (G)"
           checked={preferences.showGuides}
           onChange={(showGuides) => update({ showGuides })}
+        />
+        <Toggle
+          className="py-3"
+          label="Ausgeblendete Folien zeigen"
+          description="Folien, die in PowerPoint ausgeblendet sind, samt ihren Kommentaren (H)"
+          checked={preferences.showHiddenSlides}
+          onChange={(showHiddenSlides) => update({ showHiddenSlides })}
         />
         <Toggle
           className="py-3"

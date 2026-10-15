@@ -38,16 +38,25 @@
   --color-mention: #5c8aff;
 
   /* Reviewer accents – pins, connector lines, drawings (BER-99) */
-  --color-accent-red: #ff0000;
-  --color-accent-blue: #0048ff;
-  --color-accent-violet: #8b5cf6;
+  /* Spread for maximal distinctness (OKLab), incl. against PowerPoint orange. */
+  --color-accent-red: #ff1f5a;
   --color-accent-yellow: #ffd000;
+  --color-accent-lime: #a8ff3c;
+  --color-accent-green: #00c853;
+  --color-accent-cyan: #00e0ff;
+  --color-accent-blue: #0048ff;
+  --color-accent-violet: #a259ff;
+  --color-accent-pink: #ff6be6;
 
   /* Avatar rings (presence colours) */
   --color-ring-red: #ffd4b8;
+  --color-ring-yellow: #fff7b8;
+  --color-ring-lime: #e7ffc8;
+  --color-ring-green: #b8f0cf;
+  --color-ring-cyan: #b8f6ff;
   --color-ring-blue: #c8f1ff;
   --color-ring-violet: #dad0fc;
-  --color-ring-yellow: #fff7b8;
+  --color-ring-pink: #ffd5f8;
   --color-ring-powerpoint: #f6c9b8;
 
   /*
@@ -77,8 +86,6 @@
   --animate-slide-in-x: slide-in-x 220ms cubic-bezier(0.2, 0.9, 0.3, 1);
   /* Content coming back after something gave it room (e.g. the OneDrive picker closing). */
   --animate-rise-in: rise-in 320ms cubic-bezier(0.2, 0.9, 0.3, 1) backwards;
-  /* Countdown bar of a transient notice; the user sets the duration (`animation-duration`). */
-  --animate-countdown: shrink-x 6s linear forwards;
   /* Friendly little jump, e.g. the logo when clicked while already home. */
   --animate-hop: hop 420ms cubic-bezier(0.3, 0.7, 0.4, 1);
 
@@ -114,11 +121,6 @@
     }
     72% {
       transform: translateY(-1.5px);
-    }
-  }
-  @keyframes shrink-x {
-    to {
-      transform: scaleX(0);
     }
   }
   @keyframes shimmer {
@@ -233,9 +235,35 @@
 }
 
 /* ── Import stage (deck page while a deck imports, BER-97) ─────────────────────
-   Placeholder slides are dealt onto the track, riffle while the slides are being found, fill in
-   as they render and dissolve into the real viewer at the end. Loops only run with motion allowed
+   Once the slides are counted, one placeholder per slide is dealt onto the track; they fill in as
+   they render and dissolve, one after another, into the real viewer at the end. Loops only run with motion allowed
    (the stage checks `prefers-reduced-motion`); one-shot animations are cut short by the rule above. */
+/* Into the import stage (the only view transition): the page steps back and blurs away while
+   the stage – its ghost slide already dealt in – fades up. */
+::view-transition-old(root) {
+  animation: page-out 380ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+::view-transition-new(root) {
+  animation: page-in 520ms cubic-bezier(0.2, 0.9, 0.25, 1) 100ms both;
+}
+@keyframes page-out {
+  to {
+    opacity: 0;
+    transform: scale(0.98);
+    filter: blur(6px);
+  }
+}
+@keyframes page-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.01ms;
+  }
+}
 @keyframes import-deal {
   from {
     opacity: 0;
@@ -245,26 +273,6 @@
     opacity: 1;
   }
   to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes import-riffle {
-  0%,
-  56% {
-    opacity: 1;
-    transform: none;
-  }
-  66% {
-    opacity: 0;
-    transform: translate3d(0, -40px, 0) rotate(-4deg) scale(0.92);
-  }
-  67% {
-    opacity: 0;
-    transform: translate3d(96px, 24px, 0) rotate(6deg) scale(0.92);
-  }
-  82%,
-  100% {
     opacity: 1;
     transform: none;
   }
@@ -294,31 +302,20 @@
 }
 @keyframes import-print {
   from {
-    clip-path: inset(0 0 100% 0);
-  }
-  to {
-    clip-path: inset(0 0 0 0);
+    opacity: 0;
   }
 }
-@keyframes import-scan {
-  from {
-    opacity: 0;
-    transform: translateY(0);
+@keyframes import-wave {
+  0%,
+  24%,
+  100% {
+    transform: none;
   }
-  12%,
-  88% {
-    opacity: 1;
+  8% {
+    transform: translateY(-4px);
   }
-  to {
-    opacity: 0;
-    transform: translateY(100%);
-  }
-}
-@keyframes import-glow {
-  50% {
-    box-shadow:
-      inset 0 0 0 1px rgb(255 255 255 / 0.32),
-      0 0 40px rgb(255 255 255 / 0.07);
+  16% {
+    transform: translateY(1px);
   }
 }
 @keyframes import-sheen {
@@ -338,6 +335,32 @@
 }
 @keyframes import-fade-out {
   to {
+    opacity: 0;
+  }
+}
+/* Comments of a freshly imported deck come in once the viewer is up (`data-comments-intro` on
+   the deck page): the lines are drawn from the slides to the cards, then the cards appear. */
+[data-comments-intro='hidden']
+  :is([data-connectors], [data-comment-card], [data-connector-blob], [data-gap-bubble]) {
+  opacity: 0;
+}
+[data-comments-intro='enter'] [data-connectors] path {
+  stroke-dasharray: 1;
+  animation: comments-draw 800ms cubic-bezier(0.65, 0, 0.35, 1) 100ms both;
+}
+[data-comments-intro='enter'] :is([data-comment-card], [data-connector-blob], [data-gap-bubble]) {
+  animation: comments-in 480ms cubic-bezier(0.2, 0.9, 0.25, 1) 850ms both;
+}
+@keyframes comments-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes comments-in {
+  from {
     opacity: 0;
   }
 }

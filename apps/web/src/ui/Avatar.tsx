@@ -66,7 +66,7 @@ interface AvatarStackProps {
   className?: string;
 }
 
-/** UI kit "Avatar Stack": overlapping avatars with a "+n" overflow chip. */
+/** UI kit "Avatar Stack": overlapping avatars with a "+n" overflow chip (n ≥ 2). */
 export function AvatarStack({
   authors,
   max = 4,
@@ -74,8 +74,10 @@ export function AvatarStack({
   interactive = false,
   className,
 }: AvatarStackProps) {
-  const visible = authors.slice(0, max);
-  const hidden = authors.slice(max);
+  // A "+1" chip takes the slot the one avatar would need: show it instead, the chip starts at "+2".
+  const shown = authors.length === max + 1 ? authors.length : max;
+  const visible = authors.slice(0, shown);
+  const hidden = authors.slice(shown);
   if (authors.length === 0) return null;
 
   return (

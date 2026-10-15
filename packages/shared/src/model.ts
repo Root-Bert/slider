@@ -16,7 +16,17 @@ export const rectSchema = z.object({ x: unit, y: unit, w: unit, h: unit });
 // ── People ──────────────────────────────────────────────────────────────────
 
 /** Each reviewer gets a default accent colour for pins, lines and drawings (BER-99). */
-export const ACCENT_COLORS = ['red', 'blue', 'violet', 'yellow'] as const;
+/** Ordered by hue; picked so every pair (and PowerPoint orange) stays as far apart as possible. */
+export const ACCENT_COLORS = [
+  'red',
+  'yellow',
+  'lime',
+  'green',
+  'cyan',
+  'blue',
+  'violet',
+  'pink',
+] as const;
 export const accentColorSchema = z.enum(ACCENT_COLORS);
 export type AccentColor = z.infer<typeof accentColorSchema>;
 
