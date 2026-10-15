@@ -1,16 +1,23 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { workspaceNameSchema, type Workspace } from '@slider/shared';
+import {
+  WORKSPACE_LOGO_MAX_BYTES,
+  WORKSPACE_LOGO_TYPES,
+  workspaceNameSchema,
+  type Workspace,
+} from '@slider/shared';
 import { routes } from '@/app/routes';
 import {
   useDeleteWorkspace,
   useMembers,
   useRemoveMember,
   useRenameWorkspace,
+  useWorkspaceLogo,
 } from '@/lib/workspace-queries';
 import { Badge, Button, Dialog, Select, TextField, type ShowToast } from '@/ui';
 import { canRenameWorkspace, isLastAdmin, ROLE_HINTS, ROLE_LABELS } from '../lib/roles';
 import { SettingsSection } from './SettingsSection';
+import { WorkspaceMark } from './WorkspaceMark';
 
 export function GeneralSection({
   workspace,
@@ -29,9 +36,12 @@ export function GeneralSection({
     <SettingsSection
       title="Allgemein"
       description={
-        editable ? 'Den Namen sehen alle Mitglieder.' : 'Nur Admins können den Namen ändern.'
+        editable
+          ? 'Name und Logo sehen alle Mitglieder.'
+          : 'Nur Admins können Name und Logo ändern.'
       }
     >
+      <LogoRow workspace={workspace} editable={editable} onNotify={onNotify} />
       <form
         noValidate
         className="flex flex-col gap-2 sm:flex-row sm:items-start"
@@ -69,6 +79,76 @@ export function GeneralSection({
         {ROLE_HINTS[workspace.role]}
       </p>
     </SettingsSection>
+  );
+}
+
+/** Logo: PNG, JPEG or WebP up to 1 MB, shown square in the header and the switcher. */
+function LogoRow({
+  workspace,
+  editable,
+  onNotify,
+}: {
+  workspace: Workspace;
+  editable: boolean;
+  onNotify: ShowToast;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const logo = useWorkspaceLogo(workspace.id);
+  const save = (file: File | null) =>
+    logo.mutate(file, {
+      onSuccess: () => onNotify(file ? 'Logo gespeichert' : 'Logo entfernt'),
+      onError: (error) => onNotify(error.message, 'danger'),
+    });
+
+  return (
+    <div className="flex items-center gap-4">
+      <WorkspaceMark name={workspace.name} logoUrl={workspace.logoUrl} size={64} />
+      {editable ? (
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              icon="upload"
+              loading={logo.isPending && logo.variables !== null}
+              onClick={() => inputRef.current?.click()}
+            >
+              {workspace.logoUrl ? 'Logo ersetzen' : 'Logo hochladen'}
+            </Button>
+            {workspace.logoUrl && (
+              <Button
+                variant="ghost"
+                loading={logo.isPending && logo.variables === null}
+                onClick={() => save(null)}
+              >
+                Entfernen
+              </Button>
+            )}
+          </div>
+          <p className="text-xs text-fg-subtle">PNG, JPEG oder WebP, quadratisch, bis 1 MB.</p>
+          <input
+            ref={inputRef}
+            type="file"
+            accept={WORKSPACE_LOGO_TYPES.join(',')}
+            className="hidden"
+            tabIndex={-1}
+            aria-hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              // Same file twice in a row must fire `change` again.
+              event.target.value = '';
+              if (!file) return;
+              if (file.size > WORKSPACE_LOGO_MAX_BYTES)
+                return onNotify('Das Logo ist zu groß (maximal 1 MB).', 'danger');
+              save(file);
+            }}
+          />
+        </div>
+      ) : (
+        <p className="text-[13px] text-fg-subtle">
+          {workspace.logoUrl ? 'Logo der Organisation' : 'Noch kein Logo'}
+        </p>
+      )}
+    </div>
   );
 }
 

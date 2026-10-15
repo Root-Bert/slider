@@ -54,7 +54,13 @@ export function Invitation({
     const copy = CLOSED_COPY[preview.state];
     return (
       <JoinCard
-        icon={<WorkspaceMark name={preview.workspaceName} size={40} />}
+        icon={
+          <WorkspaceMark
+            name={preview.workspaceName}
+            logoUrl={preview.workspaceLogoUrl}
+            size={40}
+          />
+        }
         eyebrow={preview.workspaceName}
         title={copy.title}
         message={copy.message}
@@ -66,7 +72,9 @@ export function Invitation({
 
   return (
     <JoinCard
-      icon={<WorkspaceMark name={preview.workspaceName} size={40} />}
+      icon={
+        <WorkspaceMark name={preview.workspaceName} logoUrl={preview.workspaceLogoUrl} size={40} />
+      }
       eyebrow="Einladung"
       title={preview.workspaceName}
       message={roleLine}

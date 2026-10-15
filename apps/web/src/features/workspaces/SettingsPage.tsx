@@ -41,7 +41,7 @@ export function Component() {
               Zurück zu den Reviews
             </Link>
             <div className="flex items-center gap-3">
-              <WorkspaceMark name={workspace.name} size={40} />
+              <WorkspaceMark name={workspace.name} logoUrl={workspace.logoUrl} size={40} />
               <h1 className="min-w-0 truncate text-[28px] leading-tight font-semibold tracking-tight text-fg">
                 {workspace.name}
               </h1>

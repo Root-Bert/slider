@@ -26,7 +26,7 @@ import {
 } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { ApiError, badRequest, forbidden, notFound } from '../http/errors';
-import { buttonMail } from '../mail/mailer';
+import { blobKeys, fileUrl } from '../storage/blob-storage';
 import { deleteDeck } from './decks';
 import {
   assertSeatForInvite,
@@ -253,6 +253,7 @@ async function toWorkspaceDtos(
       id: workspace.id,
       name: workspace.name,
       slug: workspace.slug,
+      logoUrl: workspace.logoKey ? fileUrl(workspace.logoKey) : null,
       createdAt: workspace.createdAt.toISOString(),
       role,
       memberCount: usage.members,
@@ -297,6 +298,53 @@ export async function renameWorkspace(
   return getWorkspace(deps, userId, workspaceId);
 }
 
+/** PNG, JPEG or WebP by their magic bytes – the browser's `type` is not trusted. */
+function logoExtension(bytes: Uint8Array): 'png' | 'jpg' | 'webp' | null {
+  const ascii = (from: number, to: number) => String.fromCharCode(...bytes.subarray(from, to));
+  if (bytes[0] === 0x89 && ascii(1, 4) === 'PNG') return 'png';
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'jpg';
+  if (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') return 'webp';
+  return null;
+}
+
+const LOGO_ADMIN_ONLY = 'Nur Admins können das Logo ändern.';
+
+/** Admins only. Replaces the logo; the old file is removed after the switch. */
+export async function setWorkspaceLogo(
+  deps: AppDeps,
+  userId: string,
+  workspaceId: string,
+  bytes: Uint8Array,
+): Promise<Workspace> {
+  await requireRole(deps.db, workspaceId, userId, 'admin', LOGO_ADMIN_ONLY);
+  const extension = logoExtension(bytes);
+  if (!extension) throw badRequest('Das Logo muss ein PNG-, JPEG- oder WebP-Bild sein.');
+  const key = blobKeys.workspaceLogo(workspaceId, extension);
+  await deps.storage.put(key, bytes);
+  await replaceLogoKey(deps, workspaceId, key);
+  return getWorkspace(deps, userId, workspaceId);
+}
+
+/** Admins only. Back to the monogram. */
+export async function removeWorkspaceLogo(
+  deps: AppDeps,
+  userId: string,
+  workspaceId: string,
+): Promise<Workspace> {
+  await requireRole(deps.db, workspaceId, userId, 'admin', LOGO_ADMIN_ONLY);
+  await replaceLogoKey(deps, workspaceId, null);
+  return getWorkspace(deps, userId, workspaceId);
+}
+
+async function replaceLogoKey(deps: AppDeps, workspaceId: string, key: string | null) {
+  const [row] = await deps.db
+    .select({ logoKey: workspaces.logoKey })
+    .from(workspaces)
+    .where(eq(workspaces.id, workspaceId));
+  await deps.db.update(workspaces).set({ logoKey: key }).where(eq(workspaces.id, workspaceId));
+  if (row?.logoKey) await deps.storage.delete(row.logoKey);
+}
+
 /** Admins only. Deletes every deck with its files, then the workspace (members, invites). */
 export async function deleteWorkspace(
   deps: AppDeps,
@@ -315,6 +363,7 @@ export async function deleteWorkspace(
     .from(decks)
     .where(eq(decks.workspaceId, workspaceId));
   for (const deck of deckRows) await deleteDeck(deps, deck.id);
+  await deps.storage.deletePrefix(blobKeys.workspacePrefix(workspaceId));
   await deps.db.delete(workspaces).where(eq(workspaces.id, workspaceId));
 }
 
@@ -688,13 +737,18 @@ export async function previewInvite(deps: AppDeps, token: string): Promise<JoinP
   const invite = await findInviteByToken(deps.db, token);
   if (!invite) throw inviteNotFound();
   const [row] = await deps.db
-    .select({ workspaceName: workspaces.name, inviterName: users.name })
+    .select({
+      workspaceName: workspaces.name,
+      workspaceLogoKey: workspaces.logoKey,
+      inviterName: users.name,
+    })
     .from(workspaces)
     .leftJoin(users, eq(users.id, invite.createdBy ?? ''))
     .where(eq(workspaces.id, invite.workspaceId));
   if (!row) throw inviteNotFound();
   return {
     workspaceName: row.workspaceName,
+    workspaceLogoUrl: row.workspaceLogoKey ? fileUrl(row.workspaceLogoKey) : null,
     inviterName: row.inviterName ?? null,
     role: invite.role,
     email: invite.email ? maskEmail(invite.email) : null,

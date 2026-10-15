@@ -148,6 +148,13 @@
       "when": 1792098674216,
       "tag": "0020_drop_email_login",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792100330427,
+      "tag": "0021_workspace_logo",
+      "breakpoints": true
     }
   ]
 }

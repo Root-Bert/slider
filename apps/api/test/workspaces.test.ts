@@ -10,7 +10,6 @@ import {
   type WorkspaceRole,
 } from '@slider/shared';
 import { decks, workspaceInvites, workspaceMembers } from '../src/db/schema';
-import { RecordingMailer } from '../src/mail/mailer';
 import {
   createReadyDeck,
   createTestContext,
@@ -22,10 +21,8 @@ import {
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 let ctx: TestContext;
-let mailer: RecordingMailer;
 beforeEach(async () => {
-  mailer = new RecordingMailer();
-  ctx = await createTestContext({ mailer });
+  ctx = await createTestContext();
 });
 afterEach(() => ctx.cleanup());
 
@@ -132,6 +129,37 @@ describe('workspaces', () => {
     expect(await ctx.deps.db.select().from(decks).where(eq(decks.id, deckId))).toEqual([]);
     expect(await ctx.deps.storage.get(imageKeys[0] ?? '')).toBeNull();
     expect((await ctx.request(path)).status).toBe(404);
+  });
+
+  it('admins upload, replace and remove the logo; others may not', async () => {
+    const admin = await member('Ada', 'admin');
+    const memberUser = await member('Mia', 'member');
+    const path = `/api/workspaces/${ctx.workspaceId}/logo`;
+    const put = (bytes: number[], cookie?: string) => {
+      const form = new FormData();
+      form.append('file', new File([new Uint8Array(bytes)], 'logo.png'));
+      return ctx.request(path, { method: 'PUT', body: form, cookie });
+    };
+    const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    const keyOf = (url: string | null) => url?.replace(/^\/files\/|\?.*$/g, '') ?? '';
+
+    expect((await put(png, memberUser.cookie)).status).toBe(403);
+    expect((await put([0x3c, 0x73, 0x76, 0x67], admin.cookie)).status).toBe(400);
+
+    const first = workspaceSchema.parse(await (await put(png, admin.cookie)).json());
+    expect(first.logoUrl).toMatch(/^\/files\/workspaces\/.+\/logo-.+\.png\?exp=\d+&sig=/);
+    expect(await ctx.deps.storage.get(keyOf(first.logoUrl))).not.toBeNull();
+
+    const second = workspaceSchema.parse(await (await put(png, admin.cookie)).json());
+    expect(second.logoUrl).not.toBe(first.logoUrl);
+    expect(await ctx.deps.storage.get(keyOf(first.logoUrl))).toBeNull();
+
+    expect((await ctx.request(path, { method: 'DELETE', cookie: memberUser.cookie })).status).toBe(
+      403,
+    );
+    const removed = await ctx.request(path, { method: 'DELETE', cookie: admin.cookie });
+    expect(workspaceSchema.parse(await removed.json()).logoUrl).toBeNull();
+    expect(await ctx.deps.storage.get(keyOf(second.logoUrl))).toBeNull();
   });
 });
 
@@ -370,17 +398,14 @@ describe('members', () => {
 });
 
 describe('invitations', () => {
-  it('e-mail invites: mail with the link, preview, address must match, single use', async () => {
+  it('e-mail invites: an address-bound link, preview, address must match, single use', async () => {
     const created = await invite({ email: 'Lena@Firma.de', role: 'reviewer' });
-    expect(created.emailSent).toBe(true);
     expect(created.invite).toMatchObject({
       email: 'lena@firma.de',
       role: 'reviewer',
       state: 'valid',
     });
     expect(created.url).toMatch(/^http:\/\/localhost:5173\/join\/[\w-]{43}$/);
-    expect(mailer.sent[0]).toMatchObject({ to: 'lena@firma.de' });
-    expect(mailer.sent[0]?.text).toContain(created.url);
     // Only the hash is stored.
     const [row] = await ctx.deps.db.select().from(workspaceInvites);
     expect(row?.tokenHash).not.toBe(created.token);
@@ -391,6 +416,7 @@ describe('invitations', () => {
     );
     expect(preview).toEqual({
       workspaceName: 'Meine Organisation',
+      workspaceLogoUrl: null,
       inviterName: 'Robert Hofmann',
       role: 'reviewer',
       email: 'l…a@firma.de',
@@ -429,7 +455,6 @@ describe('invitations', () => {
 
   it('link invites are multi-use until revoked', async () => {
     const created = await invite({ role: 'member' });
-    expect(created.emailSent).toBe(false);
     expect(created.invite.email).toBeNull();
     for (const name of ['Anna', 'Ben']) {
       const person = await signedInUser(ctx, { name, email: `${name}@extern.de` });
@@ -553,6 +578,16 @@ describe('sharing a deck (no guests)', () => {
       cookie: gesa.cookie,
     });
     expect(comment.status).toBe(403);
+
+    // `@` suggests everyone with access – the sharer for her, she for the sharer.
+    const people = (await (
+      await ctx.request(`/api/decks/${deckId}/people`, { cookie: gesa.cookie })
+    ).json()) as { id: string; name: string }[];
+    expect(people.map((person) => person.name)).toContain('Gesa');
+    expect(people.map((person) => person.id)).toContain(deck.owner.id);
+    const outsider = await signedInUser(ctx, { name: 'Olaf', email: 'olaf@extern.de' });
+    const hidden = await ctx.request(`/api/decks/${deckId}/people`, { cookie: outsider.cookie });
+    expect(hidden.status).toBe(404);
 
     const shares = await json(await ctx.request(`/api/decks/${deckId}/share`));
     expect(shares).toEqual([expect.objectContaining({ useCount: 1, deck: expect.anything() })]);

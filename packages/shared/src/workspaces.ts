@@ -149,6 +149,8 @@ export const workspaceSchema = z.object({
   id: z.string(),
   name: z.string(),
   slug: z.string(),
+  /** Uploaded logo; `null` shows the monogram. Only admins change it. */
+  logoUrl: z.string().nullable(),
   createdAt: z.iso.datetime(),
   /** The caller's role. */
   role: workspaceRoleSchema,
@@ -164,6 +166,10 @@ export const createWorkspaceInputSchema = z.object({ name: workspaceNameSchema }
 export type CreateWorkspaceInput = z.infer<typeof createWorkspaceInputSchema>;
 export const updateWorkspaceInputSchema = z.object({ name: workspaceNameSchema });
 export type UpdateWorkspaceInput = z.infer<typeof updateWorkspaceInputSchema>;
+
+/** `PUT /workspaces/:id/logo` (multipart, field `file`): PNG, JPEG or WebP up to this size. */
+export const WORKSPACE_LOGO_MAX_BYTES = 1024 * 1024;
+export const WORKSPACE_LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
 
 export const workspaceMemberSchema = z.object({
   userId: z.string(),
@@ -228,14 +234,13 @@ export const createdWorkspaceInviteSchema = z.object({
   invite: workspaceInviteSchema,
   /** `${SLIDER_URL}/join/<token>` */
   url: z.string(),
-  /** An e-mail went out (only for e-mail invites with SMTP configured). */
-  emailSent: z.boolean(),
 });
 export type CreatedWorkspaceInvite = z.infer<typeof createdWorkspaceInviteSchema>;
 
 /** `GET /join/:token` – public preview of an invite link. */
 export const joinPreviewSchema = z.object({
   workspaceName: z.string(),
+  workspaceLogoUrl: z.string().nullable(),
   inviterName: z.string().nullable(),
   role: inviteRoleSchema,
   /** E-mail invites: the address, masked (`r…t@firma.de`); `null` for link invites. */

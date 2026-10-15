@@ -1,11 +1,13 @@
 import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import {
   createWorkspaceInputSchema,
   createWorkspaceInviteInputSchema,
   updateMemberInputSchema,
   shareDeckInputSchema,
   updateWorkspaceInputSchema,
+  WORKSPACE_LOGO_MAX_BYTES,
   type JoinResult,
   type Viewer,
 } from '@slider/shared';
@@ -13,6 +15,7 @@ import { requireOwner } from '../auth/access';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import { users, type UserRow } from '../db/schema';
 import type { AppDeps } from '../deps';
+import { badRequest, fileTooLarge } from '../http/errors';
 import { rateLimit } from '../http/rate-limit';
 import { readJson } from '../http/validate';
 import {
@@ -28,8 +31,10 @@ import {
   listWorkspaces,
   previewInvite,
   removeMember,
+  removeWorkspaceLogo,
   renameWorkspace,
   revokeInvite,
+  setWorkspaceLogo,
   shareDeck,
   updateMemberRole,
 } from '../services/workspaces';
@@ -73,6 +78,29 @@ export function workspacesRoutes(deps: AppDeps) {
         const { name } = await readJson(c, updateWorkspaceInputSchema);
         return c.json(await renameWorkspace(deps, userId(c.var.viewer), c.req.param('id'), name));
       })
+      .put(
+        '/workspaces/:id/logo',
+        viewer,
+        bodyLimit({
+          maxSize: WORKSPACE_LOGO_MAX_BYTES + 64 * 1024,
+          onError: (c) => c.json(fileTooLarge(WORKSPACE_LOGO_MAX_BYTES).toBody(), 413),
+        }),
+        async (c) => {
+          const body = await c.req.parseBody().catch(() => {
+            throw badRequest('Das Logo konnte nicht gelesen werden.');
+          });
+          const file = body['file'];
+          if (!(file instanceof File)) throw badRequest('Bitte das Logo im Feld „file“ mitsenden.');
+          if (file.size > WORKSPACE_LOGO_MAX_BYTES) throw fileTooLarge(WORKSPACE_LOGO_MAX_BYTES);
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          return c.json(
+            await setWorkspaceLogo(deps, userId(c.var.viewer), c.req.param('id'), bytes),
+          );
+        },
+      )
+      .delete('/workspaces/:id/logo', viewer, async (c) =>
+        c.json(await removeWorkspaceLogo(deps, userId(c.var.viewer), c.req.param('id'))),
+      )
       .delete('/workspaces/:id', viewer, async (c) => {
         await deleteWorkspace(deps, userId(c.var.viewer), c.req.param('id'));
         return c.body(null, 204);

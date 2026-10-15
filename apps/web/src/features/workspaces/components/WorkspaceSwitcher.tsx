@@ -37,7 +37,11 @@ export function WorkspaceSwitcher() {
         triggerClassName="flex h-9 max-w-[240px] items-center gap-2 rounded-control pr-2 pl-1.5 text-fg transition-colors hover:bg-white/10 aria-expanded:bg-white/10"
         trigger={() => (
           <>
-            {current ? <WorkspaceMark name={current.name} /> : <Icon name="folder" size={20} />}
+            {current ? (
+              <WorkspaceMark name={current.name} logoUrl={current.logoUrl} />
+            ) : (
+              <Icon name="folder" size={20} />
+            )}
             <span className="truncate text-sm font-medium max-sm:hidden">
               {current?.name ?? 'Organisationen'}
             </span>
@@ -58,7 +62,7 @@ export function WorkspaceSwitcher() {
                 <PopoverItem
                   key={workspace.id}
                   selected={workspace.id === current?.id}
-                  icon={<WorkspaceMark name={workspace.name} />}
+                  icon={<WorkspaceMark name={workspace.name} logoUrl={workspace.logoUrl} />}
                   trailing={
                     workspace.id === current?.id ? (
                       <Icon name="check" size={18} className="text-fg-muted" />

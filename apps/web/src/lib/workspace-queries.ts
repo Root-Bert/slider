@@ -13,7 +13,7 @@ import type {
 } from '@slider/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { registerPasskey } from '@/features/auth/lib/passkeys';
-import { api } from './api-client';
+import { api, apiRequest } from './api-client';
 import { queryKeys } from './queries';
 
 /**
@@ -123,6 +123,21 @@ export function useRenameWorkspace(workspaceId: string) {
   const reloadMe = useReloadMe();
   return useMutation({
     mutationFn: (name: string) => api.patch<Workspace>(`/workspaces/${workspaceId}`, { name }),
+    onSuccess: () => reloadMe(),
+  });
+}
+
+/** Admins only. `null` removes the logo (back to the monogram). */
+export function useWorkspaceLogo(workspaceId: string) {
+  const reloadMe = useReloadMe();
+  return useMutation({
+    mutationFn: (file: File | null) => {
+      if (!file)
+        return apiRequest<Workspace>(`/workspaces/${workspaceId}/logo`, { method: 'DELETE' });
+      const body = new FormData();
+      body.append('file', file);
+      return apiRequest<Workspace>(`/workspaces/${workspaceId}/logo`, { method: 'PUT', body });
+    },
     onSuccess: () => reloadMe(),
   });
 }

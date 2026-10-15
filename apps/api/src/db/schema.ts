@@ -183,6 +183,8 @@ export const workspaces = pgTable('workspaces', {
   createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
   /** `PlanId` – decides the limits (members, decks); see `services/plans`. */
   plan: text('plan').notNull().default('free'),
+  /** Uploaded logo in blob storage (`workspaces/<id>/logo-<uuid>.<ext>`); `null` shows the monogram. */
+  logoKey: text('logo_key'),
 });
 
 export const workspaceMembers = pgTable(

@@ -65,13 +65,14 @@ import type { MeLimits, MeUser, PendingInvite, Workspace } from './workspaces';
  * | POST   | /passkeys/register/verify              | VerifyPasskeyRegistrationInput | Passkey (201)     |
  * | PATCH  | /passkeys/:id                          | RenamePasskeyInput         | Passkey               |
  * | DELETE | /passkeys/:id                          |                            | 204                   |
- * | GET    | /dev/mails                             | (development only)         | DevMail[] (newest first) |
  * | POST   | /auth/logout                           |                            | 204 (clears session)  |
  * | GET    | /workspaces                            |                            | Workspace[]           |
  * | POST   | /workspaces                            | CreateWorkspaceInput       | Workspace (201)       |
  * | GET    | /workspaces/:id                        |                            | Workspace             |
  * | PATCH  | /workspaces/:id                        | UpdateWorkspaceInput       | Workspace (admin+)    |
  * | DELETE | /workspaces/:id                        |                            | 204 (owner)           |
+ * | PUT    | /workspaces/:id/logo                   | multipart `file` (PNG/JPEG/WebP) | Workspace (admin) |
+ * | DELETE | /workspaces/:id/logo                   |                            | Workspace (admin)     |
  * | GET    | /workspaces/:id/members                |                            | WorkspaceMember[]     |
  * | PATCH  | /workspaces/:id/members/:userId        | UpdateMemberInput          | WorkspaceMember       |
  * | DELETE | /workspaces/:id/members/:userId        | ?successor=<userId>        | 204 (admin+ or self)  |
