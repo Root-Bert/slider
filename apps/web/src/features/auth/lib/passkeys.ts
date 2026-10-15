@@ -1,6 +1,5 @@
 import {
   browserSupportsWebAuthn,
-  browserSupportsWebAuthnAutofill,
   startAuthentication,
   startRegistration,
   WebAuthnError,
@@ -14,20 +13,11 @@ import { api, ApiError } from '@/lib/api-client';
 
 export const passkeysSupported = () => browserSupportsWebAuthn();
 
-/** Passkeys offered right in the e-mail field's autofill (conditional UI). */
-export const passkeyAutofillSupported = () => browserSupportsWebAuthnAutofill().catch(() => false);
-
-/**
- * The whole sign-in ceremony. `autofill`: waits quietly until the person picks a passkey from
- * the e-mail field's suggestions; a later explicit sign-in aborts it.
- */
-export async function signInWithPasskey(
-  returnTo: string,
-  { autofill = false } = {},
-): Promise<LoginResult> {
+/** The whole sign-in ceremony. */
+export async function signInWithPasskey(returnTo: string): Promise<LoginResult> {
   const optionsJSON =
     await api.post<PublicKeyCredentialRequestOptionsJSON>('/auth/passkey/options');
-  const response = await startAuthentication({ optionsJSON, useBrowserAutofill: autofill });
+  const response = await startAuthentication({ optionsJSON });
   return api.post<LoginResult>('/auth/passkey/verify', {
     response: response as unknown as Record<string, unknown>,
     returnTo,

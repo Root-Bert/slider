@@ -8,7 +8,7 @@ import type { ImportJob, JobQueue } from './import/queue';
 import type { RenderProgress } from './import/render-progress';
 import type { SlideRenderers } from './import/rerender';
 import type { Logger } from './logger';
-import type { Mailer } from './mail/mailer';
+import type { LiveHub } from './realtime/live-hub';
 import type { SourceAdapters } from './sources/source-adapter';
 import type { BlobStorage } from './storage/blob-storage';
 import type { SyncService } from './sync/sync-service';
@@ -26,6 +26,8 @@ export interface AppDeps {
   microsoft: MicrosoftTokens;
   clock: Clock;
   log: Logger;
+  /** Presence, live cursors and live comments (BER-104); `createApp` makes one when absent. */
+  live?: LiveHub;
   /** Automatic updates of link-imported decks (BER-107). */
   sync: SyncService;
   /**
@@ -39,8 +41,6 @@ export interface AppDeps {
   google: OidcClient | null;
   /** Passkey ceremonies; defaults to `@simplewebauthn/server` (tests inject fakes). */
   webauthn?: WebAuthn;
-  /** Login and invitation mails; without SMTP a `DevMailer` in development, else a `NullMailer`. */
-  mailer: Mailer;
   /**
    * The `users.id` of the dev owner (see {@link Config.devOwner}) – only with `auth.devLogin`,
    * else `null`.

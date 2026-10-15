@@ -17,9 +17,9 @@ let dataDir: string;
 let token: string;
 let restart: ReturnType<typeof vi.fn<() => void>>;
 
-const SMTP = {
-  SMTP_URL: 'smtps://slider:geheim@mail.firma.de:465',
-  MAIL_FROM: 'Slider <s@firma.de>',
+const GOOGLE = {
+  GOOGLE_CLIENT_ID: 'g-id.apps.googleusercontent.com',
+  GOOGLE_CLIENT_SECRET: 'geheim',
 };
 
 async function setup(env: NodeJS.ProcessEnv = {}) {
@@ -48,7 +48,7 @@ const withToken = () => ({ [SETUP_TOKEN_HEADER]: token });
 async function claim(userId: string) {
   await ctx.deps.db.update(users).set({ isInstanceAdmin: true }).where(eq(users.id, userId));
   await ctx.deps.db.insert(userIdentities).values({
-    provider: 'email',
+    provider: 'google',
     subject: 'robert@q4-team.de',
     userId,
     email: 'robert@q4-team.de',
@@ -67,7 +67,7 @@ describe('setup page before the first account', () => {
     const { body } = await status();
     expect(body).toEqual({ authorized: false, hasAccount: false, loginConfigured: false });
     expect((await status({ [SETUP_TOKEN_HEADER]: 'wrong' })).body.authorized).toBe(false);
-    expect((await save(SMTP)).status).toBe(403);
+    expect((await save(GOOGLE)).status).toBe(403);
   });
 
   it('shows the fields and redirect URIs with the token', async () => {
@@ -78,27 +78,31 @@ describe('setup page before the first account', () => {
     expect(body.settings?.redirectUris.google).toBe(
       'http://localhost:5173/api/auth/google/callback',
     );
-    expect(body.settings?.fields.SMTP_URL).toEqual({ source: null, value: null, set: false });
+    expect(body.settings?.fields.GOOGLE_CLIENT_SECRET).toEqual({ source: null, value: null, set: false });
   });
 
   it('saves logins encrypted, never returns secrets and restarts', async () => {
-    const res = await save({ ...SMTP, BOOTSTRAP_EMAIL: 'robert@q4-team.de' }, withToken());
+    const res = await save({ ...GOOGLE, BOOTSTRAP_EMAIL: 'robert@q4-team.de' }, withToken());
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ restart: 'automatic' });
 
     const [row] = await ctx.deps.db
       .select()
       .from(instanceSettings)
-      .where(eq(instanceSettings.key, 'SMTP_URL'));
+      .where(eq(instanceSettings.key, 'GOOGLE_CLIENT_SECRET'));
     expect(row?.value).not.toContain('geheim');
     expect(await readStoredSettings(ctx.deps.db, ctx.deps.config.secret)).toEqual({
-      ...SMTP,
+      ...GOOGLE,
       BOOTSTRAP_EMAIL: 'robert@q4-team.de',
     });
 
     const fields = (await status(withToken())).body.settings?.fields;
-    expect(fields?.SMTP_URL).toEqual({ source: 'stored', value: null, set: true });
-    expect(fields?.MAIL_FROM).toEqual({ source: 'stored', value: SMTP.MAIL_FROM, set: true });
+    expect(fields?.GOOGLE_CLIENT_SECRET).toEqual({ source: 'stored', value: null, set: true });
+    expect(fields?.GOOGLE_CLIENT_ID).toEqual({
+      source: 'stored',
+      value: GOOGLE.GOOGLE_CLIENT_ID,
+      set: true,
+    });
 
     await vi.waitFor(() => expect(restart).toHaveBeenCalledOnce());
   });
@@ -108,28 +112,28 @@ describe('setup page before the first account', () => {
     expect(noLogin.status).toBe(400);
     expect(JSON.stringify(await noLogin.json())).toMatch(/Anmeldeweg/);
 
-    const badSignup = await save({ ...SMTP, SIGNUP: 'domains' }, withToken());
+    const badSignup = await save({ ...GOOGLE, SIGNUP: 'domains' }, withToken());
     expect(badSignup.status).toBe(400);
     expect(JSON.stringify(await badSignup.json())).toMatch(/SIGNUP_DOMAINS/);
 
-    const halfGoogle = await save({ ...SMTP, GOOGLE_CLIENT_ID: 'g-id' }, withToken());
-    expect(halfGoogle.status).toBe(400);
+    const halfOidc = await save({ ...GOOGLE, OIDC_ISSUER: 'https://sso.firma.de' }, withToken());
+    expect(halfOidc.status).toBe(400);
     expect(await readStoredSettings(ctx.deps.db, ctx.deps.config.secret)).toEqual({});
     expect(restart).not.toHaveBeenCalled();
   });
 
   it('removes a value with null', async () => {
-    await save({ ...SMTP, OIDC_LABEL: 'Firmen-Login' }, withToken());
+    await save({ ...GOOGLE, OIDC_LABEL: 'Firmen-Login' }, withToken());
     await save({ OIDC_LABEL: null }, withToken());
-    expect(await readStoredSettings(ctx.deps.db, ctx.deps.config.secret)).toEqual(SMTP);
+    expect(await readStoredSettings(ctx.deps.db, ctx.deps.config.secret)).toEqual(GOOGLE);
   });
 });
 
 describe('setup page and the environment', () => {
   it('shows values from the environment read-only and refuses to change them', async () => {
-    await setup({ ...SMTP, SIGNUP: 'invite' });
+    await setup({ ...GOOGLE, SIGNUP: 'invite' });
     const fields = (await status(withToken())).body.settings?.fields;
-    expect(fields?.SMTP_URL).toEqual({ source: 'env', value: null, set: true });
+    expect(fields?.GOOGLE_CLIENT_SECRET).toEqual({ source: 'env', value: null, set: true });
     expect(fields?.SIGNUP).toEqual({ source: 'env', value: 'invite', set: true });
 
     const res = await save({ SIGNUP: 'open' }, withToken());
@@ -139,10 +143,10 @@ describe('setup page and the environment', () => {
 
   it('asks for the admin address in production', async () => {
     await setup({ NODE_ENV: 'production', SLIDER_URL: 'https://slider.firma.de' });
-    const res = await save(SMTP, withToken());
+    const res = await save(GOOGLE, withToken());
     expect(res.status).toBe(400);
     expect(JSON.stringify(await res.json())).toMatch(/Admin/);
-    expect((await save({ ...SMTP, BOOTSTRAP_EMAIL: 'robert@firma.de' }, withToken())).status).toBe(
+    expect((await save({ ...GOOGLE, BOOTSTRAP_EMAIL: 'robert@firma.de' }, withToken())).status).toBe(
       200,
     );
   });
@@ -163,9 +167,9 @@ describe('setup page after the first account', () => {
     await claim(admin.user.id);
 
     expect((await status(withToken())).body).toMatchObject({ authorized: false, hasAccount: true });
-    expect((await save(SMTP, withToken())).status).toBe(403);
+    expect((await save(GOOGLE, withToken())).status).toBe(403);
     expect((await status({}, other.cookie)).body.authorized).toBe(false);
-    expect((await save(SMTP, {}, other.cookie)).status).toBe(403);
+    expect((await save(GOOGLE, {}, other.cookie)).status).toBe(403);
 
     expect((await status({}, admin.cookie)).body.authorized).toBe(true);
     // Once claimed, saving without a login is allowed (the admin may switch logins off and on).

@@ -67,15 +67,6 @@ const LOGIN_ERROR_COPY: Record<LoginError, { title: string; message: string }> =
     message:
       'Dein Anmeldedienst meldet die E-Mail-Adresse als nicht bestätigt. Bestätige sie dort und versuche es erneut.',
   },
-  link_invalid: {
-    title: 'Link ungültig',
-    message:
-      'Dieser Anmeldelink funktioniert nicht (mehr). Jeder Link gilt nur einmal – fordere einfach einen neuen an.',
-  },
-  link_expired: {
-    title: 'Link abgelaufen',
-    message: 'Der Anmeldelink ist abgelaufen. Fordere einen neuen an.',
-  },
   admin_consent: {
     title: 'Freigabe durch Admin nötig',
     message:

@@ -148,9 +148,7 @@ function CreatedInvite({ created }: { created: CreatedWorkspaceInvite }) {
     <div className="flex flex-col gap-2">
       {email && (
         <p role="status" className="text-xs text-fg-subtle">
-          {created.emailSent
-            ? `Einladung an ${email} verschickt.`
-            : `Für ${email} erstellt – schick den Link selbst.`}
+          Für {email} erstellt – schick den Link selbst.
         </p>
       )}
       <div className="flex items-end gap-2">

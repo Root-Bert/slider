@@ -207,7 +207,7 @@ docker run -d --name slider --restart unless-stopped -p 8787:8787 -v slider-data
 docker logs slider       # → https://slider.firma.de/einrichtung#token=…
 ```
 
-The link in the log opens the setup page: e-mail (SMTP), Microsoft, Google or SSO login and
+The link in the log opens the setup page: Microsoft, Google or SSO login and
 the admin's address, stored encrypted in the database; the server restarts itself to apply them.
 The secret is generated into `/data`, the database is PGlite in `/data` unless `DATABASE_URL`
 is set. Environment variables still work and win over the setup page. Put a reverse proxy with
@@ -281,12 +281,12 @@ Tracked in Linear (project _Slider_). This prototype covers:
 | BER-103         | "A slide is missing here" gap comments                        | ✅                                            |
 | BER-128         | ⊕ inserts a slide into the linked PowerPoint                  | ❌ removed                                    |
 | BER-112/113/115 | PowerPoint comments (modern + legacy) imported and labelled   | ✅                                            |
-| BER-121         | Owner overview "Meine Reviews"                                | ✅ (login via Microsoft/magic link pending)   |
+| BER-121         | Owner overview "Meine Reviews"                                | ✅ (login via Microsoft pending)              |
 | BER-88/92       | Import by link: OneDrive, SharePoint, direct `.pptx` URL      | ✅                                            |
 | BER-107/108/114 | Change detection, slide matching, PPT comment re-import       | ✅ API (polling, debounce, diff) |
 | BER-109–111     | Version UI: change badges, deleted slides, version history    | ⏳ API ready, UI pending                      |
 | BER-116         | Voice and video comments, on-device transcription             | ✅                                            |
-| BER-129         | Login (Microsoft, OIDC, magic link), organisations, invites   | ✅                                            |
+| BER-129         | Login (Microsoft, Google, OIDC), organisations, invites       | ✅                                            |
 | BER-130         | Open sign-up, free plan (5 people, 3 decks), view-only links  | ✅                                            |
 
 ## Contributing

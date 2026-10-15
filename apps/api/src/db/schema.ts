@@ -133,29 +133,7 @@ export const userIdentities = pgTable(
   ],
 );
 
-export type IdentityProvider = 'microsoft' | 'google' | 'oidc' | 'email';
-
-/**
- * One-time e-mail logins (hashed, 15 minutes, single use): the link's token and the 6-digit code
- * from the same mail. Either one uses the row up.
- */
-export const loginTokens = pgTable(
-  'login_tokens',
-  {
-    id: text('id').primaryKey(),
-    email: text('email').notNull(),
-    tokenHash: text('token_hash').notNull().unique(),
-    returnTo: text('return_to').notNull(),
-    createdAt: createdAt(),
-    expiresAt: timestamptz('expires_at').notNull(),
-    usedAt: timestamptz('used_at'),
-    /** HMAC of the 6-digit code (keyed with SLIDER_SECRET); `null` for rows from before codes. */
-    codeHash: text('code_hash'),
-    /** Wrong codes entered; at the limit the row is burned (`used_at` set). */
-    codeAttempts: integer('code_attempts').notNull().default(0),
-  },
-  (t) => [index('login_tokens_email_idx').on(t.email)],
-);
+export type IdentityProvider = 'microsoft' | 'google' | 'oidc';
 
 /**
  * WebAuthn passkeys (discoverable credentials). They sign into an existing account only; the

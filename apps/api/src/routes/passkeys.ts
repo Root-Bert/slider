@@ -138,9 +138,7 @@ export function passkeysRoutes(deps: AppDeps) {
         if (result.ok) return c.body(null, 204);
         if (result.error === 'not_found') throw notFound('Diese Anmeldung gibt es nicht (mehr).');
         throw badRequest(
-          result.error === 'email'
-            ? 'Die Anmeldung per E-Mail lässt sich nicht trennen.'
-            : 'Das ist deine letzte Anmeldung. Verbinde vorher eine andere oder lege einen Passkey an.',
+          'Das ist deine letzte Anmeldung. Verbinde vorher eine andere oder lege einen Passkey an.',
         );
       })
 

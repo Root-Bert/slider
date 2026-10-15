@@ -64,19 +64,6 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           {providers.data && (
             <SignupHint signup={providers.data.signup} mode={mode} returnTo={returnTo} />
           )}
-          {providers.data?.devMailbox && (
-            <p className="text-center text-xs text-fg-subtle">
-              Entwicklung: Mails erscheinen unter{' '}
-              <a
-                href="/api/dev/mails"
-                target="_blank"
-                rel="noreferrer"
-                className="font-mono text-fg-muted underline-offset-2 hover:text-fg hover:underline"
-              >
-                /api/dev/mails
-              </a>
-            </p>
-          )}
         </div>
       </main>
     </div>

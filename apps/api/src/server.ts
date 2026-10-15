@@ -14,7 +14,6 @@ import { RenderProgress } from './import/render-progress';
 import { scheduleFileAuthorBackfill } from './import/file-author-backfill';
 import { scheduleRerenderBackfill } from './import/rerender';
 import { consoleLogger as log } from './logger';
-import { createMailer } from './mail/mailer';
 import {
   ensureSetupToken,
   instanceClaimed,
@@ -54,10 +53,6 @@ async function main(): Promise<void> {
   }
   const oidc = config.auth.oidc ? new OidcClient(config.auth.oidc, clock) : null;
   const google = config.auth.google ? new OidcClient(config.auth.google, clock) : null;
-  const mailer = createMailer(config.smtp, log, config.env);
-  if (!config.smtp && config.env === 'development') {
-    log.info('No SMTP configured – login mails are logged here and listed at /api/dev/mails.');
-  }
 
   const microsoft = new MicrosoftTokens({
     config: config.microsoft,
@@ -127,7 +122,6 @@ async function main(): Promise<void> {
     rendering: { renderers: { officePdf, libreOfficePdf }, progress: renderProgress },
     oidc,
     google,
-    mailer,
     ownerId: owner?.id ?? null,
     instance: {
       env,

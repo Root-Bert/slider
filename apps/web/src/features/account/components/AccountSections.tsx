@@ -30,7 +30,6 @@ const PROVIDER_LABELS: Record<LoginIdentity['provider'], string> = {
   microsoft: 'Microsoft',
   google: 'Google',
   oidc: 'Firmen-Login (SSO)',
-  email: 'E-Mail (Link oder Code)',
 };
 
 const providerIcon = (provider: LoginIdentity['provider']): ReactNode =>
@@ -39,7 +38,7 @@ const providerIcon = (provider: LoginIdentity['provider']): ReactNode =>
   ) : provider === 'google' ? (
     <GoogleMark size={18} />
   ) : (
-    <Icon name={provider === 'email' ? 'at' : 'key'} size={20} className="text-fg-muted" />
+    <Icon name="key" size={20} className="text-fg-muted" />
   );
 
 export function LoginsSection({
@@ -88,19 +87,17 @@ export function LoginsSection({
                   <Icon name="cloud" size={18} label="Verbunden mit OneDrive & SharePoint" />
                 </span>
               )}
-              {identity.provider !== 'email' && (
-                <Menu
-                  label={`Aktionen für ${PROVIDER_LABELS[identity.provider]}`}
-                  actions={[
-                    {
-                      label: 'Trennen',
-                      icon: 'delete',
-                      tone: 'danger',
-                      onSelect: () => setUnlinking(identity),
-                    },
-                  ]}
-                />
-              )}
+              <Menu
+                label={`Aktionen für ${PROVIDER_LABELS[identity.provider]}`}
+                actions={[
+                  {
+                    label: 'Trennen',
+                    icon: 'delete',
+                    tone: 'danger',
+                    onSelect: () => setUnlinking(identity),
+                  },
+                ]}
+              />
             </li>
           ))}
           {identities.data.length === 0 && (

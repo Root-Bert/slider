@@ -2,11 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { mapMicrosoftError, MICROSOFT_SCOPES } from '../src/auth/microsoft';
 import { decryptToken, encryptToken } from '../src/auth/token-crypto';
-import { users } from '../src/db/schema';
+import { userIdentities, users } from '../src/db/schema';
 import { upsertUser } from '../src/services/users';
 import type { FetchLike } from '../src/sources/safe-fetch';
 import type { LoginIdentity } from '@slider/shared';
-import { RecordingMailer } from '../src/mail/mailer';
 import { createTestContext, fakeJwt, MICROSOFT_TEST_CONFIG, type TestContext } from './helpers';
 
 const SECRET = 'test-secret-test-secret-test-secret!';
@@ -197,7 +196,6 @@ describe('Microsoft login routes', () => {
     let nonce = '';
     ctx = await createTestContext({
       config: { microsoft: MICROSOFT_TEST_CONFIG },
-      mailer: new RecordingMailer(),
       fetch: async (input) => {
         const url = String(input);
         if (url.endsWith('/oauth2/v2.0/token'))
@@ -236,11 +234,22 @@ describe('Microsoft login routes', () => {
       ['microsoft:tenant-1:oid-1', 'robert@contoso.com'],
     ]);
 
+    // Never the last way in: a second login keeps the account reachable.
+    await ctx.deps.db.insert(userIdentities).values({
+      provider: 'google',
+      subject: 'g-robert',
+      userId: ctx.ownerId,
+      email: 'robert@q4-team.de',
+    });
     const unlinked = await ctx.request('/api/me/identities/microsoft%3Atenant-1%3Aoid-1', {
       method: 'DELETE',
     });
     expect(unlinked.status).toBe(204);
-    expect(await (await ctx.request('/api/me/identities')).json()).toEqual([]);
+    expect(
+      ((await (await ctx.request('/api/me/identities')).json()) as LoginIdentity[]).map(
+        (i) => i.provider,
+      ),
+    ).toEqual(['google']);
     // File access goes with it.
     const [owner] = await ctx.deps.db.select().from(users).where(eq(users.id, ctx.ownerId));
     expect(owner?.msRefreshToken).toBeNull();

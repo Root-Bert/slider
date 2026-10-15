@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import {
   authProvidersSchema,
-  loginResultSchema,
   passkeySchema,
   type LoginIdentity,
   type MeResponse,
@@ -10,9 +9,7 @@ import {
 } from '@slider/shared';
 import { simpleWebAuthn, type WebAuthn } from '../src/auth/passkeys';
 import type { Config, OidcConfig } from '../src/config';
-import { authChallenges, loginTokens, passkeys, userIdentities, users } from '../src/db/schema';
-import { silentLogger } from '../src/logger';
-import { createMailer, DevMailer, NullMailer, RecordingMailer } from '../src/mail/mailer';
+import { authChallenges, passkeys, userIdentities, users } from '../src/db/schema';
 import type { FetchLike } from '../src/sources/safe-fetch';
 import {
   createTestContext,
@@ -25,7 +22,7 @@ import {
 } from './helpers';
 
 /**
- * Google, e-mail codes and passkeys (BER-131). Providers and authenticators are fakes – no
+ * Google and passkeys (BER-131). Providers and authenticators are fakes – no
  * network, no real WebAuthn crypto (that runs end to end in the browser).
  */
 
@@ -50,7 +47,7 @@ const me = async (cookie?: string) => {
 /** Marks the instance as bootstrapped, so the next login is a normal sign-up. */
 async function finishBootstrap() {
   await ctx.deps.db.insert(userIdentities).values({
-    provider: 'email',
+    provider: 'oidc',
     subject: 'robert@q4-team.de',
     userId: ctx.ownerId,
     email: 'robert@q4-team.de',
@@ -252,7 +249,7 @@ describe('Google login', () => {
       await ctx.request('/api/me/identities', { cookie: owner.cookie })
     ).json()) as LoginIdentity[];
     expect(identities.map((i) => [i.provider, i.email])).toEqual([
-      ['email', 'robert@q4-team.de'],
+      ['oidc', 'robert@q4-team.de'],
       ['google', 'robert.privat@gmail.com'],
     ]);
 
@@ -290,19 +287,18 @@ describe('Google login', () => {
     const google = (await identitiesOf(owner.cookie)).find((i) => i.provider === 'google');
     expect(google?.id).toBe('google:109876543210');
 
-    // Only one's own logins, and never the e-mail login.
+    // Only one's own logins.
     const lena = await signedInUser(ctx, { name: 'Lena', email: 'lena@firma.de' });
     expect((await unlink(lena.cookie, google?.id ?? '')).status).toBe(404);
-    expect((await unlink(owner.cookie, 'email:robert@q4-team.de')).status).toBe(400);
     expect((await unlink(owner.cookie, 'nonsense')).status).toBe(404);
 
     expect((await unlink(owner.cookie, google?.id ?? '')).status).toBe(204);
-    expect((await identitiesOf(owner.cookie)).map((i) => i.provider)).toEqual(['email']);
+    expect((await identitiesOf(owner.cookie)).map((i) => i.provider)).toEqual(['oidc']);
     const cookie = sessionCookieFrom(await googleLogin(idp)) ?? '';
     expect((await me(cookie)).body.user?.id).not.toBe(owner.user.id);
   });
 
-  it('never unlinks the last way in – a passkey or the magic link counts as one', async () => {
+  it('never unlinks the last way in – a passkey counts as one', async () => {
     const idp = fakeGoogle();
     await googleContext(idp);
     const lena = sessionCookieFrom(await googleLogin(idp)) ?? '';
@@ -321,208 +317,6 @@ describe('Google login', () => {
       name: 'YubiKey',
     });
     expect((await unlink(lena, google?.id ?? '')).status).toBe(204);
-  });
-
-  it('with the magic link set up, the last provider login may go', async () => {
-    const idp = fakeGoogle();
-    ctx = await createTestContext({
-      config: authConfig({ google: GOOGLE, signup: 'open' }),
-      fetch: idp.fetch,
-      mailer: new RecordingMailer(),
-    });
-    await finishBootstrap();
-    const lena = sessionCookieFrom(await googleLogin(idp)) ?? '';
-    const [google] = await identitiesOf(lena);
-    expect((await unlink(lena, google?.id ?? '')).status).toBe(204);
-  });
-});
-
-// ── E-mail code ──────────────────────────────────────────────────────────────
-
-describe('e-mail login code', () => {
-  let mailer: RecordingMailer;
-  const mailContext = async (auth: Partial<Config['auth']> = {}) => {
-    mailer = new RecordingMailer();
-    ctx = await createTestContext({ config: authConfig(auth), mailer });
-    await finishBootstrap();
-  };
-  const start = (email: string, returnTo?: string) =>
-    ctx.request('/api/auth/email/start', { method: 'POST', json: { email, returnTo } });
-  const codeFrom = (index = -1) => {
-    const match = /\b(\d{3}) (\d{3})\b/.exec(mailer.sent.at(index)?.text ?? '');
-    if (!match) throw new Error('No code in mail');
-    return `${match[1]}${match[2]}`;
-  };
-  const wrong = (code: string) => String((Number(code) + 1) % 1_000_000).padStart(6, '0');
-  const enter = (code: string, email = 'robert@q4-team.de', headers: Record<string, string> = {}) =>
-    ctx.request('/api/auth/email/code', { method: 'POST', json: { email, code }, headers });
-
-  it('mails a code next to the link; the code signs in once and lands on returnTo', async () => {
-    await mailContext();
-    await start('Robert@Q4-Team.de', '/d/abc');
-    const mail = mailer.sent[0]!;
-    const code = codeFrom();
-    expect(mail.text).toContain('http://localhost:5173/api/auth/email/verify?token=');
-    expect(mail.html).toContain(`${code.slice(0, 3)} ${code.slice(3)}`);
-    expect(mail.html).toContain('Bei Slider anmelden');
-    const [row] = await ctx.deps.db.select().from(loginTokens);
-    expect(row?.codeHash).toMatch(/^[0-9a-f]{64}$/);
-
-    const res = await enter(`${code.slice(0, 3)} ${code.slice(3)}`, 'ROBERT@q4-team.de');
-    expect(res.status).toBe(200);
-    expect(loginResultSchema.parse(await res.json())).toEqual({ redirectTo: '/d/abc' });
-    const cookie = sessionCookieFrom(res) ?? '';
-    expect((await me(cookie)).body.user?.id).toBe(ctx.ownerId);
-
-    // Used up – the code and the link of the same mail.
-    expect((await enter(code)).status).toBe(400);
-    const link = new URL(/http\S+/.exec(mail.text)![0]);
-    expect((await ctx.request(link.pathname + link.search)).headers.get('location')).toBe(
-      'http://localhost:5173/login?error=link_invalid',
-    );
-  });
-
-  it('a used link makes the code useless', async () => {
-    await mailContext();
-    await start('robert@q4-team.de');
-    const code = codeFrom();
-    const token = new URL(/http\S+/.exec(mailer.sent[0]!.text)![0]).searchParams.get('token')!;
-    const confirm = await ctx.request('/api/auth/email/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ token }).toString(),
-    });
-    expect(sessionCookieFrom(confirm)).not.toBeNull();
-    expect((await enter(code)).status).toBe(400);
-  });
-
-  it('burns the mail after 5 wrong codes', async () => {
-    await mailContext();
-    await start('robert@q4-team.de');
-    const code = codeFrom();
-    for (let i = 0; i < 4; i++) {
-      const res = await enter(wrong(code));
-      expect(res.status).toBe(400);
-      expect(await res.json()).toMatchObject({
-        error: { message: 'Der Code stimmt nicht oder ist abgelaufen.' },
-      });
-    }
-    const fifth = await enter(wrong(code));
-    expect(await fifth.json()).toMatchObject({
-      error: { message: 'Zu viele falsche Versuche. Fordere bitte einen neuen Code an.' },
-    });
-    const [row] = await ctx.deps.db.select().from(loginTokens);
-    expect(row).toMatchObject({ codeAttempts: 5 });
-    expect(row?.usedAt).not.toBeNull();
-    const late = await enter(code);
-    expect(late.status).toBe(400);
-    expect(sessionCookieFrom(late)).toBeNull();
-  });
-
-  it('concurrent guesses never compare more than 5 codes', async () => {
-    await mailContext();
-    await start('robert@q4-team.de');
-    const code = codeFrom();
-    const guesses = Array.from({ length: 12 }, (_, i) =>
-      String((Number(code) + 1 + i) % 1_000_000).padStart(6, '0'),
-    );
-    const results = await Promise.all(guesses.map((guess) => enter(guess)));
-    expect(results.every((res) => res.status === 400)).toBe(true);
-    const [row] = await ctx.deps.db.select().from(loginTokens);
-    expect(row).toMatchObject({ codeAttempts: 5 });
-    expect(row?.usedAt).not.toBeNull();
-    expect(sessionCookieFrom(await enter(code))).toBeNull();
-  });
-
-  it('4 wrong codes still leave the right one working', async () => {
-    await mailContext();
-    await start('robert@q4-team.de');
-    const code = codeFrom();
-    for (let i = 0; i < 4; i++) await enter(wrong(code));
-    expect(sessionCookieFrom(await enter(code))).not.toBeNull();
-  });
-
-  it('expires after 15 minutes', async () => {
-    await mailContext();
-    await start('robert@q4-team.de');
-    ctx.clock.advance(16 * 60 * 1000);
-    expect((await enter(codeFrom())).status).toBe(400);
-  });
-
-  it('only counts for the address it was sent to', async () => {
-    await mailContext({ signup: 'open' });
-    await start('robert@q4-team.de');
-    expect((await enter(codeFrom(), 'mallory@evil.example')).status).toBe(400);
-  });
-
-  it('refuses cross-site posts and malformed codes', async () => {
-    await mailContext();
-    await start('robert@q4-team.de');
-    const code = codeFrom();
-    expect((await enter(code, undefined, { Origin: 'https://evil.example' })).status).toBe(400);
-    expect((await enter('12345')).status).toBe(400);
-    expect((await enter('abcdef')).status).toBe(400);
-    expect(sessionCookieFrom(await enter(code))).not.toBeNull();
-  });
-
-  it('answers with the login error when the account may not sign in', async () => {
-    await mailContext({ signup: 'open' });
-    await start('neu@example.com', '/d/x');
-    // The instance closed sign-up while the mail was on its way.
-    ctx.deps.config.auth.signup = 'invite';
-    const res = await enter(codeFrom(), 'neu@example.com');
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
-      redirectTo: '/login?error=signup_closed&returnTo=%2Fd%2Fx',
-    });
-    expect(sessionCookieFrom(res)).toBeNull();
-  });
-});
-
-// ── Dev mailbox ──────────────────────────────────────────────────────────────
-
-describe('dev mailbox', () => {
-  it('development without SMTP: mails are kept and listed at /api/dev/mails', async () => {
-    const mailer = createMailer(null, silentLogger, 'development');
-    expect(mailer).toBeInstanceOf(DevMailer);
-    ctx = await createTestContext({
-      config: { ...authConfig({ signup: 'open' }), env: 'development' },
-      mailer,
-    });
-    await finishBootstrap();
-    const providers = authProvidersSchema.parse(
-      await (await ctx.request('/api/auth/providers')).json(),
-    );
-    expect(providers).toMatchObject({ magicLink: true, devMailbox: true });
-
-    await ctx.request('/api/auth/email/start', {
-      method: 'POST',
-      json: { email: 'robert@q4-team.de' },
-    });
-    const res = await ctx.request('/api/dev/mails');
-    expect(res.status).toBe(200);
-    const mails = (await res.json()) as { to: string; subject: string; text: string }[];
-    expect(mails).toHaveLength(1);
-    expect(mails[0]).toMatchObject({ to: 'robert@q4-team.de' });
-    expect(mails[0]?.text).toMatch(/\d{3} \d{3}/);
-    expect(mails[0]?.text).toContain('/api/auth/email/verify?token=');
-  });
-
-  it('keeps only the last 20 mails', async () => {
-    const mailer = new DevMailer(silentLogger);
-    for (let i = 0; i < 25; i++) await mailer.send({ to: `${i}@x.de`, subject: 's', text: 't' });
-    expect(mailer.list()).toHaveLength(20);
-    expect(mailer.list()[0]?.to).toBe('24@x.de');
-  });
-
-  it('never exists outside development', async () => {
-    expect(createMailer(null, silentLogger, 'production')).toBeInstanceOf(NullMailer);
-    expect(createMailer(null, silentLogger, 'test')).toBeInstanceOf(NullMailer);
-    ctx = await createTestContext({ config: authConfig(), mailer: new DevMailer(silentLogger) });
-    expect((await ctx.request('/api/dev/mails')).status).toBe(404);
-    expect(
-      authProvidersSchema.parse(await (await ctx.request('/api/auth/providers')).json()).devMailbox,
-    ).toBe(false);
   });
 });
 

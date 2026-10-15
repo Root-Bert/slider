@@ -26,13 +26,7 @@ const ROLE_OPTIONS = INVITE_ROLES.map((role) => ({ value: role, label: ROLE_LABE
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** The first row of the members card: invite by e-mail or create a link, one role for both. */
-export function InviteForm({
-  workspace,
-  onNotify,
-}: {
-  workspace: Workspace;
-  onNotify: ShowToast;
-}) {
+export function InviteForm({ workspace, onNotify }: { workspace: Workspace; onNotify: ShowToast }) {
   const create = useCreateWorkspaceInvite(workspace.id);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<InviteRole>('member');
@@ -46,19 +40,13 @@ export function InviteForm({
   const inviteByEmail = () => {
     setEmailTouched(true);
     if (!emailValid) return;
-    const address = email.trim();
     create.mutate(
-      { email: address, role },
+      { email: email.trim(), role },
       {
         onSuccess: (result) => {
           setEmail('');
           setEmailTouched(false);
-          if (result.emailSent) {
-            setCreated(null);
-            onNotify(`Einladung an ${address} verschickt`);
-          } else {
-            setCreated(result);
-          }
+          setCreated(result);
         },
         onError: (error) => onNotify(error.message, 'danger'),
       },

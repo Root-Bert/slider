@@ -8,7 +8,6 @@ import {
 } from '@slider/shared';
 import type { Config } from '../src/config';
 import { decks, workspaceMembers } from '../src/db/schema';
-import { RecordingMailer } from '../src/mail/mailer';
 import { createReadyDeck, createTestContext, signedInUser, type TestContext } from './helpers';
 import { FakeSource, pptxBytes } from './sync-helpers';
 
@@ -26,7 +25,6 @@ const setup = async (config: Partial<Config> = {}) => {
     bytes: pptxBytes('v1'),
   }));
   ctx = await createTestContext({
-    mailer: new RecordingMailer(),
     sources: { onedrive: source },
     config,
   });

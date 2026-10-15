@@ -75,6 +75,6 @@ describe('login errors', () => {
   });
 
   it('has German copy for every code', () => {
-    expect(loginErrorCopy('link_expired').title).toBe('Link abgelaufen');
+    expect(loginErrorCopy('signup_closed').title).toBe('Kein Konto gefunden');
   });
 });

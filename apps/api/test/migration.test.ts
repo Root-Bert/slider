@@ -130,8 +130,8 @@ describe('migration 0005_plans', () => {
   });
 });
 
-describe('migration 0006_passkeys', () => {
-  it('only adds: open login links keep working, without a code', async () => {
+describe('migrations 0006_passkeys … 0020_drop_email_login', () => {
+  it('passkeys go with their account; e-mail logins and open login links are dropped', async () => {
     client = new PGlite();
     const db = drizzle({ client });
     await migrate(db, { migrationsFolder: await migrationsBefore(PASSKEYS_TAG) });
@@ -143,10 +143,14 @@ describe('migration 0006_passkeys', () => {
 
     await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
 
-    const { rows } = await client.query<{ code_hash: string | null; code_attempts: number }>(
-      `SELECT code_hash, code_attempts FROM login_tokens WHERE id = 't1'`,
+    const { rows: tables } = await client.query<{ name: string | null }>(
+      `SELECT to_regclass('login_tokens')::text AS name`,
     );
-    expect(rows).toEqual([{ code_hash: null, code_attempts: 0 }]);
+    expect(tables).toEqual([{ name: null }]);
+    const { rows: identities } = await client.query<{ n: number }>(
+      'SELECT count(*)::int AS n FROM user_identities',
+    );
+    expect(identities[0]?.n).toBe(0);
     await client.exec(`
       INSERT INTO passkeys (id, user_id, credential_id, public_key, device_type, name)
         VALUES ('p1', 'u-robert', 'cred', 'key', 'singleDevice', 'Passkey');

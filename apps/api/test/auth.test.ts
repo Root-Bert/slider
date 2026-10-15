@@ -4,8 +4,7 @@ import { authProvidersSchema, createdWorkspaceInviteSchema, type MeResponse } fr
 import { decryptToken } from '../src/auth/token-crypto';
 import { signInWithIdentity } from '../src/services/accounts';
 import type { Config, OidcConfig } from '../src/config';
-import { loginTokens, sessions, userIdentities, users, workspaceMembers } from '../src/db/schema';
-import { RecordingMailer } from '../src/mail/mailer';
+import { sessions, userIdentities, users } from '../src/db/schema';
 import type { FetchLike } from '../src/sources/safe-fetch';
 import {
   createReadyDeck,
@@ -47,7 +46,7 @@ const me = async (cookie?: string) => {
 /** Marks the instance as bootstrapped, so the next login is a normal sign-up. */
 async function finishBootstrap() {
   await ctx.deps.db.insert(userIdentities).values({
-    provider: 'email',
+    provider: 'google',
     subject: 'robert@q4-team.de',
     userId: ctx.ownerId,
     email: 'robert@q4-team.de',
@@ -56,9 +55,6 @@ async function finishBootstrap() {
 
 const ownerCookie = async () =>
   (await signedInUser(ctx, { name: 'Robert Hofmann', email: 'robert@q4-team.de' })).cookie;
-
-/** Headers a browser sends when our confirm page (no referrer) submits its form. */
-const SAME_ORIGIN_FORM = { 'Sec-Fetch-Site': 'same-origin', Origin: 'null' };
 
 // ── Fake identity providers (no network) ─────────────────────────────────────
 
@@ -174,7 +170,6 @@ describe('GET /api/auth/providers', () => {
         ...authConfig({ oidc: OIDC, signup: 'domains' }),
         microsoft: MICROSOFT_TEST_CONFIG,
       },
-      mailer: new RecordingMailer(),
     });
     const body = authProvidersSchema.parse(await (await ctx.request('/api/auth/providers')).json());
     expect(body).toEqual({
@@ -192,8 +187,6 @@ describe('GET /api/auth/providers', () => {
           loginUrl: '/api/auth/oidc/login',
         },
       ],
-      magicLink: true,
-      devMailbox: false,
       devLogin: false,
       signup: 'domains',
       needsSetup: false,
@@ -488,159 +481,6 @@ describe('Microsoft login', () => {
   });
 });
 
-describe('magic link', () => {
-  let mailer: RecordingMailer;
-  const mailContext = async (auth: Partial<Config['auth']> = {}) => {
-    mailer = new RecordingMailer();
-    ctx = await createTestContext({ config: authConfig(auth), mailer });
-    await finishBootstrap();
-  };
-  const start = (email: string, returnTo?: string) =>
-    ctx.request('/api/auth/email/start', { method: 'POST', json: { email, returnTo } });
-  const linkFrom = (index = -1) => {
-    const text = mailer.sent.at(index)?.text ?? '';
-    const match = /http\S+/.exec(text);
-    if (!match) throw new Error('No link in mail');
-    return new URL(match[0]);
-  };
-  /** What a mail scanner does: only GET the link. */
-  const open = (url: URL) => ctx.request(url.pathname + url.search);
-  const confirm = (token: string, headers: Record<string, string> = SAME_ORIGIN_FORM) =>
-    ctx.request('/api/auth/email/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...headers },
-      body: new URLSearchParams({ token }).toString(),
-    });
-  /** What a person does: open the link, then press "Anmelden". */
-  const visit = async (url: URL) => {
-    const page = await open(url);
-    if (page.status !== 200) return page;
-    return confirm(url.searchParams.get('token') ?? '');
-  };
-
-  it('mails a single-use link that signs in and returns to returnTo', async () => {
-    await mailContext();
-    expect((await start('Robert@Q4-Team.de', '/d/abc')).status).toBe(204);
-    expect(mailer.sent).toHaveLength(1);
-    expect(mailer.sent[0]).toMatchObject({
-      to: 'robert@q4-team.de',
-      subject: expect.stringMatching(/^\d{3} \d{3} ist dein Anmeldecode für Slider$/),
-    });
-    const link = linkFrom();
-    expect(link.origin + link.pathname).toBe('http://localhost:5173/api/auth/email/verify');
-    const [row] = await ctx.deps.db.select().from(loginTokens);
-    expect(row?.tokenHash).not.toBe(link.searchParams.get('token'));
-
-    const res = await visit(link);
-    expect(res.headers.get('location')).toBe('http://localhost:5173/d/abc');
-    const cookie = sessionCookieFrom(res) ?? '';
-    expect((await me(cookie)).body.user?.id).toBe(ctx.ownerId);
-
-    const reuse = await visit(link);
-    expect(reuse.headers.get('location')).toBe('http://localhost:5173/login?error=link_invalid');
-    expect(sessionCookieFrom(reuse)).toBeNull();
-  });
-
-  it('survives mail scanners: GET only shows a confirm page, the POST signs in', async () => {
-    await mailContext();
-    await start('robert@q4-team.de', '/d/abc');
-    const link = linkFrom();
-    const token = link.searchParams.get('token') ?? '';
-
-    for (let i = 0; i < 2; i++) {
-      const page = await open(link);
-      expect(page.status).toBe(200);
-      expect(sessionCookieFrom(page)).toBeNull();
-      expect(page.headers.get('cache-control')).toBe('no-store');
-      expect(page.headers.get('referrer-policy')).toBe('no-referrer');
-      expect(page.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
-      const html = await page.text();
-      expect(html).toContain('<form method="post" action="/api/auth/email/verify">');
-      expect(html).toContain(`name="token" value="${token}"`);
-      expect(html).toContain('robert@q4-team.de');
-      expect(html).not.toContain('<script');
-    }
-    const [row] = await ctx.deps.db.select().from(loginTokens);
-    expect(row?.usedAt).toBeNull();
-
-    const res = await confirm(token);
-    expect(res.status).toBe(303);
-    expect(res.headers.get('location')).toBe('http://localhost:5173/d/abc');
-    expect((await me(sessionCookieFrom(res) ?? '')).body.user?.id).toBe(ctx.ownerId);
-    expect((await open(link)).headers.get('location')).toBe(
-      'http://localhost:5173/login?error=link_invalid',
-    );
-  });
-
-  it('rejects cross-site confirmations and garbage tokens without using the link up', async () => {
-    await mailContext();
-    await start('robert@q4-team.de');
-    const token = linkFrom().searchParams.get('token') ?? '';
-    const foreign: Record<string, string>[] = [
-      { 'Sec-Fetch-Site': 'cross-site', Origin: 'null' },
-      { Origin: 'https://evil.example' },
-    ];
-    for (const headers of foreign) {
-      const res = await confirm(token, headers);
-      expect(res.status).toBe(303);
-      expect(res.headers.get('location')).toBe('http://localhost:5173/login?error=link_invalid');
-      expect(sessionCookieFrom(res)).toBeNull();
-    }
-    const bogus = await open(new URL('http://localhost:5173/api/auth/email/verify?token=%22%3E'));
-    expect(bogus.headers.get('location')).toBe('http://localhost:5173/login?error=link_invalid');
-    expect((await confirm('nope')).headers.get('location')).toMatch(/error=link_invalid/);
-    expect(
-      sessionCookieFrom(await confirm(token, { Origin: 'http://localhost:5173' })),
-    ).not.toBeNull();
-  });
-
-  it('expires after 15 minutes', async () => {
-    await mailContext();
-    await start('robert@q4-team.de');
-    ctx.clock.advance(16 * 60 * 1000);
-    expect((await visit(linkFrom())).headers.get('location')).toBe(
-      'http://localhost:5173/login?error=link_expired',
-    );
-  });
-
-  it('answers the same for unknown addresses but sends nothing (SIGNUP=invite)', async () => {
-    await mailContext();
-    const res = await start('fremd@example.com');
-    expect(res.status).toBe(204);
-    expect(mailer.sent).toEqual([]);
-  });
-
-  it('signs up new people when sign-up is open', async () => {
-    await mailContext({ signup: 'open' });
-    await start('neu@example.com');
-    const cookie = sessionCookieFrom(await visit(linkFrom())) ?? '';
-    expect((await me(cookie)).body.user).toMatchObject({ email: 'neu@example.com', name: 'neu' });
-  });
-
-  it('limits mails per address', async () => {
-    await mailContext();
-    for (let i = 0; i < 5; i++) expect((await start('robert@q4-team.de')).status).toBe(204);
-    expect(mailer.sent).toHaveLength(3);
-  });
-
-  it('is not offered without SMTP', async () => {
-    ctx = await createTestContext({ config: authConfig() });
-    expect((await start('robert@q4-team.de')).status).toBe(404);
-  });
-
-  it('a new account adopts nothing and gets no organisation automatically (BER-130)', async () => {
-    await mailContext({ signup: 'open' });
-    await start('neu@example.com');
-    const cookie = sessionCookieFrom(await visit(linkFrom())) ?? '';
-    const id = (await me(cookie)).body.user?.id ?? '';
-    const memberships = await ctx.deps.db
-      .select()
-      .from(workspaceMembers)
-      .where(eq(workspaceMembers.userId, id));
-    expect(memberships).toEqual([]);
-  });
-});
-
 describe('bootstrap (first account of the instance)', () => {
   const oidcInstance = async (idp: FakeIdp, config: Partial<Config> = {}, auth = {}) => {
     ctx = await createTestContext({
@@ -734,19 +574,5 @@ describe('bootstrap (first account of the instance)', () => {
     const admins = await ctx.deps.db.select().from(users).where(eq(users.isInstanceAdmin, true));
     expect(admins).toHaveLength(1);
     expect(await identities()).toHaveLength(2);
-  });
-
-  it('sends no magic link to strangers before the instance has an account', async () => {
-    const mailer = new RecordingMailer();
-    ctx = await createTestContext({
-      config: authConfig({ bootstrapEmails: ['robert@q4-team.de'] }),
-      mailer,
-    });
-    const start = (email: string) =>
-      ctx.request('/api/auth/email/start', { method: 'POST', json: { email } });
-    expect((await start('mallory@evil.example')).status).toBe(204);
-    expect(mailer.sent).toEqual([]);
-    await start('Robert@Q4-Team.de');
-    expect(mailer.sent).toHaveLength(1);
   });
 });

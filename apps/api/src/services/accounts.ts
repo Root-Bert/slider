@@ -17,7 +17,6 @@ import {
  * - a known identity (provider + subject) always signs into its account;
  * - the very first login of the instance adopts the dev owner (and its decks) – if
  *   `mayBootstrap` lets this address claim the instance;
- * - a magic link signs into the account with that e-mail – the mail proves the mailbox;
  * - Microsoft/Google/OIDC attach to an existing account by e-mail only while that account has no
  *   login yet (e.g. created before logins existed); otherwise `account_exists`. Signed in, a
  *   person can link another provider explicitly ({@link linkIdentity}, "Verbinden" on /konto).
@@ -29,7 +28,7 @@ export interface IdentityInput {
   subject: string;
   /** As reported by the provider; `null` if it sent none. */
   email: string | null;
-  /** The provider vouches for the address (OIDC `email_verified`, Microsoft UPN, magic link). */
+  /** The provider vouches for the address (OIDC `email_verified`, Microsoft UPN). */
   emailVerified: boolean;
   name: string | null;
   /** From a `/join/<token>` return path: lets invited people sign up. */
@@ -112,17 +111,6 @@ export function mayBootstrap(deps: AppDeps, email: string, emailVerified: boolea
   return signup === 'domains' && signupDomains.includes(emailDomain(email));
 }
 
-/** Whether a magic link may be sent to this address (no mail to people who could not sign in). */
-export async function mayReceiveLoginLink(
-  deps: AppDeps,
-  email: string,
-  inviteToken: string | null,
-): Promise<boolean> {
-  if ((await identityCount(deps.db)) === 0) return mayBootstrap(deps, email, true);
-  if (await findUserByEmail(deps.db, email)) return true;
-  return (await maySignUp(deps, email, true, inviteToken)).allowed;
-}
-
 const randomColor = () => ACCENT_COLORS[Math.floor(Math.random() * ACCENT_COLORS.length)] ?? 'red';
 
 /** Resolves (or creates) the account for a login; see the rules at the top of this file. */
@@ -194,7 +182,6 @@ export async function signInWithIdentity(
 
   const existing = await findUserByEmail(db, email);
   if (existing) {
-    if (input.provider === 'email') return attach(existing);
     if ((await identityCount(db, existing.id)) > 0) return { ok: false, error: 'account_exists' };
     // An account from before logins existed: it may be claimed like a new sign-up.
     if (!(await maySignUp(deps, email, true, input.inviteToken)).allowed) {
@@ -311,12 +298,11 @@ export async function listIdentities(db: Executor, userId: string) {
 }
 
 export type UnlinkResult =
-  { ok: true } | { ok: false; error: 'not_found' | 'email' | 'last_login' };
+  { ok: true } | { ok: false; error: 'not_found' | 'last_login' };
 
 /**
- * Removes a provider login from the account ("Trennen" on /konto). The e-mail login can't go – a
- * magic link would add it right back. Nor can the last way in: some other identity, a passkey or
- * the magic link must remain. Unlinking Microsoft also drops its file access.
+ * Removes a provider login from the account ("Trennen" on /konto). Not the last way in: some
+ * other identity or a passkey must remain. Unlinking Microsoft also drops its file access.
  */
 export async function unlinkIdentity(
   deps: AppDeps,
@@ -336,13 +322,12 @@ export async function unlinkIdentity(
       .where(eq(userIdentities.userId, userId));
     const target = own.find((row) => row.provider === provider && row.subject === subject);
     if (!target) return { ok: false, error: 'not_found' };
-    if (target.provider === 'email') return { ok: false, error: 'email' };
     const [keys] = await tx
       .select({ count: count() })
       .from(passkeys)
       .where(eq(passkeys.userId, userId));
     const remaining = own.length - 1 + (keys?.count ?? 0);
-    if (remaining === 0 && !deps.mailer.configured) return { ok: false, error: 'last_login' };
+    if (remaining === 0) return { ok: false, error: 'last_login' };
     await tx
       .delete(userIdentities)
       .where(and(eq(userIdentities.provider, provider), eq(userIdentities.subject, subject)));

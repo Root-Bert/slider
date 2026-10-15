@@ -5,9 +5,7 @@ import type {
   JoinPreview,
   JoinResult,
   LoginIdentity,
-  LoginResult,
   Passkey,
-  VerifyEmailCodeInput,
   Workspace,
   WorkspaceInvite,
   WorkspaceMember,
@@ -38,18 +36,6 @@ export const useAuthProviders = () =>
     queryKey: workspaceKeys.providers,
     queryFn: () => api.get<AuthProviders>('/auth/providers'),
     staleTime: Infinity,
-  });
-
-export const useStartEmailLogin = () =>
-  useMutation({
-    mutationFn: (input: { email: string; returnTo: string }) =>
-      api.post<void>('/auth/email/start', input),
-  });
-
-/** The 6-digit code from the login mail; the web app then navigates to `redirectTo`. */
-export const useVerifyEmailCode = () =>
-  useMutation({
-    mutationFn: (input: VerifyEmailCodeInput) => api.post<LoginResult>('/auth/email/code', input),
   });
 
 // ── Account: connected logins and passkeys ──────────────────────────────────

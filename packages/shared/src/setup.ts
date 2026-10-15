@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * Setup page (`/einrichtung`): logins, mail and sign-up configured in the browser instead of
+ * Setup page (`/einrichtung`): logins and sign-up configured in the browser instead of
  * environment variables, so a self-hosted Slider needs nothing but `SLIDER_URL` to start.
  * Before the first account exists it is opened with the one-time setup token from the server log;
  * afterwards only the instance admin may use it. Values set by the environment always win and
@@ -11,8 +11,6 @@ import { z } from 'zod';
 /** The settings the page may store – named like their environment variables. */
 export const SETUP_KEYS = [
   'BOOTSTRAP_EMAIL',
-  'SMTP_URL',
-  'MAIL_FROM',
   'MS_CLIENT_ID',
   'MS_CLIENT_SECRET',
   'MS_TENANT',
@@ -28,9 +26,8 @@ export const SETUP_KEYS = [
 export const setupKeySchema = z.enum(SETUP_KEYS);
 export type SetupKey = z.infer<typeof setupKeySchema>;
 
-/** Never sent back to the browser, stored encrypted. `SMTP_URL` carries the mail password. */
+/** Never sent back to the browser, stored encrypted. */
 export const SECRET_SETUP_KEYS: readonly SetupKey[] = [
-  'SMTP_URL',
   'MS_CLIENT_SECRET',
   'GOOGLE_CLIENT_SECRET',
   'OIDC_CLIENT_SECRET',
@@ -51,7 +48,7 @@ export const setupStatusSchema = z.object({
   authorized: z.boolean(),
   /** The first account (the instance admin) exists; from then on only that admin may come here. */
   hasAccount: z.boolean(),
-  /** At least one login works (Microsoft, Google, SSO or e-mail). */
+  /** At least one login works (Microsoft, Google or SSO). */
   loginConfigured: z.boolean(),
   /** Only when authorized. */
   settings: z

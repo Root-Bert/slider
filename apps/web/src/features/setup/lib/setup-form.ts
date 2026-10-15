@@ -43,33 +43,6 @@ export function collectChanges(
   return values;
 }
 
-export interface SmtpParts {
-  host: string;
-  port: string;
-  user: string;
-  password: string;
-}
-
-export const EMPTY_SMTP: SmtpParts = { host: '', port: '465', user: '', password: '' };
-
-/**
- * `SMTP_URL` from the form fields: port 465 speaks TLS from the start (`smtps://`), the others
- * upgrade with STARTTLS (`smtp://`). User and password are URL-encoded. Empty host → nothing.
- */
-export function smtpUrl({ host, port, user, password }: SmtpParts): string {
-  const server = host
-    .trim()
-    .replace(/^smtps?:\/\//, '')
-    .replace(/\/+$/, '');
-  if (!server) return '';
-  const portNumber = port.trim() || '465';
-  const scheme = portNumber === '465' ? 'smtps' : 'smtp';
-  const auth = user.trim()
-    ? `${encodeURIComponent(user.trim())}${password ? `:${encodeURIComponent(password)}` : ''}@`
-    : '';
-  return `${scheme}://${auth}${server}:${portNumber}`;
-}
-
 const TOKEN_STORAGE_KEY = 'slider-setup-token';
 
 /**

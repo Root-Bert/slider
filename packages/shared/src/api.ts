@@ -56,9 +56,6 @@ import type { MeLimits, MeUser, PendingInvite, Workspace } from './workspaces';
  * | GET    | /auth/google/callback                  |                            | 302 back to the web app |
  * | GET    | /auth/oidc/login?returnTo=&intent=     | (`intent=connect`: link to me) | 302 to the SSO provider |
  * | GET    | /auth/oidc/callback                    |                            | 302 back to the web app |
- * | POST   | /auth/email/start                      | StartEmailLoginInput       | 204 (always; mails link + code) |
- * | GET    | /auth/email/verify?token=              |                            | confirm page → POST → 303 |
- * | POST   | /auth/email/code                       | VerifyEmailCodeInput       | LoginResult (sets cookie) |
  * | POST   | /auth/passkey/options                  |                            | WebAuthn request options |
  * | POST   | /auth/passkey/verify                   | VerifyPasskeyLoginInput    | LoginResult (sets cookie) |
  * | GET    | /me/identities                         |                            | LoginIdentity[]       |

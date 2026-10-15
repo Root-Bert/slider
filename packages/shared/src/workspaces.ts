@@ -25,13 +25,6 @@ export type LoginProvider = z.infer<typeof loginProviderSchema>;
 /** `GET /auth/providers` – what the login page offers. */
 export const authProvidersSchema = z.object({
   providers: z.array(loginProviderSchema),
-  /**
-   * Link + 6-digit code by e-mail (`POST /auth/email/start`); with SMTP configured, or in
-   * development through the dev mailbox.
-   */
-  magicLink: z.boolean(),
-  /** Development without SMTP: mails are not sent but listed at `GET /api/dev/mails`. */
-  devMailbox: z.boolean(),
   /** Development only: requests without a session act as the dev owner, no login needed. */
   devLogin: z.boolean(),
   signup: signupModeSchema,
@@ -44,7 +37,7 @@ export type AuthProviders = z.infer<typeof authProvidersSchema>;
  * `?error=` on `/login` after a failed sign-in:
  * `signup_closed` (no account and no invitation), `account_exists` (the e-mail belongs to an
  * account that signs in another way), `no_email`/`email_unverified` (the provider sent no usable
- * address), `link_invalid`/`link_expired` (magic link), `admin_consent`/`denied`/`failed`,
+ * address), `admin_consent`/`denied`/`failed`,
  * `account_limit` (the Microsoft account is already connected to two Slider accounts).
  */
 export const LOGIN_ERRORS = [
@@ -52,8 +45,6 @@ export const LOGIN_ERRORS = [
   'account_exists',
   'no_email',
   'email_unverified',
-  'link_invalid',
-  'link_expired',
   'admin_consent',
   'denied',
   'failed',
@@ -61,27 +52,8 @@ export const LOGIN_ERRORS = [
 ] as const;
 export type LoginError = (typeof LOGIN_ERRORS)[number];
 
-export const startEmailLoginInputSchema = z.object({
-  email: z.email().max(320),
-  /** Same-origin path to land on after the link was clicked, e.g. `/join/<token>`. */
-  returnTo: z.string().max(2048).optional(),
-});
-export type StartEmailLoginInput = z.infer<typeof startEmailLoginInputSchema>;
-
-/** The 6-digit code from the login mail, typed into the login page. */
-export const LOGIN_CODE_LENGTH = 6;
-export const verifyEmailCodeInputSchema = z.object({
-  email: z.email().max(320),
-  code: z
-    .string()
-    .trim()
-    .transform((code) => code.replace(/\s+/g, ''))
-    .pipe(z.string().regex(/^\d{6}$/, 'Der Code hat 6 Ziffern.')),
-});
-export type VerifyEmailCodeInput = z.input<typeof verifyEmailCodeInputSchema>;
-
 /**
- * Answer of the JSON logins (e-mail code, passkey): where the browser goes next – `returnTo`
+ * Answer of the passkey login: where the browser goes next – `returnTo`
  * when signed in (session cookie set), or `/login?error=…` when the account may not sign in.
  */
 export const loginResultSchema = z.object({ redirectTo: z.string() });
@@ -124,7 +96,7 @@ export type VerifyPasskeyLoginInput = z.infer<typeof verifyPasskeyLoginInputSche
 export const loginIdentitySchema = z.object({
   /** `<provider>:<subject>` – for `DELETE /me/identities/:id`. */
   id: z.string(),
-  provider: z.enum(['microsoft', 'google', 'oidc', 'email']),
+  provider: z.enum(['microsoft', 'google', 'oidc']),
   /** The address the provider reported at the last login. */
   email: z.string().nullable(),
   createdAt: z.iso.datetime(),

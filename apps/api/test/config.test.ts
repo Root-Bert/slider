@@ -166,20 +166,6 @@ describe('loadConfig', () => {
       );
     });
 
-    it('configures SMTP only with SMTP_URL and MAIL_FROM together', () => {
-      expect(loadConfig({}, quiet).smtp).toBeNull();
-      expect(
-        loadConfig(
-          { SMTP_URL: 'smtps://u:p@mail.firma.de:465', MAIL_FROM: 'Slider <s@firma.de>' },
-          quiet,
-        ).smtp,
-      ).toEqual({ url: 'smtps://u:p@mail.firma.de:465', from: 'Slider <s@firma.de>' });
-      expect(() => loadConfig({ SMTP_URL: 'smtps://mail.firma.de' }, quiet)).toThrow(/MAIL_FROM/);
-      expect(() => loadConfig({ SMTP_URL: 'mail.firma.de', MAIL_FROM: 'x@y.de' }, quiet)).toThrow(
-        /SMTP_URL/,
-      );
-    });
-
     it('parses BOOTSTRAP_EMAIL and warns loudly in production without it', () => {
       expect(
         loadConfig({ BOOTSTRAP_EMAIL: ' Robert@Q4-Team.de, ops@firma.de ,' }, quiet).auth

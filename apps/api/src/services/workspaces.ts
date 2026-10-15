@@ -639,45 +639,9 @@ async function insertInvite(
       .returning();
   });
   if (!row) throw new Error('Invite insert returned no row');
-  const url = inviteUrl(deps, token);
-
-  let emailSent = false;
-  if (email && deps.mailer.configured) {
-    const [workspace] = await deps.db
-      .select({ name: workspaces.name })
-      .from(workspaces)
-      .where(eq(workspaces.id, workspaceId));
-    try {
-      await deps.mailer.send(
-        buttonMail(
-          input.deck
-            ? {
-                to: email,
-                subject: `${actor.name} teilt „${input.deck.title}“ mit dir`,
-                intro: `${actor.name} hat die Präsentation „${input.deck.title}“ mit dir geteilt. Du trittst dafür der Slider-Organisation „${workspace?.name ?? ''}“ als Betrachter bei.`,
-                button: 'Präsentation ansehen',
-                url,
-                outro: `Die Einladung gilt ${EMAIL_INVITE_DAYS} Tage und nur für ${email}.`,
-              }
-            : {
-                to: email,
-                subject: `${actor.name} lädt dich zu „${workspace?.name ?? 'Slider'}“ ein`,
-                intro: `${actor.name} hat dich in die Slider-Organisation „${workspace?.name ?? ''}“ eingeladen, um Präsentationen zu prüfen und zu kommentieren.`,
-                button: 'Einladung annehmen',
-                url,
-                outro: `Die Einladung gilt ${EMAIL_INVITE_DAYS} Tage und nur für ${email}.`,
-              },
-        ),
-      );
-      emailSent = true;
-    } catch (error) {
-      deps.log.warn(`Invite mail to ${email} failed`, error);
-    }
-  }
   return {
     invite: toInviteDto(row, { id: actor.id, name: actor.name }, now, input.deck),
-    url,
-    emailSent,
+    url: inviteUrl(deps, token),
   };
 }
 
