@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { TextField } from '@/ui';
-import { isApplePlatform, useSearchShortcut } from '../hooks/useSearchShortcut';
+import { isApplePlatform } from '@/lib/platform';
+import { useSearchShortcut } from '../hooks/useSearchShortcut';
 import { Kbd } from '@/ui';
 
 interface DeckSearchProps {

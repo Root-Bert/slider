@@ -139,6 +139,7 @@ export async function toDeckDtos(
         hideLoginUrl: !permissions.canManage,
       }),
       permissions,
+      folderId: row.folderId,
     };
   });
 }

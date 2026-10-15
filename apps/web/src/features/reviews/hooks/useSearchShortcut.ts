@@ -1,7 +1,5 @@
 import { useEffect, useEffectEvent } from 'react';
 
-export const isApplePlatform = () => /Mac|iPhone|iPad/.test(navigator.userAgent);
-
 /** ⌘K (macOS) / Ctrl K (elsewhere) – the conventional "focus search" shortcut. */
 export function useSearchShortcut(onTrigger: () => void, enabled = true) {
   const handleKeyDown = useEffectEvent((event: KeyboardEvent) => {

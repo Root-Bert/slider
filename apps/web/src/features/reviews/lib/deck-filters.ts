@@ -41,6 +41,15 @@ const comparators = (openedAt: OpenedAt): Record<DeckSort, (a: Deck, b: Deck) =>
 const neverOpened: OpenedAt = () => undefined;
 const nonePinned = () => false;
 
+/**
+ * Which folder is shown: `null` = the top level (decks outside any folder), a folder id = that
+ * folder, `'*'` = every deck wherever it is (a search from the top level).
+ */
+export type FolderScope = string | null | '*';
+
+export const inFolder = (deck: Deck, scope: FolderScope) =>
+  scope === '*' || (deck.folderId ?? null) === scope;
+
 export function countByTab(decks: readonly Deck[]): Record<ReviewTab, number> {
   return {
     all: decks.filter(TAB_PREDICATES.all).length,
@@ -58,10 +67,12 @@ export function selectDecks(
     tab,
     query,
     sort,
+    folder = '*',
     openedAt = neverOpened,
     isPinned = nonePinned,
   }: {
     tab: ReviewTab;
+    folder?: FolderScope;
     query: string;
     sort: DeckSort;
     openedAt?: OpenedAt;
@@ -72,9 +83,20 @@ export function selectDecks(
   const needle = normalize(query.trim());
   const bySort = comparators(openedAt)[sort];
   return decks
+    .filter((deck) => inFolder(deck, folder))
     .filter(TAB_PREDICATES[tab])
     .filter((deck) => needle === '' || normalize(deck.title).includes(needle))
     .sort((a, b) => Number(isPinned(b.id)) - Number(isPinned(a.id)) || bySort(a, b));
+}
+
+/** Decks per folder id, for the folder tiles – archived ones don't count. */
+export function countByFolder(decks: readonly Deck[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const deck of decks) {
+    if (!deck.folderId || !TAB_PREDICATES.all(deck)) continue;
+    counts.set(deck.folderId, (counts.get(deck.folderId) ?? 0) + 1);
+  }
+  return counts;
 }
 
 /** Totals for the page subline ("6 Reviews | 30 offene Kommentare"), excluding the archive. */

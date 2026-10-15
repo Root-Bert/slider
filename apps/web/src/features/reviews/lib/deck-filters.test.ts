@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activeTotals, countByTab, selectDecks } from './deck-filters';
+import { activeTotals, countByFolder, countByTab, selectDecks } from './deck-filters';
 import { makeDeck } from './deck-fixture';
 
 const decks = [
@@ -89,5 +89,24 @@ describe('totals', () => {
   it('counts tabs and the non-archived open comments', () => {
     expect(countByTab(decks)).toEqual({ all: 3, open: 2, archive: 1 });
     expect(activeTotals(decks)).toEqual({ reviews: 3, openComments: 10 });
+  });
+});
+
+describe('folders', () => {
+  const filed = [
+    makeDeck({ id: 'top', title: 'Top' }),
+    makeDeck({ id: 'in', title: 'Drin', folderId: 'f1' }),
+    makeDeck({ id: 'old', title: 'Alt', folderId: 'f1', archivedAt: '2026-09-01T00:00:00Z' }),
+  ];
+  const opts = { tab: 'all', query: '', sort: 'name' } as const;
+
+  it('shows the top level, one folder, or everything', () => {
+    expect(ids(selectDecks(filed, { ...opts, folder: null }))).toEqual(['top']);
+    expect(ids(selectDecks(filed, { ...opts, folder: 'f1' }))).toEqual(['in']);
+    expect(ids(selectDecks(filed, { ...opts, folder: '*' }))).toEqual(['in', 'top']);
+  });
+
+  it('counts active decks per folder', () => {
+    expect(countByFolder(filed)).toEqual(new Map([['f1', 1]]));
   });
 });

@@ -10,6 +10,8 @@ import type { ShowToast } from '@/ui';
 import { markDeckVisited } from '../lib/last-visits';
 import { MAX_PINNED, pinDeck, unpinDeck, usePinnedDecks } from '../lib/pinned-decks';
 import { DeleteDeckDialog } from './DeleteDeckDialog';
+import { MoveDecksDialog } from './MoveDecksDialog';
+import { movedMessage } from '../hooks/useMoveDecks';
 import { ContextMenu, Menu, type MenuAction } from '@/ui';
 
 interface DeckActionsProps {
@@ -94,6 +96,7 @@ export function DeckActions({
   onRename,
 }: DeckActionsProps) {
   const [deleting, setDeleting] = useState(false);
+  const [moving, setMoving] = useState(false);
   const update = useUpdateDeck(deck.id);
   const rerender = useRerender(deck, onNotify);
   const pins = usePinnedDecks();
@@ -128,6 +131,7 @@ export function DeckActions({
   // Reviewers and members on other people's decks can only pin them (BER-129).
   const manageActions: MenuAction[] = [
     { label: 'Umbenennen', icon: 'edit', onSelect: onRename },
+    { label: 'Verschieben …', icon: 'folder', onSelect: () => setMoving(true) },
     ...(deck.import.status === 'ready'
       ? [{ label: rerender.label, icon: 'image', onSelect: rerender.start } satisfies MenuAction]
       : []),
@@ -156,9 +160,21 @@ export function DeckActions({
           onClose={onContextClose}
         />
       )}
+      {moving && (
+        <MoveDecksDialog
+          decks={[deck]}
+          workspaceId={deck.workspaceId}
+          onClose={() => setMoving(false)}
+          onMoved={(result, folderName) => {
+            setMoving(false);
+            const message = movedMessage(result, folderName);
+            onNotify(message.text, message.tone);
+          }}
+        />
+      )}
       {deleting && (
         <DeleteDeckDialog
-          deck={deck}
+          decks={[deck]}
           onClose={() => setDeleting(false)}
           onDeleted={() => {
             unpinDeck(deck.id);

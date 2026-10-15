@@ -16,7 +16,14 @@ import { ApiError, badRequest, fileTooLarge, notAPowerPoint } from '../http/erro
 import { readJson } from '../http/validate';
 import { withPickerLogin } from '../sources/onedrive-picker';
 import type { RemoteFile, SourceAdapter, SourceContext } from '../sources/source-adapter';
-import { createDeckFromFile, deleteDeck, listWorkspaceDecks, toDeckDto } from '../services/decks';
+import {
+  createDeckFromFile,
+  deleteDeck,
+  listDeckPeople,
+  listWorkspaceDecks,
+  toDeckDto,
+} from '../services/decks';
+import { findFolder } from '../services/folders';
 import { assertDeckSlot } from '../services/plans';
 import { listSlides } from '../services/slides';
 import { requireRole, resolveUploadWorkspace } from '../services/workspaces';
@@ -190,6 +197,8 @@ export function decksRoutes(deps: AppDeps) {
       .patch('/decks/:deckId', viewer, async (c) => {
         const deck = await requireDeckAccess(deps.db, c.var.viewer, c.req.param('deckId'), 'own');
         const input = await readJson(c, updateDeckInputSchema);
+        // Only into a folder of the deck's own workspace.
+        if (input.folderId) await findFolder(deps.db, deck.workspaceId, input.folderId);
         const now = deps.clock.now();
         const [updated] = await deps.db
           .update(decks)
@@ -198,6 +207,7 @@ export function decksRoutes(deps: AppDeps) {
             ...(input.archived !== undefined
               ? { archivedAt: input.archived ? (deck.archivedAt ?? now) : null }
               : {}),
+            ...(input.folderId !== undefined ? { folderId: input.folderId } : {}),
             updatedAt: now,
           })
           .where(eq(decks.id, deck.id))

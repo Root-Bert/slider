@@ -235,6 +235,21 @@ export const workspaceInvites = pgTable(
   ],
 );
 
+/** Folders to sort a workspace's decks into; one level, shared by the whole workspace. */
+export const deckFolders = pgTable(
+  'deck_folders',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+  },
+  (t) => [index('deck_folders_workspace_idx').on(t.workspaceId)],
+);
+
 export const decks = pgTable(
   'decks',
   {
@@ -265,6 +280,8 @@ export const decks = pgTable(
     syncState: jsonb('sync_state').$type<DeckSyncStateRow>().notNull().default({}),
     /** Last time someone opened the deck; only decks active in the last 7 days are polled. */
     lastViewedAt: timestamptz('last_viewed_at'),
+    /** The folder it is sorted into; `null` = not in a folder. Deleting the folder keeps the deck. */
+    folderId: text('folder_id').references(() => deckFolders.id, { onDelete: 'set null' }),
   },
   (t) => [
     index('decks_owner_updated_idx').on(t.ownerId, t.updatedAt),
@@ -468,6 +485,7 @@ export type WorkspaceRow = typeof workspaces.$inferSelect;
 export type WorkspaceMemberRow = typeof workspaceMembers.$inferSelect;
 export type WorkspaceInviteRow = typeof workspaceInvites.$inferSelect;
 export type DeckRow = typeof decks.$inferSelect;
+export type DeckFolderRow = typeof deckFolders.$inferSelect;
 export type RevisionRow = typeof revisions.$inferSelect;
 export type SlideVersionRow = typeof slideVersions.$inferSelect;
 /** Who drew a slide image – see `slide_versions.renderer`. */

@@ -162,6 +162,13 @@
       "when": 1792100844444,
       "tag": "0022_media_image",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1792105543503,
+      "tag": "0023_deck_folders",
+      "breakpoints": true
     }
   ]
 }

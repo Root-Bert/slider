@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type Ref } from 'react';
+import { useEffect, useId, useRef, useState, type Ref } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -35,6 +35,7 @@ export function OpenCommentsButton({
   placement = 'above',
   size = 'sm',
   cardSlot,
+  onOpenChange,
 }: {
   deck: Deck;
   placement?: Placement;
@@ -42,6 +43,8 @@ export function OpenCommentsButton({
   cardSlot?: HTMLElement | null;
   /** `md`: the deck card's title row. */
   size?: 'sm' | 'md';
+  /** The list opened or closed – the card drops its hover look while it's open. */
+  onOpenChange?: (open: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const popoverId = useId();
@@ -51,6 +54,8 @@ export function OpenCommentsButton({
   const popoverRef = useRef<HTMLElement>(null);
   const count = deck.openCommentCount;
   const done = count === 0;
+
+  useEffect(() => onOpenChange?.(open), [open, onOpenChange]);
 
   useDismiss({
     open,
@@ -244,7 +249,7 @@ function OpenThreadItem({
   };
 
   return (
-    <div className="flex items-start gap-2 rounded-control p-1.5 transition-colors hover:bg-white/5">
+    <div className="flex items-center gap-3 rounded-control py-1.5 pr-1.5 pl-2 transition-colors hover:bg-white/5">
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <Link
           to={to}
@@ -313,24 +318,24 @@ function OpenThreadItem({
             )}
           </>
         )}
-        {canResolve && (
-          // Same as the review tool's resolve button (ResolveButton, `icon`).
-          <button
-            type="button"
-            aria-pressed={done}
-            aria-label={done ? 'Wieder öffnen' : 'Als erledigt markieren'}
-            title={done ? 'Erledigt – klicken zum Wiederöffnen' : 'Als erledigt markieren'}
-            onClick={onToggle}
-            className={cn(
-              '-my-1 flex size-7 shrink-0 items-center justify-center rounded-chip transition-colors',
-              'focus-visible:ring-2 focus-visible:ring-mention focus-visible:outline-none',
-              done ? 'text-success' : 'text-fg-subtle hover:bg-white/10 hover:text-fg',
-            )}
-          >
-            <Icon name="check" size={18} />
-          </button>
-        )}
       </div>
+      {canResolve && (
+        // Same as the review tool's resolve button (ResolveButton, `icon`).
+        <button
+          type="button"
+          aria-pressed={done}
+          aria-label={done ? 'Wieder öffnen' : 'Als erledigt markieren'}
+          title={done ? 'Erledigt – klicken zum Wiederöffnen' : 'Als erledigt markieren'}
+          onClick={onToggle}
+          className={cn(
+            'flex size-8 shrink-0 items-center justify-center rounded-chip transition-colors',
+            'focus-visible:ring-2 focus-visible:ring-mention focus-visible:outline-none',
+            done ? 'text-success' : 'text-fg-subtle hover:bg-white/10 hover:text-fg',
+          )}
+        >
+          <Icon name="check" size={18} />
+        </button>
+      )}
     </div>
   );
 }

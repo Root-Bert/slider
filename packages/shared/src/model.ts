@@ -127,8 +127,19 @@ export const deckSchema = z.object({
   sync: deckSyncSchema.optional(),
   /** The caller's rights on this deck (BER-129). */
   permissions: deckPermissionsSchema,
+  /** The folder the deck is sorted into; `null` = none. Optional for older API versions. */
+  folderId: z.string().nullable().optional(),
 });
 export type Deck = z.infer<typeof deckSchema>;
+
+/** A folder of a workspace to sort its decks into (one level, shared by all members). */
+export const deckFolderSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  name: z.string(),
+  createdAt: z.iso.datetime(),
+});
+export type DeckFolder = z.infer<typeof deckFolderSchema>;
 
 /** A shape found by the PPTX parser, used to attach anchors to objects (BER-93, BER-98). */
 export const shapeSchema = z.object({

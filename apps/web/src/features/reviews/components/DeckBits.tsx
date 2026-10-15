@@ -1,12 +1,7 @@
 import type { ReactNode } from 'react';
 import type { Deck, DeckSource, SlideRenderer } from '@slider/shared';
 import { Badge, cn, Icon, ProgressBar } from '@/ui';
-import {
-  importActivityLabel,
-  importFraction,
-  isImporting,
-  slidesLabel,
-} from '../lib/deck-labels';
+import { importActivityLabel, importFraction, isImporting, slidesLabel } from '../lib/deck-labels';
 
 /** Right-hand status badge next to the title. Import state wins over "Neu", "Neu" over the version. */
 export function DeckStatusBadge({ deck, unseen }: { deck: Deck; unseen: boolean }) {

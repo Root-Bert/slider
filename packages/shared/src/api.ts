@@ -170,9 +170,17 @@ export const importDriveItemInputSchema = z.object({
 export type ImportDriveItemInput = z.infer<typeof importDriveItemInputSchema>;
 
 export const updateDeckInputSchema = z
-  .object({ title: z.string().trim().min(1).max(200), archived: z.boolean() })
+  .object({
+    title: z.string().trim().min(1).max(200),
+    archived: z.boolean(),
+    /** Moves the deck into a folder of its workspace; `null` takes it out. */
+    folderId: z.string().max(100).nullable(),
+  })
   .partial();
 export type UpdateDeckInput = z.infer<typeof updateDeckInputSchema>;
+
+export const deckFolderInputSchema = z.object({ name: z.string().trim().min(1).max(80) });
+export type DeckFolderInput = z.infer<typeof deckFolderInputSchema>;
 
 export const createCommentInputSchema = z.object({
   slideId: z.string().nullable(),
