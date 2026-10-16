@@ -56,13 +56,15 @@ export function useScrollActiveSlide(scrollerRef: RefObject<HTMLElement | null>)
       update.schedule();
     };
     const onScrollEnd = () => registry.settleProgrammaticScroll();
-    // The user takes over a programmatic scroll: any wheel without Shift (it scrolls the track
-    // sideways, `useTimelineWheel`), a swipe, or the scrollbar.
+    // The user takes over a programmatic scroll: a wheel that scrolls the track sideways (any
+    // wheel over the header, `useTimelineWheel`; a sideways one over the comments), a swipe, or
+    // the scrollbar.
     const onWheel = (event: WheelEvent) => {
       if (event.ctrlKey || event.metaKey) return;
       const overHeader =
         event.target instanceof Element && event.target.closest('[data-timeline-header]');
-      if (overHeader || !event.shiftKey) registry.endProgrammaticScroll();
+      if (overHeader || Math.abs(event.deltaX) > Math.abs(event.deltaY))
+        registry.endProgrammaticScroll();
     };
     const onTouchStart = () => registry.endProgrammaticScroll();
     const onPointerDown = (event: PointerEvent) => {

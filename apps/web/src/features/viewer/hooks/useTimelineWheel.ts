@@ -16,9 +16,10 @@ interface GestureEvent extends UIEvent {
  * - Pinch and Ctrl/⌘ + wheel move the split handle – bigger or smaller slides, like zooming a
  *   video timeline – anchored horizontally at the pointer. Chrome, Firefox and Edge report
  *   trackpad pinch as a wheel event with `ctrlKey`; Safari sends `gesture*` events.
- * - A plain vertical wheel scrolls the timeline sideways, like the slides – over the track and the
- *   controls as long as it can still move that way, over the comments always. Shift + wheel (or
- *   dragging the background, `useCanvasPan`) scrolls the comments up and down.
+ * - Over the track and the controls a plain vertical wheel scrolls the timeline sideways, like the
+ *   slides, as long as it can still move that way.
+ * - Over the comments the browser scrolls natively: up/down scrolls up and down, sideways scrolls
+ *   sideways.
  */
 export function useTimelineWheel({
   scrollerRef,
@@ -68,28 +69,13 @@ export function useTimelineWheel({
         return;
       }
       const target = event.target instanceof Element ? event.target : null;
-      // Text fields scroll their own text.
-      if (target?.closest('textarea, [contenteditable]')) return;
-      const overHeader = target?.closest('[data-timeline-header]');
-      const scale = event.deltaMode === 1 ? 16 : 1;
-      if (!overHeader && event.shiftKey) {
-        // Shift scrolls the comments up and down (macOS reports Shift + wheel as sideways).
-        const delta =
-          Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
-        event.preventDefault();
-        scroller.scrollBy({ top: delta * scale });
-        return;
-      }
+      // Comments (and text fields) scroll natively.
+      if (!target?.closest('[data-timeline-header]')) return;
       if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
-      const delta = event.deltaY * scale;
-      if (overHeader) {
-        const max = scroller.scrollWidth - scroller.clientWidth;
-        if (
-          (delta > 0 && scroller.scrollLeft >= max - 1) ||
-          (delta < 0 && scroller.scrollLeft <= 1)
-        )
-          return;
-      }
+      const delta = event.deltaY * (event.deltaMode === 1 ? 16 : 1);
+      const max = scroller.scrollWidth - scroller.clientWidth;
+      if ((delta > 0 && scroller.scrollLeft >= max - 1) || (delta < 0 && scroller.scrollLeft <= 1))
+        return;
       event.preventDefault();
       scroller.scrollBy({ left: delta });
     };
