@@ -10,6 +10,7 @@ import {
   type Stroke,
 } from '@slider/shared';
 import {
+  useRef,
   useState,
   type KeyboardEvent,
   type MouseEvent,
@@ -18,7 +19,7 @@ import {
 } from 'react';
 import { accentColor } from '@/lib/accent';
 import { cn } from '@/ui';
-import { toSlidePoint } from '../lib/geometry';
+import { normalizeClientPoint, toSlidePoint } from '../lib/geometry';
 import { appendPoint, strokePath } from '../lib/stroke-path';
 import { clickTextBox, dragTextBox, startFontSize } from '../lib/text-box';
 import type { PenTool } from '../state/viewer-state';
@@ -64,7 +65,6 @@ export function SketchSheet({
 }: SketchSheetProps) {
   const { strokes, selected, text } = editor;
   const [dragBox, setDragBox] = useState<{ start: Point; rect: Rect | null } | null>(null);
-  const [drawing, setDrawing] = useState<PathStroke | null>(null);
   /** Strokes the eraser has touched in this wipe – hidden now, removed when it ends. */
   const [erasing, setErasing] = useState<ReadonlySet<number> | null>(null);
   const [element, setElement] = useState<HTMLDivElement | null>(null);
@@ -234,7 +234,6 @@ export function SketchSheet({
             )}
           </g>
         ))}
-        {drawing && <StrokePath stroke={drawing} aspectRatio={aspect} />}
       </svg>
 
       {strokes.map((stroke, index) => {
@@ -305,39 +304,14 @@ export function SketchSheet({
 
       {dragBox?.rect && <RectFrame rect={dragBox.rect} color={accentColor(color)} dashed />}
 
-      {interactive && (tool === 'pen' || tool === 'arrow' || tool === 'highlighter') && (
-        <div
-          className="absolute inset-0 z-20 cursor-crosshair touch-none"
-          onPointerDown={(event) => {
-            const point = pointOf(event);
-            if (event.button !== 0 || !point) return;
-            event.preventDefault();
-            editor.select(null);
-            event.currentTarget.setPointerCapture(event.pointerId);
-            setDrawing({ tool, color, points: [point] });
-          }}
-          onPointerMove={(event) => {
-            const point = pointOf(event);
-            if (!drawing || !point) return;
-            // Coalesced events: smooth lines even when the main thread is busy.
-            const samples = event.nativeEvent.getCoalescedEvents?.() ?? [event.nativeEvent];
-            let points = drawing.points;
-            for (const sample of samples) {
-              const at = pointOf(sample);
-              if (at) points = appendPoint(points, at);
-            }
-            if (points !== drawing.points && points.length <= MAX_POINTS)
-              setDrawing({ ...drawing, points });
-          }}
-          onPointerUp={() => {
-            if (!drawing) return;
-            setDrawing(null);
-            // A tap still leaves a dot: a stroke needs two points.
-            const [first] = drawing.points;
-            const points = drawing.points.length >= 2 || !first ? drawing.points : [first, first];
-            editor.commit([...strokes, { ...drawing, points }]);
-          }}
-          onPointerCancel={() => setDrawing(null)}
+      {interactive && element && (tool === 'pen' || tool === 'arrow' || tool === 'highlighter') && (
+        <PenLayer
+          tool={tool}
+          color={color}
+          aspect={aspect}
+          sheet={element}
+          onStart={() => editor.select(null)}
+          onStroke={(stroke) => editor.commit([...strokes, stroke])}
         />
       )}
 
@@ -398,4 +372,82 @@ function hitPathProps(stroke: PathStroke, aspect: number) {
     pointerEvents: 'stroke' as const,
     className: 'cursor-pointer',
   };
+}
+
+/**
+ * The pens' layer above the sheet: one stroke per press, shown while drawn. The points gather in
+ * a ref – several moves can arrive before the next render, none may get lost – and only this
+ * layer re-renders while drawing, not the marks on the sheet.
+ */
+function PenLayer({
+  tool,
+  color,
+  aspect,
+  sheet,
+  onStart,
+  onStroke,
+}: {
+  tool: PenTool;
+  color: AccentColor;
+  aspect: number;
+  sheet: HTMLElement;
+  onStart: () => void;
+  onStroke: (stroke: PathStroke) => void;
+}) {
+  const pointsRef = useRef<Point[] | null>(null);
+  const [preview, setPreview] = useState<PathStroke | null>(null);
+
+  return (
+    <div
+      className="absolute inset-0 z-20 cursor-crosshair touch-none"
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        onStart();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        const points = [
+          normalizeClientPoint(event.clientX, event.clientY, sheet.getBoundingClientRect()),
+        ];
+        pointsRef.current = points;
+        setPreview({ tool, color, points });
+      }}
+      onPointerMove={(event) => {
+        const current = pointsRef.current;
+        if (!current) return;
+        const box = sheet.getBoundingClientRect();
+        // Coalesced events: smooth lines even when the main thread is busy.
+        const samples = event.nativeEvent.getCoalescedEvents?.() ?? [event.nativeEvent];
+        let points = current;
+        for (const sample of samples)
+          points = appendPoint(points, normalizeClientPoint(sample.clientX, sample.clientY, box));
+        if (points === current || points.length > MAX_POINTS) return;
+        pointsRef.current = points;
+        setPreview({ tool, color, points });
+      }}
+      onPointerUp={() => {
+        const points = pointsRef.current;
+        pointsRef.current = null;
+        setPreview(null);
+        const [first] = points ?? [];
+        // A tap still leaves a dot: a stroke needs two points.
+        if (points && first)
+          onStroke({ tool, color, points: points.length >= 2 ? points : [first, first] });
+      }}
+      onPointerCancel={() => {
+        pointsRef.current = null;
+        setPreview(null);
+      }}
+    >
+      {preview && (
+        <svg
+          className="absolute inset-0 size-full overflow-visible"
+          viewBox="0 0 1 1"
+          preserveAspectRatio="none"
+          aria-hidden
+        >
+          <StrokePath stroke={preview} aspectRatio={aspect} />
+        </svg>
+      )}
+    </div>
+  );
 }
