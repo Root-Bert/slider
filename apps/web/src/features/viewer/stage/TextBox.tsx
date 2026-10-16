@@ -1,6 +1,7 @@
 import type { AuthorColor, Rect, TextStroke } from '@slider/shared';
 import {
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useRef,
   type CSSProperties,
@@ -12,7 +13,7 @@ import { FRAME_ATTR, resized, useRectEdit, type RectCorner } from '../hooks/useR
 import { focusCommentField } from '../lib/composer-focus';
 import { MIN_TEXT_WIDTH, normalizeTextRect } from '../lib/text-box';
 import { useViewerData } from '../state/viewer-data';
-import { useViewerDispatch, type TextBoxDraft } from '../state/viewer-state';
+import { useViewerDispatch, type TextBoxDraft, type TextBoxPatch } from '../state/viewer-state';
 import { CORNERS } from './corners';
 
 /**
@@ -54,6 +55,8 @@ interface TextMarkProps {
   onPlace?: (rect: Rect, done: () => void) => void;
   /** The box as shown while dragged, `null` once it is back in place (see `useRectEdit`). */
   onPreview?: (rect: Rect | null) => void;
+  /** A double click on the box (the Bild sheet: edit the text). */
+  onDoubleClick?: () => void;
 }
 
 /** Smallest text box a resize leaves. */
@@ -69,6 +72,7 @@ export function TextMark({
   onActivate,
   onPlace,
   onPreview,
+  onDoubleClick,
 }: TextMarkProps) {
   const ref = useRef<HTMLButtonElement>(null);
   const editable = interactive && onPlace !== undefined;
@@ -109,6 +113,13 @@ export function TextMark({
         // A drag is no click: the thread doesn't open.
         if (!edit.wasDragged()) onActivate();
       }}
+      onDoubleClick={
+        onDoubleClick &&
+        ((event) => {
+          event.stopPropagation();
+          onDoubleClick();
+        })
+      }
       {...(editable ? edit.boxProps : {})}
       className={cn(
         TEXT_CLASS,
@@ -151,24 +162,58 @@ interface TextBoxEditorProps {
   box: TextBoxDraft;
 }
 
+/** The draft's text box on the slide: `TextBoxField` wired to the viewer state. */
+export function TextBoxEditor({ box }: TextBoxEditorProps) {
+  const dispatch = useViewerDispatch();
+  const { author } = useViewerData().viewer;
+  return (
+    <TextBoxField
+      box={box}
+      author={author}
+      onChange={(patch) => dispatch({ type: 'textBoxChanged', patch })}
+      onMeasured={(rect) => dispatch({ type: 'textBoxMeasured', rect })}
+      onLeave={focusCommentField}
+    />
+  );
+}
+
+interface TextBoxFieldProps {
+  box: TextBoxDraft;
+  /** Whose box: its colour and the first name on the tag. */
+  author: { name: string; color: AuthorColor };
+  onChange: (patch: TextBoxPatch) => void;
+  /** The box as rendered (normalised) – what gets stored. */
+  onMeasured: (rect: Rect) => void;
+  /** ↵ / Tab: on to what comes next; `true` if it took the key. */
+  onLeave: () => boolean;
+  /** Esc, when the field handles it itself (the slide cancels the draft globally). */
+  onEscape?: () => void;
+}
+
 type Drag =
   | { kind: 'move'; pointerX: number; pointerY: number; x: number; y: number }
   | { kind: RectCorner; start: Rect };
 
 /**
- * The draft's text box, typed into directly on the slide. It grows with its text (to the slide's
+ * A text box typed into directly on the slide (or the Bild sheet). It grows with its text (to the
  * right edge, then it wraps), moves by its edge or name tag and resizes by its corner handles.
- * ↵ / Tab = on to the comment, ⇧↵ = new line, ⌘↵ / Ctrl↵ sends (through the composer), Esc
- * cancels (global shortcut).
+ * ↵ / Tab = on to the comment (`onLeave`), ⇧↵ = new line, ⌘↵ / Ctrl↵ sends (through the
+ * composer), Esc cancels (global shortcut, or `onEscape`).
  */
-export function TextBoxEditor({ box }: TextBoxEditorProps) {
-  const dispatch = useViewerDispatch();
-  const { author } = useViewerData().viewer;
+export function TextBoxField({
+  box,
+  author,
+  onChange,
+  onMeasured,
+  onLeave,
+  onEscape,
+}: TextBoxFieldProps) {
   const layerRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dragRef = useRef<Drag | null>(null);
   const color = accentColor(author.color);
+  const measured = useEffectEvent(onMeasured);
 
   // Focus on opening and whenever the box is placed somewhere else – after the text, which may
   // already hold the first typed key.
@@ -187,22 +232,23 @@ export function TextBoxEditor({ box }: TextBoxEditorProps) {
     const measure = () => {
       const slide = layer.getBoundingClientRect();
       if (slide.width === 0 || slide.height === 0) return;
-      dispatch({
-        type: 'textBoxMeasured',
-        rect: normalizeTextRect({
+      measured(
+        normalizeTextRect({
           x: box.x,
           y: box.y,
           // +1px: the stored width must not wrap a line the editor kept on one.
           w: (element.offsetWidth + 1) / slide.width,
           h: element.offsetHeight / slide.height,
         }),
-      });
+      );
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [dispatch, box.x, box.y]);
+    // Also right after every change of text or size: the observer reports a frame later, and
+    // finishing the text right after typing must store the box as it is now.
+  }, [box.x, box.y, box.text, box.width, box.minHeight]);
 
   const startDrag = (event: ReactPointerEvent<HTMLElement>, kind: Drag['kind']) => {
     if (event.button !== 0) return;
@@ -244,12 +290,9 @@ export function TextBoxEditor({ box }: TextBoxEditorProps) {
     if (drag.kind === 'move') {
       const x = drag.x + (event.clientX - drag.pointerX) / slide.width;
       const y = drag.y + (event.clientY - drag.pointerY) / slide.height;
-      dispatch({
-        type: 'textBoxChanged',
-        patch: {
-          x: Math.min(Math.max(0, x), Math.max(0, 1 - w)),
-          y: Math.min(Math.max(0, y), Math.max(0, 1 - h)),
-        },
+      onChange({
+        x: Math.min(Math.max(0, x), Math.max(0, 1 - w)),
+        y: Math.min(Math.max(0, y), Math.max(0, 1 - h)),
       });
       return;
     }
@@ -260,10 +303,7 @@ export function TextBoxEditor({ box }: TextBoxEditorProps) {
       (event.clientY - slide.top) / slide.height,
       MIN_TEXT_SIZE,
     );
-    dispatch({
-      type: 'textBoxChanged',
-      patch: { x: next.x, y: next.y, width: next.w, minHeight: next.h },
-    });
+    onChange({ x: next.x, y: next.y, width: next.w, minHeight: next.h });
   };
 
   const endDrag = () => {
@@ -325,10 +365,14 @@ export function TextBoxEditor({ box }: TextBoxEditorProps) {
             rows={1}
             cols={1}
             spellCheck
-            onChange={(event) =>
-              dispatch({ type: 'textBoxChanged', patch: { text: event.target.value } })
-            }
+            onChange={(event) => onChange({ text: event.target.value })}
             onKeyDown={(event) => {
+              if (event.key === 'Escape' && onEscape) {
+                event.preventDefault();
+                event.stopPropagation();
+                onEscape();
+                return;
+              }
               if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
                 event.preventDefault();
                 document.querySelector<HTMLFormElement>('form[data-composer]')?.requestSubmit();
@@ -341,7 +385,7 @@ export function TextBoxEditor({ box }: TextBoxEditorProps) {
                 !event.metaKey &&
                 !event.ctrlKey &&
                 !event.nativeEvent.isComposing;
-              if (toComment && focusCommentField()) event.preventDefault();
+              if (toComment && onLeave()) event.preventDefault();
             }}
             className={cn(
               TEXT_CLASS,

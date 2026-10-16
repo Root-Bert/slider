@@ -113,7 +113,8 @@ function ComposerPopover({ draft }: { draft: Draft }) {
     if (event.defaultPrevented || event.isComposing || isTypingTarget(event.target)) return;
     if (event.metaKey || event.ctrlKey || event.altKey || freshBox) return;
     const target = event.target instanceof Element ? event.target : null;
-    if (target?.closest('dialog')) return;
+    // Dialogs, and the Bild sheet while a box is selected (typing writes into the box).
+    if (target?.closest('dialog, [data-sketch-keys]')) return;
     if (event.key === 'Tab') {
       // In the composer its panels and controls handle Tab.
       if (target && popoverRef.current?.contains(target)) return;
@@ -205,6 +206,7 @@ function ComposerPopover({ draft }: { draft: Draft }) {
         <SketchPanel
           deckId={deck.id}
           color={author.color}
+          authorName={author.name}
           aspect={sketchAspect}
           onChange={setSketch}
           autoFocus

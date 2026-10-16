@@ -71,6 +71,7 @@ export function SketchReplyDialog({
         <SketchPanel
           deckId={deckId}
           color={viewer.author.color}
+          authorName={viewer.author.name}
           aspect={aspect}
           onChange={setSketch}
           autoFocus
