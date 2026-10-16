@@ -1,9 +1,9 @@
 import { useEffect, useEffectEvent, type RefObject } from 'react';
-import { rafThrottle } from '../lib/dom';
+import { rafThrottle } from '@/lib/dom';
 import { pickActiveSlide } from '../lib/scroll-active';
-import { useStageRegistry } from '../state/stage-registry';
-import { useViewerData } from '../state/viewer-data';
-import { useViewerDispatch, useViewerState } from '../state/viewer-state';
+import { useStageRegistry } from '../../state/stage-registry';
+import { useViewerData } from '../../state/viewer-data';
+import { useViewerDispatch, useViewerState } from '../../state/viewer-state';
 
 /**
  * Scrolling the timeline sideways – wheel, trackpad, scrollbar, swipe, minimap bracket – makes

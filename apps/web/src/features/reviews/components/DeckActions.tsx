@@ -1,11 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Deck } from '@slider/shared';
-import {
-  useDeckStatus,
-  useInvalidateSlideImages,
-  useRerenderDeck,
-  useUpdateDeck,
-} from '@/lib/queries';
+import { useDeckStatus, useInvalidateSlideImages, useRerenderDeck, useUpdateDeck } from '@/lib/api';
 import type { ShowToast } from '@/ui';
 import { MAX_PINNED, pinDeck, unpinDeck, usePinnedDecks } from '../lib/pinned-decks';
 import { DeleteDeckDialog } from './DeleteDeckDialog';

@@ -1,5 +1,5 @@
 import { cn, Icon } from '@/ui';
-import type { SlideBadge, SlideBadgeKind } from '../lib/revision-changes';
+import type { SlideBadge, SlideBadgeKind } from './lib/revision-changes';
 
 const toneClasses: Record<SlideBadgeKind, string> = {
   new: 'text-success shadow-[inset_0_0_0_1px_rgb(46_204_113/0.45)]',

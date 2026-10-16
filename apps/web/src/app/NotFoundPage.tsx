@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router';
 import { Button } from '@/ui';
-import { CenteredMessage } from './RouteError';
-import { routes } from './routes';
+import { routes } from '@/lib/routes';
+import { CenteredMessage } from '@/shell/CenteredMessage';
 
 export function Component() {
   const navigate = useNavigate();

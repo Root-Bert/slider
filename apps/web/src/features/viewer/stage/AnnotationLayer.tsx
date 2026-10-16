@@ -11,8 +11,9 @@ import {
   type Slide,
 } from '@slider/shared';
 import { memo, useMemo, useRef, type PointerEvent } from 'react';
-import { useUpdateComment } from '@/lib/queries';
+import { useUpdateComment } from '@/lib/api';
 import { cn } from '@/ui';
+import { accentColor } from '@/lib/accent';
 import {
   anchorRect,
   isBareDrawing,
@@ -20,14 +21,13 @@ import {
   rectsMatch,
   textAnnotation,
   type Thread,
-} from '../lib/comment-selectors';
-import { accentColor } from '@/lib/accent';
+} from '../comments/lib/comment-selectors';
 import { useMarkPreview, useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, type Draft } from '../state/viewer-state';
-import { markLabel } from '../lib/labels';
-import { strokePath, strokesBounds, textBox } from '../lib/stroke-path';
-import { dragTextBox, startFontSize } from '../lib/text-box';
+import { markLabel } from '../comments/lib/labels';
+import { strokePath, strokesBounds, textBox } from './lib/stroke-path';
+import { dragTextBox, startFontSize } from './lib/text-box';
 import { DraftMark } from './DraftMark';
 import { EditableFrame } from './EditableFrame';
 import { Pin, type MarkState } from './Pin';

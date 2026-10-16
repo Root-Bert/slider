@@ -1,10 +1,9 @@
 import type { Comment, Point } from '@slider/shared';
 import { cn } from '@/ui';
-import { accentColor } from '@/lib/accent';
-import { POWERPOINT_COLOR } from '../lib/colors';
-import { isRemovedInPowerPoint } from '../lib/comment-selectors';
-import { usePointDrag, type PointDragOptions } from '../hooks/usePointDrag';
-import { markLabel } from '../lib/labels';
+import { accentColor, POWERPOINT_COLOR } from '@/lib/accent';
+import { isRemovedInPowerPoint } from '../comments/lib/comment-selectors';
+import { usePointDrag, type PointDragOptions } from './hooks/usePointDrag';
+import { markLabel } from '../comments/lib/labels';
 
 export type MarkState = 'normal' | 'emphasized' | 'dimmed';
 

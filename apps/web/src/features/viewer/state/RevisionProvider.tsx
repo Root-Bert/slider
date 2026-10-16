@@ -7,8 +7,8 @@ import {
   useLatestDiff,
   useRevisionDiffs,
   useRevisions,
-} from '@/lib/queries';
-import type { Thread } from '../lib/comment-selectors';
+} from '@/lib/api';
+import type { Thread } from '../comments/lib/comment-selectors';
 import {
   currentRevision,
   oldestOpenComment,
@@ -16,8 +16,12 @@ import {
   slideBadges,
   slideModifiedAt,
   type RevisionChanges,
-} from '../lib/revision-changes';
-import { markRevisionSeen, seenRevision, shouldAnnounceRevision } from '../lib/seen-revisions';
+} from '../revisions/lib/revision-changes';
+import {
+  markRevisionSeen,
+  seenRevision,
+  shouldAnnounceRevision,
+} from '../revisions/lib/seen-revisions';
 import { RevisionDataContext, type RevisionAnnouncement, type RevisionData } from './revision-data';
 import { useViewerData } from './viewer-data';
 import { useViewerDispatch } from './viewer-state';

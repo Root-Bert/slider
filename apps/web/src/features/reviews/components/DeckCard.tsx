@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import type { Deck } from '@slider/shared';
-import { routes } from '@/app/routes';
+import { routes } from '@/lib/routes';
 import { AvatarStack, cn, Icon } from '@/ui';
 import type { ShowToast } from '@/ui';
-import { isImporting } from '../lib/deck-labels';
+import { isImporting } from '@/lib/deck-labels';
 import { usePinnedDecks } from '../lib/pinned-decks';
 import { useDeckContextMenu } from '../hooks/useDeckContextMenu';
 import { DeckActions } from './DeckActions';

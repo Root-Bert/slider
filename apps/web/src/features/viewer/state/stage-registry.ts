@@ -1,6 +1,10 @@
 import type { Rect } from '@slider/shared';
 import { createContext, useContext, useSyncExternalStore } from 'react';
-import { revealScrollLeft, type RevealAlign, type TrackLayout } from '../lib/timeline-layout';
+import {
+  revealScrollLeft,
+  type RevealAlign,
+  type TrackLayout,
+} from '../timeline/lib/timeline-layout';
 
 /** The published track layout plus what's needed to address slides in it. */
 export interface PublishedLayout {

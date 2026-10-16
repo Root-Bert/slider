@@ -2,10 +2,10 @@ import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
 import { accentColor } from '@/lib/accent';
 import { formatRelativeTime, pluralize } from '@/lib/format';
 import { AvatarStack, Icon, IconButton } from '@/ui';
-import type { Thread } from '../lib/comment-selectors';
-import { locationLabel } from '../lib/labels';
-import { collapseReplies } from '../lib/replies';
-import { isChangedSinceComment } from '../lib/revision-changes';
+import type { Thread } from './lib/comment-selectors';
+import { locationLabel } from './lib/labels';
+import { collapseReplies } from './lib/replies';
+import { isChangedSinceComment } from '../revisions/lib/revision-changes';
 import { useRevisionData } from '../state/revision-data';
 import { useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
@@ -14,7 +14,7 @@ import { ReplyComposer } from './ReplyComposer';
 import { ResolveButton } from './ResolveButton';
 import { ChangedSinceCommentNote } from './RevisionNotes';
 import { ThreadMessage } from './ThreadMessage';
-import { VIEW_ONLY_HINT } from '../lib/view-only';
+import { VIEW_ONLY_HINT } from './lib/view-only';
 
 /** Thread side panel (B4) – a bottom sheet on phones. */
 export function ThreadPanel() {

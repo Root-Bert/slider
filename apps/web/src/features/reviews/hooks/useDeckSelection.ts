@@ -1,10 +1,7 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
+import { isTypingTarget } from '@/lib/dom';
 
 const NONE: ReadonlySet<string> = new Set();
-
-const isEditable = (target: EventTarget | null) =>
-  target instanceof HTMLElement &&
-  (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
 
 /**
  * Several decks selected at once in "Reviews" (Finder-style): ⌘/Ctrl-click toggles one,
@@ -66,7 +63,7 @@ export function useDeckSelection(visibleIds: readonly string[]) {
   };
 
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
-    if (event.defaultPrevented || isEditable(event.target)) return;
+    if (event.defaultPrevented || isTypingTarget(event.target)) return;
     if (document.querySelector('dialog[open], [role="menu"]')) return;
     if (event.key === 'Escape' && selectedIds.length > 0) {
       clear();

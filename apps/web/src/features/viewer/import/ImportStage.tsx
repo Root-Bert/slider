@@ -1,9 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { cn, GlassPanel } from '@/ui';
-import { useIsNarrow, useMediaQuery } from '@/features/viewer/hooks/useMediaQuery';
-import { useTimelineMetrics } from '@/features/viewer/hooks/useTimelineMetrics';
-import { layoutMinimap, MINIMAP_PAD, THUMB_H } from '@/features/viewer/lib/minimap';
-import { loadStoredSplit } from '@/features/viewer/lib/split';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { cn, useIsNarrow, useMediaQuery } from '@/ui';
+import { loadStoredSplit } from '@/lib/preferences/split';
+import { useTimelineMetrics } from '../timeline/hooks/useTimelineMetrics';
 import {
   computeTrackGeometry,
   layoutTrack,
@@ -11,39 +9,32 @@ import {
   slideHeightAt,
   TRACK_PAD_TOP,
   visibleRange,
-} from '@/features/viewer/lib/timeline-layout';
+} from '../timeline/lib/timeline-layout';
 import {
-  CHROME_DELAY,
   CONTROLS_DELAY,
   DEALT_MAX,
   DEAL_MS,
   DEAL_STAGGER,
-  INTRO_MS,
-  PRINT_MS,
   REVEAL_SLOTS_MAX,
   REVEAL_STAGGER,
-  slideSketch,
-  slotState,
-  WAVE_MS,
-  WAVE_STAGGER,
   type ImportPicture,
-  type SlideSketch,
-  type SlotState,
-} from '../lib/import-skeleton';
+} from './lib/import-skeleton';
+import { GhostControls } from './stage/GhostControls';
+import { GhostMinimap } from './stage/GhostMinimap';
+import { Slot } from './stage/Slot';
+import {
+  EASE_DEAL,
+  EASE_OUT,
+  EASE_PAN,
+  SETTLE_TRANSITION,
+  stageSlotState,
+  type StagePhase,
+} from './stage/stage-motion';
+import { useIntro, useLeaving, useReach } from './stage/useStageTimers';
 
-/**
- * `import`: the deck is importing. `settle`: the slides are loaded and the viewer is mounting
- * underneath – the placeholders take the real slides' sizes and the camera pans home. `reveal`:
- * the placeholders dissolve, one after another, into the real slides right under them.
- */
-export type StagePhase = 'import' | 'settle' | 'reveal';
+export type { StagePhase };
 
 const DEFAULT_AR = 16 / 9;
-const EASE_OUT = 'cubic-bezier(0.2, 0.9, 0.25, 1)';
-const EASE_DEAL = 'cubic-bezier(0.16, 0.92, 0.24, 1.05)';
-const EASE_PAN = 'cubic-bezier(0.65, 0, 0.35, 1)';
-const SETTLE_TRANSITION = `left 520ms ${EASE_OUT}, width 520ms ${EASE_OUT}, height 520ms ${EASE_OUT}`;
-
 interface ImportStageProps {
   picture: ImportPicture;
   phase: StagePhase;
@@ -272,306 +263,5 @@ export function ImportStage({
         </div>
       </main>
     </div>
-  );
-}
-
-/**
- * A slot's state on the stage. Once the viewer's data is in (`real`), slides past the import's
- * count (it was off) have nothing left to print.
- */
-function stageSlotState(index: number, picture: ImportPicture, real: boolean): SlotState {
-  if (real && picture.count !== null && index >= picture.count) return 'rendered';
-  return slotState(index, picture);
-}
-
-/** True until the intro, starting once `started`, has played – placeholders mounted until then are dealt in one after another. */
-function useIntro(started: boolean) {
-  const [done, setDone] = useState(false);
-  useEffect(() => {
-    if (!started) return;
-    const timer = setTimeout(() => setDone(true), INTRO_MS);
-    return () => clearTimeout(timer);
-  }, [started]);
-  return !done;
-}
-
-/** The highest index `last` has reached, up to `max` (the track's last slot). */
-function useReach(last: number, max: number) {
-  const [reach, setReach] = useState(-1);
-  const next = Math.min(Math.max(reach, last), max);
-  if (next !== reach) setReach(next);
-  return next;
-}
-
-/** Slots past a shrunken count stay a moment to fly off the track. */
-function useLeaving(n: number) {
-  const [shown, setShown] = useState(n);
-  const [leaving, setLeaving] = useState<{ to: number } | null>(null);
-  if (n !== shown) {
-    setShown(n);
-    setLeaving(n < shown ? { to: shown } : null);
-  }
-  useEffect(() => {
-    if (!leaving) return;
-    const timer = setTimeout(() => setLeaving(null), 700);
-    return () => clearTimeout(timer);
-  }, [leaving]);
-  return leaving;
-}
-
-interface SlotProps {
-  index: number;
-  state: SlotState;
-  x: number;
-  w: number;
-  h: number;
-  settling: boolean;
-  /** Animation of the whole slot: dealt in, flying off, dissolving. */
-  outer: string | undefined;
-  sheen: string | undefined;
-  failed: boolean;
-  onDissolved: (() => void) | undefined;
-}
-
-function Slot({ index, state, x, w, h, settling, outer, sheen, failed, onDissolved }: SlotProps) {
-  const current = state === 'current';
-  return (
-    <div
-      className="absolute top-0"
-      style={{
-        left: x,
-        width: w,
-        height: h,
-        animation: outer,
-        transition: settling ? SETTLE_TRANSITION : undefined,
-      }}
-      onAnimationEnd={(event) => {
-        if (event.target === event.currentTarget && event.animationName === 'import-dissolve')
-          onDissolved?.();
-      }}
-    >
-      <div
-        className={cn(
-          'relative size-full overflow-hidden rounded-panel bg-[#101010] shadow-[inset_0_0_0_1px_rgb(255_255_255/0.07)] transition-[filter,opacity] duration-500',
-          state === 'ghost' && 'skeleton',
-          failed && 'opacity-40 grayscale',
-        )}
-      >
-        {current && (
-          <div className="absolute inset-0 opacity-25">
-            <Sketch kind={slideSketch(index)} />
-          </div>
-        )}
-        {state === 'rendered' && (
-          <div
-            className="absolute inset-0 bg-[#1b1b1b]"
-            style={{ animation: `import-print ${PRINT_MS}ms ${EASE_OUT} both` }}
-          >
-            <Sketch kind={slideSketch(index)} />
-          </div>
-        )}
-        {sheen && (
-          <div
-            className="pointer-events-none absolute inset-0 bg-[linear-gradient(105deg,transparent_30%,rgb(255_255_255/0.22)_50%,transparent_70%)]"
-            style={{ animation: sheen }}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-const BAR = 'absolute rounded-[3px] bg-white/[0.13]';
-const SOFT = 'absolute rounded-[3px] bg-white/[0.07]';
-const pct = (left: number, top: number, width: number, height: number): CSSProperties => ({
-  left: `${left}%`,
-  top: `${top}%`,
-  width: `${width}%`,
-  height: `${height}%`,
-});
-
-/** Abstract slide content, in % of the slide so it scales with the track. */
-function Sketch({ kind }: { kind: SlideSketch }) {
-  const title = <span className={BAR} style={pct(7, 10, 44, 7)} />;
-  switch (kind) {
-    case 'cover':
-      return (
-        <>
-          <span className={BAR} style={pct(24, 38, 52, 9)} />
-          <span className={SOFT} style={pct(32, 53, 36, 4)} />
-        </>
-      );
-    case 'bullets':
-      return (
-        <>
-          {title}
-          {[64, 52, 70, 42].map((width, i) => (
-            <span key={i}>
-              <span
-                className="absolute rounded-full bg-white/[0.13]"
-                style={pct(8, 31.5 + i * 12, 1.6, 2.8)}
-              />
-              <span className={SOFT} style={pct(12, 31 + i * 12, width, 3.8)} />
-            </span>
-          ))}
-        </>
-      );
-    case 'chart':
-      return (
-        <>
-          {title}
-          {[26, 38, 32, 50, 44, 60].map((height, i) => (
-            <span key={i} className={BAR} style={pct(8 + i * 7.4, 86 - height, 5, height)} />
-          ))}
-          {[30, 24, 28].map((width, i) => (
-            <span key={i} className={SOFT} style={pct(60, 34 + i * 11, width, 3.8)} />
-          ))}
-        </>
-      );
-    case 'columns':
-      return (
-        <>
-          {title}
-          {[7, 52].map((left) => (
-            <span key={left} className={SOFT} style={pct(left, 28, 41, 60)} />
-          ))}
-          {[7, 52].map((left) => (
-            <span key={left} className={BAR} style={pct(left + 4, 36, 22, 5)} />
-          ))}
-        </>
-      );
-  }
-}
-
-interface GhostMinimapProps {
-  ratios: readonly number[];
-  /** Thumbnails past the count are leaving. */
-  count: number;
-  picture: ImportPicture;
-  phase: StagePhase;
-  availableW: number;
-  motion: boolean;
-  real: boolean;
-  /** The intro has played: the thumbnails bounce in a wave while the import runs. */
-  wave: boolean;
-}
-
-const THUMB_STYLE: Record<SlotState, string> = {
-  ghost: 'skeleton',
-  pending: 'bg-[#141414]',
-  current: 'bg-[#1c1c1c] shadow-[0_0_0_1px_rgb(255_255_255/0.35)]',
-  rendered: 'bg-[#2a2a2a]',
-};
-
-/** The minimap's thumbnails: one per slide, lighting up as the slides render. */
-function GhostMinimap({
-  ratios,
-  count,
-  picture,
-  phase,
-  availableW,
-  motion,
-  real,
-  wave,
-}: GhostMinimapProps) {
-  const rowH = THUMB_H + 2 * MINIMAP_PAD;
-  const mini = layoutMinimap(ratios, Math.max(0, availableW - 2 * MINIMAP_PAD));
-  return (
-    <div className="relative overflow-hidden" style={{ height: rowH }}>
-      {mini.slides.map((box, i) => {
-        if (box.x > availableW) return null;
-        const state = stageSlotState(i, picture, real);
-        return (
-          <span
-            key={i}
-            className={cn(
-              'absolute overflow-hidden rounded-thumb transition-colors duration-500',
-              THUMB_STYLE[state],
-            )}
-            style={{
-              left: MINIMAP_PAD + box.x,
-              top: MINIMAP_PAD,
-              width: box.w,
-              height: mini.h,
-              animation:
-                phase === 'reveal'
-                  ? `import-fade-out 260ms ease-out ${120 + Math.min(i, 16) * 22}ms forwards`
-                  : i >= count
-                    ? `import-leave 480ms ${EASE_OUT} ${(i - count) * 50}ms forwards`
-                    : wave
-                      ? `import-wave ${WAVE_MS}ms ease-in-out ${(i * WAVE_STAGGER) % WAVE_MS}ms infinite`
-                      : motion
-                        ? `import-pop 600ms ${EASE_DEAL} ${CHROME_DELAY + Math.min(i, 16) * 50}ms both`
-                        : undefined,
-            }}
-          >
-            {state === 'rendered' && (
-              <span className="absolute top-[22%] left-[12%] h-[12%] w-[46%] rounded-[2px] bg-white/15" />
-            )}
-          </span>
-        );
-      })}
-    </div>
-  );
-}
-
-/** Controls row in outline: tool bar, filter, upload – and the slide counter, already counting. */
-function GhostControls({ count, phase }: { count: number | null; phase: StagePhase }) {
-  const rise = (index: number) =>
-    phase === 'reveal'
-      ? `import-fade-out 300ms ease-out ${180 + index * 40}ms forwards`
-      : `import-rise 680ms ${EASE_OUT} ${CONTROLS_DELAY + index * 80}ms both`;
-  return (
-    <div className="flex flex-wrap items-center gap-3 md:flex-nowrap">
-      <GlassPanel
-        className="flex h-10 w-[265px] shrink-0 items-center p-1"
-        style={{ animation: rise(0) }}
-      >
-        {Array.from({ length: 7 }, (_, i) => (
-          <GhostIcon key={i} className={i === 5 ? 'ml-2' : undefined} />
-        ))}
-      </GlassPanel>
-      <GlassPanel
-        className="flex h-10 w-[360px] max-w-full min-w-0 items-center gap-3 px-3"
-        style={{ animation: rise(1) }}
-      >
-        {[52, 64, 72].map((width, i) => (
-          <span key={i} className="h-3 shrink-0 rounded-full bg-white/10" style={{ width }} />
-        ))}
-      </GlassPanel>
-      <GlassPanel className="flex size-10 shrink-0 items-center p-1" style={{ animation: rise(2) }}>
-        <GhostIcon />
-      </GlassPanel>
-      <div className="ml-auto flex shrink-0 items-center gap-2.5">
-        <GlassPanel
-          className="flex h-10 shrink-0 items-center gap-2 py-1 pr-4 pl-1 text-base leading-5 tabular-nums max-md:pr-3"
-          style={{ animation: rise(3) }}
-        >
-          <span className="flex h-8 min-w-8 items-center justify-center px-1.5 text-fg-muted">
-            1
-          </span>
-          <span className="text-fg-subtle">/</span>
-          {count === null ? (
-            <span className="skeleton h-3 w-4 rounded-full" />
-          ) : (
-            <span key={count} className="animate-pop-in text-fg-muted">
-              {count}
-            </span>
-          )}
-        </GlassPanel>
-        <GlassPanel className="flex h-10 w-[76px] items-center p-1" style={{ animation: rise(4) }}>
-          <GhostIcon />
-          <GhostIcon />
-        </GlassPanel>
-      </div>
-    </div>
-  );
-}
-
-function GhostIcon({ className }: { className?: string }) {
-  return (
-    <span className={cn('flex size-8 shrink-0 items-center justify-center', className)}>
-      <span className="size-4 rounded-[5px] bg-white/10" />
-    </span>
   );
 }

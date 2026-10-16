@@ -1,6 +1,6 @@
 import type { Comment } from '@slider/shared';
 import type { MouseEvent } from 'react';
-import { useUpdateComment } from '@/lib/queries';
+import { useUpdateComment } from '@/lib/api';
 import { cn, Icon } from '@/ui';
 import { useStageRegistry } from '../state/stage-registry';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';

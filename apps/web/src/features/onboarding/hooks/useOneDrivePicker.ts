@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Deck, FilePickerSession } from '@slider/shared';
 import { api, ApiError } from '@/lib/api-client';
-import { queryKeys, useImportDriveItem } from '@/lib/queries';
+import { queryKeys, useImportDriveItem } from '@/lib/api';
 import { runPicker, type PickedDriveItem } from '../lib/onedrive-picker';
 
 const FAILED_MESSAGE = 'Die OneDrive-Auswahl konnte nicht geöffnet werden.';

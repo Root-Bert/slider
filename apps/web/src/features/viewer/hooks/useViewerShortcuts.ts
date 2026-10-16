@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent } from 'react';
-import { isTypingTarget } from '../lib/dom';
+import { isTypingTarget } from '@/lib/dom';
 import { useGoToSlide } from './useGoToSlide';
 import { useViewerData } from '../state/viewer-data';
 import { cycleTool, useViewerDispatch, useViewerState } from '../state/viewer-state';

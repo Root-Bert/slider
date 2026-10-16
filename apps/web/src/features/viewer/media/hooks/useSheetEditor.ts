@@ -1,7 +1,7 @@
 import { isTextStroke, type AccentColor, type Rect, type Stroke } from '@slider/shared';
 import { useState } from 'react';
-import { textStrokeFromDraft } from '../lib/text-box';
-import type { TextBoxDraft, TextBoxPatch } from '../state/viewer-state';
+import { textStrokeFromDraft } from '../../stage/lib/text-box';
+import type { TextBoxDraft, TextBoxPatch } from '../../state/viewer-state';
 
 /** Text being written: into a new box, or replacing the stroke at `index` (a box or a text). */
 export interface SheetText {

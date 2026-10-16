@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Navigate, Outlet, useParams } from 'react-router';
-import { routes } from '@/app/routes';
-import { useAccount } from '../auth/useAccount';
+import { routes } from '@/lib/routes';
+import { useAccount } from '@/features/auth';
 import { rememberWorkspace } from './lib/last-workspace';
 
 /**

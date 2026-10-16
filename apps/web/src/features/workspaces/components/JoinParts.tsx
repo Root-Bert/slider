@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import type { InviteState, JoinPreview } from '@slider/shared';
-import { routes } from '@/app/routes';
+import { routes } from '@/lib/routes';
 import { ApiError } from '@/lib/api-client';
-import { useAuthProviders, useJoinWorkspace, useLogout } from '@/lib/workspace-queries';
+import { useAuthProviders, useJoinWorkspace, useLogout } from '@/lib/api';
 import { Badge, Button, Icon, Spinner } from '@/ui';
-import { LoginOptions } from '../../auth/components/LoginOptions';
+import { LoginOptions } from '@/features/auth';
 import { ROLE_HINTS, ROLE_LABELS } from '../lib/roles';
 import { WorkspaceMark } from './WorkspaceMark';
 

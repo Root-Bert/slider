@@ -1,9 +1,8 @@
 import { Link } from 'react-router';
-import { AppHeader } from '@/app/AppHeader';
-import { routes } from '@/app/routes';
-import { useAccount } from '@/features/auth/useAccount';
-import { Icon, Toast, useToast } from '@/ui';
-import { SettingsSection } from '@/features/workspaces/components/SettingsSection';
+import { routes } from '@/lib/routes';
+import { AppHeader } from '@/shell/AppHeader';
+import { useAccount } from '@/features/auth';
+import { Icon, Section, Toast, useToast } from '@/ui';
 import { ColorPicker, WorkSection } from './components/PreferenceSections';
 
 /**
@@ -36,9 +35,9 @@ export function Component() {
             </div>
           </div>
 
-          <SettingsSection title="Darstellung" description="Gilt für alle deine Reviews.">
+          <Section title="Darstellung" description="Gilt für alle deine Reviews.">
             <ColorPicker color={user.color} onNotify={showToast} />
-          </SettingsSection>
+          </Section>
 
           <WorkSection />
         </div>

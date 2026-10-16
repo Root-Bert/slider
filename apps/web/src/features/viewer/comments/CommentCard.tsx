@@ -9,20 +9,19 @@ import {
   type ReactNode,
 } from 'react';
 import { accentColor } from '@/lib/accent';
-import { isPendingComment } from '@/lib/comment-cache';
+import { isPendingComment } from '@/lib/api/comment-cache';
 import { pluralize } from '@/lib/format';
-import { AvatarStack, cn, Icon } from '@/ui';
-import { isRemovedInPowerPoint, type Thread } from '../lib/comment-selectors';
-import { AutosizeTextarea } from '../components/AutosizeTextarea';
-import { MediaReplyButtons } from '../components/MediaTabs';
-import { useReplyDraft } from '../hooks/useReplyDraft';
+import { AutosizeTextarea, AvatarStack, cn, Icon } from '@/ui';
+import { isRemovedInPowerPoint, type Thread } from './lib/comment-selectors';
+import { MediaReplyButtons } from './MediaTabs';
+import { useReplyDraft } from './hooks/useReplyDraft';
 import { LiveThreadMarker } from '../live/LiveThreadMarker';
 import { useViewerDispatch } from '../state/viewer-state';
 import { AuthorLine } from './AuthorLine';
 import { CommentContent } from './CommentContent';
 import { ResolveButton } from './ResolveButton';
 import { ChangedSinceCommentNote, RemovedInPowerPointNote } from './RevisionNotes';
-import { useCommentMenu } from './useCommentMenu';
+import { useCommentMenu } from './hooks/useCommentMenu';
 
 export type CardEmphasis = 'normal' | 'focused' | 'hovered' | 'dimmed';
 

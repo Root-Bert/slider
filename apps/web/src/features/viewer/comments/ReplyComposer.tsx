@@ -1,9 +1,8 @@
 import type { Comment } from '@slider/shared';
-import { Avatar, cn, Icon } from '@/ui';
-import { AutosizeTextarea } from '../components/AutosizeTextarea';
-import { MediaReplyButtons } from '../components/MediaTabs';
-import { useMentions } from '../hooks/useMentions';
-import { useReplyDraft } from '../hooks/useReplyDraft';
+import { AutosizeTextarea, Avatar, cn, Icon } from '@/ui';
+import { MediaReplyButtons } from './MediaTabs';
+import { useMentions } from './hooks/useMentions';
+import { useReplyDraft } from './hooks/useReplyDraft';
 import { MentionMenu } from './MentionMenu';
 
 interface ReplyComposerProps {

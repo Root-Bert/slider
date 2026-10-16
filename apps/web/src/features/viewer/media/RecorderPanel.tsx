@@ -9,9 +9,9 @@ import {
 } from 'react';
 import { Button, cn, Icon, Kbd, SegmentedControl, Spinner, type Segment } from '@/ui';
 import { AudioPlayer, VideoPlayer } from './MediaPlayer';
-import { canShareScreen, formatBytes, formatDuration, type VideoSource } from './recording';
-import { useMediaUsage } from './useMediaComment';
-import { useRecorder, type Recording } from './useRecorder';
+import { canShareScreen, formatBytes, formatDuration, type VideoSource } from './lib/recording';
+import { useMediaUsage } from './hooks/useMediaComment';
+import { useRecorder, type Recording } from './hooks/useRecorder';
 
 interface RecorderPanelProps {
   kind: MediaKind;
@@ -328,13 +328,7 @@ function CameraPreview({
       {bubbleOnly && (
         <div className="absolute right-[4%] bottom-[6%] flex aspect-[4/3] h-[46%] items-center justify-center overflow-hidden rounded-[10.5%/14%] bg-black text-fg-faint shadow-float after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]">
           {stream ? (
-            <video
-              ref={videoRef}
-              autoPlay
-              muted
-              playsInline
-              className="size-full object-cover"
-            />
+            <video ref={videoRef} autoPlay muted playsInline className="size-full object-cover" />
           ) : (
             <Icon name="cameraVideo" size={20} />
           )}

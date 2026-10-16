@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router';
-import { routes } from '@/app/routes';
+import { routes } from '@/lib/routes';
 import { Button, Dialog } from '@/ui';
 import { CreateWorkspaceForm } from './CreateWorkspaceForm';
 

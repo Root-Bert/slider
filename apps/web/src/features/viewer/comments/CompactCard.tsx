@@ -1,11 +1,11 @@
 import { memo, type CSSProperties } from 'react';
 import { accentColor } from '@/lib/accent';
 import { Avatar, cn, Icon } from '@/ui';
-import { commentPreview, isRemovedInPowerPoint, type Thread } from '../lib/comment-selectors';
+import { commentPreview, isRemovedInPowerPoint, type Thread } from './lib/comment-selectors';
 import { LiveThreadMarker } from '../live/LiveThreadMarker';
 import { useViewerDispatch } from '../state/viewer-state';
 import type { CardEmphasis } from './CommentCard';
-import { useCommentMenu } from './useCommentMenu';
+import { useCommentMenu } from './hooks/useCommentMenu';
 
 /**
  * Compact B1 card for narrow comment columns (small slides): avatar, author and two

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { cn } from '@/ui';
-import { tokenizeBody } from '../lib/comment-body';
+import { tokenizeBody } from './lib/comment-body';
 import { useViewerData } from '../state/viewer-data';
 
 interface CommentBodyProps {

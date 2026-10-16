@@ -1,6 +1,6 @@
 import { cn } from './cn';
 import { Icon } from './Icon';
-import type { ToastMessage } from './useToast';
+import type { ToastMessage } from './hooks/useToast';
 
 /** Bottom-centred status line. The live region stays mounted so screen readers announce changes. */
 export function Toast({ toast }: { toast: ToastMessage | null }) {

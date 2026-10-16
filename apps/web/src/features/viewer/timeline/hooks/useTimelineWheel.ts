@@ -1,9 +1,9 @@
 import { useEffect, useEffectEvent, type RefObject } from 'react';
-import { rafThrottle } from '../lib/dom';
+import { rafThrottle } from '@/lib/dom';
 import type { TrackGeometry } from '../lib/timeline-layout';
 import { pinchSplit, wheelSplit } from '../lib/split';
-import { useViewerDispatch, useViewerState } from '../state/viewer-state';
-import type { SizeAnchor } from '../timeline/timeline-context';
+import { useViewerDispatch, useViewerState } from '../../state/viewer-state';
+import type { SizeAnchor } from '../timeline-context';
 
 /** Safari's non-standard pinch event (trackpad and touch). */
 interface GestureEvent extends UIEvent {

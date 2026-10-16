@@ -1,6 +1,6 @@
 import { pluralize } from '@/lib/format';
 import { AvatarStack, cn } from '@/ui';
-import type { Thread } from '../lib/comment-selectors';
+import type { Thread } from './lib/comment-selectors';
 
 /**
  * All comments of a slide folded into one small stacked blob (Figma B4 blob in miniature) – for

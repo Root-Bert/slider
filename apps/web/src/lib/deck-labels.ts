@@ -1,5 +1,5 @@
 import type { Deck, DeckSource, ImportState } from '@slider/shared';
-import { pluralize } from '@/lib/format';
+import { pluralize } from './format';
 
 const SOURCE_LABELS: Record<DeckSource, string> = {
   onedrive: 'OneDrive',

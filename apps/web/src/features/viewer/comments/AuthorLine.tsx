@@ -2,7 +2,7 @@ import type { Comment } from '@slider/shared';
 import type { ReactNode } from 'react';
 import { formatDateTime, formatRelativeTime } from '@/lib/format';
 import { Avatar, cn } from '@/ui';
-import { formatShortDate } from '../lib/labels';
+import { formatShortDate } from './lib/labels';
 
 interface AuthorLineProps {
   comment: Comment;

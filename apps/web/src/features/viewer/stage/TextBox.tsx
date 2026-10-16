@@ -9,9 +9,9 @@ import {
 } from 'react';
 import { accentAlpha, accentColor } from '@/lib/accent';
 import { cn, Icon } from '@/ui';
-import { FRAME_ATTR, resized, useRectEdit, type RectCorner } from '../hooks/useRectEdit';
-import { focusCommentField } from '../lib/composer-focus';
-import { MIN_TEXT_WIDTH, normalizeTextRect } from '../lib/text-box';
+import { FRAME_ATTR, resized, useRectEdit, type RectCorner } from './hooks/useRectEdit';
+import { focusCommentField } from '../comments/lib/composer-focus';
+import { MIN_TEXT_WIDTH, normalizeTextRect } from './lib/text-box';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, type TextBoxDraft, type TextBoxPatch } from '../state/viewer-state';
 import { CORNERS } from './corners';

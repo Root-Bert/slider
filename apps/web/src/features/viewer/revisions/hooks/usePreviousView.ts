@@ -1,9 +1,9 @@
 import type { SlideVersionView } from '@slider/shared';
-import { useSlideVersions } from '@/lib/queries';
+import { useSlideVersions } from '@/lib/api';
 import { isChangedSinceComment, versionAtComment } from '../lib/revision-changes';
-import { useRevisionData } from '../state/revision-data';
-import { useViewerData } from '../state/viewer-data';
-import { useViewerState } from '../state/viewer-state';
+import { useRevisionData } from '../../state/revision-data';
+import { useViewerData } from '../../state/viewer-data';
+import { useViewerState } from '../../state/viewer-state';
 
 export interface ShownPreviousView {
   slideId: string;

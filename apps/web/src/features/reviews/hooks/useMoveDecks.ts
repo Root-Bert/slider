@@ -1,5 +1,5 @@
 import { pluralize } from '@/lib/format';
-import { useUpdateDecks, type BulkResult } from '@/lib/queries';
+import { useUpdateDecks, type BulkResult } from '@/lib/api';
 
 /** Moves decks into a folder (`null` = out of any); one request per deck. */
 export function useMoveDecks() {

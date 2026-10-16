@@ -7,9 +7,9 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { loadStoredBoxMode, storeBoxMode } from '../lib/box-mode';
-import { loadStoredSplit, storeSplit } from '../lib/split';
-import { loadWorkPreferences } from '../lib/work-preferences';
+import { loadStoredBoxMode, storeBoxMode } from '@/lib/preferences/box-mode';
+import { loadStoredSplit, storeSplit } from '@/lib/preferences/split';
+import { loadWorkPreferences } from '@/lib/preferences/work-preferences';
 import { createStageRegistry, StageRegistryContext } from './stage-registry';
 import {
   nearestShownSlideId,

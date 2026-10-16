@@ -11,7 +11,7 @@ import {
 import { createPortal } from 'react-dom';
 import { cn } from './cn';
 import { Icon, type IconName } from './Icon';
-import { useDismiss } from './useDismiss';
+import { useDismiss } from './hooks/useDismiss';
 
 export interface MenuAction {
   label: string;

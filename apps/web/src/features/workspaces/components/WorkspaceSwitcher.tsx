@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { routes } from '@/app/routes';
-import { useMe } from '@/lib/queries';
+import { routes } from '@/lib/routes';
+import { useMe } from '@/lib/api';
 import { Icon, Toast, useToast } from '@/ui';
 import { ROLE_LABELS } from '../lib/roles';
-import { useActiveWorkspace } from '../useWorkspace';
+import { useActiveWorkspace } from '../hooks/useWorkspace';
 import { CreateWorkspaceDialog } from './CreateWorkspaceDialog';
 import { JoinWorkspaceDialog } from './JoinWorkspaceDialog';
 import { HeaderPopover, PopoverDivider, PopoverHeading, PopoverItem } from './HeaderPopover';

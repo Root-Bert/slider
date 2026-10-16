@@ -1,6 +1,6 @@
 import type { Shape } from '@slider/shared';
 import { cn } from '@/ui';
-import { shapeLabel } from '../lib/labels';
+import { shapeLabel } from '../comments/lib/labels';
 
 interface ShapeOutlineProps {
   shape: Shape;

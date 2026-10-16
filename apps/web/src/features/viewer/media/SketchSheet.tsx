@@ -20,15 +20,15 @@ import {
 import { accentColor } from '@/lib/accent';
 import { cn } from '@/ui';
 import { normalizeClientPoint, toSlidePoint } from '../lib/geometry';
-import { appendPoint, strokePath } from '../lib/stroke-path';
-import { clickTextBox, dragTextBox, startFontSize } from '../lib/text-box';
+import { appendPoint, strokePath } from '../stage/lib/stroke-path';
+import { clickTextBox, dragTextBox, startFontSize } from '../stage/lib/text-box';
 import type { PenTool } from '../state/viewer-state';
 import { EditableFrame } from '../stage/EditableFrame';
 import { RectFrame } from '../stage/RectFrame';
 import { StrokePath } from '../stage/StrokePath';
 import { TextBoxField, TextMark } from '../stage/TextBox';
-import { boxOf, eraserHits, frameOf, placeStroke, SKETCH_BACKGROUND } from './sketch';
-import type { SheetEditor } from './useSheetEditor';
+import { boxOf, eraserHits, frameOf, placeStroke, SKETCH_BACKGROUND } from './lib/sketch';
+import type { SheetEditor } from './hooks/useSheetEditor';
 
 /** The slide's tools: the pointer (`null` – drag a box, write into it), the pens, the eraser. */
 export type SheetTool = PenTool | 'eraser' | null;

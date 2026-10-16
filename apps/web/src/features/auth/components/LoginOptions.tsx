@@ -1,16 +1,13 @@
 import { useState } from 'react';
 import type { AuthProviders, LoginProvider } from '@slider/shared';
-import { Button, Icon } from '@/ui';
+import { Button, GoogleMark, Icon, MicrosoftMark, PasskeyMark } from '@/ui';
 import {
   isPasskeyCancel,
   passkeyErrorMessage,
   passkeysSupported,
   signInWithPasskey,
-} from '../lib/passkeys';
+} from '@/lib/passkeys';
 import { providerLoginUrl } from '../lib/return-to';
-import { GoogleMark } from './GoogleMark';
-import { MicrosoftMark } from './MicrosoftMark';
-import { PasskeyMark } from './PasskeyMark';
 
 const PROVIDER_ORDER: LoginProvider['id'][] = ['microsoft', 'google', 'oidc'];
 

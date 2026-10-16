@@ -1,5 +1,5 @@
 import type { Comment } from '@slider/shared';
-import { useUpdateComment } from '@/lib/queries';
+import { useUpdateComment } from '@/lib/api';
 import { cn, Icon } from '@/ui';
 
 interface ResolveButtonProps {

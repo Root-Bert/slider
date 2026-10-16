@@ -1,13 +1,12 @@
 import type { Comment } from '@slider/shared';
 import { useState } from 'react';
-import { Button, Dialog } from '@/ui';
-import { AutosizeTextarea } from '../components/AutosizeTextarea';
-import { replyInput } from '../lib/replies';
+import { AutosizeTextarea, Button, Dialog } from '@/ui';
+import { replyInput } from '../comments/lib/replies';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerToast } from '../state/viewer-toast';
-import { DEFAULT_SKETCH_ASPECT, exportSketch } from './sketch';
+import { DEFAULT_SKETCH_ASPECT, exportSketch } from './lib/sketch';
 import { SketchPanel, type Sketch } from './SketchPanel';
-import { useCreateMediaComment } from './useMediaComment';
+import { useCreateMediaComment } from './hooks/useMediaComment';
 
 /** Reply to a thread with a drawn image, optionally with a voice memo recorded while drawing. */
 export function SketchReplyDialog({
@@ -38,7 +37,11 @@ export function SketchReplyDialog({
     if (!sketch || create.isPending) return;
     const { strokes, memo } = sketch;
     create.mutate(
-      { input: replyInput(root, note), recording: memo, image: () => exportSketch(strokes, aspect) },
+      {
+        input: replyInput(root, note),
+        recording: memo,
+        image: () => exportSketch(strokes, aspect),
+      },
       {
         onSuccess: () => {
           showToast('Bild gesendet');

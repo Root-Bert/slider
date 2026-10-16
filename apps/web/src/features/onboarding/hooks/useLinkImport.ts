@@ -3,8 +3,8 @@ import { useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { parseShareLink, type Deck, type ParsedShareLink } from '@slider/shared';
 import { ApiError } from '@/lib/api-client';
-import { queryKeys, useImportLink } from '@/lib/queries';
-import { ACCOUNT_LIMIT_MESSAGE } from '@/features/auth/lib/return-to';
+import { queryKeys, useImportLink } from '@/lib/api';
+import { ACCOUNT_LIMIT_MESSAGE } from '@/features/auth';
 
 export const INVALID_LINK_MESSAGE = 'Kein gültiger OneDrive-, SharePoint- oder PPTX-Link';
 const EMPTY_LINK_MESSAGE = 'Füge einen OneDrive-, SharePoint- oder PPTX-Link ein.';

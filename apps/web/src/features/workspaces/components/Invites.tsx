@@ -6,13 +6,18 @@ import type {
   WorkspaceInvite,
 } from '@slider/shared';
 import { formatDateTime } from '@/lib/format';
+import { useCreateWorkspaceInvite, useRevokeWorkspaceInvite, useWorkspaceInvites } from '@/lib/api';
 import {
-  useCreateWorkspaceInvite,
-  useRevokeWorkspaceInvite,
-  useWorkspaceInvites,
-} from '@/lib/workspace-queries';
-import { useCopyToClipboard } from '@/features/sharing/hooks/useCopyToClipboard';
-import { Badge, Button, Icon, IconButton, Select, Spinner, TextField, type ShowToast } from '@/ui';
+  Badge,
+  Button,
+  Icon,
+  IconButton,
+  Select,
+  Spinner,
+  TextField,
+  useCopyToClipboard,
+  type ShowToast,
+} from '@/ui';
 import {
   formatExpiry,
   INVITE_ROLES,

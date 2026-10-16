@@ -1,15 +1,14 @@
 import type { Comment } from '@slider/shared';
 import { useState } from 'react';
-import { isPendingComment } from '@/lib/comment-cache';
-import { useUpdateComment } from '@/lib/queries';
-import { Button, cn, Menu } from '@/ui';
-import { AutosizeTextarea } from '../components/AutosizeTextarea';
-import { isRemovedInPowerPoint } from '../lib/comment-selectors';
+import { isPendingComment } from '@/lib/api/comment-cache';
+import { useUpdateComment } from '@/lib/api';
+import { AutosizeTextarea, Button, cn, Menu } from '@/ui';
+import { isRemovedInPowerPoint } from './lib/comment-selectors';
 import { AuthorLine } from './AuthorLine';
 import { CommentContent } from './CommentContent';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
 import { RemovedInPowerPointNote } from './RevisionNotes';
-import { useCommentMenu } from './useCommentMenu';
+import { useCommentMenu } from './hooks/useCommentMenu';
 
 interface ThreadMessageProps {
   comment: Comment;

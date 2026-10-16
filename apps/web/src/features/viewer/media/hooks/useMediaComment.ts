@@ -7,7 +7,7 @@ import type {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, uploadWithProgress } from '@/lib/api-client';
-import { queryKeys, useInvalidateDeckFeedback } from '@/lib/queries';
+import { queryKeys, useInvalidateDeckFeedback } from '@/lib/api';
 import type { Recording } from './useRecorder';
 
 const mediaUsageKey = (deckId: string) => [...queryKeys.deck(deckId), 'media-usage'] as const;

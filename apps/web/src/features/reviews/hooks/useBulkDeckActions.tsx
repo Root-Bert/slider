@@ -7,7 +7,7 @@ import {
   useRerenderDecks,
   useUpdateDecks,
   type BulkResult,
-} from '@/lib/queries';
+} from '@/lib/api';
 import type { MenuAction, ShowToast } from '@/ui';
 import { DeleteDeckDialog } from '../components/DeleteDeckDialog';
 import { MoveDecksDialog } from '../components/MoveDecksDialog';

@@ -11,8 +11,8 @@ import {
   SCREEN_CONSTRAINTS,
   VIDEO_CONSTRAINTS,
   type VideoSource,
-} from './recording';
-import { composeScreenAndCamera } from './screen-compositor';
+} from '../lib/recording';
+import { composeScreenAndCamera } from '../lib/screen-compositor';
 
 /** A finished recording, ready to send. */
 export interface Recording {

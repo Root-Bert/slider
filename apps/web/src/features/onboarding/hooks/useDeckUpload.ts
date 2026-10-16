@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Deck } from '@slider/shared';
 import { uploadWithProgress } from '@/lib/api-client';
-import { queryKeys } from '@/lib/queries';
+import { queryKeys } from '@/lib/api';
 import { validatePptxFile } from '../lib/upload-validation';
 
 export type UploadState =

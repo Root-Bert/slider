@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type Ref } from 'react';
-import { MicrosoftMark } from '@/features/auth/components/MicrosoftMark';
-import { Button, cn, IconButton, Spinner } from '@/ui';
+import { Button, cn, IconButton, MicrosoftMark, Spinner } from '@/ui';
 
 /** Name the picker form targets; one picker at a time. */
 const PICKER_FRAME_NAME = 'slider-onedrive-picker';

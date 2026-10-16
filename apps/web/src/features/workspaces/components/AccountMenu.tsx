@@ -1,17 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { currentPath, routes } from '@/app/routes';
-import { MicrosoftMark } from '@/features/auth/components/MicrosoftMark';
-import { PasskeyMark } from '@/features/auth/components/PasskeyMark';
-import {
-  dismissPasskeyHint,
-  passkeyHintDismissed,
-  passkeysSupported,
-} from '@/features/auth/lib/passkeys';
-import { providerLoginUrl } from '@/features/auth/lib/return-to';
-import { useMe } from '@/lib/queries';
-import { useAuthProviders, useLogout, usePasskeys } from '@/lib/workspace-queries';
-import { Avatar, Icon, IconButton, Spinner } from '@/ui';
+import { currentPath, routes } from '@/lib/routes';
+import { dismissPasskeyHint, passkeyHintDismissed, passkeysSupported } from '@/lib/passkeys';
+import { providerLoginUrl } from '@/features/auth';
+import { useAuthProviders, useLogout, useMe, usePasskeys } from '@/lib/api';
+import { Avatar, Icon, IconButton, MicrosoftMark, PasskeyMark, Spinner } from '@/ui';
 import { HeaderPopover, PopoverDivider, PopoverItem } from './HeaderPopover';
 
 const MICROSOFT_CONNECT_URL = '/api/auth/microsoft/login';

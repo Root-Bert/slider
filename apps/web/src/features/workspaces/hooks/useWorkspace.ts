@@ -1,8 +1,8 @@
 import { useParams, useSearchParams } from 'react-router';
 import type { Workspace } from '@slider/shared';
-import { useMe } from '@/lib/queries';
-import { useAccount } from '../auth/useAccount';
-import { pickWorkspace, readLastWorkspaceId } from './lib/last-workspace';
+import { useMe } from '@/lib/api';
+import { useAccount } from '@/features/auth';
+import { pickWorkspace, readLastWorkspaceId } from '../lib/last-workspace';
 
 /** The workspace of the `/w/:workspaceId` route. Only below `WorkspaceLayout`, which checks it exists. */
 export function useWorkspace(): Workspace {

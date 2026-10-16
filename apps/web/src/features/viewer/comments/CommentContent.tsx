@@ -1,5 +1,5 @@
 import type { Comment } from '@slider/shared';
-import { isStrokeOnly, strokeOnlyLabel } from '../lib/comment-selectors';
+import { isStrokeOnly, strokeOnlyLabel } from './lib/comment-selectors';
 import { CommentImageView } from '../media/CommentImageView';
 import { CommentMediaView } from '../media/MediaPlayer';
 import { CommentBody } from './CommentBody';

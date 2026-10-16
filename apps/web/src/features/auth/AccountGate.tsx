@@ -1,7 +1,7 @@
 import { Navigate, Outlet, useLocation } from 'react-router';
-import { CenteredMessage } from '@/app/RouteError';
-import { routes } from '@/app/routes';
-import { useMe } from '@/lib/queries';
+import { routes } from '@/lib/routes';
+import { CenteredMessage } from '@/shell/CenteredMessage';
+import { useMe } from '@/lib/api';
 import { Button, Spinner } from '@/ui';
 import { accountGate } from './lib/gate';
 

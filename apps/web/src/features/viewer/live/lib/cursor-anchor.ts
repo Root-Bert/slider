@@ -1,5 +1,5 @@
 import type { LiveCursor } from '@slider/shared';
-import { toSlidePoint } from '../lib/geometry';
+import { toSlidePoint } from '../../lib/geometry';
 
 /**
  * Pointers are shared over the slides only (BER-104): normalised to the slide box, they land on

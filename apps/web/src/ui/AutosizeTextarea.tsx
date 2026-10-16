@@ -5,7 +5,7 @@ import {
   type Ref,
   type TextareaHTMLAttributes,
 } from 'react';
-import { cn } from '@/ui';
+import { cn } from './cn';
 
 interface AutosizeTextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   value: string;

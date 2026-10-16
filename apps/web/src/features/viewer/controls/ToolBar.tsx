@@ -6,7 +6,7 @@ import {
   useViewerDispatch,
   useViewerState,
 } from '../state/viewer-state';
-import { VIEW_ONLY_HINT } from '../lib/view-only';
+import { VIEW_ONLY_HINT } from '../comments/lib/view-only';
 
 /** The drawing tools, right next to the pointer. Boxes are the pointer's (drag). */
 const PEN_TOOLS: { tool: Tool; icon: IconName; label: string }[] = [

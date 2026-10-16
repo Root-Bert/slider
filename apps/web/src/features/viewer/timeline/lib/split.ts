@@ -1,14 +1,20 @@
 import { slideHeightAt, splitForHeight, type TrackGeometry } from './timeline-layout';
 
+export {
+  clampSplit,
+  loadStoredSplit,
+  SPLIT_MAX,
+  SPLIT_MIN,
+  SPLIT_STORAGE_KEY,
+  storeSplit,
+} from '@/lib/preferences/split';
+
 /**
  * The split handle between the slide area and the comment area. The split is `t` ∈ [0, 1]
  * between the smallest and the largest slide height (see `timeline-layout`), or `null` for the
  * default (Desktop-1 proportions). Storing `t` rather than pixels keeps the setting meaningful
  * across window sizes and decks.
  */
-export const SPLIT_MIN = 0;
-export const SPLIT_MAX = 1;
-export const SPLIT_STORAGE_KEY = 'slider.viewer.split.v1';
 /** ↑ / ↓ on the focused handle move it this far; with Shift four times as far. */
 export const SPLIT_KEY_STEP_PX = 24;
 export const SPLIT_KEY_STEP_LARGE_PX = 96;
@@ -19,8 +25,6 @@ const WHEEL_MAX_DELTA = 50;
 const LINE_HEIGHT_PX = 16;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-
-export const clampSplit = (split: number) => clamp(split, SPLIT_MIN, SPLIT_MAX);
 
 /** Dragging the handle by `dy` pixels (down = positive) from where the slides were `startH` tall. */
 export const dragSplit = (startH: number, dy: number, geo: TrackGeometry) =>
@@ -52,23 +56,3 @@ export function wheelSplit(
 /** Safari pinch: `scale` is relative to the slide height when the gesture started. */
 export const pinchSplit = (startSplit: number | null, scale: number, geo: TrackGeometry) =>
   splitForHeight(slideHeightAt(startSplit, geo) * scale, geo);
-
-/** Persisted split of this browser; missing or unreadable means the default (`null`). */
-export function loadStoredSplit(): number | null {
-  try {
-    const raw = localStorage.getItem(SPLIT_STORAGE_KEY);
-    const stored = raw === null || raw.trim() === '' ? Number.NaN : Number(raw);
-    return Number.isFinite(stored) ? clampSplit(stored) : null;
-  } catch {
-    return null;
-  }
-}
-
-export function storeSplit(split: number | null) {
-  try {
-    if (split === null) localStorage.removeItem(SPLIT_STORAGE_KEY);
-    else localStorage.setItem(SPLIT_STORAGE_KEY, split.toFixed(4));
-  } catch {
-    // Not persisted – the split still applies for this session.
-  }
-}

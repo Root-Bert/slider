@@ -1,15 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { passkeyNameSchema, type LoginIdentity, type Passkey } from '@slider/shared';
-import { GoogleMark } from '@/features/auth/components/GoogleMark';
-import { MicrosoftMark } from '@/features/auth/components/MicrosoftMark';
-import { PasskeyMark } from '@/features/auth/components/PasskeyMark';
-import {
-  isPasskeyCancel,
-  passkeyErrorMessage,
-  passkeysSupported,
-} from '@/features/auth/lib/passkeys';
-import { providerLoginUrl } from '@/features/auth/lib/return-to';
-import { SettingsSection } from '@/features/workspaces/components/SettingsSection';
+import { isPasskeyCancel, passkeyErrorMessage, passkeysSupported } from '@/lib/passkeys';
+import { providerLoginUrl } from '@/features/auth';
 import { formatDateTime, formatRelativeTime } from '@/lib/format';
 import {
   useAuthProviders,
@@ -19,8 +11,21 @@ import {
   useRegisterPasskey,
   useRenamePasskey,
   useUnlinkIdentity,
-} from '@/lib/workspace-queries';
-import { Badge, Button, Dialog, Icon, Menu, Spinner, TextField, type ShowToast } from '@/ui';
+} from '@/lib/api';
+import {
+  Badge,
+  Button,
+  Dialog,
+  GoogleMark,
+  Icon,
+  Menu,
+  MicrosoftMark,
+  PasskeyMark,
+  Section,
+  Spinner,
+  TextField,
+  type ShowToast,
+} from '@/ui';
 
 /** Sections of `/konto`: connected logins and passkeys. */
 
@@ -56,7 +61,7 @@ export function LoginsSection({
     providers.data?.providers.filter((provider) => !connected.has(provider.id)) ?? [];
 
   return (
-    <SettingsSection
+    <Section
       title="Verbundene Anmeldungen"
       description="Mit jeder davon kommst du in dieses Konto."
     >
@@ -78,9 +83,7 @@ export function LoginsSection({
                 <span className="text-sm font-medium text-fg">
                   {PROVIDER_LABELS[identity.provider]}
                 </span>
-                <span className="truncate text-xs text-fg-subtle">
-                  {identity.email ?? '–'}
-                </span>
+                <span className="truncate text-xs text-fg-subtle">{identity.email ?? '–'}</span>
               </span>
               {identity.provider === 'microsoft' && microsoftConnected && (
                 <span title="Verbunden mit OneDrive & SharePoint" className="text-fg-subtle">
@@ -136,7 +139,7 @@ export function LoginsSection({
       {unlinking && (
         <UnlinkDialog identity={unlinking} onClose={() => setUnlinking(null)} onNotify={onNotify} />
       )}
-    </SettingsSection>
+    </Section>
   );
 }
 
@@ -205,7 +208,7 @@ export function PasskeysSection({ onNotify }: { onNotify: ShowToast }) {
     });
 
   return (
-    <SettingsSection
+    <Section
       title="Passkeys"
       description="Anmelden mit Fingerabdruck, Gesicht oder Geräte-PIN – ohne Passwort und ohne Mail. Ein Passkey gilt nur für dieses Konto und diese Slider-Adresse."
       aside={
@@ -299,7 +302,7 @@ export function PasskeysSection({ onNotify }: { onNotify: ShowToast }) {
       {removing && (
         <RemoveDialog passkey={removing} onClose={() => setRemoving(null)} onNotify={onNotify} />
       )}
-    </SettingsSection>
+    </Section>
   );
 }
 

@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import type { Deck } from '@slider/shared';
 import { pluralize } from '@/lib/format';
-import { useCreateFolder, useFolders, type BulkResult } from '@/lib/queries';
+import { useCreateFolder, useFolders, type BulkResult } from '@/lib/api';
 import { Button, cn, Dialog, Icon, TextField } from '@/ui';
 import { useMoveDecks } from '../hooks/useMoveDecks';
 

@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import type { Deck, DeckFolder } from '@slider/shared';
-import { AppHeader } from '@/app/AppHeader';
-import { routes } from '@/app/routes';
+import { routes } from '@/lib/routes';
+import { AppHeader } from '@/shell/AppHeader';
 import { pluralize } from '@/lib/format';
 import {
   useAllDecks,
@@ -11,11 +11,15 @@ import {
   useDeleteFolder,
   useFolders,
   useRenameFolder,
-} from '@/lib/queries';
-import { deckLimitMessage, deckState, formatDeckUsage } from '@/features/workspaces/lib/plan';
-import { canCreateDecks } from '@/features/workspaces/lib/roles';
-import { useWorkspace } from '@/features/workspaces/useWorkspace';
-import { useAccount } from '@/features/auth/useAccount';
+} from '@/lib/api';
+import { useAccount } from '@/features/auth';
+import {
+  canCreateDecks,
+  deckLimitMessage,
+  deckState,
+  formatDeckUsage,
+  useWorkspace,
+} from '@/features/workspaces';
 import { accentColor, isLightAccent } from '@/lib/accent';
 import { Button, ContextMenu, Dialog, Icon, type MenuAction } from '@/ui';
 import { DeckCollection, DeckCollectionSkeleton, type DeckView } from './components/DeckCollection';
@@ -44,7 +48,7 @@ import {
   selectDecks,
   type ReviewTab,
 } from './lib/deck-filters';
-import { useLastVisits } from './lib/last-visits';
+import { useLastVisits } from '@/lib/last-visits';
 import { prunePinnedDecks, usePinnedDecks } from './lib/pinned-decks';
 
 const DECK_VIEWS = ['grid', 'list'] as const satisfies readonly DeckView[];

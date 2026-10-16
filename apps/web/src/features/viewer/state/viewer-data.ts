@@ -5,9 +5,9 @@ import {
   gapThreadsByGap,
   groupThreadsBySlide,
   type Thread,
-} from '../lib/comment-selectors';
+} from '../comments/lib/comment-selectors';
 import { withColorOverride } from '../lib/color-overrides';
-import { mentions } from '../lib/mentions';
+import { mentions } from '../comments/lib/mentions';
 
 /** Server data of the open deck plus everything derived from it once per fetch. */
 export interface ViewerData {

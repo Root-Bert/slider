@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router';
-import { routes } from '@/app/routes';
+import { routes } from '@/lib/routes';
 import { GlassPanel, IconButton } from '@/ui';
 import { useViewerData } from '../state/viewer-data';
 

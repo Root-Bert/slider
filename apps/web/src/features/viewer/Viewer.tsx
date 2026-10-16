@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { cn, Toast, useToast } from '@/ui';
+import { cn, Toast, useFullscreen, useToast } from '@/ui';
 import { CommentFilterBar } from './comments/CommentFilterBar';
 import { Composer } from './comments/Composer';
 import { ThreadPanel } from './comments/ThreadPanel';
@@ -8,12 +8,11 @@ import { RevisionControls, UploadRevisionControl } from './controls/RevisionCont
 import { SessionControls } from './controls/SessionControls';
 import { SlideCounter } from './controls/SlideCounter';
 import { ToolBar } from './controls/ToolBar';
-import { useFullscreen } from './hooks/useFullscreen';
 import { useThreadHover } from './hooks/useThreadHover';
 import { useSlideUrlSync } from './hooks/useSlideUrlSync';
 import { useViewerShortcuts } from './hooks/useViewerShortcuts';
 import { CursorLayer } from './live/CursorLayer';
-import { useLive } from './live/useLive';
+import { useLive } from './live/hooks/useLive';
 import { DeletedSlidesPanel } from './revisions/DeletedSlidesPanel';
 import { RevisionBanners } from './revisions/RevisionBanners';
 import { useViewerData } from './state/viewer-data';

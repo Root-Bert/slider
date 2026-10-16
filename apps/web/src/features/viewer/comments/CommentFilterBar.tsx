@@ -1,6 +1,6 @@
 import { GlassPanel, SegmentedControl } from '@/ui';
-import { useCommentThreads } from '../hooks/useCommentThreads';
-import type { StatusFilter } from '../lib/comment-selectors';
+import { useCommentThreads } from './hooks/useCommentThreads';
+import type { StatusFilter } from './lib/comment-selectors';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
 
 /**

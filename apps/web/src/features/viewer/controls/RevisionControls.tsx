@@ -1,8 +1,8 @@
 import type { SyncResult } from '@slider/shared';
 import { useRef } from 'react';
-import { useUploadRevision } from '@/lib/queries';
+import { useUploadRevision } from '@/lib/api';
 import { cn, GlassPanel, Icon, IconButton, Spinner } from '@/ui';
-import { revisionNoticeText, syncResultMessage } from '../lib/revision-changes';
+import { revisionNoticeText, syncResultMessage } from '../revisions/lib/revision-changes';
 import { RevisionNotice } from '../revisions/RevisionNotice';
 import { useRevisionData } from '../state/revision-data';
 import { useViewerData } from '../state/viewer-data';

@@ -2,7 +2,7 @@ import type { Author } from '@slider/shared';
 import { accentColor } from '@/lib/accent';
 import { AvatarStack } from '@/ui';
 import { useColorOverrides, withColorOverride } from '../lib/color-overrides';
-import { getLiveSnapshot, useLiveKey } from './live-store';
+import { getLiveSnapshot, useLiveKey } from './lib/live-store';
 
 /**
  * Who else has this comment open right now (BER-104): a frame in their colour around the card and

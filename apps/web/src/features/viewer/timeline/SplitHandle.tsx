@@ -6,7 +6,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { cn } from '@/ui';
-import { rafThrottle } from '../lib/dom';
+import { rafThrottle } from '@/lib/dom';
 import {
   dragSplit,
   SPLIT_KEY_STEP_LARGE_PX,
@@ -14,8 +14,8 @@ import {
   SPLIT_MAX,
   SPLIT_MIN,
   stepSplit,
-} from '../lib/split';
-import { resolvedSplit, type TrackGeometry } from '../lib/timeline-layout';
+} from './lib/split';
+import { resolvedSplit, type TrackGeometry } from './lib/timeline-layout';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
 
 interface SplitHandleProps {

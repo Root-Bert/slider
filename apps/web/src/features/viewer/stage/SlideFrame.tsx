@@ -15,10 +15,10 @@ import {
 import { memo, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
 import { accentColor } from '@/lib/accent';
 import { Badge, cn, Icon } from '@/ui';
-import type { Thread } from '../lib/comment-selectors';
+import type { Thread } from '../comments/lib/comment-selectors';
 import { toSlidePoint } from '../lib/geometry';
-import { slideLabel } from '../lib/labels';
-import type { SlideBadge } from '../lib/revision-changes';
+import { slideLabel } from '../comments/lib/labels';
+import type { SlideBadge } from '../revisions/lib/revision-changes';
 import { LiveSlidePresence } from '../live/LiveSlidePresence';
 import { ChangeBadge } from '../revisions/ChangeBadge';
 import { useViewerDispatch, type Draft, type Tool } from '../state/viewer-state';

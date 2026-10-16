@@ -1,12 +1,12 @@
 import { ACCENT_COLORS, type AccentColor, type Author } from '@slider/shared';
 import { useId, useRef, useState } from 'react';
 import { ACCENT_COLOR_NAMES, accentColor, isLightAccent } from '@/lib/accent';
-import { useUpdateMe } from '@/lib/queries';
+import { useUpdateMe } from '@/lib/api';
 import { Avatar, cn, GlassPanel, Icon, useDismiss } from '@/ui';
 import { setColorOverride, useColorOverrides } from '../lib/color-overrides';
-import { slideLabel } from '../lib/labels';
+import { slideLabel } from '../comments/lib/labels';
 import { useGoToSlide } from '../hooks/useGoToSlide';
-import { useLivePeople } from '../live/live-people';
+import { useLivePeople } from '../live/lib/live-people';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
 

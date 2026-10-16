@@ -1,7 +1,6 @@
 import type { Workspace } from '@slider/shared';
-import { Badge, cn } from '@/ui';
+import { Badge, cn, Section } from '@/ui';
 import { deckState, formatRatio, planLabel, seatState, type LimitState } from '../lib/plan';
-import { SettingsSection } from './SettingsSection';
 
 /** "Free-Plan" (BER-130). */
 export function PlanBadge({ plan }: { plan: string }) {
@@ -82,7 +81,7 @@ export function UsageSection({ workspace }: { workspace: Workspace }) {
   // Self-hosted instances have no limits – no plan to name there.
   const unlimited = usage.maxMembers === null && usage.maxDecks === null;
   return (
-    <SettingsSection
+    <Section
       title="Plan & Nutzung"
       description={
         unlimited
@@ -107,6 +106,6 @@ export function UsageSection({ workspace }: { workspace: Workspace }) {
           hint={usage.maxDecks !== null ? 'Archivierte zählen mit.' : undefined}
         />
       </div>
-    </SettingsSection>
+    </Section>
   );
 }

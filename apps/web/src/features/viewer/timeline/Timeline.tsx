@@ -8,14 +8,13 @@ import {
   type MouseEvent,
   type ReactNode,
 } from 'react';
-import { cn } from '@/ui';
-import { ConnectorLines } from '../comments/ConnectorLines';
-import { useCanvasPan } from '../hooks/useCanvasPan';
-import { useIsNarrow } from '../hooks/useMediaQuery';
-import { useScrollActiveSlide } from '../hooks/useScrollActiveSlide';
-import { useTimelineMetrics } from '../hooks/useTimelineMetrics';
-import { useTimelineWheel } from '../hooks/useTimelineWheel';
-import { rafThrottle } from '../lib/dom';
+import { cn, useIsNarrow } from '@/ui';
+import { rafThrottle } from '@/lib/dom';
+import { ConnectorLines } from '../connectors/ConnectorLines';
+import { useCanvasPan } from './hooks/useCanvasPan';
+import { useScrollActiveSlide } from './hooks/useScrollActiveSlide';
+import { useTimelineMetrics } from './hooks/useTimelineMetrics';
+import { useTimelineWheel } from './hooks/useTimelineWheel';
 import {
   anchoredScrollLeft,
   revealScrollLeft,
@@ -27,7 +26,7 @@ import {
   trailingWidth,
   visibleRange,
   type TrackLayout,
-} from '../lib/timeline-layout';
+} from './lib/timeline-layout';
 import { useRevisionData } from '../state/revision-data';
 import { useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';

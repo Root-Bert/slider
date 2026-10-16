@@ -1,4 +1,5 @@
-import type { StatusFilter } from './comment-selectors';
+/** Status filter of the comment list ("Offen", "Alle", "Erledigt"). */
+export type StatusFilter = 'all' | 'open' | 'done';
 
 /**
  * "Arbeiten" on `/konto`: how a deck opens. Per-browser, like the split and box mode – the

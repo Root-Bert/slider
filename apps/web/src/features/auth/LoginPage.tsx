@@ -1,6 +1,5 @@
 import { Navigate, useSearchParams } from 'react-router';
-import { useMe } from '@/lib/queries';
-import { useAuthProviders } from '@/lib/workspace-queries';
+import { useAuthProviders, useMe } from '@/lib/api';
 import { Logo, Spinner } from '@/ui';
 import { LoginErrorBanner, SignupHint } from './components/LoginBits';
 import { LoginOptions } from './components/LoginOptions';

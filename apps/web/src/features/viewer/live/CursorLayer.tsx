@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { withColorOverride, useColorOverrides } from '../lib/color-overrides';
 import { useStageRegistry } from '../state/stage-registry';
 import { LiveCursor } from './LiveCursor';
-import { getLiveSnapshot, lastMoved, useLiveSnapshot } from './live-store';
+import { getLiveSnapshot, lastMoved, useLiveSnapshot } from './lib/live-store';
 
 /** A cursor resting this long folds its name away. */
 const IDLE_MS = 3_000;

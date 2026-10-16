@@ -1,9 +1,9 @@
 import type { AccentColor, Point, Slide } from '@slider/shared';
 import { useRef, type PointerEvent, type RefObject } from 'react';
-import { useEraseDrawing } from '@/lib/queries';
-import { useDraftDrawing } from '../hooks/useDraftDrawing';
-import { isBareDrawing, type Thread } from '../lib/comment-selectors';
-import { STROKE_STYLE } from '../lib/stroke-path';
+import { useEraseDrawing } from '@/lib/api';
+import { useDraftDrawing } from './hooks/useDraftDrawing';
+import { isBareDrawing, type Thread } from '../comments/lib/comment-selectors';
+import { STROKE_STYLE } from './lib/stroke-path';
 import { useViewerData } from '../state/viewer-data';
 import type { PenTool, Tool } from '../state/viewer-state';
 import { StrokePath } from './StrokePath';
@@ -83,7 +83,8 @@ function EraserSurface({ boxRef, threads }: Pick<DrawingSurfaceProps, 'boxRef' |
       thread.root.author.id === viewer.author.id &&
       isBareDrawing(thread) &&
       thread.root.strokes.every(
-        (stroke) => stroke.tool === 'pen' || stroke.tool === 'highlighter' || stroke.tool === 'arrow',
+        (stroke) =>
+          stroke.tool === 'pen' || stroke.tool === 'highlighter' || stroke.tool === 'arrow',
       ),
   );
 

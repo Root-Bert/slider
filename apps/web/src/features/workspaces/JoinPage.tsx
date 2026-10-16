@@ -1,8 +1,7 @@
 import { Link, useParams } from 'react-router';
-import { routes } from '@/app/routes';
+import { routes } from '@/lib/routes';
 import { ApiError } from '@/lib/api-client';
-import { useMe } from '@/lib/queries';
-import { useJoinPreview } from '@/lib/workspace-queries';
+import { useJoinPreview, useMe } from '@/lib/api';
 import { Icon, Logo, Spinner } from '@/ui';
 import { AccountMenu } from './components/AccountMenu';
 import { BackLink, Invitation, JoinCard } from './components/JoinParts';

@@ -1,4 +1,4 @@
-import { useMe } from '@/lib/queries';
+import { useMe } from '@/lib/api';
 
 /**
  * The signed-in account, its workspaces and pending invitations. Only below `AccountGate`,

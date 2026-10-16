@@ -10,12 +10,10 @@ import {
   type SetupStatus,
   type SignupMode,
 } from '@slider/shared';
-import { routes } from '@/app/routes';
-import { SettingsSection } from '@/features/workspaces/components/SettingsSection';
-import { useCopyToClipboard } from '@/features/sharing/hooks/useCopyToClipboard';
+import { routes } from '@/lib/routes';
 import { apiRequest } from '@/lib/api-client';
-import { workspaceKeys } from '@/lib/workspace-queries';
-import { Button, Icon, Select, Spinner, TextField } from '@/ui';
+import { workspaceKeys } from '@/lib/api';
+import { Button, Icon, Section, Select, Spinner, TextField, useCopyToClipboard } from '@/ui';
 import {
   collectChanges,
   EMPTY_SMTP,
@@ -125,15 +123,15 @@ export function SetupForm({
     >
       {phase === 'saved' && <Saved status={status} manual={settings.restart === 'manual'} />}
 
-      <SettingsSection
+      <Section
         title="Adresse"
         description="Kommt aus SLIDER_URL. Alle Links und Weiterleitungen zeigen dorthin."
       >
         <TextField label="Öffentliche Adresse" value={settings.url} readOnly />
-      </SettingsSection>
+      </Section>
 
       {!status.hasAccount && (
-        <SettingsSection
+        <Section
           title="Dein Admin-Konto"
           description="Wer sich zuerst mit dieser Adresse anmeldet, wird Admin der Instanz. Andere Adressen können das erste Konto nicht anlegen."
         >
@@ -142,10 +140,10 @@ export function SetupForm({
             placeholder: 'du@firma.de',
             autoComplete: 'email',
           })}
-        </SettingsSection>
+        </Section>
       )}
 
-      <SettingsSection
+      <Section
         title="Microsoft"
         description="„Weiter mit Microsoft“ und PowerPoints aus OneDrive/SharePoint. App registrieren unter entra.microsoft.com → App-Registrierungen, Plattform „Web“."
         aside={removeButton(['MS_CLIENT_ID', 'MS_CLIENT_SECRET', 'MS_TENANT'])}
@@ -159,9 +157,9 @@ export function SetupForm({
             hint: 'common = alle Microsoft-Konten; sonst die Verzeichnis-ID der Firma.',
           })}
         </div>
-      </SettingsSection>
+      </Section>
 
-      <SettingsSection
+      <Section
         title="Google"
         description="„Weiter mit Google“. OAuth-Client (Webanwendung) anlegen unter console.cloud.google.com → Google Auth Platform → Clients."
         aside={removeButton(['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'])}
@@ -171,9 +169,9 @@ export function SetupForm({
           {field('GOOGLE_CLIENT_ID', 'Client-ID')}
           {field('GOOGLE_CLIENT_SECRET', 'Clientschlüssel', { secret: true })}
         </div>
-      </SettingsSection>
+      </Section>
 
-      <SettingsSection
+      <Section
         title="Firmen-Login (SSO)"
         description="Jeder OpenID-Connect-Anbieter: Authentik, Keycloak, Okta, Zitadel, …"
         aside={removeButton(['OIDC_ISSUER', 'OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET', 'OIDC_LABEL'])}
@@ -188,9 +186,9 @@ export function SetupForm({
           {field('OIDC_CLIENT_SECRET', 'Clientschlüssel', { secret: true })}
           {field('OIDC_LABEL', 'Text auf dem Button', { placeholder: 'Weiter mit SSO' })}
         </div>
-      </SettingsSection>
+      </Section>
 
-      <SettingsSection
+      <Section
         title="Registrierung"
         description="Wer ohne Einladung ein Konto anlegen darf. Eingeladene Personen dürfen immer."
       >
@@ -212,9 +210,9 @@ export function SetupForm({
         )}
         {signup === 'domains' &&
           field('SIGNUP_DOMAINS', 'Domains', { placeholder: 'firma.de, firma.com' })}
-      </SettingsSection>
+      </Section>
 
-      <SettingsSection
+      <Section
         title="E-Mail"
         description="Optional: Einladungen direkt per Mail verschicken. Ohne gibt es den Link zum Weitergeben. Jeder SMTP-Zugang passt, z. B. Brevo oder das Postfach beim Domain-Hoster."
         aside={removeButton(['SMTP_URL', 'MAIL_FROM'])}
@@ -260,7 +258,7 @@ export function SetupForm({
           </>
         )}
         {field('MAIL_FROM', 'Absender', { placeholder: 'Slider <slider@firma.de>' })}
-      </SettingsSection>
+      </Section>
 
       {save.isError && <Notice tone="danger">{save.error.message}</Notice>}
       <div className="flex flex-wrap items-center justify-end gap-3">

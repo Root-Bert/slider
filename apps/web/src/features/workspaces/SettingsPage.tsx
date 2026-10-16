@@ -1,15 +1,15 @@
 import { useEffect } from 'react';
 import { Link, useLocation } from 'react-router';
-import { AppHeader } from '@/app/AppHeader';
-import { routes } from '@/app/routes';
+import { routes } from '@/lib/routes';
+import { AppHeader } from '@/shell/AppHeader';
 import { Icon, Toast, useToast } from '@/ui';
-import { useAccount } from '../auth/useAccount';
+import { useAccount } from '@/features/auth';
 import { MembersSection } from './components/MembersSection';
 import { UsageSection } from './components/PlanUsage';
 import { DeleteSection, GeneralSection, LeaveSection } from './components/WorkspaceSections';
 import { WorkspaceMark } from './components/WorkspaceMark';
 import { canDeleteWorkspace } from './lib/roles';
-import { useWorkspace } from './useWorkspace';
+import { useWorkspace } from './hooks/useWorkspace';
 
 /**
  * `/w/:workspaceId/einstellungen` – plan usage (BER-130), name, members, invitations, leave and

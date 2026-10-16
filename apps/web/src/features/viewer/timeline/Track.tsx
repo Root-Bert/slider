@@ -1,8 +1,8 @@
 import { Fragment } from 'react';
-import { threadsOf, useCommentThreads } from '../hooks/useCommentThreads';
-import { usePreviousView } from '../hooks/usePreviousView';
-import { gapKey } from '../lib/comment-selectors';
-import type { TrackLayout } from '../lib/timeline-layout';
+import { threadsOf, useCommentThreads } from '../comments/hooks/useCommentThreads';
+import { usePreviousView } from '../revisions/hooks/usePreviousView';
+import { gapKey } from '../comments/lib/comment-selectors';
+import type { TrackLayout } from './lib/timeline-layout';
 import { DeletedSlidesEntry } from '../revisions/DeletedSlidesEntry';
 import { GapDivider } from '../stage/GapDivider';
 import { SlideFrame } from '../stage/SlideFrame';

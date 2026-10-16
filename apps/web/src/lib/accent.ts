@@ -26,6 +26,9 @@ const RING: Record<AuthorColor, string> = {
   powerpoint: 'var(--color-ring-powerpoint)',
 };
 
+/** PowerPoint's own colour – marks of comments imported from PowerPoint. */
+export const POWERPOINT_COLOR = 'var(--color-powerpoint)';
+
 /** CSS colour for a reviewer's pins, lines and drawings (BER-99). */
 export const accentColor = (color: AuthorColor): string => ACCENT[color];
 

@@ -3,16 +3,16 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Comment, Deck } from '@slider/shared';
-import { routes } from '@/app/routes';
+import { routes } from '@/lib/routes';
 import { formatRelativeTime } from '@/lib/format';
-import { queryKeys, useComments, useSlides, useUpdateComment } from '@/lib/queries';
+import { queryKeys, useComments, useSlides, useUpdateComment } from '@/lib/api';
 import { Avatar, AvatarStack, cn, Icon, Spinner, useDismiss } from '@/ui';
 import {
   buildThreads,
   commentPreview,
   isRemovedInPowerPoint,
   type Thread,
-} from '@/features/viewer/lib/comment-selectors';
+} from '@/features/viewer';
 
 /** Open threads as the card counts them: roots, open, not deleted in the PowerPoint file. */
 const isOpenThread = (comment: Comment) =>

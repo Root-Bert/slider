@@ -1,9 +1,9 @@
 import type { Comment } from '@slider/shared';
 import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { useCreateReply } from '@/lib/queries';
+import { useCreateReply } from '@/lib/api';
 import { replyInput } from '../lib/replies';
-import { useViewerData } from '../state/viewer-data';
-import { useViewerToast } from '../state/viewer-toast';
+import { useViewerData } from '../../state/viewer-data';
+import { useViewerToast } from '../../state/viewer-toast';
 
 interface ReplyDraftOptions {
   /** Esc in the field. Without it, Esc bubbles up to the viewer. */

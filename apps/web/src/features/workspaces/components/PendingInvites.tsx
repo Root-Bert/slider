@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router';
 import type { PendingInvite } from '@slider/shared';
-import { routes } from '@/app/routes';
-import { useAcceptInvite } from '@/lib/workspace-queries';
+import { routes } from '@/lib/routes';
+import { useAcceptInvite } from '@/lib/api';
 import { Badge, Button, Icon, type ShowToast } from '@/ui';
 import { formatExpiry, ROLE_LABELS } from '../lib/roles';
 

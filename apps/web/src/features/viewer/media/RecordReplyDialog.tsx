@@ -1,13 +1,12 @@
 import type { Comment, MediaKind } from '@slider/shared';
 import { useState } from 'react';
-import { Button, Dialog } from '@/ui';
-import { AutosizeTextarea } from '../components/AutosizeTextarea';
-import { replyInput } from '../lib/replies';
+import { AutosizeTextarea, Button, Dialog } from '@/ui';
+import { replyInput } from '../comments/lib/replies';
 import { useViewerToast } from '../state/viewer-toast';
-import { MEDIA_LABELS } from './recording';
+import { MEDIA_LABELS } from './lib/recording';
 import { RecorderPanel } from './RecorderPanel';
-import { useCreateMediaComment } from './useMediaComment';
-import type { Recording } from './useRecorder';
+import { useCreateMediaComment } from './hooks/useMediaComment';
+import type { Recording } from './hooks/useRecorder';
 
 /** Voice or video reply to a thread (BER-116, Figma B3 "Antworten in jedem Format"). */
 export function RecordReplyDialog({

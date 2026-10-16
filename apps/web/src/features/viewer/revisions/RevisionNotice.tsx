@@ -1,6 +1,6 @@
 import { cn, IconButton } from '@/ui';
 import { useGoToSlide } from '../hooks/useGoToSlide';
-import { revisionNoticeText } from '../lib/revision-changes';
+import { revisionNoticeText } from './lib/revision-changes';
 import { useRevisionData, type RevisionAnnouncement } from '../state/revision-data';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch } from '../state/viewer-state';

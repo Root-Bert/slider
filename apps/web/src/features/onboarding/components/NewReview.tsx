@@ -1,22 +1,21 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import type { Deck, Workspace } from '@slider/shared';
-import { AppHeader } from '@/app/AppHeader';
-import { routes } from '@/app/routes';
-import { LoginErrorBanner } from '@/features/auth/components/LoginBits';
-import { rememberWorkspace } from '@/features/workspaces/lib/last-workspace';
-import { useMe } from '@/lib/queries';
-import { useAuthProviders } from '@/lib/workspace-queries';
+import { routes } from '@/lib/routes';
+import { AppHeader } from '@/shell/AppHeader';
+import { LoginErrorBanner } from '@/features/auth';
+import { rememberWorkspace } from '@/features/workspaces';
+import { useAuthProviders, useMe } from '@/lib/api';
 import { cn } from '@/ui';
-import { LinkImportForm } from './components/LinkImportForm';
-import { NoAccessCard } from './components/NoAccessCard';
-import { OneDrivePicker } from './components/OneDrivePicker';
-import { UploadDropzone } from './components/UploadDropzone';
-import { UploadProgressCard } from './components/UploadProgressCard';
-import { useDeckUpload } from './hooks/useDeckUpload';
-import { useLinkImport } from './hooks/useLinkImport';
-import { useOneDrivePicker } from './hooks/useOneDrivePicker';
-import { PPTX_ACCEPT } from './lib/upload-validation';
+import { LinkImportForm } from './LinkImportForm';
+import { NoAccessCard } from './NoAccessCard';
+import { OneDrivePicker } from './OneDrivePicker';
+import { UploadDropzone } from './UploadDropzone';
+import { UploadProgressCard } from './UploadProgressCard';
+import { useDeckUpload } from '../hooks/useDeckUpload';
+import { useLinkImport } from '../hooks/useLinkImport';
+import { useOneDrivePicker } from '../hooks/useOneDrivePicker';
+import { PPTX_ACCEPT } from '../lib/upload-validation';
 
 /**
  * A1 "Neue Review" (BER-91, BER-92) with the A3 "no access" state, for one workspace.

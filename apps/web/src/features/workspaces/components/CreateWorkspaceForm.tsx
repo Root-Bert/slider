@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import type { Workspace } from '@slider/shared';
-import { useCreateWorkspace } from '@/lib/workspace-queries';
+import { useCreateWorkspace } from '@/lib/api';
 import { Button, TextField } from '@/ui';
 
 const MAX_NAME = 80;

@@ -1,4 +1,4 @@
-import type { RectCorner } from '../hooks/useRectEdit';
+import type { RectCorner } from './hooks/useRectEdit';
 
 /** The four resize handles, placed on a frame's corners. */
 export const CORNERS: { corner: RectCorner; className: string }[] = [

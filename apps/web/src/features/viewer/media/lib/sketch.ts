@@ -12,7 +12,7 @@ import {
   type Stroke,
   type TextStroke,
 } from '@slider/shared';
-import { STROKE_STYLE, strokePath, strokesBounds } from '../lib/stroke-path';
+import { STROKE_STYLE, strokePath, strokesBounds } from '../../stage/lib/stroke-path';
 
 /** Paper of the sheet: a light grey, dark enough to sit in the app, light enough to stand out. */
 export const SKETCH_BACKGROUND = '#3A3A3A';

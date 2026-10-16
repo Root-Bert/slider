@@ -13,10 +13,10 @@ import {
 } from 'react';
 import { accentColor } from '@/lib/accent';
 import { cn, Icon } from '@/ui';
-import { gapKey } from '../lib/comment-selectors';
-import { rafThrottle } from '../lib/dom';
-import { slideLabel } from '../lib/labels';
-import type { SlideBadge } from '../lib/revision-changes';
+import { rafThrottle } from '@/lib/dom';
+import { gapKey } from '../comments/lib/comment-selectors';
+import { slideLabel } from '../comments/lib/labels';
+import type { SlideBadge } from '../revisions/lib/revision-changes';
 import { ChangeBadge } from '../revisions/ChangeBadge';
 import {
   bracketFor,
@@ -28,8 +28,8 @@ import {
   scrollLeftForBracket,
   THUMB_GAP,
   THUMB_H,
-} from '../lib/minimap';
-import type { TrackLayout } from '../lib/timeline-layout';
+} from './lib/minimap';
+import type { TrackLayout } from './lib/timeline-layout';
 import { useRevisionData } from '../state/revision-data';
 import { useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';

@@ -10,7 +10,8 @@ import {
   type Shape,
   type Slide,
 } from '@slider/shared';
-import { STROKE_STYLE, strokeOutline, strokesBounds, textBox } from './stroke-path';
+import type { StatusFilter } from '@/lib/preferences/work-preferences';
+import { STROKE_STYLE, strokeOutline, strokesBounds, textBox } from '../../stage/lib/stroke-path';
 
 /** A root comment together with its replies – the unit shown as a card and in the thread panel. */
 export interface Thread {
@@ -25,7 +26,7 @@ export interface Thread {
   lastActivityAt: string;
 }
 
-export type StatusFilter = 'all' | 'open' | 'done';
+export type { StatusFilter };
 
 export interface ThreadFilter {
   status: StatusFilter;

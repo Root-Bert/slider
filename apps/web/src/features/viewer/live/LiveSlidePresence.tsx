@@ -1,5 +1,5 @@
 import { AvatarStack, cn } from '@/ui';
-import { useLivePeople } from './live-people';
+import { useLivePeople } from './lib/live-people';
 
 /** Who has this slide active right now: small avatars in the slide's top-right corner (BER-104). */
 export function LiveSlidePresence({ slideId, small }: { slideId: string; small: boolean }) {

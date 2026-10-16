@@ -1,10 +1,13 @@
 import { Link, Navigate } from 'react-router';
-import { CenteredMessage } from '@/app/RouteError';
-import { routes } from '@/app/routes';
-import { deckLimitMessage, deckState } from '@/features/workspaces/lib/plan';
-import { canCreateDecks } from '@/features/workspaces/lib/roles';
-import { useActiveWorkspace } from '@/features/workspaces/useWorkspace';
-import { NewReview } from './NewReview';
+import { routes } from '@/lib/routes';
+import { CenteredMessage } from '@/shell/CenteredMessage';
+import {
+  canCreateDecks,
+  deckLimitMessage,
+  deckState,
+  useActiveWorkspace,
+} from '@/features/workspaces';
+import { NewReview } from './components/NewReview';
 
 /**
  * A1 "Neue Review" (BER-91, BER-92) with the A3 "no access" state.

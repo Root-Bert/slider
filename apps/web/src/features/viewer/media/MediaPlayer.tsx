@@ -1,7 +1,7 @@
 import type { Comment } from '@slider/shared';
 import { useEffect, useRef, useState } from 'react';
 import { cn, Icon } from '@/ui';
-import { formatDuration, MEDIA_LABELS } from './recording';
+import { formatDuration, MEDIA_LABELS } from './lib/recording';
 import { Waveform } from './Waveform';
 
 /**

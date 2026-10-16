@@ -8,7 +8,7 @@ import {
   type SyntheticEvent,
 } from 'react';
 import { insertMention, mentionQueryAt, suggestPeople } from '../lib/mentions';
-import { useViewerData } from '../state/viewer-data';
+import { useViewerData } from '../../state/viewer-data';
 
 export interface Mentions {
   /** People to suggest for the `@…` before the caret; empty = no menu. */

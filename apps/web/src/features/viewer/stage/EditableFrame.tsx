@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { cn } from '@/ui';
 import { CORNERS } from './corners';
 import { FrameEdges } from './RectFrame';
-import { FRAME_ATTR, useRectEdit } from '../hooks/useRectEdit';
+import { FRAME_ATTR, useRectEdit } from './hooks/useRectEdit';
 
 interface EditableFrameProps {
   rect: Rect;

@@ -1,10 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { queryKeys } from '@/lib/queries';
-import { useViewerData } from '../state/viewer-data';
-import { useViewerState } from '../state/viewer-state';
-import { locateCursor } from './cursor-anchor';
-import { connectLive, setPresence } from './live-store';
+import { queryKeys } from '@/lib/api';
+import { useViewerData } from '../../state/viewer-data';
+import { useViewerState } from '../../state/viewer-state';
+import { locateCursor } from '../lib/cursor-anchor';
+import { connectLive, setPresence } from '../lib/live-store';
 
 /** Several changes in a row (a reply plus resolve) → one refetch. */
 const COMMENTS_REFETCH_DELAY_MS = 120;

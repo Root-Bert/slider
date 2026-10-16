@@ -1,6 +1,6 @@
 import { Link } from 'react-router';
-import { CenteredMessage } from '@/app/RouteError';
-import { routes } from '@/app/routes';
+import { CenteredMessage } from '@/shell/CenteredMessage';
+import { routes } from '@/lib/routes';
 import { ApiError } from '@/lib/api-client';
 import { Button, Spinner } from '@/ui';
 

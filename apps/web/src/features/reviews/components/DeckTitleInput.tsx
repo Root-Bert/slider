@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Deck } from '@slider/shared';
-import { useUpdateDeck } from '@/lib/queries';
+import { useUpdateDeck } from '@/lib/api';
 import { cn } from '@/ui';
 import type { ShowToast } from '@/ui';
 

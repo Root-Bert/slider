@@ -1,8 +1,8 @@
 import { useId, type ReactNode } from 'react';
-import { cn } from '@/ui';
+import { cn } from './cn';
 
 /** A card on the workspace settings page: heading, short explanation, content. */
-export function SettingsSection({
+export function Section({
   id,
   title,
   description,

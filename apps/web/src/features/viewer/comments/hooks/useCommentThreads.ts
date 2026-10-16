@@ -8,8 +8,8 @@ import {
   threadsOnCurrentSlides,
   type ThreadFilter,
 } from '../lib/comment-selectors';
-import { useViewerData } from '../state/viewer-data';
-import { useViewerState } from '../state/viewer-state';
+import { useViewerData } from '../../state/viewer-data';
+import { useViewerState } from '../../state/viewer-state';
 
 export interface VisibleThreads {
   filter: ThreadFilter;

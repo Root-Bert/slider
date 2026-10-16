@@ -2,8 +2,8 @@ import type { DeckSync, SyncError } from '@slider/shared';
 import { useState } from 'react';
 import { formatDateTime, formatRelativeTime } from '@/lib/format';
 import { Button, cn, Icon, IconButton, Spinner, type IconName } from '@/ui';
-import { bannerSyncError, isLoginError, syncErrorTitle } from '../lib/revision-changes';
-import { dismissSyncError, isSyncErrorDismissed } from '../lib/seen-revisions';
+import { bannerSyncError, isLoginError, syncErrorTitle } from './lib/revision-changes';
+import { dismissSyncError, isSyncErrorDismissed } from './lib/seen-revisions';
 import { useRevisionData } from '../state/revision-data';
 import { useViewerData } from '../state/viewer-data';
 

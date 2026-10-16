@@ -1,5 +1,5 @@
 import { Avatar, cn } from '@/ui';
-import type { Mentions } from '../hooks/useMentions';
+import type { Mentions } from './hooks/useMentions';
 
 /**
  * The `@` suggestions above a comment field (BER-105). Sits in the field's `relative` wrapper;

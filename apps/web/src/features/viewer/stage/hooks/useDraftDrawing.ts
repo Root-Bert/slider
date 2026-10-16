@@ -6,11 +6,11 @@ import {
   type Slide,
 } from '@slider/shared';
 import { useState, type PointerEvent, type RefObject } from 'react';
-import { useCreateComment } from '@/lib/queries';
-import { toSlidePoint } from '../lib/geometry';
+import { useCreateComment } from '@/lib/api';
+import { toSlidePoint } from '../../lib/geometry';
 import { appendPoint, isShapeTool, strokesBounds } from '../lib/stroke-path';
-import { useViewerData } from '../state/viewer-data';
-import { useViewerDispatch, type PenTool } from '../state/viewer-state';
+import { useViewerData } from '../../state/viewer-data';
+import { useViewerDispatch, type PenTool } from '../../state/viewer-state';
 
 const MAX_POINTS = 2000;
 

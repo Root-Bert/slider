@@ -1,9 +1,9 @@
 import { useLayoutEffect, useState, type RefObject } from 'react';
+import { rafThrottle } from '@/lib/dom';
 import { gapKey } from '../lib/comment-selectors';
-import { rafThrottle } from '../lib/dom';
-import { denormalizeRect, placePopover, type Placement } from '../lib/geometry';
-import { useMarkPreview, useStageRegistry, type MarkPreview } from '../state/stage-registry';
-import type { Draft } from '../state/viewer-state';
+import { denormalizeRect, placePopover, type Placement } from '../../lib/geometry';
+import { useMarkPreview, useStageRegistry, type MarkPreview } from '../../state/stage-registry';
+import type { Draft } from '../../state/viewer-state';
 
 /** Viewport box of the draft's mark (or of the gap divider for gap comments). */
 function draftTargetBox(

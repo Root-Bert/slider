@@ -7,7 +7,7 @@ import {
   type PublicKeyCredentialRequestOptionsJSON,
 } from '@simplewebauthn/browser';
 import type { LoginResult, Passkey } from '@slider/shared';
-import { api, ApiError } from '@/lib/api-client';
+import { api, ApiError } from './api-client';
 
 /** Passkeys (WebAuthn) in the browser: sign in, register, and what to say when it fails. */
 

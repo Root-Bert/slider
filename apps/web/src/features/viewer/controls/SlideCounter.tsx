@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { cn, GlassPanel } from '@/ui';
 import { useGoToSlide } from '../hooks/useGoToSlide';
-import { parseSlideInput, stepSlide } from '../lib/slide-input';
+import { parseSlideInput, stepSlide } from './lib/slide-input';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerState } from '../state/viewer-state';
 

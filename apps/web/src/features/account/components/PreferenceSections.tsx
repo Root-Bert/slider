@@ -1,16 +1,15 @@
 import { useId, useState } from 'react';
 import { ACCENT_COLORS, type AccentColor } from '@slider/shared';
-import { loadStoredBoxMode, storeBoxMode } from '@/features/viewer/lib/box-mode';
-import type { StatusFilter } from '@/features/viewer/lib/comment-selectors';
+import { ACCENT_COLOR_NAMES, accentColor, isLightAccent } from '@/lib/accent';
+import { useUpdateMe } from '@/lib/api';
+import { loadStoredBoxMode, storeBoxMode } from '@/lib/preferences/box-mode';
 import {
   loadWorkPreferences,
   storeWorkPreferences,
+  type StatusFilter,
   type WorkPreferences,
-} from '@/features/viewer/lib/work-preferences';
-import { SettingsSection } from '@/features/workspaces/components/SettingsSection';
-import { ACCENT_COLOR_NAMES, accentColor, isLightAccent } from '@/lib/accent';
-import { useUpdateMe } from '@/lib/queries';
-import { cn, Icon, SegmentedControl, Toggle, type ShowToast } from '@/ui';
+} from '@/lib/preferences/work-preferences';
+import { cn, Icon, Section, SegmentedControl, Toggle, type ShowToast } from '@/ui';
 
 /** Sections of `/einstellungen`: your colour and how decks open ("Arbeiten"). */
 
@@ -95,7 +94,7 @@ export function WorkSection() {
   };
 
   return (
-    <SettingsSection
+    <Section
       title="Arbeiten"
       description="So öffnet sich jedes Review. Gilt für diesen Browser – im Review selbst kannst du alles weiterhin umschalten."
     >
@@ -147,6 +146,6 @@ export function WorkSection() {
           />
         </div>
       </div>
-    </SettingsSection>
+    </Section>
   );
 }

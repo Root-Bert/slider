@@ -15,7 +15,7 @@ import {
   syncResultMessage,
   versionAtComment,
 } from './revision-changes';
-import { comment, slide } from './test-fixtures';
+import { comment, slide } from '../../lib/test-fixtures';
 
 const counts = (overrides: Partial<SyncCounts> = {}): SyncCounts => ({
   slidesModified: 0,

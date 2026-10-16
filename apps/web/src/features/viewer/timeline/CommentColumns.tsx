@@ -2,24 +2,24 @@ import type { Slide } from '@slider/shared';
 import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { accentColor } from '@/lib/accent';
 import { pluralize } from '@/lib/format';
-import { threadsOf, useCommentThreads } from '../hooks/useCommentThreads';
-import { bandCapacity, brickLayout, planBands } from '../lib/card-layout';
+import { threadsOf, useCommentThreads } from '../comments/hooks/useCommentThreads';
+import { bandCapacity, brickLayout, planBands } from '../connectors/lib/card-layout';
 import {
   countLeftExits,
   gapKey,
   sortThreadsByAnchor,
   sortThreadsClockwise,
   type Thread,
-} from '../lib/comment-selectors';
-import { gapLabel, slideLabel } from '../lib/labels';
+} from '../comments/lib/comment-selectors';
+import { gapLabel, slideLabel } from '../comments/lib/labels';
 import {
   busRoom,
   cardMode,
   slideHeightAt,
   splitForWidth,
   type TrackLayout,
-} from '../lib/timeline-layout';
-import { isChangedSinceComment } from '../lib/revision-changes';
+} from './lib/timeline-layout';
+import { isChangedSinceComment } from '../revisions/lib/revision-changes';
 import { useRevisionData } from '../state/revision-data';
 import { useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';

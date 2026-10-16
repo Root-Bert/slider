@@ -1,4 +1,4 @@
-import { loginPath } from '@/features/auth/lib/return-to';
+import { loginPath } from './return-to';
 
 /** Typed URL builders – the only place that knows the URL structure. */
 export const routes = {

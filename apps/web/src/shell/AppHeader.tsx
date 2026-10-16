@@ -1,9 +1,8 @@
 import { useState, type MouseEvent, type ReactNode } from 'react';
 import { Link, matchPath, useLocation } from 'react-router';
-import { AccountMenu } from '@/features/workspaces/components/AccountMenu';
-import { WorkspaceSwitcher } from '@/features/workspaces/components/WorkspaceSwitcher';
+import { routes } from '@/lib/routes';
+import { AccountMenu, WorkspaceSwitcher } from '@/features/workspaces';
 import { cn, Logo } from '@/ui';
-import { routes } from './routes';
 
 interface AppHeaderProps {
   /** Next to the workspace switcher, e.g. the page's primary action. */

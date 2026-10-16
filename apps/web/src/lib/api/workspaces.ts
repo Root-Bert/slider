@@ -1,98 +1,16 @@
 import type {
-  AuthProviders,
   CreatedWorkspaceInvite,
   CreateWorkspaceInviteInput,
   JoinPreview,
   JoinResult,
-  LoginIdentity,
-  Passkey,
   Workspace,
   WorkspaceInvite,
   WorkspaceMember,
   WorkspaceRole,
 } from '@slider/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { registerPasskey } from '@/features/auth/lib/passkeys';
-import { api, apiRequest } from './api-client';
-import { queryKeys } from './queries';
-
-/**
- * Login, workspaces, members and invitations (BER-129). The list of the account's workspaces
- * and pending invitations comes with `GET /me`, so mutations that change them reload `me`.
- */
-export const workspaceKeys = {
-  providers: ['auth', 'providers'] as const,
-  members: (workspaceId: string) => ['workspaces', workspaceId, 'members'] as const,
-  invites: (workspaceId: string) => ['workspaces', workspaceId, 'invites'] as const,
-  join: (token: string) => ['join', token] as const,
-  passkeys: ['account', 'passkeys'] as const,
-  identities: ['account', 'identities'] as const,
-};
-
-// ── Login ───────────────────────────────────────────────────────────────────
-
-export const useAuthProviders = () =>
-  useQuery({
-    queryKey: workspaceKeys.providers,
-    queryFn: () => api.get<AuthProviders>('/auth/providers'),
-    staleTime: Infinity,
-  });
-
-// ── Account: connected logins and passkeys ──────────────────────────────────
-
-export const useIdentities = () =>
-  useQuery({
-    queryKey: workspaceKeys.identities,
-    queryFn: () => api.get<LoginIdentity[]>('/me/identities'),
-  });
-
-export const usePasskeys = (enabled = true) =>
-  useQuery({
-    queryKey: workspaceKeys.passkeys,
-    queryFn: () => api.get<Passkey[]>('/passkeys'),
-    enabled,
-  });
-
-export function useRegisterPasskey() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => registerPasskey(),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: workspaceKeys.passkeys }),
-  });
-}
-
-export function useRenamePasskey() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) =>
-      api.patch<Passkey>(`/passkeys/${id}`, { name }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: workspaceKeys.passkeys }),
-  });
-}
-
-export function useDeletePasskey() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => api.delete(`/passkeys/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: workspaceKeys.passkeys }),
-  });
-}
-
-/** Unlinking Microsoft also drops its file access, which `/me` reports. */
-export function useUnlinkIdentity() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => api.delete(`/me/identities/${encodeURIComponent(id)}`),
-    onSuccess: () =>
-      Promise.all([
-        queryClient.invalidateQueries({ queryKey: workspaceKeys.identities }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.me }),
-      ]),
-  });
-}
-
-/** Signs out. The caller then loads the login page fresh, which also drops every cached response. */
-export const useLogout = () => useMutation({ mutationFn: () => api.post<void>('/auth/logout') });
+import { api, apiRequest } from '../api-client';
+import { queryKeys, workspaceKeys } from './keys';
 
 // ── Workspaces ──────────────────────────────────────────────────────────────
 

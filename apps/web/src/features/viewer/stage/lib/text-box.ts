@@ -7,7 +7,7 @@ import {
   type Stroke,
   type TextStroke,
 } from '@slider/shared';
-import type { Draft, TextBoxDraft } from '../state/viewer-state';
+import type { Draft, TextBoxDraft } from '../../state/viewer-state';
 import { strokesBounds } from './stroke-path';
 
 /** "Text auf Folie" (B2): sizes of the on-slide text box, normalised to the slide box. */

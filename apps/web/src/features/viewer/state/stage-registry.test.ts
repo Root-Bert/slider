@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { layoutTrack } from '../lib/timeline-layout';
+import { layoutTrack } from '../timeline/lib/timeline-layout';
 import { createStageRegistry } from './stage-registry';
 
 const ids = Array.from({ length: 12 }, (_, i) => `s${i + 1}`);

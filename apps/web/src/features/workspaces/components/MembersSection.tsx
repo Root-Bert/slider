@@ -1,8 +1,18 @@
 import type { Workspace, WorkspaceMember, WorkspaceRole } from '@slider/shared';
 import { WORKSPACE_ROLES } from '@slider/shared';
 import { useState } from 'react';
-import { useMembers, useRemoveMember, useUpdateMemberRole } from '@/lib/workspace-queries';
-import { Avatar, Badge, Button, Dialog, IconButton, Select, Spinner, type ShowToast } from '@/ui';
+import { useMembers, useRemoveMember, useUpdateMemberRole } from '@/lib/api';
+import {
+  Avatar,
+  Badge,
+  Button,
+  Dialog,
+  IconButton,
+  Section,
+  Select,
+  Spinner,
+  type ShowToast,
+} from '@/ui';
 import {
   assignableRoles,
   canRemoveMember,
@@ -15,7 +25,6 @@ import {
 } from '../lib/roles';
 import { formatRatio, INVITE_SECTION_ID, seatState } from '../lib/plan';
 import { InviteForm, InviteList } from './Invites';
-import { SettingsSection } from './SettingsSection';
 
 /** Members with their roles; admins invite (first row), change roles and remove people. */
 export function MembersSection({
@@ -46,7 +55,7 @@ export function MembersSection({
     );
 
   return (
-    <SettingsSection
+    <Section
       id={canInvite ? INVITE_SECTION_ID : undefined}
       title="Mitglieder"
       description={
@@ -181,6 +190,6 @@ export function MembersSection({
           </>
         }
       />
-    </SettingsSection>
+    </Section>
   );
 }

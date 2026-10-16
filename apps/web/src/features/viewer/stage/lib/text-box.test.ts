@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Draft, TextBoxDraft } from '../state/viewer-state';
+import type { Draft, TextBoxDraft } from '../../state/viewer-state';
 import {
   clickTextBox,
   draftSubmission,

@@ -1,6 +1,6 @@
 import type { Deck } from '@slider/shared';
 import { pluralize } from '@/lib/format';
-import { useDeleteDecks, type BulkResult } from '@/lib/queries';
+import { useDeleteDecks, type BulkResult } from '@/lib/api';
 import { Button, Dialog } from '@/ui';
 
 /** Titles listed in the dialog when several decks are deleted; the rest as "und N weitere". */

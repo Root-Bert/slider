@@ -1,21 +1,21 @@
 import { useEffect, useId, useMemo, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { accentColor } from '@/lib/accent';
-import { threadsOf, useCommentThreads } from '../hooks/useCommentThreads';
+import { useIsNarrow } from '@/ui';
+import { threadsOf, useCommentThreads } from '../comments/hooks/useCommentThreads';
 import {
   useConnectorLayout,
   type ConnectorItem,
   type ConnectorLayout,
   type ConnectorRoute,
-} from '../hooks/useConnectorLayout';
-import { useIsNarrow } from '../hooks/useMediaQuery';
+} from './hooks/useConnectorLayout';
 import {
   connectorAnchor,
   connectorExits,
   gapKey,
   sortThreadsClockwise,
   type Thread,
-} from '../lib/comment-selectors';
+} from '../comments/lib/comment-selectors';
 import { useMarkPreview } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerState } from '../state/viewer-state';

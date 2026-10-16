@@ -3,7 +3,7 @@ import type { ImportState } from '@slider/shared';
 /**
  * What the import stage shows of the deck while it imports: the viewer's own layout (track,
  * minimap, controls row) built from placeholder slides that fill in as the import goes on.
- * Pure; the stage in `components/ImportStage.tsx` animates it.
+ * Pure; the stage in `../ImportStage.tsx` animates it.
  */
 export interface ImportPicture {
   /** Number of slides once the import knows it; `null` before – the track shows ghost slides. */

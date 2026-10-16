@@ -1,7 +1,7 @@
 import type { Comment, MediaKind as RecordingKind } from '@slider/shared';
 import { useState } from 'react';
 import { cn, Icon } from '@/ui';
-import { MEDIA_KINDS, MEDIA_SOON, type MediaKindId } from '../lib/media-kinds';
+import { MEDIA_KINDS, MEDIA_SOON, type MediaKindId } from './lib/media-kinds';
 import { RecordReplyDialog } from '../media/RecordReplyDialog';
 import { SketchReplyDialog } from '../media/SketchReplyDialog';
 

@@ -15,7 +15,7 @@ import {
   connectorExits,
   threadsOnCurrentSlides,
 } from './comment-selectors';
-import { author, comment, slide } from './test-fixtures';
+import { author, comment, slide } from '../../lib/test-fixtures';
 
 describe('buildThreads', () => {
   it('groups replies under their root, oldest first, and collects participants', () => {

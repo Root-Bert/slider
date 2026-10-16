@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import type { Deck } from '@slider/shared';
-import { routes } from '@/app/routes';
-import { useDeleteDeck } from '@/lib/queries';
+import { routes } from '@/lib/routes';
+import { useDeleteDeck } from '@/lib/api';
 import { Button, cn, GlassPanel, Icon } from '@/ui';
-import { slidesLabel, sourceLabel } from '@/features/reviews/lib/deck-labels';
-import { ImportStage, type StagePhase } from './components/ImportStage';
+import { slidesLabel, sourceLabel } from '@/lib/deck-labels';
+import { ImportStage, type StagePhase } from './ImportStage';
 import {
   importPicture,
   landsAt,

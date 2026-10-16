@@ -1,9 +1,9 @@
 import type { Comment } from '@slider/shared';
 import { useCallback, useState, type MouseEvent } from 'react';
-import { isPendingComment } from '@/lib/comment-cache';
-import { useDeleteComment, useUpdateComment } from '@/lib/queries';
+import { isPendingComment } from '@/lib/api/comment-cache';
+import { useDeleteComment, useUpdateComment } from '@/lib/api';
 import { Button, ContextMenu, Dialog, type MenuAction } from '@/ui';
-import { useViewerData } from '../state/viewer-data';
+import { useViewerData } from '../../state/viewer-data';
 
 interface CommentMenuOptions {
   comment: Comment;

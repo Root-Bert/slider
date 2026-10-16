@@ -10,12 +10,12 @@ import {
 } from 'react';
 import { ACCENT_COLOR_NAMES, accentColor } from '@/lib/accent';
 import { Button, cn, IconButton, type IconName } from '@/ui';
-import { isTypingTarget } from '../lib/dom';
+import { isTypingTarget } from '@/lib/dom';
 import { RecorderPanel } from './RecorderPanel';
-import { hasInk, sketchPalette } from './sketch';
+import { hasInk, sketchPalette } from './lib/sketch';
 import { SketchSheet, type SheetTool } from './SketchSheet';
-import { useSheetEditor } from './useSheetEditor';
-import type { Recording } from './useRecorder';
+import { useSheetEditor } from './hooks/useSheetEditor';
+import type { Recording } from './hooks/useRecorder';
 
 export interface Sketch {
   strokes: Stroke[];

@@ -1,11 +1,8 @@
 import { Link, useSearchParams } from 'react-router';
-import { AppHeader } from '@/app/AppHeader';
-import { routes } from '@/app/routes';
-import { LoginErrorBanner } from '@/features/auth/components/LoginBits';
-import { isLoginError } from '@/features/auth/lib/return-to';
-import { useAccount } from '@/features/auth/useAccount';
-import { Avatar, Icon, TextField, Toast, useToast } from '@/ui';
-import { SettingsSection } from '@/features/workspaces/components/SettingsSection';
+import { routes } from '@/lib/routes';
+import { AppHeader } from '@/shell/AppHeader';
+import { isLoginError, LoginErrorBanner, useAccount } from '@/features/auth';
+import { Avatar, Icon, Section, TextField, Toast, useToast } from '@/ui';
 import { LoginsSection, PasskeysSection } from './components/AccountSections';
 
 /**
@@ -43,7 +40,7 @@ export function Component() {
 
           {isLoginError(linkError) && <LoginErrorBanner code={linkError} />}
 
-          <SettingsSection
+          <Section
             title="Profil"
             description="Name und Adresse kommen von deiner ersten Anmeldung."
           >
@@ -51,13 +48,13 @@ export function Component() {
               <TextField label="Name" value={user.name} readOnly />
               <TextField label="E-Mail" value={user.email} readOnly />
             </div>
-          </SettingsSection>
+          </Section>
 
           <LoginsSection microsoftConnected={user.microsoftConnected} onNotify={showToast} />
           <PasskeysSection onNotify={showToast} />
 
           {user.isInstanceAdmin && (
-            <SettingsSection
+            <Section
               title="Diese Slider-Instanz"
               description="Du bist Admin: Anmeldewege, E-Mail-Versand und Registrierung für alle."
               aside={
@@ -71,7 +68,7 @@ export function Component() {
               }
             >
               {null}
-            </SettingsSection>
+            </Section>
           )}
         </div>
       </main>

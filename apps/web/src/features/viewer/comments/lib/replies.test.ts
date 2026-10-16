@@ -1,8 +1,8 @@
 import type { Anchor } from '@slider/shared';
 import { describe, expect, it } from 'vitest';
-import { confirmComment, isPendingComment, pendingReply } from '@/lib/comment-cache';
+import { confirmComment, isPendingComment, pendingReply } from '@/lib/api/comment-cache';
 import { collapseReplies, replyInput } from './replies';
-import { author, comment } from './test-fixtures';
+import { author, comment } from '../../lib/test-fixtures';
 
 describe('replyInput', () => {
   const anchors: Anchor[] = [

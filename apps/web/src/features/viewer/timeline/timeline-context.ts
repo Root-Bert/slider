@@ -1,5 +1,5 @@
 import { createContext, useContext, type RefObject } from 'react';
-import type { TrackGeometry, TrackLayout } from '../lib/timeline-layout';
+import type { TrackGeometry, TrackLayout } from './lib/timeline-layout';
 
 /**
  * Content point that must stay under `viewportX` (px from the scroller's left edge) when the slide

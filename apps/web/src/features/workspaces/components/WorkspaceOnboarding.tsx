@@ -1,9 +1,9 @@
 import { useId } from 'react';
 import { useNavigate } from 'react-router';
-import { AppHeader } from '@/app/AppHeader';
-import { routes } from '@/app/routes';
+import { routes } from '@/lib/routes';
+import { AppHeader } from '@/shell/AppHeader';
 import { cn, Icon, Toast, useToast } from '@/ui';
-import { useAccount } from '../../auth/useAccount';
+import { useAccount } from '@/features/auth';
 import { CreateWorkspaceForm } from './CreateWorkspaceForm';
 import { JoinByCodeForm } from './JoinByCodeForm';
 import { PendingInvites } from './PendingInvites';
@@ -13,7 +13,7 @@ import { PendingInvites } from './PendingInvites';
  * invitation – a pending e-mail invite, or a pasted link or code. There is no search: joining
  * always needs an invitation.
  */
-export function Onboarding() {
+export function WorkspaceOnboarding() {
   const { user, pendingInvites, canCreateWorkspace } = useAccount();
   const navigate = useNavigate();
   const [toast, showToast] = useToast();

@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react';
 import { flushSync } from 'react-dom';
-import type { ConnectorAnchor, ConnectorExit } from '../lib/comment-selectors';
+import { rafThrottle } from '@/lib/dom';
+import type { ConnectorAnchor, ConnectorExit } from '../../comments/lib/comment-selectors';
 import {
   layoutBlobConnectors,
   layoutConnectors,
-  roundedPath,
   type Box,
   type ConnectorRequest,
 } from '../lib/connector-routing';
-import { rafThrottle } from '../lib/dom';
-import { useStageRegistry } from '../state/stage-registry';
+import { roundedPath } from '../lib/rounded-path';
+import { useStageRegistry } from '../../state/stage-registry';
 
 export interface ConnectorItem {
   threadId: string;

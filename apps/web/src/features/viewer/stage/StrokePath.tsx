@@ -1,6 +1,6 @@
 import type { AuthorColor, PathStroke } from '@slider/shared';
 import { accentColor } from '@/lib/accent';
-import { STROKE_STYLE, strokePath } from '../lib/stroke-path';
+import { STROKE_STYLE, strokePath } from './lib/stroke-path';
 
 interface StrokePathProps {
   /** Drawn in the comment author's colour, which may be PowerPoint orange. */

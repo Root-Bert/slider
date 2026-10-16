@@ -1,10 +1,10 @@
 import { isPathStroke, type Author, type Point, type Rect } from '@slider/shared';
 import { useEffect, useEffectEvent, useState } from 'react';
 import { accentColor } from '@/lib/accent';
-import { textAnnotation } from '../lib/comment-selectors';
-import { focusCommentField } from '../lib/composer-focus';
-import { usePointDrag } from '../hooks/usePointDrag';
-import { isTypingTarget } from '../lib/dom';
+import { isTypingTarget } from '@/lib/dom';
+import { textAnnotation } from '../comments/lib/comment-selectors';
+import { focusCommentField } from '../comments/lib/composer-focus';
+import { usePointDrag } from './hooks/usePointDrag';
 import { useStageRegistry } from '../state/stage-registry';
 import type { Draft } from '../state/viewer-state';
 import { EditableFrame } from './EditableFrame';

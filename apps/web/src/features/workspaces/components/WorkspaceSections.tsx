@@ -6,17 +6,16 @@ import {
   workspaceNameSchema,
   type Workspace,
 } from '@slider/shared';
-import { routes } from '@/app/routes';
+import { routes } from '@/lib/routes';
 import {
   useDeleteWorkspace,
   useMembers,
   useRemoveMember,
   useRenameWorkspace,
   useWorkspaceLogo,
-} from '@/lib/workspace-queries';
-import { Badge, Button, Dialog, Select, TextField, type ShowToast } from '@/ui';
+} from '@/lib/api';
+import { Badge, Button, Dialog, Section, Select, TextField, type ShowToast } from '@/ui';
 import { canRenameWorkspace, isLastAdmin, ROLE_HINTS, ROLE_LABELS } from '../lib/roles';
-import { SettingsSection } from './SettingsSection';
 import { WorkspaceMark } from './WorkspaceMark';
 
 export function GeneralSection({
@@ -33,7 +32,7 @@ export function GeneralSection({
   const changed = parsed.success && parsed.data !== workspace.name;
 
   return (
-    <SettingsSection
+    <Section
       title="Allgemein"
       description={
         editable
@@ -78,7 +77,7 @@ export function GeneralSection({
         <Badge>{ROLE_LABELS[workspace.role]}</Badge>
         {ROLE_HINTS[workspace.role]}
       </p>
-    </SettingsSection>
+    </Section>
   );
 }
 
@@ -181,7 +180,7 @@ export function LeaveSection({
   const alone = mustHandOver && members.isSuccess && others.length === 0;
 
   return (
-    <SettingsSection
+    <Section
       title="Organisation verlassen"
       description={
         alone
@@ -250,7 +249,7 @@ export function LeaveSection({
           </label>
         )}
       </Dialog>
-    </SettingsSection>
+    </Section>
   );
 }
 
@@ -271,7 +270,7 @@ export function DeleteSection({
   };
 
   return (
-    <SettingsSection
+    <Section
       tone="danger"
       title="Organisation löschen"
       description="Löscht die Organisation mit allen Präsentationen, Kommentaren, Aufnahmen und Einladungen. Das lässt sich nicht rückgängig machen."
@@ -326,6 +325,6 @@ export function DeleteSection({
           />
         )}
       </Dialog>
-    </SettingsSection>
+    </Section>
   );
 }

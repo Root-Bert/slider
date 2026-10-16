@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { cn, Icon } from '@/ui';
 import { accentColor } from '@/lib/accent';
-import type { Thread } from '../lib/comment-selectors';
+import type { Thread } from '../comments/lib/comment-selectors';
 import { useViewerDispatch } from '../state/viewer-state';
 
 interface GapDividerProps {

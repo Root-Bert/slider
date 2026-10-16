@@ -1,7 +1,7 @@
 import type { DeckSync, DeletedSlide, SyncSummary } from '@slider/shared';
 import { createContext, useContext } from 'react';
-import type { Thread } from '../lib/comment-selectors';
-import type { SlideBadge } from '../lib/revision-changes';
+import type { Thread } from '../comments/lib/comment-selectors';
+import type { SlideBadge } from '../revisions/lib/revision-changes';
 
 /** A new revision the viewer should be told about (notice in the version pill). */
 export interface RevisionAnnouncement {
