@@ -75,6 +75,12 @@ export function SketchReplyDialog({
           aspect={aspect}
           onChange={setSketch}
           autoFocus
+          actions={{
+            canSend: sketch !== null,
+            pending: create.isPending,
+            onSend: send,
+            onCancel: cancel,
+          }}
         />
         <div className="rounded-control-sm bg-white/5 px-3 py-2 shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]">
           <AutosizeTextarea

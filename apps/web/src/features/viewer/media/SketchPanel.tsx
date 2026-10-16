@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import { ACCENT_COLOR_NAMES, accentColor } from '@/lib/accent';
-import { cn, IconButton, type IconName } from '@/ui';
+import { Button, cn, IconButton, type IconName } from '@/ui';
 import { isTypingTarget } from '../lib/dom';
 import { RecorderPanel } from './RecorderPanel';
 import { hasInk, sketchPalette } from './sketch';
@@ -36,6 +36,15 @@ interface SketchPanelProps {
   autoFocus?: boolean;
   /** Tab / Shift+Tab out of the panel – the composer moves to the next or previous format. */
   onTab?: (backwards: boolean) => void;
+  /** Sending and cancelling the comment, also right from the big view. */
+  actions?: SketchActions;
+}
+
+export interface SketchActions {
+  canSend: boolean;
+  pending: boolean;
+  onSend: () => void;
+  onCancel: () => void;
 }
 
 /** The slide's tool bar: pointer (drag = box, typing writes into it), pens, eraser. */
@@ -65,6 +74,7 @@ export function SketchPanel({
   onChange,
   autoFocus = false,
   onTab,
+  actions,
 }: SketchPanelProps) {
   const editor = useSheetEditor();
   const { strokes, selected } = editor;
@@ -204,10 +214,24 @@ export function SketchPanel({
     </>
   );
 
+  /** From the big view: back to the composer, then send – its progress shows there. */
+  const send = () => {
+    if (!actions?.canSend || actions.pending) return;
+    editor.select(null);
+    setExpanded(false);
+    actions.onSend();
+  };
+
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const mod = event.metaKey || event.ctrlKey;
+    // ⌘↵ sends from the big view too (the viewer's shortcut stays out of dialogs).
+    if (expanded && mod && event.key === 'Enter' && actions) {
+      event.preventDefault();
+      send();
+      return;
+    }
     // Writing on the sheet: the text field's own keys (⌘Z undoes typing).
     if (event.nativeEvent.isComposing || isTypingTarget(event.target)) return;
-    const mod = event.metaKey || event.ctrlKey;
     if (mod && event.key.toLowerCase() === 'z') {
       // Before the viewer's own ⌘Z, which undoes strokes on the slide.
       event.preventDefault();
@@ -241,6 +265,25 @@ export function SketchPanel({
             editor.select(null);
             setExpanded(false);
           }}
+          actions={
+            actions && (
+              <>
+                <Button variant="ghost" size="sm" onClick={actions.onCancel}>
+                  Abbrechen
+                </Button>
+                <Button
+                  size="sm"
+                  icon="send"
+                  title="⌘↵"
+                  disabled={!actions.canSend}
+                  loading={actions.pending}
+                  onClick={send}
+                >
+                  Senden
+                </Button>
+              </>
+            )
+          }
         >
           {sheet(true)}
         </SketchFullscreen>
@@ -261,10 +304,13 @@ export function SketchPanel({
 function SketchFullscreen({
   aspect,
   onClose,
+  actions,
   children,
 }: {
   aspect: number;
   onClose: () => void;
+  /** Send and cancel the comment; without them, a close button. */
+  actions?: ReactNode;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -308,13 +354,17 @@ function SketchFullscreen({
         >
           <header className="flex w-full items-center justify-between gap-4">
             <h2 className="text-sm font-medium text-fg">Bild zeichnen</h2>
-            <IconButton
-              icon="close"
-              label="Schließen (Esc)"
-              size="sm"
-              onClick={onClose}
-              className="glass-control rounded-full"
-            />
+            {actions ? (
+              <div className="flex items-center gap-1">{actions}</div>
+            ) : (
+              <IconButton
+                icon="close"
+                label="Schließen (Esc)"
+                size="sm"
+                onClick={onClose}
+                className="glass-control rounded-full"
+              />
+            )}
           </header>
           {children}
         </div>

@@ -137,6 +137,12 @@ function ComposerPopover({ draft }: { draft: Draft }) {
     return () => window.removeEventListener('keydown', listener, true);
   }, []);
 
+  const cancel = () => {
+    // Unmounting aborts the upload too; Esc relies on that (BER-116).
+    createMediaComment.cancel();
+    dispatch({ type: 'draftCancelled' });
+  };
+
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
     if (!submission || pending) return;
@@ -211,6 +217,7 @@ function ComposerPopover({ draft }: { draft: Draft }) {
           onChange={setSketch}
           autoFocus
           onTab={cycleTab}
+          actions={{ canSend, pending, onSend: () => submit(), onCancel: cancel }}
         />
       )}
 
@@ -263,15 +270,7 @@ function ComposerPopover({ draft }: { draft: Draft }) {
 
       <footer className="flex items-center justify-end gap-2">
         <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              // Unmounting aborts the upload too; Esc relies on that (BER-116).
-              createMediaComment.cancel();
-              dispatch({ type: 'draftCancelled' });
-            }}
-          >
+          <Button variant="ghost" size="sm" onClick={cancel}>
             Abbrechen
           </Button>
           <Button
