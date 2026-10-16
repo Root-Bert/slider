@@ -13,7 +13,7 @@ import { focusCommentField } from '../lib/composer-focus';
 import { MIN_TEXT_WIDTH, normalizeTextRect } from '../lib/text-box';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, type TextBoxDraft } from '../state/viewer-state';
-import { CORNERS } from './EditableFrame';
+import { CORNERS } from './corners';
 
 /**
  * "Text auf Folie": text written on the slide. Sizes are in container units of the slide box
