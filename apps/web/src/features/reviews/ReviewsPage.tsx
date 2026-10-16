@@ -24,7 +24,6 @@ import { EmptyState } from './components/EmptyState';
 import { FolderNameDialog } from './components/FolderNameDialog';
 import { FolderTiles } from './components/FolderTiles';
 import { NoResults } from './components/NoResults';
-import { NotificationsButton } from './components/NotificationsButton';
 import { ReviewsToolbar } from './components/ReviewsToolbar';
 import { SelectionBar } from './components/SelectionBar';
 import { Toast } from '@/ui';
@@ -57,7 +56,7 @@ const FOLDER_PARAM = 'ordner';
 type FolderDialog = { mode: 'create' } | { mode: 'rename'; folder: DeckFolder } | null;
 
 /**
- * G1 "Reviews" – every deck of one workspace, whoever added it (BER-121, BER-124, BER-129).
+ * G1 "Reviews" – every deck of one workspace, whoever added it (BER-121, BER-129).
  */
 export function Component() {
   const navigate = useNavigate();
@@ -70,7 +69,7 @@ export function Component() {
   const decksQuery = useDecks(workspace.id);
   const decks = decksQuery.data ?? NO_DECKS;
   const allDecksQuery = useAllDecks();
-  const { isUnseen, openedAt } = useLastVisits();
+  const { openedAt } = useLastVisits();
   const { isPinned } = usePinnedDecks();
   const [toast, showToast] = useToast();
   const foldersQuery = useFolders(workspace.id);
@@ -189,7 +188,7 @@ export function Component() {
       onMouseDown={marquee.onMouseDown}
     >
       <title>{`Reviews · ${workspace.name} · Slider`}</title>
-      <AppHeader actions={<NotificationsButton decks={decks} isUnseen={isUnseen} />} />
+      <AppHeader />
 
       <main className="flex flex-col gap-6 px-4 pt-2 pb-16 md:px-14">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -319,7 +318,6 @@ export function Component() {
             <DeckCollection
               decks={visible}
               view={view}
-              isUnseen={isUnseen}
               onNotify={showToast}
               selected={selection.selected}
               onModifiedClick={selection.onModifiedClick}

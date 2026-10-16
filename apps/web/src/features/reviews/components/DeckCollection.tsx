@@ -9,7 +9,6 @@ export type DeckView = 'grid' | 'list';
 interface DeckCollectionProps {
   decks: readonly Deck[];
   view: DeckView;
-  isUnseen: (deck: Deck) => boolean;
   onNotify: ShowToast;
   selected: ReadonlySet<string>;
   /** ⌘/Ctrl/Shift-click on a deck; true when it changed the selection instead of opening it. */
@@ -27,7 +26,6 @@ const GRID_CLASSES =
 export function DeckCollection({
   decks,
   view,
-  isUnseen,
   onNotify,
   selected,
   onModifiedClick,
@@ -69,12 +67,7 @@ export function DeckCollection({
           onContextMenuCapture={onContextMenuCapture(deck.id)}
           onDragStart={deck.permissions.canManage ? onDragStart(deck) : undefined}
         >
-          <Item
-            deck={deck}
-            unseen={isUnseen(deck)}
-            selected={selected.has(deck.id)}
-            onNotify={onNotify}
-          />
+          <Item deck={deck} selected={selected.has(deck.id)} onNotify={onNotify} />
         </li>
       ))}
     </ul>

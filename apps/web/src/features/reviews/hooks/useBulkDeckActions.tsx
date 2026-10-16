@@ -12,7 +12,6 @@ import type { MenuAction, ShowToast } from '@/ui';
 import { DeleteDeckDialog } from '../components/DeleteDeckDialog';
 import { MoveDecksDialog } from '../components/MoveDecksDialog';
 import { movedMessage } from './useMoveDecks';
-import { markDecksVisited } from '../lib/last-visits';
 import { MAX_PINNED, pinDeck, unpinDeck, usePinnedDecks } from '../lib/pinned-decks';
 
 const NO_IDS: readonly string[] = [];
@@ -131,8 +130,6 @@ export function useBulkDeckActions(
       {
         onSuccess: (result) => {
           const ids = result.done.map((entry) => entry.deckId);
-          // Our own change bumps `updatedAt` – it shouldn't show up as "Neu".
-          markDecksVisited(ids);
           const failure = failureMessage(result, restore ? 'wiederhergestellt' : 'archiviert');
           onNotify(
             failure ?? `${reviews(ids.length)} ${restore ? 'wiederhergestellt' : 'archiviert'}`,

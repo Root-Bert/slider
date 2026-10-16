@@ -13,7 +13,6 @@ import {
   isRemovedInPowerPoint,
   type Thread,
 } from '@/features/viewer/lib/comment-selectors';
-import { markDeckVisited } from '../lib/last-visits';
 
 /** Open threads as the card counts them: roots, open, not deleted in the PowerPoint file. */
 const isOpenThread = (comment: Comment) =>
@@ -243,17 +242,13 @@ function OpenThreadItem({
   const repliesId = useId();
   const { root, replies } = thread;
   const to = routes.deck(deckId, root.slideId);
-  const open = () => {
-    markDeckVisited(deckId);
-    onOpen();
-  };
 
   return (
     <div className="flex items-center gap-3 rounded-control py-1.5 pr-1.5 pl-2 transition-colors hover:bg-white/5">
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <Link
           to={to}
-          onClick={open}
+          onClick={onOpen}
           className="flex min-w-0 flex-col gap-0.5 rounded-badge outline-none focus-visible:ring-2 focus-visible:ring-mention"
         >
           <CommentMeta
@@ -304,7 +299,7 @@ function OpenThreadItem({
                   <li key={reply.id}>
                     <Link
                       to={to}
-                      onClick={open}
+                      onClick={onOpen}
                       className="flex min-w-0 flex-col gap-0.5 rounded-badge outline-none focus-visible:ring-2 focus-visible:ring-mention"
                     >
                       <CommentMeta comment={reply} />

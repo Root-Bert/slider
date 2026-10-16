@@ -1,6 +1,5 @@
 import { pluralize } from '@/lib/format';
 import { useUpdateDecks, type BulkResult } from '@/lib/queries';
-import { markDecksVisited } from '../lib/last-visits';
 
 /** Moves decks into a folder (`null` = out of any); one request per deck. */
 export function useMoveDecks() {
@@ -10,18 +9,7 @@ export function useMoveDecks() {
     mutate: (
       { deckIds, folderId }: { deckIds: readonly string[]; folderId: string | null },
       options?: Parameters<typeof update.mutate>[1],
-    ) =>
-      update.mutate(
-        { deckIds, input: { folderId } },
-        {
-          ...options,
-          onSuccess: (result, ...rest) => {
-            // Our own change bumps `updatedAt` – it shouldn't show up as "Neu".
-            markDecksVisited(result.done.map((entry) => entry.deckId));
-            options?.onSuccess?.(result, ...rest);
-          },
-        },
-      ),
+    ) => update.mutate({ deckIds, input: { folderId } }, options),
   };
 }
 

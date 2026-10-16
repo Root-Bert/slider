@@ -3,7 +3,6 @@ import type { Deck } from '@slider/shared';
 import { useUpdateDeck } from '@/lib/queries';
 import { cn } from '@/ui';
 import type { ShowToast } from '@/ui';
-import { markDeckVisited } from '../lib/last-visits';
 
 const MAX_TITLE_LENGTH = 200;
 
@@ -47,8 +46,6 @@ export function DeckTitleInput({
       { title: trimmed },
       {
         onSuccess: () => {
-          // Our own change bumps `updatedAt` – it shouldn't show up as "Neu".
-          markDeckVisited(deck.id);
           finish();
         },
         onError: (error) => {

@@ -7,7 +7,6 @@ import {
   useUpdateDeck,
 } from '@/lib/queries';
 import type { ShowToast } from '@/ui';
-import { markDeckVisited } from '../lib/last-visits';
 import { MAX_PINNED, pinDeck, unpinDeck, usePinnedDecks } from '../lib/pinned-decks';
 import { DeleteDeckDialog } from './DeleteDeckDialog';
 import { MoveDecksDialog } from './MoveDecksDialog';
@@ -108,8 +107,6 @@ export function DeckActions({
       { archived: !archived },
       {
         onSuccess: () => {
-          // Our own change bumps `updatedAt` – it shouldn't show up as "Neu".
-          markDeckVisited(deck.id);
           onNotify(archived ? `„${deck.title}“ wiederhergestellt` : `„${deck.title}“ archiviert`);
         },
         onError: (error) => onNotify(error.message, 'danger'),

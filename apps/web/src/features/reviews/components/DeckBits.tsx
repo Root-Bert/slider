@@ -3,23 +3,12 @@ import type { Deck, DeckSource, SlideRenderer } from '@slider/shared';
 import { Badge, cn, Icon, ProgressBar } from '@/ui';
 import { importActivityLabel, importFraction, isImporting, slidesLabel } from '../lib/deck-labels';
 
-/** Right-hand status badge next to the title. Import state wins over "Neu", "Neu" over the version. */
-export function DeckStatusBadge({ deck, unseen }: { deck: Deck; unseen: boolean }) {
+/** Right-hand status badge next to the title. Import state wins over the version. */
+export function DeckStatusBadge({ deck }: { deck: Deck }) {
   if (isImporting(deck)) return <Badge tone="warning">Import läuft</Badge>;
   if (deck.import.status === 'failed') return <Badge tone="danger">Fehler</Badge>;
-  if (unseen) return <Badge tone="success">Neu</Badge>;
   if (deck.revisionNumber > 1) return <Badge>V{deck.revisionNumber}</Badge>;
   return null;
-}
-
-/** Top-left "Neu" on the grid card's thumbnail; import state still wins (shown next to the title). */
-export function NewChip({ deck, unseen }: { deck: Deck; unseen: boolean }) {
-  if (!unseen || isImporting(deck) || deck.import.status === 'failed') return null;
-  return (
-    <span className="absolute top-2 left-2 rounded-chip bg-black/55 px-2 py-0.5 text-[11px] leading-5 font-medium text-success backdrop-blur-md">
-      Neu
-    </span>
-  );
 }
 
 export function SlideCountChip({ count }: { count: number }) {

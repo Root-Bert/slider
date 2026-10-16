@@ -5,12 +5,11 @@ import { routes } from '@/app/routes';
 import { AvatarStack, cn, Icon } from '@/ui';
 import type { ShowToast } from '@/ui';
 import { isImporting } from '../lib/deck-labels';
-import { markDeckVisited } from '../lib/last-visits';
 import { usePinnedDecks } from '../lib/pinned-decks';
 import { useDeckContextMenu } from '../hooks/useDeckContextMenu';
 import { DeckActions } from './DeckActions';
 import { DeckTitleInput } from './DeckTitleInput';
-import { DeckStatusBadge, ImportOverlay, NewChip, OriginChips, SlideCountChip } from './DeckBits';
+import { DeckStatusBadge, ImportOverlay, OriginChips, SlideCountChip } from './DeckBits';
 import { OpenCommentsButton } from './OpenComments';
 import { SlideThumbnail } from './SlideThumbnail';
 
@@ -29,7 +28,6 @@ function PinnedMark({ deckId }: { deckId: string }) {
 
 export interface DeckItemProps {
   deck: Deck;
-  unseen: boolean;
   /** Part of the multi-selection in "Reviews". */
   selected?: boolean;
   onNotify: ShowToast;
@@ -99,7 +97,7 @@ function DeckFooter({
  * one click target while the footer controls (comments, avatars) in the title row stay separate,
  * non-nested controls on top of it. Deck actions open on a right click only.
  */
-export function DeckCard({ deck, unseen, selected = false, onNotify }: DeckItemProps) {
+export function DeckCard({ deck, selected = false, onNotify }: DeckItemProps) {
   const { onContextMenu, ...contextMenu } = useDeckContextMenu();
   const [commentsSlot, setCommentsSlot] = useState<HTMLElement | null>(null);
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -131,8 +129,7 @@ export function DeckCard({ deck, unseen, selected = false, onNotify }: DeckItemP
             selected && 'scale-[0.97] ring-(--selection)!',
           )}
         >
-          {/* Same corner as "Neu". */}
-          {selected ? <SelectedMark /> : <NewChip deck={deck} unseen={unseen} />}
+          {selected && <SelectedMark />}
           {deck.slideCount > 0 && <SlideCountChip count={deck.slideCount} />}
           <ImportOverlay deck={deck} />
         </SlideThumbnail>
@@ -160,15 +157,13 @@ export function DeckCard({ deck, unseen, selected = false, onNotify }: DeckItemP
           ) : (
             <Link
               to={routes.deck(deck.id)}
-              onClick={() => markDeckVisited(deck.id)}
               className="outline-none transition-colors duration-200 group-[:hover:not(:has([data-deck-footer]:hover)):not([data-comments-open])]:text-white after:absolute after:inset-0 after:content-['']"
             >
               {deck.title}
             </Link>
           )}
         </h3>
-        {/* "Neu" sits on the thumbnail instead. */}
-        <DeckStatusBadge deck={deck} unseen={false} />
+        <DeckStatusBadge deck={deck} />
         <DeckFooter
           deck={deck}
           placement="card"
@@ -182,7 +177,7 @@ export function DeckCard({ deck, unseen, selected = false, onNotify }: DeckItemP
 }
 
 /** Compact list-view row with the same information as the card. */
-export function DeckRow({ deck, unseen, selected = false, onNotify }: DeckItemProps) {
+export function DeckRow({ deck, selected = false, onNotify }: DeckItemProps) {
   const { onContextMenu, ...contextMenu } = useDeckContextMenu();
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -221,14 +216,13 @@ export function DeckRow({ deck, unseen, selected = false, onNotify }: DeckItemPr
             ) : (
               <Link
                 to={routes.deck(deck.id)}
-                onClick={() => markDeckVisited(deck.id)}
                 className="outline-none transition-colors duration-200 group-[:hover:not(:has([data-deck-footer]:hover)):not([data-comments-open])]:text-white after:absolute after:inset-0 after:content-['']"
               >
                 {deck.title}
               </Link>
             )}
           </h3>
-          <DeckStatusBadge deck={deck} unseen={unseen} />
+          <DeckStatusBadge deck={deck} />
         </div>
       </div>
 
