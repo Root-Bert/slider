@@ -46,11 +46,12 @@ const VIDEO_SOURCES = (screen: boolean): readonly Segment<VideoSource>[] => [
   },
 ];
 
-const IDLE_LABELS: Record<VideoSource, string> = {
-  camera: 'Videokommentar aufnehmen',
-  screen: 'Bildschirm aufnehmen',
-  both: 'Bildschirm und Kamera aufnehmen',
-};
+/** What the start button records – told by its icon alone, the label is always „Aufnahme starten“. */
+const IDLE_ICONS = {
+  camera: 'cameraVideo',
+  screen: 'screenShare',
+  both: 'pictureInPicture',
+} as const satisfies Record<VideoSource, string>;
 
 /**
  * Records a voice or video comment (BER-116): record → stop → listen/watch → send or record
@@ -236,7 +237,11 @@ function RecorderBody({
           {state.status === 'requesting' ? (
             <Spinner size={16} />
           ) : (
-            <Icon name={kind === 'audio' ? 'mic' : 'record'} size={18} className="text-danger" />
+            <Icon
+              name={kind === 'audio' ? 'mic' : IDLE_ICONS[source]}
+              size={18}
+              className="text-danger"
+            />
           )}
           {state.status === 'requesting'
             ? kind === 'audio'
@@ -244,9 +249,7 @@ function RecorderBody({
               : source === 'camera'
                 ? 'Zugriff auf Kamera …'
                 : 'Bildschirm auswählen …'
-            : kind === 'audio'
-              ? 'Sprachkommentar aufnehmen'
-              : IDLE_LABELS[source]}
+            : 'Aufnahme starten'}
           {state.status !== 'requesting' && <Kbd className="-mr-1">Leertaste</Kbd>}
         </Button>
       )}
