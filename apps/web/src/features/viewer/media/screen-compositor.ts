@@ -94,6 +94,16 @@ export function composeScreenAndCamera(screen: MediaStream, camera: MediaStream)
       // Cover: the middle of the camera picture fills the rounded rectangle.
       const crop = coverCrop({ width: videoWidth, height: videoHeight }, bubble);
       const radius = bubble.height * BUBBLE_CORNER;
+      // Lifted off the screen like the app's floating panels: a soft shadow under it…
+      context.save();
+      context.shadowColor = 'rgba(0, 0, 0, 0.5)';
+      context.shadowBlur = bubble.height * 0.12;
+      context.shadowOffsetY = bubble.height * 0.03;
+      context.beginPath();
+      context.roundRect(bubble.x, bubble.y, bubble.width, bubble.height, radius);
+      context.fillStyle = '#000';
+      context.fill();
+      context.restore();
       context.save();
       context.beginPath();
       context.roundRect(bubble.x, bubble.y, bubble.width, bubble.height, radius);
@@ -110,16 +120,17 @@ export function composeScreenAndCamera(screen: MediaStream, camera: MediaStream)
         bubble.height,
       );
       context.restore();
+      // …and a hairline edge instead of a ring.
       context.beginPath();
       context.roundRect(
-        bubble.x + 1.5,
-        bubble.y + 1.5,
-        bubble.width - 3,
-        bubble.height - 3,
-        radius - 1.5,
+        bubble.x + 0.5,
+        bubble.y + 0.5,
+        bubble.width - 1,
+        bubble.height - 1,
+        radius,
       );
-      context.lineWidth = 3;
-      context.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+      context.lineWidth = 1;
+      context.strokeStyle = 'rgba(255, 255, 255, 0.16)';
       context.stroke();
     }
   };

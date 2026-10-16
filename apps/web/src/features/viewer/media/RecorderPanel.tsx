@@ -320,7 +320,7 @@ function CameraPreview({
         </div>
       )}
       {bubbleOnly && (
-        <div className="absolute right-[4%] bottom-[6%] flex aspect-[4/3] h-[46%] items-center justify-center overflow-hidden rounded-[10.5%/14%] bg-black text-fg-faint shadow-[0_0_0_2px_rgb(255_255_255/0.85)]">
+        <div className="absolute right-[4%] bottom-[6%] flex aspect-[4/3] h-[46%] items-center justify-center overflow-hidden rounded-[10.5%/14%] bg-black text-fg-faint shadow-float after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]">
           {stream ? (
             <video
               ref={videoRef}
