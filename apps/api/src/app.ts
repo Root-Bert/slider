@@ -7,7 +7,6 @@ import type { AppDeps } from './deps';
 import { errorHandler, notFoundHandler } from './http/errors';
 import { healthCheck, trustProxy } from './http/hosting';
 import { LiveHub } from './realtime/live-hub';
-import { MAIL_LOGO_PATH, mailLogoResponse } from './mail/mailer';
 import { serveWebApp } from './http/static';
 import { authRoutes } from './routes/auth';
 import { commentsRoutes } from './routes/comments';
@@ -64,8 +63,6 @@ export function createApp(appDeps: AppDeps) {
 
   // Self-hosting: health check for Docker and uptime monitors, before any auth middleware.
   app.get(`${API_PREFIX}/health`, healthCheck(deps));
-  // The mark in invitation mails – public, Gmail's image proxy fetches it without a session.
-  app.get(MAIL_LOGO_PATH, () => mailLogoResponse());
   app.route(API_PREFIX, api);
   app.route('/files', filesRoutes(deps));
 

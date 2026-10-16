@@ -26,7 +26,7 @@ import {
 } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { ApiError, badRequest, forbidden, notFound } from '../http/errors';
-import { inviteMail, mailLogoUrl } from '../mail/mailer';
+import { inviteMail } from '../mail/mailer';
 import { blobKeys, fileUrl } from '../storage/blob-storage';
 import { deleteDeck } from './decks';
 import {
@@ -640,7 +640,7 @@ async function insertInvite(
       .where(eq(workspaces.id, workspaceId));
     // No Reply-To: the inviter's (often private) address stays out of the mail.
     const outro = `Die Einladung gilt ${days} Tage und nur für ${email}.`;
-    const shared = { to: email, url, outro, logoUrl: mailLogoUrl(deps.config.webOrigin) };
+    const shared = { to: email, url, outro };
     try {
       await deps.mailer.send(
         inviteMail(

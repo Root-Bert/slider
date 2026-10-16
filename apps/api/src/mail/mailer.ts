@@ -1,5 +1,4 @@
 import { createTransport, type Transporter } from 'nodemailer';
-import { API_PREFIX } from '@slider/shared';
 import type { SmtpConfig } from '../config';
 import type { Logger } from '../logger';
 import { LOGO_PNG_BASE64 } from './logo';
@@ -104,32 +103,12 @@ export const createMailer = (
 const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 
 const LOGO_CID = 'slider-logo';
-const LOGO_PNG = Buffer.from(LOGO_PNG_BASE64, 'base64');
 const logo: InlineImage = {
   cid: LOGO_CID,
   filename: 'slider.png',
   contentType: 'image/png',
-  content: LOGO_PNG,
+  content: Buffer.from(LOGO_PNG_BASE64, 'base64'),
 };
-
-/** Where the API serves the mark for mails (see {@link mailLogoUrl}). */
-export const MAIL_LOGO_PATH = `${API_PREFIX}/mail/logo.png`;
-
-export const mailLogoResponse = () =>
-  new Response(new Uint8Array(LOGO_PNG), {
-    headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400' },
-  });
-
-/**
- * The mark's public URL when Slider runs on a public https origin, else `null`. Gmail shows no
- * inline (`cid:`) images once the mail went through a relay like Brevo, but loads hosted ones
- * through its image proxy – which can't reach `localhost`, so development keeps the inline image.
- */
-export function mailLogoUrl(webOrigin: string): string | null {
-  const origin = new URL(webOrigin);
-  const local = ['localhost', '127.0.0.1', '[::1]'].includes(origin.hostname);
-  return origin.protocol === 'https:' && !local ? new URL(MAIL_LOGO_PATH, origin).toString() : null;
-}
 
 /**
  * Colours of the web app's dark theme (`apps/web/src/styles/index.css`) as solid hex – white at
@@ -155,17 +134,17 @@ const FONT =
  * The mark at `width` px (22×18 proportions). The size is set in CSS too – Apple Mail ignores the
  * attributes and would show the 3× PNG at full size.
  */
-const mark = (src: string, width: number) => {
+const mark = (width: number) => {
   const height = Math.round((width * 18) / 22);
-  return `<img src="${escapeHtml(src)}" width="${width}" height="${height}" alt="" style="display:block;width:${width}px;height:${height}px;max-width:${width}px;border:0;outline:none;">`;
+  return `<img src="cid:${LOGO_CID}" width="${width}" height="${height}" alt="" style="display:block;width:${width}px;height:${height}px;max-width:${width}px;border:0;outline:none;">`;
 };
 
 /**
  * A short German mail with Slider's look inside one card: the app canvas with its dot grid, the
  * word mark (`Logo`), heading, a `glass-control` button and the plain link as fallback; around it
  * the client's own background. `color-scheme: light dark` tells clients the card needs no
- * inverting. The mark comes from `logoUrl` (see {@link mailLogoUrl}), else travels inline
- * (`cid:`). Gmail drops CSS gradients, so it shows the card without dots.
+ * inverting. The mark travels inline (`cid:`). Gmail drops CSS gradients, so it shows the card
+ * without dots.
  */
 export function inviteMail(input: {
   to: string;
@@ -175,15 +154,13 @@ export function inviteMail(input: {
   button: string;
   url: string;
   outro: string;
-  logoUrl?: string | null;
 }): MailMessage {
   const url = escapeHtml(input.url);
-  const logoSrc = input.logoUrl ?? `cid:${LOGO_CID}`;
   return {
     to: input.to,
     subject: input.subject,
     text: `${input.intro}\n\n${input.button}: ${input.url}\n\n${input.outro}\n\n– Slider\n`,
-    ...(input.logoUrl ? {} : { attachments: [logo] }),
+    attachments: [logo],
     html: `<!doctype html>
 <html lang="de">
 <head>
@@ -200,7 +177,7 @@ export function inviteMail(input: {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:440px;">
 <tr><td align="center" bgcolor="${C.canvas}" style="background-color:${C.canvas};background-image:radial-gradient(${C.dots} 1px,transparent 1.2px);background-size:22px 22px;border:1px solid ${C.hairline};border-radius:16px;padding:36px 32px 32px;box-shadow:0 8px 32px rgba(0,0,0,0.12);">
 <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-<td style="padding-right:8px;vertical-align:middle;">${mark(logoSrc, 22)}</td>
+<td style="padding-right:8px;vertical-align:middle;">${mark(22)}</td>
 <td style="vertical-align:middle;font-size:18px;line-height:24px;font-weight:600;letter-spacing:-0.01em;color:${C.fg};">Slider</td>
 </tr></table>
 <h1 style="margin:32px 0 0;font-size:24px;line-height:32px;font-weight:600;letter-spacing:-0.01em;color:${C.fg};">${escapeHtml(input.heading)}</h1>
