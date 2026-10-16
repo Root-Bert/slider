@@ -638,14 +638,14 @@ async function insertInvite(
       .select({ name: workspaces.name })
       .from(workspaces)
       .where(eq(workspaces.id, workspaceId));
-    const outro = `Die Einladung gilt ${days} Tage und nur für ${email}. Antworten auf diese Mail gehen an ${actor.name}.`;
+    // No Reply-To: the inviter's (often private) address stays out of the mail.
+    const outro = `Die Einladung gilt ${days} Tage und nur für ${email}.`;
     try {
       await deps.mailer.send(
         inviteMail(
           input.deck
             ? {
                 to: email,
-                replyTo: actor.email,
                 subject: `${actor.name} teilt „${input.deck.title}“ mit dir`,
                 heading: 'Eine Präsentation für dich',
                 intro: `${actor.name} hat die Präsentation „${input.deck.title}“ mit dir geteilt, damit du sie ansehen kannst.`,
@@ -655,7 +655,6 @@ async function insertInvite(
               }
             : {
                 to: email,
-                replyTo: actor.email,
                 subject: `${actor.name} lädt dich zu „${workspace?.name ?? 'Slider'}“ ein`,
                 heading: 'Du bist eingeladen',
                 intro: `${actor.name} hat dich in die Slider-Organisation „${workspace?.name ?? ''}“ eingeladen, um Präsentationen zu prüfen und zu kommentieren.`,

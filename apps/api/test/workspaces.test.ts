@@ -544,7 +544,7 @@ describe('invitation mails', () => {
     expect(created.emailSent).toBe(false);
   });
 
-  it('mails e-mail invites with the link, answers going to the inviter', async () => {
+  it("mails e-mail invites with the link, without the inviter's address", async () => {
     const mailer = new RecordingMailer();
     await ctx.cleanup();
     ctx = await createTestContext({ mailer });
@@ -554,11 +554,11 @@ describe('invitation mails', () => {
     const [mail] = mailer.sent;
     expect(mail).toMatchObject({
       to: 'lena@firma.de',
-      replyTo: 'robert@q4-team.de',
       subject: 'Robert Hofmann lädt dich zu „Meine Organisation“ ein',
     });
     expect(mail?.text).toContain(created.url);
     expect(mail?.html).toContain(`href="${created.url}"`);
+    expect(JSON.stringify(mail)).not.toContain('robert@q4-team.de');
 
     // Links are passed on by hand, never mailed.
     expect((await invite({})).emailSent).toBe(false);

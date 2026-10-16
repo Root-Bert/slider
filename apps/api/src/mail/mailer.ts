@@ -5,8 +5,6 @@ import type { Logger } from '../logger';
 /** Outgoing e-mail: invitations to an organisation or a shared deck. */
 export interface MailMessage {
   to: string;
-  /** Answers go here, e.g. to the person who invited – the sender address has no mailbox. */
-  replyTo?: string;
   subject: string;
   text: string;
   html?: string;
@@ -97,7 +95,6 @@ const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (char) => `&#${cha
 /** A short German mail with a heading and one button; plain text and HTML. */
 export function inviteMail(input: {
   to: string;
-  replyTo?: string;
   subject: string;
   heading: string;
   intro: string;
@@ -108,7 +105,6 @@ export function inviteMail(input: {
   const url = escapeHtml(input.url);
   return {
     to: input.to,
-    replyTo: input.replyTo,
     subject: input.subject,
     text: `${input.intro}\n\n${input.button}: ${input.url}\n\n${input.outro}\n`,
     html: `<!doctype html>

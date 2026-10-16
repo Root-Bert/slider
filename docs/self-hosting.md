@@ -305,8 +305,7 @@ Anmeldung** (`/konto`) an; danach gibt es auf der Login-Seite „Mit Passkey anm
 
 Slider verschickt nur **Einladungen** per Mail – angemeldet wird sich über Microsoft, Google, SSO
 oder Passkey. Ohne SMTP zeigt der Einladungsdialog den Link zum Weitergeben an; mit SMTP geht die
-Einladung direkt an die Adresse. Antworten auf die Mail gehen per `Reply-To` an die Person, die
-eingeladen hat. Schlägt der Versand fehl, bleibt die Einladung bestehen und der Link wird angezeigt.
+Einladung direkt an die Adresse. Die Adresse der einladenden Person steht nicht in der Mail. Schlägt der Versand fehl, bleibt die Einladung bestehen und der Link wird angezeigt.
 
 Jeder SMTP-Zugang geht: das Postfach beim eigenen Domain-Hoster, der Firmen-Mailserver oder ein
 Versanddienst. Mit Blick auf DSGVO einen Anbieter mit Sitz und Daten in der EU wählen und den
