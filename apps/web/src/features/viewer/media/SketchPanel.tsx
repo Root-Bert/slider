@@ -4,9 +4,11 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type MouseEvent,
   type PointerEvent,
+  type ReactNode,
 } from 'react';
-import { cn, Dialog, IconButton } from '@/ui';
+import { cn, IconButton } from '@/ui';
 import { RecorderPanel } from './RecorderPanel';
 import {
   addPoint,
@@ -101,12 +103,17 @@ export function SketchPanel({
         color={penColor}
         width={tool === 'eraser' ? ERASER_WIDTH : bold ? SKETCH_WIDTHS.bold : SKETCH_WIDTHS.fine}
         onStroke={addStroke}
+        big={big}
       />
 
       <div
         role="toolbar"
         aria-label="Zeichenwerkzeuge"
-        className="flex items-center gap-1 rounded-control bg-white/5 p-1"
+        className={cn(
+          'flex items-center gap-1 p-1',
+          // Big: a floating glass pill like the viewer's tool bar.
+          big ? 'glass-control rounded-panel' : 'rounded-control bg-white/5',
+        )}
       >
         <IconButton
           size="sm"
@@ -164,7 +171,11 @@ export function SketchPanel({
         >
           <span className={cn('rounded-full bg-fg', bold ? 'size-2.5' : 'size-1')} aria-hidden />
         </button>
-        <span className="flex-1" />
+        {big ? (
+          <span aria-hidden className="mx-1 h-5 w-px bg-white/10" />
+        ) : (
+          <span className="flex-1" />
+        )}
         <IconButton
           size="sm"
           icon="undo"
@@ -219,25 +230,85 @@ export function SketchPanel({
       {sheet(false)}
 
       {expanded && (
-        <Dialog
-          open
-          onClose={() => setExpanded(false)}
-          title="Bild zeichnen"
-          className="w-auto! max-w-none"
-        >
-          {/* About 80 % of the screen, in the slide's format: limited by width or by height. */}
-          <div
-            className="flex flex-col gap-2"
-            style={{ width: `min(calc(80vw - 48px), calc((80dvh - 160px) * ${aspect}))` }}
-          >
-            {sheet(true)}
-          </div>
-        </Dialog>
+        <SketchFullscreen aspect={aspect} onClose={() => setExpanded(false)}>
+          {sheet(true)}
+        </SketchFullscreen>
       )}
 
       {/* Talking while drawing: the memo records on while the pen moves. */}
       <RecorderPanel kind="audio" deckId={deckId} onChange={setMemo} />
     </div>
+  );
+}
+
+/**
+ * The big view: the sheet at about 80 % of the screen in the slide's format, centred on a dimmed
+ * backdrop, the tools as a floating pill below. A modal <dialog> – on top of the reply dialog
+ * too, Esc and a click beside the sheet close it. It stays a DOM child of the panel, so ⌘Z still
+ * reaches the panel's key handler.
+ */
+function SketchFullscreen({
+  aspect,
+  onClose,
+  children,
+}: {
+  aspect: number;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = ref.current;
+    if (!dialog) return;
+    const returnFocus =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!dialog.open) dialog.showModal();
+    // The dialog itself takes focus, not its first button (no focus ring on open).
+    dialog.focus();
+    return () => {
+      if (dialog.open) dialog.close();
+      if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
+    };
+  }, []);
+
+  const closeOnBackdrop = (event: MouseEvent) => {
+    if (event.target === event.currentTarget) onClose();
+  };
+
+  return (
+    <dialog
+      ref={ref}
+      tabIndex={-1}
+      aria-label="Bild zeichnen"
+      onClose={(event) => {
+        // Not the reply dialog around it: its `onClose` would otherwise see this one close.
+        event.stopPropagation();
+        if (!event.currentTarget.open) onClose();
+      }}
+      onClick={closeOnBackdrop}
+      className="m-0 size-full max-h-none max-w-none border-0 bg-transparent p-0 text-fg outline-none backdrop:bg-black/75 backdrop:backdrop-blur-md open:animate-fade-in"
+    >
+      <div onClick={closeOnBackdrop} className="flex size-full items-center justify-center p-6">
+        {/* Header and tools take ~160px; the sheet gets the rest, at most 80 % of the screen. */}
+        <div
+          className="flex animate-pop-in flex-col items-center gap-3"
+          style={{ width: `min(80vw, calc(min(80dvh, 100dvh - 160px) * ${aspect}))` }}
+        >
+          <header className="flex w-full items-center justify-between gap-4">
+            <h2 className="text-sm font-medium text-fg">Bild zeichnen</h2>
+            <IconButton
+              icon="close"
+              label="Schließen (Esc)"
+              size="sm"
+              onClick={onClose}
+              className="glass-control rounded-full"
+            />
+          </header>
+          {children}
+        </div>
+      </div>
+    </dialog>
   );
 }
 
@@ -249,6 +320,7 @@ function SketchCanvas({
   color,
   width,
   onStroke,
+  big = false,
 }: {
   strokes: readonly SketchStroke[];
   aspect: number;
@@ -256,6 +328,8 @@ function SketchCanvas({
   color: string;
   width: number;
   onStroke: (stroke: SketchStroke) => void;
+  /** In the big view: the sheet floats on the backdrop. */
+  big?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -296,7 +370,10 @@ function SketchCanvas({
       ref={canvasRef}
       aria-label="Zeichenfläche"
       className={cn(
-        'w-full touch-none rounded-control shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]',
+        'w-full touch-none',
+        big
+          ? 'rounded-panel shadow-(--shadow-float)'
+          : 'rounded-control shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]',
         tool === 'eraser' ? 'cursor-cell' : 'cursor-crosshair',
       )}
       style={{ aspectRatio: aspect }}
