@@ -102,7 +102,9 @@ export function VideoPlayer({ src, className }: { src: string; className?: strin
       )}
     >
       <video
-        src={src}
+        // Safari shows no first frame for `preload="metadata"`; a start time just past 0 makes it
+        // load and draw one, so a stopped recording has its picture instead of a black box.
+        src={`${src}#t=0.001`}
         controls
         playsInline
         preload="metadata"

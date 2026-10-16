@@ -313,13 +313,13 @@ function CameraPreview({
           <span className="text-[11px]">Bildschirm wählst du beim Start</span>
         </div>
       ) : stream ? (
-        // The camera mirrored like a mirror – the recording itself is not; screens never.
+        // Not mirrored: the preview shows exactly what the recording will show.
         <video
           ref={videoRef}
           autoPlay
           muted
           playsInline
-          className={cn('size-full', showsScreen ? 'object-contain' : '-scale-x-100 object-cover')}
+          className={cn('size-full', showsScreen ? 'object-contain' : 'object-cover')}
         />
       ) : (
         <div className="flex size-full items-center justify-center text-fg-faint">
@@ -334,7 +334,7 @@ function CameraPreview({
               autoPlay
               muted
               playsInline
-              className="size-full -scale-x-100 object-cover"
+              className="size-full object-cover"
             />
           ) : (
             <Icon name="cameraVideo" size={20} />
