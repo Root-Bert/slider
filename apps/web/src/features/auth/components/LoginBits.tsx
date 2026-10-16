@@ -1,21 +1,13 @@
-import { Link } from 'react-router';
 import type { AuthProviders, LoginError } from '@slider/shared';
-import { Icon } from '@/ui';
+import { Notice, TextLink } from '@/ui';
 import { loginErrorCopy, loginPath, signupHintCopy } from '../lib/return-to';
 
 export function LoginErrorBanner({ code }: { code: LoginError }) {
   const copy = loginErrorCopy(code);
   return (
-    <div
-      role="alert"
-      className="flex animate-fade-in items-start gap-3 rounded-panel bg-danger/10 px-4 py-3 text-left"
-    >
-      <Icon name="error" size={20} className="mt-0.5 shrink-0 text-danger" />
-      <div className="flex flex-col gap-0.5">
-        <p className="text-sm font-medium text-fg">{copy.title}</p>
-        <p className="text-[13px] leading-5 text-fg-muted">{copy.message}</p>
-      </div>
-    </div>
+    <Notice tone="danger" variant="tinted" role="alert" animated title={copy.title}>
+      {copy.message}
+    </Notice>
   );
 }
 
@@ -30,14 +22,14 @@ export function SignupHint({
   returnTo: string;
 }) {
   return (
-    <div className="flex flex-col items-center gap-1 text-center text-[13px] leading-5 text-fg-subtle">
+    <div className="flex flex-col items-center gap-1 text-center text-body leading-5 text-fg-subtle">
       <p>{signupHintCopy(signup)}</p>
       {mode === 'register' && (
         <p>
           Schon ein Konto?{' '}
-          <Link to={loginPath(returnTo)} className="font-medium text-fg-muted hover:text-fg">
+          <TextLink to={loginPath(returnTo)} tone="muted" weight="medium">
             Anmelden
-          </Link>
+          </TextLink>
         </p>
       )}
     </div>

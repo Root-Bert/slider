@@ -151,7 +151,7 @@ function StackItem({
     <span
       className={cn(
         'group/avatar relative flex transition-transform duration-200 ease-out',
-        'hover:z-10 hover:-translate-y-1 hover:scale-110',
+        'hover:z-(--z-raised) hover:-translate-y-1 hover:scale-110',
         !first && '-ml-2',
       )}
     >

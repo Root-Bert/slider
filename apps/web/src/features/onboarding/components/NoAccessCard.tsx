@@ -1,5 +1,5 @@
-import { useId } from 'react';
-import { Button, Icon } from '@/ui';
+import { CenteredCard } from '@/shell/layouts/CenteredLayout';
+import { Button, Icon, TextLink } from '@/ui';
 import type { NoAccessInfo } from '../hooks/useLinkImport';
 
 const SHARING_HELP_URL =
@@ -19,35 +19,28 @@ export function NoAccessCard({
   info: NoAccessInfo;
   onUploadInstead: () => void;
 }) {
-  const titleId = useId();
   const signIn = () => {
     if (info.loginUrl) window.location.assign(info.loginUrl);
   };
 
   return (
-    <section
-      aria-labelledby={titleId}
-      className="glass flex animate-fade-in flex-col items-center gap-5 rounded-panel px-8 pt-10 pb-8 text-center"
+    <CenteredCard
+      headingLevel={2}
+      density="compact"
+      icon={<Icon name="lock" size="2xl" />}
+      title="Wir können diesen Link nicht öffnen"
+      message={
+        info.kind === 'login'
+          ? LOGIN_COPY.map((line) => (
+              <span key={line} className="block">
+                {line}
+              </span>
+            ))
+          : info.message
+      }
     >
-      <span className="flex size-14 items-center justify-center rounded-panel bg-white/6 text-fg">
-        <Icon name="lock" size={24} />
-      </span>
-      <div className="flex flex-col gap-2">
-        <h2 id={titleId} className="text-2xl leading-8 font-semibold text-fg">
-          Wir können diesen Link nicht öffnen
-        </h2>
-        <p className="text-sm leading-5 text-fg-subtle">
-          {info.kind === 'login'
-            ? LOGIN_COPY.map((line) => (
-                <span key={line} className="block">
-                  {line}
-                </span>
-              ))
-            : info.message}
-        </p>
-      </div>
       <p className="glass inline-flex max-w-full items-center gap-1.5 rounded-chip py-1.5 pr-3 pl-2.5 text-xs text-fg-muted">
-        <Icon name="lock" size={16} className="shrink-0" />
+        <Icon name="lock" size="md" className="shrink-0" />
         <span className="truncate">{info.host} · Nur Personen in deiner Organisation</span>
       </p>
       <div className="flex flex-wrap justify-center gap-3">
@@ -71,15 +64,18 @@ export function NoAccessCard({
           Stattdessen PPTX hochladen
         </Button>
       </div>
-      <a
+      <TextLink
         href={SHARING_HELP_URL}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 text-[13px] leading-[18px] font-medium text-fg-muted underline underline-offset-2 hover:text-fg"
+        variant="underline"
+        size="body"
+        weight="medium"
+        trailingIcon="arrowForward"
+        className="leading-4.5"
       >
         Link-Freigabe ändern – so geht’s
-        <Icon name="arrowForward" size={16} />
-      </a>
-    </section>
+      </TextLink>
+    </CenteredCard>
   );
 }

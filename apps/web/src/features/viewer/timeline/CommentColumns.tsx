@@ -1,7 +1,7 @@
 import type { Slide } from '@slider/shared';
 import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { accentColor } from '@/lib/accent';
 import { pluralize } from '@/lib/format';
+import { CountBubble } from '@/ui';
 import { threadsOf, useCommentThreads } from '../comments/hooks/useCommentThreads';
 import { bandCapacity, brickLayout, planBands } from '../connectors/lib/card-layout';
 import {
@@ -342,21 +342,18 @@ const GapColumn = memo(function GapColumn({
       className="flex justify-center"
       style={{ gridArea: '1 / 1', marginLeft: x, width, paddingTop: padTop }}
     >
-      <button
-        type="button"
+      <CountBubble
+        count={threads.length}
+        color={first.root.author.color}
+        dim={!open}
+        size="md"
         data-gap-bubble={key}
         data-hover-thread={first.id}
         onClick={() => dispatch({ type: 'threadFocused', threadId: first.id, openPanel: true })}
         aria-label={label}
         title={label}
-        className="flex h-6 max-w-full min-w-6 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold text-white ring-2 ring-canvas transition-[filter] hover:brightness-125"
-        style={{
-          backgroundColor: accentColor(first.root.author.color),
-          opacity: open ? 1 : 0.5,
-        }}
-      >
-        {threads.length}
-      </button>
+        className="max-w-full"
+      />
     </div>
   );
 });

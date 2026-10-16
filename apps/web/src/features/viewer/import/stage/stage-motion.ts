@@ -7,9 +7,10 @@ import { slotState, type ImportPicture, type SlotState } from '../lib/import-ske
  */
 export type StagePhase = 'import' | 'settle' | 'reveal';
 
-export const EASE_OUT = 'cubic-bezier(0.2, 0.9, 0.25, 1)';
-export const EASE_DEAL = 'cubic-bezier(0.16, 0.92, 0.24, 1.05)';
-export const EASE_PAN = 'cubic-bezier(0.65, 0, 0.35, 1)';
+/** The easing tokens (docs §7) for the stage's inline animations and transitions. */
+export const EASE_OUT = 'var(--ease-emphasized)';
+export const EASE_DEAL = 'var(--ease-deal)';
+export const EASE_PAN = 'var(--ease-symmetric)';
 export const SETTLE_TRANSITION = `left 520ms ${EASE_OUT}, width 520ms ${EASE_OUT}, height 520ms ${EASE_OUT}`;
 
 /**

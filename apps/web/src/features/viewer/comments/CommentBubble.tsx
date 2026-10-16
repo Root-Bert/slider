@@ -47,8 +47,8 @@ export function CommentBubble({
         className={cn(
           'glass relative flex h-9 w-full items-center justify-center gap-1.5 rounded-control px-1.5 transition-shadow',
           emphasized
-            ? 'shadow-[inset_0_0_0_1px_white]!'
-            : 'hover:shadow-[inset_0_0_0_1px_rgb(255_255_255/0.3)]!',
+            ? 'shadow-[inset_0_0_0_1px_var(--color-fg)]!'
+            : 'hover:shadow-[inset_0_0_0_1px_var(--color-fg-faint)]!',
         )}
       >
         {width >= 64 && (

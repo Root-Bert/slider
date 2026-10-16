@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
-import { Link, useLocation } from 'react-router';
+import { useLocation } from 'react-router';
 import { routes } from '@/lib/routes';
-import { AppHeader } from '@/shell/AppHeader';
-import { Icon, Toast, useToast } from '@/ui';
+import { SettingsLayout } from '@/shell/layouts/SettingsLayout';
+import { useToast } from '@/ui';
 import { useAccount } from '@/features/auth';
 import { MembersSection } from './components/MembersSection';
 import { UsageSection } from './components/PlanUsage';
@@ -27,37 +27,20 @@ export function Component() {
   }, [hash]);
 
   return (
-    <div className="dot-grid min-h-full">
-      <title>{`Einstellungen · ${workspace.name} · Slider`}</title>
-      <AppHeader />
-      <main className="flex justify-center px-4 pt-2 pb-16">
-        <div className="flex w-full max-w-[720px] flex-col gap-6">
-          <div className="flex flex-col gap-3">
-            <Link
-              to={routes.workspace(workspace.id)}
-              className="inline-flex w-fit items-center gap-1 text-[13px] text-fg-subtle hover:text-fg"
-            >
-              <Icon name="arrowBack" size={16} />
-              Zurück zu den Reviews
-            </Link>
-            <div className="flex items-center gap-3">
-              <WorkspaceMark name={workspace.name} logoUrl={workspace.logoUrl} size={40} />
-              <h1 className="min-w-0 truncate text-[28px] leading-tight font-semibold tracking-tight text-fg">
-                {workspace.name}
-              </h1>
-            </div>
-          </div>
-
-          <UsageSection workspace={workspace} />
-          <GeneralSection key={workspace.id} workspace={workspace} onNotify={showToast} />
-          <MembersSection workspace={workspace} userId={user.id} onNotify={showToast} />
-          <LeaveSection workspace={workspace} userId={user.id} onNotify={showToast} />
-          {canDeleteWorkspace(workspace.role) && (
-            <DeleteSection workspace={workspace} onNotify={showToast} />
-          )}
-        </div>
-      </main>
-      <Toast toast={toast} />
-    </div>
+    <SettingsLayout
+      docTitle={`Einstellungen · ${workspace.name} · Slider`}
+      title={workspace.name}
+      leading={<WorkspaceMark name={workspace.name} logoUrl={workspace.logoUrl} size={40} />}
+      back={{ to: routes.workspace(workspace.id) }}
+      toast={toast}
+    >
+      <UsageSection workspace={workspace} />
+      <GeneralSection key={workspace.id} workspace={workspace} onNotify={showToast} />
+      <MembersSection workspace={workspace} userId={user.id} onNotify={showToast} />
+      <LeaveSection workspace={workspace} userId={user.id} onNotify={showToast} />
+      {canDeleteWorkspace(workspace.role) && (
+        <DeleteSection workspace={workspace} onNotify={showToast} />
+      )}
+    </SettingsLayout>
   );
 }

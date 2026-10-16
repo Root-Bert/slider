@@ -2,7 +2,8 @@ import type { DeletedSlide } from '@slider/shared';
 import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
 import { accentColor } from '@/lib/accent';
 import { pluralize } from '@/lib/format';
-import { Badge, cn, Icon, IconButton } from '@/ui';
+import { Badge, Button, cn, Icon, IconButton } from '@/ui';
+import { SidePanel, SidePanelHeader } from '../components/SidePanel';
 import { ReplyComposer } from '../comments/ReplyComposer';
 import { ResolveButton } from '../comments/ResolveButton';
 import { ThreadMessage } from '../comments/ThreadMessage';
@@ -37,22 +38,8 @@ function DeletedSlidesPanelView({ deletedSlides }: { deletedSlides: readonly Del
   }, []);
 
   return (
-    <aside
-      ref={panelRef}
-      data-deleted-panel
-      // Floats over the track's right end (see `revealSlide`).
-      data-side-panel
-      tabIndex={-1}
-      aria-labelledby={titleId}
-      className={[
-        'glass-panel fixed z-40 flex flex-col overflow-hidden shadow-[inset_0_0_0_1px_var(--color-hairline),var(--shadow-float)] outline-none',
-        'transition-transform duration-300 ease-out',
-        'inset-x-0 bottom-0 max-h-[85dvh] rounded-t-panel starting:translate-y-full',
-        // Tablet and up: a floating glass card at the right edge.
-        'md:inset-y-3 md:right-3 md:left-auto md:max-h-none md:w-[400px] md:rounded-panel md:starting:translate-x-[calc(100%+12px)] md:starting:translate-y-0',
-      ].join(' ')}
-    >
-      <header className="flex flex-col gap-1.5 border-b border-hairline px-5 pt-[18px] pb-3.5">
+    <SidePanel ref={panelRef} data-deleted-panel aria-labelledby={titleId}>
+      <SidePanelHeader gap="sm">
         <div className="flex items-center gap-2">
           <Icon name="delete" size={20} className="shrink-0 text-fg-muted" />
           <h2 id={titleId} className="min-w-0 flex-1 truncate text-base font-semibold text-fg">
@@ -70,7 +57,7 @@ function DeletedSlidesPanelView({ deletedSlides }: { deletedSlides: readonly Del
             ? `${pluralize(threadCount, 'Kommentar bleibt', 'Kommentare bleiben')} erhalten – du kannst sie weiter lesen, beantworten und erledigen.`
             : 'Diese Folien sind in der aktuellen Version nicht mehr enthalten.'}
         </p>
-      </header>
+      </SidePanelHeader>
       <ol className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto overscroll-contain px-5 pt-4 pb-6">
         {deletedSlides.map((slide) => (
           <DeletedSlideItem
@@ -80,7 +67,7 @@ function DeletedSlidesPanelView({ deletedSlides }: { deletedSlides: readonly Del
           />
         ))}
       </ol>
-    </aside>
+    </SidePanel>
   );
 }
 
@@ -91,7 +78,7 @@ function DeletedSlideItem({ slide, threads }: { slide: DeletedSlide; threads: Th
     <li data-deleted-slide={slide.slideId} className="flex flex-col gap-3">
       <figure className="flex flex-col gap-2">
         <div
-          className="relative overflow-hidden rounded-control bg-placeholder shadow-[inset_0_0_0_1px_var(--color-hairline)]"
+          className="relative overflow-hidden rounded-control bg-placeholder ring-hairline"
           style={{ aspectRatio: slide.aspectRatio }}
         >
           <img
@@ -105,7 +92,7 @@ function DeletedSlideItem({ slide, threads }: { slide: DeletedSlide; threads: Th
         </div>
         <figcaption className="flex flex-col gap-0.5">
           <span className="flex min-w-0 items-center gap-2">
-            <span className="min-w-0 truncate text-[13px] font-medium text-fg">
+            <span className="min-w-0 truncate text-body font-medium text-fg">
               {label}
               {slide.title && <span className="text-fg-muted"> · {slide.title}</span>}
             </span>
@@ -114,14 +101,14 @@ function DeletedSlideItem({ slide, threads }: { slide: DeletedSlide; threads: Th
               Gelöscht
             </Badge>
           </span>
-          <span className="text-[11px] text-fg-subtle">
+          <span className="text-caption text-fg-subtle">
             Zuletzt in Version {slide.lastRevisionNumber} ·{' '}
             {threads.length === 0
               ? 'keine Kommentare'
               : pluralize(threads.length, 'Kommentar', 'Kommentare')}
           </span>
           {uncertain && (
-            <span className="mt-1 flex items-start gap-1.5 text-[11px] leading-4 text-warning">
+            <span className="mt-1 flex items-start gap-1.5 text-caption leading-4 text-warning">
               <Icon name="warning" size={14} className="mt-px shrink-0" />
               Zuordnung prüfen – vielleicht wurde die Folie stark umgebaut statt gelöscht.
             </span>
@@ -161,7 +148,7 @@ function DeletedThread({ thread }: { thread: Thread }) {
         <ol aria-label="Antworten" className="relative flex flex-col gap-2 pl-[39px]">
           <span
             aria-hidden
-            className="absolute inset-y-0 left-[25px] w-0.5 rounded-full bg-white/12"
+            className="absolute inset-y-0 left-[25px] w-0.5 rounded-full bg-surface-3"
           />
           {replies.map((reply) => (
             <li key={reply.id}>
@@ -185,14 +172,15 @@ function DeletedThread({ thread }: { thread: Thread }) {
       {canComment && (
         <div className="flex items-center gap-2 pl-[39px]">
           {!replying && (
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
+              icon="chatBubble"
+              iconSize={16}
               onClick={() => setReplying(true)}
-              className="inline-flex h-8 items-center gap-1.5 rounded-control-sm px-2.5 text-xs font-medium text-fg-muted hover:bg-white/10 hover:text-fg"
             >
-              <Icon name="chatBubble" size={16} />
               Antworten
-            </button>
+            </Button>
           )}
           <ResolveButton comment={root} deckId={deck.id} variant="chip" />
         </div>

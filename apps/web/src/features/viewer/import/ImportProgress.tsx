@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router';
 import type { Deck } from '@slider/shared';
 import { routes } from '@/lib/routes';
 import { useDeleteDeck } from '@/lib/api';
-import { Button, cn, GlassPanel, Icon } from '@/ui';
+import { motionMs } from '@/lib/motion';
+import { Button, ErrorText, GlassPanel, Icon, IconTile } from '@/ui';
 import { slidesLabel, sourceLabel } from '@/lib/deck-labels';
 import { ImportStage, type StagePhase } from './ImportStage';
 import {
@@ -100,7 +101,7 @@ async function slideImagesLoaded(): Promise<void> {
         }),
     );
   return Promise.race([
-    Promise.all(pending).then(() => sleep(pending.length > 0 ? IMAGE_FADE_MS : 0)),
+    Promise.all(pending).then(() => sleep(pending.length > 0 ? motionMs(IMAGE_FADE_MS) : 0)),
     sleep(IMAGE_WAIT_MS),
   ]);
 }
@@ -190,16 +191,11 @@ function DeckHeading({ deck, failed = false }: { deck: Deck; failed?: boolean })
     .join(' · ');
   return (
     <div className="flex items-center gap-3">
-      <span
-        className={cn(
-          'flex size-10 shrink-0 items-center justify-center rounded-control',
-          failed ? 'bg-danger/15 text-danger' : 'bg-white/10 text-fg-muted',
-        )}
-      >
-        <Icon name={failed ? 'error' : 'description'} size={20} />
-      </span>
+      <IconTile size={40} tone={failed ? 'danger' : 'muted'} tint="hover">
+        <Icon name={failed ? 'error' : 'description'} size="xl" />
+      </IconTile>
       <div className="flex min-w-0 flex-col">
-        <h1 className="truncate text-[15px] font-semibold text-fg">{deck.fileName}</h1>
+        <h1 className="truncate text-base font-semibold text-fg">{deck.fileName}</h1>
         <p className="truncate text-xs text-fg-subtle">{meta}</p>
       </div>
     </div>
@@ -215,8 +211,8 @@ function ImportFailed({ deck, error }: { deck: Deck; error: string }) {
       <DeckHeading deck={deck} failed />
       <div role="alert" className="flex flex-col gap-1">
         <h2 className="text-sm font-medium text-fg">Import fehlgeschlagen</h2>
-        <p className="text-[13px] text-fg-subtle">{error}</p>
-        {remove.error && <p className="text-xs text-danger">{remove.error.message}</p>}
+        <p className="text-body text-fg-subtle">{error}</p>
+        {remove.error && <ErrorText size="xs">{remove.error.message}</ErrorText>}
       </div>
       <div className="flex flex-wrap justify-end gap-2">
         <Button

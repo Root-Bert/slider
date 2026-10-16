@@ -7,7 +7,17 @@ import {
   useState,
   type KeyboardEvent,
 } from 'react';
-import { Button, cn, Icon, Kbd, SegmentedControl, Spinner, type Segment } from '@/ui';
+import {
+  Button,
+  cn,
+  ErrorText,
+  Icon,
+  IconButton,
+  Kbd,
+  SegmentedControl,
+  Spinner,
+  type Segment,
+} from '@/ui';
 import { AudioPlayer, VideoPlayer } from './MediaPlayer';
 import { formatDuration, formatFileSize } from '@/lib/format';
 import { canShareScreen, type VideoSource } from './lib/recording';
@@ -167,9 +177,9 @@ function RecorderBody({
 
       {state.status === 'error' ? (
         <div className="flex items-start gap-2 rounded-control-sm bg-danger/10 px-3 py-2">
-          <p role="alert" className="flex-1 text-xs text-danger">
+          <ErrorText role="alert" size="xs" className="flex-1">
             {state.message}
-          </p>
+          </ErrorText>
           <Button variant="ghost" size="sm" onClick={reset}>
             Erneut
           </Button>
@@ -186,7 +196,7 @@ function RecorderBody({
             <VideoPlayer src={recording.url} />
           )}
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] text-fg-subtle tabular-nums">
+            <span className="text-caption text-fg-subtle tabular-nums">
               {formatDuration(recording.durationMs)} · {formatFileSize(recording.blob.size)}
             </span>
             <Button variant="ghost" size="sm" icon="replay" onClick={reset}>
@@ -195,26 +205,25 @@ function RecorderBody({
           </div>
         </div>
       ) : recordingNow ? (
-        <div className="flex items-center gap-3 rounded-control bg-black/25 py-1.5 pr-3 pl-1.5">
-          <button
+        <div className="flex items-center gap-3 rounded-control bg-well-dark py-1.5 pr-3 pl-1.5">
+          <IconButton
             ref={recordButtonRef}
-            type="button"
-            onClick={stop}
-            aria-label="Aufnahme beenden"
+            variant="danger"
+            size="lg"
+            shape="round"
+            icon="stop"
+            label="Aufnahme beenden"
             title="Aufnahme beenden (↵)"
-            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-danger text-white transition-colors hover:bg-danger/85"
-          >
-            <Icon name="stop" size={20} />
-          </button>
-          <button
-            type="button"
-            onClick={paused ? resume : pause}
-            aria-label={paused ? 'Aufnahme fortsetzen' : 'Aufnahme pausieren'}
+            onClick={stop}
+          />
+          <IconButton
+            size="compact"
+            shape="round"
+            icon={paused ? 'playArrow' : 'pause'}
+            label={paused ? 'Aufnahme fortsetzen' : 'Aufnahme pausieren'}
             title={paused ? 'Fortsetzen (Leertaste)' : 'Pausieren (Leertaste)'}
-            className="flex size-7 shrink-0 items-center justify-center rounded-full text-fg-muted hover:bg-white/10 hover:text-fg"
-          >
-            <Icon name={paused ? 'playArrow' : 'pause'} size={18} />
-          </button>
+            onClick={paused ? resume : pause}
+          />
           <LiveLevels levels={levels} paused={paused} />
           <span
             className={cn(
@@ -307,11 +316,11 @@ function CameraPreview({
   const showsScreen = source !== 'camera' && recording;
 
   return (
-    <div className="relative aspect-video overflow-hidden rounded-control bg-black">
+    <div className="relative aspect-video overflow-hidden rounded-control bg-canvas">
       {bubbleOnly || (source === 'screen' && !recording) ? (
-        <div className="flex size-full flex-col items-center justify-center gap-1.5 bg-white/5 text-fg-faint">
+        <div className="flex size-full flex-col items-center justify-center gap-1.5 bg-surface-1 text-fg-faint">
           <Icon name="screenShare" size={28} />
-          <span className="text-[11px]">Bildschirm wählst du beim Start</span>
+          <span className="text-caption">Bildschirm wählst du beim Start</span>
         </div>
       ) : stream ? (
         // Not mirrored: the preview shows exactly what the recording will show.
@@ -328,7 +337,7 @@ function CameraPreview({
         </div>
       )}
       {bubbleOnly && (
-        <div className="absolute right-[4%] bottom-[6%] flex aspect-[4/3] h-[46%] items-center justify-center overflow-hidden rounded-[10.5%/14%] bg-black text-fg-faint shadow-float after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]">
+        <div className="absolute right-[4%] bottom-[6%] flex aspect-[4/3] h-[46%] items-center justify-center overflow-hidden rounded-[10.5%/14%] bg-canvas text-fg-faint shadow-float after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:ring-hairline-strong">
           {stream ? (
             <video ref={videoRef} autoPlay muted playsInline className="size-full object-cover" />
           ) : (
@@ -337,7 +346,7 @@ function CameraPreview({
         </div>
       )}
       {recording && (
-        <span className="absolute top-2 left-2 flex items-center gap-1.5 rounded-chip bg-black/60 px-2 py-0.5 text-[11px] font-medium text-white tabular-nums">
+        <span className="absolute top-2 left-2 flex items-center gap-1.5 rounded-chip bg-scrim px-2 py-0.5 text-caption font-medium text-fg tabular-nums">
           <span className={cn('size-2 rounded-full bg-danger', !paused && 'animate-pulse')} />
           {formatDuration(elapsedMs)}
           {paused && ' · Pause'}
@@ -353,7 +362,7 @@ function StorageHint({ deckId }: { deckId: string }) {
   const limitBytes = usage?.limitBytes ?? null;
   const nearlyFull = usage && limitBytes !== null && usage.usedBytes / limitBytes > 0.9;
   return (
-    <p className={cn('text-[11px]', nearlyFull ? 'text-warning' : 'text-fg-faint')}>
+    <p className={cn('text-caption', nearlyFull ? 'text-warning' : 'text-fg-faint')}>
       Max. 5 Min., Transkript entsteht auf deinem Gerät.
       {usage &&
         limitBytes !== null &&

@@ -2,9 +2,9 @@ import { cn, Icon } from '@/ui';
 import type { SlideBadge, SlideBadgeKind } from './lib/revision-changes';
 
 const toneClasses: Record<SlideBadgeKind, string> = {
-  new: 'text-success shadow-[inset_0_0_0_1px_rgb(46_204_113/0.45)]',
-  modified: 'text-warning shadow-[inset_0_0_0_1px_rgb(245_166_35/0.45)]',
-  moved: 'text-info shadow-[inset_0_0_0_1px_rgb(77_159_255/0.45)]',
+  new: 'text-success inset-ring inset-ring-success/45',
+  modified: 'text-warning inset-ring inset-ring-warning/45',
+  moved: 'text-info inset-ring inset-ring-info/45',
 };
 
 /**
@@ -32,9 +32,9 @@ export function ChangeBadge({
       data-change-badge={badge.kind}
       title={badge.description}
       className={cn(
-        'pointer-events-auto inline-flex max-w-full items-center bg-black/75 font-medium whitespace-nowrap backdrop-blur',
+        'glass-dark-strong pointer-events-auto inline-flex max-w-full items-center font-medium whitespace-nowrap',
         mini
-          ? 'h-3.5 gap-0.5 rounded-thumb px-1 text-[9px] leading-3'
+          ? 'h-3.5 gap-0.5 rounded-thumb px-1 text-micro leading-3'
           : 'h-6 gap-1 rounded-badge px-2.5 text-xs',
         toneClasses[badge.kind],
         className,

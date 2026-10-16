@@ -14,7 +14,7 @@ import {
   useRenameWorkspace,
   useWorkspaceLogo,
 } from '@/lib/api';
-import { Badge, Button, Dialog, Section, Select, TextField, type ShowToast } from '@/ui';
+import { Badge, Button, ConfirmDialog, Section, Select, TextField, type ShowToast } from '@/ui';
 import { canRenameWorkspace, isLastAdmin, ROLE_HINTS, ROLE_LABELS } from '../lib/roles';
 import { WorkspaceMark } from './WorkspaceMark';
 
@@ -65,7 +65,8 @@ export function GeneralSection({
         {editable && (
           <Button
             type="submit"
-            className="h-10 sm:mt-[22px]"
+            size="field"
+            className="sm:mt-[22px]"
             disabled={!changed}
             loading={rename.isPending}
           >
@@ -143,7 +144,7 @@ function LogoRow({
           />
         </div>
       ) : (
-        <p className="text-[13px] text-fg-subtle">
+        <p className="text-body text-fg-subtle">
           {workspace.logoUrl ? 'Logo der Organisation' : 'Noch kein Logo'}
         </p>
       )}
@@ -200,7 +201,7 @@ export function LeaveSection({
         </Button>
       }
     >
-      <Dialog
+      <ConfirmDialog
         open={confirming}
         onClose={() => setConfirming(false)}
         title={`„${workspace.name}“ verlassen?`}
@@ -209,34 +210,23 @@ export function LeaveSection({
             ? `${successor.name} wird Admin und verwaltet die Organisation weiter. Zurück kommst du nur mit einer neuen Einladung.`
             : 'Zurück kommst du nur mit einer neuen Einladung.'
         }
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setConfirming(false)}>
-              Abbrechen
-            </Button>
-            <Button
-              variant="danger"
-              loading={leave.isPending}
-              onClick={() =>
-                leave.mutate(
-                  { userId, successor: mustHandOver ? successor?.userId : undefined },
-                  {
-                    onSuccess: () => void navigate(routes.reviews(), { replace: true }),
-                    onError: (error) => {
-                      setConfirming(false);
-                      onNotify(error.message, 'danger');
-                    },
-                  },
-                )
-              }
-            >
-              {mustHandOver ? 'Übergeben & verlassen' : 'Verlassen'}
-            </Button>
-          </>
+        confirmLabel={mustHandOver ? 'Übergeben & verlassen' : 'Verlassen'}
+        pending={leave.isPending}
+        onConfirm={() =>
+          leave.mutate(
+            { userId, successor: mustHandOver ? successor?.userId : undefined },
+            {
+              onSuccess: () => void navigate(routes.reviews(), { replace: true }),
+              onError: (error) => {
+                setConfirming(false);
+                onNotify(error.message, 'danger');
+              },
+            },
+          )
         }
       >
         {mustHandOver && successor && (
-          <label className="flex flex-col gap-1.5 text-[13px] text-fg-muted">
+          <label className="flex flex-col gap-1.5 text-body text-fg-muted">
             Neuer Admin
             <Select<string>
               value={successor.userId}
@@ -248,7 +238,7 @@ export function LeaveSection({
             />
           </label>
         )}
-      </Dialog>
+      </ConfirmDialog>
     </Section>
   );
 }
@@ -280,7 +270,7 @@ export function DeleteSection({
         </Button>
       }
     >
-      <Dialog
+      <ConfirmDialog
         open={confirming}
         onClose={close}
         title={`„${workspace.name}“ endgültig löschen?`}
@@ -290,29 +280,18 @@ export function DeleteSection({
             Bestätigung den Namen der Organisation ein.
           </>
         }
-        footer={
-          <>
-            <Button variant="ghost" onClick={close}>
-              Abbrechen
-            </Button>
-            <Button
-              variant="danger"
-              icon="delete"
-              disabled={typed.trim() !== workspace.name}
-              loading={remove.isPending}
-              onClick={() =>
-                remove.mutate(undefined, {
-                  onSuccess: () => void navigate(routes.reviews(), { replace: true }),
-                  onError: (error) => {
-                    close();
-                    onNotify(error.message, 'danger');
-                  },
-                })
-              }
-            >
-              Endgültig löschen
-            </Button>
-          </>
+        confirmLabel="Endgültig löschen"
+        confirmIcon="delete"
+        confirmDisabled={typed.trim() !== workspace.name}
+        pending={remove.isPending}
+        onConfirm={() =>
+          remove.mutate(undefined, {
+            onSuccess: () => void navigate(routes.reviews(), { replace: true }),
+            onError: (error) => {
+              close();
+              onNotify(error.message, 'danger');
+            },
+          })
         }
       >
         {confirming && (
@@ -324,7 +303,7 @@ export function DeleteSection({
             onChange={(event) => setTyped(event.target.value)}
           />
         )}
-      </Dialog>
+      </ConfirmDialog>
     </Section>
   );
 }

@@ -11,6 +11,8 @@ import { EditableFrame } from './EditableFrame';
 import { StrokePath } from './StrokePath';
 import { TextMark } from './TextBox';
 import { isModKey } from '@/lib/keyboard';
+import { cn } from '@/ui';
+import { DRAFT_PIN_RING, NAME_TAG_CLASS } from './lib/mark-chrome';
 
 interface DraftMarkProps {
   draft: Draft;
@@ -132,7 +134,7 @@ export function DraftMark({
           rect={box.rect}
           color={color}
           handles
-          className="bg-white/5"
+          className="bg-surface-1"
           title="Ziehen zum Verschieben, Ecken zum Ändern der Größe, Tippen schreibt hinein, ↵ zum Kommentar"
           onDoubleClick={() => onWriteInside(box.rect)}
           // The composer next to the box follows it live.
@@ -142,10 +144,7 @@ export function DraftMark({
             done();
           }}
         >
-          <span
-            className="absolute -top-6 left-[-2px] rounded-t-thumb rounded-br-thumb px-1.5 py-0.5 text-[11px] leading-4 font-medium whitespace-nowrap text-white"
-            style={{ backgroundColor: color }}
-          >
+          <span className={cn(NAME_TAG_CLASS, 'px-1.5')} style={{ backgroundColor: color }}>
             {author.name.split(' ')[0]}
           </span>
         </EditableFrame>
@@ -158,7 +157,10 @@ export function DraftMark({
           {...pinDrag.pointerProps}
           // Its click must not place a new pin on the slide below.
           onClick={(event) => event.stopPropagation()}
-          className="pointer-events-auto absolute size-4 -translate-x-1/2 -translate-y-1/2 animate-pop-in cursor-move touch-none rounded-full shadow-[0_0_0_2px_white,0_0_0_6px_rgb(255_255_255/0.2)]"
+          className={cn(
+            'pointer-events-auto absolute size-4 -translate-x-1/2 -translate-y-1/2 animate-pop-in cursor-move touch-none rounded-full',
+            DRAFT_PIN_RING,
+          )}
           style={{
             left: `${(point.x + (pinShift?.dx ?? 0)) * 100}%`,
             top: `${(point.y + (pinShift?.dy ?? 0)) * 100}%`,

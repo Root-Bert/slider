@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { cn } from '@/ui';
+import { cn, TextLink } from '@/ui';
 import { tokenizeBody } from './lib/comment-body';
 import { useViewerData } from '../state/viewer-data';
 
@@ -15,12 +15,7 @@ export function CommentBody({ body, className }: CommentBodyProps) {
   const tokens = useMemo(() => tokenizeBody(body, participantNames), [body, participantNames]);
 
   return (
-    <p
-      className={cn(
-        'text-[13px] leading-[18px] break-words whitespace-pre-wrap text-fg',
-        className,
-      )}
-    >
+    <p className={cn('text-body leading-4.5 break-words whitespace-pre-wrap text-fg', className)}>
       {tokens.map((token, index) => {
         switch (token.type) {
           case 'text':
@@ -38,7 +33,7 @@ export function CommentBody({ body, className }: CommentBodyProps) {
                 key={index}
                 className={cn(
                   'font-medium text-mention',
-                  token.text === ownMention && 'rounded-[4px] bg-mention/20 px-0.5 text-fg',
+                  token.text === ownMention && 'rounded-thumb bg-mention/20 px-0.5 text-fg',
                 )}
               >
                 {token.text}
@@ -46,15 +41,16 @@ export function CommentBody({ body, className }: CommentBodyProps) {
             );
           case 'link':
             return (
-              <a
+              <TextLink
                 key={index}
+                variant="mention"
                 href={token.href}
                 target="_blank"
                 rel="noopener noreferrer nofollow"
-                className="relative z-10 text-mention underline underline-offset-2 hover:text-fg"
+                className="relative z-(--z-raised)"
               >
                 {token.text}
-              </a>
+              </TextLink>
             );
         }
       })}

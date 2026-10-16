@@ -1,7 +1,7 @@
 import type { Deck } from '@slider/shared';
 import { pluralize } from '@/lib/format';
 import { useDeleteDecks, type BulkResult } from '@/lib/api';
-import { Button, Dialog } from '@/ui';
+import { ConfirmDialog } from '@/ui';
 
 /** Titles listed in the dialog when several decks are deleted; the rest as "und N weitere". */
 const LISTED_TITLES = 5;
@@ -20,8 +20,7 @@ export function DeleteDeckDialog({
   const failed = remove.data?.failed ?? [];
 
   return (
-    <Dialog
-      open
+    <ConfirmDialog
       onClose={onClose}
       title={
         single
@@ -51,37 +50,20 @@ export function DeleteDeckDialog({
           <span>Original in OneDrive/SharePoint bleibt.</span>
         </div>
       }
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            Abbrechen
-          </Button>
-          <Button
-            variant="danger"
-            icon="delete"
-            loading={remove.isPending}
-            onClick={() =>
-              remove.mutate(
-                decks.map((deck) => deck.id),
-                {
-                  // A single deck that couldn't go stays open with the reason; the caller
-                  // reports partial failures of several.
-                  onSuccess: (result) =>
-                    (!single || result.failed.length === 0) && onDeleted(result),
-                },
-              )
-            }
-          >
-            Endgültig löschen
-          </Button>
-        </>
+      confirmLabel="Endgültig löschen"
+      confirmIcon="delete"
+      pending={remove.isPending}
+      onConfirm={() =>
+        remove.mutate(
+          decks.map((deck) => deck.id),
+          {
+            // A single deck that couldn't go stays open with the reason; the caller
+            // reports partial failures of several.
+            onSuccess: (result) => (!single || result.failed.length === 0) && onDeleted(result),
+          },
+        )
       }
-    >
-      {failed[0] && (
-        <p role="alert" className="text-[13px] text-danger">
-          {failed[0].message}
-        </p>
-      )}
-    </Dialog>
+      error={failed[0]?.message}
+    />
   );
 }

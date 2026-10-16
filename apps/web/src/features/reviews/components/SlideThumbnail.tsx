@@ -26,7 +26,7 @@ export function SlideThumbnail({ glow = false, glowClassName, ...props }: SlideT
       <div
         aria-hidden
         className={cn(
-          'pointer-events-none absolute -inset-16 -z-10 p-16 opacity-35 blur-2xl',
+          'pointer-events-none absolute -inset-16 -z-(--z-raised) p-16 opacity-35 blur-2xl',
           'transition-[opacity,scale] duration-300 will-change-[opacity,scale]',
           glowClassName,
         )}

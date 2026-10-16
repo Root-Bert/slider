@@ -1,7 +1,7 @@
 import { useState, type DragEvent } from 'react';
 import { MAX_UPLOAD_BYTES } from '@slider/shared';
 import { formatBytes } from '@/lib/format';
-import { cn, Icon } from '@/ui';
+import { cn, ErrorText, Icon, TextLink } from '@/ui';
 
 interface UploadDropzoneProps {
   onFile: (file: File) => void;
@@ -41,24 +41,23 @@ export function UploadDropzone({ onFile, onBrowse, error }: UploadDropzoneProps)
         }}
         className={cn(
           'flex cursor-pointer items-center gap-3 rounded-control border border-dashed px-4 py-8 transition-colors',
-          dragOver ? 'border-fg bg-white/5' : 'border-hairline-strong hover:bg-white/[0.03]',
-          error && !dragOver && 'border-danger/60',
+          // One border colour at a time: `cn` is clsx, and in the CSS `border-hairline-strong`
+          // comes after `border-danger/45`, so both together never showed the error edge.
+          dragOver
+            ? 'border-fg bg-surface-1'
+            : cn(error ? 'border-danger/45' : 'border-hairline-strong', 'hover:bg-surface-1'),
         )}
       >
-        <Icon name="upload" size={18} className="pointer-events-none shrink-0 text-fg-subtle" />
+        <Icon name="upload" size="lg" className="pointer-events-none shrink-0 text-fg-subtle" />
         <p className="pointer-events-none min-w-0 flex-1 text-sm text-fg-muted">
           {dragOver ? (
             'Loslassen zum Hochladen'
           ) : (
             <>
               PPTX hierher ziehen oder{' '}
-              <button
-                type="button"
-                onClick={onBrowse}
-                className="pointer-events-auto text-fg underline underline-offset-2 hover:text-fg"
-              >
+              <TextLink variant="inline" onClick={onBrowse} className="pointer-events-auto">
                 Datei auswählen
-              </button>
+              </TextLink>
             </>
           )}
         </p>
@@ -67,9 +66,9 @@ export function UploadDropzone({ onFile, onBrowse, error }: UploadDropzoneProps)
         </span>
       </div>
       {error && (
-        <p role="alert" className="text-xs text-danger">
+        <ErrorText role="alert" size="xs">
           {error}
-        </p>
+        </ErrorText>
       )}
     </div>
   );

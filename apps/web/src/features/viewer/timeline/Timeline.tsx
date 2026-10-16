@@ -230,7 +230,7 @@ export function Timeline({ controls }: { controls: ReactNode }) {
         data-timeline
         onClick={onCommentAreaClick}
         className={cn(
-          'absolute inset-0 overflow-auto overscroll-contain [container-type:inline-size] [scrollbar-color:rgb(255_255_255/0.2)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin]',
+          'absolute inset-0 overflow-auto overscroll-contain [container-type:inline-size] [scrollbar-color:var(--color-surface-4)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin]',
           narrow && 'snap-x snap-mandatory [scroll-padding-inline:16px]',
         )}
       >
@@ -244,14 +244,14 @@ export function Timeline({ controls }: { controls: ReactNode }) {
           <div
             ref={setConnectorLayer}
             data-connector-layer
-            className="pointer-events-none sticky top-0 z-[25] h-0"
+            className="pointer-events-none sticky top-0 z-(--z-sticky) h-0"
           />
           {/* Sticky header in two parts: the opaque track under the connector lines, and the
               see-through band over them – lines, cards and the dot grid show behind its glass
               controls and thumbnails. The comment area starts where the split handle puts it. */}
           <div
             data-timeline-header
-            className="sticky top-0 z-20 bg-canvas"
+            className="sticky top-0 z-(--z-overlay) bg-canvas"
             style={{ paddingTop: TRACK_PAD_TOP }}
           >
             {layout && context ? (
@@ -271,7 +271,7 @@ export function Timeline({ controls }: { controls: ReactNode }) {
             data-timeline-header
             data-connector-occluder
             className={cn(
-              'sticky left-0 z-30 w-[100cqw] pt-2 pb-2 transition-[padding] duration-300 @container',
+              'sticky left-0 z-(--z-chrome) w-[100cqw] pt-2 pb-2 transition-[padding] duration-300 @container',
               (threadPanelOpen || deletedPanelOpen) && 'md:pr-[412px]',
             )}
             style={{ top: TRACK_PAD_TOP + (slideH ?? 0) }}

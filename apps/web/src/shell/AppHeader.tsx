@@ -2,7 +2,7 @@ import { useState, type MouseEvent, type ReactNode } from 'react';
 import { Link, matchPath, useLocation } from 'react-router';
 import { routes } from '@/lib/routes';
 import { AccountMenu, WorkspaceSwitcher } from '@/features/workspaces';
-import { cn, Logo } from '@/ui';
+import { cn, Logo, ToolbarDivider } from '@/ui';
 
 interface AppHeaderProps {
   /** Next to the workspace switcher, e.g. the page's primary action. */
@@ -32,7 +32,7 @@ export function AppHeader({ leading, center, actions }: AppHeaderProps) {
   }
 
   return (
-    <header className="relative z-10 grid h-[88px] shrink-0 grid-cols-[minmax(max-content,1fr)_minmax(0,312px)_minmax(max-content,1fr)] items-center gap-6 px-6 md:px-14">
+    <header className="relative z-(--z-raised) grid h-[88px] shrink-0 grid-cols-[minmax(max-content,1fr)_minmax(0,312px)_minmax(max-content,1fr)] items-center gap-6 px-6 md:px-14">
       <div className="flex min-w-0 items-center gap-2 sm:gap-3">
         <Link
           to={routes.reviews()}
@@ -45,7 +45,7 @@ export function AppHeader({ leading, center, actions }: AppHeaderProps) {
             onAnimationEnd={() => setHopping(false)}
           />
         </Link>
-        <span aria-hidden className="h-5 w-px shrink-0 bg-hairline-strong max-sm:hidden" />
+        <ToolbarDivider spacing="none" className="max-sm:hidden" />
         <WorkspaceSwitcher />
         {leading && <span className="ml-1 flex shrink-0 items-center">{leading}</span>}
       </div>

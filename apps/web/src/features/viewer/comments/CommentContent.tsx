@@ -25,7 +25,7 @@ export function CommentContent({
       {hasText || (!hasMedia && !isStrokeOnly(comment)) ? (
         <CommentBody body={comment.body} className={bodyClassName} />
       ) : (
-        !hasMedia && <p className="text-[13px] text-fg-muted">{strokeOnlyLabel(comment)}</p>
+        !hasMedia && <p className="text-body text-fg-muted">{strokeOnlyLabel(comment)}</p>
       )}
     </>
   );

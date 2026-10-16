@@ -274,8 +274,8 @@ export const SlideFrame = memo(function SlideFrame({
             )}
           >
             {slide.hidden && w >= 200 && (
-              <Badge className="shrink-0 bg-black/60! backdrop-blur">
-                <Icon name="visibilityOff" size={14} />
+              <Badge tone="overlay" className="shrink-0">
+                <Icon name="visibilityOff" size="sm" />
                 Ausgeblendet
               </Badge>
             )}
@@ -344,7 +344,7 @@ function OldVersionFrame({
       <div
         aria-hidden
         className={cn(
-          'pointer-events-none absolute inset-0 shadow-[inset_0_0_0_2px_var(--color-warning)]',
+          'pointer-events-none absolute inset-0 inset-ring-2 inset-ring-warning',
           small ? 'rounded-thumb' : 'rounded-panel',
         )}
       />
@@ -357,15 +357,17 @@ function OldVersionFrame({
         }}
         title="Wieder die aktuelle Folie zeigen"
         className={cn(
-          'absolute z-10 inline-flex items-center gap-1 rounded-badge bg-black/75 font-medium text-warning backdrop-blur',
-          'shadow-[inset_0_0_0_1px_rgb(245_166_35/0.45)] hover:bg-black/90',
-          small ? 'top-1.5 left-1.5 h-5 px-1.5 text-[10px]' : 'top-3 left-3 h-6 px-2.5 text-xs',
+          // A badge over the slide that is also a button (like `ChangeBadge`), not a toolbar
+          // control: the strong dark chip with the status ring.
+          'absolute z-(--z-raised) inline-flex items-center gap-1 rounded-badge glass-dark-strong font-medium text-warning',
+          'inset-ring inset-ring-warning/45 hover:bg-scrim-max',
+          small ? 'top-1.5 left-1.5 h-5 px-1.5 text-tiny' : 'top-3 left-3 h-6 px-2.5 text-xs',
         )}
       >
-        <Icon name="history" size={small ? 12 : 14} className="shrink-0" />
+        <Icon name="history" size={small ? 'xs' : 'sm'} className="shrink-0" />
         {version ? `Alt · V${version.revisionNumber}` : 'Alt …'}
         {!small && <span className="text-fg-muted">{version ? '– so beim Kommentar' : ''}</span>}
-        <Icon name="close" size={small ? 12 : 14} className="shrink-0 text-fg-muted" />
+        <Icon name="close" size={small ? 'xs' : 'sm'} className="shrink-0 text-fg-muted" />
       </button>
     </>
   );

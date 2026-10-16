@@ -1,6 +1,6 @@
 import type { Author } from '@slider/shared';
 import type { Ref } from 'react';
-import { accentColor, isLightAccent } from '@/lib/accent';
+import { accentColor, onAccentClass } from '@/lib/accent';
 import { generatedAvatar } from '@/lib/generated-avatar';
 import { cn } from '@/ui';
 
@@ -29,7 +29,6 @@ const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? name;
  */
 export function LiveCursor({ author, ref }: LiveCursorProps) {
   const color = accentColor(author.color);
-  const onAccent = isLightAccent(author.color) ? 'text-black' : 'text-white';
 
   return (
     <div
@@ -40,7 +39,7 @@ export function LiveCursor({ author, ref }: LiveCursorProps) {
       {/* Behind the avatar, vertically centred on it. */}
       <div
         className={cn(
-          'absolute w-max rounded-r-full shadow-[0_4px_12px_rgb(0_0_0/0.35)]',
+          'absolute w-max rounded-r-full shadow-lift',
           'transition-[opacity,translate] duration-300 ease-out',
           'group-data-[idle]:-translate-x-2 group-data-[idle]:opacity-0',
         )}
@@ -56,14 +55,14 @@ export function LiveCursor({ author, ref }: LiveCursorProps) {
           className={cn(
             'block max-w-32 overflow-hidden pr-2 pl-1 text-xs leading-5 font-medium text-ellipsis whitespace-nowrap',
             'transition-[max-width,padding] duration-300 ease-out group-data-[idle]:max-w-0 group-data-[idle]:px-0',
-            onAccent,
+            onAccentClass(author.color),
           )}
         >
           {firstName(author.name)}
         </span>
       </div>
       <div
-        className="relative shadow-[0_4px_12px_rgb(0_0_0/0.45)] transition-transform duration-200 ease-out group-data-[idle]:scale-90"
+        className="relative shadow-lift transition-transform duration-200 ease-out group-data-[idle]:scale-90"
         style={{
           width: SIZE,
           height: SIZE,

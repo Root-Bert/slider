@@ -39,11 +39,12 @@ export function LiveThreadMarker({ threadId }: { threadId: string }) {
     <>
       <span
         aria-hidden
-        className="pointer-events-none absolute -inset-[3px] z-10 animate-fade-in rounded-[calc(var(--radius-panel)+3px)]"
+        // Concentric with the card: its radius plus the 3px the frame stands off.
+        className="pointer-events-none absolute -inset-0.75 z-(--z-raised) animate-fade-in rounded-[calc(var(--radius-panel)+3px)]"
         style={{ boxShadow: `0 0 0 2px ${accentColor(first.color)}` }}
       />
       <span
-        className="pointer-events-none absolute -top-2.5 -right-2.5 z-20 animate-pop-in"
+        className="pointer-events-none absolute -top-2.5 -right-2.5 z-(--z-overlay) animate-pop-in"
         title={`${people.map((person) => person.name).join(', ')} ${people.length === 1 ? 'schaut' : 'schauen'} sich das gerade an`}
       >
         <AvatarStack authors={people} size={20} max={3} />

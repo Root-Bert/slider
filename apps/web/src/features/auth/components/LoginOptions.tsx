@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { AuthProviders, LoginProvider } from '@slider/shared';
-import { Button, GoogleMark, Icon, MicrosoftMark, PasskeyMark } from '@/ui';
+import { Button, ErrorText, GoogleMark, Icon, MicrosoftMark, Notice, PasskeyMark } from '@/ui';
 import {
   isPasskeyCancel,
   passkeyErrorMessage,
@@ -26,20 +26,14 @@ export function LoginOptions({ config, returnTo }: { config: AuthProviders; retu
 
   if (providers.length === 0) {
     return (
-      <div className="flex flex-col gap-2 rounded-control bg-white/5 px-4 py-3 text-left">
-        <p className="flex items-center gap-2 text-sm font-medium text-fg">
-          <Icon name="warning" size={18} className="text-warning" />
-          Anmeldung nicht eingerichtet
-        </p>
-        <p className="text-[13px] leading-5 text-fg-subtle">
-          Für diese Slider-Instanz ist noch keine Anmeldung konfiguriert. Wer Slider betreibt,
-          findet im Server-Log einen Einrichtungslink (
-          <code className="rounded-badge bg-white/8 px-1 py-0.5 text-xs text-fg-muted">
-            /einrichtung#token=…
-          </code>
-          ) und richtet dort Microsoft, Google oder SSO ein.
-        </p>
-      </div>
+      <Notice tone="warning" variant="plain" title="Anmeldung nicht eingerichtet">
+        Für diese Slider-Instanz ist noch keine Anmeldung konfiguriert. Wer Slider betreibt, findet
+        im Server-Log einen Einrichtungslink (
+        <code className="rounded-badge bg-surface-2 px-1 py-0.5 text-xs text-fg-muted">
+          /einrichtung#token=…
+        </code>
+        ) und richtet dort Microsoft, Google oder SSO ein.
+      </Notice>
     );
   }
 
@@ -117,9 +111,9 @@ function PasskeyButton({ returnTo }: { returnTo: string }) {
         Mit Passkey anmelden
       </Button>
       {error && (
-        <p role="alert" className="text-left text-xs text-danger">
+        <ErrorText role="alert" size="xs" className="text-left">
           {error}
-        </p>
+        </ErrorText>
       )}
     </div>
   );

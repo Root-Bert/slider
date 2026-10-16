@@ -37,7 +37,10 @@ function PenSurface({
   const { handlers, previewStrokes } = useDraftDrawing({ slide, boxRef, tool, color });
 
   return (
-    <div {...handlers} className="absolute inset-0 z-20 cursor-crosshair touch-none select-none">
+    <div
+      {...handlers}
+      className="absolute inset-0 z-(--z-overlay) cursor-crosshair touch-none select-none"
+    >
       {previewStrokes.length > 0 && (
         <svg
           className="absolute inset-0 size-full overflow-visible"
@@ -127,7 +130,7 @@ function EraserSurface({ boxRef, threads }: Pick<DrawingSurfaceProps, 'boxRef' |
       onPointerCancel={() => {
         wiping.current = false;
       }}
-      className="absolute inset-0 z-20 cursor-cell touch-none select-none"
+      className="absolute inset-0 z-(--z-overlay) cursor-cell touch-none select-none"
     />
   );
 }

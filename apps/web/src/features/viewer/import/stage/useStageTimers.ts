@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { motionMs } from '@/lib/motion';
 import { INTRO_MS } from '../lib/import-skeleton';
 
 /** True until the intro, starting once `started`, has played – placeholders mounted until then are dealt in one after another. */
@@ -20,6 +21,9 @@ export function useReach(last: number, max: number) {
   return next;
 }
 
+/** How long slots past a shrunken count stay to fly off the track. */
+const LEAVE_MS = 700;
+
 /** Slots past a shrunken count stay a moment to fly off the track. */
 export function useLeaving(n: number) {
   const [shown, setShown] = useState(n);
@@ -30,7 +34,8 @@ export function useLeaving(n: number) {
   }
   useEffect(() => {
     if (!leaving) return;
-    const timer = setTimeout(() => setLeaving(null), 700);
+    // Waits for the slots' `import-leave` (520 ms + stagger); nothing to wait for without motion.
+    const timer = setTimeout(() => setLeaving(null), motionMs(LEAVE_MS));
     return () => clearTimeout(timer);
   }, [leaving]);
   return leaving;

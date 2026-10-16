@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import type { Deck } from '@slider/shared';
 import { routes } from '@/lib/routes';
-import { AvatarStack, cn, Icon } from '@/ui';
-import type { ShowToast } from '@/ui';
+import { AvatarStack, cn, Icon, type ShowToast } from '@/ui';
 import { isImporting } from '@/lib/deck-labels';
 import { usePinnedDecks } from '../hooks/usePinnedDecks';
 import { useDeckContextMenu } from '../hooks/useDeckContextMenu';
@@ -38,7 +37,7 @@ function SelectedMark({ compact = false }: { compact?: boolean }) {
   return (
     <span
       className={cn(
-        'absolute z-10 flex items-center justify-center rounded-full bg-(--selection) text-(--on-selection) shadow',
+        'absolute z-(--z-raised) flex items-center justify-center rounded-full bg-(--selection) text-(--on-selection) shadow-mark',
         compact ? 'top-1 left-1 size-4' : 'top-2 left-2 size-6',
       )}
     >
@@ -108,7 +107,7 @@ export function DeckCard({ deck, selected = false, onNotify }: DeckItemProps) {
       data-comments-open={commentsOpen || undefined}
       // Positioned for the stretched link and the comments list floating in the thumbnail;
       // lifted above the neighbours while open.
-      className="group relative flex min-w-0 flex-col gap-3 has-[[aria-expanded=true]]:z-30"
+      className="group relative flex min-w-0 flex-col gap-3 has-[[aria-expanded=true]]:z-(--z-chrome)"
       onContextMenu={onContextMenu}
     >
       <div className="relative">
@@ -157,7 +156,7 @@ export function DeckCard({ deck, selected = false, onNotify }: DeckItemProps) {
           ) : (
             <Link
               to={routes.deck(deck.id)}
-              className="outline-none transition-colors duration-200 group-[:hover:not(:has([data-deck-footer]:hover)):not([data-comments-open])]:text-white after:absolute after:inset-0 after:content-['']"
+              className="outline-none transition-colors duration-200 group-[:hover:not(:has([data-deck-footer]:hover)):not([data-comments-open])]:text-primary-hover after:absolute after:inset-0 after:content-['']"
             >
               {deck.title}
             </Link>
@@ -188,8 +187,8 @@ export function DeckRow({ deck, selected = false, onNotify }: DeckItemProps) {
       className={cn(
         'group relative flex items-center gap-4 rounded-control-sm px-3 py-2.5 transition-colors',
         // Hovering the footer controls must not light up the whole row.
-        '[&:hover:not(:has([data-deck-footer]:hover)):not([data-comments-open])]:bg-white/5',
-        'has-[a:focus-visible]:bg-white/5 has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-mention',
+        '[&:hover:not(:has([data-deck-footer]:hover)):not([data-comments-open])]:bg-surface-1',
+        'has-[a:focus-visible]:bg-surface-1 has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-mention',
         selected && 'bg-(--selection)/15! ring-1 ring-(--selection)/60',
       )}
     >
@@ -216,7 +215,7 @@ export function DeckRow({ deck, selected = false, onNotify }: DeckItemProps) {
             ) : (
               <Link
                 to={routes.deck(deck.id)}
-                className="outline-none transition-colors duration-200 group-[:hover:not(:has([data-deck-footer]:hover)):not([data-comments-open])]:text-white after:absolute after:inset-0 after:content-['']"
+                className="outline-none transition-colors duration-200 group-[:hover:not(:has([data-deck-footer]:hover)):not([data-comments-open])]:text-primary-hover after:absolute after:inset-0 after:content-['']"
               >
                 {deck.title}
               </Link>
@@ -231,14 +230,14 @@ export function DeckRow({ deck, selected = false, onNotify }: DeckItemProps) {
         placement="above"
         onCommentsOpenChange={setCommentsOpen}
         // Above the stretched title link; an open list covers the rows above it.
-        className="relative z-10 hidden shrink-0 gap-4 has-[[aria-expanded=true]]:z-30 sm:flex"
+        className="relative z-(--z-raised) hidden shrink-0 gap-4 has-[[aria-expanded=true]]:z-(--z-chrome) sm:flex"
       />
       <DeckActions
         deck={deck}
         onNotify={onNotify}
         {...contextMenu}
         onRename={() => setRenaming(true)}
-        className="z-10 shrink-0"
+        className="z-(--z-raised) shrink-0"
       />
     </article>
   );

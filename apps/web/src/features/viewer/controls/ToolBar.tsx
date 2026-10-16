@@ -1,4 +1,4 @@
-import { cn, GlassPanel, Icon, IconButton, type IconName } from '@/ui';
+import { cn, GlassPanel, Icon, IconButton, type IconName, Toolbar, ToolbarDivider } from '@/ui';
 import { useViewerData } from '../state/viewer-data';
 import {
   isBoxModeActive,
@@ -57,10 +57,8 @@ function ToolButtons() {
   const dispatch = useViewerDispatch();
 
   return (
-    <GlassPanel
-      role="toolbar"
-      aria-label="Werkzeuge (Tab wechselt)"
-      className="flex items-center gap-1 p-1"
+    <Toolbar
+      label="Werkzeuge (Tab wechselt)"
       // A click keeps the focus off the button, so Tab goes on stepping through the tools.
       onMouseDown={(event) => event.preventDefault()}
     >
@@ -87,7 +85,7 @@ function ToolButtons() {
           onClick={() => dispatch({ type: 'toolSelected', tool: option.tool })}
         />
       ))}
-      <span aria-hidden className="mx-0.5 h-5 w-px bg-white/15" />
+      <ToolbarDivider />
       <IconButton
         icon="gridView"
         label={`Box-Modus ${boxMode ? 'aus' : 'an'} (B) – ⌥ halten wechselt kurz`}
@@ -115,6 +113,6 @@ function ToolButtons() {
           onClick={() => dispatch({ type: 'showHiddenSlidesToggled' })}
         />
       )}
-    </GlassPanel>
+    </Toolbar>
   );
 }

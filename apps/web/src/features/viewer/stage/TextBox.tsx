@@ -11,29 +11,43 @@ import { accentAlpha, accentColor } from '@/lib/accent';
 import { cn, Icon } from '@/ui';
 import { FRAME_ATTR, resized, useRectEdit, type RectCorner } from './hooks/useRectEdit';
 import { focusCommentField } from '../comments/lib/composer-focus';
-import { MIN_TEXT_WIDTH, normalizeTextRect } from './lib/text-box';
+import {
+  MIN_TEXT_WIDTH,
+  normalizeTextRect,
+  TEXT_BOX_LOOK,
+  TEXT_BOX_RADIUS,
+  TEXT_CLASS,
+} from './lib/text-box';
+import { HANDLE_CLASS, handleRing, NAME_TAG_CLASS } from './lib/mark-chrome';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, type TextBoxDraft, type TextBoxPatch } from '../state/viewer-state';
 import { CORNERS } from './corners';
 import { isModEnter, isModKey } from '@/lib/keyboard';
 
-/**
+/*
  * "Text auf Folie": text written on the slide. Sizes are in container units of the slide box
  * (the parent sets `container-type: size`), so position, width and font size scale with the slide.
- * Editor and stored text share one box style – the text wraps the same way in both, centred
- * horizontally and vertically in the box.
+ * Editor and stored text share one box style (`TEXT_CLASS`, `TEXT_BOX_LOOK`) – the text wraps the
+ * same way in both, centred horizontally and vertically in the box – and the sketch canvas draws
+ * it from the same numbers.
  */
-const TEXT_CLASS =
-  'whitespace-pre-wrap [overflow-wrap:anywhere] px-[0.35em] py-[0.15em] text-center leading-[1.25] font-semibold';
+
+const percent = (share: number) => `${Math.round(share * 100)}%`;
 
 /**
  * Dark like the rest of the app, readable on light and dark slides. The text is the author's
  * accent lifted towards white – pure blue or red alone is too dark on the dark backdrop.
  */
 const textSurface = (color: AuthorColor): CSSProperties => ({
-  color: `color-mix(in srgb, ${accentColor(color)} 75%, white)`,
-  backgroundColor: 'color-mix(in srgb, var(--color-glass-solid) 75%, transparent)',
+  color: `color-mix(in srgb, ${accentColor(color)} ${percent(TEXT_BOX_LOOK.textLift)}, white)`,
+  backgroundColor: `color-mix(in srgb, var(--color-glass-solid) ${percent(TEXT_BOX_LOOK.fillAlpha)}, transparent)`,
 });
+
+/** Lifted off the slide while emphasised or dragged; a soft edge and shadow at rest. */
+const textShadow = (color: AuthorColor, lit: boolean): string =>
+  lit
+    ? `0 0 0 2px ${accentColor(color)}, var(--shadow-mark)`
+    : `0 0 0 1px ${accentAlpha(color, Math.round(TEXT_BOX_LOOK.edgeAlpha * 100))}, 0 1px 4px var(--color-well-dark)`;
 
 const boxPosition = (x: number, y: number, fontSize: number): CSSProperties => ({
   left: `${x * 100}%`,
@@ -124,10 +138,11 @@ export function TextMark({
       {...(editable ? edit.boxProps : {})}
       className={cn(
         TEXT_CLASS,
-        'absolute flex flex-col justify-center rounded-[0.25em] outline-offset-2 transition-[opacity,box-shadow] duration-200',
+        TEXT_BOX_RADIUS,
+        'absolute flex flex-col justify-center outline-offset-2 transition-[opacity,box-shadow] duration-200',
         interactive ? 'pointer-events-auto cursor-pointer' : 'pointer-events-none',
         editable && 'cursor-move touch-none',
-        (emphasized || preview) && 'z-10',
+        (emphasized || preview) && 'z-(--z-raised)',
       )}
       style={{
         ...boxPosition(box.x, box.y, stroke.fontSize),
@@ -135,10 +150,7 @@ export function TextMark({
         width: `${box.w * 100}%`,
         minHeight: `${box.h * 100}%`,
         opacity,
-        boxShadow:
-          emphasized || preview
-            ? `0 0 0 2px ${accentColor(stroke.color)}, 0 2px 10px rgb(0 0 0 / 0.35)`
-            : `0 0 0 1px ${accentAlpha(stroke.color, 55)}, 0 1px 4px rgb(0 0 0 / 0.25)`,
+        boxShadow: textShadow(stroke.color, emphasized || preview),
       }}
     >
       {stroke.text}
@@ -151,8 +163,8 @@ export function TextMark({
             role="presentation"
             title="Größe ändern"
             {...edit.cornerProps(corner)}
-            className={cn('absolute size-3 touch-none rounded-[3px] bg-white', position)}
-            style={{ boxShadow: `0 0 0 1.5px ${accentColor(stroke.color)}` }}
+            className={cn(HANDLE_CLASS, position)}
+            style={{ boxShadow: handleRing(accentColor(stroke.color)) }}
           />
         ))}
     </button>
@@ -319,11 +331,17 @@ export function TextBoxField({
   };
 
   return (
-    <div ref={layerRef} className="pointer-events-none absolute inset-0 z-30 [container-type:size]">
+    <div
+      ref={layerRef}
+      className="pointer-events-none absolute inset-0 z-(--z-chrome) [container-type:size]"
+    >
       <div
         ref={boxRef}
         data-text-editor
-        className="pointer-events-auto absolute flex animate-pop-in flex-col justify-center rounded-[0.25em]"
+        className={cn(
+          'pointer-events-auto absolute flex animate-pop-in flex-col justify-center',
+          TEXT_BOX_RADIUS,
+        )}
         style={{
           ...boxPosition(box.x, box.y, box.fontSize),
           ...textSurface(author.color),
@@ -400,10 +418,13 @@ export function TextBoxField({
           title="Textfeld verschieben"
           onPointerDown={(event) => startDrag(event, 'move')}
           {...dragHandlers}
-          className="absolute -top-6 left-[-2px] flex cursor-move touch-none items-center gap-0.5 rounded-t-thumb rounded-br-thumb py-0.5 pr-1.5 pl-1 text-[11px] leading-4 font-medium whitespace-nowrap text-white select-none"
+          className={cn(
+            NAME_TAG_CLASS,
+            'flex cursor-move touch-none items-center gap-0.5 pr-1.5 pl-1 select-none',
+          )}
           style={{ backgroundColor: color }}
         >
-          <Icon name="moreHoriz" size={12} className="rotate-90" />
+          <Icon name="moreHoriz" size="xs" className="rotate-90" />
           {author.name.split(' ')[0]}
         </span>
         {/* Resize handles on all four corners, like every other box. */}
@@ -414,8 +435,8 @@ export function TextBoxField({
             title="Größe ändern"
             onPointerDown={(event) => startDrag(event, corner)}
             {...dragHandlers}
-            className={cn('absolute size-3 touch-none rounded-[3px] bg-white', position)}
-            style={{ boxShadow: `0 0 0 1.5px ${color}` }}
+            className={cn(HANDLE_CLASS, position)}
+            style={{ boxShadow: handleRing(color) }}
           />
         ))}
       </div>

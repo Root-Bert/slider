@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import type { Deck } from '@slider/shared';
 import { pluralize } from '@/lib/format';
 import { useCreateFolder, useFolders, type BulkResult } from '@/lib/api';
-import { Button, cn, Dialog, Icon, TextField } from '@/ui';
+import { Button, Dialog, Icon, MenuItem, TextField } from '@/ui';
 import { useMoveDecks } from '../hooks/useMoveDecks';
 
 /** "Verschieben …": pick a folder (or none) for one or several decks; a new folder on the spot. */
@@ -40,19 +40,18 @@ export function MoveDecksDialog({
   const busy = move.isPending || create.isPending;
   const option = (folderId: string | null, label: string) => (
     <li key={folderId ?? 'none'}>
-      <button
-        type="button"
+      <MenuItem
+        size="md"
+        icon={folderId ? 'folder' : 'description'}
+        trailing={only === folderId && <Icon name="check" size={16} label="Aktueller Ort" />}
         disabled={busy || only === folderId}
+        // The current folder keeps full opacity: it is shown with a check, not switched off.
+        dimDisabled={false}
+        truncate
         onClick={() => moveTo(folderId, folderId ? label : null)}
-        className={cn(
-          'flex w-full items-center gap-3 rounded-control-sm px-3 py-2 text-left text-sm text-fg',
-          'hover:bg-white/10 disabled:cursor-default disabled:hover:bg-transparent',
-        )}
       >
-        <Icon name={folderId ? 'folder' : 'description'} size={18} className="text-fg-subtle" />
-        <span className="min-w-0 flex-1 truncate">{label}</span>
-        {only === folderId && <Icon name="check" size={16} label="Aktueller Ort" />}
-      </button>
+        {label}
+      </MenuItem>
     </li>
   );
 

@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import { Button, Dialog, TextField } from '@/ui';
+import { useId, useState, type FormEvent } from 'react';
+import { ConfirmDialog, TextField } from '@/ui';
 
 /** "Neuer Ordner" and "Umbenennen": one name field. */
 export function FolderNameDialog({
@@ -19,6 +19,7 @@ export function FolderNameDialog({
   onSubmit: (name: string) => void;
   onClose: () => void;
 }) {
+  const formId = useId();
   const [name, setName] = useState(initialName);
   const trimmed = name.trim();
   const submit = (event: FormEvent) => {
@@ -26,8 +27,15 @@ export function FolderNameDialog({
     if (trimmed && !pending) onSubmit(trimmed);
   };
   return (
-    <Dialog open onClose={onClose} title={title}>
-      <form className="flex flex-col gap-5" onSubmit={submit}>
+    <ConfirmDialog
+      onClose={onClose}
+      title={title}
+      tone="primary"
+      confirmLabel={submitLabel}
+      form={formId}
+      confirmDisabled={!trimmed || pending}
+    >
+      <form id={formId} onSubmit={submit}>
         <TextField
           aria-label="Name des Ordners"
           placeholder="z. B. Kunde Müller"
@@ -38,15 +46,7 @@ export function FolderNameDialog({
           error={error}
           onChange={(event) => setName(event.target.value)}
         />
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={onClose}>
-            Abbrechen
-          </Button>
-          <Button type="submit" disabled={!trimmed || pending}>
-            {submitLabel}
-          </Button>
-        </div>
       </form>
-    </Dialog>
+    </ConfirmDialog>
   );
 }

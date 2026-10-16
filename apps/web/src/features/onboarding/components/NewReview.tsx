@@ -6,7 +6,7 @@ import { AppHeader } from '@/shell/AppHeader';
 import { LoginErrorBanner } from '@/features/auth';
 import { rememberWorkspace } from '@/features/workspaces';
 import { useAuthProviders, useMe } from '@/lib/api';
-import { cn } from '@/ui';
+import { cn, Divider, PageHeader } from '@/ui';
 import { LinkImportForm } from './LinkImportForm';
 import { NoAccessCard } from './NoAccessCard';
 import { OneDrivePicker } from './OneDrivePicker';
@@ -82,15 +82,12 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
 
       {!link.noAccess && (
         // Same place and type as "Reviews".
-        <hgroup className="flex flex-col gap-1 px-4 pt-2 md:px-14">
-          <h1 className="text-[28px] leading-tight font-semibold tracking-tight text-fg">
-            Neue Review
-          </h1>
-          <p className="text-[13px] text-fg-subtle">
-            Präsentation aus OneDrive oder SharePoint öffnen und Feedback direkt auf den Folien
-            sammeln.
-          </p>
-        </hgroup>
+        <PageHeader
+          title="Neue Review"
+          subtitle="Präsentation aus OneDrive oder SharePoint öffnen und Feedback direkt auf den Folien sammeln."
+          subtitleSize="body"
+          className="px-4 pt-2 md:px-14"
+        />
       )}
       {accountLimit && (
         <div className="px-4 pt-4 md:px-14">
@@ -121,18 +118,7 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
                   error={picker.error}
                   onShownChange={setPickerShown}
                 />
-                {!picking && (
-                  <p
-                    {...riseIn(0)}
-                    className={cn(
-                      'flex items-center gap-3 text-xs text-fg-subtle',
-                      riseIn(0).className,
-                    )}
-                  >
-                    oder
-                    <span aria-hidden className="h-px flex-1 bg-hairline" />
-                  </p>
-                )}
+                {!picking && <Divider label="oder" labelPosition="start" {...riseIn(0)} />}
               </>
             )}
 

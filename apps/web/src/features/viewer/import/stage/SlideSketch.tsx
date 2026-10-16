@@ -1,8 +1,10 @@
 import type { CSSProperties } from 'react';
+import { cn } from '@/ui';
 import type { SlideSketch } from '../lib/import-skeleton';
+import { STAGE_TONE } from './stage-tones';
 
-const BAR = 'absolute rounded-[3px] bg-white/[0.13]';
-const SOFT = 'absolute rounded-[3px] bg-white/[0.07]';
+const BAR = cn('absolute rounded-mark', STAGE_TONE.sketchBar);
+const SOFT = cn('absolute rounded-mark', STAGE_TONE.sketchSoft);
 const pct = (left: number, top: number, width: number, height: number): CSSProperties => ({
   left: `${left}%`,
   top: `${top}%`,
@@ -28,7 +30,7 @@ export function Sketch({ kind }: { kind: SlideSketch }) {
           {[64, 52, 70, 42].map((width, i) => (
             <span key={i}>
               <span
-                className="absolute rounded-full bg-white/[0.13]"
+                className={cn('absolute rounded-full', STAGE_TONE.sketchBar)}
                 style={pct(8, 31.5 + i * 12, 1.6, 2.8)}
               />
               <span className={SOFT} style={pct(12, 31 + i * 12, width, 3.8)} />

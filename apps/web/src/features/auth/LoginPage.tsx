@@ -1,5 +1,6 @@
 import { Navigate, useSearchParams } from 'react-router';
 import { useAuthProviders, useMe } from '@/lib/api';
+import { CenteredCard, CenteredLayout } from '@/shell/layouts/CenteredLayout';
 import { Logo, Spinner } from '@/ui';
 import { LoginErrorBanner, SignupHint } from './components/LoginBits';
 import { LoginOptions } from './components/LoginOptions';
@@ -27,44 +28,31 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const joining = returnTo.startsWith('/join/');
 
   return (
-    <div className="dot-grid flex min-h-full flex-col">
-      <title>{mode === 'register' ? 'Konto erstellen · Slider' : 'Anmelden · Slider'}</title>
-      <header className="flex h-[88px] shrink-0 items-center px-6 md:px-14">
-        <Logo />
-      </header>
-      <main className="flex flex-1 justify-center px-4 pt-[clamp(8px,12vh,140px)] pb-16">
-        <div className="flex w-full max-w-[440px] flex-col gap-4">
-          {isLoginError(errorCode) && <LoginErrorBanner code={errorCode} />}
-          <section
-            aria-labelledby="login-title"
-            className="glass flex animate-fade-in flex-col items-center gap-6 rounded-panel px-6 pt-10 pb-8 text-center sm:px-10"
-          >
-            <span className="flex size-14 items-center justify-center rounded-panel bg-white/6 text-fg">
-              <Logo withText={false} />
-            </span>
-            <div className="flex flex-col gap-2">
-              <h1 id="login-title" className="text-2xl leading-8 font-semibold text-fg">
-                {mode === 'register' ? 'Konto erstellen' : 'Anmelden oder Konto erstellen'}
-              </h1>
-              <p className="text-sm leading-5 text-fg-subtle">
-                {joining
-                  ? 'Melde dich an, um der Einladung zu folgen.'
-                  : 'Folien teilen. Feedback direkt auf der Folie sammeln.'}
-              </p>
-            </div>
-            {providers.isPending ? (
-              <Spinner size={24} className="text-fg-subtle" />
-            ) : providers.isError ? (
-              <p className="text-sm text-danger">{providers.error.message}</p>
-            ) : (
-              <LoginOptions config={providers.data} returnTo={returnTo} />
-            )}
-          </section>
-          {providers.data && (
-            <SignupHint signup={providers.data.signup} mode={mode} returnTo={returnTo} />
-          )}
-        </div>
-      </main>
-    </div>
+    <CenteredLayout
+      docTitle={mode === 'register' ? 'Konto erstellen · Slider' : 'Anmelden · Slider'}
+    >
+      {isLoginError(errorCode) && <LoginErrorBanner code={errorCode} />}
+      <CenteredCard
+        titleId="login-title"
+        icon={<Logo withText={false} />}
+        title={mode === 'register' ? 'Konto erstellen' : 'Anmelden oder Konto erstellen'}
+        message={
+          joining
+            ? 'Melde dich an, um der Einladung zu folgen.'
+            : 'Folien teilen. Feedback direkt auf der Folie sammeln.'
+        }
+      >
+        {providers.isPending ? (
+          <Spinner size={24} className="text-fg-subtle" />
+        ) : providers.isError ? (
+          <p className="text-sm text-danger">{providers.error.message}</p>
+        ) : (
+          <LoginOptions config={providers.data} returnTo={returnTo} />
+        )}
+      </CenteredCard>
+      {providers.data && (
+        <SignupHint signup={providers.data.signup} mode={mode} returnTo={returnTo} />
+      )}
+    </CenteredLayout>
   );
 }

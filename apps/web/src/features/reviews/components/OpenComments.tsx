@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type Ref } from 'react';
+import { useId, useState, type Ref } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -6,7 +6,18 @@ import type { Comment, Deck } from '@slider/shared';
 import { routes } from '@/lib/routes';
 import { formatRelativeTime } from '@/lib/format';
 import { queryKeys, useComments, useSlides, useUpdateComment } from '@/lib/api';
-import { Avatar, AvatarStack, cn, Icon, Spinner, useDismiss } from '@/ui';
+import {
+  Avatar,
+  AvatarStack,
+  Button,
+  cn,
+  Icon,
+  IconButton,
+  LoadingState,
+  PopoverPanel,
+  TextLink,
+  usePopover,
+} from '@/ui';
 import {
   buildThreads,
   commentPreview,
@@ -45,23 +56,13 @@ export function OpenCommentsButton({
   /** The list opened or closed – the card drops its hover look while it's open. */
   onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const popoverId = useId();
-  const wrapperRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  // The `card` list is portalled out of the wrapper, so it counts as inside on its own.
-  const popoverRef = useRef<HTMLElement>(null);
+  // The `card` list is portalled out of the wrapper; as the panel it still counts as inside.
+  const { open, close, wrapperRef, panelRef, panelId, triggerProps } = usePopover({
+    onOpenChange,
+  });
   const count = deck.openCommentCount;
   const done = count === 0;
-
-  useEffect(() => onOpenChange?.(open), [open, onOpenChange]);
-
-  useDismiss({
-    open,
-    onDismiss: () => setOpen(false),
-    refs: [wrapperRef, popoverRef],
-    returnFocusTo: triggerRef,
-  });
+  const md = size === 'md';
 
   // Nothing open: no button. Kept while the list is open, so ticking the last thread doesn't
   // yank it away.
@@ -69,49 +70,45 @@ export function OpenCommentsButton({
 
   return (
     <div ref={wrapperRef} className={cn(placement === 'above' && 'relative')}>
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-expanded={open}
-        aria-controls={open ? popoverId : undefined}
+      <Button
+        {...triggerProps}
+        variant="secondary"
+        size={md ? 'sm' : 'xs'}
+        weight="normal"
+        icon={done ? 'checkCircle' : 'chatBubble'}
+        iconSize={md ? 18 : 16}
         aria-label={done ? 'Alle Kommentare erledigt' : `${count} offene Kommentare anzeigen`}
-        onClick={() => setOpen((value) => !value)}
-        className={cn(
-          // Positioned, so it sits above a stretched deck link.
-          'glass-control relative inline-flex items-center gap-1.5 rounded-chip text-fg-muted transition-colors',
-          size === 'md' ? 'h-8 px-3 text-[13px]' : 'h-7 px-2.5 text-xs',
-          'hover:bg-glass-hover hover:text-fg focus-visible:ring-2 focus-visible:ring-mention focus-visible:outline-none',
-          open && 'bg-glass-hover text-fg',
-        )}
+        // Positioned, so it sits above a stretched deck link.
+        className="relative"
       >
-        <Icon name={done ? 'checkCircle' : 'chatBubble'} size={size === 'md' ? 18 : 16} />
         {done ? 'Alles erledigt' : `${count} offen`}
         <Icon
           name="expandLess"
-          size={size === 'md' ? 16 : 14}
+          size={md ? 16 : 14}
           className={cn('-mr-1 transition-transform', open && 'rotate-180')}
         />
-      </button>
+      </Button>
       {open &&
         placement === 'card' &&
         cardSlot &&
         createPortal(
           // The thumbnail, 8px inset – the same size for one comment or a hundred; the list scrolls inside.
           <OpenCommentsPopover
-            ref={popoverRef}
-            id={popoverId}
+            ref={panelRef}
+            id={panelId}
             deck={deck}
-            onClose={() => setOpen(false)}
-            className="absolute inset-2 z-30"
+            onClose={close}
+            position="none"
+            className="absolute inset-2"
           />,
           cardSlot,
         )}
       {open && placement === 'above' && (
         <OpenCommentsPopover
-          id={popoverId}
+          id={panelId}
           deck={deck}
-          onClose={() => setOpen(false)}
-          className="absolute bottom-full left-0 z-30 mb-2 origin-bottom-left max-h-[min(420px,60vh)] w-[min(340px,calc(100vw-32px))]"
+          onClose={close}
+          className="max-h-[min(420px,60vh)] w-[min(340px,calc(100vw-32px))]"
         />
       )}
     </div>
@@ -123,12 +120,15 @@ function OpenCommentsPopover({
   id,
   deck,
   onClose,
+  position = 'anchored',
   className,
 }: {
   ref?: Ref<HTMLElement>;
   id: string;
   deck: Deck;
   onClose: () => void;
+  /** `none` for the `card` list, which fills the thumbnail instead of hanging off the button. */
+  position?: 'anchored' | 'none';
   className?: string;
 }) {
   const headingId = useId();
@@ -166,11 +166,14 @@ function OpenCommentsPopover({
   };
 
   return (
-    <section
+    <PopoverPanel
+      as="section"
       ref={ref}
       id={id}
       aria-labelledby={headingId}
-      className={cn('glass-elevated flex animate-pop-in flex-col rounded-panel', className)}
+      side="top"
+      position={position}
+      className={className}
     >
       <header className="flex shrink-0 items-center justify-between gap-3 px-4 pt-3.5 pb-2">
         <h2 id={headingId} className="text-sm font-semibold text-fg">
@@ -185,15 +188,13 @@ function OpenCommentsPopover({
 
       <div className="min-h-0 overflow-y-auto overscroll-contain px-2 pb-2">
         {comments.isPending ? (
-          <div className="flex justify-center py-6">
-            <Spinner />
-          </div>
+          <LoadingState padding="md" />
         ) : comments.isError ? (
-          <p className="px-2 py-6 text-center text-[13px] text-fg-subtle">
+          <p className="px-2 py-6 text-center text-body text-fg-subtle">
             Kommentare konnten nicht geladen werden.
           </p>
         ) : threads.length === 0 ? (
-          <p className="px-2 py-6 text-center text-[13px] text-fg-subtle">Nichts mehr offen.</p>
+          <p className="px-2 py-6 text-center text-body text-fg-subtle">Nichts mehr offen.</p>
         ) : (
           <ul className="flex flex-col gap-0.5">
             {threads.map((thread) => (
@@ -214,7 +215,7 @@ function OpenCommentsPopover({
           </ul>
         )}
       </div>
-    </section>
+    </PopoverPanel>
   );
 }
 
@@ -244,7 +245,7 @@ function OpenThreadItem({
   const to = routes.deck(deckId, root.slideId);
 
   return (
-    <div className="flex items-center gap-3 rounded-control py-1.5 pr-1.5 pl-2 transition-colors hover:bg-white/5">
+    <div className="flex items-center gap-3 rounded-control py-1.5 pr-1.5 pl-2 transition-colors hover:bg-surface-1">
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <Link
           to={to}
@@ -257,7 +258,7 @@ function OpenThreadItem({
           />
           <span
             className={cn(
-              'line-clamp-2 text-[13px] text-fg transition-colors',
+              'line-clamp-2 text-body text-fg transition-colors',
               done && 'text-fg-subtle line-through',
             )}
           >
@@ -267,15 +268,12 @@ function OpenThreadItem({
 
         {replies.length > 0 && (
           <>
-            <button
-              type="button"
+            <TextLink
+              size="xs"
               aria-expanded={expanded}
               aria-controls={expanded ? repliesId : undefined}
               onClick={() => setExpanded((value) => !value)}
-              className={cn(
-                '-ml-1 flex w-fit items-center gap-1.5 rounded-chip px-1 py-0.5 text-xs text-fg-subtle transition-colors',
-                'hover:text-fg focus-visible:ring-2 focus-visible:ring-mention focus-visible:outline-none',
-              )}
+              className="-ml-1 flex w-fit items-center gap-1.5 rounded-chip px-1 py-0.5"
             >
               <AvatarStack
                 // Only the root author answered: show them rather than nobody.
@@ -289,7 +287,7 @@ function OpenThreadItem({
                 size={14}
                 className={cn('transition-transform', expanded && 'rotate-180')}
               />
-            </button>
+            </TextLink>
             {expanded && (
               <ul
                 id={repliesId}
@@ -303,7 +301,7 @@ function OpenThreadItem({
                       className="flex min-w-0 flex-col gap-0.5 rounded-badge outline-none focus-visible:ring-2 focus-visible:ring-mention"
                     >
                       <CommentMeta comment={reply} />
-                      <span className="line-clamp-3 text-[13px] text-fg-muted">
+                      <span className="line-clamp-3 text-body text-fg-muted">
                         {commentPreview(reply)}
                       </span>
                     </Link>
@@ -316,20 +314,17 @@ function OpenThreadItem({
       </div>
       {canResolve && (
         // Same as the review tool's resolve button (ResolveButton, `icon`).
-        <button
-          type="button"
+        <IconButton
+          icon="check"
+          variant="subtle"
+          size="sm"
+          iconSize={18}
+          iconTone={done ? 'success' : undefined}
           aria-pressed={done}
-          aria-label={done ? 'Wieder öffnen' : 'Als erledigt markieren'}
+          label={done ? 'Wieder öffnen' : 'Als erledigt markieren'}
           title={done ? 'Erledigt – klicken zum Wiederöffnen' : 'Als erledigt markieren'}
           onClick={onToggle}
-          className={cn(
-            'flex size-8 shrink-0 items-center justify-center rounded-chip transition-colors',
-            'focus-visible:ring-2 focus-visible:ring-mention focus-visible:outline-none',
-            done ? 'text-success' : 'text-fg-subtle hover:bg-white/10 hover:text-fg',
-          )}
-        >
-          <Icon name="check" size={18} />
-        </button>
+        />
       )}
     </div>
   );

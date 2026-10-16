@@ -264,7 +264,7 @@ export function useConnectorLayout({
         for (const connector of routed)
           lines.push({
             threadId: connector.id,
-            color: colorOf.get(connector.id) ?? 'white',
+            color: colorOf.get(connector.id) ?? 'var(--color-fg)',
             d: roundedPath(connector.points),
           });
         cutouts.push(...measureCutouts(slideElement, origin));

@@ -1,6 +1,7 @@
 import type { Shape } from '@slider/shared';
 import { cn } from '@/ui';
 import { shapeLabel } from '../comments/lib/labels';
+import { ON_MARK_TEXT } from './lib/mark-chrome';
 
 interface ShapeOutlineProps {
   shape: Shape;
@@ -29,9 +30,9 @@ export function ShapeOutline({ shape, variant, color, labelled = false }: ShapeO
       aria-hidden
       data-shape-outline={variant}
       className={cn(
-        'pointer-events-none absolute rounded-[3px]',
+        'pointer-events-none absolute rounded-mark',
         variant === 'faint'
-          ? 'border border-dashed border-white/45 mix-blend-difference'
+          ? 'border border-dashed border-fg-subtle mix-blend-difference'
           : 'border-[1.5px]',
       )}
       style={{
@@ -49,11 +50,12 @@ export function ShapeOutline({ shape, variant, color, labelled = false }: ShapeO
       {labelled && (
         <span
           className={cn(
-            'absolute left-0 max-w-80 truncate rounded-[3px] px-1.5 py-0.5',
-            'text-[11px] leading-tight font-medium whitespace-nowrap text-white shadow-sm',
+            'absolute left-0 max-w-80 truncate rounded-mark px-1.5 py-0.5',
+            'text-caption leading-tight font-medium whitespace-nowrap shadow-mark',
+            ON_MARK_TEXT,
             labelInside ? 'top-0' : 'bottom-full mb-0.5',
           )}
-          style={{ backgroundColor: color ?? 'rgb(0 0 0 / 0.7)' }}
+          style={{ backgroundColor: color ?? 'var(--color-scrim-strong)' }}
         >
           {shapeLabel(shape)}
         </span>

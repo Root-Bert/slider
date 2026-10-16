@@ -23,11 +23,11 @@ export function UsageMeter({
   const { used, max, full, remaining } = state;
   const status = max === null ? 'Kein Limit' : full ? 'Limit erreicht' : `Noch ${remaining} frei`;
   return (
-    <div className="flex min-w-0 flex-1 flex-col gap-3 rounded-2xl bg-white/[0.04] p-4">
+    <div className="flex min-w-0 flex-1 flex-col gap-3 rounded-panel bg-surface-1 p-4">
       <div className="flex items-baseline gap-1.5">
         <span
           className={cn(
-            'text-[28px] leading-none font-semibold tabular-nums',
+            'text-display leading-none font-semibold tabular-nums',
             full ? 'text-warning' : 'text-fg',
           )}
         >
@@ -35,7 +35,7 @@ export function UsageMeter({
         </span>
         {max !== null && <span className="text-sm text-fg-subtle tabular-nums">von {max}</span>}
       </div>
-      <span className="text-[13px] text-fg-muted">{label}</span>
+      <span className="text-body text-fg-muted">{label}</span>
       {max !== null && (
         <div
           role="meter"
@@ -52,12 +52,12 @@ export function UsageMeter({
                 key={i}
                 className={cn(
                   'flex-1 rounded-full',
-                  i < used ? (full ? 'bg-warning' : 'bg-fg') : 'bg-white/10',
+                  i < used ? (full ? 'bg-warning' : 'bg-fg') : 'bg-hover',
                 )}
               />
             ))
           ) : (
-            <div className="flex-1 overflow-hidden rounded-full bg-white/10">
+            <div className="flex-1 overflow-hidden rounded-full bg-hover">
               <div
                 className={cn('h-full rounded-full', full ? 'bg-warning' : 'bg-fg')}
                 style={{ width: `${Math.round((state.ratio ?? 0) * 100)}%` }}

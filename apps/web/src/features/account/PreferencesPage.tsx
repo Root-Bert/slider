@@ -1,8 +1,7 @@
-import { Link } from 'react-router';
 import { routes } from '@/lib/routes';
-import { AppHeader } from '@/shell/AppHeader';
+import { SettingsLayout } from '@/shell/layouts/SettingsLayout';
 import { useAccount } from '@/features/auth';
-import { Icon, Section, Toast, useToast } from '@/ui';
+import { Icon, Section, useToast } from '@/ui';
 import { ColorPicker, WorkSection } from './components/PreferenceSections';
 
 /**
@@ -14,35 +13,18 @@ export function Component() {
   const [toast, showToast] = useToast();
 
   return (
-    <div className="dot-grid min-h-full">
-      <title>Einstellungen · Slider</title>
-      <AppHeader />
-      <main className="flex justify-center px-4 pt-2 pb-16">
-        <div className="flex w-full max-w-[720px] flex-col gap-6">
-          <div className="flex flex-col gap-3">
-            <Link
-              to={routes.reviews()}
-              className="inline-flex w-fit items-center gap-1 text-[13px] text-fg-subtle hover:text-fg"
-            >
-              <Icon name="arrowBack" size={16} />
-              Zurück zu den Reviews
-            </Link>
-            <div className="flex items-center gap-3">
-              <Icon name="settings" size={32} className="text-fg-muted" />
-              <h1 className="min-w-0 truncate text-[28px] leading-tight font-semibold tracking-tight text-fg">
-                Einstellungen
-              </h1>
-            </div>
-          </div>
+    <SettingsLayout
+      docTitle="Einstellungen · Slider"
+      title="Einstellungen"
+      leading={<Icon name="settings" size={32} className="text-fg-muted" />}
+      back={{ to: routes.reviews() }}
+      toast={toast}
+    >
+      <Section title="Darstellung" description="Gilt für alle deine Reviews.">
+        <ColorPicker color={user.color} onNotify={showToast} />
+      </Section>
 
-          <Section title="Darstellung" description="Gilt für alle deine Reviews.">
-            <ColorPicker color={user.color} onNotify={showToast} />
-          </Section>
-
-          <WorkSection />
-        </div>
-      </main>
-      <Toast toast={toast} />
-    </div>
+      <WorkSection />
+    </SettingsLayout>
   );
 }

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type Ref } from 'react';
-import { Button, cn, IconButton, MicrosoftMark, Spinner } from '@/ui';
+import { motionMs } from '@/lib/motion';
+import { Button, cn, ErrorText, IconButton, MicrosoftMark, Spinner } from '@/ui';
 
 /** Name the picker form targets; one picker at a time. */
 const PICKER_FRAME_NAME = 'slider-onedrive-picker';
-/** Matches the height/width transition below. */
+/** Matches the height/width transition below (`ease-sheet`); 0 for the timer under reduced motion. */
 const EXPAND_MS = 380;
 
 /**
@@ -51,7 +52,7 @@ export function OneDrivePicker({
     const timer = setTimeout(() => {
       setGrown(false);
       setMounted(false);
-    }, EXPAND_MS);
+    }, motionMs(EXPAND_MS));
     return () => clearTimeout(timer);
   }, [open]);
 
@@ -93,9 +94,9 @@ export function OneDrivePicker({
           Aus OneDrive oder SharePoint auswählen
         </Button>
         {error && (
-          <p role="alert" className="text-xs text-danger">
+          <ErrorText role="alert" size="xs">
             {error}
-          </p>
+          </ErrorText>
         )}
       </div>
     );
@@ -109,9 +110,9 @@ export function OneDrivePicker({
       // Centred on the column, free to grow past it.
       className={cn(
         'glass relative left-1/2 flex -translate-x-1/2 flex-col overflow-hidden outline-none',
-        'transition-[width,height,border-radius,background-color] ease-[cubic-bezier(0.32,0.72,0,1)]',
+        'transition-[width,height,border-radius,background-color] ease-sheet',
         expanded
-          ? 'h-[min(760px,max(420px,calc(100dvh-300px)))] w-[min(1080px,calc(100vw-32px))] rounded-panel bg-[rgb(20_20_20/0.86)]! shadow-(--shadow-float)!'
+          ? 'h-[min(760px,max(420px,calc(100dvh-300px)))] w-[min(1080px,calc(100vw-32px))] rounded-panel bg-glass-elevated! shadow-float!'
           : 'h-11 w-full rounded-control shadow-none!',
       )}
       style={{ transitionDuration: `${EXPAND_MS}ms` }}
@@ -122,7 +123,7 @@ export function OneDrivePicker({
         <h2
           className={cn(
             'absolute top-1/2 flex -translate-y-1/2 items-center gap-2 text-sm font-medium whitespace-nowrap text-fg',
-            'transition-[left,translate] ease-[cubic-bezier(0.32,0.72,0,1)]',
+            'transition-[left,translate] ease-sheet',
             expanded ? 'left-5 translate-x-0' : 'left-1/2 -translate-x-1/2',
           )}
           style={{ transitionDuration: `${EXPAND_MS}ms` }}
@@ -153,7 +154,7 @@ export function OneDrivePicker({
         />
         {!ready && expanded && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-fg-subtle">
-            <Spinner size={20} />
+            <Spinner size="xl" />
             <p className="text-xs">OneDrive wird geladen …</p>
           </div>
         )}
@@ -162,7 +163,7 @@ export function OneDrivePicker({
           inset shadow the opaque frame would cover it at the sides and bottom. */}
       <span
         aria-hidden
-        className="pointer-events-none absolute inset-0 rounded-[inherit] shadow-[inset_0_0_0_1px_var(--color-hairline)]"
+        className="pointer-events-none absolute inset-0 rounded-[inherit] ring-hairline"
       />
     </section>
   );

@@ -3,6 +3,7 @@ import { Navigate, useLocation, useParams, useSearchParams } from 'react-router'
 import { routes } from '@/lib/routes';
 import { isSignedOutError } from '@/features/auth';
 import { markDeckOpened } from '@/lib/last-visits';
+import { motionMs } from '@/lib/motion';
 import { useComments, useDeck, useDeckPeople, useMe, useSlides } from '@/lib/api';
 import { ImportProgress } from './import/ImportProgress';
 import { DeckError, DeckLoading } from './DeckStates';
@@ -113,7 +114,7 @@ function useCommentsIntro(sawImport: boolean, revealed: boolean): 'hidden' | 'en
   const [done, setDone] = useState(false);
   useEffect(() => {
     if (!revealed) return;
-    const timer = setTimeout(() => setDone(true), COMMENTS_INTRO_MS);
+    const timer = setTimeout(() => setDone(true), motionMs(COMMENTS_INTRO_MS));
     return () => clearTimeout(timer);
   }, [revealed]);
   if (!sawImport || done) return null;

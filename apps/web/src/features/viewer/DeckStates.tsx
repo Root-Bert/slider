@@ -1,8 +1,7 @@
-import { Link } from 'react-router';
 import { CenteredMessage } from '@/shell/CenteredMessage';
 import { routes } from '@/lib/routes';
 import { ApiError } from '@/lib/api-client';
-import { Button, Spinner } from '@/ui';
+import { Button, LoadingState, TextLink } from '@/ui';
 
 /** Full-page states of the deck route besides the viewer itself. */
 
@@ -26,20 +25,13 @@ export function DeckError({ error }: { error: Error }) {
           Erneut versuchen
         </Button>
       )}
-      <Link
-        to={routes.reviews()}
-        className="text-sm text-fg-muted underline underline-offset-4 hover:text-fg"
-      >
+      <TextLink to={routes.reviews()} variant="underline" size="sm">
         Zu meinen Reviews
-      </Link>
+      </TextLink>
     </CenteredMessage>
   );
 }
 
 export function DeckLoading() {
-  return (
-    <main className="dot-grid flex h-dvh items-center justify-center" aria-busy>
-      <Spinner size={28} className="text-fg-subtle" />
-    </main>
-  );
+  return <LoadingState fullPage height="screen" />;
 }

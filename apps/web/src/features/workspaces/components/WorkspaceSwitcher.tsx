@@ -2,12 +2,12 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { routes } from '@/lib/routes';
 import { useMe } from '@/lib/api';
-import { Icon, Toast, useToast } from '@/ui';
+import { Icon, MenuDivider, MenuHeading, MenuItem, Toast, useToast } from '@/ui';
 import { ROLE_LABELS } from '../lib/roles';
 import { useActiveWorkspace } from '../hooks/useWorkspace';
 import { CreateWorkspaceDialog } from './CreateWorkspaceDialog';
 import { JoinWorkspaceDialog } from './JoinWorkspaceDialog';
-import { HeaderPopover, PopoverDivider, PopoverHeading, PopoverItem } from './HeaderPopover';
+import { HeaderPopover } from './HeaderPopover';
 import { PendingInvites } from './PendingInvites';
 import { WorkspaceMark } from './WorkspaceMark';
 
@@ -34,7 +34,7 @@ export function WorkspaceSwitcher() {
     <>
       <HeaderPopover
         label={label}
-        triggerClassName="flex h-9 max-w-[240px] items-center gap-2 rounded-control pr-2 pl-1.5 text-fg transition-colors hover:bg-white/10 aria-expanded:bg-white/10"
+        triggerClassName="flex h-9 max-w-[240px] items-center gap-2 rounded-control pr-2 pl-1.5 text-fg transition-colors hover:bg-hover aria-expanded:bg-hover"
         trigger={() => (
           <>
             {current ? (
@@ -46,7 +46,7 @@ export function WorkspaceSwitcher() {
               {current?.name ?? 'Organisationen'}
             </span>
             {invites.length > 0 && (
-              <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-thumb bg-info px-1 text-[10px] font-semibold text-white">
+              <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-thumb bg-info px-1 text-tiny font-semibold text-primary-hover">
                 {invites.length}
               </span>
             )}
@@ -56,10 +56,10 @@ export function WorkspaceSwitcher() {
       >
         {(close) => (
           <>
-            <PopoverHeading>Organisationen</PopoverHeading>
+            <MenuHeading>Organisationen</MenuHeading>
             <div className="flex max-h-[min(320px,50vh)] flex-col gap-0.5 overflow-y-auto">
               {workspaces.map((workspace) => (
-                <PopoverItem
+                <MenuItem
                   key={workspace.id}
                   selected={workspace.id === current?.id}
                   icon={<WorkspaceMark name={workspace.name} logoUrl={workspace.logoUrl} />}
@@ -68,7 +68,7 @@ export function WorkspaceSwitcher() {
                       <Icon name="check" size={18} className="text-fg-muted" />
                     ) : null
                   }
-                  onSelect={() => {
+                  onClick={() => {
                     close();
                     void navigate(routes.workspace(workspace.id));
                   }}
@@ -77,24 +77,24 @@ export function WorkspaceSwitcher() {
                   <span className="shrink-0 text-xs text-fg-subtle">
                     {ROLE_LABELS[workspace.role]}
                   </span>
-                </PopoverItem>
+                </MenuItem>
               ))}
             </div>
-            <PopoverDivider />
-            <PopoverHeading>Neue Organisation</PopoverHeading>
+            <MenuDivider />
+            <MenuHeading>Neue Organisation</MenuHeading>
             {canCreate ? (
-              <PopoverItem
-                icon={<Icon name="add" size={18} className="text-fg-subtle" />}
-                onSelect={() => {
+              <MenuItem
+                icon="add"
+                onClick={() => {
                   close();
                   setDialog('create');
                 }}
               >
                 Eigene erstellen
-              </PopoverItem>
+              </MenuItem>
             ) : (
               // One own organisation per account (BER-130) – handing it over frees the slot.
-              <div className="flex items-start gap-2.5 px-2.5 py-1.5 text-[13px] text-fg-subtle">
+              <div className="flex items-start gap-2.5 px-2.5 py-1.5 text-body text-fg-subtle">
                 <Icon name="add" size={18} className="shrink-0 opacity-50" />
                 <span className="flex flex-col gap-0.5">
                   <span>Eigene erstellen</span>
@@ -105,31 +105,31 @@ export function WorkspaceSwitcher() {
                 </span>
               </div>
             )}
-            <PopoverItem
-              icon={<Icon name="personAdd" size={18} className="text-fg-subtle" />}
-              onSelect={() => {
+            <MenuItem
+              icon="personAdd"
+              onClick={() => {
                 close();
                 setDialog('join');
               }}
             >
               Mit Einladung beitreten
-            </PopoverItem>
-            <PopoverDivider />
+            </MenuItem>
+            <MenuDivider />
             {current && (
-              <PopoverItem
-                icon={<Icon name="settings" size={18} className="text-fg-subtle" />}
-                onSelect={() => {
+              <MenuItem
+                icon="settings"
+                onClick={() => {
                   close();
                   void navigate(routes.workspaceSettings(current.id));
                 }}
               >
                 Organisation verwalten
-              </PopoverItem>
+              </MenuItem>
             )}
             {invites.length > 0 && (
               <>
-                <PopoverDivider />
-                <PopoverHeading>Einladungen</PopoverHeading>
+                <MenuDivider />
+                <MenuHeading>Einladungen</MenuHeading>
                 <PendingInvites invites={invites} onError={showToast} compact />
               </>
             )}

@@ -1,4 +1,4 @@
-import { cn, IconButton } from '@/ui';
+import { Button, cn, IconButton } from '@/ui';
 import { useGoToSlide } from '../hooks/useGoToSlide';
 import { revisionNoticeText } from './lib/revision-changes';
 import { useRevisionData, type RevisionAnnouncement } from '../state/revision-data';
@@ -41,7 +41,7 @@ export function RevisionNotice({
       data-revision-notice
       title={text}
       className={cn(
-        'flex h-8 min-w-0 animate-slide-in-x items-center gap-1 rounded-control bg-white/8 pr-0.5 pl-2.5 text-xs text-fg',
+        'flex h-8 min-w-0 animate-slide-in-x items-center gap-1 rounded-control bg-surface-2 pr-0.5 pl-2.5 text-xs text-fg',
         'max-w-[440px]',
       )}
     >
@@ -54,13 +54,9 @@ export function RevisionNotice({
         )}
       </span>
       {canShow && (
-        <button
-          type="button"
-          onClick={showChanges}
-          className="ml-1 h-6 shrink-0 rounded-badge bg-white/12 px-2 font-medium text-fg transition-colors hover:bg-white/20"
-        >
+        <Button variant="soft" tone="strong" size="xs" onClick={showChanges} className="ml-1">
           Änderungen ansehen
-        </button>
+        </Button>
       )}
       <IconButton icon="close" label="Hinweis schließen" size="sm" onClick={onDone} />
     </span>

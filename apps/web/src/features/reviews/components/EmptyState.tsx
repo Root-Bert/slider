@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { EmptyState as KitEmptyState } from '@/ui';
 
 interface EmptyStateProps {
   title: string;
@@ -8,22 +9,9 @@ interface EmptyStateProps {
   illustration?: ReactNode;
 }
 
-export function EmptyState({
-  title,
-  message,
-  action,
-  illustration = <StackedSlides />,
-}: EmptyStateProps) {
-  return (
-    <div className="flex flex-col items-center gap-5 px-4 py-20 text-center">
-      {illustration}
-      <div className="flex max-w-sm flex-col gap-1.5">
-        <h2 className="text-base font-semibold text-fg">{title}</h2>
-        <p className="text-sm text-fg-subtle">{message}</p>
-      </div>
-      {action}
-    </div>
-  );
+/** The kit's empty state with the reviews illustration as its default. */
+export function EmptyState({ illustration = <StackedSlides />, ...props }: EmptyStateProps) {
+  return <KitEmptyState illustration={illustration} {...props} />;
 }
 
 /** Three fanned-out slide outlines with a comment pin – hints at what Slider does. */
@@ -37,8 +25,8 @@ function StackedSlides() {
         height="56"
         rx="6"
         transform="rotate(-8 10 22)"
-        fill="#141414"
-        stroke="rgb(255 255 255 / 0.12)"
+        fill="var(--color-glass-solid)"
+        stroke="var(--color-surface-3)"
       />
       <rect
         x="30"
@@ -46,14 +34,14 @@ function StackedSlides() {
         width="88"
         height="56"
         rx="6"
-        fill="#1a1a1a"
-        stroke="rgb(255 255 255 / 0.18)"
+        fill="var(--color-placeholder)"
+        stroke="var(--color-hairline-strong)"
       />
-      <rect x="40" y="30" width="40" height="5" rx="2.5" fill="rgb(255 255 255 / 0.3)" />
-      <rect x="40" y="41" width="60" height="3" rx="1.5" fill="rgb(255 255 255 / 0.14)" />
-      <rect x="40" y="48" width="52" height="3" rx="1.5" fill="rgb(255 255 255 / 0.14)" />
+      <rect x="40" y="30" width="40" height="5" rx="2.5" fill="var(--color-fg-faint)" />
+      <rect x="40" y="41" width="60" height="3" rx="1.5" fill="var(--color-selected)" />
+      <rect x="40" y="48" width="52" height="3" rx="1.5" fill="var(--color-selected)" />
       <circle cx="108" cy="22" r="9" fill="var(--color-accent-blue)" />
-      <circle cx="108" cy="22" r="3" fill="white" />
+      <circle cx="108" cy="22" r="3" fill="var(--color-primary-hover)" />
     </svg>
   );
 }

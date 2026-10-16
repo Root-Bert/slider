@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router';
 import type { PendingInvite } from '@slider/shared';
 import { routes } from '@/lib/routes';
 import { useAcceptInvite } from '@/lib/api';
-import { Badge, Button, Icon, type ShowToast } from '@/ui';
+import { Badge, Button, Icon, IconTile, ListRow, type ShowToast } from '@/ui';
 import { formatExpiry, ROLE_LABELS } from '../lib/roles';
 
 /** E-mail invitations for the signed-in address, each with "Beitreten". */
@@ -44,30 +44,29 @@ function PendingInviteRow({
     });
 
   return (
-    <li
-      className={
-        compact
-          ? 'flex items-center gap-3 rounded-control px-2.5 py-2'
-          : 'flex items-center gap-3 rounded-control-sm p-2.5'
+    <ListRow
+      variant="flush"
+      padding={compact ? 'wide' : 'md'}
+      size="body"
+      leading={
+        <IconTile size={36}>
+          <Icon name="personAdd" size={18} />
+        </IconTile>
       }
-    >
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-control-sm bg-white/6 text-fg-muted">
-        <Icon name="personAdd" size={18} />
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-[13px] font-medium text-fg">{invite.workspaceName}</span>
-          <Badge>{ROLE_LABELS[invite.role]}</Badge>
-        </span>
-        <span className="truncate text-xs text-fg-subtle">
+      title={invite.workspaceName}
+      badge={<Badge>{ROLE_LABELS[invite.role]}</Badge>}
+      subtitle={
+        <>
           {invite.deck ? `„${invite.deck.title}“ · ` : ''}
           {invite.inviterName ? `Von ${invite.inviterName} · ` : ''}
           {formatExpiry(invite.expiresAt)}
-        </span>
-      </span>
-      <Button size="sm" loading={accept.isPending} onClick={join}>
-        Beitreten
-      </Button>
-    </li>
+        </>
+      }
+      trailing={
+        <Button size="sm" loading={accept.isPending} onClick={join}>
+          Beitreten
+        </Button>
+      }
+    />
   );
 }

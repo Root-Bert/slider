@@ -4,6 +4,7 @@ import { cn } from '@/ui';
 import { CORNERS } from './corners';
 import { FrameEdges } from './RectFrame';
 import { FRAME_ATTR, useRectEdit } from './hooks/useRectEdit';
+import { frameHalo, HANDLE_CLASS, handleRing } from './lib/mark-chrome';
 
 interface EditableFrameProps {
   rect: Rect;
@@ -74,7 +75,7 @@ export function EditableFrame({
       className={cn(
         'absolute cursor-move touch-none rounded-thumb border-2',
         edgesOnly ? 'pointer-events-none' : 'pointer-events-auto',
-        lit && 'z-10',
+        lit && 'z-(--z-raised)',
         className,
       )}
       style={{
@@ -83,7 +84,7 @@ export function EditableFrame({
         width: `${shown.w * 100}%`,
         height: `${shown.h * 100}%`,
         borderColor: color,
-        boxShadow: lit ? `0 0 0 3px color-mix(in srgb, ${color} 30%, transparent)` : undefined,
+        boxShadow: lit ? frameHalo(color) : undefined,
       }}
     >
       {edgesOnly && <FrameEdges />}
@@ -94,7 +95,7 @@ export function EditableFrame({
           role="presentation"
           title="Ziehen zum Ändern der Größe"
           {...edit.cornerProps('nw')}
-          className="pointer-events-auto absolute -top-3.5 -left-3.5 z-10 size-6 cursor-nwse-resize touch-none"
+          className="pointer-events-auto absolute -top-3.5 -left-3.5 z-(--z-raised) size-6 cursor-nwse-resize touch-none"
         >
           {badge}
         </span>
@@ -107,11 +108,8 @@ export function EditableFrame({
               role="presentation"
               title="Größe ändern"
               {...edit.cornerProps(corner)}
-              className={cn(
-                'pointer-events-auto absolute size-3 touch-none rounded-[3px] bg-white',
-                position,
-              )}
-              style={{ boxShadow: `0 0 0 1.5px ${color}` }}
+              className={cn('pointer-events-auto', HANDLE_CLASS, position)}
+              style={{ boxShadow: handleRing(color) }}
             />
           ),
         )}

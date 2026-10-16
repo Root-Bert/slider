@@ -164,7 +164,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
       ref={layerRef}
       className={cn(
         'pointer-events-none absolute inset-0 [container-type:size]',
-        aboveTools && 'z-30',
+        aboveTools && 'z-(--z-chrome)',
       )}
     >
       {emphasizedShape && emphasized && !draftShape && (

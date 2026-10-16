@@ -20,11 +20,11 @@ export function WorkspaceMark({
     <span
       aria-hidden
       className={cn(
-        'inline-flex shrink-0 items-center justify-center overflow-hidden bg-white/12 font-semibold text-fg',
+        'inline-flex shrink-0 items-center justify-center overflow-hidden bg-surface-3 font-semibold text-fg',
         size === 24
-          ? 'rounded-badge text-[11px]'
+          ? 'rounded-badge text-caption'
           : size === 32
-            ? 'rounded-chip text-[13px]'
+            ? 'rounded-chip text-body'
             : size === 40
               ? 'rounded-control-sm text-sm'
               : 'rounded-control text-2xl',

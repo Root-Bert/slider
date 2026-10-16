@@ -10,8 +10,14 @@ import { useCreateWorkspaceInvite, useRevokeWorkspaceInvite, useWorkspaceInvites
 import {
   Badge,
   Button,
+  ErrorText,
   Icon,
   IconButton,
+  IconTile,
+  ListRow,
+  LoadingState,
+  Notice,
+  RowList,
   Select,
   Spinner,
   TextField,
@@ -75,22 +81,15 @@ export function InviteForm({ workspace, onNotify }: { workspace: Workspace; onNo
 
   return (
     <div className="flex flex-col gap-3">
-      {seatsHint && (
-        <p
-          className={
-            seats.full
-              ? 'flex items-start gap-2 rounded-control bg-warning/10 px-3 py-2.5 text-[13px] leading-5 text-fg'
-              : 'text-[13px] text-fg-subtle'
-          }
-        >
-          {seats.full && <Icon name="warning" size={18} className="mt-px shrink-0 text-warning" />}
-          <span>
-            {seatsHint}
-            {seats.full &&
-              ' Entferne ein Mitglied oder ziehe eine Einladung zurück, um jemanden einzuladen. Über einen Link beitreten klappt erst wieder, wenn ein Platz frei ist.'}
-          </span>
-        </p>
-      )}
+      {seatsHint &&
+        (seats.full ? (
+          <Notice tone="warning" variant="tinted" size="sm">
+            {seatsHint} Entferne ein Mitglied oder ziehe eine Einladung zurück, um jemanden
+            einzuladen. Über einen Link beitreten klappt erst wieder, wenn ein Platz frei ist.
+          </Notice>
+        ) : (
+          <p className="text-body text-fg-subtle">{seatsHint}</p>
+        ))}
       <form
         noValidate
         className="flex flex-wrap items-start gap-2"
@@ -119,7 +118,7 @@ export function InviteForm({ workspace, onNotify }: { workspace: Workspace; onNo
         />
         <Button
           type="submit"
-          className="h-10"
+          size="field"
           icon="send"
           disabled={seats.full}
           loading={pendingKind === 'email'}
@@ -128,7 +127,7 @@ export function InviteForm({ workspace, onNotify }: { workspace: Workspace; onNo
         </Button>
         <Button
           variant="secondary"
-          className="h-10"
+          size="field"
           icon="link"
           title="Einladungslink für alle, die ihn bekommen (7 Tage gültig)"
           loading={pendingKind === 'link'}
@@ -153,13 +152,11 @@ export function InviteList({ workspace, onNotify }: { workspace: Workspace; onNo
     <div className="flex flex-col gap-2">
       <h3 className="text-xs text-fg-subtle">Einladungen</h3>
       {invites.isPending ? (
-        <div className="flex justify-center py-4">
-          <Spinner className="text-fg-subtle" />
-        </div>
+        <LoadingState padding="sm" />
       ) : invites.isError ? (
-        <p className="text-[13px] text-danger">{invites.error.message}</p>
+        <ErrorText>{invites.error.message}</ErrorText>
       ) : (
-        <ul className="-mx-2 flex flex-col">
+        <RowList variant="flush">
           {sortInvites(invites.data).map((invite) => (
             <InviteRow
               key={invite.id}
@@ -173,7 +170,7 @@ export function InviteList({ workspace, onNotify }: { workspace: Workspace; onNo
               }
             />
           ))}
-        </ul>
+        </RowList>
       )}
     </div>
   );
@@ -196,41 +193,44 @@ function CreatedInvite({
   const { state, copy } = useCopyToClipboard();
   const { invite } = created;
   return (
-    <div className="flex animate-fade-in flex-col gap-3 rounded-control bg-info/10 p-3">
-      <div className="flex items-start gap-2">
-        <Icon name="checkCircle" size={18} className="mt-px shrink-0 text-info" />
-        <p className="flex-1 text-[13px] leading-5 text-fg">
-          {invite.email
-            ? `Einladung für ${invite.email} erstellt. Die E-Mail konnte nicht verschickt werden – schick den Link selbst.`
-            : `Einladungslink als ${ROLE_LABELS[invite.role]} erstellt.`}{' '}
-          <span className="text-fg-muted">Er wird nur jetzt angezeigt.</span>
-        </p>
-        <IconButton
-          icon="close"
-          size="sm"
-          iconSize={18}
-          label="Schließen"
-          onClick={onDismiss}
-          className="-mt-1 -mr-1"
-        />
-      </div>
-      <div className="flex gap-2">
-        <TextField
-          aria-label="Einladungslink"
-          icon="link"
-          readOnly
-          value={created.url}
-          onFocus={(event) => event.currentTarget.select()}
-          className="min-w-0 flex-1"
-        />
-        <Button className="h-10" icon="contentCopy" onClick={() => void copy(created.url)}>
-          <span className="max-sm:hidden">{COPY_LABELS[state]}</span>
-        </Button>
-      </div>
-      <p role="status" className="sr-only">
-        {state === 'copied' ? 'Link kopiert' : state === 'failed' ? 'Kopieren fehlgeschlagen' : ''}
-      </p>
-    </div>
+    <Notice
+      tone="info"
+      variant="tinted"
+      size="sm"
+      icon="checkCircle"
+      animated
+      onDismiss={onDismiss}
+      dismissLabel="Schließen"
+      footer={
+        <>
+          <div className="flex gap-2">
+            <TextField
+              aria-label="Einladungslink"
+              icon="link"
+              readOnly
+              value={created.url}
+              onFocus={(event) => event.currentTarget.select()}
+              className="min-w-0 flex-1"
+            />
+            <Button size="field" icon="contentCopy" onClick={() => void copy(created.url)}>
+              <span className="max-sm:hidden">{COPY_LABELS[state]}</span>
+            </Button>
+          </div>
+          <p role="status" className="sr-only">
+            {state === 'copied'
+              ? 'Link kopiert'
+              : state === 'failed'
+                ? 'Kopieren fehlgeschlagen'
+                : ''}
+          </p>
+        </>
+      }
+    >
+      {invite.email
+        ? `Einladung für ${invite.email} erstellt. Die E-Mail konnte nicht verschickt werden – schick den Link selbst.`
+        : `Einladungslink als ${ROLE_LABELS[invite.role]} erstellt.`}{' '}
+      <span className="text-fg-muted">Er wird nur jetzt angezeigt.</span>
+    </Notice>
   );
 }
 
@@ -253,45 +253,39 @@ function InviteRow({
     .join(' · ');
 
   return (
-    <li className="flex items-center gap-3 rounded-control-sm px-2 py-2">
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-chip bg-white/6 text-fg-muted">
-        <Icon name={invite.email ? 'at' : 'link'} size={16} />
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="flex min-w-0 items-center gap-2">
-          <span
-            className={
-              open ? 'truncate text-[13px] text-fg' : 'truncate text-[13px] text-fg-subtle'
-            }
-          >
-            {invite.email ?? 'Einladungslink'}
-          </span>
-          <Badge>{ROLE_LABELS[invite.role]}</Badge>
-        </span>
-        <span
-          className="truncate text-xs text-fg-subtle"
-          title={`Erstellt ${formatDateTime(invite.createdAt)}`}
-        >
-          {detail}
-        </span>
-      </span>
-      <Badge tone={open ? 'info' : invite.state === 'used' ? 'success' : 'neutral'}>
-        {INVITE_STATE_LABELS[invite.state]}
-      </Badge>
-      <span className="flex w-8 shrink-0 justify-end">
-        {open &&
-          (revoking ? (
-            <Spinner size={16} className="text-fg-subtle" />
-          ) : (
-            <IconButton
-              icon="delete"
-              size="sm"
-              iconSize={18}
-              label="Einladung zurückziehen"
-              onClick={onRevoke}
-            />
-          ))}
-      </span>
-    </li>
+    <ListRow
+      variant="flush"
+      size="body"
+      titleWeight="normal"
+      titleTone={open ? 'fg' : 'subtle'}
+      leading={
+        <IconTile size={32}>
+          <Icon name={invite.email ? 'at' : 'link'} size={16} />
+        </IconTile>
+      }
+      title={invite.email ?? 'Einladungslink'}
+      badge={<Badge>{ROLE_LABELS[invite.role]}</Badge>}
+      subtitle={detail}
+      subtitleTitle={`Erstellt ${formatDateTime(invite.createdAt)}`}
+      trailing={
+        <Badge tone={open ? 'info' : invite.state === 'used' ? 'success' : 'neutral'}>
+          {INVITE_STATE_LABELS[invite.state]}
+        </Badge>
+      }
+      actionSlot={
+        open &&
+        (revoking ? (
+          <Spinner size={16} className="text-fg-subtle" />
+        ) : (
+          <IconButton
+            icon="delete"
+            size="sm"
+            iconSize={18}
+            label="Einladung zurückziehen"
+            onClick={onRevoke}
+          />
+        ))
+      }
+    />
   );
 }

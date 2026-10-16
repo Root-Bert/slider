@@ -11,7 +11,7 @@ import {
 import { accentColor } from '@/lib/accent';
 import { isPendingComment } from '@/lib/api/comment-cache';
 import { pluralize } from '@/lib/format';
-import { AutosizeTextarea, AvatarStack, cn, Icon } from '@/ui';
+import { AutosizeTextarea, AvatarStack, Button, cn, IconButton, ToolbarDivider } from '@/ui';
 import { isRemovedInPowerPoint, type Thread } from './lib/comment-selectors';
 import { MediaReplyButtons } from './MediaTabs';
 import { useReplyDraft } from './hooks/useReplyDraft';
@@ -84,8 +84,8 @@ export const CommentCard = memo(function CommentCard({
       data-hover-thread={thread.id}
       className={cn(
         // Raised while hovered or focused, so the reply bar overlaps the cards below.
-        'group relative transition-opacity duration-200 focus-within:z-20 hover:z-20',
-        emphasis === 'focused' && 'z-20',
+        'group relative transition-opacity duration-200 focus-within:z-(--z-overlay) hover:z-(--z-overlay)',
+        emphasis === 'focused' && 'z-(--z-overlay)',
         (emphasis === 'dimmed' || done) && 'opacity-45',
         emphasis === 'dimmed' && done && 'opacity-30',
       )}
@@ -121,16 +121,18 @@ export const CommentCard = memo(function CommentCard({
           comment={root}
           trailing={
             expanded ? (
-              <button
-                type="button"
-                aria-expanded
+              <Button
+                variant="soft"
+                size="2xs"
+                weight="normal"
+                trailingIcon="expandLess"
+                expanded
                 aria-controls={repliesId}
                 onClick={collapse}
-                className="relative z-10 -my-0.5 inline-flex items-center gap-0.5 rounded-chip bg-white/8 py-0.5 pr-1 pl-2 text-[11px] text-fg-muted hover:bg-white/15 hover:text-fg"
+                className="relative z-(--z-raised) -my-0.5"
               >
                 Zuklappen
-                <Icon name="expandLess" size={16} />
-              </button>
+              </Button>
             ) : (
               canResolve && (
                 <ResolveButton comment={root} deckId={deckId} className="-my-1 -mr-1.5" />
@@ -138,11 +140,11 @@ export const CommentCard = memo(function CommentCard({
             )
           }
         />
-        {location && <p className="text-[11px] font-medium text-fg-subtle">{location}</p>}
+        {location && <p className="text-caption font-medium text-fg-subtle">{location}</p>}
         {removed && <RemovedInPowerPointNote />}
         <CommentContent
           comment={root}
-          bodyClassName={cn(removed && 'text-fg-subtle line-through decoration-white/30')}
+          bodyClassName={cn(removed && 'text-fg-subtle line-through decoration-fg-faint')}
         />
         {changedSince && !done && (
           <ChangedSinceCommentNote comment={root} deckId={deckId} canResolve={canResolve} />
@@ -153,16 +155,19 @@ export const CommentCard = memo(function CommentCard({
             <span className="text-xs text-fg-subtle">
               {pluralize(replies.length, 'Antwort', 'Antworten')}
             </span>
-            <button
-              type="button"
-              aria-expanded={false}
+            <Button
+              variant="ghost"
+              tone="subtle"
+              size="2xs"
+              weight="normal"
+              trailingIcon="expandMore"
+              expanded={false}
               aria-controls={repliesId}
               onClick={expand}
-              className="relative z-10 ml-auto inline-flex items-center gap-0.5 rounded-badge px-1.5 py-0.5 text-xs text-fg-subtle hover:bg-white/10 hover:text-fg"
+              className="relative z-(--z-raised) ml-auto"
             >
               Aufklappen
-              <Icon name="expandMore" size={16} />
-            </button>
+            </Button>
           </footer>
         )}
       </div>
@@ -326,22 +331,23 @@ function ReplyBar({
             if (event.target.value.length > 0) onCompose();
           }}
           onKeyDown={onKeyDown}
-          className="text-[13px] leading-[18px] text-fg placeholder:text-white/60"
+          className="text-body leading-4.5 text-fg placeholder:text-fg-subtle"
         />
       </div>
       {hasDraft && (
-        <button
+        <IconButton
           type="submit"
-          aria-label="Antwort senden"
+          icon="arrowUpward"
+          label="Antwort senden"
           title="Senden (Enter)"
+          size="compact"
+          iconTone="success"
+          disabledStyle="dim"
           disabled={!canSend}
-          className="flex size-7 shrink-0 items-center justify-center rounded-chip text-success hover:bg-white/10 disabled:text-fg-faint disabled:hover:bg-transparent"
-        >
-          <Icon name="arrowUpward" size={18} />
-        </button>
+        />
       )}
       <MediaReplyButtons root={root} deckId={deckId} />
-      <span aria-hidden className="mx-0.5 mb-1.5 h-4 w-px shrink-0 bg-white/15" />
+      <ToolbarDivider size="sm" className="mb-1.5" />
       <ResolveButton comment={root} deckId={deckId} />
     </form>
   );

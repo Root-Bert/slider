@@ -1,7 +1,6 @@
 import type { Comment } from '@slider/shared';
-import type { MouseEvent } from 'react';
 import { useUpdateComment } from '@/lib/api';
-import { cn, Icon } from '@/ui';
+import { Button, cn, Icon, SegmentedControl } from '@/ui';
 import { useStageRegistry } from '../state/stage-registry';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
 
@@ -12,7 +11,7 @@ export function RemovedInPowerPointNote({ className }: { className?: string }) {
       data-removed-in-pptx
       title="Dieser Kommentar wurde in der PowerPoint-Datei gelöscht. In Slider bleibt er mit allen Antworten erhalten."
       className={cn(
-        'flex w-fit max-w-full items-center gap-1.5 rounded-chip bg-white/[0.06] px-2 py-1 text-[11px] leading-4 text-fg-subtle',
+        'flex w-fit max-w-full items-center gap-1.5 rounded-chip bg-surface-1 px-2 py-1 text-caption leading-4 text-fg-subtle',
         className,
       )}
     >
@@ -43,7 +42,7 @@ export function ChangedSinceCommentNote({
     <div
       data-changed-since-comment
       className={cn(
-        'relative z-10 flex w-fit max-w-full items-center gap-1 rounded-chip py-0.5 pr-0.5 pl-2 text-[11px] leading-4 text-warning shadow-[inset_0_0_0_1px_rgb(245_166_35/0.4)]',
+        'relative z-(--z-raised) flex w-fit max-w-full items-center gap-1 rounded-chip py-0.5 pr-0.5 pl-2 text-caption leading-4 text-warning inset-ring inset-ring-warning/45',
         !canResolve && 'pr-2',
         className,
       )}
@@ -54,18 +53,20 @@ export function ChangedSinceCommentNote({
       </span>
       {comment.slideId && <OldNewSwitch threadId={comment.id} slideId={comment.slideId} />}
       {canResolve && (
-        <button
-          type="button"
+        <Button
+          variant="soft"
+          tone="warning"
+          size="xs"
+          icon="check"
           onClick={(event) => {
             event.stopPropagation();
             update.mutate({ commentId: comment.id, status: 'done' });
           }}
           title="Als erledigt markieren"
-          className="ml-1 inline-flex h-6 items-center gap-0.5 rounded-badge bg-warning/12 px-1.5 font-medium hover:bg-warning/20"
+          className="ml-1"
         >
-          <Icon name="check" size={14} />
           Erledigt
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -80,43 +81,27 @@ function OldNewSwitch({ threadId, slideId }: { threadId: string; slideId: string
   const dispatch = useViewerDispatch();
   const registry = useStageRegistry();
   const old = previousView?.threadId === threadId;
-  const pick = (showOld: boolean) => (event: MouseEvent) => {
-    event.stopPropagation();
+  const pick = (version: 'old' | 'new') => {
+    const showOld = version === 'old';
     if (showOld === old) return;
     dispatch({ type: 'previousViewSet', view: showOld ? { slideId, threadId } : null });
     if (showOld) registry.revealSlide(slideId, { align: 'nearest', behavior: 'smooth' });
   };
-  const segment = (selected: boolean) =>
-    cn(
-      'h-5 rounded-[5px] px-1.5 font-medium transition-colors',
-      selected ? 'bg-warning text-black' : 'text-warning hover:bg-warning/15',
-    );
   return (
-    <span
-      role="radiogroup"
-      aria-label="Folie zeigen wie"
-      className="ml-1 inline-flex shrink-0 items-center gap-0.5 rounded-badge bg-warning/12 p-0.5"
-    >
-      <button
-        type="button"
-        role="radio"
-        aria-checked={old}
-        title="Folie so zeigen, wie sie beim Kommentar war"
-        onClick={pick(true)}
-        className={segment(old)}
-      >
-        Alt
-      </button>
-      <button
-        type="button"
-        role="radio"
-        aria-checked={!old}
-        title="Folie so zeigen, wie sie jetzt ist"
-        onClick={pick(false)}
-        className={segment(!old)}
-      >
-        Neu
-      </button>
-    </span>
+    // Clicks stay here: the note sits on a card whose surroundings react to clicks.
+    <div className="ml-1 shrink-0" onClick={(event) => event.stopPropagation()}>
+      <SegmentedControl
+        label="Folie zeigen wie"
+        size="xs"
+        tone="warning"
+        track="soft"
+        value={old ? 'old' : 'new'}
+        onChange={pick}
+        segments={[
+          { value: 'old', label: 'Alt', title: 'Folie so zeigen, wie sie beim Kommentar war' },
+          { value: 'new', label: 'Neu', title: 'Folie so zeigen, wie sie jetzt ist' },
+        ]}
+      />
+    </div>
   );
 }

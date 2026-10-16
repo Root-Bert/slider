@@ -2,7 +2,7 @@ import type { Comment } from '@slider/shared';
 import { useCallback, useState, type MouseEvent } from 'react';
 import { isPendingComment } from '@/lib/api/comment-cache';
 import { useDeleteComment, useUpdateComment } from '@/lib/api';
-import { Button, ContextMenu, Dialog, type MenuAction } from '@/ui';
+import { Button, ConfirmDialog, ContextMenu, type MenuAction } from '@/ui';
 import { useViewerData } from '../../state/viewer-data';
 
 interface CommentMenuOptions {
@@ -82,7 +82,7 @@ export function useCommentMenu({ comment, deckId, isRoot, onEdit, onDeleted }: C
           onClose={closeContext}
         />
       )}
-      <Dialog
+      <ConfirmDialog
         open={confirmingDelete}
         onClose={() => setConfirmingDelete(false)}
         title="Kommentar löschen?"
@@ -93,38 +93,24 @@ export function useCommentMenu({ comment, deckId, isRoot, onEdit, onDeleted }: C
               ? 'Der ganze Thread mit allen Antworten wird gelöscht.'
               : 'Das lässt sich nicht rückgängig machen.'
         }
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setConfirmingDelete(false)}>
-              Abbrechen
-            </Button>
-            {canKeepDrawing && (
-              <Button
-                variant="secondary"
-                loading={remove.isPending && remove.variables?.keepDrawing}
-                disabled={remove.isPending}
-                onClick={() => confirmDelete(true)}
-              >
-                Nur Kommentar löschen
-              </Button>
-            )}
+        confirmLabel="Löschen"
+        onConfirm={() => confirmDelete(false)}
+        pending={remove.isPending && !remove.variables?.keepDrawing}
+        confirmDisabled={remove.isPending}
+        error={remove.isError && remove.error.message}
+        extraActions={
+          canKeepDrawing && (
             <Button
-              variant="danger"
-              loading={remove.isPending && !remove.variables?.keepDrawing}
+              variant="secondary"
+              loading={remove.isPending && remove.variables?.keepDrawing}
               disabled={remove.isPending}
-              onClick={() => confirmDelete(false)}
+              onClick={() => confirmDelete(true)}
             >
-              Löschen
+              Nur Kommentar löschen
             </Button>
-          </>
+          )
         }
-      >
-        {remove.isError && (
-          <p role="alert" className="text-sm text-danger">
-            {remove.error.message}
-          </p>
-        )}
-      </Dialog>
+      />
     </>
   );
 

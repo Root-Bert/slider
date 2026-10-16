@@ -1,6 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
-import { Link } from 'react-router';
 import {
   API_PREFIX,
   type SaveSetupInput,
@@ -13,7 +12,16 @@ import {
 import { routes } from '@/lib/routes';
 import { apiRequest } from '@/lib/api-client';
 import { workspaceKeys } from '@/lib/api';
-import { Button, Icon, Section, Select, Spinner, TextField, useCopyToClipboard } from '@/ui';
+import {
+  Button,
+  Notice,
+  Section,
+  Select,
+  Spinner,
+  TextField,
+  TextLink,
+  useCopyToClipboard,
+} from '@/ui';
 import {
   collectChanges,
   EMPTY_SMTP,
@@ -27,19 +35,16 @@ import {
 export function NotAuthorized({ status }: { status: SetupStatus }) {
   if (status.hasAccount) {
     return (
-      <Notice>
+      <Notice tone="warning">
         Nur der Admin dieser Slider-Instanz kann die Einrichtung ändern.{' '}
-        <Link
-          to={routes.login('/einrichtung')}
-          className="text-fg underline underline-offset-2 transition-opacity hover:opacity-80"
-        >
+        <TextLink to={routes.login('/einrichtung')} variant="inline">
           Als Admin anmelden
-        </Link>
+        </TextLink>
       </Notice>
     );
   }
   return (
-    <Notice>
+    <Notice tone="warning">
       Öffne den Einrichtungslink aus dem Server-Log – er endet auf <Code>/einrichtung#token=…</Code>
       . Mit Docker zum Beispiel: <Code>docker logs slider</Code>.
     </Notice>
@@ -222,7 +227,7 @@ export function SetupForm({
         ) : (
           <>
             {fields.SMTP_URL.set && !removed.has('SMTP_URL') && (
-              <p className="text-[13px] text-fg-subtle">
+              <p className="text-body text-fg-subtle">
                 Ein Mailserver ist gespeichert. Zum Ändern alle Felder neu ausfüllen.
               </p>
             )}
@@ -263,8 +268,8 @@ export function SetupForm({
       {save.isError && <Notice tone="danger">{save.error.message}</Notice>}
       <div className="flex flex-wrap items-center justify-end gap-3">
         {phase === 'restarting' && (
-          <span className="flex items-center gap-2 text-[13px] text-fg-subtle">
-            <Spinner size={16} /> Slider startet neu …
+          <span className="flex items-center gap-2 text-body text-fg-subtle">
+            <Spinner size="md" /> Slider startet neu …
           </span>
         )}
         <Button type="submit" loading={save.isPending || phase === 'restarting'}>
@@ -338,14 +343,13 @@ function RedirectUri({ uri }: { uri: string }) {
       readOnly
       onFocus={(event) => event.currentTarget.select()}
       trailing={
-        <button
-          type="button"
+        <TextLink
+          size="xs"
+          icon={state === 'copied' ? 'check' : 'contentCopy'}
           onClick={() => void copy(uri)}
-          className="flex items-center gap-1 text-xs text-fg-subtle hover:text-fg"
         >
-          <Icon name={state === 'copied' ? 'check' : 'contentCopy'} size={16} />
           {state === 'copied' ? 'Kopiert' : 'Kopieren'}
-        </button>
+        </TextLink>
       }
     />
   );
@@ -353,7 +357,11 @@ function RedirectUri({ uri }: { uri: string }) {
 
 function Saved({ status, manual }: { status: SetupStatus; manual: boolean }) {
   if (manual) {
-    return <Notice>Gespeichert. Starte den Slider-Server neu, damit die Änderungen gelten.</Notice>;
+    return (
+      <Notice tone="warning">
+        Gespeichert. Starte den Slider-Server neu, damit die Änderungen gelten.
+      </Notice>
+    );
   }
   return (
     <Notice tone="success">
@@ -361,12 +369,9 @@ function Saved({ status, manual }: { status: SetupStatus; manual: boolean }) {
       {!status.hasAccount && status.loginConfigured && (
         <>
           Melde dich jetzt mit deiner Admin-Adresse an:{' '}
-          <a
-            href={routes.login()}
-            className="font-medium text-fg underline underline-offset-2 transition-opacity hover:opacity-80"
-          >
+          <TextLink href={routes.login()} variant="inline" weight="medium">
             Zur Anmeldung
-          </a>
+          </TextLink>
         </>
       )}
     </Notice>
@@ -375,33 +380,15 @@ function Saved({ status, manual }: { status: SetupStatus; manual: boolean }) {
 
 function EnvHint({ name, value }: { name: string; value?: string | null }) {
   return (
-    <p className="text-[13px] text-fg-subtle">
+    <p className="text-body text-fg-subtle">
       Per Umgebungsvariable gesetzt: <Code>{name}</Code>
       {value ? ` = ${value}` : ''}
     </p>
   );
 }
 
-export function Notice({
-  tone = 'info',
-  children,
-}: {
-  tone?: 'info' | 'success' | 'danger';
-  children: ReactNode;
-}) {
-  const icon = tone === 'danger' ? 'error' : tone === 'success' ? 'checkCircle' : 'warning';
-  const color =
-    tone === 'danger' ? 'text-danger' : tone === 'success' ? 'text-success' : 'text-warning';
-  return (
-    <div className="glass flex gap-3 rounded-panel px-4 py-3 text-sm leading-5 text-fg-muted">
-      <Icon name={icon} size={20} className={`shrink-0 ${color}`} />
-      <div>{children}</div>
-    </div>
-  );
-}
-
 const Code = ({ children }: { children: ReactNode }) => (
-  <code className="rounded-badge bg-white/8 px-1 py-0.5 text-xs text-fg-muted">{children}</code>
+  <code className="rounded-badge bg-surface-2 px-1 py-0.5 text-xs text-fg-muted">{children}</code>
 );
 
 /** After saving the server restarts: wait until it answers again (at most ~30 s). */

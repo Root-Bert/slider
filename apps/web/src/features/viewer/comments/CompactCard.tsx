@@ -68,7 +68,7 @@ export const CompactCard = memo(function CompactCard({
       >
         <span className="flex min-w-0 items-center gap-1.5">
           <Avatar author={root.author} size={20} showPowerPointBadge={root.source === 'pptx'} />
-          <span className="truncate text-[11px] font-medium text-fg">{root.author.name}</span>
+          <span className="truncate text-caption font-medium text-fg">{root.author.name}</span>
           <span className="ml-auto flex shrink-0 items-center gap-1">
             {flagged && (
               <Icon
@@ -87,14 +87,14 @@ export const CompactCard = memo(function CompactCard({
               />
             )}
             {replies.length > 0 && (
-              <span className="text-[10px] text-fg-subtle tabular-nums">+{replies.length}</span>
+              <span className="text-tiny text-fg-subtle tabular-nums">+{replies.length}</span>
             )}
           </span>
         </span>
         <span
           className={cn(
             'line-clamp-2 text-xs leading-4 break-words text-fg-muted',
-            removed && 'text-fg-subtle line-through decoration-white/30',
+            removed && 'text-fg-subtle line-through decoration-fg-faint',
           )}
         >
           {text}

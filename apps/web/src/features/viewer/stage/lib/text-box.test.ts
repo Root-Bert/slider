@@ -6,8 +6,21 @@ import {
   dragTextBox,
   normalizeTextRect,
   startFontSize,
+  TEXT_BOX_LOOK,
+  TEXT_BOX_RADIUS,
+  TEXT_CLASS,
   textStrokeFromDraft,
 } from './text-box';
+
+describe('TEXT_BOX_LOOK', () => {
+  it('matches the literal classes the DOM uses (the sketch canvas reads the numbers)', () => {
+    const classes = TEXT_CLASS.split(' ');
+    expect(classes).toContain(`px-[${TEXT_BOX_LOOK.padding.x}em]`);
+    expect(classes).toContain(`py-[${TEXT_BOX_LOOK.padding.y}em]`);
+    expect(classes).toContain(`leading-[${TEXT_BOX_LOOK.lineHeight}]`);
+    expect(TEXT_BOX_RADIUS).toBe(`rounded-[${TEXT_BOX_LOOK.radius}em]`);
+  });
+});
 
 const textBox = (overrides: Partial<TextBoxDraft> = {}): TextBoxDraft => ({
   x: 0.1,

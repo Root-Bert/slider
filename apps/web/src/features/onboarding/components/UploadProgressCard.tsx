@@ -1,5 +1,5 @@
 import { formatBytes } from '@/lib/format';
-import { Icon, IconButton, ProgressBar } from '@/ui';
+import { Icon, IconButton, IconTile, ProgressBar } from '@/ui';
 
 /** Replaces the dropzone while a PPTX uploads (BER-91). */
 export function UploadProgressCard({
@@ -17,9 +17,9 @@ export function UploadProgressCard({
 
   return (
     <div className="glass flex items-center gap-3 rounded-panel p-4">
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-control bg-white/10 text-fg-muted">
-        <Icon name="description" size={20} />
-      </span>
+      <IconTile size={40} tint="hover">
+        <Icon name="description" size="xl" />
+      </IconTile>
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <div className="flex items-baseline justify-between gap-3">
           <span className="truncate text-sm font-medium text-fg">{file.name}</span>

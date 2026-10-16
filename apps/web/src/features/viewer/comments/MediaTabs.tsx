@@ -1,6 +1,6 @@
 import type { Comment, MediaKind as RecordingKind } from '@slider/shared';
 import { useState } from 'react';
-import { cn, Icon } from '@/ui';
+import { IconButton, SegmentedControl } from '@/ui';
 import { MEDIA_KINDS, MEDIA_SOON, type MediaKindId } from './lib/media-kinds';
 import { RecordReplyDialog } from '../media/RecordReplyDialog';
 import { SketchReplyDialog } from '../media/SketchReplyDialog';
@@ -16,38 +16,22 @@ export function MediaTabs({
   className?: string;
 }) {
   return (
-    <div
-      role="tablist"
-      aria-label="Kommentarart"
-      className={cn('flex w-fit items-center gap-1 rounded-control bg-white/5 p-1', className)}
-    >
-      {MEDIA_KINDS.map((kind) => {
-        const selected = kind.id === value;
-        return (
-          <button
-            key={kind.id}
-            type="button"
-            role="tab"
-            aria-selected={selected}
-            aria-disabled={!kind.enabled || undefined}
-            tabIndex={kind.enabled ? 0 : -1}
-            title={kind.enabled ? undefined : MEDIA_SOON}
-            onClick={() => kind.enabled && onChange(kind.id)}
-            className={cn(
-              'flex items-center gap-1.5 rounded-chip py-1.5 pr-3 pl-2.5 text-xs font-medium',
-              !kind.enabled
-                ? 'cursor-not-allowed text-fg-subtle'
-                : selected
-                  ? 'bg-white/12 text-fg'
-                  : 'text-fg-muted hover:bg-white/5 hover:text-fg',
-            )}
-          >
-            <Icon name={kind.icon} size={16} />
-            {kind.label}
-          </button>
-        );
-      })}
-    </div>
+    <SegmentedControl<MediaKindId>
+      label="Kommentarart"
+      mode="tabs"
+      size="sm"
+      track="soft"
+      value={value}
+      onChange={onChange}
+      segments={MEDIA_KINDS.map((kind) => ({
+        value: kind.id,
+        label: kind.label,
+        icon: kind.icon,
+        disabled: !kind.enabled,
+        ...(kind.enabled ? {} : { title: MEDIA_SOON }),
+      }))}
+      className={className}
+    />
   );
 }
 
@@ -76,19 +60,16 @@ export function MediaReplyButtons({
       {MEDIA_KINDS.filter((kind) => kind.id !== 'text').map((kind) => {
         const id = kind.id as Exclude<MediaKindId, 'text'>;
         return (
-          <button
+          <IconButton
             key={id}
-            type="button"
-            aria-label={REPLY_LABELS[id].label}
+            icon={kind.icon}
+            label={REPLY_LABELS[id].label}
             title={REPLY_LABELS[id].title}
+            variant="subtle"
+            size={size === 'sm' ? 'compact' : 'sm'}
+            iconSize={18}
             onClick={() => setOpen(id)}
-            className={cn(
-              'flex shrink-0 items-center justify-center rounded-chip text-fg-subtle hover:bg-white/10 hover:text-fg',
-              size === 'sm' ? 'size-7' : 'size-8',
-            )}
-          >
-            <Icon name={kind.icon} size={18} />
-          </button>
+          />
         );
       })}
       {(open === 'audio' || open === 'video') && (

@@ -1,6 +1,7 @@
 import { cn, GlassPanel } from '@/ui';
 import { CONTROLS_DELAY } from '../lib/import-skeleton';
 import { EASE_OUT, type StagePhase } from './stage-motion';
+import { STAGE_TONE } from './stage-tones';
 
 /** Controls row in outline: tool bar, filter, upload – and the slide counter, already counting. */
 export function GhostControls({ count, phase }: { count: number | null; phase: StagePhase }) {
@@ -23,7 +24,11 @@ export function GhostControls({ count, phase }: { count: number | null; phase: S
         style={{ animation: rise(1) }}
       >
         {[52, 64, 72].map((width, i) => (
-          <span key={i} className="h-3 shrink-0 rounded-full bg-white/10" style={{ width }} />
+          <span
+            key={i}
+            className={cn('h-3 shrink-0 rounded-full', STAGE_TONE.ghostControl)}
+            style={{ width }}
+          />
         ))}
       </GlassPanel>
       <GlassPanel className="flex size-10 shrink-0 items-center p-1" style={{ animation: rise(2) }}>
@@ -58,7 +63,7 @@ export function GhostControls({ count, phase }: { count: number | null; phase: S
 function GhostIcon({ className }: { className?: string }) {
   return (
     <span className={cn('flex size-8 shrink-0 items-center justify-center', className)}>
-      <span className="size-4 rounded-[5px] bg-white/10" />
+      <span className={cn('size-4 rounded-thumb', STAGE_TONE.ghostControl)} />
     </span>
   );
 }

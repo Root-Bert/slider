@@ -1,6 +1,6 @@
 import type { Comment } from '@slider/shared';
 import { useEffect, useRef, useState } from 'react';
-import { cn, Icon } from '@/ui';
+import { cn, IconButton } from '@/ui';
 import { formatDuration } from '@/lib/format';
 import { MEDIA_LABELS } from './lib/recording';
 import { Waveform } from './Waveform';
@@ -55,7 +55,7 @@ export function AudioPlayer({
   return (
     <div
       className={cn(
-        'relative z-10 flex items-center gap-2 rounded-control bg-black/25 py-1 pr-2.5 pl-1',
+        'relative z-(--z-raised) flex items-center gap-2 rounded-control bg-well-dark py-1 pr-2.5 pl-1',
         className,
       )}
     >
@@ -70,16 +70,17 @@ export function AudioPlayer({
           setPositionMs(0);
         }}
       />
-      <button
-        type="button"
+      <IconButton
+        variant="primary"
+        size="compact"
+        shape="round"
+        icon={playing ? 'pause' : 'playArrow'}
+        label={playing ? 'Pause' : 'Abspielen'}
+        title={false}
         onClick={toggle}
-        aria-label={playing ? 'Pause' : 'Abspielen'}
-        className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white/90 text-black hover:bg-white"
-      >
-        <Icon name={playing ? 'pause' : 'playArrow'} size={18} />
-      </button>
+      />
       <Waveform peaks={peaks} progress={progress} onSeek={seek} label="Position in der Aufnahme" />
-      <span className="shrink-0 text-[11px] text-fg-subtle tabular-nums">
+      <span className="shrink-0 text-caption text-fg-subtle tabular-nums">
         {playing || positionMs > 0 ? formatDuration(positionMs) : formatDuration(durationMs)}
       </span>
     </div>
@@ -92,7 +93,7 @@ export function VideoPlayer({ src, className }: { src: string; className?: strin
   return (
     <div
       className={cn(
-        'relative isolate z-10 overflow-hidden rounded-control bg-black [transform:translateZ(0)]',
+        'relative isolate z-(--z-raised) overflow-hidden rounded-control bg-canvas [transform:translateZ(0)]',
         className,
       )}
     >
@@ -103,7 +104,7 @@ export function VideoPlayer({ src, className }: { src: string; className?: strin
         controls
         playsInline
         preload="metadata"
-        className="block max-h-72 w-full bg-black object-contain"
+        className="block max-h-72 w-full bg-canvas object-contain"
       />
     </div>
   );

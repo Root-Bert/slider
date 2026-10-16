@@ -207,8 +207,8 @@ export function SketchSheet({
       className={cn(
         'relative w-full touch-none outline-none select-none [container-type:size]',
         big
-          ? 'rounded-panel shadow-(--shadow-float)'
-          : 'rounded-control shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]',
+          ? 'rounded-panel shadow-float'
+          : 'rounded-control ring-hairline-strong',
         interactive && tool === null && 'cursor-crosshair',
       )}
       style={{ aspectRatio: aspect, backgroundColor: SKETCH_BACKGROUND }}
@@ -318,7 +318,7 @@ export function SketchSheet({
 
       {interactive && tool === 'eraser' && (
         <div
-          className="absolute inset-0 z-20 cursor-cell touch-none"
+          className="absolute inset-0 z-(--z-overlay) cursor-cell touch-none"
           onPointerDown={(event) => {
             if (event.button !== 0) return;
             event.preventDefault();
@@ -400,7 +400,7 @@ function PenLayer({
 
   return (
     <div
-      className="absolute inset-0 z-20 cursor-crosshair touch-none"
+      className="absolute inset-0 z-(--z-overlay) cursor-crosshair touch-none"
       onPointerDown={(event) => {
         if (event.button !== 0) return;
         event.preventDefault();

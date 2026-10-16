@@ -2,6 +2,7 @@ import { cn } from '@/ui';
 import { PRINT_MS, slideSketch, type SlotState } from '../lib/import-skeleton';
 import { Sketch } from './SlideSketch';
 import { EASE_OUT, SETTLE_TRANSITION } from './stage-motion';
+import { STAGE_TONE } from './stage-tones';
 
 interface SlotProps {
   index: number;
@@ -47,7 +48,8 @@ export function Slot({
     >
       <div
         className={cn(
-          'relative size-full overflow-hidden rounded-panel bg-[#101010] shadow-[inset_0_0_0_1px_rgb(255_255_255/0.07)] transition-[filter,opacity] duration-500',
+          'relative size-full overflow-hidden rounded-panel transition-[filter,opacity] duration-500',
+          STAGE_TONE.slot,
           state === 'ghost' && 'skeleton',
           failed && 'opacity-40 grayscale',
         )}
@@ -59,7 +61,7 @@ export function Slot({
         )}
         {state === 'rendered' && (
           <div
-            className="absolute inset-0 bg-[#1b1b1b]"
+            className={cn('absolute inset-0', STAGE_TONE.slotPrinted)}
             style={{ animation: `import-print ${PRINT_MS}ms ${EASE_OUT} both` }}
           >
             <Sketch kind={slideSketch(index)} />
@@ -67,7 +69,7 @@ export function Slot({
         )}
         {sheen && (
           <div
-            className="pointer-events-none absolute inset-0 bg-[linear-gradient(105deg,transparent_30%,rgb(255_255_255/0.22)_50%,transparent_70%)]"
+            className={cn('pointer-events-none absolute inset-0', STAGE_TONE.sheen)}
             style={{ animation: sheen }}
           />
         )}

@@ -12,6 +12,34 @@ import { strokesBounds } from './stroke-path';
 
 /** "Text auf Folie" (B2): sizes of the on-slide text box, normalised to the slide box. */
 
+/**
+ * How a text box looks on the slide – shared by the DOM (`TextMark`, `TextBoxField`) and the
+ * sketch canvas (`media/lib/sketch.ts`), so a drawn sketch matches the slide. Slide geometry in
+ * em of the box's font size, so it is exempt from the UI type and radius scales.
+ */
+export const TEXT_BOX_LOOK = {
+  /** Padding around the text (em). */
+  padding: { x: 0.35, y: 0.15 },
+  lineHeight: 1.25,
+  /** Corner radius (em). */
+  radius: 0.25,
+  /** Share of `--color-glass-solid` in the backdrop (the rest is transparent). */
+  fillAlpha: 0.75,
+  /** Share of the accent in the resting edge. */
+  edgeAlpha: 0.55,
+  /** Share of the accent in the text colour; the rest is white (pure accents are too dark). */
+  textLift: 0.75,
+} as const;
+
+/**
+ * The text classes of {@link TEXT_BOX_LOOK} – literal so Tailwind sees them; `text-box.test.ts`
+ * keeps them in step with the numbers.
+ */
+export const TEXT_CLASS =
+  'whitespace-pre-wrap [overflow-wrap:anywhere] px-[0.35em] py-[0.15em] text-center leading-[1.25] font-semibold';
+/** {@link TEXT_BOX_LOOK} `radius` as a class. */
+export const TEXT_BOX_RADIUS = 'rounded-[0.25em]';
+
 /** On-screen size new text starts with, in px – turned into a size relative to the slide. */
 const TARGET_FONT_PX = 16;
 /** Bounds for the starting size, so text on tiny or huge slides keeps sensible proportions. */

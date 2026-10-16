@@ -21,7 +21,17 @@ import {
   useWorkspace,
 } from '@/features/workspaces';
 import { accentColor, isLightAccent } from '@/lib/accent';
-import { Button, ContextMenu, Dialog, Icon, type MenuAction } from '@/ui';
+import {
+  Button,
+  ConfirmDialog,
+  ContextMenu,
+  Icon,
+  PageHeader,
+  TextLink,
+  Toast,
+  useToast,
+  type MenuAction,
+} from '@/ui';
 import { DeckCollection, DeckCollectionSkeleton, type DeckView } from './components/DeckCollection';
 import { DeckSearch } from './components/DeckSearch';
 import { EmptyState } from './components/EmptyState';
@@ -30,14 +40,12 @@ import { FolderTiles } from './components/FolderTiles';
 import { NoResults } from './components/NoResults';
 import { ReviewsToolbar } from './components/ReviewsToolbar';
 import { SelectionBar } from './components/SelectionBar';
-import { Toast } from '@/ui';
 import { useBulkDeckActions } from './hooks/useBulkDeckActions';
 import { useDeckContextMenu } from './hooks/useDeckContextMenu';
 import { useDeckSelection } from './hooks/useDeckSelection';
 import { useMarqueeSelect } from './hooks/useMarqueeSelect';
 import { movedMessage, useMoveDecks } from './hooks/useMoveDecks';
 import { useStoredChoice } from './hooks/useStoredChoice';
-import { useToast } from '@/ui';
 import {
   activeTotals,
   countByFolder,
@@ -186,7 +194,9 @@ export function Component() {
       style={
         {
           '--selection': accentColor(user.color),
-          '--on-selection': isLightAccent(user.color) ? 'black' : 'white',
+          '--on-selection': isLightAccent(user.color)
+            ? 'var(--color-on-primary)'
+            : 'var(--color-primary-hover)',
         } as CSSProperties
       }
       onContextMenu={onPageContextMenu}
@@ -196,42 +206,41 @@ export function Component() {
       <AppHeader />
 
       <main className="flex flex-col gap-6 px-4 pt-2 pb-16 md:px-14">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          {openFolder ? (
-            <h1 className="flex min-w-0 items-center gap-1.5 text-[28px] leading-tight font-semibold tracking-tight text-fg">
-              <button
-                type="button"
-                onClick={() => openFolderById(null)}
-                className="text-fg-subtle hover:text-fg"
-              >
-                Reviews
-              </button>
-              <Icon name="chevronRight" size={24} className="shrink-0 text-fg-subtle" />
-              <span className="truncate">{openFolder.name}</span>
-            </h1>
-          ) : (
-            <h1 className="text-[28px] leading-tight font-semibold tracking-tight text-fg">
-              Reviews
-            </h1>
-          )}
-          {decksQuery.isSuccess && (
-            <p className="text-[13px] text-fg-subtle">
-              {pluralize(totals.reviews, 'Review', 'Reviews')} |{' '}
-              {pluralize(totals.openComments, 'offener Kommentar', 'offene Kommentare')}
-              {workspace.usage.maxDecks !== null && (
-                <>
-                  {' | '}
-                  <span className={decksFull ? 'text-warning' : undefined}>
-                    {formatDeckUsage(workspace.usage)}
-                  </span>
-                </>
-              )}
-            </p>
-          )}
-        </div>
+        <PageHeader
+          layout="inline"
+          subtitleSize="body"
+          titleRow={Boolean(openFolder)}
+          title={
+            openFolder ? (
+              <>
+                <TextLink onClick={() => openFolderById(null)}>Reviews</TextLink>
+                <Icon name="chevronRight" size={24} className="shrink-0 text-fg-subtle" />
+                <span className="truncate">{openFolder.name}</span>
+              </>
+            ) : (
+              'Reviews'
+            )
+          }
+          subtitle={
+            decksQuery.isSuccess && (
+              <>
+                {pluralize(totals.reviews, 'Review', 'Reviews')} |{' '}
+                {pluralize(totals.openComments, 'offener Kommentar', 'offene Kommentare')}
+                {workspace.usage.maxDecks !== null && (
+                  <>
+                    {' | '}
+                    <span className={decksFull ? 'text-warning' : undefined}>
+                      {formatDeckUsage(workspace.usage)}
+                    </span>
+                  </>
+                )}
+              </>
+            )
+          }
+        />
 
         {mayCreate && decksFull && (
-          <p id={limitNoticeId} className="max-w-[720px] text-[13px] leading-5 text-fg">
+          <p id={limitNoticeId} className="max-w-[720px] text-body leading-5 text-fg">
             {deckLimitMessage(workspace)}
           </p>
         )}
@@ -368,39 +377,27 @@ export function Component() {
         />
       )}
       {deletingFolder && (
-        <Dialog
-          open
+        <ConfirmDialog
           onClose={() => setDeletingFolder(null)}
           title={`Ordner „${deletingFolder.name}“ löschen?`}
           description="Die Reviews darin bleiben erhalten und stehen danach wieder direkt in der Übersicht."
-          footer={
-            <>
-              <Button variant="ghost" onClick={() => setDeletingFolder(null)}>
-                Abbrechen
-              </Button>
-              <Button
-                variant="danger"
-                disabled={deleteFolder.isPending}
-                onClick={() =>
-                  deleteFolder.mutate(deletingFolder.id, {
-                    onSuccess: () => {
-                      showToast(`Ordner „${deletingFolder.name}“ gelöscht`);
-                      setDeletingFolder(null);
-                    },
-                    onError: (error) => showToast(error.message, 'danger'),
-                  })
-                }
-              >
-                Ordner löschen
-              </Button>
-            </>
+          confirmLabel="Ordner löschen"
+          confirmDisabled={deleteFolder.isPending}
+          onConfirm={() =>
+            deleteFolder.mutate(deletingFolder.id, {
+              onSuccess: () => {
+                showToast(`Ordner „${deletingFolder.name}“ gelöscht`);
+                setDeletingFolder(null);
+              },
+              onError: (error) => showToast(error.message, 'danger'),
+            })
           }
         />
       )}
       {marquee.box && (
         <div
           aria-hidden
-          className="pointer-events-none absolute z-40 rounded-[3px] border border-(--selection) bg-(--selection)/15"
+          className="pointer-events-none absolute z-(--z-panel) rounded-mark border border-(--selection) bg-(--selection)/15"
           style={marquee.box}
         />
       )}

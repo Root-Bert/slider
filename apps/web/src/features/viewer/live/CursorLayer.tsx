@@ -74,7 +74,7 @@ export function CursorLayer() {
 
   if (!hasOthers) return null;
   return (
-    <div aria-hidden className="pointer-events-none fixed inset-0 z-20 overflow-hidden">
+    <div aria-hidden className="pointer-events-none fixed inset-0 z-(--z-overlay) overflow-hidden">
       {others.map((peer) => (
         <LiveCursor
           key={peer.connectionId}

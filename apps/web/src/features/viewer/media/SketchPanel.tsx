@@ -8,8 +8,15 @@ import {
   type MouseEvent,
   type ReactNode,
 } from 'react';
-import { ACCENT_COLOR_NAMES, accentColor } from '@/lib/accent';
-import { Button, cn, IconButton, type IconName } from '@/ui';
+import { ACCENT_COLOR_NAMES } from '@/lib/accent';
+import {
+  Button,
+  ColorSwatches,
+  IconButton,
+  Toolbar,
+  ToolbarDivider,
+  type IconName,
+} from '@/ui';
 import { isTypingTarget } from '@/lib/dom';
 import { RecorderPanel } from './RecorderPanel';
 import { hasInk, sketchPalette } from './lib/sketch';
@@ -112,33 +119,23 @@ export function SketchPanel({
     />
   ));
 
-  const colorButtons = sketchPalette(color).map((swatch) => {
-    const picked = (selectedStroke?.color ?? penColor) === swatch;
-    return (
-      <button
-        key={swatch}
-        type="button"
-        aria-label={`Farbe ${ACCENT_COLOR_NAMES[swatch]}`}
-        aria-pressed={picked}
-        title={selectedStroke ? 'Farbe der Auswahl' : 'Farbe'}
-        onClick={() => {
-          setPenColor(swatch);
-          // A selected mark takes the colour too.
-          if (selected !== null && selectedStroke)
-            editor.replace(selected, { ...selectedStroke, color: swatch });
-        }}
-        className="flex size-7 items-center justify-center rounded-full hover:bg-white/10"
-      >
-        <span
-          className={cn(
-            'size-4 rounded-full shadow-[inset_0_0_0_1px_rgb(255_255_255/0.2)]',
-            picked && 'ring-2 ring-white/80 ring-offset-2 ring-offset-[#1f1f1f]',
-          )}
-          style={{ backgroundColor: accentColor(swatch) }}
-        />
-      </button>
-    );
-  });
+  const colorButtons = (
+    <ColorSwatches
+      variant="dot"
+      label="Farben"
+      colors={sketchPalette(color)}
+      value={selectedStroke?.color ?? penColor}
+      swatchLabel={(swatch) => `Farbe ${ACCENT_COLOR_NAMES[swatch]}`}
+      swatchTitle={selectedStroke ? 'Farbe der Auswahl' : 'Farbe'}
+      onChange={(swatch) => {
+        setPenColor(swatch);
+        // A selected mark takes the colour too.
+        if (selected !== null && selectedStroke)
+          editor.replace(selected, { ...selectedStroke, color: swatch });
+      }}
+      className="gap-1"
+    />
+  );
 
   const actionButtons = (big: boolean) => (
     <>
@@ -168,7 +165,7 @@ export function SketchPanel({
     </>
   );
 
-  const divider = <span aria-hidden className="mx-1 h-5 w-px bg-white/10" />;
+  const divider = <ToolbarDivider spacing="md" />;
 
   /** Sheet and tools – inline in the composer, and again in the big view (same drawing). */
   const sheet = (big: boolean) => (
@@ -186,30 +183,26 @@ export function SketchPanel({
 
       {big ? (
         // A floating glass pill like the viewer's tool bar.
-        <div
-          role="toolbar"
-          aria-label="Zeichenwerkzeuge"
-          className="glass-control flex items-center gap-1 rounded-panel p-1"
-        >
+        <Toolbar label="Zeichenwerkzeuge">
           {toolButtons}
           {divider}
           {colorButtons}
           {divider}
           {actionButtons(true)}
-        </div>
+        </Toolbar>
       ) : (
         // The composer is narrow: tools and actions, then the colours below.
         <div
           role="toolbar"
           aria-label="Zeichenwerkzeuge"
-          className="flex flex-col gap-0.5 rounded-control bg-white/5 p-1"
+          className="flex flex-col gap-0.5 rounded-control bg-surface-1 p-1"
         >
           <div className="flex items-center gap-1">
             {toolButtons}
             <span className="flex-1" />
             {actionButtons(false)}
           </div>
-          <div className="flex items-center gap-1">{colorButtons}</div>
+          {colorButtons}
         </div>
       )}
     </>
@@ -345,7 +338,7 @@ function SketchFullscreen({
         if (!event.currentTarget.open) onClose();
       }}
       onClick={closeOnBackdrop}
-      className="m-0 size-full max-h-none max-w-none border-0 bg-transparent p-0 text-fg outline-none backdrop:bg-black/75 backdrop:backdrop-blur-md open:animate-fade-in"
+      className="m-0 size-full max-h-none max-w-none border-0 bg-transparent p-0 text-fg outline-none backdrop:bg-scrim-strong backdrop:backdrop-blur-md open:animate-fade-in"
     >
       <div onClick={closeOnBackdrop} className="flex size-full items-center justify-center p-6">
         {/* Header and tools take ~160px; the sheet gets the rest, at most 80 % of the screen. */}
@@ -359,11 +352,12 @@ function SketchFullscreen({
               <div className="flex items-center gap-1">{actions}</div>
             ) : (
               <IconButton
+                variant="glass"
+                shape="round"
                 icon="close"
                 label="Schließen (Esc)"
                 size="sm"
                 onClick={onClose}
-                className="glass-control rounded-full"
               />
             )}
           </header>

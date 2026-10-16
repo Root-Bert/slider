@@ -1,3 +1,4 @@
+import { CANVAS, FLOAT_SHADOW_ALPHA, HAIRLINE_STRONG_ALPHA } from '@/lib/palette';
 import { SCREEN_FRAME_RATE, SCREEN_MAX_SIZE } from './recording';
 
 export interface Size {
@@ -80,7 +81,7 @@ export function composeScreenAndCamera(screen: MediaStream, camera: MediaStream)
   const bubble = bubbleRect(frame);
 
   const draw = () => {
-    context.fillStyle = '#000';
+    context.fillStyle = CANVAS;
     context.fillRect(0, 0, frame.width, frame.height);
     if (screenVideo.videoWidth > 0) {
       const at = containRect(
@@ -96,12 +97,12 @@ export function composeScreenAndCamera(screen: MediaStream, camera: MediaStream)
       const radius = bubble.height * BUBBLE_CORNER;
       // Lifted off the screen like the app's floating panels: a soft shadow under it…
       context.save();
-      context.shadowColor = 'rgba(0, 0, 0, 0.5)';
+      context.shadowColor = `rgb(0 0 0 / ${FLOAT_SHADOW_ALPHA})`;
       context.shadowBlur = bubble.height * 0.12;
       context.shadowOffsetY = bubble.height * 0.03;
       context.beginPath();
       context.roundRect(bubble.x, bubble.y, bubble.width, bubble.height, radius);
-      context.fillStyle = '#000';
+      context.fillStyle = CANVAS;
       context.fill();
       context.restore();
       context.save();
@@ -130,7 +131,7 @@ export function composeScreenAndCamera(screen: MediaStream, camera: MediaStream)
         radius,
       );
       context.lineWidth = 1;
-      context.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+      context.strokeStyle = `rgb(255 255 255 / ${HAIRLINE_STRONG_ALPHA})`;
       context.stroke();
     }
   };

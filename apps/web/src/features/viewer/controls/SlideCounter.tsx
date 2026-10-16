@@ -98,7 +98,7 @@ export function SlideCounter({ className }: { className?: string }) {
           // border: a soft fill on hover hints that it is a field, the focus ring (global
           // :focus-visible – text fields match it on click too) marks editing.
           'h-8 min-w-8 rounded-control bg-transparent px-1.5 text-center leading-5 text-fg-muted transition-colors',
-          'hover:bg-white/8 focus:bg-white/10 focus:text-fg focus-visible:outline-offset-0',
+          'hover:bg-surface-2 focus:bg-hover focus:text-fg focus-visible:outline-offset-0',
         )}
       />
       <span aria-hidden className="text-fg-subtle">

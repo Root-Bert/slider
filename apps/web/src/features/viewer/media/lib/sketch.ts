@@ -12,6 +12,7 @@ import {
   type Stroke,
   type TextStroke,
 } from '@slider/shared';
+import { GLASS_SOLID, readToken } from '@/lib/palette';
 import { STROKE_STYLE, strokePath, strokesBounds } from '../../stage/lib/stroke-path';
 
 /** Paper of the sheet: a light grey, dark enough to sit in the app, light enough to stand out. */
@@ -118,10 +119,7 @@ export function eraserHits(stroke: Stroke, p: Point, width: number, height: numb
 
 /** A reviewer colour as the CSS colour the theme gives it. */
 function accentHex(color: AccentColor): string {
-  const value = getComputedStyle(document.documentElement)
-    .getPropertyValue(`--color-accent-${color}`)
-    .trim();
-  return value || '#141414';
+  return readToken(`--color-accent-${color}`, GLASS_SOLID);
 }
 
 /** `#rrggbb` mixed with white (`amount` of the colour), as `rgb()`. */
@@ -191,7 +189,7 @@ function drawText(
   // The box: dark glass with a hairline in the colour, rounded like on the slide.
   context.beginPath();
   context.roundRect(x, y, w, h, fontPx * 0.25);
-  context.fillStyle = withAlpha('#141414', 0.75);
+  context.fillStyle = withAlpha(GLASS_SOLID, 0.75);
   context.fill();
   context.lineWidth = Math.max(1, width / REFERENCE_WIDTH);
   context.strokeStyle = withAlpha(accent, 0.55);

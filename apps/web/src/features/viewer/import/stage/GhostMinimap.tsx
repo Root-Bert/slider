@@ -8,6 +8,7 @@ import {
   type SlotState,
 } from '../lib/import-skeleton';
 import { EASE_DEAL, EASE_OUT, stageSlotState, type StagePhase } from './stage-motion';
+import { STAGE_TONE } from './stage-tones';
 
 interface GhostMinimapProps {
   ratios: readonly number[];
@@ -24,9 +25,9 @@ interface GhostMinimapProps {
 
 const THUMB_STYLE: Record<SlotState, string> = {
   ghost: 'skeleton',
-  pending: 'bg-[#141414]',
-  current: 'bg-[#1c1c1c] shadow-[0_0_0_1px_rgb(255_255_255/0.35)]',
-  rendered: 'bg-[#2a2a2a]',
+  pending: STAGE_TONE.thumbPending,
+  current: STAGE_TONE.thumbCurrent,
+  rendered: STAGE_TONE.thumbRendered,
 };
 
 /** The minimap's thumbnails: one per slide, lighting up as the slides render. */
@@ -72,7 +73,12 @@ export function GhostMinimap({
             }}
           >
             {state === 'rendered' && (
-              <span className="absolute top-[22%] left-[12%] h-[12%] w-[46%] rounded-[2px] bg-white/15" />
+              <span
+                className={cn(
+                  'absolute top-[22%] left-[12%] h-[12%] w-[46%] rounded-mark',
+                  STAGE_TONE.thumbSketch,
+                )}
+              />
             )}
           </span>
         );

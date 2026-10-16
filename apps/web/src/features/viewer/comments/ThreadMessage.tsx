@@ -2,7 +2,7 @@ import type { Comment } from '@slider/shared';
 import { useState } from 'react';
 import { isPendingComment } from '@/lib/api/comment-cache';
 import { useUpdateComment } from '@/lib/api';
-import { AutosizeTextarea, Button, cn, Menu } from '@/ui';
+import { AutosizeTextarea, Button, cn, ErrorText, Menu } from '@/ui';
 import { isRemovedInPowerPoint } from './lib/comment-selectors';
 import { AuthorLine } from './AuthorLine';
 import { CommentContent } from './CommentContent';
@@ -51,7 +51,7 @@ export function ThreadMessage({ comment, deckId, isRoot, onDeleted }: ThreadMess
       className={cn(
         'flex flex-col gap-2 rounded-panel px-3.5 py-3 transition-opacity',
         isRoot
-          ? 'bg-white/[0.06] shadow-[inset_0_0_0_1px_var(--card-accent),0_0_20px_-4px_color-mix(in_srgb,var(--card-accent)_50%,transparent)]'
+          ? 'bg-surface-1 shadow-[inset_0_0_0_1px_var(--card-accent),0_0_20px_-4px_color-mix(in_srgb,var(--card-accent)_50%,transparent)]'
           : cn('glass max-w-80', editing ? 'w-full' : 'w-fit min-w-48'),
         pending && 'opacity-60',
       )}
@@ -63,7 +63,7 @@ export function ThreadMessage({ comment, deckId, isRoot, onDeleted }: ThreadMess
           !editing && (
             <Menu
               label="Aktionen für diesen Kommentar"
-              triggerClassName="size-7"
+              triggerSize="compact"
               actions={menu.actions}
             />
           )
@@ -79,7 +79,7 @@ export function ThreadMessage({ comment, deckId, isRoot, onDeleted }: ThreadMess
           comment={comment}
           bodyClassName={cn(
             'text-fg',
-            removed && 'text-fg-subtle line-through decoration-white/30',
+            removed && 'text-fg-subtle line-through decoration-fg-faint',
           )}
         />
       )}
@@ -113,7 +113,7 @@ function EditForm({
         save();
       }}
     >
-      <div className="rounded-control-sm bg-white/5 px-3 py-2 shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]">
+      <div className="field-well rounded-control-sm px-3 py-2">
         <AutosizeTextarea
           autoFocus
           aria-label="Kommentar bearbeiten"
@@ -126,13 +126,13 @@ function EditForm({
               onDone();
             }
           }}
-          className="text-[13px] leading-5 text-fg"
+          className="text-body leading-5 text-fg"
         />
       </div>
       {update.isError && (
-        <p role="alert" className="text-xs text-danger">
+        <ErrorText role="alert" size="xs">
           {update.error.message}
-        </p>
+        </ErrorText>
       )}
       <div className="flex justify-end gap-1">
         <Button variant="ghost" size="sm" onClick={onDone}>

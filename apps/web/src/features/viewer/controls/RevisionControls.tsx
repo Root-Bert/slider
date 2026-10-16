@@ -1,7 +1,7 @@
 import type { SyncResult } from '@slider/shared';
 import { useRef } from 'react';
 import { useUploadRevision } from '@/lib/api';
-import { cn, GlassPanel, Icon, IconButton, Spinner } from '@/ui';
+import { cn, Icon, IconButton, Spinner, SwitchTrack, Toolbar, ToolbarDivider } from '@/ui';
 import { revisionNoticeText, syncResultMessage } from '../revisions/lib/revision-changes';
 import { RevisionNotice } from '../revisions/RevisionNotice';
 import { useRevisionData } from '../state/revision-data';
@@ -30,7 +30,7 @@ export function RevisionControls({ className }: { className?: string }) {
           : null}
       </span>
       {showPill && (
-        <GlassPanel className={cn('flex shrink-0 items-center gap-1 p-1', className)}>
+        <Toolbar role={false} className={cn('shrink-0', className)}>
           {announcement && (
             // Keyed by number: a newer version restarts the notice.
             <RevisionNotice
@@ -39,11 +39,9 @@ export function RevisionControls({ className }: { className?: string }) {
               onDone={dismissAnnouncement}
             />
           )}
-          {announcement && showToggle && (
-            <span aria-hidden className="mx-0.5 h-5 w-px bg-white/15" />
-          )}
+          {announcement && showToggle && <ToolbarDivider />}
           {showToggle && <ChangesToggle revisionNumber={revisionNumber} />}
-        </GlassPanel>
+        </Toolbar>
       )}
     </>
   );
@@ -66,9 +64,9 @@ export function UploadRevisionControl({ className }: { className?: string }) {
   const { isLinked } = useRevisionData();
   if (!canManage || isLinked) return null;
   return (
-    <GlassPanel className={cn('flex shrink-0 items-center p-1', className)}>
+    <Toolbar role={false} className={cn('shrink-0', className)}>
       <UploadButton />
-    </GlassPanel>
+    </Toolbar>
   );
 }
 
@@ -128,7 +126,7 @@ function ChangesToggle({ revisionNumber }: { revisionNumber: number }) {
       aria-label={`Änderungen der Version ${revisionNumber} zeigen`}
       title={label}
       onClick={() => dispatch({ type: 'showChangesSet', show: !showChanges })}
-      className="flex h-8 items-center gap-2 rounded-control pr-1.5 pl-2 text-xs text-fg-muted transition-colors hover:bg-white/10 hover:text-fg"
+      className="flex h-8 items-center gap-2 rounded-control pr-1.5 pl-2 text-xs text-fg-muted transition-colors hover:bg-hover hover:text-fg"
     >
       {/* Narrow timeline (side panel open at laptop widths): just the switch, so the filter pill
           next to it keeps its room. Tooltip and label still name the version. */}
@@ -137,20 +135,7 @@ function ChangesToggle({ revisionNumber }: { revisionNumber: number }) {
         V{revisionNumber}
       </span>
       <span className="md:@max-[900px]:hidden max-md:hidden">Änderungen</span>
-      <span
-        aria-hidden
-        className={cn(
-          'relative h-4 w-7 shrink-0 rounded-badge transition-colors',
-          showChanges ? 'bg-primary' : 'bg-white/20',
-        )}
-      >
-        <span
-          className={cn(
-            'absolute top-0.5 left-0.5 size-3 rounded-thumb transition-transform',
-            showChanges ? 'translate-x-3 bg-black' : 'bg-white/80',
-          )}
-        />
-      </span>
+      <SwitchTrack checked={showChanges} size="sm" />
     </button>
   );
 }

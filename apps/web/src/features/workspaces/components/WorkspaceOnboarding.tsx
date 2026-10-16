@@ -1,8 +1,7 @@
-import { useId } from 'react';
 import { useNavigate } from 'react-router';
 import { routes } from '@/lib/routes';
 import { AppHeader } from '@/shell/AppHeader';
-import { cn, Icon, Toast, useToast } from '@/ui';
+import { Divider, PageHeader, Section, Toast, useToast } from '@/ui';
 import { useAccount } from '@/features/auth';
 import { CreateWorkspaceForm } from './CreateWorkspaceForm';
 import { JoinByCodeForm } from './JoinByCodeForm';
@@ -17,8 +16,6 @@ export function WorkspaceOnboarding() {
   const { user, pendingInvites, canCreateWorkspace } = useAccount();
   const navigate = useNavigate();
   const [toast, showToast] = useToast();
-  const createId = useId();
-  const joinId = useId();
   const firstName = user.name.split(/\s+/)[0] ?? user.name;
   const invited = pendingInvites.length > 0;
 
@@ -28,78 +25,53 @@ export function WorkspaceOnboarding() {
       <AppHeader />
       <main className="flex flex-1 justify-center px-4 pt-[clamp(8px,6vh,72px)] pb-16">
         <div className="flex w-full max-w-[456px] flex-col gap-6">
-          <hgroup className="flex flex-col items-center gap-2 text-center">
-            <h1 className="text-[28px] leading-tight font-semibold tracking-tight text-fg">
-              Willkommen, {firstName}
-            </h1>
-            <p className="text-sm text-fg-subtle">
-              In Slider liegt alles in Organisationen. Erstelle deine eigene oder tritt einer bei,
-              in die du eingeladen wurdest.
-            </p>
-          </hgroup>
+          <PageHeader
+            align="center"
+            title={`Willkommen, ${firstName}`}
+            subtitle="In Slider liegt alles in Organisationen. Erstelle deine eigene oder tritt einer bei, in die du eingeladen wurdest."
+          />
 
           {/* Invited people see "beitreten" first, everyone else "erstellen". */}
           <div className="flex flex-col gap-6">
-            <section
-              aria-labelledby={joinId}
-              className={cn(
-                'glass flex flex-col gap-4 rounded-panel p-6',
-                invited ? 'order-1' : 'order-3',
-              )}
+            <Section
+              density="compact"
+              icon="personAdd"
+              title="Organisation beitreten"
+              description={
+                invited
+                  ? 'Du wurdest eingeladen. Oder füge einen Einladungslink ein.'
+                  : 'Füge den Einladungslink oder -code ein, den du bekommen hast.'
+              }
+              className={invited ? 'order-1' : 'order-3'}
             >
-              <div className="flex flex-col gap-1">
-                <h2 id={joinId} className="flex items-center gap-2 text-base font-semibold text-fg">
-                  <Icon name="personAdd" size={20} className="text-fg-muted" />
-                  Organisation beitreten
-                </h2>
-                <p className="text-[13px] text-fg-subtle">
-                  {invited
-                    ? 'Du wurdest eingeladen. Oder füge einen Einladungslink ein.'
-                    : 'Füge den Einladungslink oder -code ein, den du bekommen hast.'}
-                </p>
-              </div>
               {invited && (
                 <div className="-mx-2">
                   <PendingInvites invites={pendingInvites} onError={showToast} />
                 </div>
               )}
               <JoinByCodeForm onJoin={(token) => void navigate(routes.join(token))} />
-            </section>
+            </Section>
 
-            <p className="order-2 flex items-center gap-3 text-xs text-fg-subtle">
-              <span aria-hidden className="h-px flex-1 bg-hairline" />
-              oder
-              <span aria-hidden className="h-px flex-1 bg-hairline" />
-            </p>
+            <Divider label="oder" className="order-2" />
 
-            <section
-              aria-labelledby={createId}
-              className={cn(
-                'glass flex flex-col gap-4 rounded-panel p-6',
-                invited ? 'order-3' : 'order-1',
-              )}
+            <Section
+              density="compact"
+              icon="add"
+              title="Organisation erstellen"
+              description={
+                canCreateWorkspace
+                  ? 'Du bist Admin und kannst danach dein Team einladen. Neue Organisationen starten im Free-Plan.'
+                  : 'Du hast bereits eine eigene Organisation. Übergib sie an jemand anderen, um eine neue zu gründen – weiteren trittst du per Einladung bei.'
+              }
+              className={invited ? 'order-3' : 'order-1'}
             >
-              <div className="flex flex-col gap-1">
-                <h2
-                  id={createId}
-                  className="flex items-center gap-2 text-base font-semibold text-fg"
-                >
-                  <Icon name="add" size={20} className="text-fg-muted" />
-                  Organisation erstellen
-                </h2>
-                <p className="text-[13px] text-fg-subtle">
-                  {canCreateWorkspace
-                    ? 'Du bist Admin und kannst danach dein Team einladen. Neue Organisationen starten im Free-Plan.'
-                    : 'Du hast bereits eine eigene Organisation. Übergib sie an jemand anderen, um eine neue zu gründen – weiteren trittst du per Einladung bei.'}
-                </p>
-              </div>
               {canCreateWorkspace && (
                 <CreateWorkspaceForm
                   autoFocus={!invited}
                   onCreated={(workspace) => void navigate(routes.workspace(workspace.id))}
                 />
               )}
-            </section>
+            </Section>
           </div>
         </div>
       </main>

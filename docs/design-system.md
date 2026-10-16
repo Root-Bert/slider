@@ -9,16 +9,17 @@ canvas, frosted glass and white at fixed opacities.
 
 ## 1. Rules
 
-1. **No raw colours in components.** No `bg-white/12`, `#141414`, `rgb(…)` or `rgba(…)` in `.tsx`.
-   Use a token class (`bg-hover`, `text-fg-muted`, `bg-scrim`) or a utility (`glass-control`,
-   `ring-hairline`). Exceptions are listed in `apps/web/src/styles/raw-color-allowlist.ts` and
-   enforced by `styles/design-tokens.test.ts`.
+1. **No raw colours in components.** No `bg-white/12`, `#141414`, `rgb(…)` or `rgba(…)` in `.tsx`
+   or in `.ts` modules that build class strings. Use a token class (`bg-hover`, `text-fg-muted`,
+   `bg-scrim`) or a utility (`glass-control`, `ring-hairline`). The few exceptions are listed,
+   value by value, in `apps/web/src/styles/raw-color-allowlist.ts` and enforced by
+   `styles/design-tokens.test.ts` (§12).
 2. **No hand-rolled controls.** A clickable thing is a `Button`, `IconButton`, `TextLink`,
    `ButtonLink`, `MenuItem`, `SegmentedControl`, `Toggle` or `ColorSwatches`. Surfaces that are
    clickable as a whole (deck cards, thumbnails, pins) stay bespoke but use the state tokens.
 3. **Tailwind scale first, tokens second, arbitrary values last.** An arbitrary value
    (`h-[88px]`) is fine for one-off geometry, never for colours, font sizes, radii, z-index or
-   easings.
+   easings (guarded, §12).
 4. **`cn` is plain `clsx`** — there is no tailwind-merge. A `className` override only wins by CSS
    order or `!`. Kit components therefore expose props (variant, size, tone) instead of relying
    on callers overriding classes.
@@ -98,7 +99,8 @@ Status tints use Tailwind opacity modifiers on the token, at fixed steps only:
 ### On-accent text
 
 Text on a reviewer accent is black or white, decided by `isLightAccent` in `lib/accent.ts`
-(`onAccentClass(color)`). Raw `text-black` / `text-white` only there.
+(`onAccentClass(color)`). Raw `text-black` / `text-white` only there and in the few fixed
+white-on-colour spots listed in §12 (count bubbles, slide chrome, brand marks).
 
 ## 3. Surfaces (utilities)
 
@@ -181,16 +183,17 @@ Stacking uses named layers (`z-(--z-…)`):
 Durations come from Tailwind's scale only: `duration-150` (default: hover, colour), `200`
 (cards, pins, cursors), `300` (panels, layout), `500` (import stage). Easings are tokens:
 
-| Class             | Curve                            | Use                       |
-| ----------------- | -------------------------------- | ------------------------- |
-| `ease-out`        | Tailwind                         | Small fades               |
-| `ease-emphasized` | `cubic-bezier(.2,.9,.25,1)`      | Panels, rise-in, slide-in |
-| `ease-overshoot`  | `cubic-bezier(.2,.9,.3,1.2)`     | Pop-in                    |
-| `ease-sheet`      | `cubic-bezier(.32,.72,0,1)`      | Sheets and drawers        |
-| `ease-symmetric`  | `cubic-bezier(.65,0,.35,1)`      | Drawn lines               |
-| `ease-exit`       | `cubic-bezier(.4,0,1,1)`         | Leaving the page          |
-| `ease-hop`        | `cubic-bezier(.3,.7,.4,1)`       | Logo hop                  |
-| `ease-deal`       | `cubic-bezier(.16,.92,.24,1.05)` | Import stage deal-in      |
+| Class             | Curve                            | Use                  |
+| ----------------- | -------------------------------- | -------------------- |
+| `ease-out`        | Tailwind                         | Small fades          |
+| `ease-emphasized` | `cubic-bezier(.2,.9,.25,1)`      | Panels               |
+| `ease-settle`     | `cubic-bezier(.2,.9,.3,1)`       | Rise-in, slide-in    |
+| `ease-overshoot`  | `cubic-bezier(.2,.9,.3,1.2)`     | Pop-in               |
+| `ease-sheet`      | `cubic-bezier(.32,.72,0,1)`      | Sheets and drawers   |
+| `ease-symmetric`  | `cubic-bezier(.65,0,.35,1)`      | Drawn lines          |
+| `ease-exit`       | `cubic-bezier(.4,0,1,1)`         | Leaving the page     |
+| `ease-hop`        | `cubic-bezier(.3,.7,.4,1)`       | Logo hop             |
+| `ease-deal`       | `cubic-bezier(.16,.92,.24,1.05)` | Import stage deal-in |
 
 JS-coupled timings live in `lib/motion.ts`; `motionMs(ms)` returns 0 under reduced motion.
 
@@ -323,7 +326,8 @@ App chrome lives in `shell/` (not `ui/`): `SettingsLayout` (`docTitle`, `title`,
 
 ```
 app/            router, App, RouteError, NotFoundPage — only wiring; nothing imports app/
-shell/          AppHeader, CenteredMessage (app chrome shared by several features)
+shell/          AppHeader, CenteredMessage, layouts/ (SettingsLayout, CenteredLayout,
+                LogoHeader) – app chrome shared by several features
 ui/             design-system primitives; never imports features or shell/
   brand/        provider and app marks (Google, Microsoft, Passkey, PowerPoint)
   hooks/        generic UI hooks (useDismiss, useToast, useCopyToClipboard, useMediaQuery,
@@ -348,3 +352,42 @@ features/<f>/   <Page>.tsx at the root, components/, hooks/, lib/, index.ts (pub
 - The viewer is the one large feature and is split by sub-domain (`comments`, `connectors`,
   `controls`, `import`, `live`, `media`, `revisions`, `stage`, `state`, `timeline`), each with
   its own `hooks/` and `lib/` where needed.
+
+## 12. Guards and migration status
+
+**Migration status: complete.** Every feature folder (`account`, `auth`, `onboarding`,
+`reviews`, `setup`, `workspaces`, `viewer/*`), `app/` and `shell/` uses the tokens and kit
+components above. There is no pending-migration list any more; new code starts clean.
+
+`styles/design-tokens.test.ts` scans every `.tsx` and `.ts` file under `apps/web/src` (tests,
+`.d.ts` and `styles/` itself excluded) with the scanners in `styles/raw-colors.ts`, comments
+stripped:
+
+- **Raw colours** (`findRawColors`): `white/NN`, `black/NN`, opaque `bg-/text-/…-white|black`,
+  quoted `'white'`/`'black'`, `[#hex]`, `#hex` literals and `rgb(`/`rgba(`.
+- **Literal values** (`findRawLiterals`): `text-[Npx]`, arbitrary radii (`rounded-*-[…]`, except
+  `rounded-[inherit]`), numeric z-indices (`z-10`, `z-[60]`, `-z-1`) and `cubic-bezier(`.
+
+A hit fails the test unless an entry in `styles/raw-color-allowlist.ts` permits that exact value
+in that file (`PERMANENT` for colours, `LITERAL_EXCEPTIONS` for literals). Each entry carries a
+reason, and the test also fails when an entry no longer matches anything, so the list cannot go
+stale. The permitted exceptions today:
+
+| File                                                | Values                        | Why                                                  |
+| --------------------------------------------------- | ----------------------------- | ---------------------------------------------------- |
+| `ui/brand/*`                                        | brand hex, `text-white`       | Google / Microsoft / PowerPoint marks                |
+| `ui/CountBubble.tsx`                                | `text-white`                  | Count on an accent fill, white on every accent       |
+| `lib/accent.ts`                                     | `text-black` · `text-white`   | `onAccentClass` – the one on-accent decision         |
+| `lib/palette.ts`                                    | hex, `rgb(`                   | TS mirror of `@theme` (checked by `palette.test.ts`) |
+| `viewer/connectors/ConnectorLines.tsx`              | `"white"` · `"black"`         | SVG mask luminance                                   |
+| `viewer/stage/lib/mark-chrome.ts`                   | `bg-white` · `text-white`     | Editing chrome on the slide image                    |
+| `viewer/stage/GuideLayer.tsx`                       | `text-white`                  | Label on PowerPoint's overflow red                   |
+| `viewer/timeline/Minimap.tsx`                       | `outline-white`, `rgb(`       | Thumbnail focus outline, bracket edge over slides    |
+| `viewer/media/lib/sketch.ts`                        | `#3A3A3A`, `rgb(`             | Sketch paper (also in the exported PNG), canvas      |
+| `viewer/media/lib/screen-compositor.ts`             | `rgb(`                        | Canvas strings from the palette alphas               |
+| `viewer/stage/Pin.tsx`                              | `z-1`                         | Local order inside the slide box                     |
+| `viewer/live/LiveThreadMarker.tsx`                  | `rounded-[calc(…panel…+3px)]` | Concentric frame around a card                       |
+| `viewer/stage/TextBox.tsx`, `stage/lib/text-box.ts` | `rounded-[0.4em]`, `[0.25em]` | Slide geometry in em                                 |
+| `viewer/media/RecorderPanel.tsx`                    | `rounded-[10.5%/14%]`         | Camera bubble = compositor's `BUBBLE_CORNER`         |
+
+Never add an entry for something a token or utility can express; add the token here first.

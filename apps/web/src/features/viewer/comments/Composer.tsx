@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { isApplePlatform } from '@/lib/platform';
 import { useCreateComment, useDeleteComment } from '@/lib/api';
-import { AutosizeTextarea, Avatar, Button, cn, Kbd, ReturnKey, useIsNarrow } from '@/ui';
+import { AutosizeTextarea, Avatar, Button, cn, ErrorText, Kbd, ReturnKey, useIsNarrow } from '@/ui';
 import { accentAlpha } from '@/lib/accent';
 import { isTypingTarget } from '@/lib/dom';
 import { MediaTabs } from './MediaTabs';
@@ -170,7 +170,7 @@ function ComposerPopover({ draft }: { draft: Draft }) {
       aria-labelledby={titleId}
       onSubmit={submit}
       className={cn(
-        'glass-elevated fixed z-50 flex w-[min(340px,calc(100vw-24px))] animate-pop-in flex-col gap-3 rounded-panel p-3',
+        'glass-elevated fixed z-(--z-popover) flex w-[min(340px,calc(100vw-24px))] animate-pop-in flex-col gap-3 rounded-panel p-3',
         // The sheet to draw on needs room.
         imageTab && 'w-[min(440px,calc(100vw-24px))]',
         narrow && 'inset-x-3 bottom-24 w-auto',
@@ -189,7 +189,7 @@ function ComposerPopover({ draft }: { draft: Draft }) {
           <span id={titleId} className="text-xs font-medium text-fg">
             {author.name} <span className="font-normal text-fg-subtle">jetzt</span>
           </span>
-          <span className="truncate text-[11px] text-fg-subtle">{subtitle}</span>
+          <span className="truncate text-caption text-fg-subtle">{subtitle}</span>
         </div>
       </header>
 
@@ -220,7 +220,7 @@ function ComposerPopover({ draft }: { draft: Draft }) {
         />
       )}
 
-      <div className="relative rounded-control-sm bg-white/5 px-3 py-2 shadow-[inset_0_0_0_1px_var(--color-hairline-strong)] focus-within:shadow-[inset_0_0_0_1px_rgb(255_255_255/0.35)]">
+      <div className="field-well focus-field relative rounded-control-sm px-3 py-2">
         <MentionMenu mentions={mentions} />
         <AutosizeTextarea
           {...mentions.fieldProps}
@@ -257,14 +257,14 @@ function ComposerPopover({ draft }: { draft: Draft }) {
             if (slideText) slideText.focus();
             else cycleTab(event.shiftKey);
           }}
-          className="text-[13px] leading-5 text-fg"
+          className="text-body leading-5 text-fg"
         />
       </div>
 
       {error && (
-        <p role="alert" className="text-xs text-danger">
+        <ErrorText role="alert" size="xs">
           {error.message}
-        </p>
+        </ErrorText>
       )}
 
       <footer className="flex items-center justify-end gap-2">
@@ -287,7 +287,7 @@ function ComposerPopover({ draft }: { draft: Draft }) {
               <>
                 Senden
                 {/* Only on hover / keyboard focus, so the button stays calm. */}
-                <Kbd className="-mr-1 hidden text-on-primary/55 shadow-[inset_0_0_0_1px_rgb(0_0_0/0.15)] group-hover:inline-flex group-focus-visible:inline-flex max-sm:hidden max-sm:group-hover:hidden">
+                <Kbd className="-mr-1 hidden text-on-primary/55 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-on-primary)_15%,transparent)] group-hover:inline-flex group-focus-visible:inline-flex max-sm:hidden max-sm:group-hover:hidden">
                   {isApplePlatform() ? '⌘' : 'Strg'}
                   <ReturnKey />
                 </Kbd>

@@ -74,7 +74,7 @@ export function Viewer() {
         {/* Bottom right: who else is here, then you – hover for the name, click to pick a colour. Moves left of the side panel when that opens. */}
         <div
           className={cn(
-            'fixed right-4 bottom-4 z-30 transition-[right] duration-300 md:right-6 md:bottom-6',
+            'fixed right-4 bottom-4 z-(--z-chrome) transition-[right] duration-300 md:right-6 md:bottom-6',
             threadPanelOpen && 'max-md:hidden md:right-[424px]',
           )}
         >
@@ -87,7 +87,7 @@ export function Viewer() {
         <Composer />
         <ThreadPanel />
         <DeletedSlidesPanel />
-        {/* Above the thread panel (z-40). */}
+        {/* Above the thread panel and popovers (`--z-toast`). */}
         <Toast toast={toast} />
       </div>
     </ViewerToastContext>

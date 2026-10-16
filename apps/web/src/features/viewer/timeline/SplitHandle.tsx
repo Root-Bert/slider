@@ -125,9 +125,10 @@ export function SplitHandle({ geometry, slideH }: SplitHandleProps) {
       <span
         aria-hidden
         className={cn(
-          'h-1 w-16 rounded-full bg-white/25 transition-[background-color,width] duration-150',
-          'group-hover:w-20 group-hover:bg-white/60 group-focus-visible:w-20 group-focus-visible:bg-white/70 group-focus-visible:outline-2 group-focus-visible:outline-offset-2 group-focus-visible:outline-mention',
-          dragging && 'w-20 bg-white/80',
+          'h-1 rounded-full transition-[background-color,width] duration-150',
+          // One or the other: with plain class merging `bg-handle` would outrank `bg-fg`.
+          dragging ? 'w-20 bg-fg' : 'w-16 bg-handle',
+          'group-hover:w-20 group-hover:bg-fg-muted group-focus-visible:w-20 group-focus-visible:bg-fg-muted group-focus-visible:outline-2 group-focus-visible:outline-offset-2 group-focus-visible:outline-mention',
         )}
       />
     </div>

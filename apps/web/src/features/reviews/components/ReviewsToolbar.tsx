@@ -1,8 +1,7 @@
 import type { ReactNode } from 'react';
-import { IconButton, SegmentedControl, type Segment } from '@/ui';
+import { GlassPanel, IconButton, SegmentedControl, Select, Toolbar, type Segment } from '@/ui';
 import { DECK_SORTS, SORT_LABELS, type DeckSort, type ReviewTab } from '../lib/deck-filters';
 import type { DeckView } from './DeckCollection';
-import { Select } from '@/ui';
 
 interface ReviewsToolbarProps {
   tab: ReviewTab;
@@ -45,14 +44,14 @@ export function ReviewsToolbar({
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex flex-wrap items-center gap-3">
-        <div className="glass-control rounded-panel p-1">
+        <GlassPanel className="p-1">
           <SegmentedControl
             label="Reviews filtern"
             segments={segments}
             value={tab}
             onChange={onTabChange}
           />
-        </div>
+        </GlassPanel>
         {action}
       </div>
       <div className="flex items-center gap-2 max-sm:w-full">
@@ -64,11 +63,7 @@ export function ReviewsToolbar({
           onChange={onSortChange}
           options={SORT_OPTIONS}
         />
-        <div
-          role="group"
-          aria-label="Ansicht"
-          className="glass-control flex items-center gap-1 rounded-panel p-1"
-        >
+        <Toolbar role="group" label="Ansicht">
           <IconButton
             icon="gridView"
             label="Kachelansicht"
@@ -85,7 +80,7 @@ export function ReviewsToolbar({
             active={view === 'list'}
             onClick={() => onViewChange('list')}
           />
-        </div>
+        </Toolbar>
       </div>
     </div>
   );

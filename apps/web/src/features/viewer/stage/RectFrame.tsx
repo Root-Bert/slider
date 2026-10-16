@@ -1,6 +1,7 @@
 import type { Rect } from '@slider/shared';
 import type { CSSProperties, ReactNode } from 'react';
 import { cn } from '@/ui';
+import { frameHalo } from './lib/mark-chrome';
 
 interface RectFrameProps {
   rect: Rect;
@@ -33,9 +34,7 @@ export function RectFrame({
         width: `${rect.w * 100}%`,
         height: `${rect.h * 100}%`,
         borderColor: color,
-        boxShadow: emphasized
-          ? `0 0 0 3px color-mix(in srgb, ${color} 30%, transparent)`
-          : undefined,
+        boxShadow: emphasized ? frameHalo(color) : undefined,
       }}
     >
       {children}

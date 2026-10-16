@@ -33,6 +33,25 @@ export const ACCENT_HEX: Readonly<Record<AccentColor, string>> = {
 export const POWERPOINT_HEX = '#d35230';
 
 /**
+ * "Hilfslinien zeigen": PowerPoint's drawing guides (its own cyan) and the boxes that stick out
+ * over them, as PowerPoint shows them – deliberately not the reviewer accents or `danger`, so a
+ * guide never reads as somebody's mark.
+ */
+export const GUIDE_COLORS = { guide: 'rgb(6 182 212)', overflow: 'rgb(239 68 68)' } as const;
+
+/**
+ * Grounds of the generated avatars (DiceBear "slice", "Bold Pop" preset), as DiceBear takes them:
+ * hex without `#`. Illustration colours drawn into the avatar image, not UI tokens.
+ */
+export const GENERATED_AVATAR_GROUNDS: readonly string[] = [
+  'ff5d8f',
+  'ffb703',
+  '43aa8b',
+  '4d96ff',
+  'b57bff',
+];
+
+/**
  * The current value of a CSS custom property on `:root` (e.g. `readToken('--color-accent-red',
  * ACCENT_HEX.red)`), or `fallback` when it is unset or there is no DOM (tests, SSR).
  */

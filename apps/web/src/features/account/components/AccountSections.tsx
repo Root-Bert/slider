@@ -15,12 +15,16 @@ import {
 import {
   Badge,
   Button,
-  Dialog,
+  ConfirmDialog,
   GoogleMark,
   Icon,
+  IconTile,
+  ListRow,
   Menu,
   MicrosoftMark,
+  Notice,
   PasskeyMark,
+  RowList,
   Section,
   Spinner,
   TextField,
@@ -70,71 +74,65 @@ export function LoginsSection({
       ) : identities.isError ? (
         <p className="text-sm text-danger">{identities.error.message}</p>
       ) : (
-        <ul className="flex flex-col divide-y divide-hairline">
+        <RowList>
           {identities.data.map((identity) => (
-            <li
+            <ListRow
               key={`${identity.provider}:${identity.email ?? ''}:${identity.createdAt}`}
-              className="flex items-center gap-3 py-3 first:pt-0 last:pb-0"
-            >
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-control bg-white/6">
-                {providerIcon(identity.provider)}
-              </span>
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="text-sm font-medium text-fg">
-                  {PROVIDER_LABELS[identity.provider]}
-                </span>
-                <span className="truncate text-xs text-fg-subtle">{identity.email ?? '–'}</span>
-              </span>
-              {identity.provider === 'microsoft' && microsoftConnected && (
-                <span title="Verbunden mit OneDrive & SharePoint" className="text-fg-subtle">
-                  <Icon name="cloud" size={18} label="Verbunden mit OneDrive & SharePoint" />
-                </span>
-              )}
-              <Menu
-                label={`Aktionen für ${PROVIDER_LABELS[identity.provider]}`}
-                actions={[
-                  {
-                    label: 'Trennen',
-                    icon: 'delete',
-                    tone: 'danger',
-                    onSelect: () => setUnlinking(identity),
-                  },
-                ]}
-              />
-            </li>
+              leading={<IconTile tone="inherit">{providerIcon(identity.provider)}</IconTile>}
+              title={PROVIDER_LABELS[identity.provider]}
+              subtitle={identity.email ?? '–'}
+              trailing={
+                <>
+                  {identity.provider === 'microsoft' && microsoftConnected && (
+                    <span title="Verbunden mit OneDrive & SharePoint" className="text-fg-subtle">
+                      <Icon name="cloud" size={18} label="Verbunden mit OneDrive & SharePoint" />
+                    </span>
+                  )}
+                  <Menu
+                    label={`Aktionen für ${PROVIDER_LABELS[identity.provider]}`}
+                    actions={[
+                      {
+                        label: 'Trennen',
+                        icon: 'delete',
+                        tone: 'danger',
+                        onSelect: () => setUnlinking(identity),
+                      },
+                    ]}
+                  />
+                </>
+              }
+            />
           ))}
           {identities.data.length === 0 && (
-            <li className="text-[13px] text-fg-subtle">
+            <li className="text-body text-fg-subtle">
               {providers.data?.devLogin
                 ? 'Entwicklungsmodus: Du bist ohne Anmeldung drin.'
                 : 'Noch keine Anmeldung verknüpft.'}
             </li>
           )}
           {linkable.map((provider) => (
-            <li key={provider.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-control bg-white/6 opacity-60">
-                {providerIcon(provider.id)}
-              </span>
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="text-sm font-medium text-fg-muted">
-                  {PROVIDER_LABELS[provider.id]}
-                </span>
-                <span className="text-xs text-fg-subtle">Nicht verbunden</span>
-              </span>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() =>
-                  window.location.assign(
-                    providerLoginUrl(`${provider.loginUrl}?intent=connect`, '/konto'),
-                  )
-                }
-              >
-                Verbinden
-              </Button>
-            </li>
+            <ListRow
+              key={provider.id}
+              dimmed
+              leading={<IconTile tone="inherit">{providerIcon(provider.id)}</IconTile>}
+              title={PROVIDER_LABELS[provider.id]}
+              subtitle="Nicht verbunden"
+              trailing={
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() =>
+                    window.location.assign(
+                      providerLoginUrl(`${provider.loginUrl}?intent=connect`, '/konto'),
+                    )
+                  }
+                >
+                  Verbinden
+                </Button>
+              }
+            />
           ))}
-        </ul>
+        </RowList>
       )}
       {unlinking && (
         <UnlinkDialog identity={unlinking} onClose={() => setUnlinking(null)} onNotify={onNotify} />
@@ -155,8 +153,7 @@ function UnlinkDialog({
   const unlink = useUnlinkIdentity();
   const label = PROVIDER_LABELS[identity.provider];
   return (
-    <Dialog
-      open
+    <ConfirmDialog
       onClose={onClose}
       title={`${label} trennen?`}
       description={
@@ -164,27 +161,16 @@ function UnlinkDialog({
           ? `Mit ${identity.email ?? 'diesem Microsoft-Konto'} kommst du dann nicht mehr in dieses Konto, und Slider verliert den Zugriff auf deine OneDrive- und SharePoint-Dateien. Du kannst Microsoft jederzeit wieder verbinden.`
           : `Mit ${identity.email ?? `diesem ${label}-Konto`} kommst du dann nicht mehr in dieses Konto. Du kannst es jederzeit wieder verbinden.`
       }
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            Abbrechen
-          </Button>
-          <Button
-            variant="danger"
-            loading={unlink.isPending}
-            onClick={() =>
-              unlink.mutate(identity.id, {
-                onSuccess: () => {
-                  onNotify(`${label} getrennt`);
-                  onClose();
-                },
-                onError: (error) => onNotify(error.message, 'danger'),
-              })
-            }
-          >
-            Trennen
-          </Button>
-        </>
+      confirmLabel="Trennen"
+      pending={unlink.isPending}
+      onConfirm={() =>
+        unlink.mutate(identity.id, {
+          onSuccess: () => {
+            onNotify(`${label} getrennt`);
+            onClose();
+          },
+          onError: (error) => onNotify(error.message, 'danger'),
+        })
       }
     />
   );
@@ -226,32 +212,33 @@ export function PasskeysSection({ onNotify }: { onNotify: ShowToast }) {
       }
     >
       {!supported && (
-        <p className="flex items-center gap-2 text-[13px] text-fg-subtle">
-          <Icon name="warning" size={18} className="text-warning" />
+        <Notice tone="warning" variant="inline">
           Dieser Browser unterstützt keine Passkeys.
-        </p>
+        </Notice>
       )}
       {passkeys.isPending ? (
         <Spinner size={20} className="text-fg-subtle" />
       ) : passkeys.isError ? (
         <p className="text-sm text-danger">{passkeys.error.message}</p>
       ) : passkeys.data.length === 0 ? (
-        <p className="rounded-control bg-white/5 px-4 py-3 text-[13px] leading-5 text-fg-subtle">
+        <Notice tone="neutral" variant="plain">
           Noch kein Passkey. Mit einem Passkey meldest du dich auf diesem Gerät mit einem Klick an.
-        </p>
+        </Notice>
       ) : (
-        <ul className="flex flex-col divide-y divide-hairline">
+        <RowList>
           {passkeys.data.map((passkey) => (
-            <li key={passkey.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-control bg-white/6 text-fg-muted">
-                <PasskeyMark size={20} />
-              </span>
-              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="truncate text-sm font-medium text-fg">{passkey.name}</span>
-                  {passkey.synced && <Badge tone="info">Synchronisiert</Badge>}
-                </span>
-                <span className="truncate text-xs text-fg-subtle">
+            <ListRow
+              key={passkey.id}
+              textGap="tight"
+              leading={
+                <IconTile>
+                  <PasskeyMark size={20} />
+                </IconTile>
+              }
+              title={passkey.name}
+              badge={passkey.synced && <Badge tone="info">Synchronisiert</Badge>}
+              subtitle={
+                <>
                   Erstellt{' '}
                   <span title={formatDateTime(passkey.createdAt)}>
                     {formatRelativeTime(passkey.createdAt)}
@@ -267,23 +254,25 @@ export function PasskeysSection({ onNotify }: { onNotify: ShowToast }) {
                   ) : (
                     'Noch nie verwendet'
                   )}
-                </span>
-              </span>
-              <Menu
-                label={`Aktionen für „${passkey.name}“`}
-                actions={[
-                  { label: 'Umbenennen', icon: 'edit', onSelect: () => setRenaming(passkey) },
-                  {
-                    label: 'Entfernen',
-                    icon: 'delete',
-                    tone: 'danger',
-                    onSelect: () => setRemoving(passkey),
-                  },
-                ]}
-              />
-            </li>
+                </>
+              }
+              trailing={
+                <Menu
+                  label={`Aktionen für „${passkey.name}“`}
+                  actions={[
+                    { label: 'Umbenennen', icon: 'edit', onSelect: () => setRenaming(passkey) },
+                    {
+                      label: 'Entfernen',
+                      icon: 'delete',
+                      tone: 'danger',
+                      onSelect: () => setRemoving(passkey),
+                    },
+                  ]}
+                />
+              }
+            />
           ))}
-        </ul>
+        </RowList>
       )}
       {supported && (
         <Button
@@ -332,21 +321,15 @@ function RenameDialog({
     );
   };
   return (
-    <Dialog
-      open
+    <ConfirmDialog
       onClose={onClose}
       title="Passkey umbenennen"
       description="Ein Name, an dem du das Gerät oder den Passwort-Manager wiedererkennst."
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            Abbrechen
-          </Button>
-          <Button onClick={save} disabled={!parsed.success} loading={rename.isPending}>
-            Speichern
-          </Button>
-        </>
-      }
+      tone="primary"
+      confirmLabel="Speichern"
+      confirmDisabled={!parsed.success}
+      pending={rename.isPending}
+      onConfirm={save}
     >
       <form
         noValidate
@@ -364,7 +347,7 @@ function RenameDialog({
           onChange={(event) => setName(event.target.value)}
         />
       </form>
-    </Dialog>
+    </ConfirmDialog>
   );
 }
 
@@ -379,32 +362,20 @@ function RemoveDialog({
 }) {
   const remove = useDeletePasskey();
   return (
-    <Dialog
-      open
+    <ConfirmDialog
       onClose={onClose}
       title={`„${passkey.name}“ entfernen?`}
       description="Mit diesem Passkey kannst du dich dann nicht mehr anmelden. Lösche ihn danach auch im Passwort-Manager deines Geräts."
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            Abbrechen
-          </Button>
-          <Button
-            variant="danger"
-            loading={remove.isPending}
-            onClick={() =>
-              remove.mutate(passkey.id, {
-                onSuccess: () => {
-                  onNotify('Passkey entfernt');
-                  onClose();
-                },
-                onError: (error) => onNotify(error.message, 'danger'),
-              })
-            }
-          >
-            Entfernen
-          </Button>
-        </>
+      confirmLabel="Entfernen"
+      pending={remove.isPending}
+      onConfirm={() =>
+        remove.mutate(passkey.id, {
+          onSuccess: () => {
+            onNotify('Passkey entfernt');
+            onClose();
+          },
+          onError: (error) => onNotify(error.message, 'danger'),
+        })
       }
     />
   );

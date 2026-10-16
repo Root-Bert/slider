@@ -1,6 +1,6 @@
 import type { Comment, MediaKind } from '@slider/shared';
 import { useState } from 'react';
-import { AutosizeTextarea, Button, Dialog } from '@/ui';
+import { AutosizeTextarea, Button, Dialog, ErrorText } from '@/ui';
 import { replyInput } from '../comments/lib/replies';
 import { useViewerToast } from '../state/viewer-toast';
 import { MEDIA_LABELS } from './lib/recording';
@@ -66,7 +66,7 @@ export function RecordReplyDialog({
       <div className="flex flex-col gap-3">
         <RecorderPanel kind={kind} deckId={deckId} onChange={setRecording} autoStart autoFocus />
         {recording && (
-          <div className="rounded-control-sm bg-white/5 px-3 py-2 shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]">
+          <div className="field-well rounded-control-sm px-3 py-2">
             <AutosizeTextarea
               aria-label="Notiz zur Aufnahme"
               placeholder="Optional: Notiz zur Aufnahme"
@@ -75,14 +75,14 @@ export function RecordReplyDialog({
               onKeyDown={(event) => {
                 if (isModEnter(event)) send();
               }}
-              className="text-[13px] leading-5 text-fg"
+              className="text-body leading-5 text-fg"
             />
           </div>
         )}
         {create.error && (
-          <p role="alert" className="text-xs text-danger">
+          <ErrorText role="alert" size="xs">
             {create.error.message}
-          </p>
+          </ErrorText>
         )}
       </div>
     </Dialog>

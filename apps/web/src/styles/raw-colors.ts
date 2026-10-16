@@ -1,7 +1,8 @@
 /*
- * Finds raw colours in component source (design-system rule 1): white/black alpha classes,
- * arbitrary hex classes, `rgb()`/`rgba()` and `#hex` literals. Comments are ignored, string
- * contents are not (that is where the class names live).
+ * Finds raw values in component source: raw colours (design-system rule 1: white/black alpha
+ * classes, arbitrary hex classes, `rgb()`/`rgba()` and `#hex` literals) and literal type sizes,
+ * radii, z-indices and easings (rules 3, 5–7). Comments are ignored, string contents are not
+ * (that is where the class names live).
  */
 
 export interface RawColor {
@@ -91,11 +92,31 @@ export function stripComments(source: string): string {
   return out;
 }
 
-/** Every raw colour in a `.tsx` source, with its 1-based line. */
+/** Every raw colour in a `.tsx`/`.ts` source, with its 1-based line. */
 export function findRawColors(source: string): RawColor[] {
+  return scan(source, PATTERNS);
+}
+
+const LITERAL_PATTERNS: readonly RegExp[] = [
+  // text-[13px] – use the type scale (text-body, text-caption, …)
+  /\btext-\[\d+(?:\.\d+)?px\]/g,
+  // rounded-[4px], rounded-t-[0.25em] … – use a radius token; `rounded-[inherit]` is fine
+  /\brounded(?:-(?:t|r|b|l|s|e|tl|tr|br|bl|ss|se|es|ee))?-\[(?!inherit\])[^\]\s]+\]/g,
+  // z-10, hover:z-[60], -z-1 – use a layer variable z-(--z-…)
+  /(?<![\w[-])-?z-(?:\d+|\[[^\]\s]+\])(?![\w-])/g,
+  // cubic-bezier(…) – use an ease-* token
+  /cubic-bezier\(/g,
+];
+
+/** Literal type sizes, radii, z-indices and easings in a source (rules 3 and 5–7). */
+export function findRawLiterals(source: string): RawColor[] {
+  return scan(source, LITERAL_PATTERNS);
+}
+
+function scan(source: string, patterns: readonly RegExp[]): RawColor[] {
   const code = stripComments(source);
   const found: RawColor[] = [];
-  for (const pattern of PATTERNS) {
+  for (const pattern of patterns) {
     for (const match of code.matchAll(pattern)) {
       const line = code.slice(0, match.index).split('\n').length;
       found.push({ line, match: match[0] });

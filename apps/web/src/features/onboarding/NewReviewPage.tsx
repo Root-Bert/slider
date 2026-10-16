@@ -1,6 +1,7 @@
-import { Link, Navigate } from 'react-router';
+import { Navigate } from 'react-router';
 import { routes } from '@/lib/routes';
 import { CenteredMessage } from '@/shell/CenteredMessage';
+import { TextLink } from '@/ui';
 import {
   canCreateDecks,
   deckLimitMessage,
@@ -23,12 +24,9 @@ export function Component() {
         title="Nur ansehen und kommentieren"
         message={`Als Reviewer in „${workspace.name}“ kannst du keine Präsentationen hinzufügen. Bitte einen Admin, dich zum Mitglied zu machen.`}
       >
-        <Link
-          to={routes.workspace(workspace.id)}
-          className="text-sm text-fg-muted underline underline-offset-4 hover:text-fg"
-        >
+        <TextLink to={routes.workspace(workspace.id)} variant="underline" size="sm">
           Zurück zu den Reviews
-        </Link>
+        </TextLink>
       </CenteredMessage>
     );
   }
@@ -36,12 +34,9 @@ export function Component() {
     // The plan's deck limit (BER-130) – the API would refuse the import anyway.
     return (
       <CenteredMessage title="Keine Präsentation mehr frei" message={deckLimitMessage(workspace)}>
-        <Link
-          to={routes.workspace(workspace.id)}
-          className="text-sm text-fg-muted underline underline-offset-4 hover:text-fg"
-        >
+        <TextLink to={routes.workspace(workspace.id)} variant="underline" size="sm">
           Zu den Reviews
-        </Link>
+        </TextLink>
       </CenteredMessage>
     );
   }

@@ -1,6 +1,5 @@
 import { memo } from 'react';
-import { cn, Icon } from '@/ui';
-import { accentColor } from '@/lib/accent';
+import { cn, CountBubble, Icon } from '@/ui';
 import type { Thread } from '../comments/lib/comment-selectors';
 import { useViewerDispatch } from '../state/viewer-state';
 
@@ -18,7 +17,10 @@ interface GapDividerProps {
   canComment: boolean;
 }
 
-/** Figma: the hairline pauses 16px above and below the ⊕ – while the ⊕ shows. Literal for Tailwind. */
+/**
+ * Figma: the hairline pauses 16px above and below the ⊕ – while the ⊕ shows. Literal for Tailwind.
+ * `#000` is mask paint (opaque keeps, transparent cuts), not a visible colour.
+ */
 const HAIRLINE_GAP =
   '[mask-image:linear-gradient(#000_calc(50%-28px),transparent_calc(50%-28px),transparent_calc(50%+28px),#000_calc(50%+28px))]';
 const HAIRLINE_GAP_ON_HOVER =
@@ -58,12 +60,14 @@ export const GapDivider = memo(function GapDivider({
         aria-hidden
         className={cn(
           'h-full w-px transition-colors',
-          isDrafting ? 'bg-fg' : 'bg-white/50',
+          isDrafting ? 'bg-fg' : 'bg-fg-subtle',
           canComment && (pinned ? HAIRLINE_GAP : HAIRLINE_GAP_ON_HOVER),
         )}
       />
       <div className="absolute top-1/2 left-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2">
         {canComment && (
+          // A mark on the track rather than a toolbar control (like pins): a canvas-filled disc
+          // that cuts the hairline and fades in on hover – no hover fill, so not an IconButton.
           <button
             type="button"
             aria-label="Kommentar zwischen den Folien – hier fehlt etwas"
@@ -78,25 +82,20 @@ export const GapDivider = memo(function GapDivider({
                 : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
             )}
           >
-            <Icon name="addCircle" size={tight ? 20 : 24} />
+            <Icon name="addCircle" size={tight ? 'xl' : '2xl'} />
           </button>
         )}
         {first && (
-          <button
-            type="button"
+          <CountBubble
+            count={threads.length}
+            color={first.root.author.color}
+            dim={openThreads.length === 0}
             // The connector line to the gap comment's card starts below this marker.
             data-gap-marker
             data-hover-thread={first.id}
             onClick={() => dispatch({ type: 'threadFocused', threadId: first.id, openPanel: true })}
             aria-label={`${threads.length} Kommentar${threads.length === 1 ? '' : 'e'} zwischen den Folien`}
-            className="flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold text-white ring-2 ring-canvas"
-            style={{
-              backgroundColor: accentColor(first.root.author.color),
-              opacity: openThreads.length ? 1 : 0.5,
-            }}
-          >
-            {threads.length}
-          </button>
+          />
         )}
       </div>
     </div>

@@ -12,13 +12,13 @@ export function CommentImageView({ image, author }: { image: CommentImage; autho
         onClick={() => setOpen(true)}
         aria-label={`Bild von ${author} vergrößern`}
         title="Vergrößern"
-        className="relative z-10 block w-full overflow-hidden rounded-control shadow-[inset_0_0_0_1px_var(--color-hairline-strong)] hover:opacity-90"
+        className="relative z-(--z-raised) block w-full overflow-hidden rounded-control ring-hairline-strong hover:opacity-90"
       >
         <img
           src={image.url}
           alt={`Bild von ${author}`}
           loading="lazy"
-          className="block aspect-[4/3] w-full bg-[#141414] object-contain"
+          className="block aspect-[4/3] w-full bg-glass-solid object-contain"
         />
       </button>
       {open && (
@@ -31,7 +31,7 @@ export function CommentImageView({ image, author }: { image: CommentImage; autho
           <img
             src={image.url}
             alt={`Bild von ${author}`}
-            className="block w-full rounded-control bg-[#141414] object-contain"
+            className="block w-full rounded-control bg-glass-solid object-contain"
           />
         </Dialog>
       )}

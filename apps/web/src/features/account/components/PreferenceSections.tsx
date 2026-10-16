@@ -1,6 +1,5 @@
 import { useId, useState } from 'react';
-import { ACCENT_COLORS, type AccentColor } from '@slider/shared';
-import { ACCENT_COLOR_NAMES, accentColor, isLightAccent } from '@/lib/accent';
+import type { AccentColor } from '@slider/shared';
 import { useUpdateMe } from '@/lib/api';
 import { loadStoredBoxMode, storeBoxMode } from '@/lib/preferences/box-mode';
 import {
@@ -9,7 +8,7 @@ import {
   type StatusFilter,
   type WorkPreferences,
 } from '@/lib/preferences/work-preferences';
-import { cn, Icon, Section, SegmentedControl, Toggle, type ShowToast } from '@/ui';
+import { ColorSwatches, Section, SegmentedControl, Toggle, type ShowToast } from '@/ui';
 
 /** Sections of `/einstellungen`: your colour and how decks open ("Arbeiten"). */
 
@@ -39,40 +38,14 @@ export function ColorPicker({ color, onNotify }: { color: AccentColor; onNotify:
           Für deine Markierungen, Linien und Zeichnungen – alle sehen sie so.
         </span>
       </span>
-      <div
-        role="radiogroup"
-        aria-labelledby={labelId}
-        className="flex flex-wrap items-center gap-3"
-      >
-        {ACCENT_COLORS.map((option) => {
-          const selected = option === shown;
-          return (
-            <button
-              key={option}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              aria-label={ACCENT_COLOR_NAMES[option]}
-              title={ACCENT_COLOR_NAMES[option]}
-              disabled={updateMe.isPending}
-              onClick={() => pick(option)}
-              className={cn(
-                'flex size-8 items-center justify-center rounded-full outline-offset-2 transition-transform hover:scale-110 disabled:cursor-wait disabled:hover:scale-100',
-                selected && 'ring-2 ring-white/90 ring-offset-2 ring-offset-black/40',
-              )}
-              style={{ backgroundColor: accentColor(option) }}
-            >
-              {selected && (
-                <Icon
-                  name="check"
-                  size={16}
-                  className={isLightAccent(option) ? 'text-black' : 'text-white'}
-                />
-              )}
-            </button>
-          );
-        })}
-      </div>
+      <ColorSwatches
+        value={shown}
+        onChange={pick}
+        labelledBy={labelId}
+        disabled={updateMe.isPending}
+        size={32}
+        className="flex-wrap gap-3"
+      />
     </div>
   );
 }

@@ -348,8 +348,9 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
                       dispatch({ type: 'deletedPanelSet', open: !deletedPanelOpen });
                   }}
                   className={cn(
-                    'flex size-full items-center justify-center gap-1 rounded-thumb border border-dashed border-white/25 text-[11px] font-medium text-fg-muted transition-colors hover:border-white/40 hover:bg-white/5 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-white',
-                    deletedPanelOpen && 'border-white/50 bg-white/8 text-fg',
+                    'flex size-full items-center justify-center gap-1 rounded-thumb border border-dashed text-caption font-medium text-fg-muted transition-colors hover:border-border-focus hover:bg-surface-1 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-white',
+                    // One or the other: with plain class merging `border-handle` would outrank the open edge.
+                    deletedPanelOpen ? 'border-fg-subtle bg-surface-2 text-fg' : 'border-handle',
                   )}
                 >
                   <Icon name="delete" size={14} className="shrink-0" />
@@ -367,8 +368,10 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
           data-minimap-bracket
           // A window onto the deck: clear inside, everything outside dimmed by the shadow's spread
           // (the row's overflow clips it), still readable.
-          className="pointer-events-none absolute top-0 left-0 rounded-[calc(var(--radius-thumb)+3px)] border-[1.5px] border-white/70 shadow-[0_0_0_1px_rgb(0_0_0/0.5),0_0_12px_rgb(255_255_255/0.08),0_0_0_9999px_rgb(0_0_0/0.25)] will-change-transform"
+          className="pointer-events-none absolute top-0 left-0 border-[1.5px] border-fg-muted shadow-[0_0_0_1px_rgb(0_0_0/0.5),0_0_12px_var(--color-hairline),0_0_0_9999px_var(--color-well-dark)] will-change-transform"
           style={{
+            // Concentric with the thumbnails it frames.
+            borderRadius: `calc(var(--radius-thumb) + ${BRACKET_OUTSET}px)`,
             top: mini ? (rowH - mini.h) / 2 - BRACKET_OUTSET : 0,
             height: mini ? mini.h + 2 * BRACKET_OUTSET : rowH,
           }}
@@ -468,7 +471,7 @@ const Thumbnail = memo(function Thumbnail({
         title={label}
         className={cn(
           'relative block size-full overflow-hidden rounded-thumb bg-placeholder transition-shadow focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-white',
-          'hover:shadow-[0_0_0_2px_rgb(255_255_255/0.3)]',
+          'hover:shadow-[0_0_0_2px_var(--color-fg-faint)]',
           slide.hidden && 'opacity-40',
         )}
       >
@@ -491,7 +494,7 @@ const Thumbnail = memo(function Thumbnail({
           // Subtle open-comment count; a dot would read as a stray control on small thumbnails.
           <span
             aria-hidden
-            className="absolute right-0.5 bottom-0.5 rounded-thumb bg-black/65 px-[3px] text-[9px] leading-3 font-medium text-white/80 tabular-nums"
+            className="absolute right-0.5 bottom-0.5 rounded-thumb bg-scrim px-0.75 text-micro leading-3 font-medium text-fg tabular-nums"
           >
             {count}
           </span>

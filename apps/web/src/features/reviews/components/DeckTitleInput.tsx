@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Deck } from '@slider/shared';
 import { useUpdateDeck } from '@/lib/api';
-import { cn } from '@/ui';
-import type { ShowToast } from '@/ui';
+import { cn, type ShowToast } from '@/ui';
 
 const MAX_TITLE_LENGTH = 200;
 
@@ -78,7 +77,7 @@ export function DeckTitleInput({
       maxLength={MAX_TITLE_LENGTH}
       aria-label="Name der Review"
       className={cn(
-        '-mx-1 w-full min-w-0 rounded-badge bg-white/5 px-1 text-fg',
+        '-mx-1 w-full min-w-0 rounded-badge bg-surface-1 px-1 text-fg',
         'ring-2 ring-mention outline-none',
         className,
       )}

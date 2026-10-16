@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
 import { accentColor } from '@/lib/accent';
 import { formatRelativeTime, pluralize } from '@/lib/format';
-import { AvatarStack, Icon, IconButton } from '@/ui';
+import { AvatarStack, Button, IconButton, Notice } from '@/ui';
+import { SidePanel, SidePanelHeader } from '../components/SidePanel';
 import type { Thread } from './lib/comment-selectors';
 import { locationLabel } from './lib/labels';
 import { collapseReplies } from './lib/replies';
@@ -68,25 +69,14 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
   const close = () => dispatch({ type: 'threadPanelClosed' });
 
   return (
-    <aside
+    <SidePanel
       ref={panelRef}
       // Target of the connector line from the focused thread (B4).
       data-thread-panel
-      // Floats over the track's right end (see `revealSlide`).
-      data-side-panel
-      tabIndex={-1}
       aria-labelledby={titleId}
       style={{ '--card-accent': accentColor(root.author.color) } as CSSProperties}
-      className={[
-        'glass-panel fixed z-40 flex flex-col overflow-hidden shadow-[inset_0_0_0_1px_var(--color-hairline),var(--shadow-float)] outline-none',
-        'transition-transform duration-300 ease-out',
-        // Phone: bottom sheet.
-        'inset-x-0 bottom-0 max-h-[85dvh] rounded-t-panel starting:translate-y-full',
-        // Tablet and up: a floating glass card at the right edge.
-        'md:inset-y-3 md:right-3 md:left-auto md:max-h-none md:w-[400px] md:rounded-panel md:starting:translate-x-[calc(100%+12px)] md:starting:translate-y-0',
-      ].join(' ')}
     >
-      <header className="flex flex-col gap-2.5 border-b border-hairline px-5 pt-[18px] pb-3.5">
+      <SidePanelHeader>
         <div className="flex items-center gap-2">
           <h2 id={titleId} className="min-w-0 flex-1 truncate text-base font-semibold text-fg">
             Thread · {location}
@@ -105,7 +95,7 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
         {changedSince && (
           <ChangedSinceCommentNote comment={root} deckId={deck.id} canResolve={canComment} />
         )}
-      </header>
+      </SidePanelHeader>
 
       <div
         ref={historyRef}
@@ -116,15 +106,16 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
         <ThreadMessage comment={root} deckId={deck.id} isRoot onDeleted={close} />
         {hidden > 0 && (
           <div className="mt-2.5 flex items-center gap-1.5 pl-[26px]">
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="2xs"
+              icon="expandMore"
               onClick={() => setShowAll(true)}
-              className="-ml-1 inline-flex items-center gap-1.5 rounded-badge px-1 py-0.5 text-xs font-medium text-fg-muted hover:bg-white/10 hover:text-fg"
+              className="-ml-1.5"
             >
-              <Icon name="expandMore" size={16} />
               {hidden === 1 ? '1 frühere Antwort anzeigen' : `${hidden} frühere Antworten anzeigen`}
-            </button>
-            <span className="ml-auto text-[11px] text-white/40">Älteste zuerst</span>
+            </Button>
+            <span className="ml-auto text-caption text-fg-subtle">Älteste zuerst</span>
           </div>
         )}
         {visible.length > 0 && (
@@ -132,7 +123,7 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
           <ol aria-label="Antworten" className="relative mt-2.5 flex flex-col gap-2 pl-[39px]">
             <span
               aria-hidden
-              className="absolute inset-y-0 left-[25px] w-0.5 rounded-full bg-white/12"
+              className="absolute inset-y-0 left-[25px] w-0.5 rounded-full bg-surface-3"
             />
             {visible.map((reply) => (
               <li key={reply.id}>
@@ -142,7 +133,7 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
           </ol>
         )}
         {root.source === 'pptx' && (
-          <p className="mt-3 text-[11px] text-fg-faint">
+          <p className="mt-3 text-caption text-fg-faint">
             Antworten bleiben in Slider – die PowerPoint-Datei wird nicht verändert.
           </p>
         )}
@@ -151,11 +142,10 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
       {canComment ? (
         <ReplyComposer root={root} deckId={deck.id} />
       ) : (
-        <p className="m-3 mt-0 flex items-start gap-2 rounded-control bg-white/5 px-3 py-2.5 text-[13px] leading-5 text-fg-muted">
-          <Icon name="visibility" size={18} className="mt-px shrink-0 text-fg-subtle" />
+        <Notice variant="plain" tone="neutral" icon="visibility" className="m-3 mt-0">
           {VIEW_ONLY_HINT}
-        </p>
+        </Notice>
       )}
-    </aside>
+    </SidePanel>
   );
 }

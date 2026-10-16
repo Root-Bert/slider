@@ -1,5 +1,5 @@
 import type { Comment } from '@slider/shared';
-import { AutosizeTextarea, Avatar, cn, Icon } from '@/ui';
+import { AutosizeTextarea, Avatar, cn, ErrorText, IconButton } from '@/ui';
 import { MediaReplyButtons } from './MediaTabs';
 import { useMentions } from './hooks/useMentions';
 import { useReplyDraft } from './hooks/useReplyDraft';
@@ -44,7 +44,7 @@ export function ReplyComposer({
       onKeyDown={(event) => {
         if (!mentions.onKeyDown(event)) onKeyDown(event);
       }}
-      className="text-[13px] leading-[18px] text-fg placeholder:text-white/40"
+      className="text-body leading-4.5 text-fg placeholder:text-fg-subtle"
     />
   );
   const field = (
@@ -55,9 +55,9 @@ export function ReplyComposer({
   );
 
   const error = draft.error && (
-    <p role="alert" className="text-xs text-danger">
+    <ErrorText role="alert" size="xs">
       {draft.error.message}
-    </p>
+    </ErrorText>
   );
 
   if (variant === 'inline') {
@@ -72,28 +72,28 @@ export function ReplyComposer({
         <header className="flex min-w-0 items-center gap-2">
           <Avatar author={draft.author} size={24} />
           <span className="truncate text-xs font-medium text-fg">{draft.author.name}</span>
-          <span className="shrink-0 text-[11px] text-fg-subtle">jetzt</span>
+          <span className="shrink-0 text-caption text-fg-subtle">jetzt</span>
         </header>
-        <div className="flex items-end gap-2 rounded-control bg-black/25 py-1.5 pr-2 pl-3">
+        <div className="flex items-end gap-2 rounded-control bg-well-dark py-1.5 pr-2 pl-3">
           <div className="min-w-0 flex-1 py-[3px]">{field}</div>
-          <button
-            type="button"
-            aria-label="Antwort verwerfen"
+          <IconButton
+            icon="close"
+            label="Antwort verwerfen"
             title="Verwerfen (Esc)"
+            variant="subtle"
+            size="xs"
             onClick={onCancel}
-            className="flex size-6 shrink-0 items-center justify-center rounded-badge text-fg-subtle hover:bg-white/10 hover:text-fg"
-          >
-            <Icon name="close" size={18} />
-          </button>
-          <button
+          />
+          <IconButton
             type="submit"
-            aria-label="Antwort senden"
+            icon="arrowUpward"
+            label="Antwort senden"
             title="Senden (Enter)"
+            size="xs"
+            iconTone="success"
+            disabledStyle="dim"
             disabled={!canSend}
-            className="flex size-6 shrink-0 items-center justify-center rounded-badge text-success hover:bg-white/10 disabled:text-fg-faint disabled:hover:bg-transparent"
-          >
-            <Icon name="arrowUpward" size={18} />
-          </button>
+          />
         </div>
         {error}
       </form>
@@ -106,19 +106,20 @@ export function ReplyComposer({
       className="flex flex-col gap-2 border-t border-hairline px-5 pt-3.5 pb-[18px]"
     >
       <div className="flex items-end gap-2">
-        <div className="flex min-h-10 min-w-0 flex-1 items-end gap-0.5 rounded-control border border-white/10 bg-white/[0.06] py-[5px] pr-1 pl-3.5 transition-colors focus-within:border-white/35">
+        <div className="field-well focus-field flex min-h-10 min-w-0 flex-1 items-end gap-0.5 rounded-control py-1.5 pr-1 pl-3.5">
           <div className="min-w-0 flex-1 py-[5px]">{field}</div>
           <MediaReplyButtons root={root} deckId={deckId} />
         </div>
-        <button
+        <IconButton
           type="submit"
-          aria-label="Antwort senden"
+          icon="arrowUpward"
+          label="Antwort senden"
           title="Senden (Enter)"
+          variant="primary"
+          size="md"
+          iconSize={20}
           disabled={!canSend}
-          className="flex size-10 shrink-0 items-center justify-center rounded-control bg-primary text-on-primary transition-[opacity,background-color] hover:bg-primary/85 disabled:pointer-events-none disabled:opacity-40"
-        >
-          <Icon name="arrowUpward" size={20} />
-        </button>
+        />
       </div>
       {error}
     </form>

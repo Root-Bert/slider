@@ -84,7 +84,7 @@ function FolderTile({
   return (
     <li
       className={cn(
-        'glass-control group relative flex min-h-14 items-center rounded-panel transition-[background-color,box-shadow] hover:bg-white/15',
+        'glass-control group relative flex min-h-14 items-center rounded-panel transition-[background-color,box-shadow] hover:bg-selected',
         dropping && 'ring-2 ring-(--selection)',
       )}
       onDragOver={onDragOver}
@@ -99,7 +99,7 @@ function FolderTile({
       >
         <Icon
           name="folder"
-          size={22}
+          size={24}
           className="shrink-0 text-fg-subtle transition-colors group-hover:text-fg"
         />
         <span className="flex min-w-0 flex-col">

@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Deck } from '@slider/shared';
 import { useDeckStatus, useInvalidateSlideImages, useRerenderDeck, useUpdateDeck } from '@/lib/api';
-import type { ShowToast } from '@/ui';
+import { ContextMenu, Menu, type MenuAction, type ShowToast } from '@/ui';
 import { usePinnedDecks } from '../hooks/usePinnedDecks';
 import { MAX_PINNED, pinDeck, unpinDeck } from '../lib/pinned-decks';
 import { DeleteDeckDialog } from './DeleteDeckDialog';
 import { MoveDecksDialog } from './MoveDecksDialog';
 import { movedMessage } from '../hooks/useMoveDecks';
-import { ContextMenu, Menu, type MenuAction } from '@/ui';
 
 interface DeckActionsProps {
   deck: Deck;

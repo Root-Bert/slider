@@ -30,6 +30,7 @@ import {
   stageSlotState,
   type StagePhase,
 } from './stage/stage-motion';
+import { STAGE_TONE } from './stage/stage-tones';
 import { useIntro, useLeaving, useReach } from './stage/useStageTimers';
 
 export type { StagePhase };
@@ -153,7 +154,7 @@ export function ImportStage({
       lines.push(
         <span
           key={i}
-          className="absolute top-0 w-px origin-center bg-white/15"
+          className={cn('absolute top-0 w-px origin-center', STAGE_TONE.gapLine)}
           style={{
             left: gap.x + Math.floor(gap.w / 2),
             height: layout.h,
@@ -178,7 +179,7 @@ export function ImportStage({
   return (
     <div
       className={cn(
-        'fixed inset-0 z-[60] flex flex-col overflow-hidden text-fg',
+        'fixed inset-0 z-(--z-stage) flex flex-col overflow-hidden text-fg',
         phase === 'reveal' && 'pointer-events-none',
       )}
     >
@@ -190,7 +191,7 @@ export function ImportStage({
       <main ref={wrapperRef} className="relative min-h-0 flex-1 overflow-hidden">
         <div
           ref={scrollerRef}
-          className="absolute inset-0 overflow-x-hidden overflow-y-auto overscroll-contain [scrollbar-color:rgb(255_255_255/0.2)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin]"
+          className="absolute inset-0 overflow-x-hidden overflow-y-auto overscroll-contain [scrollbar-color:var(--color-surface-4)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin]"
         >
           <div className="relative min-h-full">
             {/* Track: placeholders on the real slides' spots; the inner layer is the camera. */}
@@ -235,7 +236,7 @@ export function ImportStage({
                 <div className="pt-1" style={{ animation: fadeOut(120) }}>
                   <div className="flex h-3 items-center justify-center">
                     <span
-                      className="h-1 w-10 rounded-full bg-white/25"
+                      className={cn('h-1 w-10 rounded-full', STAGE_TONE.handle)}
                       style={{
                         animation: `import-pop 520ms ${EASE_OUT} ${CONTROLS_DELAY + 420}ms both`,
                       }}

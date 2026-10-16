@@ -1,0 +1,147 @@
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { AccountMenu } from './AccountMenu';
+
+const api = vi.hoisted(() => ({
+  me: null as unknown,
+  providers: [] as { id: string }[],
+  passkeys: [] as unknown[] | undefined,
+  logout: vi.fn(),
+  hintDismissed: false,
+  dismissHint: vi.fn(),
+}));
+
+vi.mock('@/lib/api', () => ({
+  useMe: () => ({ data: api.me }),
+  useAuthProviders: () => ({ data: { providers: api.providers } }),
+  useLogout: () => ({ mutate: api.logout, isPending: false }),
+  usePasskeys: () => ({ data: api.passkeys }),
+}));
+
+vi.mock('@/lib/passkeys', () => ({
+  passkeysSupported: () => true,
+  passkeyHintDismissed: () => api.hintDismissed,
+  dismissPasskeyHint: api.dismissHint,
+}));
+
+const author = { id: 'u1', name: 'Anna Berg', type: 'owner', color: 'blue' } as const;
+
+function signIn(user: Partial<{ microsoftConnected: boolean }> = {}) {
+  api.me = {
+    viewer: { author },
+    user: {
+      id: 'u1',
+      name: 'Anna Berg',
+      email: 'anna@firma.de',
+      microsoftConnected: false,
+      ...user,
+    },
+  };
+}
+
+function Where() {
+  return <p data-testid="where">{useLocation().pathname}</p>;
+}
+
+function setup() {
+  render(
+    <MemoryRouter initialEntries={['/']}>
+      <AccountMenu />
+      <Routes>
+        <Route path="*" element={<Where />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+  return screen.getByRole('button', { name: 'Konto: Anna Berg' });
+}
+
+beforeEach(() => {
+  signIn();
+  api.providers = [];
+  api.passkeys = [{ id: 'p1' }];
+  api.hintDismissed = false;
+  api.logout.mockReset();
+  api.dismissHint.mockReset();
+});
+
+describe('AccountMenu', () => {
+  it('is only an avatar for a guest without an account', () => {
+    api.me = { viewer: { author } };
+    render(
+      <MemoryRouter>
+        <AccountMenu />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('opens a panel with who is signed in; Escape closes it and refocuses the trigger', async () => {
+    const trigger = setup();
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(trigger.hasAttribute('aria-controls')).toBe(false);
+
+    await userEvent.click(trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    const panel = document.getElementById(trigger.getAttribute('aria-controls')!)!;
+    expect(panel.className).toContain('z-(--z-popover)');
+    expect(panel.textContent).toContain('Anna Berg');
+    expect(panel.textContent).toContain('anna@firma.de');
+    // No Microsoft row when the instance has no Microsoft login.
+    expect(screen.queryByText(/Microsoft/)).toBeNull();
+
+    await userEvent.keyboard('{Escape}');
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('navigates to the account and the preferences and closes', async () => {
+    const trigger = setup();
+    await userEvent.click(trigger);
+    await userEvent.click(screen.getByRole('button', { name: 'Konto & Anmeldung' }));
+    expect(screen.getByTestId('where').textContent).toBe('/konto');
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+
+    await userEvent.click(trigger);
+    await userEvent.click(screen.getByRole('button', { name: 'Einstellungen' }));
+    expect(screen.getByTestId('where').textContent).toBe('/einstellungen');
+  });
+
+  it('offers to connect Microsoft as a full page link, or shows it connected', async () => {
+    api.providers = [{ id: 'microsoft' }];
+    const trigger = setup();
+    await userEvent.click(trigger);
+    const connect = screen.getByRole('link', { name: /Microsoft verbinden/ });
+    expect(connect.getAttribute('href')).toMatch(/^\/api\/auth\/microsoft\/login/);
+  });
+
+  it('shows a connected Microsoft account as a static row', async () => {
+    signIn({ microsoftConnected: true });
+    const trigger = setup();
+    await userEvent.click(trigger);
+    const row = screen.getByText('Microsoft verbunden');
+    expect(row.closest('button, a')).toBeNull();
+    expect(screen.queryByRole('link', { name: /Microsoft verbinden/ })).toBeNull();
+  });
+
+  it('nudges to add a passkey until the hint is dismissed', async () => {
+    api.passkeys = [];
+    const trigger = setup();
+    await userEvent.click(trigger);
+    expect(screen.getByRole('button', { name: /Schneller anmelden/ })).toBeTruthy();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Hinweis ausblenden' }));
+    expect(api.dismissHint).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('button', { name: /Schneller anmelden/ })).toBeNull();
+    // The menu stays open.
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('signs out', async () => {
+    const trigger = setup();
+    await userEvent.click(trigger);
+    await userEvent.click(screen.getByRole('button', { name: 'Abmelden' }));
+    expect(api.logout).toHaveBeenCalledOnce();
+  });
+});

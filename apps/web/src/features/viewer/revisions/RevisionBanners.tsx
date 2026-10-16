@@ -1,7 +1,7 @@
 import type { DeckSync, SyncError } from '@slider/shared';
 import { useState } from 'react';
 import { formatDateTime, formatRelativeTime } from '@/lib/format';
-import { Button, cn, Icon, IconButton, Spinner, type IconName } from '@/ui';
+import { Button, cn, Icon, IconButton, IconTile, Spinner, type IconName } from '@/ui';
 import { bannerSyncError, isLoginError, syncErrorTitle } from './lib/revision-changes';
 import { dismissSyncError, isSyncErrorDismissed } from './lib/seen-revisions';
 import { useRevisionData } from '../state/revision-data';
@@ -31,7 +31,7 @@ export function RevisionBanners() {
   return (
     <div
       data-revision-banners
-      className="relative z-30 flex shrink-0 flex-col items-center gap-2 px-3 pt-3 md:pt-5"
+      className="relative z-(--z-chrome) flex shrink-0 flex-col items-center gap-2 px-3 pt-3 md:pt-5"
     >
       {/* Keyed by time: a newer error shows again even after the previous one was dismissed. */}
       {error && <ErrorBanner key={error.at} error={error} />}
@@ -42,7 +42,8 @@ export function RevisionBanners() {
 
 const BANNER_CLASSES =
   'glass-elevated pointer-events-auto flex w-full max-w-[600px] animate-pop-in gap-3 rounded-panel px-2.5';
-const DANGER_RING = 'shadow-[inset_0_0_0_1px_rgb(255_59_48/0.35),var(--shadow-float)]!';
+/** Replaces `glass-elevated`'s strong hairline with a danger ring (§2 status step /30). */
+const DANGER_RING = 'shadow-float! inset-ring inset-ring-danger/30';
 
 function PendingBanner({ sync }: { sync: DeckSync }) {
   return (
@@ -96,21 +97,16 @@ function ErrorBanner({ error }: { error: SyncError }) {
         !expanded && 'max-sm:items-center max-sm:gap-2 max-sm:py-1.5',
       )}
     >
-      <span
-        className={cn(
-          'flex size-10 shrink-0 items-center justify-center rounded-control-sm bg-danger/12 text-danger',
-          !expanded && 'max-sm:size-8',
-        )}
-      >
+      <IconTile size={40} tone="danger" className={cn(!expanded && 'max-sm:size-8')}>
         <Icon name={icon} size={20} />
-      </span>
+      </IconTile>
       <div className={cn('flex min-w-0 flex-1 flex-col gap-1 py-1', !expanded && 'max-sm:py-0')}>
         <p className="text-sm font-medium text-fg max-sm:hidden sm:truncate">{title}</p>
         <button
           type="button"
           aria-expanded={expanded}
           onClick={() => setExpanded((open) => !open)}
-          className="flex min-w-0 items-center gap-1 text-left text-[13px] leading-4 font-medium text-fg hover:underline sm:hidden"
+          className="flex min-w-0 items-center gap-1 text-left text-body leading-4 font-medium text-fg hover:underline sm:hidden"
         >
           <span className={cn(!expanded && 'line-clamp-2')}>{title}</span>
           <Icon
@@ -125,7 +121,7 @@ function ErrorBanner({ error }: { error: SyncError }) {
         </button>
         <div className={cn('flex flex-col gap-1', !expanded && 'max-sm:hidden')}>
           <p className="text-xs leading-4 text-fg-muted">{error.message}</p>
-          <p className="truncate text-[11px] text-fg-subtle" title={formatDateTime(error.at)}>
+          <p className="truncate text-caption text-fg-subtle" title={formatDateTime(error.at)}>
             Du siehst weiterhin Version {revisionNumber} · {relativeOrJustNow(error.at)}
           </p>
         </div>

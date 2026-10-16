@@ -43,7 +43,7 @@ export function Waveform({ peaks, progress = 0, onSeek, label, className }: Wave
       className={cn(
         'flex h-7 min-w-0 flex-1 items-center gap-[2px]',
         onSeek &&
-          'cursor-pointer rounded-badge outline-none focus-visible:ring-1 focus-visible:ring-white/40',
+          'cursor-pointer rounded-badge outline-none focus-visible:ring-1 focus-visible:ring-border-focus',
         className,
       )}
     >
@@ -55,7 +55,7 @@ export function Waveform({ peaks, progress = 0, onSeek, label, className }: Wave
             'min-w-[2px] flex-1 rounded-full transition-colors duration-100',
             (index + 0.5) / bars.length <= progress
               ? 'bg-(--card-accent,var(--color-fg))'
-              : 'bg-white/25',
+              : 'bg-handle',
           )}
           style={{ height: `${Math.max(12, Math.round(peak * 100))}%` }}
         />

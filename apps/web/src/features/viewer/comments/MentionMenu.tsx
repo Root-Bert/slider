@@ -14,7 +14,7 @@ export function MentionMenu({ mentions }: { mentions: Mentions }) {
       id={listId}
       role="listbox"
       aria-label="Person erwähnen"
-      className="glass-elevated absolute bottom-full left-0 z-50 mb-2 flex max-h-56 w-full max-w-64 animate-pop-in flex-col overflow-y-auto rounded-control p-1"
+      className="glass-elevated absolute bottom-full left-0 z-(--z-popover) mb-2 flex max-h-56 w-full max-w-64 animate-pop-in flex-col overflow-y-auto rounded-control p-1"
     >
       {people.map((person, index) => (
         <li
@@ -28,8 +28,8 @@ export function MentionMenu({ mentions }: { mentions: Mentions }) {
             pick(person);
           }}
           className={cn(
-            'flex cursor-pointer items-center gap-2 rounded-control-sm px-2 py-1.5 text-[13px] text-fg-muted',
-            index === activeIndex ? 'bg-white/15 text-fg' : 'hover:bg-white/10 hover:text-fg',
+            'flex cursor-pointer items-center gap-2 rounded-control-sm px-2 py-1.5 text-body text-fg-muted',
+            index === activeIndex ? 'bg-selected text-fg' : 'hover:bg-hover hover:text-fg',
           )}
         >
           <Avatar author={person} size={20} />

@@ -1,9 +1,10 @@
 import type { Comment, Point } from '@slider/shared';
 import { cn } from '@/ui';
-import { accentColor, POWERPOINT_COLOR } from '@/lib/accent';
+import { accentColor } from '@/lib/accent';
 import { isRemovedInPowerPoint } from '../comments/lib/comment-selectors';
 import { usePointDrag, type PointDragOptions } from './hooks/usePointDrag';
 import { markLabel } from '../comments/lib/labels';
+import { PIN_DOT_RING } from './lib/mark-chrome';
 
 export type MarkState = 'normal' | 'emphasized' | 'dimmed';
 
@@ -51,23 +52,23 @@ export function Pin({ comment, at, state, onActivate, drag, className }: PinProp
         state === 'dimmed' && 'opacity-30',
         // Deleted in the PowerPoint file: still there, but quieter (F2).
         removed && state === 'normal' && 'opacity-55 grayscale',
-        // Above the frames' click areas.
-        state === 'emphasized' ? 'z-10 scale-125' : 'z-[1]',
+        // Above the frames' click areas (a local order inside the slide box, no named layer).
+        state === 'emphasized' ? 'z-(--z-raised) scale-125' : 'z-1',
         drag && 'cursor-move touch-none',
         className,
       )}
       style={{ left: `${at.x * 100}%`, top: `${at.y * 100}%` }}
     >
       <span
-        className="size-3.5 rounded-full shadow-[0_0_0_2px_white,0_2px_6px_rgb(0_0_0/0.45)]"
+        className={cn('size-3.5 rounded-full', PIN_DOT_RING)}
         style={{ backgroundColor: accentColor(comment.author.color) }}
       />
       {fromPowerPoint && (
         // Small "P" badge: still recognisable as a PowerPoint comment, in the author's colour.
         <span
           aria-hidden
-          className="absolute -right-0.5 -bottom-0.5 flex size-3 items-center justify-center rounded-[3px] text-[8px] leading-none font-semibold text-white shadow-[0_0_0_1px_rgb(255_255_255/0.9)]"
-          style={{ backgroundColor: POWERPOINT_COLOR }}
+          // Same mark as the avatar's PowerPoint badge (`ui/Avatar`).
+          className="absolute -right-0.5 -bottom-0.5 flex size-3 items-center justify-center rounded-mark bg-powerpoint text-micro leading-none font-semibold text-primary-hover shadow-[0_0_0_1px_var(--color-fg)]"
         >
           P
         </span>

@@ -1,4 +1,4 @@
-import { Button, IconButton, type MenuAction } from '@/ui';
+import { Button, IconButton, Toolbar, type MenuAction } from '@/ui';
 
 interface SelectionBarProps {
   count: number;
@@ -12,14 +12,14 @@ interface SelectionBarProps {
  */
 export function SelectionBar({ count, actions, onClear }: SelectionBarProps) {
   return (
-    <div
+    <Toolbar
       data-selection-bar
-      role="toolbar"
-      aria-label="Ausgewählte Reviews"
-      className="glass-elevated sticky top-3 z-30 flex min-h-10 flex-wrap items-center gap-1 rounded-panel p-1"
+      label="Ausgewählte Reviews"
+      tone="elevated"
+      className="sticky top-3 z-(--z-chrome) min-h-10 flex-wrap"
     >
       <IconButton icon="close" label="Auswahl aufheben (Esc)" size="sm" onClick={onClear} />
-      <span className="px-2 text-[13px] font-medium text-fg tabular-nums" aria-live="polite">
+      <span className="px-2 text-body font-medium text-fg tabular-nums" aria-live="polite">
         {count} ausgewählt
       </span>
       <div className="ml-auto flex flex-wrap items-center gap-1">
@@ -38,6 +38,6 @@ export function SelectionBar({ count, actions, onClear }: SelectionBarProps) {
           </Button>
         ))}
       </div>
-    </div>
+    </Toolbar>
   );
 }

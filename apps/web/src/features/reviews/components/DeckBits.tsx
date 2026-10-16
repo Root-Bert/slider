@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Deck, DeckSource, SlideRenderer } from '@slider/shared';
-import { Badge, cn, Icon, ProgressBar } from '@/ui';
+import { Badge, cn, Icon, ProgressBar, Tooltip } from '@/ui';
 import { importActivityLabel, importFraction, isImporting, slidesLabel } from '@/lib/deck-labels';
 
 /** Right-hand status badge next to the title. Import state wins over the version. */
@@ -13,7 +13,7 @@ export function DeckStatusBadge({ deck }: { deck: Deck }) {
 
 export function SlideCountChip({ count }: { count: number }) {
   return (
-    <span className="absolute right-2 bottom-2 rounded-chip bg-black/55 px-2 py-0.5 text-[11px] leading-5 text-fg backdrop-blur-md">
+    <span className="glass-dark absolute right-2 bottom-2 rounded-chip px-2 py-0.5 text-caption leading-5 text-fg">
       {slidesLabel(count)}
     </span>
   );
@@ -23,9 +23,6 @@ const RENDERER_LABELS: Partial<Record<SlideRenderer, string>> = {
   office: 'Gerendert mit PowerPoint',
   libreoffice: 'Gerendert mit LibreOffice',
 };
-
-const CHIP_CLASSES =
-  'flex size-6 items-center justify-center rounded-chip bg-black/55 backdrop-blur-md';
 
 /**
  * Bottom-left logos on the thumbnail: where the deck comes from and – once there are slides –
@@ -45,7 +42,7 @@ export function OriginChips({
   className?: string;
 }) {
   return (
-    <div className={cn('pointer-events-none absolute inset-0 z-10', className)}>
+    <div className={cn('pointer-events-none absolute inset-0 z-(--z-raised)', className)}>
       <div
         className={cn(
           'pointer-events-auto absolute flex gap-1',
@@ -64,19 +61,11 @@ export function OriginChips({
 /** Logo tile with its explanation as a tooltip above it on hover. */
 function OriginChip({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <span className={cn(CHIP_CLASSES, 'group/chip relative')} role="img" aria-label={label}>
-      {children}
-      <span
-        aria-hidden
-        className={cn(
-          'pointer-events-none absolute bottom-full left-0 mb-1.5 w-max max-w-64 translate-y-1 rounded-badge',
-          'bg-glass-solid px-2 py-1 text-[11px] leading-4 text-fg opacity-0 shadow-lg ring-1 ring-white/10',
-          'transition-[opacity,translate] duration-150 group-hover/chip:translate-y-0 group-hover/chip:opacity-100',
-        )}
-      >
-        {label}
-      </span>
-    </span>
+    <Tooltip label={label} decorative align="start" maxWidth={64}>
+      <Badge tone="overlay" iconOnly role="img" aria-label={label}>
+        {children}
+      </Badge>
+    </Tooltip>
   );
 }
 
@@ -133,7 +122,7 @@ function LetterMark({ letter, className }: { letter: string; className: string }
   return (
     <span
       className={cn(
-        'flex size-4 items-center justify-center rounded-thumb text-[10px] leading-none font-semibold text-white',
+        'flex size-4 items-center justify-center rounded-thumb text-tiny leading-none font-semibold text-primary-hover',
         className,
       )}
     >
@@ -147,8 +136,13 @@ function LibreOfficeMark() {
   return (
     <svg viewBox="0 0 16 16" className="size-4 text-libreoffice" aria-hidden>
       <path d="M3 1.5h6.5L13 5v9.5H3z" fill="currentColor" />
-      <path d="M9.5 1.5V5H13" fill="white" fillOpacity={0.6} />
-      <path d="M5 8h6M5 10.5h6M5 13h4" stroke="white" strokeWidth={1.2} strokeLinecap="round" />
+      <path d="M9.5 1.5V5H13" fill="var(--color-primary-hover)" fillOpacity={0.6} />
+      <path
+        d="M5 8h6M5 10.5h6M5 13h4"
+        stroke="var(--color-primary-hover)"
+        strokeWidth={1.2}
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
@@ -159,9 +153,9 @@ export function ImportOverlay({ deck, compact = false }: { deck: Deck; compact?:
 
   if (state.status === 'failed') {
     return (
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/70 px-4 text-center text-danger">
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-scrim-strong px-4 text-center text-danger">
         <Icon name="error" size={compact ? 18 : 24} />
-        {!compact && <span className="text-[13px] font-medium">Import fehlgeschlagen</span>}
+        {!compact && <span className="text-body font-medium">Import fehlgeschlagen</span>}
       </div>
     );
   }
@@ -171,11 +165,11 @@ export function ImportOverlay({ deck, compact = false }: { deck: Deck; compact?:
   const progress = state.status === 'running' ? state.progress : null;
 
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 bg-black/65 px-6 text-center text-fg">
-      <Icon name="sync" size={compact ? 18 : 22} className="animate-spin [animation-duration:2s]" />
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 bg-scrim px-6 text-center text-fg">
+      <Icon name="sync" size={compact ? 18 : 24} className="animate-spin [animation-duration:2s]" />
       {!compact && (
         <>
-          <span className="text-[13px] font-medium">{label}</span>
+          <span className="text-body font-medium">{label}</span>
           <ProgressBar value={importFraction(state)} label={label} className="w-3/5" />
           {progress && (
             <span className="text-xs text-fg-subtle">

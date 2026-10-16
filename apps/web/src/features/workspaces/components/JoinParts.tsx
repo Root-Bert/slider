@@ -1,13 +1,16 @@
-import type { ReactNode } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { useNavigate } from 'react-router';
 import type { InviteState, JoinPreview } from '@slider/shared';
 import { routes } from '@/lib/routes';
 import { ApiError } from '@/lib/api-client';
 import { useAuthProviders, useJoinWorkspace, useLogout } from '@/lib/api';
-import { Badge, Button, Icon, Spinner } from '@/ui';
+import { CenteredCard } from '@/shell/layouts/CenteredLayout';
+import { Badge, Button, Icon, Notice, Spinner, TextLink } from '@/ui';
 import { LoginOptions } from '@/features/auth';
 import { ROLE_HINTS, ROLE_LABELS } from '../lib/roles';
 import { WorkspaceMark } from './WorkspaceMark';
+
+/** Id of the join card's heading (`CenteredCard`), kept stable. */
+const JOIN_TITLE_ID = 'join-title';
 
 const CLOSED_COPY: Record<Exclude<InviteState, 'valid'>, { title: string; message: string }> = {
   expired: {
@@ -53,7 +56,8 @@ export function Invitation({
   if (preview.state !== 'valid') {
     const copy = CLOSED_COPY[preview.state];
     return (
-      <JoinCard
+      <CenteredCard
+        titleId={JOIN_TITLE_ID}
         icon={
           <WorkspaceMark
             name={preview.workspaceName}
@@ -65,13 +69,14 @@ export function Invitation({
         title={copy.title}
         message={copy.message}
       >
-        {signedIn && <BackLink />}
-      </JoinCard>
+        {signedIn && <ReviewsLink />}
+      </CenteredCard>
     );
   }
 
   return (
-    <JoinCard
+    <CenteredCard
+      titleId={JOIN_TITLE_ID}
       icon={
         <WorkspaceMark name={preview.workspaceName} logoUrl={preview.workspaceLogoUrl} size={40} />
       }
@@ -79,8 +84,8 @@ export function Invitation({
       title={preview.workspaceName}
       message={roleLine}
     >
-      <div className="flex w-full flex-col gap-2 rounded-control bg-white/5 px-4 py-3 text-left">
-        <p className="flex items-center gap-2 text-[13px] text-fg">
+      <div className="flex w-full flex-col gap-2 rounded-control bg-surface-1 px-4 py-3 text-left">
+        <p className="flex items-center gap-2 text-body text-fg">
           <Badge>{ROLE_LABELS[preview.role]}</Badge>
           {ROLE_HINTS[preview.role]}
         </p>
@@ -92,7 +97,7 @@ export function Invitation({
         )}
       </div>
       {signedIn ? <JoinButton token={token} /> : <SignInToJoin token={token} />}
-    </JoinCard>
+    </CenteredCard>
   );
 }
 
@@ -112,25 +117,21 @@ export function JoinButton({ token }: { token: string }) {
     <div className="flex w-full flex-col items-center gap-3">
       {full ? (
         // The plan's member limit (BER-130): nothing the joiner can fix themselves.
-        <div
+        <Notice
+          tone="warning"
+          variant="tinted"
+          size="sm"
           role="alert"
-          className="flex w-full items-start gap-2.5 rounded-control bg-warning/10 px-3 py-2.5 text-left"
+          title="Organisation voll"
+          className="w-full"
         >
-          <Icon name="warning" size={18} className="mt-px shrink-0 text-warning" />
-          <span className="flex flex-col gap-0.5">
-            <span className="text-[13px] font-medium text-fg">Organisation voll</span>
-            <span className="text-[13px] leading-5 text-fg-muted">{join.error?.message}</span>
-          </span>
-        </div>
+          {join.error?.message}
+        </Notice>
       ) : (
         join.error && (
-          <p
-            role="alert"
-            className="flex w-full items-start gap-2 rounded-control bg-danger/10 px-3 py-2.5 text-left text-[13px] leading-5 text-fg"
-          >
-            <Icon name="error" size={18} className="mt-px shrink-0 text-danger" />
+          <Notice tone="danger" variant="tinted" size="sm" role="alert" className="w-full">
             {join.error.message}
-          </p>
+          </Notice>
         )
       )}
       {wrongAccount ? (
@@ -152,7 +153,7 @@ export function JoinButton({ token }: { token: string }) {
           {full ? 'Erneut versuchen' : 'Beitreten'}
         </Button>
       )}
-      {full && <BackLink />}
+      {full && <ReviewsLink />}
     </div>
   );
 }
@@ -161,7 +162,7 @@ export function SignInToJoin({ token }: { token: string }) {
   const providers = useAuthProviders();
   return (
     <div className="flex w-full flex-col gap-3">
-      <p className="text-[13px] text-fg-subtle">Melde dich an, um beizutreten.</p>
+      <p className="text-body text-fg-subtle">Melde dich an, um beizutreten.</p>
       {providers.isPending ? (
         <Spinner size={24} className="mx-auto text-fg-subtle" />
       ) : providers.isError ? (
@@ -173,46 +174,11 @@ export function SignInToJoin({ token }: { token: string }) {
   );
 }
 
-export function JoinCard({
-  icon,
-  eyebrow,
-  title,
-  message,
-  children,
-}: {
-  icon: ReactNode;
-  eyebrow?: string;
-  title: string;
-  message: ReactNode;
-  children?: ReactNode;
-}) {
+/** "Zu meinen Reviews" below a join card. */
+export function ReviewsLink() {
   return (
-    <section
-      aria-labelledby="join-title"
-      className="glass flex animate-fade-in flex-col items-center gap-6 rounded-panel px-6 pt-10 pb-8 text-center sm:px-10"
-    >
-      <span className="flex size-14 items-center justify-center rounded-panel bg-white/6 text-fg">
-        {icon}
-      </span>
-      <div className="flex flex-col gap-2">
-        {eyebrow && <p className="text-xs text-fg-subtle">{eyebrow}</p>}
-        <h1 id="join-title" className="text-2xl leading-8 font-semibold break-words text-fg">
-          {title}
-        </h1>
-        <p className="text-sm leading-5 text-fg-subtle">{message}</p>
-      </div>
-      {children}
-    </section>
-  );
-}
-
-export function BackLink() {
-  return (
-    <Link
-      to={routes.reviews()}
-      className="text-sm text-fg-muted underline underline-offset-4 hover:text-fg"
-    >
+    <TextLink to={routes.reviews()} variant="underline" size="sm">
       Zu meinen Reviews
-    </Link>
+    </TextLink>
   );
 }

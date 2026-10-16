@@ -19,7 +19,7 @@ export function AuthorLine({ comment, trailing, className }: AuthorLineProps) {
       <time
         dateTime={comment.createdAt}
         title={formatDateTime(comment.createdAt)}
-        className="shrink-0 text-[11px] text-fg-subtle"
+        className="shrink-0 text-caption text-fg-subtle"
       >
         {fromPowerPoint
           ? `aus PowerPoint · ${formatShortDate(comment.createdAt)}`

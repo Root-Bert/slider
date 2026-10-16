@@ -1,10 +1,10 @@
 import { guideOverflows, type Slide } from '@slider/shared';
 import { useMemo } from 'react';
+import { GUIDE_COLORS } from '@/lib/palette';
 import { cn } from '@/ui';
 import { ShapeOutline } from './ShapeOutline';
 
-const GUIDE_COLOR = 'rgb(6 182 212)';
-const OVERFLOW_COLOR = 'rgb(239 68 68)';
+const { guide: GUIDE_COLOR, overflow: OVERFLOW_COLOR } = GUIDE_COLORS;
 
 /**
  * "Hilfslinien zeigen": PowerPoint's drawing guides over the slide image, and the boxes that
@@ -53,10 +53,12 @@ export function GuideLayer({ slide }: { slide: Slide }) {
       ))}
       <span
         className={cn(
-          'absolute top-3 right-3 rounded-full px-2 py-0.5 text-[11px] leading-tight font-medium',
-          'text-white shadow-sm backdrop-blur',
+          'absolute top-3 right-3 rounded-full px-2 py-0.5 text-caption leading-tight font-medium',
+          'shadow-mark',
+          // On the red: white, as on every status fill; otherwise the dark chip over the slide.
+          overflows.length > 0 ? 'text-white backdrop-blur' : 'glass-dark text-fg',
         )}
-        style={{ backgroundColor: overflows.length > 0 ? OVERFLOW_COLOR : 'rgb(0 0 0 / 0.6)' }}
+        style={overflows.length > 0 ? { backgroundColor: OVERFLOW_COLOR } : undefined}
       >
         {guides.length === 0
           ? 'Keine Hilfslinien in der PowerPoint'
