@@ -10,7 +10,7 @@ import {
   type WorkspaceRole,
 } from '@slider/shared';
 import { decks, workspaceInvites, workspaceMembers } from '../src/db/schema';
-import { FailingMailer, RecordingMailer } from '../src/mail/mailer';
+import { FailingMailer, inviteMail, mailLogoUrl, RecordingMailer } from '../src/mail/mailer';
 import {
   createReadyDeck,
   createTestContext,
@@ -568,6 +568,32 @@ describe('invitation mails', () => {
     // Links are passed on by hand, never mailed.
     expect((await invite({})).emailSent).toBe(false);
     expect(mailer.sent).toHaveLength(1);
+  });
+
+  it('links the hosted logo on a public origin (Gmail shows no inline images), inline otherwise', async () => {
+    expect(mailLogoUrl('https://slider.firma.de')).toBe(
+      'https://slider.firma.de/api/mail/logo.png',
+    );
+    expect(mailLogoUrl('http://localhost:5173')).toBeNull();
+    expect(mailLogoUrl('http://slider.intern')).toBeNull();
+
+    const hosted = inviteMail({
+      to: 'lena@firma.de',
+      subject: 's',
+      heading: 'h',
+      intro: 'i',
+      button: 'b',
+      url: 'https://slider.firma.de/join/x',
+      outro: 'o',
+      logoUrl: 'https://slider.firma.de/api/mail/logo.png',
+    });
+    expect(hosted.html).toContain('src="https://slider.firma.de/api/mail/logo.png"');
+    expect(hosted.attachments).toBeUndefined();
+
+    const res = await ctx.request('/api/mail/logo.png');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('image/png');
+    expect((await res.arrayBuffer()).byteLength).toBeGreaterThan(100);
   });
 
   it('keeps the invite when the mail server refuses, so the link can be sent by hand', async () => {

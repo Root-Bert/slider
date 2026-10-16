@@ -26,7 +26,7 @@ import {
 } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { ApiError, badRequest, forbidden, notFound } from '../http/errors';
-import { inviteMail } from '../mail/mailer';
+import { inviteMail, mailLogoUrl } from '../mail/mailer';
 import { blobKeys, fileUrl } from '../storage/blob-storage';
 import { deleteDeck } from './decks';
 import {
@@ -640,27 +640,25 @@ async function insertInvite(
       .where(eq(workspaces.id, workspaceId));
     // No Reply-To: the inviter's (often private) address stays out of the mail.
     const outro = `Die Einladung gilt ${days} Tage und nur für ${email}.`;
+    const shared = { to: email, url, outro, logoUrl: mailLogoUrl(deps.config.webOrigin) };
     try {
       await deps.mailer.send(
         inviteMail(
           input.deck
             ? {
-                to: email,
+                ...shared,
                 subject: `${actor.name} teilt „${input.deck.title}“ mit dir`,
                 heading: 'Eine Präsentation für dich',
-                intro: `${actor.name} hat die Präsentation „${input.deck.title}“ mit dir geteilt, damit du sie ansehen kannst.`,
-                button: 'Präsentation ansehen',
-                url,
-                outro,
+                intro: `${actor.name} hat die Präsentation „${input.deck.title}“ auf Slider mit dir geteilt.`,
+                button: 'Präsentation öffnen',
               }
             : {
-                to: email,
+                ...shared,
                 subject: `${actor.name} lädt dich zu „${workspace?.name ?? 'Slider'}“ ein`,
                 heading: 'Du bist eingeladen',
-                intro: `${actor.name} hat dich in die Slider-Organisation „${workspace?.name ?? ''}“ eingeladen, um Präsentationen zu prüfen und zu kommentieren.`,
+                // Worded for where Slider is heading (AI does the editing), not today's feature set.
+                intro: `${actor.name} hat dich zu „${workspace?.name ?? ''}“ auf Slider eingeladen. Dort entstehen eure Präsentationen gemeinsam – von der ersten Idee bis zur fertigen Folie.`,
                 button: 'Einladung annehmen',
-                url,
-                outro,
               },
         ),
       );
