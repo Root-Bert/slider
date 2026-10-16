@@ -44,7 +44,6 @@ import type { MeLimits, MeUser, PendingInvite, Workspace } from './workspaces';
  * | POST   | /decks/:deckId/media-comments (multipart `file` and/or `image` + `comment` JSON) | CreateMediaCommentInput | Comment (201) |
  * | GET    | /decks/:deckId/media-usage             |                            | MediaUsage            |
  * | GET    | /media/:mediaId                        | (Range supported)          | audio/video/PNG bytes |
- * | PUT    | /media/:mediaId/transcript             | UpdateTranscriptInput      | Comment               |
  * | GET    | /microsoft/file-picker                 |                            | FilePickerSession     |
  * | POST   | /microsoft/file-picker/token           | FilePickerTokenInput       | { token }             |
  * | POST   | /decks/drive-item                      | ImportDriveItemInput       | Deck (201)            |
@@ -232,12 +231,6 @@ export const createMediaCommentInputSchema = createCommentInputSchema.extend({
     .optional(),
 });
 export type CreateMediaCommentInput = z.input<typeof createMediaCommentInputSchema>;
-
-export const updateTranscriptInputSchema = z.discriminatedUnion('status', [
-  z.object({ status: z.literal('done'), transcript: z.string().trim().max(50_000) }),
-  z.object({ status: z.literal('failed') }),
-]);
-export type UpdateTranscriptInput = z.infer<typeof updateTranscriptInputSchema>;
 
 export interface MediaUsage {
   usedBytes: number;

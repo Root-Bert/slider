@@ -30,7 +30,6 @@ import type {
   Stroke,
   SyncErrorCode,
   SyncSummary,
-  TranscriptStatus,
   WorkspaceRole,
 } from '@slider/shared';
 
@@ -445,7 +444,7 @@ export const media = pgTable(
       .references(() => comments.id, { onDelete: 'cascade' }),
     /** The deck owner at upload time – the storage quota is counted per owner. */
     ownerId: text('owner_id').notNull(),
-    /** `Author.id` of whoever recorded it; only they may set the transcript. */
+    /** `Author.id` of whoever recorded it. */
     uploaderId: text('uploader_id').notNull(),
     kind: text('kind').$type<MediaKind | 'image'>().notNull(),
     mimeType: text('mime_type').notNull(),
@@ -454,11 +453,6 @@ export const media = pgTable(
     peaks: jsonb('peaks').$type<number[]>().notNull().default([]),
     storageKey: text('storage_key').notNull(),
     sha256: text('sha256').notNull(),
-    transcript: text('transcript'),
-    transcriptStatus: text('transcript_status')
-      .$type<TranscriptStatus>()
-      .notNull()
-      .default('pending'),
     createdAt: createdAt(),
   },
   (t) => [

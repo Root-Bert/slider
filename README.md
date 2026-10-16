@@ -14,8 +14,8 @@ the owner of a linked deck, add a slide with the ⊕ between two slides.
 > guest links work end to end on your machine, and so does importing by link (direct `.pptx`
 > URLs out of the box, OneDrive/SharePoint after a one-time Microsoft app registration – see
 > [Link import](#link-import)). Linked decks update themselves when the PowerPoint changes – see
-> [Automatic updates](#automatic-updates). Voice and video comments are recorded, compressed and
-> transcribed on the device – see [Voice and video comments](#voice-and-video-comments).
+> [Automatic updates](#automatic-updates). Voice and video comments are recorded and compressed
+> on the device – see [Voice and video comments](#voice-and-video-comments).
 
 ## Quick start
 
@@ -243,13 +243,9 @@ reply field) record a comment of up to five minutes (BER-116).
 - **Compressed on the device.** `MediaRecorder` records Opus at 24 kbit/s for voice (~180 KB per
   minute) and VP9 480p at 450 kbit/s for video (~3.5 MB per minute); Safari records MP4. The API
   stores the bytes as they are – no transcoding on the server.
-- **Transcribed on the device.** After sending, the recording browser runs Whisper
-  (`onnx-community/whisper-small`, ~250 MB, downloaded once from Hugging Face and then cached)
-  in a Web Worker – WebGPU where available, else WebAssembly – detects the spoken language and
-  sends only the text (`PUT /api/media/:id/transcript`). The audio never goes to a speech
-  service. If the tab was closed before it finished, the author sees "Transkript erstellen".
-  Another model can be set with `VITE_WHISPER_MODEL` in `apps/web/.env` (e.g.
-  `onnx-community/whisper-base`, ~80 MB, weaker in German).
+- **No transcripts for now.** On-device transcription (Whisper in the browser) is shelved:
+  it loaded the model from Hugging Face, so every viewer's browser contacted a third party.
+  It returns with a self-hosted model (BER-134).
 - **Stored in a folder of its own.** `MEDIA_DIR` (default `apps/api/.data/media`) can point at
   any folder, e.g. a synced one; keys are `decks/<deckId>/media/<uuid>.<webm|mp4|ogg>`, so
   deleting a comment or deck deletes its recordings. The store is the same `BlobStorage`
@@ -285,7 +281,8 @@ Tracked in Linear (project _Slider_). This prototype covers:
 | BER-88/92       | Import by link: OneDrive, SharePoint, direct `.pptx` URL      | ✅                                            |
 | BER-107/108/114 | Change detection, slide matching, PPT comment re-import       | ✅ API (polling, debounce, diff) |
 | BER-109–111     | Version UI: change badges, deleted slides, version history    | ⏳ API ready, UI pending                      |
-| BER-116         | Voice and video comments, on-device transcription             | ✅                                            |
+| BER-116         | Voice and video comments                                      | ✅                                            |
+| BER-134         | Transcripts with a self-hosted model (GDPR)                   | ⏳ M2                                         |
 | BER-129         | Login (Microsoft, Google, OIDC), organisations, invites       | ✅                                            |
 | BER-130         | Open sign-up, free plan (5 people, 3 decks), view-only links  | ✅                                            |
 

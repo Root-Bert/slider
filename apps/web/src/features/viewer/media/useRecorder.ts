@@ -23,8 +23,6 @@ export interface Recording {
   mimeType: string;
   durationMs: number;
   peaks: number[];
-  /** Audio for the transcription – for video the separately recorded voice track. */
-  transcriptionAudio: Blob;
 }
 
 export type RecorderState =
@@ -232,12 +230,6 @@ export function useRecorder(
     (media: MediaStream) => {
       const recorder = recorderFor(media, kind, screenSource ? SCREEN_BITRATES : undefined);
       const done = collect(recorder);
-      // Video: the voice separately, small and easy to decode for the transcription.
-      const voiceRecorder =
-        kind === 'video' && media.getAudioTracks().length > 0
-          ? recorderFor(new MediaStream(media.getAudioTracks()), 'audio')
-          : null;
-      const voiceDone = voiceRecorder ? collect(voiceRecorder) : null;
 
       // Level meter: RMS of the microphone every 100 ms – live bars now, waveform later.
       const audioContext = new AudioContext();
@@ -291,12 +283,10 @@ export function useRecorder(
         // The real length – the limit may be overshot by up to a chunk; the server allows that.
         const durationMs = Math.round(elapsedNow());
         if (recorder.state !== 'inactive') recorder.stop();
-        if (voiceRecorder && voiceRecorder.state !== 'inactive') voiceRecorder.stop();
         void (async () => {
           const raw = await done;
           releaseScreen();
           const blob = await withDuration(raw, durationMs);
-          const voice = voiceDone ? await voiceDone : blob;
           // Unmounted meanwhile (sent, cancelled): no object URL nobody would revoke.
           if (!mountedRef.current) return;
           releaseStream();
@@ -318,7 +308,6 @@ export function useRecorder(
               mimeType: blob.type,
               durationMs,
               peaks: downsamplePeaks(allLevels),
-              transcriptionAudio: voice.size > 0 ? voice : blob,
             },
           });
         })();
@@ -330,19 +319,16 @@ export function useRecorder(
         if (paused) {
           pausedAt = performance.now();
           recorder.pause();
-          voiceRecorder?.pause();
         } else {
           pausedMs += performance.now() - (pausedAt ?? performance.now());
           pausedAt = null;
           recorder.resume();
-          voiceRecorder?.resume();
         }
         setState({ status: paused ? 'paused' : 'recording' });
       }
       pauseRef.current = setPaused;
 
       recorder.start(1000);
-      voiceRecorder?.start(1000);
       setLevels([]);
       setElapsedMs(0);
       setState({ status: 'recording' });

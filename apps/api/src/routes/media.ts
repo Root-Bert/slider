@@ -1,22 +1,11 @@
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
-import {
-  createMediaCommentInputSchema,
-  MAX_IMAGE_BYTES,
-  updateTranscriptInputSchema,
-  type MediaUsage,
-} from '@slider/shared';
+import { createMediaCommentInputSchema, MAX_IMAGE_BYTES, type MediaUsage } from '@slider/shared';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import type { AppDeps } from '../deps';
 import { badRequest, fileTooLarge, notFound } from '../http/errors';
 import { parseRange } from '../http/range';
-import { readJson } from '../http/validate';
-import {
-  createMediaComment,
-  getMediaForViewer,
-  getMediaUsage,
-  updateTranscript,
-} from '../services/media';
+import { createMediaComment, getMediaForViewer, getMediaUsage } from '../services/media';
 
 const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
 
@@ -74,11 +63,6 @@ export function mediaRoutes(deps: AppDeps) {
       .get('/decks/:deckId/media-usage', viewer, async (c) =>
         c.json<MediaUsage>(await getMediaUsage(deps, c.var.viewer, c.req.param('deckId'))),
       )
-
-      .put('/media/:mediaId/transcript', viewer, async (c) => {
-        const input = await readJson(c, updateTranscriptInputSchema);
-        return c.json(await updateTranscript(deps, c.var.viewer, c.req.param('mediaId'), input));
-      })
 
       // A permanent link with a permission check on every request (unlike `/files/*`).
       .get('/media/:mediaId', viewer, async (c) => {

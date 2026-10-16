@@ -5,7 +5,7 @@ import { CommentMediaView } from '../media/MediaPlayer';
 import { CommentBody } from './CommentBody';
 
 /**
- * What a comment says: its drawn image, its recording with transcript (BER-116), then its text.
+ * What a comment says: its drawn image, its recording (BER-116), then its text.
  * A drawing on the slide without text stands in with a label – unless an image or recording is
  * the content.
  */

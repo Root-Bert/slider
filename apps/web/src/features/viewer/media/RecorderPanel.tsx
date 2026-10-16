@@ -55,9 +55,8 @@ const IDLE_ICONS = {
 
 /**
  * Records a voice or video comment (BER-116): record → stop → listen/watch → send or record
- * again. Five minutes at most; compressed while recording, transcribed on this device after
- * sending. Keyboard: Space starts, pauses and resumes (afterwards: plays and pauses the
- * recording), ↵ stops.
+ * again. Five minutes at most; compressed while recording. Keyboard: Space starts, pauses and
+ * resumes (afterwards: plays and pauses the recording), ↵ stops.
  *
  * Video picks its picture first: camera, shared screen, or both (camera bubble in the corner).
  */

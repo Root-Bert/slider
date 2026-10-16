@@ -7,7 +7,6 @@ import {
   type CommentMedia,
   type createMediaCommentInputSchema,
   type MediaUsage,
-  type UpdateTranscriptInput,
   type Viewer,
 } from '@slider/shared';
 import type { z } from 'zod';
@@ -15,7 +14,7 @@ import { requireDeckAccess } from '../auth/access';
 import { advisoryXactLock, type Executor } from '../db/client';
 import { comments, media, type MediaRow } from '../db/schema';
 import type { AppDeps } from '../deps';
-import { ApiError, badRequest, fileTooLarge, forbidden, notFound } from '../http/errors';
+import { ApiError, badRequest, fileTooLarge, notFound } from '../http/errors';
 import { blobKeys } from '../storage/blob-storage';
 import { insertComment, toCommentDto } from './comments';
 
@@ -33,8 +32,6 @@ export function toMediaDto(row: MediaRow): CommentMedia {
     sizeBytes: row.sizeBytes,
     durationMs: row.durationMs,
     peaks: row.peaks,
-    transcript: row.transcript,
-    transcriptStatus: row.transcriptStatus,
   };
 }
 
@@ -154,7 +151,7 @@ interface StoredBlob {
  * A comment with a voice or video recording, a drawn image, or both (an image with the voice
  * memo recorded while drawing). The recording was compressed on the device (Opus, AV1/VP9 at
  * low bitrates), so it is stored as it is – no server-side transcoding, which keeps the API
- * runnable on Cloudflare Workers. The transcript follows later from the device.
+ * runnable on Cloudflare Workers.
  */
 export async function createMediaComment(
   deps: AppDeps,
@@ -216,8 +213,6 @@ export async function createMediaComment(
         peaks: [],
         storageKey: blobKeys.media(deckId, id, 'png'),
         sha256: await sha256Hex(image.bytes),
-        // Nothing to transcribe.
-        transcriptStatus: 'done',
       },
     });
   }
@@ -281,35 +276,6 @@ export async function getMediaForViewer(
   const row = await loadMedia(deps.db, mediaId);
   await requireDeckAccess(deps.db, viewer, row.deckId, 'view');
   return row;
-}
-
-/** The recording device sends the transcript (or that it could not make one). */
-export async function updateTranscript(
-  deps: AppDeps,
-  viewer: Viewer,
-  mediaId: string,
-  input: UpdateTranscriptInput,
-): Promise<Comment> {
-  const row = await loadMedia(deps.db, mediaId);
-  if (row.kind === 'image') throw notFound('Diese Aufnahme gibt es nicht (mehr).');
-  await requireDeckAccess(deps.db, viewer, row.deckId, 'comment');
-  if (row.uploaderId !== viewer.author.id)
-    throw forbidden('Nur wer aufgenommen hat, kann das Transkript setzen.');
-
-  const [updated] = await deps.db
-    .update(media)
-    .set(
-      input.status === 'done'
-        ? { transcript: input.transcript, transcriptStatus: 'done' }
-        : { transcriptStatus: 'failed' },
-    )
-    .where(eq(media.id, mediaId))
-    .returning();
-  const [comment] = await deps.db.select().from(comments).where(eq(comments.id, row.commentId));
-  if (!updated || !comment) throw notFound('Diese Aufnahme gibt es nicht (mehr).');
-  deps.live?.commentsChanged(row.deckId);
-  const attachments = await mediaByComment(deps.db, [comment.id]);
-  return toCommentDto(comment, attachments.get(comment.id));
 }
 
 /** Storage keys of the recordings on a comment and its replies (the rows go by cascade). */

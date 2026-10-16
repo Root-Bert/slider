@@ -383,16 +383,13 @@ const formatClock = (ms: number) => {
 
 /**
  * One line of text for a comment in tight spots (compact cards, tooltips): the body, else the
- * transcript or "🎙 Sprachkommentar · 0:42" for recordings, else the drawing label.
+ * "🎙 Sprachkommentar · 0:42" for recordings, else the drawing label.
  */
 export function commentPreview(comment: Comment): string {
   if (comment.body.trim()) return comment.body;
   const { media } = comment;
   if (media) {
-    const icon = MEDIA_ICONS[media.kind];
-    return media.transcript
-      ? `${icon} ${media.transcript}`
-      : `${icon} ${MEDIA_NOUNS[media.kind]} · ${formatClock(media.durationMs)}`;
+    return `${MEDIA_ICONS[media.kind]} ${MEDIA_NOUNS[media.kind]} · ${formatClock(media.durationMs)}`;
   }
   return isStrokeOnly(comment) ? strokeOnlyLabel(comment) : comment.body;
 }

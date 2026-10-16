@@ -79,8 +79,6 @@ describe('voice and video comments', () => {
       sizeBytes: 1000,
       durationMs: 4200,
       peaks: [0.1, 0.8, 0.4],
-      transcript: null,
-      transcriptStatus: 'pending',
     });
 
     const list = commentSchema
@@ -174,29 +172,6 @@ describe('voice and video comments', () => {
     expect(usage).toEqual({ usedBytes: 2500, limitBytes: 4096 });
   });
 
-  it('lets only the recording person set the transcript', async () => {
-    const guest = await joinAsMember('Mara');
-    const res = await upload(voiceComment(), webm(), 'audio/webm', guest);
-    const { media } = commentSchema.parse(await res.json());
-
-    const byOwner = await ctx.request(`${media!.url}/transcript`, {
-      method: 'PUT',
-      json: { status: 'done', transcript: 'Hallo' },
-    });
-    expect(byOwner.status).toBe(403);
-
-    const byGuest = await ctx.request(`${media!.url}/transcript`, {
-      method: 'PUT',
-      json: { status: 'done', transcript: '  Bitte das Logo größer.  ' },
-      cookie: guest,
-    });
-    expect(byGuest.status).toBe(200);
-    expect(commentSchema.parse(await byGuest.json()).media).toMatchObject({
-      transcript: 'Bitte das Logo größer.',
-      transcriptStatus: 'done',
-    });
-  });
-
   it('keeps recordings private to people with access to the deck', async () => {
     const { media } = await create();
     const outsider = await signedInUser(ctx, { name: 'Fremd', email: 'fremd@example.com' });
@@ -277,16 +252,6 @@ describe('drawn images', () => {
   it('rejects images that are not PNG, and memo details without a memo', async () => {
     expect((await uploadImage(voiceComment({ media: undefined }), webm(500))).status).toBe(415);
     expect((await uploadImage(voiceComment(), png())).status).toBe(400);
-  });
-
-  it('has no transcript to set', async () => {
-    const res = await uploadImage(voiceComment({ media: undefined }), png());
-    const { image } = commentSchema.parse(await res.json());
-    const put = await ctx.request(`/api/media/${image!.id}/transcript`, {
-      method: 'PUT',
-      json: { status: 'failed' },
-    });
-    expect(put.status).toBe(404);
   });
 });
 

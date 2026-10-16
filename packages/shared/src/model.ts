@@ -344,13 +344,6 @@ export type MediaKind = z.infer<typeof mediaKindSchema>;
 /** Bars of the audio waveform stored with a recording (0–1, drawn as the player's scrubber). */
 export const MAX_MEDIA_PEAKS = 64;
 
-/**
- * Transcripts are made on the recording device (Whisper in the browser) and arrive after the
- * comment: `pending` until then, `failed` if the device could not transcribe.
- */
-export const transcriptStatusSchema = z.enum(['pending', 'done', 'failed']);
-export type TranscriptStatus = z.infer<typeof transcriptStatusSchema>;
-
 export const commentMediaSchema = z.object({
   id: z.string(),
   kind: mediaKindSchema,
@@ -360,8 +353,6 @@ export const commentMediaSchema = z.object({
   sizeBytes: z.number().int(),
   durationMs: z.number().int(),
   peaks: z.array(z.number().min(0).max(1)).max(MAX_MEDIA_PEAKS),
-  transcript: z.string().nullable(),
-  transcriptStatus: transcriptStatusSchema,
 });
 export type CommentMedia = z.infer<typeof commentMediaSchema>;
 

@@ -8,7 +8,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, uploadWithProgress } from '@/lib/api-client';
 import { queryKeys, useInvalidateDeckFeedback } from '@/lib/queries';
-import { transcribeInBackground } from './transcription';
 import type { Recording } from './useRecorder';
 
 const mediaUsageKey = (deckId: string) => [...queryKeys.deck(deckId), 'media-usage'] as const;
@@ -41,11 +40,10 @@ export interface MediaCommentUpload {
 
 /**
  * Sends a voice or video comment, or a drawn image with an optional voice memo – root or
- * reply – with upload progress. Once saved, this
- * browser transcribes the recording in the background (Whisper, on the device).
+ * reply – with upload progress.
  *
  * `cancel()` aborts a running upload; leaving (unmount) does too. An aborted upload creates
- * nothing here – no cache entry, no transcription – and is not reported as an error.
+ * nothing here – no cache entry – and is not reported as an error.
  */
 export function useCreateMediaComment(deckId: string) {
   const queryClient = useQueryClient();
@@ -84,21 +82,13 @@ export function useCreateMediaComment(deckId: string) {
         if (controllerRef.current === controller) controllerRef.current = null;
       });
     },
-    onSuccess: (comment, { recording }) => {
+    onSuccess: (comment) => {
       queryClient.setQueryData<Comment[]>(queryKeys.comments(deckId), (current = []) => [
         ...current.filter((existing) => existing.id !== comment.id),
         comment,
       ]);
       void invalidate();
       void queryClient.invalidateQueries({ queryKey: mediaUsageKey(deckId) });
-      if (comment.media && recording) {
-        transcribeInBackground({
-          queryClient,
-          deckId,
-          mediaId: comment.media.id,
-          audio: recording.transcriptionAudio,
-        });
-      }
     },
   });
 
