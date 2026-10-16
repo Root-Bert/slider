@@ -157,7 +157,7 @@ die Umgebungsvariable hat dann Vorrang.
 | `GOOGLE_REDIRECT_URI`                                 | nein                       | Standard `${SLIDER_URL}/api/auth/google/callback` – genau so bei Google eintragen.                                                                                                                                                                                                        |
 | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | eine Login-Art (Seite)     | z. B. Authentik: `https://auth.firma.de/application/o/slider/`.                                                                                                                                                                                                                           |
 | `OIDC_LABEL`, `OIDC_SCOPES`, `OIDC_REDIRECT_URI`      | nein                       | Button-Text, Scopes (`openid profile email`), Redirect (Standard `${SLIDER_URL}/api/auth/oidc/callback`).                                                                                                                                                                                 |
-| `SMTP_URL`, `MAIL_FROM`                               | nein (Seite)               | Einladungen per Mail, z. B. `smtp://<login>:<key>@smtp-relay.brevo.com:587` und `Slider <einladung@send.firma.de>`. Nur zusammen. Ohne: Der Einladungslink wird zum Weitergeben angezeigt. Siehe [E-Mail](#e-mail-einladungen-optional).                                                  |
+| `SMTP_URL`, `MAIL_FROM`                               | nein (Seite)               | Einladungen per Mail, z. B. `smtp://<login>:<key>@smtp-relay.brevo.com:587` und `Slider <slider@firma.de>`. Nur zusammen. Ohne: Der Einladungslink wird zum Weitergeben angezeigt. Siehe [E-Mail](#e-mail-einladungen-optional).                                                          |
 | `SESSION_TTL_DAYS`                                    | nein                       | Login-Dauer, Standard 30.                                                                                                                                                                                                                                                                 |
 | `MAX_UPLOAD_BYTES`                                    | nein                       | Max. PPTX-Größe, Standard 200 MB.                                                                                                                                                                                                                                                         |
 | `MEDIA_QUOTA_BYTES`, `MAX_MEDIA_BYTES`                | nein                       | Speicher für Sprach-/Video-Kommentare pro Deck-Besitzer (Standard unbegrenzt, `0` = unbegrenzt) bzw. pro Aufnahme (100 MB).                                                                                                                                                               |
@@ -317,9 +317,10 @@ Auftragsverarbeitungsvertrag abschließen (Stand Oktober 2026):
 | [Brevo](https://www.brevo.com/free-smtp-server) | `smtp://<LOGIN>:<SMTP_KEY>@smtp-relay.brevo.com:587` | 300 Mails/Tag | Frankreich. Login und SMTP-Key unter _SMTP & API → SMTP_ (nicht der API-Key). Login enthält `@` → als `%40` schreiben. Öffnungs-/Klick-Tracking ausschalten. |
 | Postfach beim Hoster (IONOS, all-inkl, …)       | `smtps://<adresse>:<passwort>@<smtp-host>:465`       | meist inkl.   | Für ein paar Einladungen am Tag völlig ausreichend.                                                                                                          |
 
-Absender-Domain beim Dienst verifizieren (SPF/DKIM), sonst landen Mails im Spam. Bewährt hat sich
-eine eigene Subdomain nur für den Versand, z. B. `MAIL_FROM=Slider <einladung@send.firma.de>` –
-so bleibt der Ruf der Hauptdomain unberührt. Sonderzeichen in Login und Passwort URL-kodieren
+Absender-Domain beim Dienst verifizieren (SPF/DKIM), sonst landen Mails im Spam oder werden gar
+nicht verschickt. `MAIL_FROM` muss eine beim Dienst freigegebene Adresse dieser Domain sein, z. B.
+`Slider <slider@firma.de>`. Brevo legt dafür zusätzlich eine „Branded Subdomain“ (z. B.
+`send.firma.de`) an – die ist nur für Tracking und Rücklauf, nicht als Absender. Sonderzeichen in Login und Passwort URL-kodieren
 (`@` → `%40`, `/` → `%2F`, `+` → `%2B`). Auf der Einrichtungsseite trägt man Server, Port,
 Benutzer und Passwort einzeln ein; Port 465 heißt TLS, andere STARTTLS.
 
