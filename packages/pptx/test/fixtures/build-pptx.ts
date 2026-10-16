@@ -5,6 +5,8 @@ import {
   corePropertiesXml,
   escapeXml,
   extendedPropertiesXml,
+  MASTER_BODY_BOX,
+  MASTER_TITLE_BOX,
   NS,
   PML_NAMESPACES,
   PRES_PROPS_XML,
@@ -15,9 +17,13 @@ import {
   slideMasterXml,
   TABLE_STYLES_XML,
   THEME_XML,
+  TITLE_LAYOUT_SUBTITLE_BOX,
+  TITLE_LAYOUT_TITLE_BOX,
   VIEW_PROPS_XML,
   XML_DECLARATION,
   xfrmXml,
+  type AppPropertiesSpec,
+  type CorePropertiesSpec,
   type EmuBox,
   type LayoutKind,
   type Relationship,
@@ -39,6 +45,21 @@ export interface DeckSpec {
   sections?: { name: string; slides: number[] }[];
   /** Drawing guides of the presentation (`p15:sldGuideLst`), `pos` in 1/576 inch. */
   guides?: { orient: 'horz' | 'vert'; pos: number }[];
+
+  // The options below are opt-in producer quirks for the BER-106 corpus. Leaving them out keeps
+  // the output byte-identical to what the builder wrote before they existed.
+
+  /** Renames the built-in layouts (`p:cSld/@name`), e.g. Google Slides' `TITLE_AND_BODY`. */
+  layoutNames?: Partial<Record<LayoutKind, string>>;
+  /** `docProps/app.xml` fields; without it the historic fixed part is written. */
+  app?: AppPropertiesSpec;
+  /** `docProps/core.xml` fields (creator, lastModifiedBy, revision). */
+  core?: CorePropertiesSpec;
+  /**
+   * Account of a modern comment author by name (`p188:author/@userId`, `@providerId`), e.g.
+   * `{ userId: 'S::lena@contoso.com::…', providerId: 'AD' }`. Default: userId = name, `None`.
+   */
+  authorAccounts?: Record<string, { userId: string; providerId: string }>;
 }
 
 export interface SlideSpec {
@@ -55,6 +76,25 @@ export interface SlideSpec {
   shapes?: ShapeSpec[];
   comments?: ModernCommentSpec[];
   legacyComments?: LegacyCommentSpec[];
+
+  // Opt-in producer quirks (BER-106 corpus); see DeckSpec.
+
+  /**
+   * Number of the slide part (`ppt/slides/slide{n}.xml`, presentation rel `rId{n+1}`); defaults
+   * to the position. Set it on every slide or none, so part names and rIds stay unique.
+   */
+  partNumber?: number;
+  /** `p14:creationId` in the slide's `p:extLst`; also used as `pc:sldMk/@cId` of its comments. */
+  creationId?: number;
+  /**
+   * Puts the slide on a layout of this name under a second slide master, as PowerPoint's
+   * "Reuse slides → keep source formatting" does. `layout` still picks the placeholder set.
+   */
+  foreignLayout?: string;
+  /** First `p:cNvPr/@id` for the slide's shapes; defaults to 2. */
+  firstShapeId?: number;
+  /** Writes the inherited placeholder boxes as explicit `a:xfrm`, as Google Slides does. */
+  explicitPlaceholderBoxes?: boolean;
 }
 
 export type ShapeSpec = RectSpec | PictureSpec | GroupSpec | TableSpec;
@@ -111,6 +151,11 @@ export interface LegacyCommentSpec {
   created?: string;
   /** Raw `p:pos` value in PowerPoint's legacy units (1/576 inch). */
   position: { x: number; y: number };
+  /**
+   * Index of the comment (in the same slide's `legacyComments`) this one replies to, written as
+   * `p15:threadingInfo/p15:parentCm` like PowerPoint 2013–2019 did.
+   */
+  replyTo?: number;
 }
 
 export const SLIDE_SIZE_16_9 = { cx: 12_192_000, cy: 6_858_000 };
@@ -148,10 +193,17 @@ class PptxWriter {
 
   async write(): Promise<Uint8Array> {
     const layoutPaths = this.writeMasterAndLayouts();
-    const slideRels = this.deck.slides.map((slide, index) =>
-      this.writeSlide(slide, index, layoutPaths[slide.layout ?? 'content']),
-    );
-    this.writePresentation(slideRels);
+    const foreignLayoutPaths = this.writeForeignMaster();
+    const slideRels = this.deck.slides.map((slide, index) => {
+      const kind = slide.layout ?? 'content';
+      const layoutPath =
+        slide.foreignLayout !== undefined
+          ? foreignLayoutPaths.get(foreignLayoutKey(kind, slide.foreignLayout))
+          : layoutPaths[kind];
+      if (!layoutPath) throw new Error(`No layout for slide ${index}`);
+      return this.writeSlide(slide, index, layoutPath);
+    });
+    this.writePresentation(slideRels, foreignLayoutPaths.size > 0);
     this.writePackageParts();
     return this.zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
   }
@@ -187,7 +239,12 @@ class PptxWriter {
     const paths = {} as Record<LayoutKind, string>;
     kinds.forEach((kind, index) => {
       const path = `ppt/slideLayouts/slideLayout${index + 1}.xml`;
-      this.addPart(path, slideLayoutXml(kind), CONTENT_TYPES.slideLayout);
+      const name = this.deck.layoutNames?.[kind];
+      this.addPart(
+        path,
+        name === undefined ? slideLayoutXml(kind) : slideLayoutXml(kind, name),
+        CONTENT_TYPES.slideLayout,
+      );
       this.addPart(
         `ppt/slideLayouts/_rels/slideLayout${index + 1}.xml.rels`,
         relationshipsXml([
@@ -199,28 +256,78 @@ class PptxWriter {
     return paths;
   }
 
+  /**
+   * A second master (`slideMaster2.xml`, own theme) holding one layout per distinct
+   * `foreignLayout` – what a slide reused from another deck brings along. Written only when a
+   * slide asks for it.
+   */
+  private writeForeignMaster(): Map<string, string> {
+    const layouts: { kind: LayoutKind; name: string }[] = [];
+    for (const slide of this.deck.slides) {
+      if (slide.foreignLayout === undefined) continue;
+      const kind = slide.layout ?? 'content';
+      const key = foreignLayoutKey(kind, slide.foreignLayout);
+      if (!layouts.some((layout) => foreignLayoutKey(layout.kind, layout.name) === key)) {
+        layouts.push({ kind, name: slide.foreignLayout });
+      }
+    }
+    const paths = new Map<string, string>();
+    if (layouts.length === 0) return paths;
+    this.addPart(
+      'ppt/slideMasters/slideMaster2.xml',
+      slideMasterXml(
+        layouts.map((_, index) => `rId${index + 1}`),
+        FOREIGN_MASTER_ID + 1,
+      ),
+      CONTENT_TYPES.slideMaster,
+    );
+    this.addPart(
+      'ppt/slideMasters/_rels/slideMaster2.xml.rels',
+      relationshipsXml([
+        ...layouts.map((_, index) => ({
+          id: `rId${index + 1}`,
+          type: REL_TYPES.slideLayout,
+          target: `../slideLayouts/slideLayout${index + 3}.xml`,
+        })),
+        { id: `rId${layouts.length + 1}`, type: REL_TYPES.theme, target: '../theme/theme2.xml' },
+      ]),
+    );
+    this.addPart('ppt/theme/theme2.xml', THEME_XML, CONTENT_TYPES.theme);
+    layouts.forEach((layout, index) => {
+      const path = `ppt/slideLayouts/slideLayout${index + 3}.xml`;
+      this.addPart(path, slideLayoutXml(layout.kind, layout.name), CONTENT_TYPES.slideLayout);
+      this.addPart(
+        `ppt/slideLayouts/_rels/slideLayout${index + 3}.xml.rels`,
+        relationshipsXml([
+          { id: 'rId1', type: REL_TYPES.slideMaster, target: '../slideMasters/slideMaster2.xml' },
+        ]),
+      );
+      paths.set(foreignLayoutKey(layout.kind, layout.name), path);
+    });
+    return paths;
+  }
+
   // --- Slides ------------------------------------------------------------------------------------
 
-  private writeSlide(
-    slide: SlideSpec,
-    index: number,
-    layoutPath: string,
-  ): { sldId: number; target: string } {
-    const number = index + 1;
+  private writeSlide(slide: SlideSpec, index: number, layoutPath: string): SlideRef {
+    const number = slide.partNumber ?? index + 1;
     const sldId = slide.sldId ?? 256 + index;
     const rels: Relationship[] = [
       { id: 'rId1', type: REL_TYPES.slideLayout, target: `../${layoutPath.slice('ppt/'.length)}` },
     ];
-    const context: SlideContext = { rels, nextId: 2 };
+    const context: SlideContext = { rels, nextId: slide.firstShapeId ?? 2 };
 
     const placeholders = this.placeholderShapes(slide, context);
     const extraShapes = (slide.shapes ?? []).map((shape) => this.shapeXml(shape, context)).join('');
 
     if (slide.comments?.length) {
-      const fileName = `modernComment_${sldId}_${sldId.toString(16).toUpperCase().padStart(8, '0')}.xml`;
+      const fileName =
+        slide.creationId === undefined
+          ? `modernComment_${sldId}_${sldId.toString(16).toUpperCase().padStart(8, '0')}.xml`
+          : `modernComment_${sldId.toString(16).toUpperCase()}_${hex8(slide.creationId)}.xml`;
       this.addPart(
         `ppt/comments/${fileName}`,
-        this.modernCommentsXml(slide.comments, sldId),
+        this.modernCommentsXml(slide.comments, sldId, slide.creationId ?? 0),
         CONTENT_TYPES.modernComments,
       );
       rels.push({
@@ -246,19 +353,29 @@ class PptxWriter {
     const background = slide.background
       ? `<p:bg><p:bgPr><a:solidFill><a:srgbClr val="${slide.background}"/></a:solidFill><a:effectLst/></p:bgPr></p:bg>`
       : '';
+    const extensions =
+      slide.creationId === undefined
+        ? ''
+        : '<p:extLst><p:ext uri="{BB962C8B-B14F-4D97-AF65-F5344CB8AC3E}">' +
+          `<p14:creationId xmlns:p14="${NS.p14}" val="${slide.creationId}"/></p:ext></p:extLst>`;
     this.addPart(
       `ppt/slides/slide${number}.xml`,
       `${XML_DECLARATION}<p:sld ${PML_NAMESPACES}${slide.hidden ? ' show="0"' : ''}>` +
         `<p:cSld>${background}<p:spTree>${SP_TREE_HEADER}${placeholders}${extraShapes}</p:spTree></p:cSld>` +
-        '<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>',
+        `<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>${extensions}</p:sld>`,
       CONTENT_TYPES.slide,
     );
     this.addPart(`ppt/slides/_rels/slide${number}.xml.rels`, relationshipsXml(rels));
-    return { sldId, target: `slides/slide${number}.xml` };
+    return {
+      sldId,
+      target: `slides/slide${number}.xml`,
+      relId: slide.partNumber === undefined ? undefined : `rId${slide.partNumber + 1}`,
+    };
   }
 
   private placeholderShapes(slide: SlideSpec, context: SlideContext): string {
     const isTitleLayout = (slide.layout ?? 'content') === 'title';
+    const explicit = slide.explicitPlaceholderBoxes === true;
     let xml = '';
     if (slide.title !== undefined) {
       xml += placeholderXml(
@@ -266,12 +383,19 @@ class PptxWriter {
         'Title',
         `<p:ph type="${isTitleLayout ? 'ctrTitle' : 'title'}"/>`,
         [slide.title],
+        explicit ? (isTitleLayout ? TITLE_LAYOUT_TITLE_BOX : MASTER_TITLE_BOX) : undefined,
       );
     }
     if (slide.body !== undefined) {
       const paragraphs = Array.isArray(slide.body) ? slide.body : [slide.body];
       const ph = isTitleLayout ? '<p:ph type="subTitle" idx="1"/>' : '<p:ph idx="1"/>';
-      xml += placeholderXml(context, isTitleLayout ? 'Subtitle' : 'Content', ph, paragraphs);
+      xml += placeholderXml(
+        context,
+        isTitleLayout ? 'Subtitle' : 'Content',
+        ph,
+        paragraphs,
+        explicit ? (isTitleLayout ? TITLE_LAYOUT_SUBTITLE_BOX : MASTER_BODY_BOX) : undefined,
+      );
     }
     return xml;
   }
@@ -319,8 +443,12 @@ class PptxWriter {
     return id;
   }
 
-  private modernCommentsXml(comments: ModernCommentSpec[], sldId: number): string {
-    const slideMoniker = `<pc:docMk/><pc:sldMk cId="0" sldId="${sldId}"/>`;
+  private modernCommentsXml(
+    comments: ModernCommentSpec[],
+    sldId: number,
+    creationId: number,
+  ): string {
+    const slideMoniker = `<pc:docMk/><pc:sldMk cId="${creationId}" sldId="${sldId}"/>`;
     const items = comments.map((comment) => {
       const commentId = guid(0xc, ++this.guidCount);
       const authorId = this.modernAuthorId(comment.author);
@@ -353,6 +481,7 @@ class PptxWriter {
   }
 
   private legacyCommentsXml(comments: LegacyCommentSpec[]): string {
+    const written: { authorId: number; idx: number }[] = [];
     const items = comments.map((comment) => {
       let author = this.legacyAuthors.get(comment.author);
       if (!author) {
@@ -360,9 +489,19 @@ class PptxWriter {
         this.legacyAuthors.set(comment.author, author);
       }
       author.lastIdx += 1;
+      written.push({ authorId: author.id, idx: author.lastIdx });
+      const parent = comment.replyTo === undefined ? undefined : written[comment.replyTo];
+      if (comment.replyTo !== undefined && !parent) {
+        throw new Error(`Legacy comment replies to unknown comment ${comment.replyTo}`);
+      }
+      const threading = parent
+        ? '<p:extLst><p:ext uri="{C676402C-5697-4E1C-873F-D02D1690AC5C}">' +
+          `<p15:threadingInfo xmlns:p15="${NS.p15}" timeZoneBias="0">` +
+          `<p15:parentCm authorId="${parent.authorId}" idx="${parent.idx}"/></p15:threadingInfo></p:ext></p:extLst>`
+        : '';
       return (
         `<p:cm authorId="${author.id}" dt="${(comment.created ?? DEFAULT_DATE).replace(/Z$/, '')}" idx="${author.lastIdx}">` +
-        `<p:pos x="${comment.position.x}" y="${comment.position.y}"/><p:text>${escapeXml(comment.text)}</p:text></p:cm>`
+        `<p:pos x="${comment.position.x}" y="${comment.position.y}"/><p:text>${escapeXml(comment.text)}</p:text>${threading}</p:cm>`
       );
     });
     return `${XML_DECLARATION}<p:cmLst ${PML_NAMESPACES}>${items.join('')}</p:cmLst>`;
@@ -370,17 +509,29 @@ class PptxWriter {
 
   // --- Presentation and package ----------------------------------------------------------------
 
-  private writePresentation(slides: { sldId: number; target: string }[]): void {
+  private writePresentation(slides: SlideRef[], foreignMaster: boolean): void {
+    const slideRelId = (slide: SlideRef, index: number) => slide.relId ?? `rId${index + 2}`;
     const rels: Relationship[] = [
       { id: 'rId1', type: REL_TYPES.slideMaster, target: 'slideMasters/slideMaster1.xml' },
       ...slides.map((slide, index) => ({
-        id: `rId${index + 2}`,
+        id: slideRelId(slide, index),
         type: REL_TYPES.slide,
         target: slide.target,
       })),
     ];
-    const addRel = (type: string, target: string) =>
-      rels.push({ id: `rId${rels.length + 1}`, type, target });
+    if (new Set(rels.map((rel) => rel.id)).size !== rels.length) {
+      throw new Error('Duplicate presentation relationship ids (set partNumber on all slides)');
+    }
+    // Next free number; with positional slide rIds this equals rels.length + 1.
+    const addRel = (type: string, target: string): string => {
+      const highest = Math.max(...rels.map((rel) => Number(rel.id.slice('rId'.length))));
+      const id = `rId${highest + 1}`;
+      rels.push({ id, type, target });
+      return id;
+    };
+    const foreignMasterRelId = foreignMaster
+      ? addRel(REL_TYPES.slideMaster, 'slideMasters/slideMaster2.xml')
+      : undefined;
     addRel(REL_TYPES.presProps, 'presProps.xml');
     addRel(REL_TYPES.viewProps, 'viewProps.xml');
     addRel(REL_TYPES.theme, 'theme/theme1.xml');
@@ -395,12 +546,15 @@ class PptxWriter {
     }
 
     const slideIds = slides
-      .map((slide, index) => `<p:sldId id="${slide.sldId}" r:id="rId${index + 2}"/>`)
+      .map((slide, index) => `<p:sldId id="${slide.sldId}" r:id="${slideRelId(slide, index)}"/>`)
       .join('');
+    const foreignMasterId = foreignMasterRelId
+      ? `<p:sldMasterId id="${FOREIGN_MASTER_ID}" r:id="${foreignMasterRelId}"/>`
+      : '';
     this.addPart(
       PRESENTATION_PATH,
       `${XML_DECLARATION}<p:presentation ${PML_NAMESPACES} saveSubsetFonts="1">` +
-        '<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>' +
+        `<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/>${foreignMasterId}</p:sldMasterIdLst>` +
         `<p:sldIdLst>${slideIds}</p:sldIdLst>` +
         `<p:sldSz cx="${this.size.cx}" cy="${this.size.cy}"/><p:notesSz cx="6858000" cy="9144000"/>` +
         this.extensionsXml(slides) +
@@ -449,7 +603,9 @@ class PptxWriter {
     const authors = [...this.modernAuthors]
       .map(
         ([name, id]) =>
-          `<p188:author id="${id}" name="${escapeXml(name)}" initials="${escapeXml(initialsOf(name))}" userId="${escapeXml(name)}" providerId="None"/>`,
+          `<p188:author id="${id}" name="${escapeXml(name)}" initials="${escapeXml(initialsOf(name))}" ` +
+          `userId="${escapeXml(this.deck.authorAccounts?.[name]?.userId ?? name)}" ` +
+          `providerId="${escapeXml(this.deck.authorAccounts?.[name]?.providerId ?? 'None')}"/>`,
       )
       .join('');
     return `${XML_DECLARATION}<p188:authorLst xmlns:a="${NS.a}" xmlns:r="${NS.r}" xmlns:p188="${NS.p188}">${authors}</p188:authorLst>`;
@@ -472,12 +628,12 @@ class PptxWriter {
     this.addPart('ppt/tableStyles.xml', TABLE_STYLES_XML, CONTENT_TYPES.tableStyles);
     this.addPart(
       'docProps/core.xml',
-      corePropertiesXml(title, '2026-01-15T09:30:00Z'),
+      corePropertiesXml(title, '2026-01-15T09:30:00Z', this.deck.core),
       CONTENT_TYPES.coreProperties,
     );
     this.addPart(
       'docProps/app.xml',
-      extendedPropertiesXml(this.deck.slides.length),
+      extendedPropertiesXml(this.deck.slides.length, this.deck.app),
       CONTENT_TYPES.extendedProperties,
     );
     this.addPart(
@@ -493,6 +649,20 @@ class PptxWriter {
 }
 
 // --- Shape markup ------------------------------------------------------------------------------
+
+interface SlideRef {
+  sldId: number;
+  target: string;
+  /** Presentation rel id when the slide has an explicit part number. */
+  relId?: string;
+}
+
+/** `p:sldMasterId` of the second master; its layouts follow it in the shared id space. */
+const FOREIGN_MASTER_ID = 2147483651;
+
+const foreignLayoutKey = (kind: LayoutKind, name: string) => `${kind}|${name}`;
+
+const hex8 = (value: number) => value.toString(16).toUpperCase().padStart(8, '0');
 
 interface SlideContext {
   rels: Relationship[];
@@ -526,11 +696,15 @@ function placeholderXml(
   label: string,
   ph: string,
   paragraphs: string[],
+  box?: EmuBox,
 ): string {
   const id = takeId(context);
+  const spPr = box
+    ? `<p:spPr>${xfrmXml(box)}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>`
+    : '<p:spPr/>';
   return (
     `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${label} ${id - 1}"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr>` +
-    `<p:nvPr>${ph}</p:nvPr></p:nvSpPr><p:spPr/>` +
+    `<p:nvPr>${ph}</p:nvPr></p:nvSpPr>${spPr}` +
     `<p:txBody><a:bodyPr/><a:lstStyle/>${paragraphs.map((text) => paragraphXml(text)).join('')}</p:txBody></p:sp>`
   );
 }

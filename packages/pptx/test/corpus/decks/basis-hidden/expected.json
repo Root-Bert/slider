@@ -1,0 +1,161 @@
+{
+  "case": "basis-hidden",
+  "tags": ["basis", "visibility"],
+  "synthetic": false,
+  "matches": [
+    {
+      "prev": "titel",
+      "next": "titel",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 0,
+      "position": 0
+    },
+    {
+      "prev": "umsatz",
+      "next": "umsatz",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 1,
+      "position": 1
+    },
+    {
+      "prev": "reserve",
+      "next": "reserve",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 2,
+      "position": 2
+    },
+    {
+      "prev": "ausblick",
+      "next": "ausblick",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 3,
+      "position": 3
+    },
+    {
+      "prev": "anhang",
+      "next": "anhang",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 4,
+      "position": 4
+    }
+  ],
+  "prev": {
+    "author": "Slider",
+    "slides": [
+      {
+        "label": "titel",
+        "sldId": 256,
+        "part": "ppt/slides/slide1.xml",
+        "hidden": false,
+        "title": "Quartalsbericht Q3",
+        "layoutName": "Title Slide",
+        "section": null
+      },
+      {
+        "label": "umsatz",
+        "sldId": 257,
+        "part": "ppt/slides/slide2.xml",
+        "hidden": false,
+        "title": "Umsatz",
+        "layoutName": "Title and Content",
+        "section": null
+      },
+      {
+        "label": "reserve",
+        "sldId": 258,
+        "part": "ppt/slides/slide3.xml",
+        "hidden": true,
+        "title": "Reserve: Detailzahlen",
+        "layoutName": "Title and Content",
+        "section": null
+      },
+      {
+        "label": "ausblick",
+        "sldId": 259,
+        "part": "ppt/slides/slide4.xml",
+        "hidden": false,
+        "title": "Ausblick Q4",
+        "layoutName": "Title and Content",
+        "section": null
+      },
+      {
+        "label": "anhang",
+        "sldId": 260,
+        "part": "ppt/slides/slide5.xml",
+        "hidden": true,
+        "title": "Anhang: Methodik",
+        "layoutName": "Title and Content",
+        "section": null
+      }
+    ],
+    "sections": [],
+    "comments": []
+  },
+  "next": {
+    "author": "Slider",
+    "slides": [
+      {
+        "label": "titel",
+        "sldId": 256,
+        "part": "ppt/slides/slide1.xml",
+        "hidden": false,
+        "title": "Quartalsbericht Q3",
+        "layoutName": "Title Slide",
+        "section": null
+      },
+      {
+        "label": "umsatz",
+        "sldId": 257,
+        "part": "ppt/slides/slide2.xml",
+        "hidden": false,
+        "title": "Umsatz",
+        "layoutName": "Title and Content",
+        "section": null
+      },
+      {
+        "label": "reserve",
+        "sldId": 258,
+        "part": "ppt/slides/slide3.xml",
+        "hidden": true,
+        "title": "Reserve: Detailzahlen",
+        "layoutName": "Title and Content",
+        "section": null
+      },
+      {
+        "label": "ausblick",
+        "sldId": 259,
+        "part": "ppt/slides/slide4.xml",
+        "hidden": false,
+        "title": "Ausblick Q4",
+        "layoutName": "Title and Content",
+        "section": null
+      },
+      {
+        "label": "anhang",
+        "sldId": 260,
+        "part": "ppt/slides/slide5.xml",
+        "hidden": true,
+        "title": "Anhang: Methodik",
+        "layoutName": "Title and Content",
+        "section": null
+      }
+    ],
+    "sections": [],
+    "comments": []
+  }
+}

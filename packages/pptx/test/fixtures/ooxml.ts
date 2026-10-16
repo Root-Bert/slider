@@ -187,9 +187,10 @@ const textStyleLevel = (attributes: string, bullet: string, sizePt: number, font
   '<a:solidFill><a:schemeClr val="tx1"/></a:solidFill>' +
   `<a:latin typeface="${font}"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:lvl1pPr>`;
 
-export function slideMasterXml(layoutRelIds: string[]): string {
+/** `firstLayoutId` lets a second master continue the shared master/layout id space. */
+export function slideMasterXml(layoutRelIds: string[], firstLayoutId = 2147483649): string {
   const layoutIds = layoutRelIds
-    .map((relId, index) => `<p:sldLayoutId id="${2147483649 + index}" r:id="${relId}"/>`)
+    .map((relId, index) => `<p:sldLayoutId id="${firstLayoutId + index}" r:id="${relId}"/>`)
     .join('');
   return (
     `${XML_DECLARATION}<p:sldMaster ${PML_NAMESPACES}><p:cSld>` +
@@ -242,7 +243,8 @@ export const TITLE_LAYOUT_SUBTITLE_SIZE_PT = 24;
 const centredLevel = (sizePt: number) =>
   `<a:lvl1pPr marL="0" indent="0" algn="ctr"><a:buNone/><a:defRPr sz="${sizePt * 100}"/></a:lvl1pPr>`;
 
-export function slideLayoutXml(kind: LayoutKind): string {
+/** `name` overrides the layout's `p:cSld/@name` (e.g. Google Slides' `TITLE_AND_BODY`). */
+export function slideLayoutXml(kind: LayoutKind, name: string = LAYOUT_NAMES[kind]): string {
   const placeholders =
     kind === 'title'
       ? placeholderXml({
@@ -277,7 +279,7 @@ export function slideLayoutXml(kind: LayoutKind): string {
 
   return (
     `${XML_DECLARATION}<p:sldLayout ${PML_NAMESPACES} type="${kind === 'title' ? 'title' : 'obj'}" preserve="1">` +
-    `<p:cSld name="${LAYOUT_NAMES[kind]}"><p:spTree>${SP_TREE_HEADER}${placeholders}</p:spTree></p:cSld>` +
+    `<p:cSld name="${escapeXml(name)}"><p:spTree>${SP_TREE_HEADER}${placeholders}</p:spTree></p:cSld>` +
     '<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>'
   );
 }
@@ -293,23 +295,71 @@ export const VIEW_PROPS_XML =
 
 export const TABLE_STYLES_XML = `${XML_DECLARATION}<a:tblStyleLst xmlns:a="${NS.a}" def="{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}"/>`;
 
-export function corePropertiesXml(title: string, created: string): string {
+/** Optional `docProps/core.xml` fields; the defaults are what every fixture had before. */
+export interface CorePropertiesSpec {
+  /** `dc:creator`; defaults to `Slider`. */
+  creator?: string;
+  lastModifiedBy?: string;
+  revision?: number;
+  /** `dcterms:modified`; defaults to the creation date. */
+  modified?: string;
+}
+
+export function corePropertiesXml(
+  title: string,
+  created: string,
+  core: CorePropertiesSpec = {},
+): string {
   return (
     `${XML_DECLARATION}<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" ` +
     'xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" ' +
     'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' +
-    `<dc:title>${escapeXml(title)}</dc:title><dc:creator>Slider</dc:creator>` +
+    `<dc:title>${escapeXml(title)}</dc:title><dc:creator>${escapeXml(core.creator ?? 'Slider')}</dc:creator>` +
+    (core.lastModifiedBy !== undefined
+      ? `<cp:lastModifiedBy>${escapeXml(core.lastModifiedBy)}</cp:lastModifiedBy>`
+      : '') +
+    (core.revision !== undefined ? `<cp:revision>${core.revision}</cp:revision>` : '') +
     `<dcterms:created xsi:type="dcterms:W3CDTF">${created}</dcterms:created>` +
-    `<dcterms:modified xsi:type="dcterms:W3CDTF">${created}</dcterms:modified>` +
+    `<dcterms:modified xsi:type="dcterms:W3CDTF">${core.modified ?? created}</dcterms:modified>` +
     '</cp:coreProperties>'
   );
 }
 
-export function extendedPropertiesXml(slideCount: number): string {
-  return (
+/**
+ * Optional `docProps/app.xml` fields, to imitate a producer (PowerPoint Win/Mac/Online, Google
+ * Slides). Without it the part keeps its historic fixed content.
+ */
+export interface AppPropertiesSpec {
+  /** `Application`; left out when undefined. */
+  application?: string;
+  appVersion?: string;
+  company?: string;
+  totalTime?: number;
+  /** `PresentationFormat`; left out when undefined. */
+  presentationFormat?: string;
+}
+
+export function extendedPropertiesXml(slideCount: number, app?: AppPropertiesSpec): string {
+  const open =
     `${XML_DECLARATION}<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" ` +
-    'xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">' +
-    `<Application>Microsoft Office PowerPoint</Application><Slides>${slideCount}</Slides>` +
-    '<PresentationFormat>Widescreen</PresentationFormat></Properties>'
+    'xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">';
+  if (!app) {
+    return (
+      open +
+      `<Application>Microsoft Office PowerPoint</Application><Slides>${slideCount}</Slides>` +
+      '<PresentationFormat>Widescreen</PresentationFormat></Properties>'
+    );
+  }
+  const element = (tag: string, value: string | number | undefined) =>
+    value === undefined ? '' : `<${tag}>${escapeXml(String(value))}</${tag}>`;
+  return (
+    open +
+    element('TotalTime', app.totalTime) +
+    element('Application', app.application) +
+    element('PresentationFormat', app.presentationFormat) +
+    element('Slides', slideCount) +
+    element('Company', app.company) +
+    element('AppVersion', app.appVersion) +
+    '</Properties>'
   );
 }
