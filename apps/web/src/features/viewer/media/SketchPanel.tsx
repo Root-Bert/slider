@@ -16,6 +16,7 @@ import { hasInk, sketchPalette } from './lib/sketch';
 import { SketchSheet, type SheetTool } from './SketchSheet';
 import { useSheetEditor } from './hooks/useSheetEditor';
 import type { Recording } from './hooks/useRecorder';
+import { isModKey } from '@/lib/keyboard';
 
 export interface Sketch {
   strokes: Stroke[];
@@ -223,7 +224,7 @@ export function SketchPanel({
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const mod = event.metaKey || event.ctrlKey;
+    const mod = isModKey(event);
     // ⌘↵ sends from the big view too (the viewer's shortcut stays out of dialogs).
     if (expanded && mod && event.key === 'Enter' && actions) {
       event.preventDefault();

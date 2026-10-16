@@ -34,6 +34,7 @@ import { useRevisionData } from '../state/revision-data';
 import { useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
+import { isModKey } from '@/lib/keyboard';
 
 /** A pointer that moves this far after pressing drags the bracket instead of clicking. */
 const DRAG_SLOP = 4;
@@ -137,7 +138,7 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
     const list = listRef.current;
     if (!list) return;
     const onWheel = (event: WheelEvent) => {
-      if (event.ctrlKey || event.metaKey) return;
+      if (isModKey(event)) return;
       const max = list.scrollWidth - list.clientWidth;
       const scale = event.deltaMode === 1 ? 16 : 1;
       if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {

@@ -8,6 +8,7 @@ import {
 } from '@simplewebauthn/browser';
 import type { LoginResult, Passkey } from '@slider/shared';
 import { api, ApiError } from './api-client';
+import { readString, writeString } from './storage';
 
 /** Passkeys (WebAuthn) in the browser: sign in, register, and what to say when it fails. */
 
@@ -58,17 +59,6 @@ export function passkeyErrorMessage(error: unknown): string {
 
 /** Hint "Schneller anmelden: Passkey hinzufügen" – dismissed per browser. */
 const HINT_KEY = 'slider.passkeyHintDismissed';
-export function passkeyHintDismissed(): boolean {
-  try {
-    return window.localStorage.getItem(HINT_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-export function dismissPasskeyHint(): void {
-  try {
-    window.localStorage.setItem(HINT_KEY, '1');
-  } catch {
-    // Private mode & co.: the hint simply comes back next time.
-  }
-}
+export const passkeyHintDismissed = (): boolean => readString(HINT_KEY) === '1';
+/** Private mode & co.: the hint simply comes back next time. */
+export const dismissPasskeyHint = (): void => writeString(HINT_KEY, '1');

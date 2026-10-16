@@ -6,16 +6,15 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
+import { moved, resized, type RectCorner, type RectSize } from '../lib/rect-edit';
 
-export type RectCorner = 'nw' | 'ne' | 'sw' | 'se';
+export { resized, type RectCorner } from '../lib/rect-edit';
 
 /** Marks the frame element; corner handles inside it find it by this. */
 export const FRAME_ATTR = 'data-editable-frame';
 
 /** Pointer travel (px) before a press on a box counts as a drag, not a click. */
 const DRAG_THRESHOLD = 3;
-/** Smallest box a resize leaves, relative to the slide. */
-const MIN_SIZE = { w: 0.02, h: 0.02 };
 
 type Drag = {
   kind: 'move' | RectCorner;
@@ -28,42 +27,12 @@ type Drag = {
 };
 
 const round = (value: number) => Math.round(value * 10_000) / 10_000;
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-
-/** `start` moved by the pointer delta (`dx`, `dy` relative to the slide), kept on the slide. */
-function moved(start: Rect, dx: number, dy: number): Rect {
-  return {
-    ...start,
-    x: clamp(start.x + dx, 0, 1 - start.w),
-    y: clamp(start.y + dy, 0, 1 - start.h),
-  };
-}
-
-/** `start` with `corner` dragged to (`px`, `py`), the opposite corner fixed. */
-export function resized(
-  start: Rect,
-  corner: RectCorner,
-  px: number,
-  py: number,
-  min: RectEditOptions['minSize'] = MIN_SIZE,
-): Rect {
-  const x = clamp(px, 0, 1);
-  const y = clamp(py, 0, 1);
-  let { x: left, y: top } = start;
-  let right = start.x + start.w;
-  let bottom = start.y + start.h;
-  if (corner === 'nw' || corner === 'sw') left = Math.min(x, right - min.w);
-  else right = Math.max(x, left + min.w);
-  if (corner === 'nw' || corner === 'ne') top = Math.min(y, bottom - min.h);
-  else bottom = Math.max(y, top + min.h);
-  return { x: left, y: top, w: right - left, h: bottom - top };
-}
 
 export interface RectEditOptions {
   /** Follows the box as shown while dragged (`null` once it is back to `rect`). */
   onPreview?: (rect: Rect | null) => void;
   /** Smallest box a resize leaves, relative to the slide. */
-  minSize?: { w: number; h: number };
+  minSize?: RectSize;
 }
 
 /**

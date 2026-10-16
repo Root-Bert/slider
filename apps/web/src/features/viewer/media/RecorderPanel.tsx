@@ -9,9 +9,11 @@ import {
 } from 'react';
 import { Button, cn, Icon, Kbd, SegmentedControl, Spinner, type Segment } from '@/ui';
 import { AudioPlayer, VideoPlayer } from './MediaPlayer';
-import { canShareScreen, formatBytes, formatDuration, type VideoSource } from './lib/recording';
+import { formatDuration, formatFileSize } from '@/lib/format';
+import { canShareScreen, type VideoSource } from './lib/recording';
 import { useMediaUsage } from './hooks/useMediaComment';
 import { useRecorder, type Recording } from './hooks/useRecorder';
+import { isModKey } from '@/lib/keyboard';
 
 interface RecorderPanelProps {
   kind: MediaKind;
@@ -96,7 +98,7 @@ function RecorderBody({
   }, [autoFocus]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.metaKey || event.ctrlKey || event.altKey || event.nativeEvent.isComposing) return;
+    if (isModKey(event) || event.altKey || event.nativeEvent.isComposing) return;
     if (event.key === 'Tab' && onTab) {
       event.preventDefault();
       onTab(event.shiftKey);
@@ -185,7 +187,7 @@ function RecorderBody({
           )}
           <div className="flex items-center justify-between gap-2">
             <span className="text-[11px] text-fg-subtle tabular-nums">
-              {formatDuration(recording.durationMs)} · {formatBytes(recording.blob.size)}
+              {formatDuration(recording.durationMs)} · {formatFileSize(recording.blob.size)}
             </span>
             <Button variant="ghost" size="sm" icon="replay" onClick={reset}>
               Neu aufnehmen
@@ -355,7 +357,7 @@ function StorageHint({ deckId }: { deckId: string }) {
       Max. 5 Min., Transkript entsteht auf deinem Gerät.
       {usage &&
         limitBytes !== null &&
-        ` ${formatBytes(usage.usedBytes)} von ${formatBytes(limitBytes)} belegt.`}
+        ` ${formatFileSize(usage.usedBytes)} von ${formatFileSize(limitBytes)} belegt.`}
     </p>
   );
 }

@@ -12,6 +12,7 @@ import {
   VIDEO_CONSTRAINTS,
   type VideoSource,
 } from '../lib/recording';
+import { describeError, describeScreenError } from '../lib/recorder-errors';
 import { composeScreenAndCamera } from '../lib/screen-compositor';
 
 /** A finished recording, ready to send. */
@@ -39,28 +40,6 @@ export type RecorderState =
 const LEVEL_INTERVAL_MS = 100;
 /** Bars of the live meter while recording. */
 const LIVE_BARS = 40;
-
-const DEVICE_NAMES: Record<MediaKind, string> = { audio: 'Mikrofon', video: 'Kamera und Mikrofon' };
-
-function describeError(error: unknown, kind: MediaKind): string {
-  const name = error instanceof DOMException ? error.name : '';
-  if (name === 'NotAllowedError' || name === 'SecurityError')
-    return `Kein Zugriff auf ${DEVICE_NAMES[kind]}. Bitte im Browser erlauben und erneut versuchen.`;
-  if (name === 'NotFoundError' || name === 'OverconstrainedError')
-    return `${kind === 'audio' ? 'Kein Mikrofon' : 'Keine Kamera'} gefunden.`;
-  if (name === 'NotReadableError')
-    return `${DEVICE_NAMES[kind]} wird gerade von einer anderen App benutzt.`;
-  return 'Die Aufnahme ist fehlgeschlagen. Bitte erneut versuchen.';
-}
-
-/** `null`: the person closed the browser's share dialog – no error, just not shared. */
-function describeScreenError(error: unknown): string | null {
-  const name = error instanceof DOMException ? error.name : '';
-  if (name === 'NotAllowedError' || name === 'AbortError') return null;
-  if (name === 'NotReadableError')
-    return 'Der Bildschirm lässt sich gerade nicht teilen. Bitte erneut versuchen.';
-  return 'Bildschirm teilen ist fehlgeschlagen. Bitte erneut versuchen.';
-}
 
 function recorderFor(
   stream: MediaStream,

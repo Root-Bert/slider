@@ -4,6 +4,7 @@ import type { TrackGeometry } from '../lib/timeline-layout';
 import { pinchSplit, wheelSplit } from '../lib/split';
 import { useViewerDispatch, useViewerState } from '../../state/viewer-state';
 import type { SizeAnchor } from '../timeline-context';
+import { isModKey } from '@/lib/keyboard';
 
 /** Safari's non-standard pinch event (trackpad and touch). */
 interface GestureEvent extends UIEvent {
@@ -58,7 +59,7 @@ export function useTimelineWheel({
     const onWheel = (event: WheelEvent) => {
       // Already taken (the minimap scrolls its own overflowing row).
       if (event.defaultPrevented) return;
-      if (event.ctrlKey || event.metaKey) {
+      if (isModKey(event)) {
         // Otherwise the browser zooms the whole page.
         event.preventDefault();
         const { split: base, geometry: geo } = current();

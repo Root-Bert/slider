@@ -2,11 +2,6 @@ import type { Anchor, Comment, Shape } from '@slider/shared';
 
 /** German copy for where a comment lives ("Folie 3", "Zwischen Folie 3 und 4"). */
 
-const shortDate = new Intl.DateTimeFormat('de-DE', { day: 'numeric', month: 'short' });
-
-/** "3. Okt." – PowerPoint comments show their original date instead of a relative time. */
-export const formatShortDate = (iso: string) => shortDate.format(new Date(iso));
-
 export const slideLabel = (index: number) => `Folie ${index + 1}`;
 
 /**

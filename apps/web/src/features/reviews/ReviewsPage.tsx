@@ -48,8 +48,9 @@ import {
   selectDecks,
   type ReviewTab,
 } from './lib/deck-filters';
-import { useLastVisits } from '@/lib/last-visits';
-import { prunePinnedDecks, usePinnedDecks } from './lib/pinned-decks';
+import { useLastVisits } from './hooks/useLastVisits';
+import { usePinnedDecks } from './hooks/usePinnedDecks';
+import { prunePinnedDecks } from './lib/pinned-decks';
 
 const DECK_VIEWS = ['grid', 'list'] as const satisfies readonly DeckView[];
 const NO_DECKS: readonly Deck[] = [];

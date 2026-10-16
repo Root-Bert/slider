@@ -196,8 +196,9 @@ JS-coupled timings live in `lib/motion.ts`; `motionMs(ms)` returns 0 under reduc
 
 ## 8. Icons
 
-`<Icon size>` takes a number from the scale `12 · 14 · 16 · 18 · 20 · 24` (`ICON_SIZE`). Button
-sm/md → 18, IconButton xs/compact → 18 (16 for dense), sm → 20, md → 24.
+`<Icon size>` takes a step of the scale `xs 12 · sm 14 · md 16 · lg 18 · xl 20 · 2xl 24`
+(`ICON_SIZE`) or px. Defaults: Button 2xs → 16, xs → 14, all other sizes → 18; IconButton
+xs/compact → 18, sm/lg → 20, md → 24 (`iconSize` overrides, e.g. 16 for dense rows).
 
 ## 9. States
 
@@ -212,35 +213,111 @@ sm/md → 18, IconButton xs/compact → 18 (16 for dense), sm → 20, md → 24.
 
 ## 10. Components (`apps/web/src/ui`)
 
-| Component                                                 | Covers                                                                                                                                                            |
-| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Button`                                                  | variants `primary · secondary · soft · ghost · danger`; sizes `xs · sm · md · field · lg · toolbar`; `tone="subtle"`; `icon`, `trailingIcon`, `loading`           |
-| `ButtonLink`                                              | A router `Link` that looks like a `Button` (`buttonClasses`)                                                                                                      |
-| `IconButton`                                              | variants `ghost · subtle · glass · primary · danger`; sizes `xs 24 · compact 28 · sm 32 · md 40 · lg 36`; `shape="round"`; `active`, `expanded`; separate `title` |
-| `TextLink` / `BackLink`                                   | Link-style actions: `quiet · underline · inline`                                                                                                                  |
-| `MenuItem` `MenuDivider` `MenuHeading`                    | Rows in menus, popovers and option lists                                                                                                                          |
-| `Menu` `ContextMenu`                                      | Action menus (roving focus)                                                                                                                                       |
-| `usePopover` `PopoverPanel`                               | Trigger + dismiss + elevated floating panel                                                                                                                       |
-| `Tooltip`                                                 | Hover/focus bubble                                                                                                                                                |
-| `Dialog` `ConfirmDialog`                                  | Modal; confirm with Abbrechen + primary/danger action                                                                                                             |
-| `Section`                                                 | Settings card (`tone="danger"`, `density="compact"`)                                                                                                              |
-| `PageHeader`                                              | 28px page title, subtitle, back link                                                                                                                              |
-| `ListRow`                                                 | Settings list row (leading, title, subtitle, trailing)                                                                                                            |
-| `IconTile`                                                | Square tinted tile around an icon or mark                                                                                                                         |
-| `Notice`                                                  | Callout `info · success · warning · danger · neutral`                                                                                                             |
-| `EmptyState` `LoadingState` `ErrorText`                   | Placeholder states                                                                                                                                                |
-| `Toolbar` `ToolbarDivider`                                | Glass control pill with dividers                                                                                                                                  |
-| `Divider`                                                 | Horizontal rule, optional label ("oder")                                                                                                                          |
-| `SegmentedControl` `FilterChip`                           | Radio / tab segments; sizes `xs · sm · md`                                                                                                                        |
-| `Toggle`                                                  | Switch, sizes `sm · md`                                                                                                                                           |
-| `ColorSwatches`                                           | Accent colour picker                                                                                                                                              |
-| `Badge`                                                   | `neutral · success · warning · danger · info · overlay`                                                                                                           |
-| `CountBubble`                                             | Comment count bubble                                                                                                                                              |
-| `Avatar` `AvatarStack` `AvatarOverflow`                   | People                                                                                                                                                            |
-| `TextField` `Select` `AutosizeTextarea`                   | Inputs                                                                                                                                                            |
-| `Kbd` `Spinner` `ProgressBar` `Toast` `Logo` `GlassPanel` | Misc                                                                                                                                                              |
-| `brand/*`                                                 | `MicrosoftMark` `GoogleMark` `PasskeyMark` `PowerPointMark`                                                                                                       |
-| `hooks/*`                                                 | `useDismiss` `useToast` `useMediaQuery` `useCopyToClipboard`                                                                                                      |
+Everything is exported from `@/ui`. Defaults are **bold**. `cn` is plain `clsx` (no class
+merging), so pick a size/variant prop instead of overriding classes with `className`.
+
+### Actions
+
+| Component     | Props (variants · sizes)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Button`      | `variant` **primary** · secondary · soft · ghost · danger; `size` 2xs 20 · xs 24 · sm 32 · **md 36** · field 40 · lg 44 · toolbar 40 (panel radius); `tone` **default** · subtle (ghost) · strong · warning (soft); `weight` **medium** · normal; `icon`, `trailingIcon`, `iconSize` (default 16 at 2xs, 14 at xs, 18 otherwise); `loading` (spinner, disabled, `aria-busy`); `expanded` (`aria-expanded` + open fill); `ref`; native button props (`type` defaults to `button`). Class helper: `buttonClasses({ variant, size, tone, weight })` |
+| `ButtonLink`  | Router `LinkProps` + `variant` `size` `tone` `weight` `icon` `trailingIcon` `iconSize` – navigation that looks like a `Button`                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `IconButton`  | `icon`, `label` (required, `aria-label`); `variant` **ghost** · subtle · glass · primary · danger; `size` xs 24 · compact 28 · sm 32 · lg 36 · **md 40** (icon 18 · 18 · 20 · 20 · 24); `shape` **square** · round; `active` (`aria-pressed`, `bg-selected`; a caller's own `aria-pressed` wins); `expanded` (`aria-expanded` only); `title` (defaults to `label`, `false` for none); `iconTone="success"`; `disabledStyle` **fade** (40 %) · dim (`fg-faint`); `iconSize`; `ref`. Class helper: `iconButtonClasses()`                           |
+| `TextLink`    | Renders a router `Link` for `to`, an `<a>` for `href`, otherwise a `<button>`; `variant` **quiet** · underline · inline · mention; `tone` **subtle** · muted (quiet only); `size` **inherit** · xs · body · sm; `weight` **normal** · medium; `icon`, `trailingIcon`, `iconSize` (**16**). Class helper: `textLinkClasses()`                                                                                                                                                                                                                     |
+| `BackLink`    | `to`, `label` (**"Zurück zu den Reviews"**), `className` – the arrow link above a page title                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `CountBubble` | `count`, `color` (author accent fill), `aria-label` (required), `dim` (50 %), `size` **sm 20** · md 24; native button props                                                                                                                                                                                                                                                                                                                                                                                                                      |
+
+### Selection
+
+| Component          | Props                                                                                                                                                                                                                                                                                                                                  |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SegmentedControl` | `segments` (`{ value, label, count?, icon?, disabled?, title? }[]`), `value`, `onChange(value)`, `label` (group name); `size` xs 20 · sm 28 · **md 32**; `tone` **neutral** · warning; `track` **none** · soft; `mode` **radio** (radiogroup) · tabs (tablist, roving focus, ←/→/Home/End skip disabled)                               |
+| `FilterChip`       | `selected`, `onClick`, `children` (string); `icon`, `count`, `disabled`, `title`; `role` **checkbox** · radio · tab; `size` xs · sm · **md**; `tone` **neutral** · warning; `tabIndex`; `value` (`data-segment`)                                                                                                                       |
+| `Toggle`           | `checked`, `onChange(checked)`, `label`, `description`, `disabled`, `size` sm 28×16 · **md 36×20** – `role="switch"` with a label row                                                                                                                                                                                                  |
+| `SwitchTrack`      | `checked`, `size` **sm** · md – decorative switch inside a row button that is itself `role="switch"`                                                                                                                                                                                                                                   |
+| `ColorSwatches`    | `value`, `onChange(color)`, `colors` (**the six accents**), `labelledBy` or `label`, `swatchLabel`, `swatchTitle`, `disabled` (wait cursor), `size` **28** · 32; `variant` **fill** (radiogroup, check mark) · dot (pressed buttons); `ringOffset` canvas · glass-solid (fill default) · placeholder (dot default) · well-dark · scrim |
+| `Select`           | `value`, `onChange(value)`, `options` (`{ value, label }[]`), `size` sm · **md** · toolbar; native select props                                                                                                                                                                                                                        |
+
+### Menus, popovers, dialogs
+
+| Component                   | Props                                                                                                                                                                                                                                                                                                                                                   |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Menu`                      | `label` (trigger name), `actions` (`MenuAction[]`: `label`, `icon`, `onSelect`, `tone` default · danger, `disabled`, `title`), `triggerSize` (IconButton size, **sm**), `triggerClassName`, `className` – menu button pattern (Enter/Space/↓ open, ↑/↓/Home/End, Escape/Tab close)                                                                      |
+| `ContextMenu`               | `label`, `actions`, `at` (`{ x, y }`), `onClose` – the same menu at the pointer, portalled to `<body>`                                                                                                                                                                                                                                                  |
+| `MenuItem`                  | `as` (**button** · `a` · router `Link` · `div` static row); `icon` (icon name or node); `trailing`; `selected` (`bg-surface-2`, `aria-current`); `tone` **default** · danger; `size` **sm** (13px) · md (14px); `inset` 4 (`rounded-control`) · **6** (`rounded-control-sm`); `disabled`, `dimDisabled` (**true**), `focusableWhenDisabled`; `truncate` |
+| `MenuDivider` `MenuHeading` | Hairline between groups; uppercase caption above a group (give it an `id` to label the group)                                                                                                                                                                                                                                                           |
+| `usePopover`                | Options `extraRefs`, `returnFocus` (**true**), `hasPopup`, `onOpenChange`, `initialOpen` → `{ open, setOpen, toggle, close, wrapperRef, triggerRef, panelRef, panelId, triggerProps }`                                                                                                                                                                  |
+| `PopoverPanel`              | `as` **div** · section; `side` **bottom** · top; `align` **start** · end; `position` **anchored** · none; `offset` sm 4 · **md 8**; `tone` **elevated** · default; `padding` **none** · sm 4 · md 6 · lg 12; `ref`                                                                                                                                      |
+| `Tooltip`                   | `label`, `children`; `align` **center** · start · end; `maxWidth` **48** · 64 · none; `showOnFocus` (**true**); `animated` (**true**); `decorative` (`aria-hidden` instead of `role="tooltip"`); `disabled`; `display` **inline-flex** · flex                                                                                                           |
+| `Dialog`                    | `open`, `onClose`, `title`, `description`, `children`, `footer`, `className` – native `<dialog>`, close button, a backdrop click closes                                                                                                                                                                                                                 |
+| `ConfirmDialog`             | `open` (**true**), `onClose`, `title`, `description`, `confirmLabel`, `confirmIcon`, `tone` **danger** · primary, `onConfirm`, `form` (confirm becomes that form's submit), `pending`, `confirmDisabled`, `error` (alert), `extraActions`, `cancelLabel` (**"Abbrechen"**), `children`, `className`                                                     |
+| `Toolbar`                   | `label`, `role` **toolbar** · group · `false` (plain pill), `tone` (GlassPanel), div props                                                                                                                                                                                                                                                              |
+| `ToolbarDivider`            | `size` sm 16 · **md 20**; `tone` **strong** · subtle; `spacing` none · **sm** · md                                                                                                                                                                                                                                                                      |
+| `GlassPanel`                | `as`, `tone` **default** (`glass-control`) · elevated                                                                                                                                                                                                                                                                                                   |
+| `Toast` / `useToast`        | `toast` (`{ id, text, tone }` or `null`) – polite live region at the bottom                                                                                                                                                                                                                                                                             |
+
+### Layout and content
+
+| Component        | Props                                                                                                                                                                                                                                                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Section`        | `title`, `id`, `icon`, `description`, `aside`, `tone` **default** · danger, `density` **default** · compact, `children` – settings card (`aria-labelledby`)                                                                                                                                                        |
+| `PageHeader`     | `title`, `subtitle`, `subtitleSize` sm · body, `back` (`{ to, label? }`), `leading`, `actions`, `truncate`, `align` start · center, `layout` stacked · inline, `titleRow`                                                                                                                                          |
+| `RowList`        | `variant` **divided** · hover · flush; `ul` props                                                                                                                                                                                                                                                                  |
+| `ListRow`        | `title`, `leading`, `badge`, `subtitle`, `subtitleTitle`, `trailing`, `actionSlot`; `variant` divided · hover · flush; `padding` sm · md · wide · header (each with its radius); `textGap` none · tight; `size` sm · body; `titleWeight` medium · normal; `titleTone` fg · muted · subtle; `dimmed`; `as` li · div |
+| `IconTile`       | `children`, `size` 32 · 36 · 40 · 56; `tone` muted · fg · inherit · danger; `tint` surface-1 · hover; `dimmed`                                                                                                                                                                                                     |
+| `Notice`         | `tone` info · success · warning · danger · neutral; `variant` glass · tinted · plain · inline; `size` md · sm; `title`, `icon` (name or `false`; a tone default otherwise), `onDismiss` + `dismissLabel`, `footer`, `role` alert · status, `animated`                                                              |
+| `EmptyState`     | `title`, `message`, `action`, `illustration`, `size` md · lg, `headingLevel` 1 · 2 · 3                                                                                                                                                                                                                             |
+| `LoadingState`   | `fullPage`, `height` full · screen, `padding` sm · md · lg, `size` (spinner px)                                                                                                                                                                                                                                    |
+| `ErrorText`      | `size` **body** · xs; `p` props                                                                                                                                                                                                                                                                                    |
+| `Divider`        | `label` (e.g. "oder"; without it a `role="separator"` hairline), `labelPosition` **center** · start                                                                                                                                                                                                                |
+| `Badge`          | `tone` **neutral** · success · warning · info · danger · powerpoint · overlay (`glass-dark text-fg`); `iconOnly` (24px square); span props                                                                                                                                                                         |
+| `Avatar`         | `author`, `size` 16 · 18 · 20 · 24 · 28 · 32 · 64, `showPowerPointBadge`, `nativeTitle`                                                                                                                                                                                                                            |
+| `AvatarStack`    | `authors`, `max`, `size`, `interactive`                                                                                                                                                                                                                                                                            |
+| `AvatarOverflow` | `count`, `size`, `title` – the "+n" chip                                                                                                                                                                                                                                                                           |
+
+App chrome lives in `shell/` (not `ui/`): `SettingsLayout` (`docTitle`, `title`, `subtitle`,
+`leading`, `back`, `truncate`, `header` app · logo, `toast`), `CenteredLayout` (`docTitle`,
+`logoLink`, `headerEnd`) with `CenteredCard` (`icon`, `eyebrow`, `title`, `message`,
+`headingLevel`, `density`, `titleId`) and `CenteredMessage`.
+
+### Inputs, misc, hooks
+
+| Component          | Props                                                                                                         |
+| ------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `TextField`        | `label`, `icon`, `error`, `hint`, `trailing`, `size` md · lg, `ref`; input props                              |
+| `AutosizeTextarea` | `value`, `maxHeight`, `ref`; textarea props                                                                   |
+| `Icon`             | `name`, `size` (scale step `xs`…`2xl` or px, **24**), `label` (otherwise decorative); `ICON_SIZE`, `iconPx()` |
+| `Spinner`          | `size` (scale step or px, **20**), `label` (**"Lädt"**, `role="status"`)                                      |
+| `ProgressBar`      | `value` (0–1, `null` = indeterminate), `label`                                                                |
+| `Kbd` `ReturnKey`  | Shortcut hint chip; the ↵ glyph                                                                               |
+| `Logo`             | `withText` (**true**), `onAnimationEnd`                                                                       |
+| `brand/*`          | `MicrosoftMark` `GoogleMark` `PasskeyMark` `PowerPointMark`                                                   |
+| `hooks/*`          | `useDismiss` `usePopover` `useToast` `useMediaQuery` `useIsNarrow` `useCopyToClipboard` `useFullscreen`       |
+
+### How to pick a control
+
+1. **Does it navigate?** To another route → `ButtonLink` (looks like a button) or `TextLink to`
+   (looks like text); out of the app → `TextLink href`. Anything that _does_ something is a
+   `<button>`: `Button`, `IconButton`, or `TextLink` without `to`/`href`.
+2. **Text or only an icon?** Visible label → `Button`. Icon only → `IconButton` (its `label`
+   is required). A quiet action inside running text or a comment row ("Aufklappen") →
+   `TextLink`, or `Button variant="ghost" size="2xs"`/`"xs"`.
+3. **Which `Button` variant?** One `primary` per view (the main action). `secondary` on glass
+   next to it, `soft` on cards and in lists, `ghost` for low-emphasis actions ("Abbrechen"),
+   `danger` only for destructive actions – and confirm those with `ConfirmDialog`.
+4. **Which size?** Match the row: `toolbar` / `IconButton md` in floating pills (40), `sm` /
+   `IconButton sm` inside a `Toolbar` (32), `field` next to a `TextField` (40), `md` in dialogs
+   and settings (36), `xs` / `2xs` in dense comment rows.
+5. **A choice, not an action?** One of a few, always visible → `SegmentedControl`
+   (`mode="tabs"` when it switches panels). On/off → `Toggle` (`SwitchTrack` inside a row
+   button). An on/off tool in a toolbar → `IconButton active`. A colour → `ColorSwatches`. Many
+   options → `Select`.
+6. **More actions than fit?** A "…" → `Menu` (right click: `ContextMenu`). Free content in a
+   floating panel → `usePopover` + `PopoverPanel` with `MenuItem` rows. A blocking question →
+   `ConfirmDialog`; a form → `Dialog`.
+7. **Feedback, not a control?** Inline message → `Notice`; field error → `TextField error` or
+   `ErrorText`; short confirmation → `useToast`; status chip → `Badge`; hover hint → `Tooltip`
+   (or the `IconButton` `title`).
 
 ## 11. File structure (`apps/web/src`)
 

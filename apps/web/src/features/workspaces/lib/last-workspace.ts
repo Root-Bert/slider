@@ -1,22 +1,12 @@
 import type { Workspace } from '@slider/shared';
+import { readString, writeString } from '@/lib/storage';
 
 const STORAGE_KEY = 'slider.lastWorkspace';
 
-export function readLastWorkspaceId(): string | null {
-  try {
-    return localStorage.getItem(STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
+export const readLastWorkspaceId = (): string | null => readString(STORAGE_KEY);
 
-export function rememberWorkspace(workspaceId: string) {
-  try {
-    localStorage.setItem(STORAGE_KEY, workspaceId);
-  } catch {
-    // Storage unavailable (private mode) – `/` then opens the first workspace.
-  }
-}
+/** Storage unavailable (private mode) – `/` then opens the first workspace. */
+export const rememberWorkspace = (workspaceId: string) => writeString(STORAGE_KEY, workspaceId);
 
 /** The workspace `/` opens: the last used one if the account still belongs to it, else the first. */
 export function pickWorkspace(

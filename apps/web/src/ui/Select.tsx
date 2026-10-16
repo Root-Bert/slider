@@ -40,12 +40,12 @@ export function Select<T extends string>({
         }}
         className={cn(
           'glass w-full cursor-pointer appearance-none pr-8 text-fg-muted transition-colors hover:text-fg',
-          'disabled:cursor-default disabled:opacity-50 disabled:hover:text-fg-muted',
+          'disabled:cursor-default disabled:opacity-40 disabled:hover:text-fg-muted',
           size === 'sm'
             ? 'h-7 rounded-chip pl-2.5 text-xs'
             : size === 'toolbar'
-              ? 'h-10 rounded-panel pl-3.5 text-[13px]'
-              : 'h-9 rounded-control pl-3.5 text-[13px]',
+              ? 'h-10 rounded-panel pl-3.5 text-body'
+              : 'h-9 rounded-control pl-3.5 text-body',
         )}
         {...props}
       >

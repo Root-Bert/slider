@@ -48,9 +48,9 @@ export const PERMANENT: readonly RawColorException[] = [
     reason: 'On-accent check mark in the colour preference, decided by isLightAccent.',
   },
   {
-    path: 'ui/ColorSwatches.tsx',
-    allow: [ON_ACCENT],
-    reason: 'On-accent check mark on a swatch, decided by isLightAccent.',
+    path: 'ui/CountBubble.tsx',
+    allow: [/^text-white$/],
+    reason: 'Comment count on an accent fill: white on every accent, as in the design.',
   },
   {
     path: 'features/viewer/import/',
@@ -143,15 +143,4 @@ export const ALLOW_PENDING_MIGRATION: readonly string[] = [
   'features/workspaces/components/PlanUsage.tsx',
   'features/workspaces/components/WorkspaceMark.tsx',
   'features/workspaces/components/WorkspaceSwitcher.tsx',
-  'ui/Avatar.tsx',
-  'ui/Badge.tsx',
-  'ui/Button.tsx',
-  'ui/Dialog.tsx',
-  'ui/IconButton.tsx',
-  'ui/Menu.tsx',
-  'ui/ProgressBar.tsx',
-  'ui/Section.tsx',
-  'ui/SegmentedControl.tsx',
-  'ui/TextField.tsx',
-  'ui/Toggle.tsx',
 ];

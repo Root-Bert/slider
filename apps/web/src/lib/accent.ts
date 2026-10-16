@@ -53,3 +53,10 @@ const LIGHT: ReadonlySet<AuthorColor> = new Set(['yellow', 'green', 'cyan']);
 
 /** Bright accents need black text/icons on top; the rest take white. */
 export const isLightAccent = (color: AuthorColor): boolean => LIGHT.has(color);
+
+/**
+ * Text/icon colour class on top of an accent fill (check marks, cursor labels). Spelled out so
+ * Tailwind emits both classes.
+ */
+export const onAccentClass = (color: AuthorColor): 'text-black' | 'text-white' =>
+  isLightAccent(color) ? 'text-black' : 'text-white';

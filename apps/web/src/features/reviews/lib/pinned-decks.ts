@@ -1,81 +1,43 @@
-import { useSyncExternalStore } from 'react';
+import { createStoredStore } from '@/lib/storage';
 
 /**
  * Decks pinned to the top of "Reviews", whatever the sort. Like the last visits kept per
- * browser in localStorage; at most {@link MAX_PINNED}, in the order they were pinned.
+ * browser in localStorage; at most {@link MAX_PINNED}, in the order they were pinned. The hook is
+ * `usePinnedDecks`.
  */
 export const MAX_PINNED = 3;
 
 const STORAGE_KEY = 'slider.reviews.pinned.v1';
 const NONE: readonly string[] = [];
 
-const listeners = new Set<() => void>();
-let pinned: readonly string[] | null = null;
-
-function load(): readonly string[] {
-  try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null');
-    if (Array.isArray(parsed)) {
-      return parsed.filter((id): id is string => typeof id === 'string').slice(0, MAX_PINNED);
-    }
-  } catch {
-    // Corrupt or inaccessible storage – nothing pinned.
-  }
-  return NONE;
-}
-
-const getSnapshot = (): readonly string[] => (pinned ??= load());
-
-function setPinned(next: readonly string[]) {
-  pinned = next;
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-  } catch {
-    // Storage unavailable (private mode, quota) – the pins last for this session only.
-  }
-  listeners.forEach((listener) => listener());
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  // Keep several open tabs in sync.
-  const onStorage = (event: StorageEvent) => {
-    if (event.key !== STORAGE_KEY) return;
-    pinned = load();
-    listener();
-  };
-  window.addEventListener('storage', onStorage);
-  return () => {
-    listeners.delete(listener);
-    window.removeEventListener('storage', onStorage);
-  };
-}
+/** The single store behind `usePinnedDecks`; several open tabs stay in sync. */
+export const pinnedDecksStore = createStoredStore<readonly string[]>({
+  key: STORAGE_KEY,
+  parse: (value) =>
+    Array.isArray(value)
+      ? value.filter((id): id is string => typeof id === 'string').slice(0, MAX_PINNED)
+      : NONE,
+  fallback: NONE,
+  crossTab: true,
+});
 
 /** Pins the deck; returns false when {@link MAX_PINNED} decks are pinned already. */
 export function pinDeck(deckId: string): boolean {
-  const current = getSnapshot();
+  const current = pinnedDecksStore.getSnapshot();
   if (current.includes(deckId)) return true;
   if (current.length >= MAX_PINNED) return false;
-  setPinned([...current, deckId]);
+  pinnedDecksStore.set([...current, deckId]);
   return true;
 }
 
 export function unpinDeck(deckId: string) {
-  const current = getSnapshot();
-  if (current.includes(deckId)) setPinned(current.filter((id) => id !== deckId));
+  const current = pinnedDecksStore.getSnapshot();
+  if (current.includes(deckId)) pinnedDecksStore.set(current.filter((id) => id !== deckId));
 }
 
 /** Drops pins of decks that no longer exist, so they don't block a slot. */
 export function prunePinnedDecks(existing: ReadonlySet<string>) {
-  const current = getSnapshot();
+  const current = pinnedDecksStore.getSnapshot();
   const kept = current.filter((id) => existing.has(id));
-  if (kept.length !== current.length) setPinned(kept);
-}
-
-export function usePinnedDecks() {
-  const ids = useSyncExternalStore(subscribe, getSnapshot);
-  return {
-    isPinned: (deckId: string) => ids.includes(deckId),
-    full: ids.length >= MAX_PINNED,
-  };
+  if (kept.length !== current.length) pinnedDecksStore.set(kept);
 }

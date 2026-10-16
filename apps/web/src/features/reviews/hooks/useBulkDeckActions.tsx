@@ -1,35 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Deck } from '@slider/shared';
 import { pluralize } from '@/lib/format';
-import {
-  useDeckStatuses,
-  useInvalidateDecks,
-  useRerenderDecks,
-  useUpdateDecks,
-  type BulkResult,
-} from '@/lib/api';
+import { useDeckStatuses, useInvalidateDecks, useRerenderDecks, useUpdateDecks } from '@/lib/api';
 import type { MenuAction, ShowToast } from '@/ui';
 import { DeleteDeckDialog } from '../components/DeleteDeckDialog';
 import { MoveDecksDialog } from '../components/MoveDecksDialog';
-import { movedMessage } from './useMoveDecks';
-import { MAX_PINNED, pinDeck, unpinDeck, usePinnedDecks } from '../lib/pinned-decks';
+import { failureMessage, movedMessage, withCount } from '../lib/bulk-messages';
+import { usePinnedDecks } from './usePinnedDecks';
+import { MAX_PINNED, pinDeck, unpinDeck } from '../lib/pinned-decks';
 
 const NO_IDS: readonly string[] = [];
 
 const reviews = (count: number) => pluralize(count, 'Review', 'Reviews');
 
-/** "Archivieren (2)" when the action only applies to some of the selected decks. */
-const withCount = (label: string, count: number, selected: number) =>
-  count < selected ? `${label} (${count})` : label;
-
 const NOT_MANAGED = 'Gilt nur für Reviews, die du verwaltest.';
-
-/** The failed part of a bulk request as a toast, or null when everything went through. */
-function failureMessage(result: BulkResult<unknown>, verb: string) {
-  const first = result.failed[0];
-  if (!first) return null;
-  return `${pluralize(result.failed.length, 'Review konnte', 'Reviews konnten')} nicht ${verb} werden: ${first.message}`;
-}
 
 /**
  * "Neu rendern" for several decks (BER-94): starts each, then follows their status until none

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { downsamplePeaks, formatBytes, formatDuration, pickRecorderFormat } from './recording';
+import { downsamplePeaks, pickRecorderFormat } from './recording';
 
 describe('pickRecorderFormat', () => {
   it('prefers WebM/Opus for voice and MP4 for video, falls back to MP4 / WebM', () => {
@@ -29,16 +29,5 @@ describe('downsamplePeaks', () => {
         64,
       ),
     ).toHaveLength(64);
-  });
-});
-
-describe('formatting', () => {
-  it('formats durations and sizes', () => {
-    expect(formatDuration(0)).toBe('0:00');
-    expect(formatDuration(83_400)).toBe('1:23');
-    expect(formatDuration(300_000)).toBe('5:00');
-    expect(formatBytes(512)).toBe('512 B');
-    expect(formatBytes(1_536_000)).toBe('1,5 MB');
-    expect(formatBytes(5 * 1024 ** 3)).toBe('5 GB');
   });
 });

@@ -5,7 +5,7 @@ import { routes } from '@/lib/routes';
 import { AvatarStack, cn, Icon } from '@/ui';
 import type { ShowToast } from '@/ui';
 import { isImporting } from '@/lib/deck-labels';
-import { usePinnedDecks } from '../lib/pinned-decks';
+import { usePinnedDecks } from '../hooks/usePinnedDecks';
 import { useDeckContextMenu } from '../hooks/useDeckContextMenu';
 import { DeckActions } from './DeckActions';
 import { DeckTitleInput } from './DeckTitleInput';

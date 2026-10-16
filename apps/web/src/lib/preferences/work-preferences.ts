@@ -1,3 +1,5 @@
+import { readJson, writeJson } from '../storage';
+
 /** Status filter of the comment list ("Offen", "Alle", "Erledigt"). */
 export type StatusFilter = 'all' | 'open' | 'done';
 
@@ -27,37 +29,35 @@ export const DEFAULT_WORK_PREFERENCES: WorkPreferences = {
 
 const STATUS_FILTERS: readonly StatusFilter[] = ['open', 'all', 'done'];
 
-export function loadWorkPreferences(): WorkPreferences {
-  try {
-    const parsed: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '{}');
-    if (typeof parsed !== 'object' || parsed === null) return DEFAULT_WORK_PREFERENCES;
-    const stored = parsed as Partial<Record<keyof WorkPreferences, unknown>>;
-    return {
-      showGuides:
-        typeof stored.showGuides === 'boolean'
-          ? stored.showGuides
-          : DEFAULT_WORK_PREFERENCES.showGuides,
-      showHiddenSlides:
-        typeof stored.showHiddenSlides === 'boolean'
-          ? stored.showHiddenSlides
-          : DEFAULT_WORK_PREFERENCES.showHiddenSlides,
-      showChanges:
-        typeof stored.showChanges === 'boolean'
-          ? stored.showChanges
-          : DEFAULT_WORK_PREFERENCES.showChanges,
-      statusFilter: STATUS_FILTERS.includes(stored.statusFilter as StatusFilter)
-        ? (stored.statusFilter as StatusFilter)
-        : DEFAULT_WORK_PREFERENCES.statusFilter,
-    };
-  } catch {
-    return DEFAULT_WORK_PREFERENCES;
-  }
+/** Each field on its own: a missing or invalid one takes its default. */
+function parseWorkPreferences(value: unknown): WorkPreferences {
+  if (typeof value !== 'object' || value === null) return DEFAULT_WORK_PREFERENCES;
+  const stored = value as Partial<Record<keyof WorkPreferences, unknown>>;
+  return {
+    showGuides:
+      typeof stored.showGuides === 'boolean'
+        ? stored.showGuides
+        : DEFAULT_WORK_PREFERENCES.showGuides,
+    showHiddenSlides:
+      typeof stored.showHiddenSlides === 'boolean'
+        ? stored.showHiddenSlides
+        : DEFAULT_WORK_PREFERENCES.showHiddenSlides,
+    showChanges:
+      typeof stored.showChanges === 'boolean'
+        ? stored.showChanges
+        : DEFAULT_WORK_PREFERENCES.showChanges,
+    statusFilter: STATUS_FILTERS.includes(stored.statusFilter as StatusFilter)
+      ? (stored.statusFilter as StatusFilter)
+      : DEFAULT_WORK_PREFERENCES.statusFilter,
+  };
 }
 
+/** Missing, corrupt or unreadable storage: the defaults. */
+export function loadWorkPreferences(): WorkPreferences {
+  return readJson(STORAGE_KEY, parseWorkPreferences, DEFAULT_WORK_PREFERENCES);
+}
+
+/** Private mode or blocked storage: decks open with the defaults. */
 export function storeWorkPreferences(preferences: WorkPreferences): void {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
-  } catch {
-    // Private mode or blocked storage: decks open with the defaults.
-  }
+  writeJson(STORAGE_KEY, preferences);
 }

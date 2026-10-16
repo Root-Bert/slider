@@ -9,6 +9,7 @@ import { CommentContent } from './CommentContent';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
 import { RemovedInPowerPointNote } from './RevisionNotes';
 import { useCommentMenu } from './hooks/useCommentMenu';
+import { isModEnter } from '@/lib/keyboard';
 
 interface ThreadMessageProps {
   comment: Comment;
@@ -119,7 +120,7 @@ function EditForm({
           value={body}
           onChange={(event) => setBody(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) save();
+            if (isModEnter(event)) save();
             if (event.key === 'Escape') {
               event.stopPropagation();
               onDone();

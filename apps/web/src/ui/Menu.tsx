@@ -1,17 +1,21 @@
 import {
   useEffect,
-  useId,
   useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
   type KeyboardEvent,
+  type MouseEvent,
   type RefObject,
 } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from './cn';
-import { Icon, type IconName } from './Icon';
+import type { IconName } from './Icon';
+import { IconButton, type IconButtonSize } from './IconButton';
+import { MenuItem } from './MenuItem';
+import { PopoverPanel } from './Popover';
 import { useDismiss } from './hooks/useDismiss';
+import { usePopover } from './hooks/usePopover';
 
 export interface MenuAction {
   label: string;
@@ -28,6 +32,8 @@ interface MenuProps {
   label: string;
   actions: readonly MenuAction[];
   className?: string;
+  /** Size of the `IconButton` trigger: `sm` 32px (default), `compact` 28px, … */
+  triggerSize?: IconButtonSize;
   triggerClassName?: string;
 }
 
@@ -35,32 +41,28 @@ interface MenuProps {
  * Icon-triggered action menu following the WAI-ARIA menu-button pattern:
  * Enter/Space/↓ opens and focuses the first item, ↑/↓/Home/End move, Escape/Tab close.
  */
-export function Menu({ label, actions, className, triggerClassName }: MenuProps) {
-  const [open, setOpen] = useState(false);
+export function Menu({
+  label,
+  actions,
+  className,
+  triggerSize = 'sm',
+  triggerClassName,
+}: MenuProps) {
   // Only a keyboard-opened menu puts focus on its first item; a click shouldn't pre-select one.
   const [openedByKeyboard, setOpenedByKeyboard] = useState(false);
-  const menuId = useId();
-  const wrapperRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-
-  useDismiss({
-    open,
-    onDismiss: () => setOpen(false),
-    refs: [wrapperRef],
-    returnFocusTo: triggerRef,
-  });
+  const { open, setOpen, close, wrapperRef, triggerRef, panelId } = usePopover();
 
   return (
     <div ref={wrapperRef} className={cn('relative', className)}>
-      {/* Not `IconButton`: the UI kit button doesn't forward refs, and the trigger needs one for focus return. */}
-      <button
+      <IconButton
         ref={triggerRef}
-        type="button"
-        aria-label={label}
-        title={label}
+        icon="moreHoriz"
+        label={label}
+        size={triggerSize}
+        // aria-expanded and the open look; a menu button is never `aria-pressed`.
+        expanded={open}
         aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? menuId : undefined}
+        aria-controls={open ? panelId : undefined}
         onClick={(event) => {
           // `detail` is 0 for Enter/Space, the click count for a pointer.
           setOpenedByKeyboard(event.detail === 0);
@@ -73,24 +75,18 @@ export function Menu({ label, actions, className, triggerClassName }: MenuProps)
             setOpen(true);
           }
         }}
-        className={cn(
-          'inline-flex size-8 items-center justify-center rounded-control transition-colors',
-          open ? 'bg-white/15 text-fg' : 'text-fg-muted hover:bg-white/10 hover:text-fg',
-          triggerClassName,
-        )}
-      >
-        <Icon name="moreHoriz" size={20} />
-      </button>
+        className={triggerClassName}
+      />
       {open && (
         <MenuList
-          id={menuId}
+          id={panelId}
           label={label}
           actions={actions}
-          onClose={() => setOpen(false)}
+          onClose={close}
           focusFirst={openedByKeyboard}
           // Focus goes back to the trigger first, so a dialog opened by the action restores it on close.
           returnFocusTo={triggerRef}
-          className="absolute top-full right-0 mt-1"
+          anchored
         />
       )}
     </div>
@@ -138,7 +134,7 @@ export function ContextMenu({ label, actions, at, onClose }: ContextMenuProps) {
   }, [onClose]);
 
   return createPortal(
-    <div ref={ref} className="fixed z-50" style={position}>
+    <div ref={ref} className="fixed z-(--z-popover)" style={position}>
       <MenuList label={label} actions={actions} onClose={onClose} focusFirst={false} />
     </div>,
     document.body,
@@ -153,7 +149,8 @@ interface MenuListProps {
   returnFocusTo?: RefObject<HTMLElement | null>;
   /** Focus the first item (keyboard) or only the menu itself (pointer), so ↑/↓ still work. */
   focusFirst?: boolean;
-  className?: string;
+  /** Below the trigger, right-aligned (`Menu`); otherwise placed by the caller (`ContextMenu`). */
+  anchored?: boolean;
 }
 
 /** The open menu: ↑/↓/Home/End move between the enabled items, Tab closes. */
@@ -164,9 +161,9 @@ function MenuList({
   onClose,
   returnFocusTo,
   focusFirst = true,
-  className,
+  anchored = false,
 }: MenuListProps) {
-  const menuRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const enabled = actions.flatMap((action, index) => (action.disabled ? [] : [index]));
 
@@ -178,7 +175,7 @@ function MenuList({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+  const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     const count = enabled.length;
     // -1 while the menu itself has focus: ↓ goes to the first item, ↑ to the last.
     const current = enabled.findIndex(
@@ -207,50 +204,44 @@ function MenuList({
   };
 
   return (
-    <div
+    <PopoverPanel
       ref={menuRef}
       id={id}
       role="menu"
       aria-label={label}
       tabIndex={-1}
       onKeyDown={handleKeyDown}
-      className={cn(
-        'glass-elevated z-30 flex min-w-48 animate-pop-in flex-col rounded-panel p-1 outline-none',
-        className,
-      )}
+      position={anchored ? 'anchored' : 'none'}
+      side="bottom"
+      align="end"
+      offset="sm"
+      padding="sm"
+      className="min-w-48 outline-none"
     >
       {actions.map((action, index) => (
-        <button
+        <MenuItem
           key={action.label}
-          ref={(element) => {
+          ref={(element: HTMLButtonElement | null) => {
             itemRefs.current[index] = element;
           }}
-          type="button"
           role="menuitem"
           tabIndex={-1}
-          aria-disabled={action.disabled || undefined}
+          inset={4}
+          icon={action.icon}
+          tone={action.tone}
+          disabled={action.disabled}
+          // Keeps its `title` (the reason) and stays a menuitem; the arrow keys skip it.
+          focusableWhenDisabled
           title={action.title}
           onClick={() => select(action)}
           // The pointer moves the focus along, so hover and keyboard never mark two items.
-          onMouseEnter={(event) => {
+          onMouseEnter={(event: MouseEvent<HTMLButtonElement>) => {
             if (!action.disabled) event.currentTarget.focus({ preventScroll: true });
           }}
-          className={cn(
-            'flex h-9 items-center gap-2.5 rounded-control px-2.5 text-left text-[13px] outline-none',
-            action.disabled
-              ? 'cursor-default opacity-40'
-              : 'hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none',
-            action.tone === 'danger' ? 'text-danger' : 'text-fg',
-          )}
         >
-          <Icon
-            name={action.icon}
-            size={18}
-            className={action.tone === 'danger' ? undefined : 'text-fg-subtle'}
-          />
           {action.label}
-        </button>
+        </MenuItem>
       ))}
-    </div>
+    </PopoverPanel>
   );
 }

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { readString, writeString } from '@/lib/storage';
 
 const isOneOf = <T extends string>(options: readonly T[], value: string | null): value is T =>
   value !== null && (options as readonly string[]).includes(value);
@@ -9,21 +10,14 @@ const isOneOf = <T extends string>(options: readonly T[], value: string | null):
  */
 export function useStoredChoice<T extends string>(key: string, options: readonly T[], fallback: T) {
   const [value, setValue] = useState<T>(() => {
-    try {
-      const stored = localStorage.getItem(key);
-      return isOneOf(options, stored) ? stored : fallback;
-    } catch {
-      return fallback;
-    }
+    const stored = readString(key);
+    return isOneOf(options, stored) ? stored : fallback;
   });
 
   const update = (next: T) => {
     setValue(next);
-    try {
-      localStorage.setItem(key, next);
-    } catch {
-      // Not persisted – the choice still applies for this session.
-    }
+    // Not persisted (private mode) – the choice still applies for this session.
+    writeString(key, next);
   };
 
   return [value, update] as const;

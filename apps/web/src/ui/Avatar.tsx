@@ -4,7 +4,7 @@ import { ringColor } from '@/lib/accent';
 import { generatedAvatar } from '@/lib/generated-avatar';
 import { cn } from './cn';
 
-type AvatarSize = 16 | 18 | 20 | 24 | 28 | 32 | 64;
+export type AvatarSize = 16 | 18 | 20 | 24 | 28 | 32 | 64;
 
 interface AvatarProps {
   author: Pick<Author, 'name' | 'color' | 'type'>;
@@ -46,11 +46,11 @@ export function Avatar({
       </span>
       {showPowerPointBadge && (
         <span
-          className="absolute -right-1 -bottom-1 flex items-center justify-center rounded-thumb bg-powerpoint text-white"
+          className="absolute -right-1 -bottom-1 flex items-center justify-center rounded-thumb bg-powerpoint text-primary-hover"
           style={{ width: size * 0.6, height: size * 0.6 }}
           aria-label="aus PowerPoint"
         >
-          <span className="text-[8px] leading-none font-semibold">P</span>
+          <span className="text-micro leading-none font-semibold">P</span>
         </span>
       )}
     </span>
@@ -102,14 +102,35 @@ export function AvatarStack({
       ))}
       {hidden.length > 0 && (
         <StackItem label={hidden.map((a) => a.name).join(', ')} interactive={interactive}>
-          <span
-            className="flex items-center justify-center rounded-full bg-[#2a2a2a] text-[10px] font-medium text-fg-muted ring-2 ring-canvas"
-            style={{ width: size, height: size }}
-          >
-            +{hidden.length}
-          </span>
+          <AvatarOverflow count={hidden.length} size={size} />
         </StackItem>
       )}
+    </span>
+  );
+}
+
+export interface AvatarOverflowProps {
+  /** How many people are not shown. */
+  count: number;
+  size?: AvatarSize;
+  /** Native tooltip, e.g. the hidden names. */
+  title?: string;
+  /** Layout only (overlap margin); the look comes from the props. */
+  className?: string;
+}
+
+/** The "+n" chip at the end of an avatar row: opaque raised circle with the count. */
+export function AvatarOverflow({ count, size = 24, title, className }: AvatarOverflowProps) {
+  return (
+    <span
+      className={cn(
+        'flex shrink-0 items-center justify-center rounded-full bg-surface-raised text-tiny font-medium text-fg-muted ring-2 ring-canvas',
+        className,
+      )}
+      style={{ width: size, height: size }}
+      title={title}
+    >
+      +{count}
     </span>
   );
 }
@@ -139,7 +160,7 @@ function StackItem({
         role="tooltip"
         className={cn(
           'pointer-events-none absolute bottom-full left-1/2 mb-1.5 w-max max-w-48 -translate-x-1/2 translate-y-1 rounded-badge',
-          'bg-glass-solid px-2 py-1 text-[11px] leading-4 text-fg opacity-0 shadow-lg ring-1 ring-white/10',
+          'bg-glass-solid px-2 py-1 text-caption leading-4 text-fg opacity-0 shadow-lift ring-1 ring-hover',
           'transition-[opacity,translate] duration-150 group-hover/avatar:translate-y-0 group-hover/avatar:opacity-100',
         )}
       >

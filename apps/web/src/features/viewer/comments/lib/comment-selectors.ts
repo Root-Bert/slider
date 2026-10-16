@@ -10,6 +10,7 @@ import {
   type Shape,
   type Slide,
 } from '@slider/shared';
+import { formatDuration } from '@/lib/format';
 import type { StatusFilter } from '@/lib/preferences/work-preferences';
 import { STROKE_STYLE, strokeOutline, strokesBounds, textBox } from '../../stage/lib/stroke-path';
 
@@ -377,11 +378,6 @@ export const strokeOnlyLabel = (comment: Pick<Comment, 'strokes'>) => {
 const MEDIA_ICONS = { audio: '🎙', video: '🎬' } as const;
 const MEDIA_NOUNS = { audio: 'Sprachkommentar', video: 'Videokommentar' } as const;
 
-const formatClock = (ms: number) => {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
-};
-
 /**
  * One line of text for a comment in tight spots (compact cards, tooltips): the body, else the
  * "🎙 Sprachkommentar · 0:42" for recordings, else the drawing label.
@@ -390,7 +386,7 @@ export function commentPreview(comment: Comment): string {
   if (comment.body.trim()) return comment.body;
   const { media } = comment;
   if (media) {
-    return `${MEDIA_ICONS[media.kind]} ${MEDIA_NOUNS[media.kind]} · ${formatClock(media.durationMs)}`;
+    return `${MEDIA_ICONS[media.kind]} ${MEDIA_NOUNS[media.kind]} · ${formatDuration(media.durationMs)}`;
   }
   return isStrokeOnly(comment) ? strokeOnlyLabel(comment) : comment.body;
 }

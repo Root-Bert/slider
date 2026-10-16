@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { withColorOverride, useColorOverrides } from '../lib/color-overrides';
+import { useColorOverrides } from '../hooks/useColorOverrides';
+import { withColorOverride } from '../lib/color-overrides';
 import { useStageRegistry } from '../state/stage-registry';
 import { LiveCursor } from './LiveCursor';
 import { getLiveSnapshot, lastMoved, useLiveSnapshot } from './lib/live-store';

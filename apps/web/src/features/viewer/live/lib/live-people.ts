@@ -1,6 +1,7 @@
 import type { Author } from '@slider/shared';
 import { useMemo } from 'react';
-import { useColorOverrides, withColorOverride } from '../../lib/color-overrides';
+import { useColorOverrides } from '../../hooks/useColorOverrides';
+import { withColorOverride } from '../../lib/color-overrides';
 import { useLiveSnapshot } from './live-store';
 
 export interface LivePerson {

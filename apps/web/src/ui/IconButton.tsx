@@ -1,23 +1,41 @@
 import type { ButtonHTMLAttributes, Ref } from 'react';
 import { cn } from './cn';
-import { Icon, type IconName } from './Icon';
+import { Icon, type IconName, type IconSize } from './Icon';
+import {
+  ICON_BUTTON_ICON_PX,
+  iconButtonClasses,
+  type IconButtonStyle,
+} from './icon-button-classes';
 
-export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+export type { IconButtonSize, IconButtonStyle, IconButtonVariant } from './icon-button-classes';
+
+export interface IconButtonProps
+  extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'title'>, IconButtonStyle {
   icon: IconName;
-  /** Required: icon-only buttons need an accessible name. Also used as tooltip. */
+  /** Required: icon-only buttons need an accessible name. Also the tooltip unless `title` is set. */
   label: string;
-  /** Pressed / selected state, e.g. the active drawing tool. */
-  active?: boolean;
-  size?: 'sm' | 'md';
-  iconSize?: number;
+  /** Tooltip, when it should say more than the label (e.g. a shortcut); `false` for none. */
+  title?: string | false;
+  /**
+   * Trigger of a menu or popover: sets `aria-expanded` and the open background. Not a toggle,
+   * so it never sets `aria-pressed`.
+   */
+  expanded?: boolean;
+  iconSize?: IconSize;
   ref?: Ref<HTMLButtonElement>;
 }
 
 export function IconButton({
   icon,
   label,
-  active = false,
+  title,
+  variant,
   size = 'md',
+  shape,
+  active = false,
+  expanded,
+  iconTone,
+  disabledStyle,
   iconSize,
   className,
   type = 'button',
@@ -27,19 +45,16 @@ export function IconButton({
     <button
       type={type}
       aria-label={label}
-      title={label}
+      title={title === false ? undefined : (title ?? label)}
       aria-pressed={active || undefined}
+      aria-expanded={expanded}
       className={cn(
-        // Radius of a control nested in a pill with 4px padding (panel − 4), so corners nest.
-        'inline-flex shrink-0 items-center justify-center rounded-control transition-colors',
-        'disabled:pointer-events-none disabled:opacity-40',
-        size === 'md' ? 'size-10' : 'size-8',
-        active ? 'bg-white/15 text-fg' : 'text-fg-muted hover:bg-white/10 hover:text-fg',
+        iconButtonClasses({ variant, size, shape, active, iconTone, disabledStyle }),
         className,
       )}
       {...props}
     >
-      <Icon name={icon} size={iconSize ?? (size === 'md' ? 24 : 20)} />
+      <Icon name={icon} size={iconSize ?? ICON_BUTTON_ICON_PX[size]} />
     </button>
   );
 }

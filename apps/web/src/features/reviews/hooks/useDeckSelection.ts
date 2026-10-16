@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { isTypingTarget } from '@/lib/dom';
+import { isModKey } from '@/lib/keyboard';
 
 const NONE: ReadonlySet<string> = new Set();
 
@@ -38,7 +39,7 @@ export function useDeckSelection(visibleIds: readonly string[]) {
       setPicked(new Set([...selectedIds, ...range]));
       return true;
     }
-    if (event.metaKey || event.ctrlKey || event.shiftKey) {
+    if (isModKey(event) || event.shiftKey) {
       anchor.current = deckId;
       const next = new Set(selectedIds);
       if (next.has(deckId)) next.delete(deckId);
@@ -69,7 +70,7 @@ export function useDeckSelection(visibleIds: readonly string[]) {
       clear();
     } else if (
       event.key.toLowerCase() === 'a' &&
-      (event.metaKey || event.ctrlKey) &&
+      isModKey(event) &&
       !event.altKey &&
       visibleIds.length > 0
     ) {

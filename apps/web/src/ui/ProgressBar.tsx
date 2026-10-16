@@ -16,7 +16,7 @@ export function ProgressBar({ value, label, className }: ProgressBarProps) {
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={percent ?? undefined}
-      className={cn('h-1 overflow-hidden rounded-full bg-white/10', className)}
+      className={cn('h-1 overflow-hidden rounded-full bg-hover', className)}
     >
       <div
         className={cn(

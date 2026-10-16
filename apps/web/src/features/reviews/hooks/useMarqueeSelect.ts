@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent, type RefObject } from 'react';
+import { isModKey } from '@/lib/keyboard';
 
 export interface MarqueeBox {
   left: number;
@@ -51,7 +52,7 @@ export function useMarqueeSelect(
     event.preventDefault();
     (document.activeElement as HTMLElement | null)?.blur?.();
 
-    const additive = event.shiftKey || event.metaKey || event.ctrlKey;
+    const additive = event.shiftKey || isModKey(event);
     const origin = () => container.getBoundingClientRect();
     const toLocal = (x: number, y: number) => {
       const rect = origin();

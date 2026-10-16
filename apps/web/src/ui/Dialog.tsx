@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { cn } from './cn';
 import { IconButton } from './IconButton';
 
-interface DialogProps {
+export interface DialogProps {
   open: boolean;
   onClose: () => void;
   title: string;
@@ -57,7 +57,7 @@ export function Dialog({
       className={cn(
         'glass-elevated m-auto w-[min(480px,calc(100vw-32px))] rounded-panel p-0 text-fg',
         'max-h-[calc(100dvh-32px)] overflow-y-auto overscroll-contain',
-        'backdrop:bg-black/60 backdrop:backdrop-blur-sm open:animate-pop-in',
+        'backdrop:bg-scrim backdrop:backdrop-blur-sm open:animate-pop-in',
         className,
       )}
     >
@@ -67,7 +67,7 @@ export function Dialog({
             <h2 id={titleId} className="text-lg font-semibold text-fg">
               {title}
             </h2>
-            {description && <div className="text-[13px] text-fg-subtle">{description}</div>}
+            {description && <div className="text-body text-fg-subtle">{description}</div>}
           </div>
           <IconButton
             icon="close"

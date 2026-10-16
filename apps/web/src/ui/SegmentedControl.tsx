@@ -1,3 +1,4 @@
+import type { KeyboardEvent } from 'react';
 import { cn } from './cn';
 import { Icon, type IconName } from './Icon';
 
@@ -12,38 +13,112 @@ export interface Segment<T extends string> {
   title?: string;
 }
 
+/** xs 20px (segments inside a badge) · sm 28px (composer tabs) · md 32px (filter pills). */
+export type SegmentSize = 'xs' | 'sm' | 'md';
+export type SegmentTone = 'neutral' | 'warning';
+
 interface SegmentedControlProps<T extends string> {
   segments: readonly Segment<T>[];
   value: T;
   onChange: (value: T) => void;
   /** Accessible name of the group, e.g. "Kommentare filtern". */
   label: string;
+  size?: SegmentSize;
+  tone?: SegmentTone;
+  /** `soft`: segments sit in a tinted, padded track. `none`: bare (inside a glass pill). */
+  track?: 'none' | 'soft';
+  /**
+   * `radio` (default): a radio group of filter chips. `tabs`: a tab list with roving focus
+   * (arrow keys, Home/End); disabled tabs stay visible but are skipped.
+   */
+  mode?: 'radio' | 'tabs';
   className?: string;
 }
 
+/** Track padding/radius per size, concentric with the segment radius (docs §5). */
+const trackClasses: Record<SegmentSize, string> = {
+  xs: 'gap-0.5 rounded-badge p-0.5',
+  sm: 'gap-1 rounded-control p-1',
+  md: 'gap-1 rounded-panel p-1',
+};
+
+const trackTone: Record<SegmentTone, string> = {
+  neutral: 'bg-surface-1',
+  warning: 'bg-warning/10',
+};
+
 /**
- * Single-select row of filter chips (e.g. Alle · Offen · Erledigt).
- * Rendered as a radio group so it is keyboard and screen-reader friendly.
+ * Single-select row of segments (e.g. Alle · Offen · Erledigt, or Text · Audio · Video · Bild).
+ * Rendered as a radio group or a tab list, so it is keyboard and screen-reader friendly.
  */
 export function SegmentedControl<T extends string>({
   segments,
   value,
   onChange,
   label,
+  size = 'md',
+  tone = 'neutral',
+  track = 'none',
+  mode = 'radio',
   className,
 }: SegmentedControlProps<T>) {
+  const tabs = mode === 'tabs';
+  const enabled = segments.filter((segment) => !segment.disabled);
+  // Roving focus: the selected tab takes Tab; the first enabled one if none is selected.
+  const focusable = enabled.some((segment) => segment.value === value) ? value : enabled[0]?.value;
+
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!tabs || enabled.length === 0) return;
+    const index = enabled.findIndex((segment) => segment.value === value);
+    let next: number;
+    switch (event.key) {
+      case 'ArrowRight':
+        next = (index + 1) % enabled.length;
+        break;
+      case 'ArrowLeft':
+        next = index <= 0 ? enabled.length - 1 : index - 1;
+        break;
+      case 'Home':
+        next = 0;
+        break;
+      case 'End':
+        next = enabled.length - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    const target = enabled[next]!;
+    onChange(target.value);
+    const chips = event.currentTarget.querySelectorAll<HTMLElement>('[data-segment]');
+    [...chips].find((chip) => chip.dataset.segment === target.value)?.focus();
+  };
+
   return (
-    <div role="radiogroup" aria-label={label} className={cn('flex items-center gap-1', className)}>
+    <div
+      role={tabs ? 'tablist' : 'radiogroup'}
+      aria-label={label}
+      onKeyDown={tabs ? onKeyDown : undefined}
+      className={cn(
+        'flex items-center',
+        track === 'soft' ? cn('w-fit', trackClasses[size], trackTone[tone]) : 'gap-1',
+        className,
+      )}
+    >
       {segments.map((segment) => (
         <FilterChip
           key={segment.value}
+          value={segment.value}
           selected={segment.value === value}
           icon={segment.icon}
           count={segment.count}
           disabled={segment.disabled}
           title={segment.title}
+          size={size}
+          tone={tone}
           onClick={() => onChange(segment.value)}
-          role="radio"
+          role={tabs ? 'tab' : 'radio'}
+          tabIndex={tabs ? (segment.value === focusable ? 0 : -1) : undefined}
         >
           {segment.label}
         </FilterChip>
@@ -60,12 +135,38 @@ interface FilterChipProps {
   title?: string | undefined;
   onClick: () => void;
   children: string;
-  role?: 'radio' | 'checkbox';
+  /** `tab`: `aria-selected`, and disabled via `aria-disabled` (stays hoverable for its title). */
+  role?: 'radio' | 'checkbox' | 'tab';
+  size?: SegmentSize | undefined;
+  tone?: SegmentTone | undefined;
+  tabIndex?: number | undefined;
+  /** Identifies the chip for roving focus (`data-segment`). */
+  value?: string | undefined;
 }
 
+const sizeClasses: Record<SegmentSize, string> = {
+  xs: 'h-5 gap-1 rounded-thumb px-1.5 text-caption font-medium',
+  sm: 'h-7 gap-1.5 rounded-chip pr-3 pl-2.5 text-xs font-medium',
+  md: 'h-8 gap-1.5 rounded-control px-2.5 text-body',
+};
+
+const ICON_PX: Record<SegmentSize, number> = { xs: 14, sm: 16, md: 18 };
+
+const toneClasses: Record<SegmentTone, { selected: string; idle: string }> = {
+  neutral: {
+    selected: 'bg-selected text-fg',
+    idle: 'text-fg-muted hover:bg-hover hover:text-fg',
+  },
+  warning: {
+    selected: 'bg-warning text-on-primary',
+    idle: 'text-warning hover:bg-warning/15',
+  },
+};
+
 /**
- * 32px filter chip with optional icon and count. Same states as the tool bar's `IconButton`:
- * selected is backed (`white/15`), the others stay bare until hover. Sits in a glass pill.
+ * Filter chip with optional icon and count. Same states as the tool bar's `IconButton`:
+ * selected is backed (`bg-selected`), the others stay bare until hover. Sits in a glass pill or a
+ * `SegmentedControl` track.
  */
 export function FilterChip({
   selected,
@@ -76,25 +177,38 @@ export function FilterChip({
   onClick,
   children,
   role = 'checkbox',
+  size = 'md',
+  tone = 'neutral',
+  tabIndex,
+  value,
 }: FilterChipProps) {
+  const tab = role === 'tab';
+  const states = toneClasses[tone];
   return (
     <button
       type="button"
       role={role}
-      aria-checked={selected}
-      disabled={disabled}
+      aria-checked={tab ? undefined : selected}
+      aria-selected={tab ? selected : undefined}
+      aria-disabled={tab && disabled ? true : undefined}
+      disabled={tab ? undefined : disabled}
+      tabIndex={tab && disabled ? -1 : tabIndex}
       title={title}
-      onClick={onClick}
+      data-segment={value}
+      onClick={() => {
+        if (!disabled) onClick();
+      }}
       className={cn(
-        'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-control px-2.5 text-[13px] whitespace-nowrap transition-colors',
+        'inline-flex shrink-0 items-center whitespace-nowrap transition-colors',
+        sizeClasses[size],
         disabled
-          ? 'cursor-not-allowed text-fg-faint'
+          ? 'cursor-not-allowed text-fg-muted opacity-40'
           : selected
-            ? 'bg-white/15 font-medium text-fg'
-            : 'text-fg-muted hover:bg-white/10 hover:text-fg',
+            ? cn(states.selected, size === 'md' && 'font-medium')
+            : states.idle,
       )}
     >
-      {icon && <Icon name={icon} size={18} />}
+      {icon && <Icon name={icon} size={ICON_PX[size]} />}
       {children}
       {count !== undefined && (
         <span className={cn('text-xs font-medium', selected ? 'text-fg-muted' : 'text-fg-subtle')}>

@@ -92,25 +92,6 @@ export function downsamplePeaks(levels: readonly number[], bars = MAX_MEDIA_PEAK
   return result.map((peak) => Math.round((peak / loudest) * 100) / 100);
 }
 
-/** `83_000` → `1:23`. */
-export function formatDuration(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
-}
-
-/** `1_536_000` → `1,5 MB`. */
-export function formatBytes(bytes: number): string {
-  const units = ['B', 'KB', 'MB', 'GB'];
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  const digits = unit === 0 || value >= 10 ? 0 : 1;
-  return `${value.toLocaleString('de-DE', { maximumFractionDigits: digits })} ${units[unit]}`;
-}
-
 /** Whether the recorder can run at all in this browser (needs a secure context). */
 export const canRecord = () =>
   typeof window !== 'undefined' &&

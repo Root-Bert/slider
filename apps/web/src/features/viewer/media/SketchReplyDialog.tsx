@@ -7,6 +7,7 @@ import { useViewerToast } from '../state/viewer-toast';
 import { DEFAULT_SKETCH_ASPECT, exportSketch } from './lib/sketch';
 import { SketchPanel, type Sketch } from './SketchPanel';
 import { useCreateMediaComment } from './hooks/useMediaComment';
+import { isModEnter } from '@/lib/keyboard';
 
 /** Reply to a thread with a drawn image, optionally with a voice memo recorded while drawing. */
 export function SketchReplyDialog({
@@ -92,7 +93,7 @@ export function SketchReplyDialog({
             value={note}
             onChange={(event) => setNote(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) send();
+              if (isModEnter(event)) send();
             }}
             className="text-[13px] leading-5 text-fg"
           />

@@ -6,7 +6,7 @@ import { markDeckOpened } from '@/lib/last-visits';
 import { useComments, useDeck, useDeckPeople, useMe, useSlides } from '@/lib/api';
 import { ImportProgress } from './import/ImportProgress';
 import { DeckError, DeckLoading } from './DeckStates';
-import { useColorOverrides } from './lib/color-overrides';
+import { useColorOverrides } from './hooks/useColorOverrides';
 import { useLiveSnapshot } from './live/lib/live-store';
 import { useDocumentTitle } from './hooks/usePageSession';
 import { SLIDE_PARAM } from './hooks/useSlideUrlSync';

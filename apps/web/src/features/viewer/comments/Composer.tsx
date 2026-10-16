@@ -26,6 +26,7 @@ import { draftSubmission } from '../stage/lib/text-box';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, useViewerState, type Draft } from '../state/viewer-state';
 import { MentionMenu } from './MentionMenu';
+import { isModEnter, isModKey } from '@/lib/keyboard';
 
 /** Popover for a new comment, anchored next to the draft mark (B2). Rendered only while drafting. */
 export function Composer() {
@@ -109,7 +110,7 @@ function ComposerPopover({ draft }: { draft: Draft }) {
   // through the kinds, typing writes the comment. A fresh box takes the keys itself (`DraftMark`).
   const onWindowKeyDown = useEffectEvent((event: KeyboardEvent) => {
     if (event.defaultPrevented || event.isComposing || isTypingTarget(event.target)) return;
-    if (event.metaKey || event.ctrlKey || event.altKey || freshBox) return;
+    if (isModKey(event) || event.altKey || freshBox) return;
     const target = event.target instanceof Element ? event.target : null;
     // Dialogs, and the Bild sheet while a box is selected (typing writes into the box).
     if (target?.closest('dialog, [data-sketch-keys]')) return;
@@ -245,8 +246,8 @@ function ComposerPopover({ draft }: { draft: Draft }) {
           value={body}
           onKeyDown={(event) => {
             if (mentions.onKeyDown(event)) return;
-            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit();
-            if (event.key !== 'Tab' || event.metaKey || event.ctrlKey || event.altKey) return;
+            if (isModEnter(event)) submit();
+            if (event.key !== 'Tab' || isModKey(event) || event.altKey) return;
             // Shift+Tab goes back to the text on the slide.
             const slideText =
               event.shiftKey && tab === 'text'

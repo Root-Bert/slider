@@ -7,6 +7,7 @@ import { MEDIA_LABELS } from './lib/recording';
 import { RecorderPanel } from './RecorderPanel';
 import { useCreateMediaComment } from './hooks/useMediaComment';
 import type { Recording } from './hooks/useRecorder';
+import { isModEnter } from '@/lib/keyboard';
 
 /** Voice or video reply to a thread (BER-116, Figma B3 "Antworten in jedem Format"). */
 export function RecordReplyDialog({
@@ -72,7 +73,7 @@ export function RecordReplyDialog({
               value={note}
               onChange={(event) => setNote(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) send();
+                if (isModEnter(event)) send();
               }}
               className="text-[13px] leading-5 text-fg"
             />

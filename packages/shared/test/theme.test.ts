@@ -42,9 +42,13 @@ describe('THEME mirrors apps/web/src/styles/index.css', () => {
     expect(THEME.dot).toBe(whiteAlpha('--color-dot'));
   });
 
-  it('logo back opacity', () => {
+  it('logo back opacity comes from THEME', () => {
     const logo = readFileSync(new URL('ui/Logo.tsx', root), 'utf8');
-    expect(logo).toContain(`fillOpacity="${THEME.logoBackOpacity}"`);
+    // Either reads THEME directly or repeats the literal value.
+    expect(
+      logo.includes('fillOpacity={THEME.logoBackOpacity}') ||
+        logo.includes(`fillOpacity="${THEME.logoBackOpacity}"`),
+    ).toBe(true);
   });
 });
 

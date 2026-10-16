@@ -14,8 +14,8 @@ interface AutosizeTextareaProps extends TextareaHTMLAttributes<HTMLTextAreaEleme
 }
 
 /**
- * Textarea that grows with its content up to `maxHeight`, then scrolls.
- * Generic primitive – candidate for `src/ui` once another feature needs it.
+ * Textarea that grows with its content up to `maxHeight`, then scrolls. Transparent and
+ * borderless: the surrounding field (`field-well`, `focus-field`) draws the box.
  */
 export function AutosizeTextarea({
   value,

@@ -29,6 +29,7 @@ import { StrokePath } from '../stage/StrokePath';
 import { TextBoxField, TextMark } from '../stage/TextBox';
 import { boxOf, eraserHits, frameOf, placeStroke, SKETCH_BACKGROUND } from './lib/sketch';
 import type { SheetEditor } from './hooks/useSheetEditor';
+import { isModKey } from '@/lib/keyboard';
 
 /** The slide's tools: the pointer (`null` – drag a box, write into it), the pens, the eraser. */
 export type SheetTool = PenTool | 'eraser' | null;
@@ -108,7 +109,7 @@ export function SketchSheet({
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget || selected === null || !selectedStroke) return;
-    if (event.metaKey || event.ctrlKey || event.altKey || event.nativeEvent.isComposing) return;
+    if (isModKey(event) || event.altKey || event.nativeEvent.isComposing) return;
     const box = boxOf(selectedStroke) !== null;
     if (event.key === 'Delete' || event.key === 'Backspace') {
       event.preventDefault();

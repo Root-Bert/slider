@@ -1,22 +1,25 @@
 import type { SVGProps } from 'react';
 import { cn } from './cn';
 import { iconPaths, type IconName } from './icon-paths';
+import { iconPx, type IconSize } from './icon-size';
 
 export type { IconName };
+export type { IconSize };
 
 interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'name'> {
   name: IconName;
-  /** Rendered size in px (square). */
-  size?: number;
+  /** Rendered size (square): a scale step (`'lg'`) or px (`18`). */
+  size?: IconSize;
   /** Accessible label. Without it the icon is treated as decorative. */
   label?: string;
 }
 
 export function Icon({ name, size = 24, label, className, ...props }: IconProps) {
+  const px = iconPx(size);
   return (
     <svg
-      width={size}
-      height={size}
+      width={px}
+      height={px}
       viewBox="0 0 24 24"
       fill="currentColor"
       aria-hidden={label ? undefined : true}

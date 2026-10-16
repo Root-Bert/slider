@@ -40,8 +40,8 @@ export function TextField({
       )}
       <div
         className={cn(
-          'glass flex items-center gap-3 rounded-control px-3 transition-shadow',
-          'focus-within:shadow-[inset_0_0_0_1px_rgb(255_255_255/0.35)]',
+          'glass focus-field flex items-center gap-3 rounded-control px-3 transition-shadow',
+          'has-[input:disabled]:opacity-40',
           size === 'lg' ? 'h-11' : 'h-10',
           error && 'shadow-[inset_0_0_0_1px_var(--color-danger)]!',
         )}

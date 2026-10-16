@@ -1,6 +1,5 @@
-import type { Workspace, WorkspaceInvite } from '@slider/shared';
+import type { WorkspaceInvite } from '@slider/shared';
 import { describe, expect, it } from 'vitest';
-import { pickWorkspace } from './last-workspace';
 import {
   assignableRoles,
   atLeast,
@@ -66,20 +65,6 @@ describe('sortInvites', () => {
       invite('new-open', 'valid', '2026-02-01T00:00:00Z'),
     ]);
     expect(sorted.map((i) => i.id)).toEqual(['new-open', 'old-open', 'new-used']);
-  });
-});
-
-describe('pickWorkspace', () => {
-  const ws = (id: string) => ({ id }) as Workspace;
-
-  it('prefers the last used workspace', () => {
-    expect(pickWorkspace([ws('a'), ws('b')], 'b')?.id).toBe('b');
-  });
-
-  it('falls back to the first, or null without workspaces', () => {
-    expect(pickWorkspace([ws('a'), ws('b')], 'gone')?.id).toBe('a');
-    expect(pickWorkspace([ws('a')], null)?.id).toBe('a');
-    expect(pickWorkspace([], 'a')).toBeNull();
   });
 });
 

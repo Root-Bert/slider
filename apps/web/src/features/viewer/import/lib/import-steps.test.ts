@@ -25,3 +25,35 @@ describe('importStepViews', () => {
     expect(importStatusText(steps)).toBe('Import abgeschlossen');
   });
 });
+
+describe('import step labels', () => {
+  it('names each step', () => {
+    const steps = importStepViews({ status: 'running', step: 'received', progress: null });
+    expect(steps.map((step) => step.label)).toEqual([
+      'Datei empfangen',
+      'Folien erkennen',
+      'Folien werden gerendert',
+      'PowerPoint-Kommentare importieren',
+    ]);
+    expect(steps.map((step) => step.status)).toEqual(['current', 'pending', 'pending', 'pending']);
+    expect(steps[0]?.progress).toBeNull();
+  });
+
+  it('only carries progress on the current step', () => {
+    const steps = importStepViews({
+      status: 'running',
+      step: 'comments',
+      progress: { done: 1, total: 2 },
+    });
+    expect(steps.map((step) => step.progress)).toEqual([null, null, null, { done: 1, total: 2 }]);
+    expect(importStatusText(steps)).toBe('Schritt 4 von 4: PowerPoint-Kommentare importieren');
+  });
+
+  it('shows nothing as done after a failure; the status names the first step', () => {
+    const steps = importStepViews({ status: 'failed', error: 'kaputt' });
+    expect(steps.every((step) => step.status === 'pending')).toBe(true);
+    expect(importStatusText(steps)).toBe('Datei empfangen');
+    expect(importStatusText(importStepViews({ status: 'queued' }))).toBe('In der Warteschlange…');
+    expect(importStatusText([])).toBe('Import abgeschlossen');
+  });
+});

@@ -1,3 +1,5 @@
+import { readJson, writeJson } from '@/lib/storage';
+
 /**
  * Per-browser memory of which revision of each deck the user has seen, so the viewer can say
  * "Neue Version geladen" once – on the next visit, or live while the deck is open. Storage can
@@ -9,22 +11,15 @@ const DISMISSED_ERRORS_KEY = 'slider.dismissedSyncErrors.v1';
 
 type Store = Record<string, number | string>;
 
-function read(key: string): Store {
-  try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(key) ?? '{}');
-    return typeof parsed === 'object' && parsed !== null ? (parsed as Store) : {};
-  } catch {
-    return {};
-  }
-}
+const read = (key: string): Store =>
+  readJson(
+    key,
+    (value) => (typeof value === 'object' && value !== null ? (value as Store) : {}),
+    {},
+  );
 
-function write(key: string, store: Store) {
-  try {
-    localStorage.setItem(key, JSON.stringify(store));
-  } catch {
-    // Unavailable storage – the banner simply isn't remembered.
-  }
-}
+/** Unavailable storage – the banner simply isn't remembered. */
+const write = (key: string, store: Store) => writeJson(key, store);
 
 export function seenRevision(deckId: string): number | null {
   const value = read(STORAGE_KEY)[deckId];

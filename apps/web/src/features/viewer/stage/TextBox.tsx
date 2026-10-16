@@ -15,6 +15,7 @@ import { MIN_TEXT_WIDTH, normalizeTextRect } from './lib/text-box';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, type TextBoxDraft, type TextBoxPatch } from '../state/viewer-state';
 import { CORNERS } from './corners';
+import { isModEnter, isModKey } from '@/lib/keyboard';
 
 /**
  * "Text auf Folie": text written on the slide. Sizes are in container units of the slide box
@@ -373,7 +374,7 @@ export function TextBoxField({
                 onEscape();
                 return;
               }
-              if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+              if (isModEnter(event)) {
                 event.preventDefault();
                 document.querySelector<HTMLFormElement>('form[data-composer]')?.requestSubmit();
               }
@@ -382,8 +383,7 @@ export function TextBoxField({
               const toComment =
                 (event.key === 'Tab' || event.key === 'Enter') &&
                 !event.shiftKey &&
-                !event.metaKey &&
-                !event.ctrlKey &&
+                !isModKey(event) &&
                 !event.nativeEvent.isComposing;
               if (toComment && onLeave()) event.preventDefault();
             }}

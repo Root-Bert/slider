@@ -1,5 +1,6 @@
-import { pluralize } from '@/lib/format';
-import { useUpdateDecks, type BulkResult } from '@/lib/api';
+import { useUpdateDecks } from '@/lib/api';
+
+export { movedMessage } from '../lib/bulk-messages';
 
 /** Moves decks into a folder (`null` = out of any); one request per deck. */
 export function useMoveDecks() {
@@ -10,25 +11,5 @@ export function useMoveDecks() {
       { deckIds, folderId }: { deckIds: readonly string[]; folderId: string | null },
       options?: Parameters<typeof update.mutate>[1],
     ) => update.mutate({ deckIds, input: { folderId } }, options),
-  };
-}
-
-/** Toast text after a move: what went where, or what failed. */
-export function movedMessage(
-  result: BulkResult<unknown>,
-  folderName: string | null,
-): { text: string; tone?: 'danger' } {
-  const failed = result.failed[0];
-  if (failed) {
-    return {
-      text: `${pluralize(result.failed.length, 'Review konnte', 'Reviews konnten')} nicht verschoben werden: ${failed.message}`,
-      tone: 'danger',
-    };
-  }
-  const what = pluralize(result.done.length, 'Review', 'Reviews');
-  return {
-    text: folderName
-      ? `${what} nach „${folderName}“ verschoben`
-      : `${what} aus dem Ordner genommen`,
   };
 }

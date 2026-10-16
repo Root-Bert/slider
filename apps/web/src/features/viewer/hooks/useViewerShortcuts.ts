@@ -3,6 +3,7 @@ import { isTypingTarget } from '@/lib/dom';
 import { useGoToSlide } from './useGoToSlide';
 import { useViewerData } from '../state/viewer-data';
 import { cycleTool, useViewerDispatch, useViewerState } from '../state/viewer-state';
+import { isModKey } from '@/lib/keyboard';
 
 /**
  * Global keyboard shortcuts of the viewer:
@@ -44,7 +45,7 @@ export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen:
     }
 
     if (isTypingTarget(event.target)) return;
-    const mod = event.metaKey || event.ctrlKey;
+    const mod = isModKey(event);
 
     if (mod && event.key === 'Enter' && draft) {
       event.preventDefault();

@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { insertMention, mentionQueryAt, suggestPeople } from '../lib/mentions';
 import { useViewerData } from '../../state/viewer-data';
+import { isModKey } from '@/lib/keyboard';
 
 export interface Mentions {
   /** People to suggest for the `@…` before the caret; empty = no menu. */
@@ -78,7 +79,7 @@ export function useMentions(
         break;
       case 'Enter':
       case 'Tab':
-        if (event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return false;
+        if (event.shiftKey || isModKey(event) || event.altKey) return false;
         pick(people[activeIndex] ?? people[0]!);
         break;
       case 'Escape':

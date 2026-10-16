@@ -4,6 +4,7 @@ import { pickActiveSlide } from '../lib/scroll-active';
 import { useStageRegistry } from '../../state/stage-registry';
 import { useViewerData } from '../../state/viewer-data';
 import { useViewerDispatch, useViewerState } from '../../state/viewer-state';
+import { isModKey } from '@/lib/keyboard';
 
 /**
  * Scrolling the timeline sideways – wheel, trackpad, scrollbar, swipe, minimap bracket – makes
@@ -60,7 +61,7 @@ export function useScrollActiveSlide(scrollerRef: RefObject<HTMLElement | null>)
     // wheel over the header, `useTimelineWheel`; a sideways one over the comments), a swipe, or
     // the scrollbar.
     const onWheel = (event: WheelEvent) => {
-      if (event.ctrlKey || event.metaKey) return;
+      if (isModKey(event)) return;
       const overHeader =
         event.target instanceof Element && event.target.closest('[data-timeline-header]');
       if (overHeader || Math.abs(event.deltaX) > Math.abs(event.deltaY))

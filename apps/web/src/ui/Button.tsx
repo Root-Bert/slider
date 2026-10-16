@@ -1,41 +1,64 @@
 import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react';
+import { BUTTON_ICON_PX, buttonClasses, type ButtonSize, type ButtonStyle } from './button-classes';
 import { cn } from './cn';
-import { Icon, type IconName } from './Icon';
+import { Icon, type IconName, type IconSize } from './Icon';
 import { Spinner } from './Spinner';
 
-type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
-type ButtonSize = 'sm' | 'md' | 'lg' | 'toolbar';
+export type { ButtonSize, ButtonStyle, ButtonTone, ButtonVariant } from './button-classes';
 
-export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: ButtonVariant;
-  size?: ButtonSize;
+export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>, ButtonStyle {
   icon?: IconName;
+  trailingIcon?: IconName;
+  /** Overrides the size's icon size (scale step or px). */
+  iconSize?: IconSize;
   loading?: boolean;
+  /** Trigger of a popover or menu: sets `aria-expanded` and the open background. */
+  expanded?: boolean;
   children: ReactNode;
   ref?: Ref<HTMLButtonElement>;
 }
 
+/** Leading icon / spinner, label, trailing icon – shared by `Button` and `ButtonLink`. */
+export function ButtonContent({
+  size = 'md',
+  icon,
+  trailingIcon,
+  iconSize,
+  loading = false,
+  children,
+}: {
+  size?: ButtonSize | undefined;
+  icon?: IconName | undefined;
+  trailingIcon?: IconName | undefined;
+  iconSize?: IconSize | undefined;
+  loading?: boolean | undefined;
+  children: ReactNode;
+}) {
+  const px = iconSize ?? BUTTON_ICON_PX[size];
+  return (
+    <>
+      {loading ? (
+        <Spinner size={size === 'xs' || size === '2xs' ? 14 : 16} />
+      ) : (
+        icon && <Icon name={icon} size={px} />
+      )}
+      {children}
+      {trailingIcon && <Icon name={trailingIcon} size={px} />}
+    </>
+  );
+}
+
 /** UI kit "Button": Primary = white 90 % / black text, Secondary = glass-control, Ghost = text only. */
-const variantClasses: Record<ButtonVariant, string> = {
-  primary: 'bg-primary text-on-primary hover:bg-white',
-  secondary: 'glass-control text-fg hover:bg-white/15',
-  ghost: 'text-fg-muted hover:text-fg hover:bg-white/5',
-  danger: 'bg-danger/15 text-danger hover:bg-danger/25',
-};
-
-const sizeClasses: Record<ButtonSize, string> = {
-  sm: 'h-8 px-3 text-[13px] gap-1.5 rounded-control-sm',
-  md: 'h-9 px-4 text-sm gap-2 rounded-control',
-  lg: 'h-11 px-5 text-sm gap-2 rounded-control',
-  /** Matches a glass toolbar pill (`p-1` around `h-8` segments). */
-  toolbar: 'h-10 px-3.5 text-[13px] gap-1.5 rounded-panel',
-};
-
 export function Button({
   variant = 'primary',
   size = 'md',
+  tone,
+  weight,
   icon,
+  trailingIcon,
+  iconSize,
   loading = false,
+  expanded,
   disabled,
   className,
   children,
@@ -47,17 +70,19 @@ export function Button({
       type={type}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
-      className={cn(
-        'inline-flex shrink-0 items-center justify-center font-medium whitespace-nowrap transition-colors',
-        'disabled:pointer-events-none disabled:opacity-50',
-        variantClasses[variant],
-        sizeClasses[size],
-        className,
-      )}
+      aria-expanded={expanded}
+      className={cn(buttonClasses({ variant, size, tone, weight }), className)}
       {...props}
     >
-      {loading ? <Spinner size={16} /> : icon && <Icon name={icon} size={18} />}
-      {children}
+      <ButtonContent
+        size={size}
+        icon={icon}
+        trailingIcon={trailingIcon}
+        iconSize={iconSize}
+        loading={loading}
+      >
+        {children}
+      </ButtonContent>
     </button>
   );
 }
