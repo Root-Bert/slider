@@ -1,6 +1,7 @@
 import {
   useEffect,
   useEffectEvent,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent,
@@ -8,16 +9,24 @@ import {
   type PointerEvent,
   type ReactNode,
 } from 'react';
-import { cn, IconButton } from '@/ui';
+import { cn, IconButton, type IconName } from '@/ui';
+import { isTypingTarget } from '../lib/dom';
 import { RecorderPanel } from './RecorderPanel';
 import {
   addPoint,
-  ERASER_WIDTH,
+  eraserHits,
   hasInk,
+  isTwoPointTool,
   renderSketch,
+  SKETCH_FONT_SIZES,
+  SKETCH_LINE_HEIGHT,
   SKETCH_WIDTHS,
+  sketchFont,
   sketchPalette,
+  textAt,
+  type SketchPathStroke,
   type SketchStroke,
+  type SketchTextStroke,
   type SketchTool,
 } from './sketch';
 import type { Recording } from './useRecorder';
@@ -41,10 +50,21 @@ interface SketchPanelProps {
   onTab?: (backwards: boolean) => void;
 }
 
+/** The tools of the slide's tool bar, plus box and text (on the slide: drag and type). */
+const TOOLS: { tool: SketchTool; icon: IconName; label: string }[] = [
+  { tool: 'pen', icon: 'gesture', label: 'Freihand' },
+  { tool: 'arrow', icon: 'arrow', label: 'Pfeil' },
+  { tool: 'highlighter', icon: 'marker', label: 'Marker' },
+  { tool: 'rect', icon: 'cropSquare', label: 'Box' },
+  { tool: 'text', icon: 'textFields', label: 'Text' },
+  { tool: 'eraser', icon: 'eraser', label: 'Radierer: Striche wegwischen' },
+];
+
 /**
- * The Bild tab: a sheet to sketch on – pen in a few colours, two widths, eraser, undo – and a
- * voice memo that can run while drawing ("hier fehlt noch …"). Sending turns the sketch into a
- * PNG; the memo goes along as the comment's recording.
+ * The Bild tab: a sheet to sketch on with the slide's tools – freehand, arrow, marker, box, text,
+ * eraser – in a few colours and two widths, with undo, and a voice memo that can run while
+ * drawing ("hier fehlt noch …"). Sending turns the sketch into a PNG; the memo goes along as the
+ * comment's recording.
  */
 export function SketchPanel({
   deckId,
@@ -56,7 +76,9 @@ export function SketchPanel({
 }: SketchPanelProps) {
   const palette = sketchPalette(color);
   const [strokes, setStrokes] = useState<SketchStroke[]>([]);
-  const [undone, setUndone] = useState<SketchStroke[]>([]);
+  // Undo and redo step through whole states, so erasing and clearing are undone too.
+  const [past, setPast] = useState<SketchStroke[][]>([]);
+  const [future, setFuture] = useState<SketchStroke[][]>([]);
   const [tool, setTool] = useState<SketchTool>('pen');
   const [penColor, setPenColor] = useState(palette[0] ?? '#141414');
   const [bold, setBold] = useState(false);
@@ -70,28 +92,113 @@ export function SketchPanel({
   }, [autoFocus]);
 
   const report = useEffectEvent((value: Sketch | null) => onChange(value));
-  useEffect(() => report(hasInk(strokes) ? { strokes, memo } : null), [strokes, memo]);
+  useEffect(() => {
+    report(hasInk(strokes) ? { strokes, memo } : null);
+  }, [strokes, memo]);
 
-  const addStroke = (stroke: SketchStroke) => {
-    setStrokes((current) => [...current, stroke]);
-    setUndone([]);
+  const commit = (next: SketchStroke[]) => {
+    setPast([...past, strokes]);
+    setFuture([]);
+    setStrokes(next);
   };
   const undo = () => {
-    const last = strokes[strokes.length - 1];
-    if (!last) return;
-    setStrokes(strokes.slice(0, -1));
-    setUndone([...undone, last]);
+    const previous = past.at(-1);
+    if (!previous) return;
+    setPast(past.slice(0, -1));
+    setFuture([...future, strokes]);
+    setStrokes(previous);
   };
   const redo = () => {
-    const next = undone[undone.length - 1];
+    const next = future.at(-1);
     if (!next) return;
-    setUndone(undone.slice(0, -1));
-    setStrokes([...strokes, next]);
+    setFuture(future.slice(0, -1));
+    setPast([...past, strokes]);
+    setStrokes(next);
   };
-  const clear = () => {
-    setStrokes([]);
-    setUndone([]);
-  };
+
+  const size = bold ? 'bold' : 'fine';
+  const lineWidth = tool === 'text' || tool === 'eraser' ? 0 : SKETCH_WIDTHS[tool][size];
+
+  const toolButtons = TOOLS.map((option) => (
+    <IconButton
+      key={option.tool}
+      size="sm"
+      icon={option.icon}
+      label={option.label}
+      active={tool === option.tool}
+      onClick={() => setTool(option.tool)}
+    />
+  ));
+
+  const colorButtons = (
+    <>
+      {palette.map((swatch) => {
+        const selected = tool !== 'eraser' && swatch === penColor;
+        return (
+          <button
+            key={swatch}
+            type="button"
+            aria-label={`Farbe ${swatch}`}
+            aria-pressed={selected}
+            title="Farbe"
+            onClick={() => {
+              setPenColor(swatch);
+              if (tool === 'eraser') setTool('pen');
+            }}
+            className="flex size-7 items-center justify-center rounded-full hover:bg-white/10"
+          >
+            <span
+              className={cn(
+                'size-4 rounded-full shadow-[inset_0_0_0_1px_rgb(255_255_255/0.2)]',
+                selected && 'ring-2 ring-white/80 ring-offset-2 ring-offset-[#1f1f1f]',
+              )}
+              style={{ backgroundColor: swatch }}
+            />
+          </button>
+        );
+      })}
+      <button
+        type="button"
+        aria-label={bold ? 'Dünne Linie, kleine Schrift' : 'Dicke Linie, große Schrift'}
+        title={bold ? 'Dünn' : 'Dick'}
+        aria-pressed={bold}
+        onClick={() => setBold((value) => !value)}
+        className={cn(
+          'flex size-7 items-center justify-center rounded-control-sm hover:bg-white/10',
+          bold && 'bg-white/15',
+        )}
+      >
+        <span className={cn('rounded-full bg-fg', bold ? 'size-2.5' : 'size-1')} aria-hidden />
+      </button>
+    </>
+  );
+
+  const actionButtons = (big: boolean) => (
+    <>
+      <IconButton
+        size="sm"
+        icon="undo"
+        label="Rückgängig (⌘Z)"
+        disabled={past.length === 0}
+        onClick={undo}
+      />
+      <IconButton
+        size="sm"
+        icon="delete"
+        label="Alles löschen"
+        disabled={strokes.length === 0}
+        onClick={() => commit([])}
+      />
+      <IconButton
+        size="sm"
+        icon={big ? 'closeFullscreen' : 'openInFull'}
+        label={big ? 'Verkleinern (Esc)' : 'Groß zeichnen'}
+        onClick={() => setExpanded(!big)}
+      />
+    </>
+  );
+
+  const divider = <span aria-hidden className="mx-1 h-5 w-px bg-white/10" />;
 
   /** Canvas and tools – inline in the composer, and again in the big view (same strokes). */
   const sheet = (big: boolean) => (
@@ -101,107 +208,46 @@ export function SketchPanel({
         aspect={aspect}
         tool={tool}
         color={penColor}
-        width={tool === 'eraser' ? ERASER_WIDTH : bold ? SKETCH_WIDTHS.bold : SKETCH_WIDTHS.fine}
-        onStroke={addStroke}
+        width={lineWidth}
+        fontSize={SKETCH_FONT_SIZES[size]}
+        onCommit={commit}
         big={big}
       />
 
-      <div
-        role="toolbar"
-        aria-label="Zeichenwerkzeuge"
-        className={cn(
-          'flex items-center gap-1 p-1',
-          // Big: a floating glass pill like the viewer's tool bar.
-          big ? 'glass-control rounded-panel' : 'rounded-control bg-white/5',
-        )}
-      >
-        <IconButton
-          size="sm"
-          icon="gesture"
-          label="Stift"
-          active={tool === 'pen'}
-          onClick={() => setTool('pen')}
-        />
-        <IconButton
-          size="sm"
-          icon="eraser"
-          label="Radierer"
-          active={tool === 'eraser'}
-          onClick={() => setTool('eraser')}
-        />
-        <span aria-hidden className="mx-1 h-5 w-px bg-white/10" />
-        {palette.map((swatch) => {
-          const selected = tool === 'pen' && swatch === penColor;
-          return (
-            <button
-              key={swatch}
-              type="button"
-              aria-label={`Farbe ${swatch}`}
-              aria-pressed={selected}
-              title="Farbe"
-              onClick={() => {
-                setPenColor(swatch);
-                setTool('pen');
-              }}
-              className="flex size-7 items-center justify-center rounded-full hover:bg-white/10"
-            >
-              <span
-                className={cn(
-                  'size-4 rounded-full shadow-[inset_0_0_0_1px_rgb(255_255_255/0.2)]',
-                  selected && 'ring-2 ring-white/80 ring-offset-2 ring-offset-[#1f1f1f]',
-                )}
-                style={{ backgroundColor: swatch }}
-              />
-            </button>
-          );
-        })}
-        <button
-          type="button"
-          aria-label={bold ? 'Dünne Linie' : 'Dicke Linie'}
-          title={bold ? 'Dünn' : 'Dick'}
-          aria-pressed={bold}
-          onClick={() => {
-            setBold((value) => !value);
-            setTool('pen');
-          }}
-          className={cn(
-            'flex size-7 items-center justify-center rounded-control-sm hover:bg-white/10',
-            bold && 'bg-white/15',
-          )}
+      {big ? (
+        // A floating glass pill like the viewer's tool bar.
+        <div
+          role="toolbar"
+          aria-label="Zeichenwerkzeuge"
+          className="glass-control flex items-center gap-1 rounded-panel p-1"
         >
-          <span className={cn('rounded-full bg-fg', bold ? 'size-2.5' : 'size-1')} aria-hidden />
-        </button>
-        {big ? (
-          <span aria-hidden className="mx-1 h-5 w-px bg-white/10" />
-        ) : (
-          <span className="flex-1" />
-        )}
-        <IconButton
-          size="sm"
-          icon="undo"
-          label="Rückgängig (⌘Z)"
-          disabled={strokes.length === 0}
-          onClick={undo}
-        />
-        <IconButton
-          size="sm"
-          icon="delete"
-          label="Alles löschen"
-          disabled={strokes.length === 0}
-          onClick={clear}
-        />
-        <IconButton
-          size="sm"
-          icon={big ? 'closeFullscreen' : 'openInFull'}
-          label={big ? 'Verkleinern (Esc)' : 'Groß zeichnen'}
-          onClick={() => setExpanded(!big)}
-        />
-      </div>
+          {toolButtons}
+          {divider}
+          {colorButtons}
+          {divider}
+          {actionButtons(true)}
+        </div>
+      ) : (
+        // The composer is narrow: tools and actions, then the colours below.
+        <div
+          role="toolbar"
+          aria-label="Zeichenwerkzeuge"
+          className="flex flex-col gap-0.5 rounded-control bg-white/5 p-1"
+        >
+          <div className="flex items-center gap-1">
+            {toolButtons}
+            <span className="flex-1" />
+            {actionButtons(false)}
+          </div>
+          <div className="flex items-center gap-1">{colorButtons}</div>
+        </div>
+      )}
     </>
   );
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.nativeEvent.isComposing) return;
+    // Writing on the sheet: the text field's own keys (⌘Z undoes typing).
+    if (event.nativeEvent.isComposing || isTypingTarget(event.target)) return;
     const mod = event.metaKey || event.ctrlKey;
     if (mod && event.key.toLowerCase() === 'z') {
       // Before the viewer's own ⌘Z, which undoes strokes on the slide.
@@ -312,28 +358,52 @@ function SketchFullscreen({
   );
 }
 
-/** The sheet: vector strokes repainted on every change, sharp at any pixel ratio. */
+/** Text being written: a new box (`index` null) or an existing one taken off the sheet. */
+type TextEdit = Omit<SketchTextStroke, 'tool'> & { index: number | null };
+
+/** Room a new text box keeps to the right edge, and its margin there (relative). */
+const TEXT_ROOM = 0.15;
+const TEXT_MARGIN = 0.02;
+
+/**
+ * The sheet: vector strokes repainted on every change, sharp at any pixel ratio. Drawing tools
+ * add a stroke, the eraser wipes whole strokes, the text tool opens a field on the sheet (on a
+ * text: edits it). Every change goes to `onCommit` as the new list – one undo step each.
+ */
 function SketchCanvas({
   strokes,
   aspect,
   tool,
   color,
   width,
-  onStroke,
+  fontSize,
+  onCommit,
   big = false,
 }: {
-  strokes: readonly SketchStroke[];
+  strokes: SketchStroke[];
   aspect: number;
   tool: SketchTool;
   color: string;
+  /** Line width of the drawing tools (relative to the canvas width). */
   width: number;
-  onStroke: (stroke: SketchStroke) => void;
+  /** Size of new text (relative to the canvas height). */
+  fontSize: number;
+  onCommit: (strokes: SketchStroke[]) => void;
   /** In the big view: the sheet floats on the backdrop. */
   big?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
-  const [current, setCurrent] = useState<SketchStroke | null>(null);
+  const [current, setCurrent] = useState<SketchPathStroke | null>(null);
+  /** Strokes the eraser has touched in this drag – hidden now, removed when the drag ends. */
+  const [erasing, setErasing] = useState<ReadonlySet<number> | null>(null);
+  const [editing, setEditingState] = useState<TextEdit | null>(null);
+  // Finishing a text can come twice (pointer down elsewhere, then blur): only the first counts.
+  const editingRef = useRef<TextEdit | null>(null);
+  const setEditing = (next: TextEdit | null) => {
+    editingRef.current = next;
+    setEditingState(next);
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -353,55 +423,224 @@ function SketchCanvas({
     const ratio = window.devicePixelRatio || 1;
     canvas.width = Math.round(size.width * ratio);
     canvas.height = Math.round(size.height * ratio);
-    renderSketch(context, current ? [...strokes, current] : strokes, canvas.width, canvas.height);
-  }, [strokes, current, size]);
+    const visible = strokes.filter((_, index) => !erasing?.has(index) && index !== editing?.index);
+    renderSketch(context, current ? [...visible, current] : visible, canvas.width, canvas.height);
+  }, [strokes, current, erasing, editing, size]);
 
-  const pointAt = (event: PointerEvent<HTMLCanvasElement>): [number, number] => {
-    const box = event.currentTarget.getBoundingClientRect();
-    const clamp = (value: number) => Math.min(1, Math.max(0, value));
-    return [
-      clamp((event.clientX - box.left) / box.width),
-      clamp((event.clientY - box.top) / box.height),
-    ];
+  /** Pointer position relative to the sheet (0–1) and in CSS px. */
+  const locate = (event: { clientX: number; clientY: number }) => {
+    const box = canvasRef.current?.getBoundingClientRect();
+    if (!box) return null;
+    const x = Math.min(1, Math.max(0, (event.clientX - box.left) / box.width));
+    const y = Math.min(1, Math.max(0, (event.clientY - box.top) / box.height));
+    return {
+      point: [x, y] as [number, number],
+      px: [x * box.width, y * box.height] as [number, number],
+      box,
+    };
+  };
+
+  const eraseAt = (event: { clientX: number; clientY: number }, touched: Set<number>) => {
+    const context = canvasRef.current?.getContext('2d');
+    const at = locate(event);
+    if (!context || !at) return;
+    strokes.forEach((stroke, index) => {
+      if (!touched.has(index) && eraserHits(context, stroke, at.px, at.box.width, at.box.height))
+        touched.add(index);
+    });
+  };
+
+  const finishText = () => {
+    const edit = editingRef.current;
+    if (!edit) return;
+    setEditing(null);
+    const { index, ...rest } = edit;
+    const text = rest.text.trim();
+    const stroke: SketchTextStroke = { tool: 'text', ...rest, text };
+    if (index === null) {
+      if (text) onCommit([...strokes, stroke]);
+      return;
+    }
+    const before = strokes[index];
+    if (!text) onCommit(strokes.filter((_, other) => other !== index));
+    else if (before?.tool !== 'text' || before.text !== text)
+      onCommit(strokes.map((other, at) => (at === index ? stroke : other)));
+  };
+
+  const startText = (event: PointerEvent<HTMLCanvasElement>) => {
+    const context = canvasRef.current?.getContext('2d');
+    const at = locate(event);
+    if (!context || !at) return;
+    const index = textAt(context, strokes, at.px, at.box.width, at.box.height);
+    const existing = strokes[index];
+    if (existing?.tool === 'text') {
+      setEditing({ ...existing, index });
+      return;
+    }
+    const x = Math.min(at.point[0], 1 - TEXT_ROOM);
+    // The first line fits on the sheet.
+    const y = Math.min(at.point[1], Math.max(0, 1 - fontSize * SKETCH_LINE_HEIGHT));
+    setEditing({ index: null, color, x, y, w: 1 - x - TEXT_MARGIN, text: '', fontSize });
   };
 
   return (
-    <canvas
-      ref={canvasRef}
-      aria-label="Zeichenfläche"
-      className={cn(
-        'w-full touch-none',
-        big
-          ? 'rounded-panel shadow-(--shadow-float)'
-          : 'rounded-control shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]',
-        tool === 'eraser' ? 'cursor-cell' : 'cursor-crosshair',
+    <div className="relative w-full" style={{ aspectRatio: aspect }}>
+      <canvas
+        ref={canvasRef}
+        aria-label="Zeichenfläche"
+        className={cn(
+          'absolute inset-0 size-full touch-none',
+          big
+            ? 'rounded-panel shadow-(--shadow-float)'
+            : 'rounded-control shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]',
+          tool === 'eraser' ? 'cursor-cell' : tool === 'text' ? 'cursor-text' : 'cursor-crosshair',
+        )}
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          // A click beside the text being written finishes it.
+          if (editingRef.current) {
+            finishText();
+            return;
+          }
+          if (tool === 'text') {
+            startText(event);
+            return;
+          }
+          event.currentTarget.setPointerCapture(event.pointerId);
+          if (tool === 'eraser') {
+            const touched = new Set<number>();
+            eraseAt(event, touched);
+            setErasing(touched);
+            return;
+          }
+          const at = locate(event);
+          if (at) setCurrent({ tool, color, width, points: [at.point] });
+        }}
+        onPointerMove={(event) => {
+          if (erasing) {
+            const touched = new Set(erasing);
+            eraseAt(event, touched);
+            if (touched.size !== erasing.size) setErasing(touched);
+            return;
+          }
+          if (!current) return;
+          const at = locate(event);
+          if (!at) return;
+          // Arrow and box: from where the drag started to the pointer.
+          if (isTwoPointTool(current.tool)) {
+            setCurrent({ ...current, points: [current.points[0] ?? at.point, at.point] });
+            return;
+          }
+          // Coalesced events: smooth lines even when the main thread is busy.
+          const events = event.nativeEvent.getCoalescedEvents?.() ?? [event.nativeEvent];
+          let points = current.points;
+          for (const sample of events) {
+            const position = locate(sample);
+            if (position) points = addPoint(points, position.point);
+          }
+          if (points !== current.points) setCurrent({ ...current, points });
+        }}
+        onPointerUp={() => {
+          if (erasing) {
+            if (erasing.size > 0) onCommit(strokes.filter((_, index) => !erasing.has(index)));
+            setErasing(null);
+            return;
+          }
+          if (!current) return;
+          setCurrent(null);
+          const [start, end] = [current.points[0], current.points.at(-1)];
+          // A click with the arrow or box draws nothing.
+          if (
+            isTwoPointTool(current.tool) &&
+            (!start || !end || Math.hypot(end[0] - start[0], end[1] - start[1]) < 0.01)
+          )
+            return;
+          onCommit([...strokes, current]);
+        }}
+        onPointerCancel={() => {
+          setCurrent(null);
+          setErasing(null);
+        }}
+      />
+      {editing && size.height > 0 && (
+        <TextEditor
+          edit={editing}
+          height={size.height}
+          onChange={(text) => setEditing({ ...editing, text })}
+          onDone={finishText}
+          onCancel={() => {
+            // An existing text stays as it was.
+            setEditing(null);
+          }}
+        />
       )}
-      style={{ aspectRatio: aspect }}
-      onPointerDown={(event) => {
-        if (event.button !== 0) return;
-        event.preventDefault();
-        event.currentTarget.setPointerCapture(event.pointerId);
-        setCurrent({ tool, color, width, points: [pointAt(event)] });
-      }}
-      onPointerMove={(event) => {
-        if (!current) return;
-        // Coalesced events: smooth lines even when the main thread is busy.
-        const events = event.nativeEvent.getCoalescedEvents?.() ?? [event.nativeEvent];
-        const box = event.currentTarget.getBoundingClientRect();
-        let points = current.points;
-        for (const sample of events) {
-          points = addPoint(points, [
-            Math.min(1, Math.max(0, (sample.clientX - box.left) / box.width)),
-            Math.min(1, Math.max(0, (sample.clientY - box.top) / box.height)),
-          ]);
+    </div>
+  );
+}
+
+/** The field for text on the sheet: same font, size and wrapping as the text drawn later. */
+function TextEditor({
+  edit,
+  height,
+  onChange,
+  onDone,
+  onCancel,
+}: {
+  edit: TextEdit;
+  /** Height of the sheet in px – the font size is relative to it. */
+  height: number;
+  onChange: (text: string) => void;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const field = ref.current;
+    if (!field) return;
+    field.focus({ preventScroll: true });
+    field.setSelectionRange(field.value.length, field.value.length);
+  }, []);
+
+  // Grows with the text.
+  useLayoutEffect(() => {
+    const field = ref.current;
+    if (!field) return;
+    field.style.height = 'auto';
+    field.style.height = `${field.scrollHeight}px`;
+  }, [edit.text, height]);
+
+  return (
+    <textarea
+      ref={ref}
+      aria-label="Text auf dem Bild"
+      rows={1}
+      value={edit.text}
+      onChange={(event) => onChange(event.target.value)}
+      onBlur={onDone}
+      onKeyDown={(event) => {
+        if (event.nativeEvent.isComposing) return;
+        if (event.key === 'Escape') {
+          // Not the big view's dialog: Esc only drops the text.
+          event.preventDefault();
+          event.stopPropagation();
+          onCancel();
+        } else if (event.key === 'Enter' && !event.shiftKey) {
+          event.preventDefault();
+          onDone();
         }
-        if (points !== current.points) setCurrent({ ...current, points });
       }}
-      onPointerUp={() => {
-        if (current) onStroke(current);
-        setCurrent(null);
+      className="absolute resize-none overflow-hidden rounded-[2px] border-0 bg-transparent p-0 outline-1 outline-offset-2 outline-black/30 outline-dashed"
+      style={{
+        left: `${edit.x * 100}%`,
+        top: `${edit.y * 100}%`,
+        width: `${edit.w * 100}%`,
+        font: sketchFont(edit.fontSize, height),
+        lineHeight: SKETCH_LINE_HEIGHT,
+        color: edit.color,
+        caretColor: edit.color,
       }}
-      onPointerCancel={() => setCurrent(null)}
     />
   );
 }
