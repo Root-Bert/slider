@@ -142,7 +142,7 @@ function RecorderBody({
           : 'Videokommentar – Leertaste: Aufnahme starten/pausieren, ↵: beenden'
       }
       onKeyDown={onKeyDown}
-      className="flex flex-col gap-2 rounded-control outline-none focus-visible:shadow-[0_0_0_1px_rgb(255_255_255/0.35)]"
+      className="flex flex-col gap-2 rounded-control outline-none"
     >
       {onSourceChange && !recording && !recordingNow && (
         <SegmentedControl
