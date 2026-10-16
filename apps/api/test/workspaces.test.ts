@@ -559,6 +559,11 @@ describe('invitation mails', () => {
     expect(mail?.text).toContain(created.url);
     expect(mail?.html).toContain(`href="${created.url}"`);
     expect(JSON.stringify(mail)).not.toContain('robert@q4-team.de');
+    // The logo travels inline with the mail.
+    expect(mail?.html).toContain('src="cid:slider-logo"');
+    expect(mail?.attachments).toEqual([
+      expect.objectContaining({ cid: 'slider-logo', contentType: 'image/png' }),
+    ]);
 
     // Links are passed on by hand, never mailed.
     expect((await invite({})).emailSent).toBe(false);
