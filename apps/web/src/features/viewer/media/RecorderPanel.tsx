@@ -7,7 +7,7 @@ import {
   useState,
   type KeyboardEvent,
 } from 'react';
-import { Button, cn, Icon, SegmentedControl, Spinner, type Segment } from '@/ui';
+import { Button, cn, Icon, Kbd, SegmentedControl, Spinner, type Segment } from '@/ui';
 import { AudioPlayer, VideoPlayer } from './MediaPlayer';
 import { canShareScreen, formatBytes, formatDuration, type VideoSource } from './recording';
 import { useMediaUsage } from './useMediaComment';
@@ -192,65 +192,63 @@ function RecorderBody({
             </Button>
           </div>
         </div>
-      ) : (
+      ) : recordingNow ? (
         <div className="flex items-center gap-3 rounded-control bg-black/25 py-1.5 pr-3 pl-1.5">
           <button
             ref={recordButtonRef}
             type="button"
-            onClick={recordingNow ? stop : () => void start()}
-            disabled={state.status === 'requesting'}
-            aria-label={recordingNow ? 'Aufnahme beenden' : 'Aufnahme starten'}
-            title={recordingNow ? 'Aufnahme beenden' : 'Aufnahme starten'}
-            className={cn(
-              'flex size-9 shrink-0 items-center justify-center rounded-full transition-colors',
-              recordingNow
-                ? 'bg-danger text-white hover:bg-danger/85'
-                : 'bg-danger/15 text-danger hover:bg-danger/25',
-            )}
+            onClick={stop}
+            aria-label="Aufnahme beenden"
+            title="Aufnahme beenden (↵)"
+            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-danger text-white transition-colors hover:bg-danger/85"
           >
-            {state.status === 'requesting' ? (
-              <Spinner size={16} />
-            ) : (
-              <Icon name={recordingNow ? 'stop' : kind === 'audio' ? 'mic' : 'record'} size={20} />
-            )}
+            <Icon name="stop" size={20} />
           </button>
-          {recordingNow ? (
-            <>
-              <button
-                type="button"
-                onClick={paused ? resume : pause}
-                aria-label={paused ? 'Aufnahme fortsetzen' : 'Aufnahme pausieren'}
-                title={paused ? 'Fortsetzen (Leertaste)' : 'Pausieren (Leertaste)'}
-                className="flex size-7 shrink-0 items-center justify-center rounded-full text-fg-muted hover:bg-white/10 hover:text-fg"
-              >
-                <Icon name={paused ? 'playArrow' : 'pause'} size={18} />
-              </button>
-              <LiveLevels levels={levels} paused={paused} />
-              <span
-                className={cn(
-                  'shrink-0 text-xs tabular-nums',
-                  remaining < 30_000 ? 'text-warning' : 'text-fg-muted',
-                )}
-                title="Höchstens 5 Minuten"
-              >
-                {formatDuration(elapsedMs)} / {formatDuration(MAX_MEDIA_DURATION_MS)}
-              </span>
-            </>
-          ) : (
-            <span className="text-xs text-fg-muted">
-              {state.status === 'requesting'
-                ? kind === 'audio'
-                  ? 'Zugriff auf Mikrofon …'
-                  : source === 'camera'
-                    ? 'Zugriff auf Kamera …'
-                    : 'Bildschirm auswählen …'
-                : kind === 'audio'
-                  ? 'Sprachkommentar aufnehmen'
-                  : IDLE_LABELS[source]}
-              {state.status !== 'requesting' && <span className="text-fg-faint"> (Leertaste)</span>}
-            </span>
-          )}
+          <button
+            type="button"
+            onClick={paused ? resume : pause}
+            aria-label={paused ? 'Aufnahme fortsetzen' : 'Aufnahme pausieren'}
+            title={paused ? 'Fortsetzen (Leertaste)' : 'Pausieren (Leertaste)'}
+            className="flex size-7 shrink-0 items-center justify-center rounded-full text-fg-muted hover:bg-white/10 hover:text-fg"
+          >
+            <Icon name={paused ? 'playArrow' : 'pause'} size={18} />
+          </button>
+          <LiveLevels levels={levels} paused={paused} />
+          <span
+            className={cn(
+              'shrink-0 text-xs tabular-nums',
+              remaining < 30_000 ? 'text-warning' : 'text-fg-muted',
+            )}
+            title="Höchstens 5 Minuten"
+          >
+            {formatDuration(elapsedMs)} / {formatDuration(MAX_MEDIA_DURATION_MS)}
+          </span>
         </div>
+      ) : (
+        <Button
+          ref={recordButtonRef}
+          variant="secondary"
+          onClick={() => void start()}
+          disabled={state.status === 'requesting'}
+          title="Aufnahme starten (Leertaste)"
+          className="w-full"
+        >
+          {state.status === 'requesting' ? (
+            <Spinner size={16} />
+          ) : (
+            <Icon name={kind === 'audio' ? 'mic' : 'record'} size={18} className="text-danger" />
+          )}
+          {state.status === 'requesting'
+            ? kind === 'audio'
+              ? 'Zugriff auf Mikrofon …'
+              : source === 'camera'
+                ? 'Zugriff auf Kamera …'
+                : 'Bildschirm auswählen …'
+            : kind === 'audio'
+              ? 'Sprachkommentar aufnehmen'
+              : IDLE_LABELS[source]}
+          {state.status !== 'requesting' && <Kbd className="-mr-1">Leertaste</Kbd>}
+        </Button>
       )}
 
       <StorageHint deckId={deckId} />
