@@ -27,16 +27,29 @@ export function containRect(source: Size, frame: Size): Rect {
   return { x: (frame.width - width) / 2, y: (frame.height - height) / 2, width, height };
 }
 
-/** The camera bubble: a circle in the bottom right corner, a quarter of the frame's height. */
+/** The camera bubble's shape: landscape 4:3, its corners rounded by this share of its height. */
+export const BUBBLE_ASPECT = 4 / 3;
+export const BUBBLE_CORNER = 0.14;
+
+/** The camera bubble: a 4:3 rectangle in the bottom right corner, a quarter of the frame's height. */
 export function bubbleRect(frame: Size): Rect {
-  const size = Math.round(Math.min(frame.width, frame.height) * 0.26);
+  const height = Math.round(Math.min(frame.width, frame.height) * 0.26);
+  const width = Math.round(height * BUBBLE_ASPECT);
   const margin = Math.round(Math.min(frame.width, frame.height) * 0.04);
   return {
-    x: frame.width - size - margin,
-    y: frame.height - size - margin,
-    width: size,
-    height: size,
+    x: frame.width - width - margin,
+    y: frame.height - height - margin,
+    width,
+    height,
   };
+}
+
+/** The part of a `source` picture that fills `target` without distortion, centred (cover). */
+export function coverCrop(source: Size, target: Size): Rect {
+  const scale = Math.max(target.width / source.width, target.height / source.height);
+  const width = target.width / scale;
+  const height = target.height / scale;
+  return { x: (source.width - width) / 2, y: (source.height - height) / 2, width, height };
 }
 
 function playingVideo(stream: MediaStream): HTMLVideoElement {
@@ -49,7 +62,7 @@ function playingVideo(stream: MediaStream): HTMLVideoElement {
 }
 
 /**
- * The shared screen with the camera as a round bubble in the corner, drawn onto a canvas and
+ * The shared screen with the camera as a rounded rectangle in the corner, drawn onto a canvas and
  * captured as one video track. The frame size is fixed by the screen at the start – a recorder
  * should not change resolution midway; a window shared later is letterboxed into it.
  */
@@ -78,21 +91,19 @@ export function composeScreenAndCamera(screen: MediaStream, camera: MediaStream)
     }
     const { videoWidth, videoHeight } = cameraVideo;
     if (videoWidth > 0) {
-      // Cover: the middle square of the camera picture fills the circle.
-      const side = Math.min(videoWidth, videoHeight);
-      const radius = bubble.width / 2;
-      const cx = bubble.x + radius;
-      const cy = bubble.y + radius;
+      // Cover: the middle of the camera picture fills the rounded rectangle.
+      const crop = coverCrop({ width: videoWidth, height: videoHeight }, bubble);
+      const radius = bubble.height * BUBBLE_CORNER;
       context.save();
       context.beginPath();
-      context.arc(cx, cy, radius, 0, Math.PI * 2);
+      context.roundRect(bubble.x, bubble.y, bubble.width, bubble.height, radius);
       context.clip();
       context.drawImage(
         cameraVideo,
-        (videoWidth - side) / 2,
-        (videoHeight - side) / 2,
-        side,
-        side,
+        crop.x,
+        crop.y,
+        crop.width,
+        crop.height,
         bubble.x,
         bubble.y,
         bubble.width,
@@ -100,7 +111,13 @@ export function composeScreenAndCamera(screen: MediaStream, camera: MediaStream)
       );
       context.restore();
       context.beginPath();
-      context.arc(cx, cy, radius - 1.5, 0, Math.PI * 2);
+      context.roundRect(
+        bubble.x + 1.5,
+        bubble.y + 1.5,
+        bubble.width - 3,
+        bubble.height - 3,
+        radius - 1.5,
+      );
       context.lineWidth = 3;
       context.strokeStyle = 'rgba(255, 255, 255, 0.85)';
       context.stroke();
