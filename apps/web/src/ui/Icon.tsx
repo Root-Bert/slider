@@ -1,4 +1,5 @@
 import type { SVGProps } from 'react';
+import { cn } from './cn';
 import { iconPaths, type IconName } from './icon-paths';
 
 export type { IconName };
@@ -11,7 +12,7 @@ interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'name'> {
   label?: string;
 }
 
-export function Icon({ name, size = 24, label, ...props }: IconProps) {
+export function Icon({ name, size = 24, label, className, ...props }: IconProps) {
   return (
     <svg
       width={size}
@@ -22,6 +23,8 @@ export function Icon({ name, size = 24, label, ...props }: IconProps) {
       aria-label={label}
       role={label ? 'img' : undefined}
       focusable="false"
+      // Never squeezed by a flex row whose label runs out of room.
+      className={cn('shrink-0', className)}
       {...props}
     >
       <path d={iconPaths[name]} />
