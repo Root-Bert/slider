@@ -41,22 +41,18 @@
   /* Spread for maximal distinctness (OKLab), incl. against PowerPoint orange. */
   --color-accent-red: #ff1f5a;
   --color-accent-yellow: #ffd000;
-  --color-accent-lime: #a8ff3c;
   --color-accent-green: #00c853;
   --color-accent-cyan: #00e0ff;
   --color-accent-blue: #0048ff;
   --color-accent-violet: #a259ff;
-  --color-accent-pink: #ff6be6;
 
   /* Avatar rings (presence colours) */
   --color-ring-red: #ffd4b8;
   --color-ring-yellow: #fff7b8;
-  --color-ring-lime: #e7ffc8;
   --color-ring-green: #b8f0cf;
   --color-ring-cyan: #b8f6ff;
   --color-ring-blue: #c8f1ff;
   --color-ring-violet: #dad0fc;
-  --color-ring-pink: #ffd5f8;
   --color-ring-powerpoint: #f6c9b8;
 
   /*

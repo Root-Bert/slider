@@ -20,12 +20,10 @@ export const rectSchema = z.object({ x: unit, y: unit, w: unit, h: unit });
 export const ACCENT_COLORS = [
   'red',
   'yellow',
-  'lime',
   'green',
   'cyan',
   'blue',
   'violet',
-  'pink',
 ] as const;
 export const accentColorSchema = z.enum(ACCENT_COLORS);
 export type AccentColor = z.infer<typeof accentColorSchema>;

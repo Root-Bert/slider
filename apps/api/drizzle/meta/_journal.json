@@ -169,6 +169,13 @@
       "when": 1792105543503,
       "tag": "0023_deck_folders",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792151304971,
+      "tag": "0024_merge_close_colors",
+      "breakpoints": true
     }
   ]
 }

@@ -8,12 +8,10 @@ import type { AccentColor, AuthorColor } from '@slider/shared';
 const ACCENT: Record<AuthorColor, string> = {
   red: 'var(--color-accent-red)',
   yellow: 'var(--color-accent-yellow)',
-  lime: 'var(--color-accent-lime)',
   green: 'var(--color-accent-green)',
   cyan: 'var(--color-accent-cyan)',
   blue: 'var(--color-accent-blue)',
   violet: 'var(--color-accent-violet)',
-  pink: 'var(--color-accent-pink)',
   // PowerPoint authors without a Slider account.
   powerpoint: 'var(--color-powerpoint)',
 };
@@ -21,12 +19,10 @@ const ACCENT: Record<AuthorColor, string> = {
 const RING: Record<AuthorColor, string> = {
   red: 'var(--color-ring-red)',
   yellow: 'var(--color-ring-yellow)',
-  lime: 'var(--color-ring-lime)',
   green: 'var(--color-ring-green)',
   cyan: 'var(--color-ring-cyan)',
   blue: 'var(--color-ring-blue)',
   violet: 'var(--color-ring-violet)',
-  pink: 'var(--color-ring-pink)',
   powerpoint: 'var(--color-ring-powerpoint)',
 };
 
@@ -44,15 +40,13 @@ export const ringColor = (color: AuthorColor): string => RING[color];
 export const ACCENT_COLOR_NAMES: Record<AccentColor, string> = {
   red: 'Rot',
   yellow: 'Gelb',
-  lime: 'Limette',
   green: 'Grün',
   cyan: 'Cyan',
   blue: 'Blau',
   violet: 'Violett',
-  pink: 'Pink',
 };
 
-const LIGHT: ReadonlySet<AuthorColor> = new Set(['yellow', 'lime', 'green', 'cyan', 'pink']);
+const LIGHT: ReadonlySet<AuthorColor> = new Set(['yellow', 'green', 'cyan']);
 
 /** Bright accents need black text/icons on top; the rest take white. */
 export const isLightAccent = (color: AuthorColor): boolean => LIGHT.has(color);

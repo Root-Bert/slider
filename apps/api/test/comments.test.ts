@@ -208,7 +208,7 @@ describe('text on the slide ("Text auf Folie")', () => {
     ['a zero-width box', { w: 0 }],
     ['a tiny font', { fontSize: 0.001 }],
     ['a huge font', { fontSize: 0.5 }],
-    ['an unknown colour', { color: 'green' }],
+    ['an unknown colour', { color: 'pink' }],
     ['text that is too long', { text: 'x'.repeat(2001) }],
   ])('rejects %s', async (_, overrides) => {
     const res = await post(textComment(textStroke(overrides)));
@@ -568,7 +568,7 @@ describe('own colour (PATCH /me)', () => {
   });
 
   it('rejects unknown colours', async () => {
-    expect((await patchMe('green')).status).toBe(400);
+    expect((await patchMe('pink')).status).toBe(400);
   });
 });
 

@@ -11,6 +11,7 @@ const MIGRATIONS_DIR = fileURLToPath(new URL('../drizzle', import.meta.url));
 const WORKSPACES_TAG = '0004_workspaces';
 const PLANS_TAG = '0005_plans';
 const PASSKEYS_TAG = '0006_passkeys';
+const CLOSE_COLORS_TAG = '0024_merge_close_colors';
 
 let client: PGlite | null = null;
 let tmp: string | null = null;
@@ -160,5 +161,49 @@ describe('migrations 0006_passkeys … 0020_drop_email_login', () => {
       'SELECT count(*)::int AS n FROM passkeys',
     );
     expect(left[0]?.n).toBe(0);
+  });
+});
+
+describe('migration 0024_merge_close_colors', () => {
+  it('folds pink into violet and lime into green for accounts, comment authors and strokes', async () => {
+    client = new PGlite();
+    const db = drizzle({ client });
+    await migrate(db, { migrationsFolder: await migrationsBefore(CLOSE_COLORS_TAG) });
+    await client.exec(`
+      INSERT INTO users (id, name, email, color) VALUES
+        ('u-pink', 'Pia', 'pia@q4-team.de', 'pink'),
+        ('u-lime', 'Lio', 'lio@q4-team.de', 'lime'),
+        ('u-red', 'Rea', 'rea@q4-team.de', 'red');
+      INSERT INTO workspaces (id, name, slug, created_by) VALUES ('w1', 'Team', 'team', 'u-red');
+      INSERT INTO decks (id, workspace_id, owner_id, title, file_name, source, import_state)
+        VALUES ('d1', 'w1', 'u-red', 'Q4', 'q4.pptx', 'upload', '{"status":"ready"}');
+      INSERT INTO comments (id, deck_id, author, body, anchor, strokes, source) VALUES
+        ('c1', 'd1', '{"id":"u-pink","name":"Pia","type":"owner","color":"pink"}', 'a',
+          '{"type":"point"}',
+          '[{"tool":"pen","color":"pink","points":[]},{"tool":"pen","color":"red","points":[]},{"tool":"pen","color":"lime","points":[]}]',
+          'slider'),
+        ('c2', 'd1', '{"id":"u-red","name":"Rea","type":"owner","color":"red"}', 'b',
+          '{"type":"point"}', '[]', 'slider');
+    `);
+
+    await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+
+    const { rows: users } = await client.query<{ id: string; color: string }>(
+      'SELECT id, color FROM users ORDER BY id',
+    );
+    expect(users).toEqual([
+      { id: 'u-lime', color: 'green' },
+      { id: 'u-pink', color: 'violet' },
+      { id: 'u-red', color: 'red' },
+    ]);
+    const { rows: comments } = await client.query<{ color: string; strokes: string[] }>(
+      `SELECT author->>'color' AS color,
+         ARRAY(SELECT s->>'color' FROM jsonb_array_elements(strokes) s) AS strokes
+       FROM comments ORDER BY id`,
+    );
+    expect(comments).toEqual([
+      { color: 'violet', strokes: ['violet', 'red', 'green'] },
+      { color: 'red', strokes: [] },
+    ]);
   });
 });
