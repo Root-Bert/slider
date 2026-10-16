@@ -3,7 +3,7 @@ import type { DeckFolder } from '@slider/shared';
 import type { Executor } from '../db/client';
 import { deckFolders, type DeckFolderRow } from '../db/schema';
 import { notFound } from '../http/errors';
-import { requireRole } from './workspaces';
+import { requireRole } from './workspaces/roles';
 
 /** Members and up sort decks into folders; viewers and reviewers only see them. */
 const FOLDER_ROLE = 'member';

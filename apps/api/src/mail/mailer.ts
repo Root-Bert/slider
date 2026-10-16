@@ -1,3 +1,4 @@
+import { flatten, THEME } from '@slider/shared';
 import { createTransport, type Transporter } from 'nodemailer';
 import type { SmtpConfig } from '../config';
 import type { Logger } from '../logger';
@@ -111,20 +112,23 @@ const logo: InlineImage = {
 };
 
 /**
- * Colours of the web app's dark theme (`apps/web/src/styles/index.css`) as solid hex – white at
- * fixed opacities over the canvas, since not every mail client blends `rgba`.
+ * Colours of the web app's dark theme (`THEME` in `@slider/shared`, mirroring
+ * `apps/web/src/styles/index.css`) as solid hex – white at fixed opacities flattened over the
+ * canvas, since not every mail client blends `rgba`.
  */
 const C = {
-  canvas: '#000000',
+  canvas: THEME.canvas,
   /** `dot-grid`: white 14 % dots, 1px, every 22px. */
-  dots: 'rgba(255,255,255,0.14)',
-  hairline: '#1f1f1f', // white ~12 % edge of the card on the canvas
-  fg: '#e6e6e6', // white 90 %
-  muted: '#b3b3b3', // white 70 %
-  subtle: '#808080', // white 50 %
-  faint: '#4d4d4d', // white 30 %
+  dots: `rgba(255,255,255,${THEME.dot})`,
+  // White ~12 % edge of the card on the canvas – brighter than the app's hairline (8 %), kept as
+  // its own value so the card still reads in mail clients.
+  hairline: '#1f1f1f',
+  fg: flatten(THEME.fg.fg), // #e6e6e6
+  muted: flatten(THEME.fg.muted), // #b3b3b3
+  subtle: flatten(THEME.fg.subtle), // #808080
+  faint: flatten(THEME.fg.faint), // #4d4d4d
   /** Primary button: white 90 % with black text. */
-  primary: '#e6e6e6',
+  primary: flatten(THEME.fg.fg),
   onPrimary: '#000000',
 };
 const FONT =

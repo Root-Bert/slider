@@ -17,7 +17,7 @@ import { sha256Hex } from '../import/common';
 import { blobKeys, fileUrl } from '../storage/blob-storage';
 import { toDeckSync } from './deck-sync';
 import { assertDeckSlot } from './plans';
-import { rolesOf } from './workspaces';
+import { rolesOf } from './workspaces/roles';
 
 export interface DeckDtoOptions {
   /** Who is asking, for `permissions`; without it every permission is `false`. */

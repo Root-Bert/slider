@@ -3,7 +3,7 @@ import type { DeckPermissions, Viewer, WorkspaceRole } from '@slider/shared';
 import type { Executor } from '../db/client';
 import { decks, type DeckRow } from '../db/schema';
 import { forbidden, notFound } from '../http/errors';
-import { deckPermissions, getRole, rolesOf } from '../services/workspaces';
+import { deckPermissions, getRole, rolesOf } from '../services/workspaces/roles';
 
 /** `view` ⊂ `comment` ⊂ `own` (= manage: rename, delete, share, new versions). */
 export type DeckRight = 'view' | 'comment' | 'own';
