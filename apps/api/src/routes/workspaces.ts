@@ -5,7 +5,6 @@ import {
   createWorkspaceInputSchema,
   createWorkspaceInviteInputSchema,
   updateMemberInputSchema,
-  shareDeckInputSchema,
   updateWorkspaceInputSchema,
   WORKSPACE_LOGO_MAX_BYTES,
   type JoinResult,
@@ -25,7 +24,6 @@ import {
   foundWorkspace,
   getWorkspace,
   joinByToken,
-  listDeckShares,
   listInvites,
   listMembers,
   listWorkspaces,
@@ -35,7 +33,6 @@ import {
   renameWorkspace,
   revokeInvite,
   setWorkspaceLogo,
-  shareDeck,
   updateMemberRole,
 } from '../services/workspaces';
 
@@ -140,15 +137,6 @@ export function workspacesRoutes(deps: AppDeps) {
         const user = await requireUser(deps, c.var.viewer);
         const input = await readJson(c, createWorkspaceInviteInputSchema);
         return c.json(await createInvite(deps, user, c.req.param('id'), input), 201);
-      })
-      /** Sharing a deck invites into its organisation as `viewer` (no guests). */
-      .get('/decks/:deckId/share', viewer, async (c) =>
-        c.json(await listDeckShares(deps, userId(c.var.viewer), c.req.param('deckId'))),
-      )
-      .post('/decks/:deckId/share', viewer, async (c) => {
-        const user = await requireUser(deps, c.var.viewer);
-        const input = await readJson(c, shareDeckInputSchema);
-        return c.json(await shareDeck(deps, user, c.req.param('deckId'), input), 201);
       })
       .delete('/workspace-invites/:inviteId', viewer, async (c) => {
         await revokeInvite(deps, userId(c.var.viewer), c.req.param('inviteId'));

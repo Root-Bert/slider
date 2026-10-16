@@ -45,8 +45,6 @@ import type { MeLimits, MeUser, PendingInvite, Workspace } from './workspaces';
  * | GET    | /decks/:deckId/media-usage             |                            | MediaUsage            |
  * | GET    | /media/:mediaId                        | (Range supported)          | audio/video/PNG bytes |
  * | PUT    | /media/:mediaId/transcript             | UpdateTranscriptInput      | Comment               |
- * | GET    | /decks/:deckId/share                   |                            | WorkspaceInvite[]     |
- * | POST   | /decks/:deckId/share                   | ShareDeckInput             | CreatedWorkspaceInvite (201) |
  * | GET    | /microsoft/file-picker                 |                            | FilePickerSession     |
  * | POST   | /microsoft/file-picker/token           | FilePickerTokenInput       | { token }             |
  * | POST   | /decks/drive-item                      | ImportDriveItemInput       | Deck (201)            |

@@ -210,7 +210,7 @@ export const workspaceInviteSchema = z.object({
   acceptedAt: z.iso.datetime().nullable(),
   revokedAt: z.iso.datetime().nullable(),
   useCount: z.number().int(),
-  /** Sharing a deck (`POST /decks/:deckId/share`): joining leads to this deck. */
+  /** Invites from the former deck sharing (removed): joining leads to this deck. */
   deck: z.object({ id: z.string(), title: z.string() }).nullable(),
 });
 export type WorkspaceInvite = z.infer<typeof workspaceInviteSchema>;
@@ -221,13 +221,6 @@ export const createWorkspaceInviteInputSchema = z.object({
   role: inviteRoleSchema.default('member'),
 });
 export type CreateWorkspaceInviteInput = z.input<typeof createWorkspaceInviteInputSchema>;
-
-/**
- * `POST /decks/:deckId/share` – sharing a deck is always an invitation into its organisation as
- * `viewer` (only looks). Omit `email` for a link anyone may use.
- */
-export const shareDeckInputSchema = z.object({ email: z.email().max(320).optional() });
-export type ShareDeckInput = z.input<typeof shareDeckInputSchema>;
 
 /** `POST /workspaces/:id/invites` – the only time the plain link is visible. */
 export const createdWorkspaceInviteSchema = z.object({

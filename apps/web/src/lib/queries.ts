@@ -3,7 +3,6 @@ import {
   moveDrawing,
   type Author,
   type Comment,
-  type CreatedWorkspaceInvite,
   type CreateCommentInput,
   type Deck,
   type DeckFolder,
@@ -16,12 +15,10 @@ import {
   type RevisionDiff,
   type Slide,
   type SlideVersionView,
-  type ShareDeckInput,
   type SyncResult,
   type UpdateCommentInput,
   type UpdateDeckInput,
   type UpdateMeInput,
-  type WorkspaceInvite,
 } from '@slider/shared';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './api-client';
@@ -41,7 +38,6 @@ export const queryKeys = {
   folders: (workspaceId: string) => ['folders', workspaceId] as const,
   slides: (deckId: string) => ['decks', deckId, 'slides'] as const,
   comments: (deckId: string) => ['decks', deckId, 'comments'] as const,
-  shares: (deckId: string) => ['decks', deckId, 'shares'] as const,
   people: (deckId: string) => ['decks', deckId, 'people'] as const,
   status: (deckId: string) => ['decks', deckId, 'status'] as const,
   revisions: (deckId: string) => ['decks', deckId, 'revisions'] as const,
@@ -618,31 +614,3 @@ export const useDeckStatuses = (deckIds: readonly string[]) =>
       refetchIntervalInBackground: false,
     })),
   });
-
-// ── Sharing ─────────────────────────────────────────────────────────────────
-
-/** Invitations created by sharing this deck – each invites into the organisation as `viewer`. */
-export const useDeckShares = (deckId: string, enabled = true) =>
-  useQuery({
-    queryKey: queryKeys.shares(deckId),
-    queryFn: () => api.get<WorkspaceInvite[]>(`/decks/${deckId}/share`),
-    enabled,
-  });
-
-/** Sharing a deck = inviting into its organisation as `viewer` (there are no guests). */
-export function useShareDeck(deckId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (input: ShareDeckInput) =>
-      api.post<CreatedWorkspaceInvite>(`/decks/${deckId}/share`, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.shares(deckId) }),
-  });
-}
-
-export function useRevokeDeckShare(deckId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (inviteId: string) => api.delete(`/workspace-invites/${inviteId}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.shares(deckId) }),
-  });
-}

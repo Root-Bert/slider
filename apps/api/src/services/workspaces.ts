@@ -47,8 +47,8 @@ import {
 type WorkspaceDeps = Pick<AppDeps, 'db' | 'config' | 'clock'>;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const EMAIL_INVITE_DAYS = 7;
-const LINK_INVITE_DAYS = 30;
+/** E-mail invites and links alike. */
+const INVITE_DAYS = 7;
 export const PERSONAL_WORKSPACE_NAME = 'Meine Organisation';
 
 const RANK: Record<WorkspaceRole, number> = {
@@ -569,7 +569,7 @@ export async function listInvites(
 export const inviteUrl = (deps: AppDeps, token: string) =>
   new URL(`/join/${token}`, deps.config.webOrigin).toString();
 
-/** Admins invite by e-mail (single use, 7 days) or create a link (multi use, 30 days). */
+/** Admins invite by e-mail (single use) or create a link (multi use); both valid 7 days. */
 export async function createInvite(
   deps: AppDeps,
   actor: UserRow,
@@ -578,67 +578,6 @@ export async function createInvite(
 ): Promise<CreatedWorkspaceInvite> {
   await requireRole(deps.db, workspaceId, actor.id, 'admin', 'Nur Admins können einladen.');
   return insertInvite(deps, actor, workspaceId, { ...input, deck: null });
-}
-
-/**
- * Sharing a deck: always an invitation into its organisation as `viewer` – there are no guests.
- * Whoever manages the deck may share it (admins, and members their own decks).
- */
-export async function shareDeck(
-  deps: AppDeps,
-  actor: UserRow,
-  deckId: string,
-  input: { email?: string },
-): Promise<CreatedWorkspaceInvite> {
-  const deck = await requireDeckManager(deps.db, actor.id, deckId);
-  return insertInvite(deps, actor, deck.workspaceId, {
-    email: input.email,
-    role: 'viewer',
-    deck: { id: deck.id, title: deck.title },
-  });
-}
-
-/** Open share invites of a deck, newest first. */
-export async function listDeckShares(
-  deps: AppDeps,
-  userId: string,
-  deckId: string,
-): Promise<WorkspaceInvite[]> {
-  const deck = await requireDeckManager(deps.db, userId, deckId);
-  const rows = await deps.db
-    .select({ invite: workspaceInvites, creatorName: users.name })
-    .from(workspaceInvites)
-    .leftJoin(users, eq(users.id, workspaceInvites.createdBy))
-    .where(eq(workspaceInvites.deckId, deckId))
-    .orderBy(sql`${workspaceInvites.createdAt} desc`);
-  const now = deps.clock.now();
-  return rows.map(({ invite, creatorName }) =>
-    toInviteDto(
-      invite,
-      invite.createdBy && creatorName ? { id: invite.createdBy, name: creatorName } : null,
-      now,
-      { id: deck.id, title: deck.title },
-    ),
-  );
-}
-
-/** Like `deckAccess(…, 'own')` in `auth/access` (which imports this module). */
-async function requireDeckManager(db: Executor, userId: string, deckId: string) {
-  const [deck] = await db
-    .select({
-      id: decks.id,
-      title: decks.title,
-      workspaceId: decks.workspaceId,
-      ownerId: decks.ownerId,
-    })
-    .from(decks)
-    .where(eq(decks.id, deckId));
-  const role = deck ? await getRole(db, deck.workspaceId, userId) : null;
-  if (!deck || !role) throw notFound('Diese Präsentation gibt es nicht (mehr).');
-  if (!deckPermissions(role, deck.ownerId, userId).canManage) {
-    throw forbidden('Teilen dürfen nur die Person, die die Präsentation angelegt hat, und Admins.');
-  }
-  return deck;
 }
 
 async function insertInvite(
@@ -666,7 +605,7 @@ async function insertInvite(
   }
   const token = newSecretToken();
   const now = deps.clock.now();
-  const days = email ? EMAIL_INVITE_DAYS : LINK_INVITE_DAYS;
+  const days = INVITE_DAYS;
   // An e-mail invite reserves a seat (BER-130); links may always be created, joining checks.
   const [row] = await deps.db.transaction(async (tx) => {
     if (email && !(await hasPendingEmailInviteIn(tx, workspaceId, email, now))) {
@@ -694,26 +633,20 @@ async function insertInvite(
   };
 }
 
-/**
- * Revoking is idempotent; admins of the invite's workspace, and for a shared deck also whoever
- * manages that deck.
- */
+/** Revoking is idempotent; only admins of the invite's workspace. */
 export async function revokeInvite(deps: AppDeps, userId: string, inviteId: string): Promise<void> {
   const [invite] = await deps.db
     .select()
     .from(workspaceInvites)
     .where(eq(workspaceInvites.id, inviteId));
   if (!invite) throw inviteNotFound();
-  if (invite.deckId) await requireDeckManager(deps.db, userId, invite.deckId);
-  else {
-    await requireRole(
-      deps.db,
-      invite.workspaceId,
-      userId,
-      'admin',
-      'Nur Admins können Einladungen zurückziehen.',
-    );
-  }
+  await requireRole(
+    deps.db,
+    invite.workspaceId,
+    userId,
+    'admin',
+    'Nur Admins können Einladungen zurückziehen.',
+  );
   if (invite.revokedAt) return;
   await deps.db
     .update(workspaceInvites)

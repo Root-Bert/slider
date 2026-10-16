@@ -119,7 +119,7 @@ export function InviteForm({ workspace, onNotify }: { workspace: Workspace; onNo
           variant="secondary"
           className="h-10"
           icon="link"
-          title="Einladungslink für alle, die ihn bekommen (30 Tage gültig)"
+          title="Einladungslink für alle, die ihn bekommen (7 Tage gültig)"
           loading={pendingKind === 'link'}
           onClick={createLink}
         >

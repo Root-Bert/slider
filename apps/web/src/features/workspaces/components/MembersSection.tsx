@@ -51,7 +51,7 @@ export function MembersSection({
       title="Mitglieder"
       description={
         canInvite
-          ? 'Wer in dieser Organisation Präsentationen sieht und kommentiert. Einladungen per E-Mail gelten 7 Tage, Links 30 Tage.'
+          ? 'Wer in dieser Organisation Präsentationen sieht und kommentiert. Einladungen per E-Mail und Links gelten 7 Tage.'
           : 'Wer in dieser Organisation Präsentationen sieht und kommentiert.'
       }
       aside={

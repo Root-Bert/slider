@@ -190,9 +190,6 @@ describe('deck rights by role', () => {
       ).status,
     ).toBe(403);
     expect((await upload(reviewer.cookie, ctx.workspaceId)).status).toBe(403);
-    expect(
-      (await ctx.request(`/api/decks/${deckId}/share`, { cookie: reviewer.cookie })).status,
-    ).toBe(403);
   });
 
   it('members create decks and manage their own, not other people’s', async () => {
@@ -215,15 +212,6 @@ describe('deck rights by role', () => {
       });
     expect((await rename(own.id)).status).toBe(200);
     expect((await rename(ownersDeck)).status).toBe(403);
-    expect(
-      (
-        await ctx.request(`/api/decks/${ownersDeck}/share`, {
-          method: 'POST',
-          json: {},
-          cookie: memberA.cookie,
-        })
-      ).status,
-    ).toBe(403);
 
     const list = deckSchema
       .array()
@@ -480,9 +468,9 @@ describe('invitations', () => {
     expect(await json(res)).toMatchObject({ error: { code: 'link_revoked' } });
   });
 
-  it('link invites expire after 30 days', async () => {
+  it('link invites expire after 7 days', async () => {
     const created = await invite({});
-    ctx.clock.advance(31 * DAY_MS);
+    ctx.clock.advance(8 * DAY_MS);
     const person = await signedInUser(ctx, { name: 'Anna', email: 'anna@extern.de' });
     const res = await ctx.request(`/api/join/${created.token}`, {
       method: 'POST',
@@ -547,78 +535,20 @@ describe('invitations', () => {
   });
 });
 
-describe('sharing a deck (no guests)', () => {
-  const share = (deckId: string, body: { email?: string }, cookie?: string) =>
-    ctx.request(`/api/decks/${deckId}/share`, { method: 'POST', json: body, cookie });
-
-  it('invites into the organisation as viewer and leads to the deck', async () => {
-    const { deckId, slideIds } = await createReadyDeck(ctx);
-    const res = await share(deckId, {});
-    expect(res.status).toBe(201);
-    const created = createdWorkspaceInviteSchema.parse(await res.json());
-    expect(created.invite).toMatchObject({ role: 'viewer', deck: { id: deckId } });
-    const token = new URL(created.url).pathname.split('/').pop() ?? '';
-
-    const preview = joinPreviewSchema.parse(await json(await ctx.request(`/api/join/${token}`)));
-    expect(preview).toMatchObject({ role: 'viewer', deck: { id: deckId } });
-
-    const gesa = await signedInUser(ctx, { name: 'Gesa', email: 'gesa@extern.de' });
-    // Without joining, the deck does not exist for her.
-    expect((await ctx.request(`/api/decks/${deckId}`, { cookie: gesa.cookie })).status).toBe(404);
-    const joined = await ctx.request(`/api/join/${token}`, { method: 'POST', cookie: gesa.cookie });
-    expect(await json(joined)).toMatchObject({ deckId, workspace: { role: 'viewer' } });
-
-    const deck = deckSchema.parse(
-      await json(await ctx.request(`/api/decks/${deckId}`, { cookie: gesa.cookie })),
-    );
-    expect(deck.permissions).toEqual({ canManage: false, canComment: false });
-    const comment = await ctx.request(`/api/decks/${deckId}/comments`, {
-      method: 'POST',
-      json: pinComment(slideIds[0] ?? ''),
-      cookie: gesa.cookie,
-    });
-    expect(comment.status).toBe(403);
-
-    // `@` suggests everyone with access – the sharer for her, she for the sharer.
-    const people = (await (
-      await ctx.request(`/api/decks/${deckId}/people`, { cookie: gesa.cookie })
-    ).json()) as { id: string; name: string }[];
-    expect(people.map((person) => person.name)).toContain('Gesa');
-    expect(people.map((person) => person.id)).toContain(deck.owner.id);
-    const outsider = await signedInUser(ctx, { name: 'Olaf', email: 'olaf@extern.de' });
-    const hidden = await ctx.request(`/api/decks/${deckId}/people`, { cookie: outsider.cookie });
-    expect(hidden.status).toBe(404);
-
-    const shares = await json(await ctx.request(`/api/decks/${deckId}/share`));
-    expect(shares).toEqual([expect.objectContaining({ useCount: 1, deck: expect.anything() })]);
+describe('no deck sharing', () => {
+  it('has no share endpoint: people join only through the organisation’s invites', async () => {
+    const { deckId } = await createReadyDeck(ctx);
+    const res = await ctx.request(`/api/decks/${deckId}/share`, { method: 'POST', json: {} });
+    expect(res.status).toBe(404);
+    expect((await ctx.request(`/api/decks/${deckId}/share`)).status).toBe(404);
   });
 
-  it('members share their own decks, reviewers and viewers none', async () => {
+  it('only admins revoke invites', async () => {
     const mia = await member('Mia', 'member');
-    const res = await upload(mia.cookie, ctx.workspaceId);
-    const own = deckSchema.parse(await res.json());
-    await ctx.deps.queue.idle();
-    const { deckId: ownersDeck } = await createReadyDeck(ctx);
-
-    expect((await share(own.id, {}, mia.cookie)).status).toBe(201);
-    expect((await share(ownersDeck, {}, mia.cookie)).status).toBe(403);
-    const reviewer = await member('Rita', 'reviewer');
-    expect((await share(ownersDeck, {}, reviewer.cookie)).status).toBe(403);
-    const viewer = await member('Vera', 'viewer');
-    expect((await share(ownersDeck, {}, viewer.cookie)).status).toBe(403);
-  });
-
-  it('lets the person who shared revoke the invite', async () => {
-    const mia = await member('Mia', 'member');
-    const own = deckSchema.parse(await (await upload(mia.cookie, ctx.workspaceId)).json());
-    await ctx.deps.queue.idle();
-    const created = createdWorkspaceInviteSchema.parse(
-      await json(await share(own.id, { email: 'neu@extern.de' }, mia.cookie)),
-    );
-    const revoke = await ctx.request(`/api/workspace-invites/${created.invite.id}`, {
-      method: 'DELETE',
-      cookie: mia.cookie,
-    });
-    expect(revoke.status).toBe(204);
+    const created = await invite({});
+    const revoke = (cookie?: string) =>
+      ctx.request(`/api/workspace-invites/${created.invite.id}`, { method: 'DELETE', cookie });
+    expect((await revoke(mia.cookie)).status).toBe(403);
+    expect((await revoke()).status).toBe(204);
   });
 });
