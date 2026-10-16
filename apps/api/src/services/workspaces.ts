@@ -657,7 +657,7 @@ async function insertInvite(
                 subject: `${actor.name} lädt dich zu „${workspace?.name ?? 'Slider'}“ ein`,
                 heading: 'Du bist eingeladen',
                 // Worded for where Slider is heading (AI does the editing), not today's feature set.
-                intro: `${actor.name} hat dich zu „${workspace?.name ?? ''}“ auf Slider eingeladen. Dort entstehen eure Präsentationen gemeinsam – von der ersten Idee bis zur fertigen Folie.`,
+                intro: `${actor.name} hat dich zu „${workspace?.name ?? ''}“ auf Slider eingeladen. Dort entstehen eure Präsentationen gemeinsam, von der ersten Idee bis zur fertigen Folie.`,
                 button: 'Einladung annehmen',
               },
         ),

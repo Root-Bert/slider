@@ -182,12 +182,12 @@ export function inviteMail(input: {
 </tr></table>
 <h1 style="margin:32px 0 0;font-size:24px;line-height:32px;font-weight:600;letter-spacing:-0.01em;color:${C.fg};">${escapeHtml(input.heading)}</h1>
 <p style="margin:8px 0 0;font-size:14px;line-height:22px;color:${C.muted};">${escapeHtml(input.intro)}</p>
-<table role="presentation" cellpadding="0" cellspacing="0" style="margin:28px auto 0;"><tr>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:36px auto 0;"><tr>
 <td align="center" bgcolor="${C.primary}" style="background-color:${C.primary};border-radius:12px;">
 <a href="${url}" style="display:inline-block;padding:13px 20px;font-size:14px;line-height:18px;font-weight:500;color:${C.onPrimary};text-decoration:none;border-radius:12px;">${escapeHtml(input.button)}</a>
 </td>
 </tr></table>
-<p style="margin:28px 0 0;font-size:12px;line-height:18px;color:${C.subtle};">${escapeHtml(input.outro)}</p>
+<p style="margin:36px 0 0;font-size:12px;line-height:18px;color:${C.subtle};">${escapeHtml(input.outro)}</p>
 <p style="margin:12px 0 0;font-size:12px;line-height:18px;color:${C.faint};word-break:break-all;">Button geht nicht? <a href="${url}" style="color:${C.subtle};text-decoration:underline;">${url}</a></p>
 </td></tr>
 </table>
