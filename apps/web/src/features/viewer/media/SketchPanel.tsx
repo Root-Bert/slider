@@ -68,7 +68,8 @@ export function SketchPanel({
 }: SketchPanelProps) {
   const editor = useSheetEditor();
   const { strokes, selected } = editor;
-  const [tool, setTool] = useState<SheetTool>('pen');
+  // The pointer first, as on the slide.
+  const [tool, setTool] = useState<SheetTool>(null);
   const [penColor, setPenColor] = useState<AccentColor>(color);
   const [memo, setMemo] = useState<Recording | null>(null);
   /** The sheet blown up to most of the screen, for drawing with room to move. */

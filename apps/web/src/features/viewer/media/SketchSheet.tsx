@@ -26,7 +26,7 @@ import { EditableFrame } from '../stage/EditableFrame';
 import { RectFrame } from '../stage/RectFrame';
 import { StrokePath } from '../stage/StrokePath';
 import { TextBoxField, TextMark } from '../stage/TextBox';
-import { boxOf, eraserHits, frameOf, placeStroke } from './sketch';
+import { boxOf, eraserHits, frameOf, placeStroke, SKETCH_BACKGROUND } from './sketch';
 import type { SheetEditor } from './useSheetEditor';
 
 /** The slide's tools: the pointer (`null` – drag a box, write into it), the pens, the eraser. */
@@ -204,13 +204,13 @@ export function SketchSheet({
       data-sketch-keys={selectedStroke && boxOf(selectedStroke) ? '' : undefined}
       {...sheetEvents}
       className={cn(
-        'relative w-full touch-none bg-white outline-none select-none [container-type:size]',
+        'relative w-full touch-none outline-none select-none [container-type:size]',
         big
           ? 'rounded-panel shadow-(--shadow-float)'
           : 'rounded-control shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]',
         interactive && tool === null && 'cursor-crosshair',
       )}
-      style={{ aspectRatio: aspect }}
+      style={{ aspectRatio: aspect, backgroundColor: SKETCH_BACKGROUND }}
     >
       <svg
         className="pointer-events-none absolute inset-0 size-full overflow-visible"

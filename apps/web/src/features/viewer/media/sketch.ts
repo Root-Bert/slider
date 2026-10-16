@@ -14,8 +14,8 @@ import {
 } from '@slider/shared';
 import { STROKE_STYLE, strokePath, strokesBounds } from '../lib/stroke-path';
 
-/** Paper of the sheet – an empty white slide. */
-export const SKETCH_BACKGROUND = '#FFFFFF';
+/** Paper of the sheet: a light grey, dark enough to sit in the app, light enough to stand out. */
+export const SKETCH_BACKGROUND = '#3A3A3A';
 /** Format when there is no slide to take it from (comments in a gap between slides). */
 export const DEFAULT_SKETCH_ASPECT = 16 / 9;
 /** Exported image: sharp enough to zoom in, a few hundred KB as PNG. */
