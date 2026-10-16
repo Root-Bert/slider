@@ -92,17 +92,23 @@ export function AudioPlayer({
 }
 
 export function VideoPlayer({ src, className }: { src: string; className?: string }) {
+  // Safari draws a native video (and its controls) on its own layer and ignores the element's
+  // own radius – a clipping wrapper with its own stacking context rounds it everywhere.
   return (
-    <video
-      src={src}
-      controls
-      playsInline
-      preload="metadata"
+    <div
       className={cn(
-        'relative z-10 max-h-72 w-full rounded-control bg-black object-contain',
+        'relative isolate z-10 overflow-hidden rounded-control bg-black [transform:translateZ(0)]',
         className,
       )}
-    />
+    >
+      <video
+        src={src}
+        controls
+        playsInline
+        preload="metadata"
+        className="block max-h-72 w-full bg-black object-contain"
+      />
+    </div>
   );
 }
 

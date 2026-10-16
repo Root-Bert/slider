@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { downsamplePeaks, formatBytes, formatDuration, pickRecorderFormat } from './recording';
 
 describe('pickRecorderFormat', () => {
-  it('prefers WebM/Opus and VP9, falls back to MP4 for Safari', () => {
+  it('prefers WebM/Opus for voice and MP4 for video, falls back to MP4 / WebM', () => {
     expect(pickRecorderFormat('audio', () => true)).toBe('audio/webm;codecs=opus');
-    expect(pickRecorderFormat('video', () => true)).toBe('video/webm;codecs=vp9,opus');
+    expect(pickRecorderFormat('video', () => true)).toBe('video/mp4;codecs=avc1,mp4a.40.2');
+    const firefox = (type: string) => type.includes('webm');
+    expect(pickRecorderFormat('video', firefox)).toBe('video/webm;codecs=vp9,opus');
     const safari = (type: string) => type.startsWith('audio/mp4') || type.startsWith('video/mp4');
     expect(pickRecorderFormat('audio', safari)).toBe('audio/mp4;codecs=mp4a.40.2');
     expect(pickRecorderFormat('video', safari)).toBe('video/mp4;codecs=avc1,mp4a.40.2');

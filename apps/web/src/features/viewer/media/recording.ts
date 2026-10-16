@@ -8,7 +8,9 @@ import { MAX_MEDIA_PEAKS, type MediaKind } from '@slider/shared';
 
 /**
  * Formats in order of preference. Opus is made for speech: 24 kbit/s mono sounds clear and costs
- * ~180 KB per minute. VP9 beats VP8 and H.264 at the same size; Safari only records MP4.
+ * ~180 KB per minute. Video is MP4 (H.264/AAC) wherever the browser records it: Safari records
+ * WebM nowadays but cannot play it back, and a recording must play for every viewer, not only
+ * in the browser that made it. WebM is the fallback for browsers without MP4 recording (Firefox).
  */
 export const RECORDER_FORMATS: Record<MediaKind, readonly string[]> = {
   audio: [
@@ -18,14 +20,14 @@ export const RECORDER_FORMATS: Record<MediaKind, readonly string[]> = {
     'audio/mp4',
   ],
   video: [
-    'video/webm;codecs=vp9,opus',
-    'video/webm;codecs=vp8,opus',
     'video/mp4;codecs=avc1,mp4a.40.2',
     'video/mp4',
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
   ],
 };
 
-/** Bits per second. 480p VP9 at 450 kbit/s + Opus ≈ 3.6 MB per minute. */
+/** Bits per second. 480p at 450 kbit/s + audio ≈ 3.6 MB per minute. */
 export const RECORDER_BITRATES: Record<MediaKind, MediaRecorderOptions> = {
   audio: { audioBitsPerSecond: 24_000 },
   video: { videoBitsPerSecond: 450_000, audioBitsPerSecond: 32_000 },
