@@ -128,9 +128,14 @@ const C = {
 const FONT =
   "'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
-/** The mark at `width` px (22×18 proportions); `inline` centres it in a table cell. */
-const mark = (width: number, inline = false) =>
-  `<img src="cid:${LOGO_CID}" width="${width}" height="${Math.round((width * 18) / 22)}" alt="" style="display:${inline ? 'inline-block;vertical-align:middle' : 'block'};border:0;outline:none;">`;
+/**
+ * The mark at `width` px (22×18 proportions); `inline` centres it in a table cell. The size is set
+ * in CSS too – Apple Mail ignores the attributes and would show the 3× PNG at full size.
+ */
+const mark = (width: number, inline = false) => {
+  const height = Math.round((width * 18) / 22);
+  return `<img src="cid:${LOGO_CID}" width="${width}" height="${height}" alt="" style="display:${inline ? 'inline-block;vertical-align:middle' : 'block'};width:${width}px;height:${height}px;max-width:${width}px;border:0;outline:none;">`;
+};
 
 /**
  * A short German mail in Slider's look: black canvas, the word mark, a dark card like the login
@@ -153,18 +158,20 @@ export function inviteMail(input: {
     text: `${input.intro}\n\n${input.button}: ${input.url}\n\n${input.outro}\n\n– Slider\n`,
     attachments: [logo],
     html: `<!doctype html>
-<html lang="de" style="color-scheme:dark;">
+<html lang="de" style="color-scheme:dark;height:100%;background:${C.canvas};">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <meta name="supported-color-schemes" content="dark">
 <title>${escapeHtml(input.subject)}</title>
+<style>html,body{background:${C.canvas}!important;}</style>
 </head>
-<body style="margin:0;padding:0;background:${C.canvas};color-scheme:dark;">
+<body bgcolor="${C.canvas}" style="margin:0;padding:0;height:100%;min-height:100vh;background:${C.canvas};color-scheme:dark;">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(input.intro)}</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="${C.canvas}" style="background:${C.canvas};font-family:${FONT};">
-<tr><td align="center" style="padding:40px 16px 48px;">
+<!-- Fills the reading pane, so no light client background shows below a short mail. -->
+<table role="presentation" width="100%" height="100%" cellpadding="0" cellspacing="0" bgcolor="${C.canvas}" style="width:100%;height:100%;min-height:100vh;background:${C.canvas};font-family:${FONT};">
+<tr><td align="center" valign="top" style="padding:56px 16px 64px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:440px;">
 <tr><td style="padding:0 4px 24px;">
 <table role="presentation" cellpadding="0" cellspacing="0"><tr>
