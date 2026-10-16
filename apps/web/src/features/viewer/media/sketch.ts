@@ -3,6 +3,8 @@
  * size and undo is just dropping the last stroke), rendered onto a canvas and exported as PNG.
  */
 
+import { getStroke, type StrokeOptions } from 'perfect-freehand';
+
 export type SketchTool = 'pen' | 'eraser';
 
 export interface SketchStroke {
@@ -45,7 +47,19 @@ export function addPoint(
   return [...points, point];
 }
 
-/** Paints the paper and every stroke, smoothed through the midpoints of its points. */
+/**
+ * Pen feel of `perfect-freehand`: lines thin out when drawn fast and swell when slow, with
+ * tapered ends. The eraser keeps one width – it paints the paper back where it goes.
+ */
+const PEN: StrokeOptions = {
+  thinning: 0.5,
+  smoothing: 0.5,
+  streamline: 0.5,
+  simulatePressure: true,
+};
+const ERASER: StrokeOptions = { thinning: 0, smoothing: 0.5, streamline: 0.5 };
+
+/** Paints the paper and every stroke as a filled freehand outline (a tap gives a dot). */
 export function renderSketch(
   context: CanvasRenderingContext2D,
   strokes: readonly SketchStroke[],
@@ -55,41 +69,37 @@ export function renderSketch(
   context.save();
   context.fillStyle = SKETCH_BACKGROUND;
   context.fillRect(0, 0, width, height);
-  context.lineCap = 'round';
-  context.lineJoin = 'round';
   for (const stroke of strokes) {
-    const [first, ...rest] = stroke.points;
-    if (!first) continue;
-    const color = stroke.tool === 'eraser' ? SKETCH_BACKGROUND : stroke.color;
-    const lineWidth = Math.max(1, stroke.width * width);
-    const x = (point: [number, number]) => point[0] * width;
-    const y = (point: [number, number]) => point[1] * height;
-    if (rest.length === 0) {
-      // A tap: a dot.
-      context.fillStyle = color;
-      context.beginPath();
-      context.arc(x(first), y(first), lineWidth / 2, 0, Math.PI * 2);
-      context.fill();
-      continue;
-    }
-    context.strokeStyle = color;
-    context.lineWidth = lineWidth;
-    context.beginPath();
-    context.moveTo(x(first), y(first));
-    let previous = first;
-    for (const point of rest) {
-      context.quadraticCurveTo(
-        x(previous),
-        y(previous),
-        (x(previous) + x(point)) / 2,
-        (y(previous) + y(point)) / 2,
-      );
-      previous = point;
-    }
-    context.lineTo(x(previous), y(previous));
-    context.stroke();
+    if (stroke.points.length === 0) continue;
+    const outline = getStroke(
+      stroke.points.map(([x, y]) => [x * width, y * height]),
+      {
+        ...(stroke.tool === 'eraser' ? ERASER : PEN),
+        size: Math.max(1, stroke.width * width),
+        last: true,
+      },
+    );
+    context.fillStyle = stroke.tool === 'eraser' ? SKETCH_BACKGROUND : stroke.color;
+    context.fill(outlinePath(outline));
   }
   context.restore();
+}
+
+/** Closed path around the outline, smoothed through the midpoints of its points. */
+function outlinePath(outline: number[][]): Path2D {
+  const path = new Path2D();
+  const [first] = outline;
+  if (!first) return path;
+  const mid = (a: number[], b: number[]) =>
+    [((a[0] ?? 0) + (b[0] ?? 0)) / 2, ((a[1] ?? 0) + (b[1] ?? 0)) / 2] as const;
+  path.moveTo(...mid(first, outline[1] ?? first));
+  for (let index = 1; index <= outline.length; index++) {
+    const point = outline[index % outline.length] ?? first;
+    const next = outline[(index + 1) % outline.length] ?? first;
+    path.quadraticCurveTo(point[0] ?? 0, point[1] ?? 0, ...mid(point, next));
+  }
+  path.closePath();
+  return path;
 }
 
 /** Whether anything is left to see – strokes that are all erased still count (cheap and honest). */
