@@ -460,6 +460,8 @@ describe('invitations', () => {
       (await ctx.request(`/api/workspace-invites/${created.invite.id}`, { method: 'DELETE' }))
         .status,
     ).toBe(204);
+    // Revoked invites drop out of the list.
+    expect(await json(await ctx.request(`/api/workspaces/${ctx.workspaceId}/invites`))).toEqual([]);
     const late = await signedInUser(ctx, { name: 'Cleo', email: 'cleo@extern.de' });
     const res = await ctx.request(`/api/join/${created.token}`, {
       method: 'POST',

@@ -554,7 +554,9 @@ export async function listInvites(
     .from(workspaceInvites)
     .leftJoin(users, eq(users.id, workspaceInvites.createdBy))
     .leftJoin(decks, eq(decks.id, workspaceInvites.deckId))
-    .where(eq(workspaceInvites.workspaceId, workspaceId))
+    // Revoked invites are gone for good from the admin's point of view; the row stays only so
+    // the link answers `link_revoked`.
+    .where(and(eq(workspaceInvites.workspaceId, workspaceId), isNull(workspaceInvites.revokedAt)))
     .orderBy(sql`${workspaceInvites.createdAt} desc`);
   const now = deps.clock.now();
   return rows.map(({ invite, creatorName, deckTitle }) =>
