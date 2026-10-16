@@ -259,12 +259,16 @@ function RecorderBody({
   );
 }
 
+// Anchored right and clipped: in a narrow panel the oldest bars drop off instead of running under the time.
 function LiveLevels({ levels, paused }: { levels: readonly number[]; paused: boolean }) {
   const bars = Array.from({ length: 40 }, (_, i) => levels[levels.length - 40 + i] ?? 0);
   return (
     <div
       aria-hidden
-      className={cn('flex h-6 min-w-0 flex-1 items-center gap-[2px]', paused && 'opacity-40')}
+      className={cn(
+        'flex h-6 min-w-0 flex-1 items-center justify-end gap-[2px] overflow-hidden',
+        paused && 'opacity-40',
+      )}
     >
       {bars.map((level, index) => (
         <span
