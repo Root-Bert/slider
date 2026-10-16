@@ -123,9 +123,9 @@ const C = {
   muted: '#b3b3b3', // white 70 %
   subtle: '#808080', // white 50 %
   faint: '#4d4d4d', // white 30 %
-  /** `glass-control`: a frost that hides the dots, edged with the 8 % hairline. */
-  glass: '#171717',
-  glassEdge: '#2b2b2b',
+  /** Primary button: white 90 % with black text. */
+  primary: '#e6e6e6',
+  onPrimary: '#000000',
 };
 const FONT =
   "'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
@@ -141,7 +141,7 @@ const mark = (width: number) => {
 
 /**
  * A short German mail with Slider's look inside one card: the app canvas with its dot grid, the
- * word mark (`Logo`), heading, a `glass-control` button and the plain link as fallback; around it
+ * word mark (`Logo`), heading, the white primary button and the plain link as fallback; around it
  * the client's own background. `color-scheme: light dark` tells clients the card needs no
  * inverting. The mark travels inline (`cid:`). Gmail drops CSS gradients, so it shows the card
  * without dots.
@@ -183,8 +183,8 @@ export function inviteMail(input: {
 <h1 style="margin:32px 0 0;font-size:24px;line-height:32px;font-weight:600;letter-spacing:-0.01em;color:${C.fg};">${escapeHtml(input.heading)}</h1>
 <p style="margin:8px 0 0;font-size:14px;line-height:22px;color:${C.muted};">${escapeHtml(input.intro)}</p>
 <table role="presentation" cellpadding="0" cellspacing="0" style="margin:28px auto 0;"><tr>
-<td align="center" bgcolor="${C.glass}" style="background-color:${C.glass};border:1px solid ${C.glassEdge};border-radius:12px;">
-<a href="${url}" style="display:inline-block;padding:12px 20px;font-size:14px;line-height:18px;font-weight:500;color:${C.fg};text-decoration:none;border-radius:12px;">${escapeHtml(input.button)}</a>
+<td align="center" bgcolor="${C.primary}" style="background-color:${C.primary};border-radius:12px;">
+<a href="${url}" style="display:inline-block;padding:13px 20px;font-size:14px;line-height:18px;font-weight:500;color:${C.onPrimary};text-decoration:none;border-radius:12px;">${escapeHtml(input.button)}</a>
 </td>
 </tr></table>
 <p style="margin:28px 0 0;font-size:12px;line-height:18px;color:${C.subtle};">${escapeHtml(input.outro)}</p>
