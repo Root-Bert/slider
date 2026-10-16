@@ -48,7 +48,7 @@ describe('modern comments (BER-112)', () => {
     expect(thread?.replies).toEqual([
       {
         externalId: expect.stringMatching(/^\{[0-9a-f-]{36}\}$/) as string,
-        author: { name: 'Jonas Weber', initials: 'JW' },
+        author: { name: 'Jonas Weber', initials: 'JW', userId: 'Jonas Weber', providerId: 'None' },
         createdAt: '2026-09-28T09:40:00.000Z',
         text: 'Erledige ich.',
       },

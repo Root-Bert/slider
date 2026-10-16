@@ -22,13 +22,18 @@ const GOOGLE = {
   GOOGLE_CLIENT_SECRET: 'geheim',
 };
 
-async function setup(env: NodeJS.ProcessEnv = {}) {
+/** `manual`: no supervisor restarts the server; `none`: no instance control at all. */
+async function setup(
+  env: NodeJS.ProcessEnv = {},
+  control: 'supervised' | 'manual' | 'none' = 'supervised',
+) {
   dataDir = await mkdtemp(path.join(tmpdir(), 'slider-setup-'));
+  restart = vi.fn<() => void>();
   ctx = await createTestContext({
     config: { dataDir, auth: { ...testConfig().auth, devLogin: false } },
+    instance:
+      control === 'none' ? undefined : { env, restart: control === 'manual' ? null : restart },
   });
-  restart = vi.fn<() => void>();
-  ctx.deps.instance = { env, restart };
   token = ensureSetupToken(dataDir);
 }
 
@@ -78,7 +83,11 @@ describe('setup page before the first account', () => {
     expect(body.settings?.redirectUris.google).toBe(
       'http://localhost:5173/api/auth/google/callback',
     );
-    expect(body.settings?.fields.GOOGLE_CLIENT_SECRET).toEqual({ source: null, value: null, set: false });
+    expect(body.settings?.fields.GOOGLE_CLIENT_SECRET).toEqual({
+      source: null,
+      value: null,
+      set: false,
+    });
   });
 
   it('saves logins encrypted, never returns secrets and restarts', async () => {
@@ -146,14 +155,13 @@ describe('setup page and the environment', () => {
     const res = await save(GOOGLE, withToken());
     expect(res.status).toBe(400);
     expect(JSON.stringify(await res.json())).toMatch(/Admin/);
-    expect((await save({ ...GOOGLE, BOOTSTRAP_EMAIL: 'robert@firma.de' }, withToken())).status).toBe(
-      200,
-    );
+    expect(
+      (await save({ ...GOOGLE, BOOTSTRAP_EMAIL: 'robert@firma.de' }, withToken())).status,
+    ).toBe(200);
   });
 
   it('reports a manual restart when no supervisor runs the server', async () => {
-    await setup();
-    ctx.deps.instance = { env: {}, restart: null };
+    await setup({}, 'manual');
     expect((await status(withToken())).body.settings?.restart).toBe('manual');
   });
 });
@@ -183,8 +191,7 @@ describe('setup page after the first account', () => {
 
 describe('setup page without instance control', () => {
   it('does not exist', async () => {
-    await setup();
-    delete ctx.deps.instance;
+    await setup({}, 'none');
     expect((await ctx.request('/api/setup')).status).toBe(404);
   });
 });

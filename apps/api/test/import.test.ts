@@ -56,7 +56,8 @@ describe('import pipeline', () => {
     const image = await ctx.request(list[0]?.imageUrl ?? '');
     expect(image.status).toBe(200);
     expect(image.headers.get('content-type')).toBe('image/svg+xml');
-    expect(image.headers.get('cache-control')).toBe('private, max-age=31536000, immutable');
+    // Cached until the signed URL expires.
+    expect(image.headers.get('cache-control')).toMatch(/^private, max-age=\d+, immutable$/);
     expect(await image.text()).toContain('<svg');
   });
 

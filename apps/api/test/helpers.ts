@@ -13,7 +13,7 @@ import type { Clock } from '../src/clock';
 import type { Config } from '../src/config';
 import { openDatabase } from '../src/db/client';
 import { decks, revisions, sessions, slides, slideVersions, type UserRow } from '../src/db/schema';
-import type { AppDeps } from '../src/deps';
+import type { AppDeps, InstanceControl } from '../src/deps';
 import { importDeck } from '../src/import/import-deck';
 import type { PptxToPdf } from '../src/import/libreoffice';
 import type { OfficePdf } from '../src/import/office-pages';
@@ -161,6 +161,8 @@ export async function createTestContext(
     mailer?: Mailer;
     /** Fake passkey verification (no real authenticator in tests). */
     webauthn?: WebAuthn;
+    /** Environment and restart hook for the setup page; without it `/api/setup` is a 404. */
+    instance?: InstanceControl;
   } = {},
 ): Promise<TestContext> {
   const { db, close } = await openDatabase();
@@ -221,6 +223,7 @@ export async function createTestContext(
     google: config.auth.google ? new OidcClient(config.auth.google, clock, fetch) : null,
     webauthn: options.webauthn,
     mailer: options.mailer ?? new NullMailer(),
+    instance: options.instance,
     ownerId: owner.id,
   };
   const app = createApp(deps);
