@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent } from 'react';
+import { useEffect, useEffectEvent, useRef } from 'react';
 import { isTypingTarget } from '@/lib/dom';
 import { useGoToSlide } from './useGoToSlide';
 import { useViewerData } from '../state/viewer-data';
@@ -8,7 +8,8 @@ import { isModKey } from '@/lib/keyboard';
 /**
  * Global keyboard shortcuts of the viewer:
  * ←/→ previous/next slide, Home/End first/last, F fullscreen, B PowerPoint boxes on/off,
- * G PowerPoint guides on/off, typing right after a drawing comments on it, Tab / ⇧Tab next/previous tool while nothing is selected,
+ * G PowerPoint guides on/off, typing right after a drawing comments on it, Tab / ⇧Tab next/previous tool while nothing is selected
+ * (after a click – from the keyboard alone, Tab moves the focus as usual),
  * ⌘Z / ⇧⌘Z undo/redo while drawing, ⌘↵ sends the draft, Esc cancels the draft → drops the tool → closes the thread (or the deleted slides panel).
  */
 export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen: () => void }) {
@@ -24,6 +25,9 @@ export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen:
   } = useViewerState();
   const dispatch = useViewerDispatch();
   const goTo = useGoToSlide();
+  // The focus is on the page because of a click (slide, canvas, tool bar), not because keyboard
+  // navigation dropped it there (a deck opened with ↵, a panel closed with Esc).
+  const pointerLast = useRef(false);
 
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
     // Modal dialogs (share, delete confirmation) handle their own keys.
@@ -34,6 +38,7 @@ export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen:
       return;
 
     if (event.key === 'Escape') {
+      pointerLast.current = false;
       // Typing in the composer: Esc still cancels the draft, that's what people expect.
       if (draft) dispatch({ type: 'draftCancelled' });
       else if (tool) dispatch({ type: 'toolSelected', tool: null });
@@ -68,10 +73,11 @@ export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen:
     }
 
     // Tab / ⇧Tab steps through the tools while nothing is selected – with focus on a control,
-    // Tab moves focus as usual.
+    // or for someone working with the keyboard alone, Tab moves focus as usual (else they could
+    // never reach the tool bar, filters and cards).
     if (event.key === 'Tab') {
       const onPage = event.target === document.body || event.target === document.documentElement;
-      if (!canComment || draft || focusedThreadId || !onPage) return;
+      if (!canComment || draft || focusedThreadId || !onPage || !pointerLast.current) return;
       event.preventDefault();
       // `toolSelected` toggles: picking the current tool again would drop it.
       const next = cycleTool(tool, event.shiftKey ? -1 : 1);
@@ -118,8 +124,15 @@ export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen:
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => onKeyDown(event);
+    const onPointerDown = () => {
+      pointerLast.current = true;
+    };
     window.addEventListener('keydown', listener);
-    return () => window.removeEventListener('keydown', listener);
+    window.addEventListener('pointerdown', onPointerDown, true);
+    return () => {
+      window.removeEventListener('keydown', listener);
+      window.removeEventListener('pointerdown', onPointerDown, true);
+    };
   }, []);
 
   // Holding ⌥ flips box mode for one quick comment: a free spot while box mode is on, a box

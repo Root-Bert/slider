@@ -21,6 +21,9 @@ export default tseslint.config(
       '**/dist',
       '**/node_modules',
       '**/.data',
+      'e2e/.results',
+      'e2e/.report',
+      'e2e/.shots',
       'apps/api/drizzle',
       'figma-scripts',
       '.claude',
@@ -91,5 +94,10 @@ export default tseslint.config(
   {
     files: ['apps/api/**/*.ts', 'packages/**/*.ts', '*.config.{js,ts}'],
     languageOptions: { globals: globals.node },
+  },
+  // Playwright: Node, plus the browser inside `page.evaluate`.
+  {
+    files: ['e2e/**/*.ts'],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
 );

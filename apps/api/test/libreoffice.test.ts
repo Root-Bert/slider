@@ -5,7 +5,11 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
-import { createLibreOfficePdf, findSoffice } from '../src/import/libreoffice';
+import {
+  createLibreOfficePdf,
+  findSoffice,
+  stopRunningConversions,
+} from '../src/import/libreoffice';
 import { silentLogger } from '../src/logger';
 import { makePdf } from './pdf';
 
@@ -100,6 +104,26 @@ describe('createLibreOfficePdf (BER-94)', () => {
     await expect(convert(new Uint8Array([1]))).rejects.toThrow('timed out after 20 ms');
     const child = spawn.mock.results[0]?.value as ChildProcess;
     expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+  });
+
+  it('kills running conversions and removes their temp folder on shutdown', async () => {
+    const { spawn, calls } = fakeSoffice('hang');
+    const convert = createLibreOfficePdf({ binary: 'soffice', log: silentLogger, spawn });
+    const result = convert(new Uint8Array([1]));
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    const dir = path.dirname(calls[0]?.args.at(-1) ?? '');
+    expect(existsSync(dir)).toBe(true);
+
+    stopRunningConversions();
+    // Synchronously: the process exits right after, before the conversion's own clean-up runs.
+    expect(existsSync(dir)).toBe(false);
+    const child = spawn.mock.results[0]?.value as ChildProcess;
+    expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+    await expect(result).rejects.toThrow('exited with SIGKILL');
+
+    // Finished conversions are forgotten: nothing left to kill.
+    stopRunningConversions();
+    expect(child.kill).toHaveBeenCalledTimes(1);
   });
 });
 

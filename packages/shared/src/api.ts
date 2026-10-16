@@ -179,10 +179,13 @@ export type UpdateDeckInput = z.infer<typeof updateDeckInputSchema>;
 export const deckFolderInputSchema = z.object({ name: z.string().trim().min(1).max(80) });
 export type DeckFolderInput = z.infer<typeof deckFolderInputSchema>;
 
+/** Longest comment text; the comment fields stop there too. */
+export const MAX_COMMENT_BODY_LENGTH = 10_000;
+
 export const createCommentInputSchema = z.object({
   slideId: z.string().nullable(),
   parentId: z.string().nullable().default(null),
-  body: z.string().trim().max(10_000),
+  body: z.string().trim().max(MAX_COMMENT_BODY_LENGTH),
   anchor: anchorSchema,
   strokes: z.array(strokeSchema).max(50).default([]),
 });
@@ -240,7 +243,7 @@ export interface MediaUsage {
 
 export const updateCommentInputSchema = z
   .object({
-    body: z.string().trim().min(1).max(10_000),
+    body: z.string().trim().min(1).max(MAX_COMMENT_BODY_LENGTH),
     status: commentStatusSchema,
     /** Moves / resizes the comment's text on the slide ("Text auf Folie"); author only. */
     textBox: rectSchema

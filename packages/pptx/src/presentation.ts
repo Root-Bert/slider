@@ -30,7 +30,7 @@ export async function parsePresentation(archive: Archive): Promise<ParsedPresent
     size,
     slides,
     sections: readSections(presentation),
-    comments: await readComments(archive, slideRefs, size),
+    comments: await readComments(archive, slideRefs, size, slides),
     author: await readFileAuthor(archive),
   };
 }
@@ -95,6 +95,7 @@ async function readComments(
   archive: Archive,
   slideRefs: SlideRef[],
   size: { cx: number; cy: number },
+  slides: readonly ParsedSlide[],
 ): Promise<ParsedComment[]> {
   const modernAuthors = await readAuthorPart(archive, REL.authors, 'ppt/authors.xml', 'author');
   const legacyAuthors = await readAuthorPart(
@@ -106,7 +107,10 @@ async function readComments(
 
   const comments: ParsedComment[] = [];
   for (const ref of slideRefs) {
-    const slide = { sldId: ref.sldId, size };
+    const groups = new Map(
+      slides.find((parsed) => parsed.path === ref.path)?.groups.map((g) => [g.id, g.bbox]),
+    );
+    const slide = { sldId: ref.sldId, size, groups };
     for (const rel of await archive.relationshipsOfType(ref.path, REL.modernComments)) {
       comments.push(...readModernComments(await archive.readXml(rel.target), slide, modernAuthors));
     }

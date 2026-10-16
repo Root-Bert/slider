@@ -16,8 +16,9 @@
     "dev": "bun run --filter @slider/api --filter @slider/web dev",
     "build": "bun run --filter '*' build",
     "start": "bun apps/api/src/server.ts",
-    "typecheck": "bun run --filter '*' typecheck",
+    "typecheck": "bun run --filter '*' typecheck && tsc -p e2e && tsc -p test",
     "test": "vitest run",
+    "e2e": "playwright test -c e2e/playwright.config.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
     "seed": "bun run --filter @slider/api seed",
@@ -25,6 +26,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.64.1",
     "@types/node": "^26.6.4",
     "eslint": "^10.12.0",
     "eslint-plugin-react-hooks": "^7.1.1",

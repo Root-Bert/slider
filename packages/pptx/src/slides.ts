@@ -1,13 +1,15 @@
 import type { Archive } from './archive';
 import { solidFillOf } from './colors';
+import { slideContentHash } from './content-hash';
 import { normaliseGuides, type EmuGuide } from './guides';
 import { textHash } from './hash';
 import { readBackground, type LayoutContext } from './layouts';
 import { walkShapeTree, type ShapeNode } from './shape-tree';
 import { NO_TEXT_DEFAULTS, paragraphsToText, plainText, readParagraphs } from './text';
 import { normaliseRect } from './transform';
+import type { Rect } from '@slider/shared';
 import { PptxError, type ParsedShape, type ParsedSlide } from './types';
-import { attr, child, children, descendants, path } from './xml';
+import { attr, child, children, descendants, path, type XmlElement } from './xml';
 
 export interface SlideRef {
   sldId: number;
@@ -30,8 +32,16 @@ export async function parseSlide(
   const cSld = child(slide, 'p:cSld');
 
   const shapes: ParsedShape[] = [];
+  const groups = new Map<string, Rect>();
   for (const node of walkShapeTree(child(cSld, 'p:spTree'))) {
-    shapes.push(await toParsedShape(archive, ref.path, node, size, layout));
+    const shape = await toParsedShape(archive, ref.path, node, size, layout);
+    shapes.push(shape);
+    // A group's box is the union of its (visible) children – what PowerPoint selects.
+    for (const groupId of node.groupIds) {
+      if (groupId === '') continue;
+      const box = groups.get(groupId);
+      groups.set(groupId, box ? unionRect(box, shape.bbox) : shape.bbox);
+    }
   }
 
   const titleShape = shapes.find(
@@ -46,10 +56,35 @@ export async function parseSlide(
     title: titleShape?.text.trim() || null,
     layoutName: layout.name,
     textHash: textHash(shapes.map((shape) => shape.text).join('\n')),
+    contentHash: await slideContentHash(archive, ref.path, slide),
+    creationId: readCreationId(slide),
     shapes,
+    groups: [...groups].map(([id, bbox]) => ({ id, bbox })),
     background: readBackground(cSld, layout.scheme) ?? layout.background,
     guides: normaliseGuides([...presentationGuides, ...layout.guides], size),
   };
+}
+
+function unionRect(a: Rect, b: Rect): Rect {
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  return {
+    x,
+    y,
+    w: Math.max(a.x + a.w, b.x + b.w) - x,
+    h: Math.max(a.y + a.h, b.y + b.h) - y,
+  };
+}
+
+/** `p:extLst/p:ext/p14:creationId/@val`: random per created slide, kept by PowerPoint saves. */
+function readCreationId(slide: XmlElement): number | null {
+  for (const ext of children(child(slide, 'p:extLst'), 'p:ext')) {
+    const value = attr(child(ext, 'p14:creationId'), 'val');
+    if (value === undefined) continue;
+    const id = Number(value);
+    if (Number.isSafeInteger(id)) return id;
+  }
+  return null;
 }
 
 async function toParsedShape(

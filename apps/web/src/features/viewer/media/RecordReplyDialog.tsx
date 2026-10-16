@@ -1,4 +1,4 @@
-import type { Comment, MediaKind } from '@slider/shared';
+import { MAX_COMMENT_BODY_LENGTH, type Comment, type MediaKind } from '@slider/shared';
 import { useState } from 'react';
 import { AutosizeTextarea, Button, Dialog, ErrorText } from '@/ui';
 import { replyInput } from '../comments/lib/replies';
@@ -69,6 +69,7 @@ export function RecordReplyDialog({
           <div className="field-well rounded-control-sm px-3 py-2">
             <AutosizeTextarea
               aria-label="Notiz zur Aufnahme"
+              maxLength={MAX_COMMENT_BODY_LENGTH}
               placeholder="Optional: Notiz zur Aufnahme"
               value={note}
               onChange={(event) => setNote(event.target.value)}

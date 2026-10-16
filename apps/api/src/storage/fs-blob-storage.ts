@@ -1,5 +1,7 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 import { assertValidKey, type BlobStorage } from './blob-storage';
 
 export class FsBlobStorage implements BlobStorage {
@@ -22,6 +24,25 @@ export class FsBlobStorage implements BlobStorage {
       if (isNotFound(error)) return null;
       throw error;
     }
+  }
+
+  async size(key: string): Promise<number | null> {
+    try {
+      const info = await stat(this.resolve(key));
+      return info.isFile() ? info.size : null;
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+  }
+
+  async stream(
+    key: string,
+    range?: { start: number; end: number },
+  ): Promise<ReadableStream<Uint8Array> | null> {
+    if ((await this.size(key)) === null) return null;
+    const nodeStream = createReadStream(this.resolve(key), range ? { ...range } : {});
+    return Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>;
   }
 
   async delete(key: string): Promise<void> {

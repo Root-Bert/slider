@@ -20,7 +20,7 @@ export function DeckSearch({ value, onChange }: DeckSearchProps) {
   }, true);
 
   return (
-    <search className="w-[260px] max-sm:min-w-0 max-sm:flex-1">
+    <search className="w-[260px] max-sm:w-full max-sm:basis-full">
       <TextField
         ref={inputRef}
         type="search"

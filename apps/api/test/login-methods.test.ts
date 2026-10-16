@@ -318,6 +318,47 @@ describe('Google login', () => {
     });
     expect((await unlink(lena, google?.id ?? '')).status).toBe(204);
   });
+
+  it('a passkey-only account is a login: no attaching by e-mail, no second bootstrap', async () => {
+    const idp = fakeGoogle();
+    ctx = await createTestContext({
+      config: authConfig({ google: GOOGLE, signup: 'open' }),
+      fetch: idp.fetch,
+    });
+    // The instance admin went passkey-only: every provider unlinked.
+    await ctx.deps.db.update(users).set({ isInstanceAdmin: true }).where(eq(users.id, ctx.ownerId));
+    await ctx.deps.db.insert(passkeys).values({
+      id: 'pk-admin',
+      userId: ctx.ownerId,
+      credentialId: 'cred-admin',
+      publicKey: 'key',
+      deviceType: 'singleDevice',
+      name: 'YubiKey',
+    });
+    const { user: lena } = await signedInUser(ctx, { name: 'Lena', email: 'lena.berg@gmail.com' });
+    await ctx.deps.db.insert(passkeys).values({
+      id: 'pk-lena',
+      userId: lena.id,
+      credentialId: 'cred-lena',
+      publicKey: 'key',
+      deviceType: 'singleDevice',
+      name: 'iPhone',
+    });
+
+    const res = await googleLogin(idp);
+    expect(res.headers.get('location')).toBe('http://localhost:5173/login?error=account_exists');
+    expect(await ctx.deps.db.select().from(userIdentities)).toEqual([]);
+
+    // Someone else signs up as a normal account, not as a second instance admin.
+    idp.claims = { ...idp.claims, sub: '2222', email: 'neu@gmail.com' };
+    const cookie = sessionCookieFrom(await googleLogin(idp)) ?? '';
+    expect((await me(cookie)).body.user).toMatchObject({
+      email: 'neu@gmail.com',
+      isInstanceAdmin: false,
+    });
+    const admins = await ctx.deps.db.select().from(users).where(eq(users.isInstanceAdmin, true));
+    expect(admins.map((u) => u.id)).toEqual([ctx.ownerId]);
+  });
 });
 
 // ── Passkeys ─────────────────────────────────────────────────────────────────
@@ -604,6 +645,7 @@ describe('passkeys', () => {
     const lena = await signedInUser(ctx, { name: 'Lena', email: 'lena@firma.de' });
     const max = await signedInUser(ctx, { name: 'Max', email: 'max@firma.de' });
     const { id } = (await (await register(lena.cookie)).json()) as Passkey;
+    await register(lena.cookie, 'cred-2');
 
     expect(
       (
@@ -634,6 +676,32 @@ describe('passkeys', () => {
     // A deleted passkey no longer signs in.
     const start = await startLogin();
     expect((await login(start.cookie, assertion('cred-1', start.challenge, 9))).status).toBe(400);
+  });
+
+  it('never deletes the last way in – under the same rule as unlinking', async () => {
+    await passkeyContext();
+    const lena = await signedInUser(ctx, { name: 'Lena', email: 'lena@firma.de' });
+    const remove = (id: string) =>
+      ctx.request(`/api/passkeys/${id}`, { method: 'DELETE', cookie: lena.cookie });
+    const first = (await (await register(lena.cookie, 'cred-1')).json()) as Passkey;
+
+    const refused = await remove(first.id);
+    expect(refused.status).toBe(400);
+    expect(await refused.text()).toContain('letzte Anmeldung');
+
+    const second = (await (await register(lena.cookie, 'cred-2')).json()) as Passkey;
+    expect((await remove(first.id)).status).toBe(204);
+    expect((await remove(second.id)).status).toBe(400);
+
+    // With a provider login left, the last passkey may go.
+    await ctx.deps.db.insert(userIdentities).values({
+      provider: 'google',
+      subject: '1234',
+      userId: lena.user.id,
+      email: 'lena@firma.de',
+    });
+    expect((await remove(second.id)).status).toBe(204);
+    expect(await ctx.deps.db.select().from(passkeys)).toEqual([]);
   });
 
   it('never creates an account – and disappears with its account', async () => {

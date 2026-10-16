@@ -4,11 +4,16 @@ import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SETUP_TOKEN_HEADER, type SetupStatus } from '@slider/shared';
-import { instanceSettings, userIdentities, users } from '../src/db/schema';
+import { instanceSettings, passkeys, userIdentities, users } from '../src/db/schema';
+import { loadBootConfig, loadConfig } from '../src/config';
+import { silentLogger, type Logger } from '../src/logger';
 import {
+  announceSetup,
   ensureSetupToken,
+  loadInstanceConfig,
   readSetupToken,
   readStoredSettings,
+  saveStoredSettings,
 } from '../src/services/instance-settings';
 import { createTestContext, signedInUser, testConfig, type TestContext } from './helpers';
 
@@ -119,7 +124,10 @@ describe('setup page before the first account', () => {
   it('needs a login first, and refuses invalid combinations', async () => {
     const noLogin = await save({ SIGNUP: 'open' }, withToken());
     expect(noLogin.status).toBe(400);
-    expect(JSON.stringify(await noLogin.json())).toMatch(/Anmeldeweg/);
+    const noLoginBody = JSON.stringify(await noLogin.json());
+    expect(noLoginBody).toMatch(/Anmeldeweg/);
+    // E-mail login is gone (0020_drop_email_login): only offer what exists.
+    expect(noLoginBody).toContain('(Microsoft, Google oder SSO)');
 
     const badSignup = await save({ ...GOOGLE, SIGNUP: 'domains' }, withToken());
     expect(badSignup.status).toBe(400);
@@ -184,6 +192,24 @@ describe('setup page after the first account', () => {
     expect((await save({ SIGNUP: 'open' }, {}, admin.cookie)).status).toBe(200);
   });
 
+  it('stays claimed when the admin signs in with passkeys only', async () => {
+    const admin = await signedInUser(ctx, { name: 'Robert', email: 'robert@firma.de' });
+    await claim(admin.user.id);
+    await ctx.deps.db.delete(userIdentities);
+    await ctx.deps.db.insert(passkeys).values({
+      id: 'pk-1',
+      userId: admin.user.id,
+      credentialId: 'cred-1',
+      publicKey: 'key',
+      deviceType: 'singleDevice',
+      name: 'YubiKey',
+    });
+
+    expect((await status(withToken())).body).toMatchObject({ authorized: false, hasAccount: true });
+    expect((await save(GOOGLE, withToken())).status).toBe(403);
+    expect((await status({}, admin.cookie)).body.authorized).toBe(true);
+  });
+
   it('keeps the token file until the server sees the first account', () => {
     expect(readSetupToken(dataDir)).toBe(token);
   });
@@ -193,5 +219,46 @@ describe('setup page without instance control', () => {
   it('does not exist', async () => {
     await setup({}, 'none');
     expect((await ctx.request('/api/setup')).status).toBe(404);
+  });
+});
+
+describe('server start', () => {
+  beforeEach(() => setup());
+
+  it('boots when a pair is split between the environment and the setup page', async () => {
+    await saveStoredSettings(
+      ctx.deps.db,
+      ctx.deps.config.secret,
+      { GOOGLE_CLIENT_SECRET: 'geheim' },
+      ctx.clock.now(),
+    );
+    // Pinned in deploy/.env later; its partner stays on the setup page.
+    const env = {
+      GOOGLE_CLIENT_ID: GOOGLE.GOOGLE_CLIENT_ID,
+      SLIDER_SECRET: ctx.deps.config.secret,
+    };
+    expect(() => loadConfig(env, () => {})).toThrow(/must be set together/);
+    const boot = loadBootConfig(env);
+    expect(boot.secret).toBe(ctx.deps.config.secret);
+    const config = await loadInstanceConfig(env, boot, ctx.deps.db, silentLogger);
+    expect(config.auth.google?.clientId).toBe(GOOGLE.GOOGLE_CLIENT_ID);
+  });
+
+  it('logs a setup link with dev login too, so the hint on /einrichtung leads somewhere', async () => {
+    const devDir = await mkdtemp(path.join(tmpdir(), 'slider-setup-dev-'));
+    const info = vi.fn<Logger['info']>();
+    try {
+      const config = testConfig({
+        env: 'development',
+        dataDir: devDir,
+        auth: { ...testConfig().auth, devLogin: true },
+      });
+      await announceSetup(config, ctx.deps.db, { ...silentLogger, info });
+      const devToken = readSetupToken(devDir);
+      expect(devToken).toEqual(expect.any(String));
+      expect(info).toHaveBeenCalledWith(expect.stringContaining(`/einrichtung#token=${devToken}`));
+    } finally {
+      await rm(devDir, { recursive: true, force: true });
+    }
   });
 });

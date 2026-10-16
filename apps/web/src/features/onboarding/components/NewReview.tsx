@@ -15,6 +15,7 @@ import { UploadProgressCard } from './UploadProgressCard';
 import { useDeckUpload } from '../hooks/useDeckUpload';
 import { useLinkImport } from '../hooks/useLinkImport';
 import { useOneDrivePicker } from '../hooks/useOneDrivePicker';
+import { connectErrorFrom } from '../lib/link-import-errors';
 import { PPTX_ACCEPT } from '../lib/upload-validation';
 
 /**
@@ -52,14 +53,13 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
   // Back from the Microsoft login only `?link=` survives – the last workspace stands in.
   useEffect(() => rememberWorkspace(workspace.id), [workspace.id]);
 
-  // "Verbinden" or the picker came back refused: this Microsoft account already serves two
-  // Slider accounts. (With `?link=`, the link form explains it.) Read once, then off the URL.
+  // A Microsoft connect that failed ("Verbinden" in /konto or the account menu, the picker):
+  // the API lands every such failure here. (With `?link=`, the link form explains it.) Read
+  // once, then off the URL.
   const [searchParams, setSearchParams] = useSearchParams();
-  const [accountLimit] = useState(
-    () => searchParams.get('msError') === 'account_limit' && !searchParams.get('link'),
-  );
+  const [connectError] = useState(() => connectErrorFrom(searchParams));
   useEffect(() => {
-    if (!accountLimit) return;
+    if (!connectError) return;
     setSearchParams(
       (params) => {
         params.delete('msError');
@@ -67,7 +67,7 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
       },
       { replace: true },
     );
-  }, [accountLimit, setSearchParams]);
+  }, [connectError, setSearchParams]);
 
   const pickFile = () => fileInputRef.current?.click();
   const uploadFile = (file: File) => {
@@ -89,10 +89,10 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
           className="px-4 pt-2 md:px-14"
         />
       )}
-      {accountLimit && (
+      {connectError && (
         <div className="px-4 pt-4 md:px-14">
           <div className="max-w-[640px]">
-            <LoginErrorBanner code="account_limit" />
+            <LoginErrorBanner code={connectError} />
           </div>
         </div>
       )}
@@ -139,7 +139,7 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
           </div>
 
           {picking ? null : link.noAccess ? (
-            <NoAccessCard info={link.noAccess} onUploadInstead={pickFile} />
+            <NoAccessCard info={link.noAccess} onSignIn={link.signIn} onUploadInstead={pickFile} />
           ) : upload.state.status === 'uploading' ? (
             <UploadProgressCard
               file={upload.state.file}

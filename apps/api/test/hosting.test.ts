@@ -122,3 +122,52 @@ describe('client address behind a proxy', () => {
     expect(seen).toEqual(['local', '198.51.100.7']);
   });
 });
+
+describe('writes from other origins (CSRF)', () => {
+  let ctx: TestContext;
+  beforeEach(async () => {
+    ctx = await createTestContext();
+  });
+  afterEach(() => ctx.cleanup());
+
+  /** What a `<form enctype="text/plain">` on a sibling subdomain would send. */
+  const formPost = (headers: Record<string, string>) =>
+    ctx.request('/api/workspaces', {
+      method: 'POST',
+      body: '{"name":"Gekapert","x":"=1"}',
+      headers: { 'Content-Type': 'text/plain', ...headers },
+    });
+
+  it('refuses a same-site form post from another host, and creates nothing', async () => {
+    const res = await formPost({
+      Origin: 'https://evil.bertro.dev',
+      'Sec-Fetch-Site': 'same-site',
+    });
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe('forbidden');
+    expect((await formPost({ Origin: 'https://evil.bertro.dev' })).status).toBe(403);
+    expect((await formPost({ 'Sec-Fetch-Site': 'cross-site' })).status).toBe(403);
+    const list = (await (await ctx.request('/api/workspaces')).json()) as { name: string }[];
+    expect(list.map((w) => w.name)).not.toContain('Gekapert');
+  });
+
+  it('lets the web app (same origin or WEB_ORIGIN) and non-browser clients through', async () => {
+    const blocked = async (res: Response) => (await res.text()).includes('kommt nicht von Slider');
+    expect(
+      await blocked(
+        await formPost({ 'Sec-Fetch-Site': 'same-origin', Origin: 'http://10.0.0.5:8787' }),
+      ),
+    ).toBe(false);
+    expect(
+      await blocked(
+        await formPost({ Origin: 'http://localhost:5173', 'Sec-Fetch-Site': 'same-site' }),
+      ),
+    ).toBe(false);
+    expect(await blocked(await formPost({}))).toBe(false);
+    expect((await ctx.request('/api/live/unknown/leave', { method: 'POST' })).status).toBe(204);
+    // Reads are never blocked.
+    expect(
+      (await ctx.request('/api/me', { headers: { 'Sec-Fetch-Site': 'cross-site' } })).status,
+    ).toBe(200);
+  });
+});

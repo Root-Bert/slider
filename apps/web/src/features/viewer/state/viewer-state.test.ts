@@ -219,6 +219,23 @@ describe('viewerReducer', () => {
       expect(state.draft).toBeNull();
     });
 
+    it('closes the panel of a thread deleted meanwhile, keeps it while the thread is there', () => {
+      const open = run(
+        { type: 'threadFocused', threadId: 't1', openPanel: true },
+        { type: 'threadHovered', threadId: 't1' },
+      );
+      expect(
+        viewerReducer(open, { type: 'threadsReplaced', threadIds: new Set(['t1', 't2']) }),
+      ).toBe(open);
+      const gone = viewerReducer(open, { type: 'threadsReplaced', threadIds: new Set(['t2']) });
+      expect(gone).toMatchObject({
+        threadPanelOpen: false,
+        focusedThreadId: null,
+        hoveredThreadId: null,
+        editingCommentId: null,
+      });
+    });
+
     it('shares the right side between thread panel and deleted slides', () => {
       let state = run(
         { type: 'threadFocused', threadId: 't1', openPanel: true },

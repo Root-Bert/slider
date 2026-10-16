@@ -14,15 +14,14 @@ const LOGIN_COPY = [
 /** A3: the link points to a file only people in the owner's organisation may open. */
 export function NoAccessCard({
   info,
+  onSignIn,
   onUploadInstead,
 }: {
   info: NoAccessInfo;
+  /** Leaves for `info.loginUrl` (the link form remembers the link first, see `link-login.ts`). */
+  onSignIn: () => void;
   onUploadInstead: () => void;
 }) {
-  const signIn = () => {
-    if (info.loginUrl) window.location.assign(info.loginUrl);
-  };
-
   return (
     <CenteredCard
       headingLevel={2}
@@ -45,11 +44,11 @@ export function NoAccessCard({
       </p>
       <div className="flex flex-wrap justify-center gap-3">
         {info.kind === 'consent' ? (
-          <Button variant="secondary" size="lg" onClick={signIn}>
+          <Button variant="secondary" size="lg" onClick={onSignIn}>
             Erneut anmelden
           </Button>
         ) : info.loginUrl ? (
-          <Button size="lg" onClick={signIn}>
+          <Button size="lg" onClick={onSignIn}>
             Mit Microsoft anmelden
           </Button>
         ) : (

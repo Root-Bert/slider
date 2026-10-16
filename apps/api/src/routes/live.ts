@@ -2,17 +2,11 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { LIVE_EVENT, livePresenceInputSchema } from '@slider/shared';
 import { requireDeckAccess } from '../auth/access';
-import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
+import { resolveViewer, viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import type { AppDeps } from '../deps';
-import { notFound } from '../http/errors';
+import { ApiError, notFound } from '../http/errors';
 import { readJson } from '../http/validate';
 import type { LiveHub } from '../realtime/live-hub';
-
-/**
- * Keeps idle streams open through proxies and runtimes that close quiet connections (Bun's
- * default idle timeout is 10 s); a comment line, ignored by `EventSource`.
- */
-const HEARTBEAT_MS = 5_000;
 
 /** A tab id from the query (`?tab=…&replaces=…`): something short and plain, else none. */
 const tabId = (value: string | undefined) => (value && /^[\w-]{8,64}$/.test(value) ? value : null);
@@ -30,6 +24,20 @@ export function liveRoutes(deps: AppDeps, hub: LiveHub) {
         const tab = { tab: tabId(c.req.query('tab')), replaces: tabId(c.req.query('replaces')) };
         // nginx & co. would otherwise buffer the stream.
         c.header('X-Accel-Buffering', 'no');
+        /** Still signed in as the same person, and still allowed to see the deck? */
+        const stillAllowed = async () => {
+          try {
+            const current = await resolveViewer(c, deps);
+            if (current?.author.id !== author.id) return false;
+            await requireDeckAccess(deps.db, current, deck.id, 'view');
+            return true;
+          } catch (error) {
+            // Removed from the workspace, deck deleted: end. A database hiccup: keep going.
+            if (error instanceof ApiError) return false;
+            deps.log.warn(`Live access check for deck ${deck.id} failed`, error);
+            return true;
+          }
+        };
         return streamSSE(c, async (stream) => {
           const connectionId = hub.join(
             deck.id,
@@ -41,12 +49,23 @@ export function liveRoutes(deps: AppDeps, hub: LiveHub) {
                 .catch(() => hub.leave(connectionId));
             },
             tab,
+            () => {
+              void stream.close().catch(() => {});
+            },
           );
           stream.onAbort(() => hub.leave(connectionId));
+          const open = () => !stream.aborted && !stream.closed && hub.has(connectionId);
+          let checkedAt = Date.now();
           try {
-            // Ends once the hub dropped the connection (goodbye, timeout): the browser reconnects.
-            while (!stream.aborted && !stream.closed && hub.has(connectionId)) {
-              await stream.sleep(HEARTBEAT_MS);
+            // Ends once the hub dropped the connection (goodbye, timeout, shutdown) or access is
+            // gone; the browser reconnects – and gets a 404 if it may no longer see the deck.
+            while (open()) {
+              await stream.sleep(hub.heartbeatMs);
+              if (!open()) break;
+              if (Date.now() - checkedAt >= hub.accessCheckMs) {
+                checkedAt = Date.now();
+                if (!(await stillAllowed())) break;
+              }
               await stream.write(': ping\n\n');
             }
           } finally {

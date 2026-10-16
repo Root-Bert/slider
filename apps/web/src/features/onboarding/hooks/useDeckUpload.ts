@@ -31,6 +31,8 @@ export function useDeckUpload(workspaceId: string, onUploaded: (deck: Deck) => v
     controllerRef.current = controller;
     setState({ status: 'uploading', file, progress: 0 });
 
+    // All bytes sent: from here on the server creates the deck even if we stop listening.
+    let sent = false;
     const formData = new FormData();
     formData.append('workspaceId', workspaceId);
     formData.append('file', file);
@@ -38,7 +40,10 @@ export function useDeckUpload(workspaceId: string, onUploaded: (deck: Deck) => v
       const deck = await uploadWithProgress<Deck>(
         '/decks/upload',
         formData,
-        (progress) => setState({ status: 'uploading', file, progress }),
+        (progress) => {
+          if (progress >= 1) sent = true;
+          setState({ status: 'uploading', file, progress });
+        },
         controller.signal,
       );
       queryClient.setQueryData(queryKeys.deck(deck.id), deck);
@@ -46,7 +51,14 @@ export function useDeckUpload(workspaceId: string, onUploaded: (deck: Deck) => v
       void queryClient.invalidateQueries({ queryKey: queryKeys.me });
       onUploaded(deck);
     } catch (error) {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) {
+        // Left the page after the bytes were sent: the deck (and its plan slot) may exist now.
+        if (sent) {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.deckLists });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.me });
+        }
+        return;
+      }
       setState({
         status: 'error',
         message: error instanceof Error ? error.message : 'Der Upload ist fehlgeschlagen.',

@@ -5,7 +5,8 @@ import { count, eq } from 'drizzle-orm';
 import { SECRET_SETUP_KEYS, SETUP_KEYS, type SetupKey } from '@slider/shared';
 import { decryptToken, encryptToken } from '../auth/token-crypto';
 import type { Executor } from '../db/client';
-import { instanceSettings, userIdentities } from '../db/schema';
+import { instanceSettings, userIdentities, users } from '../db/schema';
+import { hasLogin, loadConfig, withStoredSettings, type BootConfig, type Config } from '../config';
 import type { Logger } from '../logger';
 
 /**
@@ -63,10 +64,20 @@ export async function saveStoredSettings(
   }
 }
 
-/** Someone has signed in: the first account (instance admin) exists. */
+/**
+ * Someone has signed in: the first account (instance admin) exists. The admin flag counts on its
+ * own, so an admin who later signs in with passkeys only (every provider unlinked) keeps the
+ * instance claimed – no fresh setup token, no second bootstrap.
+ */
 export async function instanceClaimed(db: Executor): Promise<boolean> {
-  const [row] = await db.select({ count: count() }).from(userIdentities);
-  return (row?.count ?? 0) > 0;
+  const [identity] = await db.select({ count: count() }).from(userIdentities);
+  if ((identity?.count ?? 0) > 0) return true;
+  const [admin] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.isInstanceAdmin, true))
+    .limit(1);
+  return admin !== undefined;
 }
 
 // ── Setup token ─────────────────────────────────────────────────────────────────────────────
@@ -104,4 +115,62 @@ export function setupTokenMatches(dataDir: string, given: string | undefined): b
   const a = Buffer.from(expected);
   const b = Buffer.from(given);
   return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/**
+ * Until the first account exists, the log shows the one-time link to the setup page – the only
+ * way in when no login is configured yet. Also with dev login (development only): the setup page
+ * points there, so the link must exist.
+ */
+export async function announceSetup(config: Config, db: Executor, log: Logger): Promise<void> {
+  if (await instanceClaimed(db)) {
+    removeSetupToken(config.dataDir);
+    if (!hasLogin(config) && !config.auth.devLogin) {
+      log.warn('No login is configured. The instance admin can set one up at /einrichtung.');
+    }
+    return;
+  }
+  if (config.env === 'test') return;
+  const token = ensureSetupToken(config.dataDir);
+  const url = `${config.webOrigin}/einrichtung#token=${token}`;
+  if (config.auth.devLogin) {
+    // Development acts as the dev owner anyway; the link is only for trying the setup page.
+    log.info(`Setup page (until the first account exists): ${url}`);
+    return;
+  }
+  log.warn(
+    [
+      '',
+      '────────────────────────────────────────────────────────────────────',
+      ' Slider is not set up yet. Open this link to configure the login',
+      ' and become the admin of this instance:',
+      '',
+      `   ${url}`,
+      '',
+      ' (Shown until the first account exists. Keep it private.)',
+      '────────────────────────────────────────────────────────────────────',
+    ].join('\n'),
+  );
+}
+
+/**
+ * The environment plus the settings saved on the setup page. Broken stored settings are skipped
+ * (the environment alone then has to be complete).
+ */
+export async function loadInstanceConfig(
+  env: NodeJS.ProcessEnv,
+  boot: BootConfig,
+  db: Executor,
+  log: Logger,
+): Promise<Config> {
+  const stored = await readStoredSettings(db, boot.secret, log);
+  if (Object.keys(stored).length === 0) return loadConfig(env);
+  try {
+    const config = loadConfig(withStoredSettings(env, stored));
+    log.info(`Settings from the setup page: ${Object.keys(stored).join(', ')}`);
+    return config;
+  } catch (error) {
+    log.error('The settings saved on the setup page are invalid – starting without them', error);
+    return loadConfig(env);
+  }
 }

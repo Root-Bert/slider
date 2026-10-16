@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { eq } from 'drizzle-orm';
 import type { LiveEvent } from '@slider/shared';
+import { workspaceMembers } from '../src/db/schema';
+import { LiveHub } from '../src/realtime/live-hub';
 import {
   createReadyDeck,
   createTestContext,
@@ -221,5 +224,67 @@ describe('live routes', () => {
       headers: { 'Content-Type': 'application/json' },
     });
     expect(notJson.status).toBe(400);
+  });
+});
+
+describe('live streams end', () => {
+  let ctx: TestContext;
+  let deck: DeckFixture;
+  let hub: LiveHub;
+  const streams: LiveStream[] = [];
+  const open = async (url: string, cookie?: string) => {
+    const stream = await openLive(ctx, url, cookie);
+    streams.push(stream);
+    return stream;
+  };
+  const ended = (stream: LiveStream) =>
+    expect(nextOfType(stream, 'comments')).rejects.toThrow('Stream ended');
+
+  beforeEach(async () => {
+    hub = new LiveHub(Date.now, { heartbeatMs: 20, accessCheckMs: 50 });
+    ctx = await createTestContext({ live: hub });
+    deck = await createReadyDeck(ctx);
+  });
+  afterEach(async () => {
+    await Promise.all(streams.splice(0).map((stream) => stream.close()));
+    await ctx.cleanup();
+  });
+
+  it('on shutdown: closeAll ends every stream, so the server can close', async () => {
+    const first = await open(`/api/decks/${deck.deckId}/live`);
+    const second = await open(`/api/decks/${deck.deckId}/live`);
+    await nextOfType(first, 'hello');
+    await nextOfType(second, 'hello');
+    hub.closeAll();
+    await ended(first);
+    await ended(second);
+    expect(hub.peers(deck.deckId)).toEqual([]);
+  });
+
+  it('when the viewer is removed from the workspace', async () => {
+    const mia = await signedInUser(ctx, { name: 'Mia', email: 'mia@firma.de' });
+    await ctx.deps.db
+      .insert(workspaceMembers)
+      .values({ workspaceId: ctx.workspaceId, userId: mia.user.id, role: 'reviewer' });
+    const owner = await open(`/api/decks/${deck.deckId}/live`);
+    await nextOfType(owner, 'hello');
+    const stream = await open(`/api/decks/${deck.deckId}/live`, mia.cookie);
+    const hello = await nextOfType(stream, 'hello');
+    await ctx.deps.db.delete(workspaceMembers).where(eq(workspaceMembers.userId, mia.user.id));
+
+    await ended(stream);
+    expect(await nextOfType(owner, 'leave')).toEqual({
+      type: 'leave',
+      connectionId: hello.connectionId,
+    });
+    const again = await ctx.request(`/api/decks/${deck.deckId}/live`, { cookie: mia.cookie });
+    expect(again.status).toBe(404);
+  });
+
+  it('when the deck is deleted', async () => {
+    const stream = await open(`/api/decks/${deck.deckId}/live`);
+    await nextOfType(stream, 'hello');
+    expect((await ctx.request(`/api/decks/${deck.deckId}`, { method: 'DELETE' })).status).toBe(204);
+    await ended(stream);
   });
 });

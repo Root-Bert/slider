@@ -1,6 +1,8 @@
+import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
+import { openPptx } from '../src';
 import { textHash } from '../src/hash';
-import { LAYOUT_NAMES } from './fixtures/build-pptx';
+import { buildPptx, LAYOUT_NAMES } from './fixtures/build-pptx';
 import { defined, openDeck } from './helpers';
 
 describe('presentation structure', () => {
@@ -164,5 +166,48 @@ describe('slide metadata', () => {
       new TextDecoder().decode(defined(await pptx.readFile('ppt/presentation.xml'))),
     ).toContain('p:sldIdLst');
     expect(await pptx.readFile('ppt/missing.xml')).toBeNull();
+  });
+});
+
+describe('Strict Open XML', () => {
+  /** Rewrites every relationship type to the strict namespace, as "Strict Open XML" saves do. */
+  async function toStrict(bytes: Uint8Array): Promise<Uint8Array> {
+    const zip = await JSZip.loadAsync(bytes);
+    for (const path of Object.keys(zip.files).filter((p) => p.endsWith('.rels'))) {
+      const xml = await defined(zip.file(path)).async('string');
+      zip.file(
+        path,
+        xml.replaceAll(
+          'http://schemas.openxmlformats.org/officeDocument/2006/relationships/',
+          'http://purl.oclc.org/ooxml/officeDocument/relationships/',
+        ),
+      );
+    }
+    return zip.generateAsync({ type: 'uint8array' });
+  }
+
+  it('reads layouts, placeholder boxes and legacy comments like a transitional file', async () => {
+    const bytes = await buildPptx({
+      slides: [
+        {
+          title: 'Kickoff',
+          body: ['Eins', 'Zwei'],
+          legacyComments: [
+            { author: 'Lena', text: 'Erster', position: { x: 10, y: 10 } },
+            { author: 'Jonas', text: 'Zweiter', position: { x: 20, y: 20 } },
+          ],
+        },
+      ],
+    });
+    const transitional = (await openPptx(bytes)).presentation;
+    const strict = (await openPptx(await toStrict(bytes))).presentation;
+    const slide = defined(strict.slides[0]);
+    expect(slide.layoutName).toBe(defined(transitional.slides[0]).layoutName);
+    expect(slide.layoutName).not.toBeNull();
+    expect(slide.shapes.map((shape) => shape.bbox)).toEqual(
+      defined(transitional.slides[0]).shapes.map((shape) => shape.bbox),
+    );
+    expect(slide.shapes.every((shape) => shape.bbox.w > 0 && shape.bbox.h > 0)).toBe(true);
+    expect(strict.comments.map((comment) => comment.text)).toEqual(['Erster', 'Zweiter']);
   });
 });

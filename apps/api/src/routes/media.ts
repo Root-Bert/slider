@@ -67,10 +67,10 @@ export function mediaRoutes(deps: AppDeps) {
       // A permanent link with a permission check on every request (unlike `/files/*`).
       .get('/media/:mediaId', viewer, async (c) => {
         const row = await getMediaForViewer(deps, c.var.viewer, c.req.param('mediaId'));
-        const data = await deps.media.get(row.storageKey);
-        if (!data) throw notFound('Die Aufnahme ist nicht mehr gespeichert.');
-
-        const size = data.byteLength;
+        const gone = () => notFound('Die Aufnahme ist nicht mehr gespeichert.');
+        // Only the requested bytes are read: players fetch long recordings in many small ranges.
+        const size = await deps.media.size(row.storageKey);
+        if (size === null) throw gone();
         c.header('Content-Type', row.mimeType);
         c.header('Accept-Ranges', 'bytes');
         // The bytes behind an id never change; the permission check runs again after a reload.
@@ -84,11 +84,16 @@ export function mediaRoutes(deps: AppDeps) {
         }
         if (!range) {
           c.header('Content-Length', String(size));
-          return c.body(data);
+          if (size === 0) return c.body(null);
+          const body = await deps.media.stream(row.storageKey);
+          if (!body) throw gone();
+          return c.body(body);
         }
+        const body = await deps.media.stream(row.storageKey, range);
+        if (!body) throw gone();
         c.header('Content-Range', `bytes ${range.start}-${range.end}/${size}`);
         c.header('Content-Length', String(range.end - range.start + 1));
-        return c.body(data.subarray(range.start, range.end + 1), 206);
+        return c.body(body, 206);
       })
   );
 }

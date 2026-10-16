@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Deck } from '@slider/shared';
 import { useDeckStatus, useInvalidateSlideImages, useRerenderDeck, useUpdateDeck } from '@/lib/api';
-import { ContextMenu, Menu, type MenuAction, type ShowToast } from '@/ui';
+import { ContextMenu, Menu, type IconButtonVariant, type MenuAction, type ShowToast } from '@/ui';
 import { usePinnedDecks } from '../hooks/usePinnedDecks';
 import { MAX_PINNED, pinDeck, unpinDeck } from '../lib/pinned-decks';
 import { DeleteDeckDialog } from './DeleteDeckDialog';
@@ -13,8 +13,8 @@ interface DeckActionsProps {
   onNotify: ShowToast;
   className?: string;
   triggerClassName?: string;
-  /** Without the ⋯ button: the actions only open on a right click (grid card). */
-  hideTrigger?: boolean;
+  /** Look of the ⋯ button (`glass` over the grid card's thumbnail). */
+  triggerVariant?: IconButtonVariant;
   /** Where the card was right-clicked: the same actions open there as a context menu. */
   contextAt?: { x: number; y: number } | null;
   onContextClose?: () => void;
@@ -84,7 +84,7 @@ export function DeckActions({
   onNotify,
   className,
   triggerClassName,
-  hideTrigger = false,
+  triggerVariant,
   contextAt,
   onContextClose,
   onRename,
@@ -136,14 +136,13 @@ export function DeckActions({
 
   return (
     <>
-      {!hideTrigger && (
-        <Menu
-          label={`Aktionen für „${deck.title}“`}
-          actions={actions}
-          className={className}
-          triggerClassName={triggerClassName}
-        />
-      )}
+      <Menu
+        label={`Aktionen für „${deck.title}“`}
+        actions={actions}
+        className={className}
+        triggerClassName={triggerClassName}
+        triggerVariant={triggerVariant}
+      />
       {contextAt && onContextClose && (
         <ContextMenu
           label={`Aktionen für „${deck.title}“`}

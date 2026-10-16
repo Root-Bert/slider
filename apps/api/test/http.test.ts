@@ -137,6 +137,17 @@ describe('errorHandler', () => {
     expect((await failingWith(new HTTPException(503)).request()).status).toBe(500);
   });
 
+  it('answers a unique violation (a race for the same row) with a 409, wrapped or not', async () => {
+    const unique = Object.assign(new Error('duplicate key value'), { code: '23505' });
+    for (const error of [unique, new Error('Failed query', { cause: unique })]) {
+      const res = await failingWith(error).request();
+      expect(res.status).toBe(409);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe('bad_request');
+    }
+    const other = Object.assign(new Error('fk'), { code: '23503' });
+    expect((await failingWith(other).request()).status).toBe(500);
+  });
+
   it('answers unknown routes with a JSON 404', async () => {
     const res = await appWithErrors().app.request('/nowhere');
     expect(res.status).toBe(404);

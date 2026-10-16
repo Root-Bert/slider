@@ -9,6 +9,7 @@ import {
   type Rect,
   type Shape,
   type Slide,
+  type UpdateCommentInput,
 } from '@slider/shared';
 import { memo, useMemo, useRef, type PointerEvent } from 'react';
 import { useUpdateComment } from '@/lib/api';
@@ -92,6 +93,10 @@ export const AnnotationLayer = memo(function AnnotationLayer({
   const dispatch = useViewerDispatch();
   const { viewer, deck, canComment } = useViewerData();
   const update = useUpdateComment(deck.id);
+  // Per call, not `mutate`'s options: those run only for the latest call of this one mutation, so a
+  // second drag before the first is stored would leave the first frame's preview standing.
+  const save = (input: UpdateCommentInput & { commentId: string }, done: () => void) =>
+    void update.mutateAsync(input).then(done, done);
   const layerRef = useRef<HTMLDivElement>(null);
   const registry = useStageRegistry();
   // A box being dragged: its badge follows it live.
@@ -209,9 +214,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                     : null,
                 );
               }}
-              onMove={(shift, done) =>
-                update.mutate({ commentId: root.id, move: shift }, { onSettled: done })
-              }
+              onMove={(shift, done) => save({ commentId: root.id, move: shift }, done)}
             />
           );
         })}
@@ -255,8 +258,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                           : null,
                       );
                     },
-                    onDrop: (shift, done) =>
-                      update.mutate({ commentId: root.id, move: shift }, { onSettled: done }),
+                    onDrop: (shift, done) => save({ commentId: root.id, move: shift }, done),
                   }
                 : undefined
             }
@@ -291,10 +293,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                   onActivate={() => activate(mark)}
                   onPreview={(rect) => showPreview(mark.thread.id, rect)}
                   onCommit={(rect, done) =>
-                    update.mutate(
-                      { commentId: root.id, anchor: rectAnchor(rect) },
-                      { onSettled: done },
-                    )
+                    save({ commentId: root.id, anchor: rectAnchor(rect) }, done)
                   }
                 />
               ) : (
@@ -321,8 +320,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                 onActivate={() => activate(mark)}
                 onPlace={
                   isOwn(root)
-                    ? (box, done) =>
-                        update.mutate({ commentId: root.id, textBox: box }, { onSettled: done })
+                    ? (box, done) => save({ commentId: root.id, textBox: box }, done)
                     : undefined
                 }
                 onPreview={

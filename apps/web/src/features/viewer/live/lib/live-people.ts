@@ -2,7 +2,7 @@ import type { Author } from '@slider/shared';
 import { useMemo } from 'react';
 import { useColorOverrides } from '../../hooks/useColorOverrides';
 import { withColorOverride } from '../../lib/color-overrides';
-import { useLiveSnapshot } from './live-store';
+import { getLiveSnapshot, useLiveKey, type LiveSnapshot } from './live-store';
 
 export interface LivePerson {
   author: Author;
@@ -15,15 +15,12 @@ export interface LivePerson {
  * own other windows count too.
  */
 export function useLivePeople(): LivePerson[] {
-  const { peers } = useLiveSnapshot();
   const overrides = useColorOverrides();
-  // Recomputed on presence changes only when someone switches slides or comes and goes.
-  const key = [...peers.values()]
-    .map(
-      (peer) => `${peer.connectionId}:${peer.author.id}:${peer.author.color}:${peer.activeSlideId}`,
-    )
-    .join('|');
+  // Re-rendered on presence changes only when someone switches slides or comes and goes – not on
+  // the many cursor moves.
+  const key = useLiveKey(peopleKey);
   return useMemo(() => {
+    const { peers } = getLiveSnapshot();
     const people = new Map<string, LivePerson>();
     for (const peer of peers.values()) {
       people.set(peer.author.id, {
@@ -32,7 +29,14 @@ export function useLivePeople(): LivePerson[] {
       });
     }
     return [...people.values()];
-    // `key` captures what matters of `peers`; cursor moves alone don't recompute.
+    // `key` captures what matters of the peers.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, overrides]);
 }
+
+const peopleKey = ({ peers }: LiveSnapshot) =>
+  [...peers.values()]
+    .map(
+      (peer) => `${peer.connectionId}:${peer.author.id}:${peer.author.color}:${peer.activeSlideId}`,
+    )
+    .join('|');

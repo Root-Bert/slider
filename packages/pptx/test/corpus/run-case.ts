@@ -17,7 +17,8 @@ import { toDeckSpec, type CorpusCase } from './spec';
 /**
  * Runs one corpus case the way the API's sync import does (apps/api/src/sync/sync-import.ts):
  * fingerprints from `fingerprintFromShapes` over clamped shapes (apps/api/src/import/common.ts
- * `toShape`) with `renderHash = sha256(renderSlideSvg)`, then `matchSlides(prev, next)`.
+ * `toShape`) with `renderHash = sha256(renderSlideSvg)`, the slide's `contentHash` and
+ * `creationId`, then `matchSlides(prev, next)`.
  * Slide keys are the labels from the case definition.
  */
 
@@ -37,7 +38,7 @@ export interface CommentSummary {
   status: 'open' | 'done';
   author: string;
   providerId: string | null;
-  anchor: 'slide' | 'point' | 'shape';
+  anchor: 'slide' | 'point' | 'shape' | 'rect';
   text: string;
   replies: number;
 }
@@ -111,6 +112,8 @@ async function analyse(
         textHash: slide.textHash,
         shapes: slide.shapes.map(toShape),
         renderHash: sha256(await pkg.renderSlideSvg(slide)),
+        contentHash: slide.contentHash,
+        creationId: slide.creationId,
       }),
     );
   }

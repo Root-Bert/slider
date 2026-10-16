@@ -17,6 +17,12 @@ const reducedMotionList = (): MediaQueryList | null =>
 /** Whether the user asked for reduced motion right now (`false` without a DOM). */
 export const prefersReducedMotion = (): boolean => reducedMotionList()?.matches ?? false;
 
+/**
+ * `behavior` for a scroll started from script: the CSS reduced-motion rule only reaches scrolls
+ * whose behavior is `auto`, so an explicit `smooth` has to ask here.
+ */
+export const smoothScroll = (): ScrollBehavior => (prefersReducedMotion() ? 'instant' : 'smooth');
+
 /** `ms`, or 0 under reduced motion – for timers that wait for an animation to finish. */
 export const motionMs = (ms: number): number => (prefersReducedMotion() ? 0 : ms);
 

@@ -51,6 +51,10 @@ export function useLiveKey(select: (snapshot: LiveSnapshot) => string): string {
   return useSyncExternalStore(subscribe, () => select(snapshot));
 }
 
+/** Whether the stream is up – re-renders only when that flips, not on cursor moves. */
+export const useLiveConnected = () =>
+  useLiveKey((current) => (current.connected ? '1' : '')) === '1';
+
 // ── Connection ──────────────────────────────────────────────────────────────
 
 /** Never post presence faster than this (ms) – the others interpolate in between. */

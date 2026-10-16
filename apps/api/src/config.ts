@@ -12,6 +12,7 @@ import {
   type PlanId,
   type SignupMode,
 } from '@slider/shared';
+import { LIBREOFFICE_TIMEOUT_MS } from './import/libreoffice';
 import { DEFAULT_PLAN_LIMITS, type PlanLimits } from './services/plans';
 
 export interface Config {
@@ -59,6 +60,11 @@ export interface Config {
    * Unset → looked up on the PATH and in /Applications; not installed → SVG previews.
    */
   libreOfficePath?: string | null;
+  /**
+   * `LIBREOFFICE_TIMEOUT_MS`: how long one conversion may take before the deck falls back to SVG
+   * previews. Big decks with many pictures on a small server need more than the default.
+   */
+  libreOfficeTimeoutMs?: number;
 }
 
 export interface MediaConfig {
@@ -210,6 +216,7 @@ const envSchema = z.object({
   PLAN_FREE_MAX_MEMBERS: z.coerce.number().int().min(0).optional(),
   PLAN_FREE_MAX_DECKS: z.coerce.number().int().min(0).optional(),
   LIBREOFFICE_PATH: z.string().min(1).optional(),
+  LIBREOFFICE_TIMEOUT_MS: z.coerce.number().int().min(10_000).default(LIBREOFFICE_TIMEOUT_MS),
 });
 
 /** Env value → limit: unset keeps the default, `0` means unlimited (`null`). */
@@ -227,6 +234,30 @@ export const DEMO_HOSTS = ['slider.bertro.dev'];
  */
 export function isLimitedInstance(webOrigin: string, demo: boolean | undefined): boolean {
   return demo ?? DEMO_HOSTS.includes(new URL(webOrigin).hostname);
+}
+
+/** What the server needs before the database is open: data folder, secret, database. */
+export type BootConfig = Pick<Config, 'env' | 'dataDir' | 'secret' | 'hosting'>;
+
+/**
+ * The boot part of the config, without the cross-field checks of logins, mail and sign-up: one
+ * half of a pair (e.g. GOOGLE_CLIENT_ID) may come from the environment and the other from the
+ * setup page. {@link loadConfig} validates the merged settings once the database is open.
+ */
+export function loadBootConfig(env: NodeJS.ProcessEnv = process.env): BootConfig {
+  const parsed = envSchema
+    .pick({ NODE_ENV: true, DATA_DIR: true, SLIDER_SECRET: true })
+    .parse(stripEmpty(env));
+  const dataDir = path.resolve(REPO_ROOT, parsed.DATA_DIR);
+  const secret =
+    parsed.SLIDER_SECRET ??
+    (parsed.NODE_ENV === 'production' ? loadOrCreateSecret(dataDir) : DEV_SECRET);
+  return {
+    env: parsed.NODE_ENV,
+    dataDir,
+    secret,
+    hosting: loadHostingConfig(env, parsed.NODE_ENV),
+  };
 }
 
 export function loadConfig(
@@ -372,6 +403,7 @@ export function loadConfig(
     libreOfficePath: parsed.LIBREOFFICE_PATH
       ? path.resolve(REPO_ROOT, expandHome(parsed.LIBREOFFICE_PATH))
       : null,
+    libreOfficeTimeoutMs: parsed.LIBREOFFICE_TIMEOUT_MS,
   };
 }
 

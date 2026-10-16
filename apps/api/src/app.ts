@@ -7,6 +7,7 @@ import type { AppDeps } from './deps';
 import { errorHandler, notFoundHandler } from './http/errors';
 import { healthCheck, trustProxy } from './http/hosting';
 import { LiveHub } from './realtime/live-hub';
+import { sameOriginWrites } from './http/same-origin';
 import { serveWebApp } from './http/static';
 import { authRoutes } from './routes/auth';
 import { commentsRoutes } from './routes/comments';
@@ -45,6 +46,7 @@ export function createApp(appDeps: AppDeps) {
     }),
   );
   app.use(cors({ origin: deps.config.webOrigin, credentials: true }));
+  app.use(sameOriginWrites(deps.config.webOrigin));
   if (deps.config.hosting?.trustProxy) app.use(trustProxy());
 
   const api = new Hono()

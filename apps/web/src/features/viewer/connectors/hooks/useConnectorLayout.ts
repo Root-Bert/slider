@@ -288,10 +288,9 @@ export function useConnectorLayout({
     for (const header of wrapper?.querySelectorAll('[data-timeline-header]') ?? []) observe(header);
     observe(wrapper?.querySelector('[data-comment-area]'));
     // Slides, columns and cards move without resizing when the split or the brick layout change:
-    // watch their inline styles and the rendered window too. The lines themselves live in the
-    // scroller as well – their own updates don't count.
+    // watch their inline styles and the rendered window too.
     const mutationObserver = new MutationObserver((records) => {
-      if (records.some((record) => !layer?.contains(record.target))) throttled.schedule();
+      if (needsRemeasure(records, layer)) throttled.schedule();
     });
     if (scroller)
       mutationObserver.observe(scroller, {
@@ -355,4 +354,21 @@ function measureCutouts(slideElement: HTMLElement, origin: DOMRect): Cutout[] {
     }
   }
   return cutouts;
+}
+
+/**
+ * Whether DOM changes in the scroller can move a line's ends. The lines themselves live in the
+ * scroller as well, and so does the minimap, whose bracket follows every frame of a sideways
+ * scroll (`data-connector-ignore`) – their own updates don't count.
+ */
+export function needsRemeasure(
+  records: readonly Pick<MutationRecord, 'target'>[],
+  layer: Element | null | undefined,
+): boolean {
+  return records.some((record) => {
+    const { target } = record;
+    if (layer?.contains(target)) return false;
+    const element = target instanceof Element ? target : target.parentElement;
+    return !element?.closest('[data-connector-ignore]');
+  });
 }

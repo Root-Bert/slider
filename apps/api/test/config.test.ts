@@ -14,6 +14,14 @@ describe('loadConfig', () => {
     expect(loadConfig({}, quiet).dataDir).toBe(API_DATA_DIR);
   });
 
+  it('gives LibreOffice 2 minutes per deck unless LIBREOFFICE_TIMEOUT_MS says otherwise', () => {
+    expect(loadConfig({}, quiet).libreOfficeTimeoutMs).toBe(120_000);
+    expect(loadConfig({ LIBREOFFICE_TIMEOUT_MS: '600000' }, quiet).libreOfficeTimeoutMs).toBe(
+      600_000,
+    );
+    expect(() => loadConfig({ LIBREOFFICE_TIMEOUT_MS: '500' }, quiet)).toThrow();
+  });
+
   it('treats empty keys from .env as unset', () => {
     const config = loadConfig({ SLIDER_SECRET: '', MS_CLIENT_ID: '', MS_CLIENT_SECRET: '' }, quiet);
     expect(config.microsoft).toBeNull();

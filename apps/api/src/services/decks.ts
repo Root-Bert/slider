@@ -54,7 +54,10 @@ export async function toDeckDtos(
         ? db
             .select({ revisionId: slideVersions.revisionId, count: count() })
             .from(slideVersions)
-            .where(inArray(slideVersions.revisionId, revisionIds))
+            // Visible slides only, as the viewer counts them ("1 / n").
+            .where(
+              and(inArray(slideVersions.revisionId, revisionIds), eq(slideVersions.hidden, false)),
+            )
             .groupBy(slideVersions.revisionId)
         : [],
       revisionIds.length

@@ -1,5 +1,6 @@
 import type { Rect } from '@slider/shared';
 import { createContext, useContext, useSyncExternalStore } from 'react';
+import { smoothScroll } from '@/lib/motion';
 import {
   revealScrollLeft,
   type RevealAlign,
@@ -90,8 +91,10 @@ export function createStageRegistry(): StageRegistry {
   let markPreview: MarkPreview | null = null;
   const markListeners = new Set<() => void>();
 
-  const scrollTrackTo = (left: number, behavior: ScrollBehavior = 'instant') => {
+  const scrollTrackTo = (left: number, asked: ScrollBehavior = 'instant') => {
     if (!scroller || Math.abs(left - scroller.scrollLeft) < 0.5) return;
+    // Reduced motion: a jump instead of a long animated pan.
+    const behavior = asked === 'smooth' ? smoothScroll() : asked;
     const now = performance.now();
     until = now + PROGRAMMATIC_START_MS[behavior === 'smooth' ? 'smooth' : 'instant'];
     deadline = now + PROGRAMMATIC_MAX_MS;

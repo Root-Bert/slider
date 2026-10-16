@@ -8,13 +8,15 @@ const TITLE = 'Wir können diesen Link nicht öffnen';
 
 function setup(info: Partial<NoAccessInfo> = {}) {
   const onUploadInstead = vi.fn();
+  const onSignIn = vi.fn();
   render(
     <NoAccessCard
       info={{ host: 'acme.sharepoint.com', kind: 'login', message: 'Nachricht', ...info }}
+      onSignIn={onSignIn}
       onUploadInstead={onUploadInstead}
     />,
   );
-  return { onUploadInstead };
+  return { onUploadInstead, onSignIn };
 }
 
 describe('NoAccessCard', () => {
@@ -30,14 +32,12 @@ describe('NoAccessCard', () => {
     expect(help.getAttribute('rel')).toBe('noopener noreferrer');
   });
 
-  it('login: the two-line copy and "Mit Microsoft anmelden" goes to the login URL', async () => {
-    const assign = vi.fn();
-    vi.stubGlobal('location', { ...window.location, assign });
-    setup({ loginUrl: '/api/login' });
+  it('login: the two-line copy and "Mit Microsoft anmelden" signs in', async () => {
+    const { onSignIn } = setup({ loginUrl: '/api/login' });
     expect(screen.getByText(/nur für deine Organisation freigegeben/)).toBeTruthy();
     expect(screen.queryByText('Nachricht')).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Mit Microsoft anmelden' }));
-    expect(assign).toHaveBeenCalledWith('/api/login');
+    expect(onSignIn).toHaveBeenCalledOnce();
   });
 
   it('not configured: the sign-in is disabled and explains why', () => {

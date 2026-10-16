@@ -207,3 +207,19 @@ describe('migration 0024_merge_close_colors', () => {
     ]);
   });
 });
+
+describe('migration 0027_slide_indexes', () => {
+  it('indexes the slide_id foreign keys that slide deletes cascade through', async () => {
+    client = new PGlite();
+    await migrate(drizzle({ client }), { migrationsFolder: MIGRATIONS_DIR });
+    const { rows } = await client.query<{ tablename: string; indexdef: string }>(
+      "SELECT tablename, indexdef FROM pg_indexes WHERE tablename IN ('comments', 'slide_versions')",
+    );
+    const leadingColumns = rows.map(
+      (row) => `${row.tablename}.${/\((\w+)/.exec(row.indexdef)?.[1] ?? ''}`,
+    );
+    expect(leadingColumns).toEqual(
+      expect.arrayContaining(['comments.slide_id', 'slide_versions.slide_id']),
+    );
+  });
+});

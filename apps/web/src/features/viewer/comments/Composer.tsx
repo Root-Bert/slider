@@ -1,3 +1,4 @@
+import { MAX_COMMENT_BODY_LENGTH } from '@slider/shared';
 import {
   useEffect,
   useEffectEvent,
@@ -13,12 +14,13 @@ import { AutosizeTextarea, Avatar, Button, cn, ErrorText, Kbd, ReturnKey, useIsN
 import { accentAlpha } from '@/lib/accent';
 import { isTypingTarget } from '@/lib/dom';
 import { MediaTabs } from './MediaTabs';
-import { MEDIA_KINDS, type MediaKindId } from './lib/media-kinds';
+import type { MediaKindId } from './lib/media-kinds';
 import { RecorderPanel } from '../media/RecorderPanel';
 import { DEFAULT_SKETCH_ASPECT, exportSketch } from '../media/lib/sketch';
 import { SketchPanel, type Sketch } from '../media/SketchPanel';
 import { useCreateMediaComment } from '../media/hooks/useMediaComment';
 import type { Recording } from '../media/hooks/useRecorder';
+import { useRestoreFocus } from '../hooks/useRestoreFocus';
 import { useComposerPosition } from './hooks/useComposerPosition';
 import { useMentions } from './hooks/useMentions';
 import { locationLabel } from './lib/labels';
@@ -55,6 +57,8 @@ function ComposerPopover({ draft }: { draft: Draft }) {
   const sketchAspect =
     slides.find((slide) => slide.id === draft.slideId)?.aspectRatio ?? DEFAULT_SKETCH_ASPECT;
   const mentions = useMentions(body, setBody, commentRef);
+  // Closed (sent, Esc): back to what had the focus, e.g. the drawing's badge.
+  useRestoreFocus();
 
   // Typed right after drawing: go on after the first characters.
   useEffect(() => {
@@ -97,17 +101,10 @@ function ComposerPopover({ draft }: { draft: Draft }) {
     setSketch(null);
   };
 
-  /** Tab / Shift+Tab: Text → Audio → Video → Bild → Text; the recorder takes the keys (Space, ↵). */
-  const cycleTab = (backwards: boolean) => {
-    const kinds = MEDIA_KINDS.map((kind) => kind.id);
-    const index = kinds.indexOf(tab);
-    const next = kinds[(index + (backwards ? kinds.length - 1 : 1)) % kinds.length] ?? 'text';
-    switchTab(next);
-    if (next === 'text') commentRef.current?.focus();
-  };
-
-  // Focus outside a field – after a click on the slide, or on the sketch or recorder: Tab steps
-  // through the kinds, typing writes the comment. A fresh box takes the keys itself (`DraftMark`).
+  // Focus outside the composer – after a click on the slide: Tab moves into it (Shift+Tab to its
+  // last control), typing writes the comment. Inside, Tab moves the focus as usual – the kinds
+  // switch with ←/→ on their tabs – so nothing (a recording, a sketch) is dropped by a key press.
+  // A fresh box takes the keys itself (`DraftMark`).
   const onWindowKeyDown = useEffectEvent((event: KeyboardEvent) => {
     if (event.defaultPrevented || event.isComposing || isTypingTarget(event.target)) return;
     if (isModKey(event) || event.altKey || freshBox) return;
@@ -115,10 +112,13 @@ function ComposerPopover({ draft }: { draft: Draft }) {
     // Dialogs, and the Bild sheet while a box is selected (typing writes into the box).
     if (target?.closest('dialog, [data-sketch-keys]')) return;
     if (event.key === 'Tab') {
-      // In the composer its panels and controls handle Tab.
-      if (target && popoverRef.current?.contains(target)) return;
+      const popover = popoverRef.current;
+      if (!popover || (target && popover.contains(target))) return;
+      const stops = tabStops(popover);
+      const stop = event.shiftKey ? stops.at(-1) : stops[0];
+      if (!stop) return;
       event.preventDefault();
-      cycleTab(event.shiftKey);
+      stop.focus();
       return;
     }
     // Space stays with buttons and the recorder.
@@ -186,10 +186,13 @@ function ComposerPopover({ draft }: { draft: Draft }) {
       <header className="flex items-center gap-2">
         <Avatar author={author} size={24} />
         <div className="flex min-w-0 flex-col">
-          <span id={titleId} className="text-xs font-medium text-fg">
+          <span className="text-xs font-medium text-fg">
             {author.name} <span className="font-normal text-fg-subtle">jetzt</span>
           </span>
-          <span className="truncate text-caption text-fg-subtle">{subtitle}</span>
+          {/* Names the dialog: what it is, not who writes ("Neuer Kommentar · Folie 3"). */}
+          <span id={titleId} className="truncate text-caption text-fg-subtle">
+            {subtitle}
+          </span>
         </div>
       </header>
 
@@ -197,14 +200,7 @@ function ComposerPopover({ draft }: { draft: Draft }) {
 
       {recordingTab && (
         // Remount per kind: switching tabs turns the previous device off.
-        <RecorderPanel
-          key={tab}
-          kind={tab}
-          deckId={deck.id}
-          onChange={setRecording}
-          autoFocus
-          onTab={cycleTab}
-        />
+        <RecorderPanel key={tab} kind={tab} deckId={deck.id} onChange={setRecording} autoFocus />
       )}
 
       {imageTab && (
@@ -215,7 +211,6 @@ function ComposerPopover({ draft }: { draft: Draft }) {
           aspect={sketchAspect}
           onChange={setSketch}
           autoFocus
-          onTab={cycleTab}
           actions={{ canSend, pending, onSend: () => submit(), onCancel: cancel }}
         />
       )}
@@ -232,6 +227,7 @@ function ComposerPopover({ draft }: { draft: Draft }) {
             (draft.strokes.length === 0 && !onSlideText && !recordingTab && !imageTab && !freshBox)
           }
           aria-label="Kommentar"
+          maxLength={MAX_COMMENT_BODY_LENGTH}
           placeholder={
             recordingTab
               ? 'Optional: Notiz zur Aufnahme'
@@ -247,15 +243,15 @@ function ComposerPopover({ draft }: { draft: Draft }) {
           onKeyDown={(event) => {
             if (mentions.onKeyDown(event)) return;
             if (isModEnter(event)) submit();
-            if (event.key !== 'Tab' || isModKey(event) || event.altKey) return;
-            // Shift+Tab goes back to the text on the slide.
+            if (event.key !== 'Tab' || !event.shiftKey || isModKey(event) || event.altKey) return;
+            // Shift+Tab goes back to the text on the slide; otherwise Tab moves on as usual.
             const slideText =
-              event.shiftKey && tab === 'text'
+              tab === 'text'
                 ? document.querySelector<HTMLTextAreaElement>('[data-text-editor] textarea')
                 : null;
+            if (!slideText) return;
             event.preventDefault();
-            if (slideText) slideText.focus();
-            else cycleTab(event.shiftKey);
+            slideText.focus();
           }}
           className="text-body leading-5 text-fg"
         />
@@ -298,4 +294,13 @@ function ComposerPopover({ draft }: { draft: Draft }) {
       </footer>
     </form>
   );
+}
+
+/** The elements Tab stops at, in order (roving tabs: only the selected one). */
+function tabStops(root: HTMLElement): HTMLElement[] {
+  return [
+    ...root.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), a[href], [tabindex]',
+    ),
+  ].filter((element) => element.tabIndex >= 0);
 }

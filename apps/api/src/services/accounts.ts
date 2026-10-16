@@ -3,6 +3,7 @@ import { ACCENT_COLORS, type LoginError } from '@slider/shared';
 import { advisoryXactLock, type Executor } from '../db/client';
 import { passkeys, userIdentities, users, type IdentityProvider, type UserRow } from '../db/schema';
 import type { AppDeps } from '../deps';
+import { instanceClaimed } from './instance-settings';
 import {
   ensurePersonalWorkspace,
   findInviteByToken,
@@ -56,12 +57,17 @@ async function findUserByEmail(db: Executor, email: string): Promise<UserRow | n
   return row ?? null;
 }
 
-async function identityCount(db: Executor, userId?: string): Promise<number> {
-  const [row] = await db
+/** Ways into the account: provider identities and passkeys. */
+export async function loginCount(db: Executor, userId: string): Promise<number> {
+  const [identities] = await db
     .select({ count: count() })
     .from(userIdentities)
-    .where(userId ? eq(userIdentities.userId, userId) : undefined);
-  return row?.count ?? 0;
+    .where(eq(userIdentities.userId, userId));
+  const [keys] = await db
+    .select({ count: count() })
+    .from(passkeys)
+    .where(eq(passkeys.userId, userId));
+  return (identities?.count ?? 0) + (keys?.count ?? 0);
 }
 
 /**
@@ -159,10 +165,10 @@ export async function signInWithIdentity(
   // Bootstrap: the first login of the instance claims the dev owner's account and decks. Checked
   // again under a lock, so two simultaneous first logins can't both become instance admin – the
   // later one finds an identity and follows the usual rules.
-  if ((await identityCount(db)) === 0) {
+  if (!(await instanceClaimed(db))) {
     const bootstrapped = await db.transaction(async (tx): Promise<SignInResult | null> => {
       await advisoryXactLock(tx, 'instance-bootstrap');
-      if ((await identityCount(tx)) > 0) return null;
+      if (await instanceClaimed(tx)) return null;
       if (!mayBootstrap(deps, email, input.emailVerified)) {
         deps.log.warn(`Bootstrap refused for ${email}: not allowed to claim this instance`);
         return {
@@ -182,7 +188,8 @@ export async function signInWithIdentity(
 
   const existing = await findUserByEmail(db, email);
   if (existing) {
-    if ((await identityCount(db, existing.id)) > 0) return { ok: false, error: 'account_exists' };
+    // A passkey is a login too: a passkey-only account is never attached to by e-mail.
+    if ((await loginCount(db, existing.id)) > 0) return { ok: false, error: 'account_exists' };
     // An account from before logins existed: it may be claimed like a new sign-up.
     if (!(await maySignUp(deps, email, true, input.inviteToken)).allowed) {
       return { ok: false, error: 'signup_closed' };
@@ -297,8 +304,7 @@ export async function listIdentities(db: Executor, userId: string) {
   return rows.map(({ subject, ...row }) => ({ id: `${row.provider}:${subject}`, ...row }));
 }
 
-export type UnlinkResult =
-  { ok: true } | { ok: false; error: 'not_found' | 'last_login' };
+export type UnlinkResult = { ok: true } | { ok: false; error: 'not_found' | 'last_login' };
 
 /**
  * Removes a provider login from the account ("Trennen" on /konto). Not the last way in: some
@@ -335,4 +341,28 @@ export async function unlinkIdentity(
   });
   if (result.ok && provider === 'microsoft') await deps.microsoft.forget(userId);
   return result;
+}
+
+/**
+ * Deletes one of the account's passkeys ("Entfernen" on /konto). Like {@link unlinkIdentity},
+ * never the last way in – under the same lock, so a concurrent unlink can't race it. The dev owner
+ * in dev-login mode always has a way in.
+ */
+export async function deletePasskey(
+  deps: AppDeps,
+  userId: string,
+  id: string,
+): Promise<UnlinkResult> {
+  return deps.db.transaction(async (tx): Promise<UnlinkResult> => {
+    await advisoryXactLock(tx, `identities:${userId}`);
+    const [row] = await tx
+      .select({ id: passkeys.id })
+      .from(passkeys)
+      .where(and(eq(passkeys.id, id), eq(passkeys.userId, userId)));
+    if (!row) return { ok: false, error: 'not_found' };
+    const devLogin = deps.config.auth.devLogin && userId === deps.ownerId;
+    if (!devLogin && (await loginCount(tx, userId)) <= 1) return { ok: false, error: 'last_login' };
+    await tx.delete(passkeys).where(eq(passkeys.id, row.id));
+    return { ok: true };
+  });
 }

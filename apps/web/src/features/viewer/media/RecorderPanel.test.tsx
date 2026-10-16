@@ -103,11 +103,15 @@ describe('RecorderPanel', () => {
     expect(recorder.pause).not.toHaveBeenCalled();
   });
 
-  it('hands Tab to the composer', () => {
-    const onTab = vi.fn();
-    const { panel } = renderPanel({ onTab });
-    fireEvent.keyDown(panel, { key: 'Tab', shiftKey: true });
-    expect(onTab).toHaveBeenCalledWith(true);
+  it('lets Tab move the focus and keeps a finished recording', async () => {
+    recorder.state = { status: 'recorded', recording: audioRecording };
+    const { onChange } = renderPanel({ autoFocus: true });
+    await userEvent.tab();
+    expect(document.activeElement).not.toBe(document.body);
+    await userEvent.tab({ shift: true });
+    expect(recorder.reset).not.toHaveBeenCalled();
+    expect(onChange).toHaveBeenLastCalledWith(audioRecording);
+    expect(screen.getByRole('button', { name: 'Neu aufnehmen' })).toBeTruthy();
   });
 
   it('reports a finished recording and offers to record again', async () => {
@@ -133,6 +137,8 @@ describe('RecorderPanel', () => {
     renderPanel();
     const hint = screen.getByText(/Max\. 5 Min\./);
     expect(hint.textContent).toMatch(/belegt\.$/);
+    // No transcript is made anywhere – the hint must not promise one.
+    expect(hint.textContent).not.toMatch(/Transkript/);
     expect(hint.className).toContain('text-warning');
   });
 

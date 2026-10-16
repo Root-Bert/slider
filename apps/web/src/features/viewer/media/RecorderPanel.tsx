@@ -34,8 +34,6 @@ interface RecorderPanelProps {
   autoStart?: boolean;
   /** Take the keyboard on opening: Space and ↵ work right away. */
   autoFocus?: boolean;
-  /** Tab / Shift+Tab out of the panel – the composer moves to the next or previous format. */
-  onTab?: (backwards: boolean) => void;
 }
 
 const NO_SCREEN = 'Bildschirm teilen geht in diesem Browser nicht';
@@ -85,7 +83,6 @@ function RecorderBody({
   onChange,
   autoStart = false,
   autoFocus = false,
-  onTab,
   source,
   onSourceChange,
 }: RecorderPanelProps & {
@@ -108,12 +105,8 @@ function RecorderBody({
   }, [autoFocus]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    // Tab moves the focus as usual: a finished recording must never go with a key press.
     if (isModKey(event) || event.altKey || event.nativeEvent.isComposing) return;
-    if (event.key === 'Tab' && onTab) {
-      event.preventDefault();
-      onTab(event.shiftKey);
-      return;
-    }
     // Only the panel itself and its record button – other buttons and fields keep their keys.
     if (event.target !== rootRef.current && event.target !== recordButtonRef.current) return;
     const player = rootRef.current?.querySelector<HTMLMediaElement>('audio, video');
@@ -356,14 +349,14 @@ function CameraPreview({
   );
 }
 
-/** "Max. 5 Min., Transkript entsteht auf deinem Gerät. 1,2 GB von 5 GB belegt." – no storage line without a quota. */
+/** "Max. 5 Min. 1,2 GB von 5 GB belegt." – no storage line without a quota. */
 function StorageHint({ deckId }: { deckId: string }) {
   const usage = useMediaUsage(deckId).data;
   const limitBytes = usage?.limitBytes ?? null;
   const nearlyFull = usage && limitBytes !== null && usage.usedBytes / limitBytes > 0.9;
   return (
     <p className={cn('text-caption', nearlyFull ? 'text-warning' : 'text-fg-faint')}>
-      Max. 5 Min., Transkript entsteht auf deinem Gerät.
+      Max. 5 Min.
       {usage &&
         limitBytes !== null &&
         ` ${formatFileSize(usage.usedBytes)} von ${formatFileSize(limitBytes)} belegt.`}

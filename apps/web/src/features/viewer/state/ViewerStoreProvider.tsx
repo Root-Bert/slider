@@ -92,6 +92,12 @@ export function ViewerStoreProvider({
     });
   }, [all, data]);
 
+  // A thread deleted meanwhile (by someone else, or in another tab): its panel closes instead of
+  // leaving an empty strip on the right.
+  useLayoutEffect(() => {
+    dispatch({ type: 'threadsReplaced', threadIds: new Set(all.threadById.keys()) });
+  }, [all.threadById]);
+
   return (
     <ViewerDataContext value={data}>
       <StageRegistryContext value={registry}>

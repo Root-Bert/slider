@@ -11,6 +11,7 @@ import {
 import type { ParsedComment, ParsedCommentAnchor } from '@slider/pptx';
 import type { Executor } from '../db/client';
 import { comments, deletedPptxComments, type CommentRow } from '../db/schema';
+import { clampRect } from './common';
 import { pptxAuthorResolver, type PptxAuthorResolver } from './pptx-authors';
 
 /** The slide a PowerPoint comment belongs to, looked up by its `sldId`. */
@@ -266,6 +267,9 @@ export function toAnchor(anchor: ParsedCommentAnchor, shapes: readonly Shape[]):
       const point = { x: clamp01(anchor.point.x), y: clamp01(anchor.point.y) };
       return { type: 'point', point, shapeRef: shapeRefAt(shapes, point) };
     }
+    case 'rect':
+      // A shape group: groups are not in `shapes`, the parser gives their box.
+      return { type: 'rect', rect: clampRect(anchor.rect), shapeRef: null };
     case 'shape': {
       const shape = shapes.find((candidate) => candidate.id === anchor.shapeId);
       if (!shape) return { type: 'slide' };

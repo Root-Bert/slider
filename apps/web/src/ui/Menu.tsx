@@ -11,7 +11,7 @@ import {
 import { createPortal } from 'react-dom';
 import { cn } from './cn';
 import type { IconName } from './Icon';
-import { IconButton, type IconButtonSize } from './IconButton';
+import { IconButton, type IconButtonSize, type IconButtonVariant } from './IconButton';
 import { MenuItem } from './MenuItem';
 import { PopoverPanel } from './Popover';
 import { useDismiss } from './hooks/useDismiss';
@@ -34,6 +34,8 @@ interface MenuProps {
   className?: string;
   /** Size of the `IconButton` trigger: `sm` 32px (default), `compact` 28px, … */
   triggerSize?: IconButtonSize;
+  /** Look of the trigger: **ghost**, or `glass` over images (a card thumbnail). */
+  triggerVariant?: IconButtonVariant;
   triggerClassName?: string;
 }
 
@@ -46,6 +48,7 @@ export function Menu({
   actions,
   className,
   triggerSize = 'sm',
+  triggerVariant,
   triggerClassName,
 }: MenuProps) {
   // Only a keyboard-opened menu puts focus on its first item; a click shouldn't pre-select one.
@@ -59,6 +62,7 @@ export function Menu({
         icon="moreHoriz"
         label={label}
         size={triggerSize}
+        variant={triggerVariant}
         // aria-expanded and the open look; a menu button is never `aria-pressed`.
         expanded={open}
         aria-haspopup="menu"

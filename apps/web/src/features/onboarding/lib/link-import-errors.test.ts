@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ApiError } from '@/lib/api-client';
 import { ACCOUNT_LIMIT_MESSAGE } from '@/features/auth';
 import {
+  connectErrorFrom,
   CONSENT_MESSAGE,
   LOGIN_DENIED_MESSAGE,
   LOGIN_FAILED_MESSAGE,
@@ -61,5 +62,22 @@ describe('noAccessFromLoginError', () => {
       message,
       loginUrl: FALLBACK_LOGIN,
     });
+  });
+});
+
+describe('connectErrorFrom', () => {
+  const at = (search: string) => connectErrorFrom(new URLSearchParams(search));
+
+  it('explains every failed Microsoft connect, not only the account limit', () => {
+    expect(at('msError=denied')).toBe('denied');
+    expect(at('msError=admin_consent')).toBe('admin_consent');
+    expect(at('msError=failed')).toBe('failed');
+    expect(at('msError=account_limit')).toBe('account_limit');
+  });
+
+  it('leaves a link import to the link form, and ignores unknown kinds', () => {
+    expect(at('msError=denied&link=https%3A%2F%2Fx.sharepoint.com%2Fa')).toBeNull();
+    expect(at('msError=nope')).toBeNull();
+    expect(at('')).toBeNull();
   });
 });

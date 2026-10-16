@@ -165,27 +165,7 @@
         "providerId": null,
         "anchor": "point",
         "text": "Budget nach vorn?",
-        "replies": 0
-      },
-      {
-        "slide": "agenda",
-        "format": "legacy",
-        "status": "open",
-        "author": "Jonas Weber",
-        "providerId": null,
-        "anchor": "point",
-        "text": "Ja, mache ich.",
-        "replies": 0
-      },
-      {
-        "slide": "agenda",
-        "format": "legacy",
-        "status": "open",
-        "author": "Lena Hoffmann",
-        "providerId": null,
-        "anchor": "point",
-        "text": "Danke!",
-        "replies": 0
+        "replies": 2
       }
     ]
   }

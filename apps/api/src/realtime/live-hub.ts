@@ -1,6 +1,8 @@
 import type { Author, LiveEvent, LivePeer, LivePresenceInput } from '@slider/shared';
 
 type Send = (event: LiveEvent) => void;
+/** Ends the connection's stream (the browser then reconnects, or not, if access is gone). */
+type Close = () => void;
 
 /**
  * A connection not heard from this long is gone. Closed streams can't be relied on to report it
@@ -9,10 +11,23 @@ type Send = (event: LiveEvent) => void;
  */
 export const LIVE_STALE_MS = 45_000;
 const SWEEP_MS = 10_000;
+/**
+ * Keeps idle streams open through proxies and runtimes that close quiet connections (Bun's
+ * default idle timeout is 10 s); a comment line, ignored by `EventSource`.
+ */
+export const LIVE_STREAM_HEARTBEAT_MS = 5_000;
+/** An open stream re-checks session and deck access this often (removed members, deleted decks). */
+export const LIVE_ACCESS_CHECK_MS = 30_000;
+
+export interface LiveHubTiming {
+  heartbeatMs?: number;
+  accessCheckMs?: number;
+}
 
 interface Connection extends LivePeer {
   deckId: string;
   send: Send;
+  close: Close | null;
   lastSeen: number;
   /** The browser tab (page load) the connection belongs to, if it said so. */
   tab: string | null;
@@ -36,8 +51,16 @@ export class LiveHub {
   private readonly rooms = new Map<string, Map<string, Connection>>();
   private readonly connections = new Map<string, Connection>();
   private sweeper: ReturnType<typeof setInterval> | null = null;
+  readonly heartbeatMs: number;
+  readonly accessCheckMs: number;
 
-  constructor(private readonly now: () => number = Date.now) {}
+  constructor(
+    private readonly now: () => number = Date.now,
+    timing: LiveHubTiming = {},
+  ) {
+    this.heartbeatMs = timing.heartbeatMs ?? LIVE_STREAM_HEARTBEAT_MS;
+    this.accessCheckMs = timing.accessCheckMs ?? LIVE_ACCESS_CHECK_MS;
+  }
 
   /**
    * Opens a connection; `send` gets the `hello` (with the others already here) right away. The
@@ -52,6 +75,7 @@ export class LiveHub {
     author: Author,
     send: Send,
     { tab, replaces }: LiveTab = { tab: null, replaces: null },
+    close: Close | null = null,
   ): string {
     for (const old of [...(this.rooms.get(deckId)?.values() ?? [])]) {
       const sameTab = old.tab !== null && (old.tab === tab || old.tab === replaces);
@@ -65,6 +89,7 @@ export class LiveHub {
       cursor: null,
       focusedThreadId: null,
       send,
+      close,
       lastSeen: this.now(),
       tab,
     };
@@ -97,7 +122,17 @@ export class LiveHub {
     room?.delete(connectionId);
     if (room?.size === 0) this.rooms.delete(connection.deckId);
     if (this.connections.size === 0) this.stopSweeper();
+    connection.close?.();
     this.broadcast(connection.deckId, { type: 'leave', connectionId });
+  }
+
+  /** Shutdown: ends every stream at once, so the HTTP server can close (no goodbyes sent). */
+  closeAll(): void {
+    const all = [...this.connections.values()];
+    this.connections.clear();
+    this.rooms.clear();
+    this.stopSweeper();
+    for (const connection of all) connection.close?.();
   }
 
   /**

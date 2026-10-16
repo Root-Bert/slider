@@ -23,6 +23,20 @@ describe('FsBlobStorage', () => {
     expect(await storage.get('decks/a/b.svg')).toBeNull();
   });
 
+  it('knows sizes and streams whole blobs or byte ranges', async () => {
+    await storage.put('media/a.webm', new Uint8Array([0, 1, 2, 3, 4, 5]));
+    expect(await storage.size('media/a.webm')).toBe(6);
+    expect(await storage.size('media/none.webm')).toBeNull();
+    expect(await storage.stream('media/none.webm')).toBeNull();
+    const read = async (stream: ReadableStream<Uint8Array> | null) => [
+      ...new Uint8Array(await new Response(stream).arrayBuffer()),
+    ];
+    expect(await read(await storage.stream('media/a.webm'))).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(await read(await storage.stream('media/a.webm', { start: 2, end: 4 }))).toEqual([
+      2, 3, 4,
+    ]);
+  });
+
   it('deletes by prefix', async () => {
     await storage.put('decks/a/1.svg', new Uint8Array([1]));
     await storage.put('decks/a/x/2.svg', new Uint8Array([2]));

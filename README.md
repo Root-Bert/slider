@@ -11,7 +11,7 @@ the owner of a linked deck, add a slide with the ⊕ between two slides.
 
 > **Status: first prototype (milestones M1 + M2).** Upload, parsing, preview rendering, the review
 > viewer with pins/frames/freehand, threads, done-status, filters, PowerPoint comment import and
-> guest links work end to end on your machine, and so does importing by link (direct `.pptx`
+> invitations work end to end on your machine, and so does importing by link (direct `.pptx`
 > URLs out of the box, OneDrive/SharePoint after a one-time Microsoft app registration – see
 > [Link import](#link-import)). Linked decks update themselves when the PowerPoint changes – see
 > [Automatic updates](#automatic-updates). Voice and video comments are recorded and compressed
@@ -40,6 +40,7 @@ bun run sample       # writes packages/pptx/samples/slider-demo.pptx
 | ------------------- | ---------------------------------------------- |
 | `bun run dev`       | API + web with hot reload                      |
 | `bun run test`      | All unit and API tests (Vitest)                |
+| `bun run e2e`       | Browser smoke tests (Playwright, `e2e/`)       |
 | `bun run lint`      | ESLint (TypeScript, React hooks)               |
 | `bun run typecheck` | `tsc` for every workspace                      |
 | `bun run build`     | Production build (`apps/web/dist` is static)   |
@@ -82,6 +83,8 @@ Design decisions worth knowing:
   stable id (`/d/:deck?slide=:id`), never the slide number.
 - **Real Postgres, zero setup.** Locally the API runs [PGlite](https://pglite.dev) (Postgres in
   WASM) through Drizzle. The same schema and migrations run on a hosted Postgres in production.
+  CI runs the API suite on both; locally `TEST_DATABASE_URL=postgres://… bun run test` gives
+  every test context a fresh database on that server.
 - **Adapters at the edges.** Blob storage, the job queue, the slide renderer and link sources are
   interfaces with a local implementation today (filesystem, in-process queue, Office/LibreOffice/SVG
   renderers, Microsoft Graph + plain HTTPS link sources) and S3 / pg-boss tomorrow.
@@ -94,8 +97,8 @@ Design decisions worth knowing:
   or right click ("Neu rendern", `POST /api/decks/:id/rerender` – Office first; a linked file
   that changed meanwhile is imported as a new version). Locally:
   `brew install --cask libreoffice` (or set `LIBREOFFICE_PATH`).
-- **The original stays untouched.** Slider only ever reads the PPTX. Guests see rendered slide
-  images, never the file.
+- **The original stays untouched.** Slider only ever reads the PPTX. Reviewers see rendered
+  slide images, never the file.
 
 ## Link import
 
@@ -220,8 +223,9 @@ docker compose up -d
 ```
 
 A small VPS (2 vCPU, 4 GB) is enough for a team, at roughly 7 € a month and no per-user costs.
-The image (amd64 + arm64) is built by `.github/workflows/image.yml`: `:edge` from `main`,
-`:1.2.3`/`:1.2`/`:1`/`:latest` from `v*` tags.
+CI (`.github/workflows/ci.yml`) builds the image on every pull request and smoke-tests it
+(`scripts/smoke-image.sh`). It publishes amd64 + arm64 only once every check is green: `:edge`
+from `main`, `:1.2.3`/`:1.2`/`:1`/`:latest` from `v*` tags.
 
 Accounts are created on the first login (`SIGNUP=open`, the default; `invite` and `domains`
 restrict that). Everything lives in organisations. A self-hosted instance has no limits. Only
@@ -251,8 +255,7 @@ reply field) record a comment of up to five minutes (BER-116).
   deleting a comment or deck deletes its recordings. The store is the same `BlobStorage`
   interface as the slide files – Cloudflare R2 needs only another adapter.
 - **5 GB per account on the demo.** `MEDIA_QUOTA_BYTES` (default 5 GB on the demo, unlimited
-  elsewhere) counts every recording in a deck
-  owner's decks, guests' recordings included, so a guest link cannot be used to fill the disk;
+  elsewhere) counts every recording in a deck owner's decks, whoever recorded them;
   `MAX_MEDIA_BYTES` (default 100 MB) limits one recording. The recorder shows the usage.
 - **Served with a permission check.** `GET /api/media/:id` checks access to the deck on every
   request and supports `Range` (Safari needs it to play at all). The type is taken from the
@@ -262,29 +265,29 @@ reply field) record a comment of up to five minutes (BER-116).
 
 Tracked in Linear (project _Slider_). This prototype covers:
 
-| Ticket          | Topic                                                         | State                                         |
-| --------------- | ------------------------------------------------------------- | --------------------------------------------- |
-| BER-89          | Monorepo, stack, one-command dev, CI                          | ✅ (deploy pending, BER-123)                  |
-| BER-90          | Data model: deck, revision, slide, slide version, comment     | ✅                                            |
-| BER-91          | `.pptx` upload with progress and error states                 | ✅                                            |
-| BER-93          | PPTX parser: slide ids, order, hidden, sections, shapes, text | ✅                                            |
-| BER-94          | Rendering: Office PDF (linked), LibreOffice (uploads), SVG    | ✅                                            |
-| BER-95/96       | Viewer, filmstrip, counter, zoom, fullscreen, deep links      | ✅                                            |
-| BER-97          | Import status and error states                                | ✅                                            |
-| BER-98/99       | Pins, frames, freehand, arrow, highlighter                    | ✅                                            |
-| BER-100/101     | Threads, connector lines, done status, filters                | ✅                                            |
-| BER-102         | Guest review links (name only, revocable, expiring)           | ✅ view-only since BER-130                    |
-| BER-103         | "A slide is missing here" gap comments                        | ✅                                            |
-| BER-128         | ⊕ inserts a slide into the linked PowerPoint                  | ❌ removed                                    |
-| BER-112/113/115 | PowerPoint comments (modern + legacy) imported and labelled   | ✅                                            |
-| BER-121         | Owner overview "Meine Reviews"                                | ✅ (login via Microsoft pending)              |
-| BER-88/92       | Import by link: OneDrive, SharePoint, direct `.pptx` URL      | ✅                                            |
+| Ticket          | Topic                                                         | State                            |
+| --------------- | ------------------------------------------------------------- | -------------------------------- |
+| BER-89          | Monorepo, stack, one-command dev, CI                          | ✅ (deploy pending, BER-123)     |
+| BER-90          | Data model: deck, revision, slide, slide version, comment     | ✅                               |
+| BER-91          | `.pptx` upload with progress and error states                 | ✅                               |
+| BER-93          | PPTX parser: slide ids, order, hidden, sections, shapes, text | ✅                               |
+| BER-94          | Rendering: Office PDF (linked), LibreOffice (uploads), SVG    | ✅                               |
+| BER-95/96       | Viewer, filmstrip, counter, zoom, fullscreen, deep links      | ✅                               |
+| BER-97          | Import status and error states                                | ✅                               |
+| BER-98/99       | Pins, frames, freehand, arrow, highlighter                    | ✅                               |
+| BER-100/101     | Threads, connector lines, done status, filters                | ✅                               |
+| BER-102         | Guest review links (name only, revocable, expiring)           | ✅ view-only since BER-130       |
+| BER-103         | "A slide is missing here" gap comments                        | ✅                               |
+| BER-128         | ⊕ inserts a slide into the linked PowerPoint                  | ❌ removed                       |
+| BER-112/113/115 | PowerPoint comments (modern + legacy) imported and labelled   | ✅                               |
+| BER-121         | Owner overview "Meine Reviews"                                | ✅ (login via Microsoft pending) |
+| BER-88/92       | Import by link: OneDrive, SharePoint, direct `.pptx` URL      | ✅                               |
 | BER-107/108/114 | Change detection, slide matching, PPT comment re-import       | ✅ API (polling, debounce, diff) |
-| BER-109–111     | Version UI: change badges, deleted slides, version history    | ⏳ API ready, UI pending                      |
-| BER-116         | Voice and video comments                                      | ✅                                            |
-| BER-134         | Transcripts with a self-hosted model (GDPR)                   | ⏳ M2                                         |
-| BER-129         | Login (Microsoft, Google, OIDC), organisations, invites       | ✅                                            |
-| BER-130         | Open sign-up, free plan (5 people, 3 decks), view-only links  | ✅                                            |
+| BER-109–111     | Version UI: change badges, deleted slides, version history    | ⏳ API ready, UI pending         |
+| BER-116         | Voice and video comments                                      | ✅                               |
+| BER-134         | Transcripts with a self-hosted model (GDPR)                   | ⏳ M2                            |
+| BER-129         | Login (Microsoft, Google, OIDC), organisations, invites       | ✅                               |
+| BER-130         | Open sign-up, free plan (5 people, 3 decks), view-only links  | ✅                               |
 
 ## Contributing
 

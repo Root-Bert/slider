@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router';
@@ -11,10 +11,11 @@ import { NotAuthorized, SetupForm } from './SetupForm';
 // `vi.fn` itself is reported as unhandled by vitest's result tracking).
 const apiRequest = vi.hoisted(() => vi.fn());
 let fail: Error | null = null;
+let restart: 'manual' | 'automatic' = 'manual';
 vi.mock('@/lib/api-client', () => ({
   apiRequest: (...args: unknown[]) => {
     apiRequest(...args);
-    return fail ? Promise.reject(fail) : Promise.resolve({ restart: 'manual' });
+    return fail ? Promise.reject(fail) : Promise.resolve({ restart });
   },
 }));
 
@@ -45,8 +46,10 @@ function status(
   };
 }
 
-function wrap(children: ReactNode) {
-  const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+function wrap(
+  children: ReactNode,
+  client = new QueryClient({ defaultOptions: { mutations: { retry: false } } }),
+) {
   return (
     <QueryClientProvider client={client}>
       <MemoryRouter>{children}</MemoryRouter>
@@ -132,5 +135,34 @@ describe('SetupForm', () => {
     await userEvent.type(within(section('Google')).getByLabelText('Client-ID'), 'x');
     await userEvent.click(screen.getByRole('button', { name: 'Speichern' }));
     expect(await screen.findByText('Speichern fehlgeschlagen')).toBeTruthy();
+  });
+
+  it('after an automatic restart the form shows what the server now has', async () => {
+    restart = 'automatic';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { status: 200 })),
+    );
+    const before = status({
+      MS_CLIENT_ID: { source: 'stored', value: 'abc', set: true },
+      MS_CLIENT_SECRET: { source: 'stored', value: null, set: true },
+    });
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    // What `/setup` answers after the restart: Microsoft is gone.
+    client.setQueryData(['setup'], status());
+    render(
+      wrap(
+        <SetupForm status={before} settings={before.settings} headers={{ 'X-Setup-Token': 't' }} />,
+        client,
+      ),
+    );
+    const clientId = () =>
+      within(section('Microsoft')).getByLabelText(/Client-ID/) as HTMLInputElement;
+    expect(clientId().value).toBe('abc');
+    await userEvent.click(within(section('Microsoft')).getByRole('button', { name: 'Entfernen' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+    await waitFor(() => expect(clientId().value).toBe(''), { timeout: 3000 });
+    restart = 'manual';
+    vi.unstubAllGlobals();
   });
 });

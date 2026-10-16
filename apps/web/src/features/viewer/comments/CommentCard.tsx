@@ -1,4 +1,4 @@
-import type { Comment } from '@slider/shared';
+import { MAX_COMMENT_BODY_LENGTH, type Comment } from '@slider/shared';
 import {
   memo,
   useEffect,
@@ -323,6 +323,7 @@ function ReplyBar({
         <AutosizeTextarea
           ref={textareaRef}
           aria-label={`Antwort an ${root.author.name}`}
+          maxLength={MAX_COMMENT_BODY_LENGTH}
           placeholder="Antworten mit …"
           value={body}
           maxHeight={120}

@@ -20,6 +20,7 @@ import {
   sourceUnreachable,
 } from '../src/sources/errors';
 import { SyncScheduler, syncTickMs } from '../src/sync/scheduler';
+import { SYNC_IMPORT_MAX_ATTEMPTS } from '../src/sync/sync-import';
 import { createTestContext, pinComment, type TestContext } from './helpers';
 import {
   BASE_SLIDES,
@@ -402,6 +403,48 @@ describe('errors keep the last revision', () => {
     source.bytes = pptxBytes('v3');
     expect((await sync(ctx, deckId)).status).toBe('updated');
     expect((await deckOf(ctx, deckId)).sync?.lastSyncError).toBeNull();
+  });
+
+  it('a file whose import keeps failing (not a parse error) backs off, then is skipped', async () => {
+    const { ctx, source, deckId } = await setup({ v3: presentation(EDITED) });
+    const scheduler = new SyncScheduler({
+      db: ctx.deps.db,
+      clock: ctx.clock,
+      log: silentLogger,
+      sync: ctx.deps.sync,
+      config: ctx.deps.config,
+    });
+    // `versionedPptx` throws a plain Error (no PptxError) for an unknown version.
+    source.token = 'c2';
+    source.bytes = pptxBytes('renderer-bug');
+    source.download.mockClear();
+    // Two hours of polling, as the scheduler runs it.
+    for (let i = 0; i < 240; i++) {
+      ctx.clock.advance(30_000);
+      await scheduler.tick();
+      await ctx.deps.queue.idle();
+    }
+    expect(source.download).toHaveBeenCalledTimes(SYNC_IMPORT_MAX_ATTEMPTS);
+    const after = await deckRow(ctx, deckId);
+    expect(after.syncState).toMatchObject({
+      failedToken: 'c2',
+      consecutiveFailures: SYNC_IMPORT_MAX_ATTEMPTS,
+      lastSyncError: { code: 'internal' },
+    });
+    expect(await revisionRows(ctx, deckId)).toHaveLength(1);
+
+    // "Neu rendern" still tries the file, and a newer file imports and resets the count.
+    source.download.mockClear();
+    expect((await sync(ctx, deckId)).status).toBe('error');
+    expect(source.download).toHaveBeenCalledTimes(1);
+    source.token = 'c3';
+    source.bytes = pptxBytes('v3');
+    expect((await sync(ctx, deckId)).status).toBe('updated');
+    expect((await deckRow(ctx, deckId)).syncState).toMatchObject({
+      consecutiveFailures: 0,
+      failedToken: null,
+      lastSyncError: null,
+    });
   });
 });
 

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { activeTotals, countByFolder, countByTab, selectDecks } from './deck-filters';
+import {
+  activeTotals,
+  countByFolder,
+  countByTab,
+  onlyFolderTiles,
+  selectDecks,
+} from './deck-filters';
 import { makeDeck } from './deck-fixture';
 
 const decks = [
@@ -108,5 +114,24 @@ describe('folders', () => {
 
   it('counts active decks per folder', () => {
     expect(countByFolder(filed)).toEqual(new Map([['f1', 1]]));
+  });
+});
+
+describe('onlyFolderTiles', () => {
+  const top = { atTop: true, folderCount: 2, deckCount: 3 };
+
+  it('on "Alle", folder tiles alone are enough when every deck sits in a folder', () => {
+    expect(onlyFolderTiles({ tab: 'all', ...top })).toBe(true);
+  });
+
+  it('on "Offen" and "Archiv" the empty state still explains why nothing shows', () => {
+    expect(onlyFolderTiles({ tab: 'open', ...top })).toBe(false);
+    expect(onlyFolderTiles({ tab: 'archive', ...top })).toBe(false);
+  });
+
+  it('needs folders, decks and the top level', () => {
+    expect(onlyFolderTiles({ tab: 'all', ...top, folderCount: 0 })).toBe(false);
+    expect(onlyFolderTiles({ tab: 'all', ...top, deckCount: 0 })).toBe(false);
+    expect(onlyFolderTiles({ tab: 'all', ...top, atTop: false })).toBe(false);
   });
 });

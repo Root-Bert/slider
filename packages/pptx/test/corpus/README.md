@@ -92,6 +92,9 @@ the keys. Confidences are rounded to two decimals.
 | `producer-win` / `producer-mac` / `producer-online` | the same edit (text, thread answered and resolved, new comment) saved by PowerPoint for Windows / 2019 for Mac / the web _(synthetic)_                            |
 | `producer-win-to-online`                            | saved on Windows, re-saved unchanged on the web _(synthetic)_                                                                                                     |
 | `producer-win-move`                                 | PowerPoint move with stable part names, rIds and creationIds _(synthetic)_                                                                                        |
+| `rewrite-most-slides`                               | four of five slides translated, sldIds kept: all still matched by sldId                                                                                           |
+| `ppt-delete-last-insert`                            | last slide deleted, new one inserted on the reused max sldId, told apart by creationId _(synthetic)_                                                              |
+| `google-insert-late` / `google-delete-late`         | Google Slides insert / delete late in the deck: shifted sldIds are not trusted _(synthetic)_                                                                      |
 
 ## Synthetic cases
 
@@ -116,8 +119,9 @@ plausible, from what these apps are known to write, but **not verified against r
 - **PowerPoint for the web** (`asPowerPointOnline`): a sparse app.xml (Application and
   AppVersion only), modern comments by work accounts, `lastModifiedBy` = the signed-in user.
 
-Matching ignores app.xml, core.xml, part names, rIds and creationIds; these cases mainly pin
-down that it keeps ignoring them, plus the renumber guard (Google) and the comment parsing.
+Matching ignores app.xml, core.xml, part names and rIds; these cases mainly pin down that it
+keeps ignoring them, plus the sldId checks (creationIds, Google's renumbering) and the comment
+parsing.
 
 ### Real files
 
@@ -167,6 +171,10 @@ What the matcher does today that a reader might not expect. These are recorded, 
   guard drops them (`matchedBy: "content"`), and since the render is identical nothing counts as
   modified, although layout names and shape ids changed. Sections and comments are gone from
   the Google file.
-- **Legacy reply threads are flat.** `p15:threadingInfo` is not read: replies arrive as separate
-  comments with `replies: 0` (`comments-legacy-threads`, `producer-mac`), and legacy comments
-  are always `open`.
+- **Legacy comments are always `open`.** Reply threads come back from
+  `p15:threadingInfo/p15:parentCm` (`comments-legacy-threads`, `producer-mac`), but legacy
+  comments cannot store "resolved".
+- **A reused sldId is only recognised with `p14:creationId`.** `ppt-delete-last-insert` gets it
+  right because PowerPoint writes creationIds; without them (and without a better content match
+  elsewhere) a slide on the same sldId counts as the same slide, however much it changed
+  (`rewrite-most-slides`).

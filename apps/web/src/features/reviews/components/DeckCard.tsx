@@ -7,6 +7,7 @@ import { isImporting } from '@/lib/deck-labels';
 import { usePinnedDecks } from '../hooks/usePinnedDecks';
 import { useDeckContextMenu } from '../hooks/useDeckContextMenu';
 import { DeckActions } from './DeckActions';
+import { REVEAL_ON_HOVER } from './reveal';
 import { DeckTitleInput } from './DeckTitleInput';
 import { DeckStatusBadge, ImportOverlay, OriginChips, SlideCountChip } from './DeckBits';
 import { OpenCommentsButton } from './OpenComments';
@@ -52,10 +53,12 @@ function DeckFooter({
   placement,
   commentsSlot,
   onCommentsOpenChange,
+  onNotify,
   className,
 }: {
   deck: Deck;
   placement: 'card' | 'above';
+  onNotify: ShowToast;
   commentsSlot?: HTMLElement | null;
   onCommentsOpenChange?: (open: boolean) => void;
   className?: string;
@@ -79,6 +82,7 @@ function DeckFooter({
         size={large ? 'md' : 'sm'}
         cardSlot={commentsSlot}
         onOpenChange={onCommentsOpenChange}
+        onNotify={onNotify}
       />
       {large ? (
         avatars
@@ -94,7 +98,8 @@ function DeckFooter({
 /**
  * Grid card (G1). The title link is stretched over the whole card, so thumbnail and title are
  * one click target while the footer controls (comments, avatars) in the title row stay separate,
- * non-nested controls on top of it. Deck actions open on a right click only.
+ * non-nested controls on top of it. Deck actions open from the ⋯ button in the thumbnail corner
+ * (shown on hover, focus and touch screens) or a right click.
  */
 export function DeckCard({ deck, selected = false, onNotify }: DeckItemProps) {
   const { onContextMenu, ...contextMenu } = useDeckContextMenu();
@@ -141,7 +146,9 @@ export function DeckCard({ deck, selected = false, onNotify }: DeckItemProps) {
           onNotify={onNotify}
           {...contextMenu}
           onRename={() => setRenaming(true)}
-          hideTrigger
+          triggerVariant="glass"
+          // Above the stretched title link.
+          className={cn('absolute top-2 right-2 z-(--z-raised)', REVEAL_ON_HOVER)}
         />
         {/* The open comments list lands here, over the thumbnail; counted as footer, so hovering
             it leaves the card alone. */}
@@ -168,6 +175,7 @@ export function DeckCard({ deck, selected = false, onNotify }: DeckItemProps) {
           placement="card"
           commentsSlot={commentsSlot}
           onCommentsOpenChange={setCommentsOpen}
+          onNotify={onNotify}
           className="ml-auto shrink-0 pl-1.5"
         />
       </div>
@@ -229,6 +237,7 @@ export function DeckRow({ deck, selected = false, onNotify }: DeckItemProps) {
         deck={deck}
         placement="above"
         onCommentsOpenChange={setCommentsOpen}
+        onNotify={onNotify}
         // Above the stretched title link; an open list covers the rows above it.
         className="relative z-(--z-raised) hidden shrink-0 gap-4 has-[[aria-expanded=true]]:z-(--z-chrome) sm:flex"
       />

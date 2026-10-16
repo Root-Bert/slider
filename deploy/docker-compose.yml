@@ -27,6 +27,8 @@ services:
       TRUST_PROXY: '1'
     volumes:
       - slider-data:/data
+      # Company fonts (.ttf/.otf) for LibreOffice's slide images; survive image updates.
+      - ./fonts:/usr/local/share/fonts/custom:ro
     depends_on:
       postgres:
         condition: service_healthy

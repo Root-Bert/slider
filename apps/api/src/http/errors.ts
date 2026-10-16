@@ -53,6 +53,18 @@ export function errorHandler(log: Logger): ErrorHandler {
         err.status,
       );
     }
+    if (isUniqueViolation(err)) {
+      // Two requests raced for the same row (e.g. the same name at once): nothing was written.
+      log.warn(`Unique violation on ${c.req.method} ${c.req.path}`, err);
+      return c.json(
+        new ApiError(
+          409,
+          'bad_request',
+          'Das hat sich mit einer anderen Änderung überschnitten. Bitte lade neu und versuche es noch einmal.',
+        ).toBody(),
+        409,
+      );
+    }
     log.error(`Unhandled error on ${c.req.method} ${c.req.path}`, err);
     const internal = new ApiError(
       500,
@@ -61,6 +73,16 @@ export function errorHandler(log: Logger): ErrorHandler {
     );
     return c.json(internal.toBody(), 500);
   };
+}
+
+/** Postgres `unique_violation` (23505) – from postgres-js or PGlite, wrapped by Drizzle or not. */
+export function isUniqueViolation(error: unknown): boolean {
+  for (let current = error, depth = 0; current && depth < 3; depth++) {
+    if (typeof current !== 'object') return false;
+    if ((current as { code?: unknown }).code === '23505') return true;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
 }
 
 export const notFoundHandler: NotFoundHandler = (c) => c.json(notFound().toBody(), 404);

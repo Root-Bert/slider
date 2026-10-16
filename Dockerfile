@@ -5,7 +5,8 @@
 #     ghcr.io/root-bert/slider:edge
 # Nothing else is required: the secret is generated into /data, the database is PGlite in /data
 # (or DATABASE_URL), and the login is set up in the browser via the link in the log.
-# Published by .github/workflows/image.yml; see docs/self-hosting.md.
+# Built, smoke-tested (scripts/smoke-image.sh) and – once CI is green – published by
+# .github/workflows/ci.yml; see docs/self-hosting.md.
 #
 # Debian slim, not Alpine: @napi-rs/canvas (PDF → slide images) ships glibc binaries.
 
@@ -59,6 +60,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       libreoffice-impress \
       fonts-liberation fonts-crosextra-carlito fonts-crosextra-caladea fonts-dejavu \
+      tini \
  && rm -rf /var/lib/apt/lists/*
 
 # package.json files and node_modules (workspace symlinks included).
@@ -82,6 +84,9 @@ EXPOSE 8787
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD ["bun", "-e", "fetch('http://127.0.0.1:' + (process.env.PORT || 8787) + '/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
 
+# tini is PID 1: it reaps what LibreOffice leaves behind (soffice.bin is re-parented to PID 1 when
+# its launcher dies, e.g. on the 120 s timeout) and passes signals on to the supervisor.
 # The supervisor runs server.ts and restarts it after settings were saved on /einrichtung; it
-# passes SIGTERM on (server.ts closes the server and the database).
+# passes SIGTERM on (server.ts stops running conversions, closes the server and the database).
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["bun", "apps/api/src/supervisor.ts"]

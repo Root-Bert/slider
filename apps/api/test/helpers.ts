@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
+import postgres from 'postgres';
 import type { CreateCommentInput, Shape } from '@slider/shared';
 import type { ParsedPresentation, ParsedSlide } from '@slider/pptx';
 import { createApp } from '../src/app';
@@ -11,17 +12,18 @@ import type { WebAuthn } from '../src/auth/passkeys';
 import { hashToken, newSecretToken, SESSION_COOKIE } from '../src/auth/session';
 import type { Clock } from '../src/clock';
 import type { Config } from '../src/config';
-import { openDatabase } from '../src/db/client';
+import { openDatabase, type DatabaseHandle } from '../src/db/client';
 import { decks, revisions, sessions, slides, slideVersions, type UserRow } from '../src/db/schema';
 import type { AppDeps, InstanceControl } from '../src/deps';
 import { importDeck } from '../src/import/import-deck';
 import type { PptxToPdf } from '../src/import/libreoffice';
 import type { OfficePdf } from '../src/import/office-pages';
 import type { OpenPptx } from '../src/import/pptx';
-import { InProcessQueue, type ImportJob } from '../src/import/queue';
+import { importJobPriority, InProcessQueue, type ImportJob } from '../src/import/queue';
 import { RenderProgress } from '../src/import/render-progress';
 import { silentLogger } from '../src/logger';
 import { NullMailer, type Mailer } from '../src/mail/mailer';
+import type { LiveHub } from '../src/realtime/live-hub';
 import { DEFAULT_PLAN_LIMITS } from '../src/services/plans';
 import { upsertUser } from '../src/services/users';
 import { ensurePersonalWorkspace } from '../src/services/workspaces';
@@ -95,6 +97,9 @@ export function parsedSlide(sldId: number, index: number): ParsedSlide {
     path: `ppt/slides/slide${index + 1}.xml`,
     hidden: false,
     guides: [],
+    contentHash: '',
+    creationId: null,
+    groups: [],
     title: `Folie ${index + 1}`,
     layoutName: 'Titel und Inhalt',
     textHash: `hash${index}`,
@@ -145,6 +150,38 @@ export const offlineFetch: FetchLike = async (input) => {
 /** Every host resolves to a public documentation address (TEST-NET-3 is not private). */
 export const publicLookup: LookupAll = async () => [{ address: '203.0.113.10' }];
 
+/**
+ * An in-memory PGlite – or, with `TEST_DATABASE_URL` (CI's Postgres job), a fresh database on
+ * that Postgres server, dropped again on close. That way the whole suite also runs on the
+ * production driver (postgres-js) and its migrator, e.g.
+ * `TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres bun run test`.
+ */
+export async function openTestDatabase(
+  serverUrl = process.env.TEST_DATABASE_URL,
+): Promise<DatabaseHandle> {
+  if (!serverUrl) return openDatabase();
+  const name = `slider_test_${crypto.randomUUID().replaceAll('-', '')}`;
+  const admin = async (statement: string) => {
+    const client = postgres(serverUrl, { max: 1, onnotice: () => {} });
+    try {
+      await client.unsafe(statement);
+    } finally {
+      await client.end();
+    }
+  };
+  await admin(`create database ${name}`);
+  const url = new URL(serverUrl);
+  url.pathname = `/${name}`;
+  const handle = await openDatabase(url.toString());
+  return {
+    db: handle.db,
+    close: async () => {
+      await handle.close();
+      await admin(`drop database if exists ${name} with (force)`);
+    },
+  };
+}
+
 export async function createTestContext(
   options: {
     openPptx?: OpenPptx;
@@ -163,9 +200,11 @@ export async function createTestContext(
     webauthn?: WebAuthn;
     /** Environment and restart hook for the setup page; without it `/api/setup` is a 404. */
     instance?: InstanceControl;
+    /** e.g. a hub with short stream timings; `createApp` makes a default one otherwise. */
+    live?: LiveHub;
   } = {},
 ): Promise<TestContext> {
-  const { db, close } = await openDatabase();
+  const { db, close } = await openTestDatabase();
   const blobsDir = await mkdtemp(path.join(tmpdir(), 'slider-api-test-'));
   const storage = new FsBlobStorage(blobsDir);
   const media = new FsBlobStorage(path.join(blobsDir, 'media-store'));
@@ -179,15 +218,25 @@ export async function createTestContext(
   const openPptx = options.openPptx ?? stubPptx();
   const renderers = { officePdf: options.officePdf, libreOfficePdf: options.libreOfficePdf };
   const renderProgress = new RenderProgress();
+  const config = testConfig(options.config);
   const queue = new InProcessQueue<ImportJob>(
     (job) =>
       importDeck(
-        { db, storage, openPptx, clock, log: silentLogger, ...renderers, renderProgress },
+        {
+          db,
+          storage,
+          openPptx,
+          clock,
+          log: silentLogger,
+          ...renderers,
+          renderProgress,
+          syncPollMs: config.sync.pollIntervalMs,
+        },
         job,
       ),
     silentLogger,
+    importJobPriority,
   );
-  const config = testConfig(options.config);
   const fetch = options.fetch ?? offlineFetch;
   const microsoft = new MicrosoftTokens({
     config: config.microsoft,
@@ -225,6 +274,7 @@ export async function createTestContext(
     mailer: options.mailer ?? new NullMailer(),
     instance: options.instance,
     ownerId: owner.id,
+    live: options.live,
   };
   const app = createApp(deps);
 

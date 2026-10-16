@@ -8,6 +8,9 @@ export const useMe = () =>
     queryKey: queryKeys.me,
     queryFn: () => api.get<MeResponse>('/me'),
     staleTime: Infinity,
+    // Back in the tab: pick up a role change, a removal or a session ended elsewhere (the
+    // 401 then goes to the login, see `app/query-client.ts`).
+    refetchOnWindowFocus: 'always',
   });
 
 /** Picks the viewer's colour; their comments are recoloured, so everything deck-related reloads. */

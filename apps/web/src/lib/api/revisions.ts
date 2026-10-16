@@ -12,9 +12,11 @@ import { queryKeys } from './keys';
 
 /**
  * Answers with slide image URLs: signed URLs expire after 6 h at the earliest (BER-94), so
- * these are fetched again after an hour instead of being kept forever.
+ * these are fetched again after an hour instead of being kept forever – also in a tab left open
+ * and visible all day, where no focus change would refetch them (images mounted later, e.g.
+ * scrolled to, would otherwise load expired links).
  */
-const SIGNED_URL_STALE_MS = 60 * 60_000;
+export const SIGNED_URL_STALE_MS = 60 * 60_000;
 
 export const useRevisions = (deckId: string, enabled = true) =>
   useQuery({
@@ -60,6 +62,7 @@ export const useDeletedSlides = (deckId: string, revisionId: string | null, enab
     queryFn: () => api.get<DeletedSlide[]>(`/decks/${deckId}/deleted-slides`),
     enabled: enabled && revisionId !== null,
     staleTime: SIGNED_URL_STALE_MS,
+    refetchInterval: SIGNED_URL_STALE_MS,
   });
 
 /** One slide in every revision, newest first: "Alt" on a comment shows the one it was made on. */
@@ -73,6 +76,7 @@ export const useSlideVersions = (
     queryFn: () => api.get<SlideVersionView[]>(`/decks/${deckId}/slides/${slideId}/versions`),
     enabled: slideId !== null,
     staleTime: SIGNED_URL_STALE_MS,
+    refetchInterval: SIGNED_URL_STALE_MS,
   });
 
 /**

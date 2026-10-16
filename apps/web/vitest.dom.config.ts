@@ -6,6 +6,8 @@ export default defineProject({
   resolve: { alias: { '@': new URL('./src', import.meta.url).pathname } },
   test: {
     name: 'web-dom',
+    // Dates format in the local zone; tests assert calendar days, so they pin one.
+    env: { TZ: 'Europe/Berlin' },
     environment: 'happy-dom',
     include: ['src/**/*.test.tsx'],
     setupFiles: ['./src/test/setup-dom.ts'],

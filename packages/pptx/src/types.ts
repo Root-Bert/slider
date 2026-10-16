@@ -35,7 +35,17 @@ export interface ParsedSlide {
   layoutName: string | null;
   /** Normalised full text (lower-case, collapsed whitespace) hashed with FNV-1a, hex. */
   textHash: string;
+  /**
+   * SHA-256 (hex) of what the SVG preview cannot see: geometry, fills, crops, media bytes and
+   * the parts behind charts, SmartArt and OLE objects. Producer-neutral (no ids, positions or
+   * relationship ids), so an unchanged slide keeps it across saves.
+   */
+  contentHash: string;
+  /** `p14:creationId`, PowerPoint's random id per created slide; `null` if not written. */
+  creationId: number | null;
   shapes: ParsedShape[];
+  /** Shape groups (`p:grpSp`, flattened in `shapes`) with the union box of their children. */
+  groups: { id: string; bbox: Rect }[];
   /** Solid background colour as `#rrggbb`, if one is set on slide, layout or master. */
   background: string | null;
   /** Drawing guides shown on the slide: the presentation's, its master's and its layout's. */
@@ -81,7 +91,11 @@ export interface ParsedRun {
 }
 
 export type ParsedCommentAnchor =
-  { type: 'slide' } | { type: 'point'; point: Point } | { type: 'shape'; shapeId: string };
+  | { type: 'slide' }
+  | { type: 'point'; point: Point }
+  | { type: 'shape'; shapeId: string }
+  /** A shape group (`ac:grpSpMk`): groups are not in `shapes`, so their box is given. */
+  | { type: 'rect'; rect: Rect; shapeId: string };
 
 export interface ParsedComment {
   /** Stable id for idempotent import: modern → comment GUID, legacy → `authorId:idx`. */
@@ -94,7 +108,7 @@ export interface ParsedComment {
   text: string;
   status: 'open' | 'done';
   anchor: ParsedCommentAnchor;
-  /** Modern comments only; legacy comments are flat. */
+  /** Answers in thread order (legacy replies come from `p15:threadingInfo`). */
   replies: ParsedReply[];
 }
 

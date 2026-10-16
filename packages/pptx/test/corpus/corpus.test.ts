@@ -183,11 +183,9 @@ const INTENTS: Record<string, (e: Expected) => void> = {
     ]);
   },
   'comments-legacy-threads': (e) => {
-    // p15:threadingInfo is not read: the replies arrive as three flat comments.
-    expect(e.next.comments).toHaveLength(3);
-    for (const c of e.next.comments) {
-      expect(c).toMatchObject({ slide: 'agenda', format: 'legacy', replies: 0 });
-    }
+    // p15:threadingInfo/p15:parentCm: the two replies hang under their root comment.
+    expect(e.next.comments).toHaveLength(1);
+    expect(e.next.comments[0]).toMatchObject({ slide: 'agenda', format: 'legacy', replies: 2 });
   },
   'comments-resolved': (e) => {
     expect(e.prev.comments.map((c) => c.status)).toEqual(['open', 'open', 'open']);
@@ -234,11 +232,11 @@ const INTENTS: Record<string, (e: Expected) => void> = {
   },
   'producer-mac': (e) => {
     expectChanges(e, { ziele: 'modified' }, { matchedBy: 'sldId' });
-    // Legacy comments: the thread is flat and "resolved" is lost.
-    expect(e.next.comments).toHaveLength(4);
-    for (const c of e.next.comments) {
-      expect(c).toMatchObject({ format: 'legacy', status: 'open', replies: 0 });
-    }
+    // Legacy comments: threads come back via p15:threadingInfo, "resolved" is lost.
+    expect(e.next.comments.map((c) => [c.format, c.status, c.replies])).toEqual([
+      ['legacy', 'open', 2],
+      ['legacy', 'open', 0],
+    ]);
   },
   'producer-online': (e) => {
     expectChanges(e, { ziele: 'modified' }, { matchedBy: 'sldId' });
@@ -256,6 +254,30 @@ const INTENTS: Record<string, (e: Expected) => void> = {
   'producer-win-move': (e) => {
     expectChanges(e, { budget: 'moved' }, { matchedBy: 'sldId' });
     for (const s of e.next.slides) expect(s.part).toBe(slide(e.prev, s.label).part);
+  },
+
+  'rewrite-most-slides': (e) => {
+    // Most sldId pairs disagree on content, but nothing points elsewhere: keep every sldId.
+    expectChanges(
+      e,
+      { kickoff: 'modified', agenda: 'modified', ziele: 'modified', zeitplan: 'modified' },
+      { matchedBy: 'sldId' },
+    );
+    for (const m of e.matches) expect(m.prev).toBe(m.next);
+  },
+  'ppt-delete-last-insert': (e) => {
+    expect(slide(e.next, 'neu').sldId).toBe(slide(e.prev, 'budget').sldId);
+    expectChanges(e, { neu: 'new', budget: 'deleted' }, { matchedBy: 'sldId' });
+  },
+  'google-insert-late': (e) => {
+    expectChanges(e, { neu: 'new' });
+    expect(match(e, 'zeitplan').prev).toBe('zeitplan');
+    expect(match(e, 'budget').prev).toBe('budget');
+    expect(match(e, 'agenda').matchedBy).toBe('sldId');
+  },
+  'google-delete-late': (e) => {
+    expectChanges(e, { zeitplan: 'deleted' });
+    expect(match(e, 'budget').prev).toBe('budget');
   },
 };
 

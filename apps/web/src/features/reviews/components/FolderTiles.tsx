@@ -1,7 +1,8 @@
 import { useState, type DragEvent, type MouseEvent } from 'react';
 import type { DeckFolder } from '@slider/shared';
 import { pluralize } from '@/lib/format';
-import { cn, ContextMenu, Icon, type MenuAction } from '@/ui';
+import { cn, ContextMenu, Icon, Menu, type MenuAction } from '@/ui';
+import { REVEAL_ON_HOVER } from './reveal';
 import { draggedDecks, isDeckDrag } from '../lib/deck-drag';
 
 interface FolderTilesProps {
@@ -16,7 +17,11 @@ interface FolderTilesProps {
   };
 }
 
-/** The workspace's folders above the decks of the top level – open on click, drop decks onto them. */
+/**
+ * The workspace's folders above the decks of the top level – open on click, drop decks onto them.
+ * Rename and delete sit in each tile's ⋯ menu (shown on hover, focus and touch screens) and on
+ * a right click.
+ */
 export function FolderTiles({ folders, counts, onOpen, manage }: FolderTilesProps) {
   if (folders.length === 0) return null;
   return (
@@ -107,6 +112,13 @@ function FolderTile({
           <span className="text-xs text-fg-subtle">{pluralize(count, 'Review', 'Reviews')}</span>
         </span>
       </button>
+      {actions.length > 0 && (
+        <Menu
+          label={`Aktionen für Ordner „${folder.name}“`}
+          actions={actions}
+          className={cn('mr-2 shrink-0', REVEAL_ON_HOVER)}
+        />
+      )}
       {contextAt && (
         <ContextMenu
           label={`Aktionen für Ordner „${folder.name}“`}

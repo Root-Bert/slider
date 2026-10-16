@@ -1,4 +1,5 @@
 import {
+  bigint,
   boolean,
   doublePrecision,
   index,
@@ -363,6 +364,13 @@ export const slideVersions = pgTable(
     /** SHA-256 of the rendered image, for slide matching (BER-108); filled lazily for old rows. */
     renderHash: text('render_hash'),
     /**
+     * `ParsedSlide.contentHash`: what the SVG preview cannot see (charts, SmartArt, media, fills),
+     * compared next to `render_hash` (BER-108). `null` for rows from before it.
+     */
+    contentHash: text('content_hash'),
+    /** `p14:creationId` of the slide (unsigned 32 bit), tells a reused sldId apart. */
+    creationId: bigint('creation_id', { mode: 'number' }),
+    /**
      * What drew `image_key` (BER-94): Office's PDF, LibreOffice's PDF, or the in-house SVG
      * preview. `svg` means a better renderer was tried and failed; `null` means the SVG preview
      * and nothing better tried yet (rows from before this column, uploads without LibreOffice) –
@@ -374,6 +382,11 @@ export const slideVersions = pgTable(
   (t) => [
     unique('slide_versions_revision_slide_unique').on(t.revisionId, t.slideId),
     index('slide_versions_revision_position_idx').on(t.revisionId, t.position),
+    // Deleting slides cascades here row by row; also slide history and orphan cleanup.
+    index('slide_versions_slide_idx').on(t.slideId),
+    // Which images a re-render may delete (`rerender`: still used by another version?).
+    index('slide_versions_image_key_idx').on(t.imageKey),
+    index('slide_versions_thumbnail_key_idx').on(t.thumbnailKey),
   ],
 );
 
@@ -409,6 +422,8 @@ export const comments = pgTable(
     unique('comments_deck_source_external_unique').on(t.deckId, t.source, t.externalId),
     index('comments_deck_created_idx').on(t.deckId, t.createdAt),
     index('comments_parent_idx').on(t.parentId),
+    // Deleting slides cascades here row by row; also comment counts per slide.
+    index('comments_slide_idx').on(t.slideId),
   ],
 );
 

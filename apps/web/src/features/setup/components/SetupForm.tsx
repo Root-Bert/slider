@@ -84,6 +84,10 @@ export function SetupForm({
       await waitForRestart();
       await queryClient.invalidateQueries({ queryKey: ['setup'] });
       await queryClient.invalidateQueries({ queryKey: workspaceKeys.providers });
+      // The form stays mounted across the refetch: start over from what the server now has, or
+      // removed values would still show (and be sent again with the next save).
+      const fresh = queryClient.getQueryData<SetupStatus>(['setup'])?.settings;
+      if (fresh) setDraft(initialDraft(fresh.fields));
       setRemoved(new Set());
       setSmtp(EMPTY_SMTP);
       setPhase('saved');

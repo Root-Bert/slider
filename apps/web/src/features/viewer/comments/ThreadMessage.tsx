@@ -1,4 +1,4 @@
-import type { Comment } from '@slider/shared';
+import { MAX_COMMENT_BODY_LENGTH, type Comment } from '@slider/shared';
 import { useState } from 'react';
 import { isPendingComment } from '@/lib/api/comment-cache';
 import { useUpdateComment } from '@/lib/api';
@@ -117,6 +117,7 @@ function EditForm({
         <AutosizeTextarea
           autoFocus
           aria-label="Kommentar bearbeiten"
+          maxLength={MAX_COMMENT_BODY_LENGTH}
           value={body}
           onChange={(event) => setBody(event.target.value)}
           onKeyDown={(event) => {

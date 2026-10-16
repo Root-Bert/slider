@@ -1,4 +1,4 @@
-import type { Author, Comment } from '@slider/shared';
+import { MAX_COMMENT_BODY_LENGTH, type Author, type Comment } from '@slider/shared';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -62,6 +62,12 @@ describe('ReplyComposer', () => {
       expect.anything(),
     );
     expect((field as HTMLTextAreaElement).value).toBe('');
+  });
+
+  it('stops the reply at the length the API takes', () => {
+    render(<ReplyComposer root={root} deckId="deck-1" />);
+    const field = screen.getByRole('textbox', { name: 'Antwort an Anna' });
+    expect(field.getAttribute('maxlength')).toBe(String(MAX_COMMENT_BODY_LENGTH));
   });
 
   it('offers voice, video and image replies beside the field', async () => {

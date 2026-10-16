@@ -17,6 +17,7 @@ import {
   PopoverPanel,
   TextLink,
   usePopover,
+  type ShowToast,
 } from '@/ui';
 import {
   buildThreads,
@@ -46,6 +47,7 @@ export function OpenCommentsButton({
   size = 'sm',
   cardSlot,
   onOpenChange,
+  onNotify,
 }: {
   deck: Deck;
   placement?: Placement;
@@ -55,6 +57,8 @@ export function OpenCommentsButton({
   size?: 'sm' | 'md';
   /** The list opened or closed – the card drops its hover look while it's open. */
   onOpenChange?: (open: boolean) => void;
+  /** Says when ticking a thread off could not be saved. */
+  onNotify?: ShowToast;
 }) {
   // The `card` list is portalled out of the wrapper; as the panel it still counts as inside.
   const { open, close, wrapperRef, panelRef, panelId, triggerProps } = usePopover({
@@ -98,6 +102,7 @@ export function OpenCommentsButton({
             id={panelId}
             deck={deck}
             onClose={close}
+            onNotify={onNotify}
             position="none"
             className="absolute inset-2"
           />,
@@ -108,6 +113,7 @@ export function OpenCommentsButton({
           id={panelId}
           deck={deck}
           onClose={close}
+          onNotify={onNotify}
           className="max-h-[min(420px,60vh)] w-[min(340px,calc(100vw-32px))]"
         />
       )}
@@ -120,6 +126,7 @@ function OpenCommentsPopover({
   id,
   deck,
   onClose,
+  onNotify,
   position = 'anchored',
   className,
 }: {
@@ -127,6 +134,7 @@ function OpenCommentsPopover({
   id: string;
   deck: Deck;
   onClose: () => void;
+  onNotify?: ShowToast;
   /** `none` for the `card` list, which fills the thumbnail instead of hanging off the button. */
   position?: 'anchored' | 'none';
   className?: string;
@@ -150,18 +158,29 @@ function OpenCommentsPopover({
       .map((slide, index) => [slide.id, index + 1]),
   );
 
-  const toggle = (comment: Comment) => {
-    const resolve = !ticked.has(comment.id);
+  const setDone = (commentId: string, done: boolean) =>
     setTicked((current) => {
       const next = new Set(current);
-      if (resolve) next.add(comment.id);
-      else next.delete(comment.id);
+      if (done) next.add(commentId);
+      else next.delete(commentId);
       return next;
     });
+
+  const toggle = (comment: Comment) => {
+    const resolve = !ticked.has(comment.id);
+    setDone(comment.id, resolve);
     update.mutate(
       { commentId: comment.id, status: resolve ? 'done' : 'open' },
-      // The card's "n offen" comes from the deck list.
-      { onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.deckLists }) },
+      {
+        // Not saved (offline, role changed, rate limit): the row goes back to how it was, and
+        // says so – the cache is rolled back by `useUpdateComment`.
+        onError: (error) => {
+          setDone(comment.id, !resolve);
+          onNotify?.(error.message, 'danger');
+        },
+        // The card's "n offen" comes from the deck list.
+        onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.deckLists }),
+      },
     );
   };
 

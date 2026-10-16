@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EMU_PER_LEGACY_POSITION_UNIT } from '../src/comments/legacy';
+import { readModernComments } from '../src/comments/modern';
+import { parseXml } from '../src/xml';
 import { SLIDE_SIZE_16_9 } from './fixtures/build-pptx';
 import { defined, openDeck } from './helpers';
 
@@ -149,5 +151,85 @@ describe('legacy comments (BER-113)', () => {
     const legacy = defined(presentation.comments[1]);
     expect(legacy).toMatchObject({ format: 'legacy', status: 'open', replies: [] });
     expect(legacy.createdAt).toBe('2026-03-01T12:00:00.000');
+  });
+});
+
+describe('legacy reply threads (p15:threadingInfo)', () => {
+  it('puts replies under their root comment, in order', async () => {
+    const { presentation } = await openDeck({
+      slides: [
+        {
+          title: 'Agenda',
+          legacyComments: [
+            { author: 'Lena', text: 'Frage?', position: { x: 10, y: 10 } },
+            { author: 'Jonas', text: 'Antwort', position: { x: 10, y: 10 }, replyTo: 0 },
+            { author: 'Lena', text: 'Danke', position: { x: 10, y: 10 }, replyTo: 1 },
+            { author: 'Mira', text: 'Eigenes Thema', position: { x: 90, y: 90 } },
+          ],
+        },
+      ],
+    });
+    expect(presentation.comments.map((c) => [c.text, c.replies.map((r) => r.text)])).toEqual([
+      ['Frage?', ['Antwort', 'Danke']],
+      ['Eigenes Thema', []],
+    ]);
+    const reply = defined(defined(presentation.comments[0]).replies[0]);
+    expect(reply.author.name).toBe('Jonas');
+    expect(reply.externalId).toMatch(/^\d+:\d+$/);
+  });
+});
+
+describe('modern comments on shape groups', () => {
+  const comment = (monikers: string) =>
+    parseXml(
+      '<p188:cmLst xmlns:p188="x" xmlns:ac="y"><p188:cm id="{C1}" authorId="{A}" created="2026-01-01T00:00:00Z">' +
+        `<ac:deMkLst><pc:docMk/><pc:sldMk cId="1" sldId="256"/>${monikers}</ac:deMkLst>` +
+        '<p188:txBody><a:p><a:r><a:t>Hm</a:t></a:r></a:p></p188:txBody></p188:cm></p188:cmLst>',
+    );
+  const groups = new Map([['7', { x: 0.1, y: 0.2, w: 0.3, h: 0.4 }]]);
+  const read = (monikers: string) =>
+    readModernComments(
+      comment(monikers),
+      { sldId: 256, size: SLIDE_SIZE_16_9, groups },
+      new Map(),
+    )[0]?.anchor;
+
+  it('anchors a comment on a group to the group box', () => {
+    expect(read('<ac:grpSpMk id="7" creationId="{G}"/>')).toEqual({
+      type: 'rect',
+      rect: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 },
+      shapeId: '7',
+    });
+  });
+
+  it('prefers the shape inside the group over the enclosing group', () => {
+    expect(read('<ac:grpSpMk id="7"/><ac:spMk id="9"/>')).toEqual({ type: 'shape', shapeId: '9' });
+  });
+
+  it('computes group boxes from the children when parsing a deck', async () => {
+    const { presentation } = await openDeck({
+      slides: [
+        {
+          title: 'Gruppe',
+          shapes: [
+            {
+              type: 'group',
+              id: 20,
+              box: { x: 1_000_000, y: 1_000_000, w: 2_000_000, h: 2_000_000 },
+              childBox: { x: 0, y: 0, w: 2_000_000, h: 2_000_000 },
+              shapes: [
+                { type: 'rect', box: { x: 0, y: 0, w: 1_000_000, h: 1_000_000 } },
+                { type: 'rect', box: { x: 1_000_000, y: 1_000_000, w: 1_000_000, h: 1_000_000 } },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const slide = defined(presentation.slides[0]);
+    const group = defined(slide.groups.find((g) => g.id === '20'));
+    expect(group.bbox.x).toBeCloseTo(1_000_000 / SLIDE_SIZE_16_9.cx);
+    expect(group.bbox.w).toBeCloseTo(2_000_000 / SLIDE_SIZE_16_9.cx);
+    expect(group.bbox.h).toBeCloseTo(2_000_000 / SLIDE_SIZE_16_9.cy);
   });
 });

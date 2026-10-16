@@ -1,4 +1,5 @@
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
+import { rmSync } from 'node:fs';
 import { access, constants, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -15,6 +16,25 @@ export const LIBREOFFICE_TIMEOUT_MS = 120_000;
 const WELL_KNOWN_SOFFICE = ['/Applications/LibreOffice.app/Contents/MacOS/soffice'];
 
 type Spawn = (command: string, args: string[], options: { detached: boolean }) => ChildProcess;
+
+/**
+ * Conversions still running, with their temp folder. They run in their own process group, so
+ * they would outlive the server: {@link stopRunningConversions} takes them down on shutdown.
+ */
+const running = new Map<ChildProcess, string>();
+
+/**
+ * Kills every running conversion (whole process group) and removes its temp folder right away –
+ * for shutdown and the restart after `/einrichtung`, where the process exits before the
+ * conversions' own clean-up would run. Their imports are picked up again on the next start.
+ */
+export function stopRunningConversions(): void {
+  for (const [child, dir] of running) {
+    kill(child);
+    rmSync(dir, { recursive: true, force: true });
+  }
+  running.clear();
+}
 
 export interface FindSofficeOptions {
   /** `LIBREOFFICE_PATH`: used as is when set (and executable). */
@@ -102,6 +122,7 @@ export function createLibreOfficePdf({
           input,
         ],
         timeoutMs,
+        dir,
       );
       let pdf: Uint8Array;
       try {
@@ -122,11 +143,18 @@ export function createLibreOfficePdf({
 const isPdf = (bytes: Uint8Array) =>
   bytes.length > 4 && new TextDecoder().decode(bytes.subarray(0, 5)) === '%PDF-';
 
-function run(spawn: Spawn, binary: string, args: string[], timeoutMs: number): Promise<void> {
+function run(
+  spawn: Spawn,
+  binary: string,
+  args: string[],
+  timeoutMs: number,
+  dir: string,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     // Own process group: on Linux `soffice` is a script that starts `soffice.bin`; a timeout
     // must take both down.
     const child = spawn(binary, args, { detached: true });
+    running.set(child, dir);
     let stderr = '';
     child.stderr?.on('data', (chunk: Buffer) => {
       if (stderr.length < 4000) stderr += chunk.toString();
@@ -139,10 +167,12 @@ function run(spawn: Spawn, binary: string, args: string[], timeoutMs: number): P
     }, timeoutMs);
     child.on('error', (error) => {
       clearTimeout(timer);
+      running.delete(child);
       reject(error);
     });
     child.on('close', (code, signal) => {
       clearTimeout(timer);
+      running.delete(child);
       if (timedOut) reject(new Error(`LibreOffice timed out after ${timeoutMs} ms`));
       else if (code === 0) resolve();
       else {

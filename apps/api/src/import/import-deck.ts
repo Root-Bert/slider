@@ -28,6 +28,8 @@ export interface ImportDeps {
   libreOfficePdf?: PptxToPdf | null;
   /** Progress of background re-renders, shown by `GET /decks/:id/status`. */
   renderProgress?: RenderProgress;
+  /** `SYNC_POLL_INTERVAL_MS`: the base of the backoff after a failed sync import. */
+  syncPollMs?: number;
 }
 
 const PPTX_ERROR_MESSAGES: Record<PptxError['code'], string> = {
@@ -123,6 +125,8 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
         title: parsed.title,
         layoutName: parsed.layoutName,
         textHash: parsed.textHash,
+        contentHash: parsed.contentHash,
+        creationId: parsed.creationId,
         imageKey,
         thumbnailKey: imageKey,
         aspectRatio,

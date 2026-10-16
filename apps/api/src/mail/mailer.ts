@@ -27,13 +27,27 @@ export interface Mailer {
   send(message: MailMessage): Promise<void>;
 }
 
+/**
+ * Invites wait for the mail inside the request, so a blocked port (many hosters drop outgoing
+ * 25/465) must fail within seconds – nodemailer's defaults wait 2 minutes, longer than proxies
+ * like Cloudflare keep the request open. The invite stands either way; the link is shown.
+ */
+export const SMTP_TIMEOUTS = {
+  connectionTimeout: 10_000,
+  greetingTimeout: 10_000,
+  socketTimeout: 20_000,
+};
+
 /** Sends through SMTP (`SMTP_URL`, e.g. `smtps://user:pass@host:465`). */
 export class SmtpMailer implements Mailer {
   readonly configured = true;
   private readonly transport: Transporter;
 
-  constructor(private readonly config: SmtpConfig) {
-    this.transport = createTransport(config.url);
+  constructor(
+    private readonly config: SmtpConfig,
+    timeouts: typeof SMTP_TIMEOUTS = SMTP_TIMEOUTS,
+  ) {
+    this.transport = createTransport({ url: config.url, ...timeouts });
   }
 
   async send(message: MailMessage): Promise<void> {

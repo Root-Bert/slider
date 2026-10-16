@@ -17,6 +17,13 @@ export async function mergeSyncState(
     .where(eq(decks.id, deckId));
 }
 
+/** Longest wait between checks after repeated errors. */
+export const SYNC_MAX_BACKOFF_MS = 6 * 60 * 60 * 1000;
+
+/** Wait before the next check after `failures` errors in a row: doubling, capped. */
+export const syncBackoffMs = (pollMs: number, failures: number) =>
+  Math.min(pollMs * 2 ** failures, SYNC_MAX_BACKOFF_MS);
+
 /** Patch that records a healthy check: no error, no failures. */
 export const healthyCheck = (now: Date, nextCheckAt: Date): Partial<DeckSyncStateRow> => ({
   lastCheckedAt: now.toISOString(),

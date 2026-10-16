@@ -5,12 +5,18 @@ import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { commentSchema, deckSchema, slideSchema, type Deck } from '@slider/shared';
 import { PptxError, type ParsedComment } from '@slider/pptx';
-import { comments, userIdentities, users } from '../src/db/schema';
-import { importDeck } from '../src/import/import-deck';
+import { comments, decks, userIdentities, users } from '../src/db/schema';
+import { findInterruptedImports, importDeck } from '../src/import/import-deck';
 import type { OpenPptx } from '../src/import/pptx';
 import { toAnchor, upsertPptxComments } from '../src/import/pptx-comments';
 import { silentLogger } from '../src/logger';
-import { createReadyDeck, createTestContext, stubPptx, type TestContext } from './helpers';
+import {
+  createReadyDeck,
+  createTestContext,
+  parsedSlide,
+  stubPptx,
+  type TestContext,
+} from './helpers';
 
 let ctx: TestContext | undefined;
 afterEach(async () => {
@@ -39,6 +45,17 @@ const failingWith =
   };
 
 describe('import pipeline', () => {
+  it('counts only visible slides, like the viewer', async () => {
+    const slides = [
+      parsedSlide(256, 0),
+      { ...parsedSlide(257, 1), hidden: true },
+      parsedSlide(258, 2),
+    ];
+    ctx = await createTestContext({ openPptx: stubPptx({ slides }) });
+    const deck = await upload(ctx);
+    expect(deck).toMatchObject({ import: { status: 'ready' }, slideCount: 2 });
+  });
+
   it('creates slides with shapes and stores an SVG render per slide', async () => {
     ctx = await createTestContext({ openPptx: stubPptx({}, 3) });
     const deck = await upload(ctx);
@@ -142,6 +159,41 @@ describe('import pipeline', () => {
       slideId: root?.slideId,
       author: { name: 'Max Kern' },
     });
+  });
+});
+
+describe('after a restart', () => {
+  it('resumes first imports cut off mid-way; ready decks and demo decks stay as they are', async () => {
+    ctx = await createTestContext({ openPptx: stubPptx({}, 3) });
+    const cutOff = await upload(ctx);
+    const finished = await upload(ctx, 'Fertig.pptx');
+    // A demo deck without an original, left "running" too.
+    const demo = await createReadyDeck(ctx);
+    const crashed = (deckId: string) =>
+      ctx!.deps.db
+        .update(decks)
+        .set({ importState: { status: 'running', step: 'rendering', progress: null } })
+        .where(eq(decks.id, deckId));
+    await crashed(cutOff.id);
+    await crashed(demo.deckId);
+
+    const jobs = await findInterruptedImports(ctx.deps.db);
+    expect(jobs).toEqual([
+      { deckId: cutOff.id, revisionId: cutOff.currentRevisionId, kind: 'initial' },
+    ]);
+    const state = async (deckId: string) =>
+      (await ctx!.deps.db.select().from(decks).where(eq(decks.id, deckId)))[0]?.importState;
+    expect(await state(cutOff.id)).toEqual({ status: 'queued' });
+    expect(await state(finished.id)).toEqual({ status: 'ready' });
+
+    for (const job of jobs) ctx.deps.queue.enqueue(job);
+    await ctx.deps.queue.idle();
+    const resumed = deckSchema.parse(await (await ctx.request(`/api/decks/${cutOff.id}`)).json());
+    expect(resumed).toMatchObject({ import: { status: 'ready' }, slideCount: 3 });
+    const slides = slideSchema
+      .array()
+      .parse(await (await ctx.request(`/api/decks/${cutOff.id}/slides`)).json());
+    expect(slides).toHaveLength(3);
   });
 });
 

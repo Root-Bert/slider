@@ -14,8 +14,8 @@ import { requireOwner } from '../auth/access';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import { users, type UserRow } from '../db/schema';
 import type { AppDeps } from '../deps';
-import { badRequest, fileTooLarge } from '../http/errors';
-import { rateLimit } from '../http/rate-limit';
+import { ApiError, badRequest, fileTooLarge } from '../http/errors';
+import { clientAddress, fixedWindow, rateLimit } from '../http/rate-limit';
 import { readJson } from '../http/validate';
 import {
   acceptInviteById,
@@ -44,6 +44,13 @@ async function requireUser(deps: AppDeps, viewer: Viewer): Promise<UserRow> {
   return user;
 }
 
+/**
+ * Invite mails per hour, per account and per client address. Every one goes out from the
+ * instance's sender with text the inviter chose (name, organisation), so the open demo keeps a
+ * tight cap; links (no mail) are not counted.
+ */
+export const INVITE_MAILS_PER_HOUR = { limited: 20, unlimited: 200 } as const;
+
 /** Workspaces, members and invitations (BER-129). */
 export function workspacesRoutes(deps: AppDeps) {
   const viewer = viewerMiddleware(deps);
@@ -52,6 +59,13 @@ export function workspacesRoutes(deps: AppDeps) {
     windowMs: 60_000,
     clock: deps.clock,
   });
+  const mailLimit = {
+    limit: deps.config.limited ? INVITE_MAILS_PER_HOUR.limited : INVITE_MAILS_PER_HOUR.unlimited,
+    windowMs: 60 * 60_000,
+    clock: deps.clock,
+  };
+  const mailsPerUser = fixedWindow(mailLimit);
+  const mailsPerClient = fixedWindow(mailLimit);
   const userId = (v: Viewer) => {
     requireOwner(v);
     return v.author.id;
@@ -136,6 +150,22 @@ export function workspacesRoutes(deps: AppDeps) {
       .post('/workspaces/:id/invites', viewer, async (c) => {
         const user = await requireUser(deps, c.var.viewer);
         const input = await readJson(c, createWorkspaceInviteInputSchema);
+        if (input.email) {
+          const byUser = mailsPerUser.hit(user.id);
+          const byClient = mailsPerClient.hit(clientAddress(c));
+          if (!byUser.allowed || !byClient.allowed) {
+            const retryAfterS = Math.max(
+              byUser.allowed ? 0 : byUser.retryAfterS,
+              byClient.allowed ? 0 : byClient.retryAfterS,
+            );
+            c.header('Retry-After', String(retryAfterS));
+            throw new ApiError(
+              429,
+              'rate_limited',
+              `Du hast gerade sehr viele Einladungen verschickt. Bitte versuch es in ${Math.ceil(retryAfterS / 60)} Minuten noch einmal oder lade per Link ein.`,
+            );
+          }
+        }
         return c.json(await createInvite(deps, user, c.req.param('id'), input), 201);
       })
       .delete('/workspace-invites/:inviteId', viewer, async (c) => {

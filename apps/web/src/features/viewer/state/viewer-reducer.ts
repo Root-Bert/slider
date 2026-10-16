@@ -133,6 +133,18 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
       return action.open
         ? { ...next, deletedPanelOpen: true, threadPanelOpen: false, focusedThreadId: null }
         : { ...next, deletedPanelOpen: false };
+    case 'threadsReplaced': {
+      const keepFocus = next.focusedThreadId === null || action.threadIds.has(next.focusedThreadId);
+      const keepHover = next.hoveredThreadId === null || action.threadIds.has(next.hoveredThreadId);
+      if (keepFocus && keepHover) return next;
+      return {
+        ...next,
+        ...(keepFocus
+          ? {}
+          : { focusedThreadId: null, threadPanelOpen: false, editingCommentId: null }),
+        hoveredThreadId: keepHover ? next.hoveredThreadId : null,
+      };
+    }
     case 'slidesReplaced': {
       const ids = new Set(action.slideIds);
       const keepActive = next.activeSlideId !== null && ids.has(next.activeSlideId);

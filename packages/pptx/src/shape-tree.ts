@@ -26,6 +26,8 @@ export interface ShapeNode {
   /** Slide-space box in EMU, or `null` if the shape has no `xfrm` (inherits from a placeholder). */
   box: EmuRect | null;
   placeholder: PlaceholderRef | null;
+  /** `p:cNvPr/@id`s of the enclosing groups, outermost first. */
+  groupIds: string[];
 }
 
 /**
@@ -35,6 +37,7 @@ export interface ShapeNode {
 export function* walkShapeTree(
   tree: XmlElement | undefined,
   transform: Transform = IDENTITY,
+  groupIds: string[] = [],
 ): Generator<ShapeNode> {
   for (const element of tree?.children ?? []) {
     // Hidden in PowerPoint's selection pane (often animation helpers): not drawn, not a target.
@@ -44,19 +47,20 @@ export function* walkShapeTree(
         yield* walkShapeTree(
           element,
           groupTransform(path(element, 'p:grpSpPr', 'a:xfrm'), transform),
+          [...groupIds, attr(path(element, 'p:nvGrpSpPr', 'p:cNvPr'), 'id') ?? ''],
         );
         break;
       case 'mc:AlternateContent': {
         // Markup-compatibility wrapper: the fallback is plain PresentationML we understand.
         const branch = child(element, 'mc:Fallback') ?? child(element, 'mc:Choice');
-        yield* walkShapeTree(branch, transform);
+        yield* walkShapeTree(branch, transform, groupIds);
         break;
       }
       case 'p:sp':
       case 'p:pic':
       case 'p:cxnSp':
       case 'p:graphicFrame':
-        yield toShapeNode(element, transform);
+        yield toShapeNode(element, transform, groupIds);
         break;
       default:
         // Non-visual group properties (`p:nvGrpSpPr`, `p:grpSpPr`), `p:extLst`, content parts, …
@@ -70,7 +74,7 @@ function isHidden(element: XmlElement): boolean {
   return boolAttr(child(nonVisual, 'p:cNvPr'), 'hidden') === true;
 }
 
-function toShapeNode(element: XmlElement, transform: Transform): ShapeNode {
+function toShapeNode(element: XmlElement, transform: Transform, groupIds: string[]): ShapeNode {
   const nonVisual = element.children.find((candidate) => candidate.name.startsWith('p:nv'));
   const properties = child(nonVisual, 'p:cNvPr');
   const xfrm =
@@ -85,6 +89,7 @@ function toShapeNode(element: XmlElement, transform: Transform): ShapeNode {
     name: attr(properties, 'name') ?? '',
     box: box && applyTransform(transform, box, readOrientation(xfrm).rotation),
     placeholder: readPlaceholderRef(child(child(nonVisual, 'p:nvPr'), 'p:ph')),
+    groupIds,
   };
 }
 

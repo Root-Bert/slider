@@ -32,7 +32,11 @@ export function UploadProgressCard({
           {processing ? 'Upload abgeschlossen, Datei wird verarbeitet' : 'Upload läuft'}
         </p>
       </div>
-      <IconButton icon="close" label="Upload abbrechen" size="sm" onClick={onCancel} />
+      {/* Once the bytes are sent the server creates the deck whatever the browser does, so
+          there is nothing left to cancel (it could only pretend). */}
+      {!processing && (
+        <IconButton icon="close" label="Upload abbrechen" size="sm" onClick={onCancel} />
+      )}
     </div>
   );
 }

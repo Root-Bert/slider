@@ -6,6 +6,7 @@ import type { SourceAdapters } from '../sources/source-adapter';
 import { blobKeys, type BlobStorage } from '../storage/blob-storage';
 import type { PptxToPdf } from './libreoffice';
 import { rasterizePdf, type PageImages } from './pdf-pages';
+import { svgThumbnail } from './svg-thumbnail';
 
 type PdfRenderer = Exclude<SlideRenderer, 'svg'>;
 
@@ -188,7 +189,13 @@ export async function storeSlideRender(
   if (!page) {
     const imageKey = blobKeys.slideRender(deckId, revisionId, 'svg');
     await storage.put(imageKey, new TextEncoder().encode(svg));
-    return { imageKey, thumbnailKey: imageKey };
+    // Same SVG with its pictures scaled down: a photo slide would otherwise put megabytes into
+    // every minimap and deck card.
+    const thumbnail = await svgThumbnail(svg);
+    if (thumbnail === svg) return { imageKey, thumbnailKey: imageKey };
+    const thumbnailKey = blobKeys.slideRender(deckId, revisionId, 'svg');
+    await storage.put(thumbnailKey, new TextEncoder().encode(thumbnail));
+    return { imageKey, thumbnailKey };
   }
   const imageKey = blobKeys.slideRender(deckId, revisionId, 'webp');
   const thumbnailKey = blobKeys.slideRender(deckId, revisionId, 'webp');

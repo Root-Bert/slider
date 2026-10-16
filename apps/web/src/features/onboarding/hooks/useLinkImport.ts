@@ -12,6 +12,7 @@ import {
   noAccessFromLoginError,
   type NoAccessInfo,
 } from '../lib/link-import-errors';
+import { rememberLinkLogin, takeLinkLogin } from '../lib/link-login';
 
 export {
   CONSENT_MESSAGE,
@@ -26,7 +27,9 @@ export {
  * (errors only after blur/submit), the import mutation and the A3 "no access" outcome.
  *
  * After the Microsoft login the API sends the browser back to `/neu?link=…`: the link is
- * prefilled and imported once automatically. `&msError=…` instead explains why the login failed.
+ * prefilled, and imported once automatically if this tab started that login for this link and
+ * workspace (`link-login.ts`) – a crafted `/neu?link=…` only prefills. `&msError=…` instead
+ * explains why the login failed.
  */
 export function useLinkImport(workspaceId: string, onImported: (deck: Deck) => void) {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -68,10 +71,12 @@ export function useLinkImport(workspaceId: string, onImported: (deck: Deck) => v
       },
     });
 
-  // Retry the import once after a successful login, and drop the parameters from the URL.
+  // Retry the import once after a successful login this tab started, and drop the parameters
+  // from the URL.
   useEffect(() => {
     if (resumed.current || resume.link === null) return;
     resumed.current = true;
+    const ownLogin = takeLinkLogin(resume.link, workspaceId);
     setSearchParams(
       (params) => {
         params.delete('link');
@@ -80,7 +85,7 @@ export function useLinkImport(workspaceId: string, onImported: (deck: Deck) => v
       },
       { replace: true },
     );
-    if (resume.parsed && !resume.msError) startImport(resume.parsed);
+    if (resume.parsed && !resume.msError && ownLogin) startImport(resume.parsed);
     // Runs once on mount; `startImport` only uses stable mutation and query-client handles.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -99,8 +104,16 @@ export function useLinkImport(workspaceId: string, onImported: (deck: Deck) => v
     startImport(parsed);
   };
 
+  /** "Mit Microsoft anmelden" on the A3 card: remembers the link, then leaves for the login. */
+  const signIn = () => {
+    if (!noAccess?.loginUrl) return;
+    rememberLinkLogin(url.trim(), workspaceId);
+    window.location.assign(noAccess.loginUrl);
+  };
+
   return {
     url,
+    signIn,
     change,
     blur: () => setTouched(url.trim() !== ''),
     submit,

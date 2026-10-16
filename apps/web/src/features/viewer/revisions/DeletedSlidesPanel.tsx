@@ -4,6 +4,7 @@ import { accentColor } from '@/lib/accent';
 import { pluralize } from '@/lib/format';
 import { Badge, Button, cn, Icon, IconButton } from '@/ui';
 import { SidePanel, SidePanelHeader } from '../components/SidePanel';
+import { useRestoreFocus } from '../hooks/useRestoreFocus';
 import { ReplyComposer } from '../comments/ReplyComposer';
 import { ResolveButton } from '../comments/ResolveButton';
 import { ThreadMessage } from '../comments/ThreadMessage';
@@ -33,6 +34,7 @@ function DeletedSlidesPanelView({ deletedSlides }: { deletedSlides: readonly Del
   const titleId = useId();
   const threadCount = [...deletedThreads.values()].reduce((sum, list) => sum + list.length, 0);
 
+  useRestoreFocus();
   useEffect(() => {
     panelRef.current?.focus({ preventScroll: true });
   }, []);

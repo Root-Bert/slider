@@ -23,14 +23,14 @@ import type {
 } from '../sources/source-adapter';
 import { blobKeys, type BlobStorage } from '../storage/blob-storage';
 import { deckLoginUrl, toSyncError, TRANSIENT_SYNC_ERRORS } from './errors';
-import { healthyCheck, mergeSyncState } from './state';
+import { healthyCheck, mergeSyncState, syncBackoffMs } from './state';
+
+export { SYNC_MAX_BACKOFF_MS } from './state';
 
 /** Only decks someone opened or changed within this window are polled. */
 export const SYNC_ACTIVE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 /** Constant autosaving must not postpone an import forever: after 10 × debounce it happens. */
 export const SYNC_MAX_DEBOUNCE_FACTOR = 10;
-/** Longest wait between checks after repeated errors. */
-export const SYNC_MAX_BACKOFF_MS = 6 * 60 * 60 * 1000;
 /** Transient errors (source unreachable) show a banner only after this many failures in a row. */
 export const SYNC_TRANSIENT_ERROR_THRESHOLD = 3;
 /** Sources without ETag/cTag are downloaded and hashed – at most every 5 poll intervals. */
@@ -343,8 +343,10 @@ export class SyncService {
         });
         await mergeSyncState(tx, deck.id, {
           ...(trigger === 'upload' ? {} : healthyCheck(now, new Date(now.getTime() + this.pollMs))),
-          // Keep an earlier error visible until the import succeeded.
+          // Keep an earlier error visible, and failed imports counted (their backoff), until the
+          // import succeeded.
           ...(deck.syncState.lastSyncError ? { lastSyncError: deck.syncState.lastSyncError } : {}),
+          consecutiveFailures: deck.syncState.consecutiveFailures ?? 0,
           pending: null,
           importingRevisionId: revisionId,
         });
@@ -403,7 +405,7 @@ export class SyncService {
     if (!expected) this.deps.log.error(`Sync check of deck ${deck.id} failed`, error);
     else this.deps.log.warn(`Sync check of deck ${deck.id}: ${syncError.code}`);
     const failures = (deck.syncState.consecutiveFailures ?? 0) + 1;
-    const backoff = Math.min(this.pollMs * 2 ** failures, SYNC_MAX_BACKOFF_MS);
+    const backoff = syncBackoffMs(this.pollMs, failures);
     const show =
       !TRANSIENT_SYNC_ERRORS.has(syncError.code) || failures >= SYNC_TRANSIENT_ERROR_THRESHOLD;
     await mergeSyncState(this.deps.db, deck.id, {

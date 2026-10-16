@@ -54,7 +54,8 @@ export function ReviewsToolbar({
         </GlassPanel>
         {action}
       </div>
-      <div className="flex items-center gap-2 max-sm:w-full">
+      {/* Below sm the search takes its own full-width row, sort and view sit under it. */}
+      <div className="flex items-center gap-2 max-sm:w-full max-sm:flex-wrap">
         {search}
         <Select
           aria-label="Sortieren nach"

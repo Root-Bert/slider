@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { commentSchema, type Comment, type CreateMediaCommentInput } from '@slider/shared';
 import { workspaceMembers } from '../src/db/schema';
 import { parseRange } from '../src/http/range';
@@ -102,6 +102,23 @@ describe('voice and video comments', () => {
 
     const beyond = await ctx.request(media!.url, { headers: { Range: 'bytes=5000-' } });
     expect(beyond.status).toBe(416);
+  });
+
+  it('reads only the requested bytes, never the whole recording into memory', async () => {
+    const { media } = await create();
+    const get = vi.spyOn(ctx.deps.media, 'get');
+    const stream = vi.spyOn(ctx.deps.media, 'stream');
+    const part = await ctx.request(media!.url, { headers: { Range: 'bytes=996-' } });
+    expect(part.status).toBe(206);
+    expect(part.headers.get('content-length')).toBe('4');
+    expect((await part.arrayBuffer()).byteLength).toBe(4);
+    const full = await ctx.request(media!.url);
+    expect((await full.arrayBuffer()).byteLength).toBe(1000);
+    expect(get).not.toHaveBeenCalled();
+    expect(stream.mock.calls.map(([, range]) => range)).toEqual([
+      { start: 996, end: 999 },
+      undefined,
+    ]);
   });
 
   it('accepts replies with a recording', async () => {

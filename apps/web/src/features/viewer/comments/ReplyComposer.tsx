@@ -1,4 +1,4 @@
-import type { Comment } from '@slider/shared';
+import { MAX_COMMENT_BODY_LENGTH, type Comment } from '@slider/shared';
 import { AutosizeTextarea, Avatar, cn, ErrorText, IconButton } from '@/ui';
 import { MediaReplyButtons } from './MediaTabs';
 import { useMentions } from './hooks/useMentions';
@@ -37,6 +37,7 @@ export function ReplyComposer({
       {...mentions.fieldProps}
       ref={textareaRef}
       aria-label={`Antwort an ${root.author.name}`}
+      maxLength={MAX_COMMENT_BODY_LENGTH}
       placeholder="Antworten …"
       value={body}
       autoFocus={autoFocus}

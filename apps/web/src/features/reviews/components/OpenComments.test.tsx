@@ -150,6 +150,20 @@ describe('OpenCommentsButton', () => {
     );
   });
 
+  it('a tick that could not be saved goes back to open and says why', async () => {
+    const onNotify = vi.fn();
+    api.mutate.mockImplementation((_vars, options: { onError?: (error: Error) => void }) =>
+      options.onError?.(new Error('Keine Verbindung zum Server.')),
+    );
+    setup({ onNotify });
+    await userEvent.click(trigger());
+    const [first] = screen.getAllByRole('button', { name: 'Als erledigt markieren' });
+    await userEvent.click(first!);
+    expect(screen.getByText('2 von 2 offen')).toBeTruthy();
+    expect(screen.getByText('Kommentar c1').className).not.toContain('line-through');
+    expect(onNotify).toHaveBeenCalledWith('Keine Verbindung zum Server.', 'danger');
+  });
+
   it('folds replies behind a disclosure', async () => {
     setup();
     await userEvent.click(trigger());

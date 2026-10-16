@@ -6,6 +6,16 @@ export interface BlobStorage {
   put(key: string, data: Uint8Array): Promise<void>;
   /** `null` when the key does not exist. */
   get(key: string): Promise<Uint8Array<ArrayBuffer> | null>;
+  /** Size in bytes; `null` when the key does not exist. */
+  size(key: string): Promise<number | null>;
+  /**
+   * Streams the blob, or only the inclusive byte range – so serving a range of a long recording
+   * reads just those bytes, never the whole file. `null` when the key does not exist.
+   */
+  stream(
+    key: string,
+    range?: { start: number; end: number },
+  ): Promise<ReadableStream<Uint8Array> | null>;
   delete(key: string): Promise<void>;
   /** Removes every blob whose key starts with `prefix` (which must end in `/`). */
   deletePrefix(prefix: string): Promise<void>;

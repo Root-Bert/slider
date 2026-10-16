@@ -113,17 +113,7 @@
         "providerId": null,
         "anchor": "point",
         "text": "Budget bitte vor den Zeitplan ziehen.",
-        "replies": 0
-      },
-      {
-        "slide": "agenda",
-        "format": "legacy",
-        "status": "open",
-        "author": "Jonas Weber",
-        "providerId": null,
-        "anchor": "point",
-        "text": "Mache ich.",
-        "replies": 0
+        "replies": 1
       }
     ]
   },
@@ -186,27 +176,7 @@
         "providerId": null,
         "anchor": "point",
         "text": "Budget bitte vor den Zeitplan ziehen.",
-        "replies": 0
-      },
-      {
-        "slide": "agenda",
-        "format": "legacy",
-        "status": "open",
-        "author": "Jonas Weber",
-        "providerId": null,
-        "anchor": "point",
-        "text": "Mache ich.",
-        "replies": 0
-      },
-      {
-        "slide": "agenda",
-        "format": "legacy",
-        "status": "open",
-        "author": "Lena Hoffmann",
-        "providerId": null,
-        "anchor": "point",
-        "text": "Danke, passt so.",
-        "replies": 0
+        "replies": 2
       },
       {
         "slide": "agenda",

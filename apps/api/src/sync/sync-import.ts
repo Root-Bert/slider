@@ -23,7 +23,14 @@ import { upsertPptxComments, type ImportedSlide } from '../import/pptx-comments'
 import type { ImportJob } from '../import/queue';
 import { blobKeys } from '../storage/blob-storage';
 import { parseFailedMessage } from './errors';
-import { mergeSyncState } from './state';
+import { DEFAULT_SYNC_POLL_INTERVAL_MS } from '../config';
+import { mergeSyncState, syncBackoffMs } from './state';
+
+/**
+ * A file whose import fails this often in a row for another reason than a parse error (e.g. a
+ * renderer bug on unusual XML) is skipped like an unreadable one until it changes.
+ */
+export const SYNC_IMPORT_MAX_ATTEMPTS = 3;
 
 /**
  * Imports a pending revision of a deck that is already in use (BER-107/108/114).
@@ -107,6 +114,8 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
         textHash: row.textHash,
         shapes: row.shapes,
         renderHash,
+        contentHash: row.contentHash,
+        creationId: row.creationId,
       });
     };
     const prevFingerprints: SlideFingerprint[] = [];
@@ -121,6 +130,8 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
         textHash: slide.parsed.textHash,
         shapes: slide.shapes,
         renderHash: slide.renderHash,
+        contentHash: slide.parsed.contentHash,
+        creationId: slide.parsed.creationId,
       }),
     );
     const results = matchSlides(prevFingerprints, nextFingerprints);
@@ -221,6 +232,8 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
             title: slide.parsed.title,
             layoutName: slide.parsed.layoutName,
             textHash: slide.parsed.textHash,
+            contentHash: slide.parsed.contentHash,
+            creationId: slide.parsed.creationId,
             imageKey: slide.imageKey,
             thumbnailKey: slide.thumbnailKey,
             aspectRatio,
@@ -281,19 +294,30 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
       deps.log.error(`Cleanup of revision ${revisionId} failed`, cleanupError),
     );
     const now = clock.now();
+    const token =
+      revision.sourceChangeToken ??
+      (revision.contentSha256 ? `sha256:${revision.contentSha256}` : null);
+    const parseFailed = error instanceof PptxError;
+    // A file that cannot be parsed is skipped until it changes. Anything else may be transient
+    // (storage, database): the same file is tried again, but with the backoff of failed checks,
+    // and after a few failures in a row it is skipped too – a manual "Neu rendern" still tries.
+    const failures = parseFailed ? null : (deck.syncState.consecutiveFailures ?? 0) + 1;
     await mergeSyncState(db, deckId, {
       lastSyncError: {
-        code: error instanceof PptxError ? 'parse_failed' : 'internal',
+        code: parseFailed ? 'parse_failed' : 'internal',
         message: parseFailedMessage(error),
         at: now.toISOString(),
       },
-      // Only a file that cannot be parsed is skipped until it changes; anything else (storage,
-      // database) is transient and the next check tries the same file again.
-      failedToken:
-        error instanceof PptxError
-          ? (revision.sourceChangeToken ??
-            (revision.contentSha256 ? `sha256:${revision.contentSha256}` : null))
-          : null,
+      failedToken: parseFailed || (failures ?? 0) >= SYNC_IMPORT_MAX_ATTEMPTS ? token : null,
+      ...(failures === null
+        ? {}
+        : {
+            consecutiveFailures: failures,
+            nextCheckAt: new Date(
+              now.getTime() +
+                syncBackoffMs(deps.syncPollMs || DEFAULT_SYNC_POLL_INTERVAL_MS, failures),
+            ).toISOString(),
+          }),
       importingRevisionId: null,
       pending: null,
     }).catch(() => {});

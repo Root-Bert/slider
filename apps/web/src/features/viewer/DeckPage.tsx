@@ -8,7 +8,8 @@ import { useComments, useDeck, useDeckPeople, useMe, useSlides } from '@/lib/api
 import { ImportProgress } from './import/ImportProgress';
 import { DeckError, DeckLoading } from './DeckStates';
 import { useColorOverrides } from './hooks/useColorOverrides';
-import { useLiveSnapshot } from './live/lib/live-store';
+import { useLiveConnected } from './live/lib/live-store';
+import { blockingError } from './lib/blocking-error';
 import { useDocumentTitle } from './hooks/usePageSession';
 import { SLIDE_PARAM } from './hooks/useSlideUrlSync';
 import { RevisionProvider } from './state/RevisionProvider';
@@ -27,7 +28,8 @@ export function Component() {
   const me = useMe();
   const ready = deck.data?.import.status === 'ready';
   const slides = useSlides(deckId, ready);
-  const live = useLiveSnapshot().connected;
+  // Just the flag: the snapshot changes with every cursor move of every peer.
+  const live = useLiveConnected();
   const comments = useComments(deckId, ready, live);
   // Not awaited: `@` suggests the commenters until the rest arrives.
   const people = useDeckPeople(deckId, ready);
@@ -70,7 +72,8 @@ export function Component() {
     [data],
   );
 
-  const error = deck.error ?? me.error ?? slides.error ?? comments.error;
+  // A failed refetch keeps the viewer (and what is being written in it) up.
+  const error = blockingError([deck, me, slides, comments]);
   // Signed out: sign in and come back here.
   if (isSignedOutError(me.error) || isSignedOutError(deck.error)) {
     return <Navigate to={routes.login(location.pathname + location.search)} replace />;

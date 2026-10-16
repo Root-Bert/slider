@@ -305,3 +305,98 @@ describe('matching helpers', () => {
     expect(relinkDeletedSlides([], [fp('n5', 261, 'Anhang', 'Glossar')]).size).toBe(0);
   });
 });
+
+describe('matchSlides: sldId pairs need positive evidence against them', () => {
+  const fp = (
+    key: string,
+    sldId: number,
+    position: number,
+    text: string,
+    extra: Partial<SlideFingerprint> = {},
+  ): SlideFingerprint => ({
+    key,
+    sldId,
+    position,
+    title: text.split(' ')[0] ?? null,
+    layoutName: 'Titel und Inhalt',
+    textHash: text,
+    text,
+    renderHash: sha(text),
+    ...extra,
+  });
+  const pairs = (results: SlideMatchResult[]) =>
+    results.map((r) => `${r.prevKey ?? '-'}>${r.nextKey ?? '-'}:${r.status}`).sort();
+
+  it('two-slide deck, slide inserted at the front with ids by position (Google)', () => {
+    const prev = [
+      fp('titel', 256, 0, 'Titel Atlas Kickoff'),
+      fp('agenda', 257, 1, 'Agenda Ziele Budget'),
+    ];
+    const next = [
+      fp('neu', 256, 0, 'Zusammenfassung Pilotkunden Februar'),
+      fp('titel', 257, 1, 'Titel Atlas Kickoff'),
+      fp('agenda', 258, 2, 'Agenda Ziele Budget'),
+    ];
+    expect(pairs(matchSlides(prev, next))).toEqual([
+      '->neu:new',
+      'agenda>agenda:unchanged',
+      'titel>titel:unchanged',
+    ]);
+  });
+
+  it('a reused sldId with a different creationId is a different slide', () => {
+    const prev = [
+      fp('a', 256, 0, 'Agenda Ziele Budget', { creationId: 1 }),
+      fp('budget', 257, 1, 'Budget Personal Sachkosten', { creationId: 2 }),
+    ];
+    const next = [
+      fp('a', 256, 0, 'Agenda Ziele Budget', { creationId: 1 }),
+      fp('neu', 257, 1, 'Zusammenfassung Pilotkunden Februar', { creationId: 3 }),
+    ];
+    expect(pairs(matchSlides(prev, next))).toEqual([
+      '->neu:new',
+      'a>a:unchanged',
+      'budget>-:deleted',
+    ]);
+  });
+
+  it('an equal creationId keeps a fully rewritten slide, even in a renumbered deck', () => {
+    const prev = [
+      fp('x', 256, 0, 'Eins Zwei Drei', { creationId: 7 }),
+      fp('y', 257, 1, 'Vier Fünf Sechs', { creationId: 8 }),
+      fp('z', 258, 2, 'Sieben Acht Neun', { creationId: 9 }),
+    ];
+    const next = [
+      fp('x', 256, 0, 'One Two Three', { creationId: 7 }),
+      fp('y', 257, 1, 'Four Five Six', { creationId: 8 }),
+      fp('z', 258, 2, 'Seven Eight Nine', { creationId: 9 }),
+    ];
+    for (const result of matchSlides(prev, next)) {
+      expect(result).toMatchObject({ status: 'modified', matchedBy: 'sldId' });
+      expect(result.prevKey).toBe(result.nextKey);
+    }
+  });
+});
+
+describe('matchSlides: content hash', () => {
+  const fp = (contentHash: string | null): SlideFingerprint => ({
+    key: 'chart',
+    sldId: 256,
+    position: 0,
+    title: 'Umsatz',
+    layoutName: 'Titel und Inhalt',
+    textHash: 'umsatz',
+    text: 'Umsatz',
+    renderHash: 'same-svg',
+    contentHash,
+  });
+
+  it('marks a slide modified when only what the render cannot see changed (chart data)', () => {
+    expect(matchSlides([fp('a')], [fp('b')])[0]?.status).toBe('modified');
+    expect(matchSlides([fp('a')], [fp('a')])[0]?.status).toBe('unchanged');
+  });
+
+  it('falls back to the render hash for rows without a content hash', () => {
+    expect(matchSlides([fp(null)], [fp('b')])[0]?.status).toBe('unchanged');
+  });
+});

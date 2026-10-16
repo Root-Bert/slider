@@ -4,14 +4,7 @@ import type { Deck, DeckFolder } from '@slider/shared';
 import { routes } from '@/lib/routes';
 import { AppHeader } from '@/shell/AppHeader';
 import { pluralize } from '@/lib/format';
-import {
-  useAllDecks,
-  useCreateFolder,
-  useDecks,
-  useDeleteFolder,
-  useFolders,
-  useRenameFolder,
-} from '@/lib/api';
+import { useAllDecks, useDecks, useDeleteFolder, useFolders } from '@/lib/api';
 import { useAccount } from '@/features/auth';
 import {
   canCreateDecks,
@@ -26,6 +19,7 @@ import {
   ConfirmDialog,
   ContextMenu,
   Icon,
+  Menu,
   PageHeader,
   TextLink,
   Toast,
@@ -43,6 +37,7 @@ import { SelectionBar } from './components/SelectionBar';
 import { useBulkDeckActions } from './hooks/useBulkDeckActions';
 import { useDeckContextMenu } from './hooks/useDeckContextMenu';
 import { useDeckSelection } from './hooks/useDeckSelection';
+import { useFolderDialog } from './hooks/useFolderDialog';
 import { useMarqueeSelect } from './hooks/useMarqueeSelect';
 import { movedMessage, useMoveDecks } from './hooks/useMoveDecks';
 import { useStoredChoice } from './hooks/useStoredChoice';
@@ -52,6 +47,7 @@ import {
   countByTab,
   DECK_SORTS,
   inFolder,
+  onlyFolderTiles,
   type FolderScope,
   selectDecks,
   type ReviewTab,
@@ -65,8 +61,6 @@ const NO_DECKS: readonly Deck[] = [];
 const NO_FOLDERS: readonly DeckFolder[] = [];
 /** The open folder lives in the URL, so back/forward and links work. */
 const FOLDER_PARAM = 'ordner';
-
-type FolderDialog = { mode: 'create' } | { mode: 'rename'; folder: DeckFolder } | null;
 
 /**
  * G1 "Reviews" – every deck of one workspace, whoever added it (BER-121, BER-129).
@@ -87,11 +81,9 @@ export function Component() {
   const [toast, showToast] = useToast();
   const foldersQuery = useFolders(workspace.id);
   const folders = foldersQuery.data ?? NO_FOLDERS;
-  const createFolder = useCreateFolder(workspace.id);
-  const renameFolder = useRenameFolder(workspace.id);
+  const folderDialog = useFolderDialog(workspace.id);
   const deleteFolder = useDeleteFolder(workspace.id);
   const moveDecks = useMoveDecks();
-  const [folderDialog, setFolderDialog] = useState<FolderDialog>(null);
   const [deletingFolder, setDeletingFolder] = useState<DeckFolder | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const folderId = searchParams.get(FOLDER_PARAM);
@@ -151,7 +143,7 @@ export function Component() {
           {
             label: 'Neuer Ordner',
             icon: 'folder',
-            onSelect: () => setFolderDialog({ mode: 'create' }),
+            onSelect: folderDialog.openCreate,
           } satisfies MenuAction,
           {
             label: 'Neue Review',
@@ -263,18 +255,27 @@ export function Component() {
             onViewChange={setView}
             action={
               mayCreate && (
-                <Button
-                  variant="secondary"
-                  size="toolbar"
-                  icon="add"
-                  aria-label="Neue Review"
-                  disabled={decksFull}
-                  title={decksFull ? deckLimitMessage(workspace) : undefined}
-                  aria-describedby={decksFull ? limitNoticeId : undefined}
-                  onClick={goToNew}
-                >
-                  <span className="max-sm:hidden">Neue Review</span>
-                </Button>
+                <>
+                  <Button
+                    variant="secondary"
+                    size="toolbar"
+                    icon="add"
+                    aria-label="Neue Review"
+                    disabled={decksFull}
+                    title={decksFull ? deckLimitMessage(workspace) : undefined}
+                    aria-describedby={decksFull ? limitNoticeId : undefined}
+                    onClick={goToNew}
+                  >
+                    <span className="max-sm:hidden">Neue Review</span>
+                  </Button>
+                  {/* The page's right-click actions ("Neuer Ordner" …) – also on touch and keyboard. */}
+                  <Menu
+                    label="Weitere Aktionen"
+                    actions={pageActions}
+                    triggerSize="md"
+                    triggerVariant="glass"
+                  />
+                </>
               )
             }
           />
@@ -288,7 +289,7 @@ export function Component() {
             manage={
               mayCreate
                 ? {
-                    onRename: (each) => setFolderDialog({ mode: 'rename', folder: each }),
+                    onRename: folderDialog.openRename,
                     onDelete: setDeletingFolder,
                     onDropDecks: dropDecks,
                   }
@@ -324,9 +325,12 @@ export function Component() {
               }
             />
           ) : visible.length === 0 &&
-            atTop &&
-            folders.length > 0 &&
-            decks.length > 0 ? null : visible.length === 0 ? (
+            onlyFolderTiles({
+              tab,
+              atTop,
+              folderCount: folders.length,
+              deckCount: decks.length,
+            }) ? null : visible.length === 0 ? (
             <NoResults hasDecks={decks.length > 0} query={query} tab={tab} onAdd={goToNew} />
           ) : (
             <DeckCollection
@@ -358,22 +362,15 @@ export function Component() {
         />
       )}
       {bulk.dialog}
-      {folderDialog && (
+      {folderDialog.state && (
         <FolderNameDialog
-          title={folderDialog.mode === 'create' ? 'Neuer Ordner' : 'Ordner umbenennen'}
-          initialName={folderDialog.mode === 'rename' ? folderDialog.folder.name : ''}
-          submitLabel={folderDialog.mode === 'create' ? 'Anlegen' : 'Umbenennen'}
-          pending={createFolder.isPending || renameFolder.isPending}
-          error={(folderDialog.mode === 'create' ? createFolder : renameFolder).error?.message}
-          onClose={() => setFolderDialog(null)}
-          onSubmit={(name) =>
-            folderDialog.mode === 'create'
-              ? createFolder.mutate(name, { onSuccess: () => setFolderDialog(null) })
-              : renameFolder.mutate(
-                  { folderId: folderDialog.folder.id, name },
-                  { onSuccess: () => setFolderDialog(null) },
-                )
-          }
+          title={folderDialog.state.mode === 'create' ? 'Neuer Ordner' : 'Ordner umbenennen'}
+          initialName={folderDialog.state.mode === 'rename' ? folderDialog.state.folder.name : ''}
+          submitLabel={folderDialog.state.mode === 'create' ? 'Anlegen' : 'Umbenennen'}
+          pending={folderDialog.pending}
+          error={folderDialog.error}
+          onClose={folderDialog.close}
+          onSubmit={folderDialog.submit}
         />
       )}
       {deletingFolder && (

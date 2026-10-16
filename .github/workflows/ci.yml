@@ -1,9 +1,18 @@
 name: CI
 
+# Every pull request and push: lint, typecheck, tests (PGlite and a real Postgres), build, e2e,
+# secret scan, and the container image built and smoke-tested. Only pushes to main and v* tags
+# publish the image – and only once all of that is green:
+#   push to main  → ghcr.io/<owner>/slider:edge (+ :sha-<short>)
+#   tag v1.2.3    → :1.2.3, :1.2, :1 and :latest
+# Self-hosters then only need `docker run … ghcr.io/<owner>/slider:1` (docs/self-hosting.md).
+
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -30,6 +39,134 @@ jobs:
       - run: bun run typecheck
       - run: bun run test
       - run: bun run build
+
+  e2e:
+    name: End-to-end (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      # Playwright and Vite run on Node.
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - run: bun install --frozen-lockfile
+      - name: Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium
+      - name: Install chromium
+        if: steps.browsers.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Install chromium system dependencies
+        if: steps.browsers.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - run: bun run e2e
+      - name: Upload report and traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            e2e/.report
+            e2e/.results
+          retention-days: 7
+
+  # The production database path: DATABASE_URL, the postgres-js driver and its migrator. The
+  # whole API suite runs once more, each test context on a fresh database of this server.
+  postgres:
+    name: API tests on Postgres
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # Same major as deploy/docker-compose.yml.
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - run: bun install --frozen-lockfile
+      - run: bunx vitest run --project api
+
+  # Builds the Dockerfile (amd64) and starts it like a self-hoster would, on every PR as well.
+  image-smoke:
+    name: Container image (build + smoke test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: slider:smoke
+          cache-from: type=gha
+      - run: scripts/smoke-image.sh slider:smoke
+
+  # Publishes amd64 + arm64 – only for main and v* tags, and only when everything above passed.
+  image:
+    name: Publish image
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: [verify, e2e, postgres, image-smoke, secrets]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      # arm64 (e.g. Hetzner CAX) is built under emulation.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/slider
+          tags: |
+            type=edge,branch=main
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   secrets:
     name: Secret scan

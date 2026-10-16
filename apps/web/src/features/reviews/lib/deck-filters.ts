@@ -107,3 +107,22 @@ export function activeTotals(decks: readonly Deck[]) {
     openComments: active.reduce((sum, deck) => sum + deck.openCommentCount, 0),
   };
 }
+
+/**
+ * Nothing matches at the top level, but the folder tiles above are the whole answer: on "Alle",
+ * every deck simply sits in a folder. Other tabs still say why nothing shows (no open comments,
+ * nothing archived), because the folder tiles do not filter by tab.
+ */
+export function onlyFolderTiles({
+  tab,
+  atTop,
+  folderCount,
+  deckCount,
+}: {
+  tab: ReviewTab;
+  atTop: boolean;
+  folderCount: number;
+  deckCount: number;
+}): boolean {
+  return tab === 'all' && atTop && folderCount > 0 && deckCount > 0;
+}

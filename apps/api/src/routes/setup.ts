@@ -137,9 +137,7 @@ export function setupRoutes(deps: AppDeps) {
       }
       if (!claimed) {
         if (!hasLogin(candidate)) {
-          throw badRequest(
-            'Richte mindestens einen Anmeldeweg ein (E-Mail, Microsoft, Google oder SSO).',
-          );
+          throw badRequest('Richte mindestens einen Anmeldeweg ein (Microsoft, Google oder SSO).');
         }
         if (candidate.env === 'production' && candidate.auth.bootstrapEmails.length === 0) {
           throw badRequest('Gib deine E-Mail-Adresse an – mit ihr wirst du Admin dieser Instanz.');

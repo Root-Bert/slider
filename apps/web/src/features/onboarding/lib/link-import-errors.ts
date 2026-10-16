@@ -1,5 +1,6 @@
 import type { ApiError } from '@/lib/api-client';
-import { ACCOUNT_LIMIT_MESSAGE } from '@/features/auth';
+import type { LoginError } from '@slider/shared';
+import { ACCOUNT_LIMIT_MESSAGE, isLoginError } from '@/features/auth';
 
 /** Copy and A3 ("no access") states of the "PowerPoint-Link einfügen" form (BER-92). */
 
@@ -66,4 +67,15 @@ export function noAccessFromLoginError(kind: string, host: string, link: string)
   if (kind === 'account_limit')
     return { host, kind: 'denied', message: ACCOUNT_LIMIT_MESSAGE, loginUrl };
   return { host, kind: 'denied', message: LOGIN_FAILED_MESSAGE, loginUrl };
+}
+
+/**
+ * `/neu?msError=<kind>` without `?link=`: a Microsoft connect started elsewhere ("Verbinden" in
+ * /konto, the account menu, the OneDrive picker) failed – the API sends every such failure
+ * here. Every kind gets the login banner, not only `account_limit`.
+ */
+export function connectErrorFrom(params: URLSearchParams): LoginError | null {
+  if (params.get('link')) return null;
+  const kind = params.get('msError');
+  return isLoginError(kind) ? kind : null;
 }

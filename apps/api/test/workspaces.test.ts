@@ -11,6 +11,7 @@ import {
 } from '@slider/shared';
 import { decks, workspaceInvites, workspaceMembers } from '../src/db/schema';
 import { FailingMailer, RecordingMailer } from '../src/mail/mailer';
+import { INVITE_MAILS_PER_HOUR } from '../src/routes/workspaces';
 import {
   createReadyDeck,
   createTestContext,
@@ -271,6 +272,74 @@ describe('deck rights by role', () => {
     expect((await upload(outsider.cookie, ctx.workspaceId)).status).toBe(404);
   });
 
+  it('every managing deck route: 403 for reviewers and other people’s members, 404 for outsiders', async () => {
+    const reviewer = await member('Rita', 'reviewer');
+    const memberA = await member('Mia', 'member');
+    const outsider = await signedInUser(ctx, { name: 'Otto', email: 'otto@example.com' });
+    const { deckId } = await createReadyDeck(ctx);
+    const newVersion = () => {
+      const form = new FormData();
+      form.append('file', new File([new Uint8Array([0x50, 0x4b, 3, 4])], 'Neu.pptx'));
+      return form;
+    };
+    const routes: [string, string, () => RequestInit & { json?: unknown }][] = [
+      ['DELETE', `/api/decks/${deckId}`, () => ({})],
+      ['POST', `/api/decks/${deckId}/revisions`, () => ({ body: newVersion() })],
+      ['POST', `/api/decks/${deckId}/rerender`, () => ({})],
+      ['PATCH', `/api/decks/${deckId}`, () => ({ json: { title: 'X' } })],
+    ];
+    for (const [method, url, init] of routes) {
+      const as = async (cookie: string) =>
+        (await ctx.request(url, { method, cookie, ...init() })).status;
+      expect(await as(reviewer.cookie), `${method} ${url} as reviewer`).toBe(403);
+      expect(await as(memberA.cookie), `${method} ${url} as member`).toBe(403);
+      expect(await as(outsider.cookie), `${method} ${url} as outsider`).toBe(404);
+    }
+    // Nothing happened to the deck.
+    const deck = deckSchema.parse(await (await ctx.request(`/api/decks/${deckId}`)).json());
+    expect(deck).toMatchObject({ id: deckId, revisionNumber: 1 });
+  });
+
+  it('every read route of a deck is a 404 for outsiders', async () => {
+    const outsider = await signedInUser(ctx, { name: 'Otto', email: 'otto@example.com' });
+    const { deckId, revisionId, slideIds } = await createReadyDeck(ctx);
+    for (const url of [
+      `/api/decks/${deckId}/status`,
+      `/api/decks/${deckId}/revisions`,
+      `/api/decks/${deckId}/revisions/${revisionId}/diff`,
+      `/api/decks/${deckId}/deleted-slides`,
+      `/api/decks/${deckId}/slides/${slideIds[0] ?? ''}/versions`,
+      `/api/decks/${deckId}/media-usage`,
+      `/api/decks/${deckId}/people`,
+      `/api/decks/${deckId}/slides`,
+    ]) {
+      expect((await ctx.request(url, { cookie: outsider.cookie })).status, url).toBe(404);
+      expect((await ctx.request(url)).status, `${url} as owner`).not.toBe(404);
+    }
+  });
+
+  it('folders: reviewers may not rename or delete them, outsiders do not see them', async () => {
+    const reviewer = await member('Rita', 'reviewer');
+    const memberA = await member('Mia', 'member');
+    const outsider = await signedInUser(ctx, { name: 'Otto', email: 'otto@example.com' });
+    const created = await ctx.request(`/api/workspaces/${ctx.workspaceId}/folders`, {
+      method: 'POST',
+      json: { name: 'Vertrieb' },
+    });
+    expect(created.status).toBe(201);
+    const { id } = (await created.json()) as { id: string };
+    const rename = (cookie: string) =>
+      ctx.request(`/api/folders/${id}`, { method: 'PATCH', json: { name: 'X' }, cookie });
+    const remove = (cookie: string) =>
+      ctx.request(`/api/folders/${id}`, { method: 'DELETE', cookie });
+    expect((await rename(reviewer.cookie)).status).toBe(403);
+    expect((await remove(reviewer.cookie)).status).toBe(403);
+    expect((await rename(outsider.cookie)).status).toBe(404);
+    expect((await remove(outsider.cookie)).status).toBe(404);
+    expect((await rename(memberA.cookie)).status).toBe(200);
+    expect((await remove(memberA.cookie)).status).toBe(204);
+  });
+
   it('uploads without workspaceId go to the first workspace (old clients)', async () => {
     const res = await upload(undefined);
     expect(res.status).toBe(201);
@@ -442,6 +511,22 @@ describe('invitations', () => {
     ).toMatchObject({ state: 'used' });
   });
 
+  it('two accepts at once (two tabs, a retry) both succeed and join once', async () => {
+    const created = await invite({ role: 'member' });
+    const anna = await signedInUser(ctx, { name: 'Anna', email: 'anna@extern.de' });
+    const accept = () =>
+      ctx.request(`/api/join/${created.token}`, { method: 'POST', cookie: anna.cookie });
+    const results = await Promise.all([accept(), accept()]);
+    expect(results.map((res) => res.status)).toEqual([200, 200]);
+    const memberships = await ctx.deps.db
+      .select()
+      .from(workspaceMembers)
+      .where(eq(workspaceMembers.userId, anna.user.id));
+    expect(memberships).toHaveLength(1);
+    const listed = await json(await ctx.request(`/api/workspaces/${ctx.workspaceId}/invites`));
+    expect(listed).toEqual([expect.objectContaining({ id: created.invite.id, useCount: 1 })]);
+  });
+
   it('link invites are multi-use until revoked', async () => {
     const created = await invite({ role: 'member' });
     expect(created.invite.email).toBeNull();
@@ -568,6 +653,31 @@ describe('invitation mails', () => {
     // Links are passed on by hand, never mailed.
     expect((await invite({})).emailSent).toBe(false);
     expect(mailer.sent).toHaveLength(1);
+  });
+
+  it('caps invite mails per account and hour, even to the same address; links stay open', async () => {
+    const mailer = new RecordingMailer();
+    await ctx.cleanup();
+    ctx = await createTestContext({ mailer, config: { limited: true } });
+    for (let i = 0; i < INVITE_MAILS_PER_HOUR.limited; i++) {
+      await invite({ email: 'lena@firma.de' });
+    }
+    const send = () =>
+      ctx.request(`/api/workspaces/${ctx.workspaceId}/invites`, {
+        method: 'POST',
+        json: { email: 'lena@firma.de' },
+      });
+    const refused = await send();
+    expect(refused.status).toBe(429);
+    expect(Number(refused.headers.get('retry-after'))).toBeGreaterThan(0);
+    expect(mailer.sent).toHaveLength(INVITE_MAILS_PER_HOUR.limited);
+    expect(await ctx.deps.db.select().from(workspaceInvites)).toHaveLength(
+      INVITE_MAILS_PER_HOUR.limited,
+    );
+
+    expect((await invite({})).emailSent).toBe(false);
+    ctx.clock.advance(60 * 60 * 1000);
+    expect((await send()).status).toBe(201);
   });
 
   it('keeps the invite when the mail server refuses, so the link can be sent by hand', async () => {

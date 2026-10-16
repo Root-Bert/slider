@@ -27,6 +27,8 @@ export function Dialog({
 }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
+  // Where the press started: a text selection dragged out of a field ends on the backdrop too.
+  const pressedBackdrop = useRef(false);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -50,9 +52,16 @@ export function Dialog({
         // re-run, close + showModal) arrives while the dialog is open again – ignore it.
         if (!event.currentTarget.open) onClose();
       }}
+      onPointerDown={(event) => {
+        pressedBackdrop.current = event.target === event.currentTarget;
+      }}
       onClick={(event) => {
-        // Clicks on the backdrop land on the <dialog> element itself.
-        if (event.target === event.currentTarget) onClose();
+        // Clicks on the backdrop land on the <dialog> element itself – but so does a press
+        // inside (e.g. selecting text in a field) released over the backdrop: only a press that
+        // also started on the backdrop closes.
+        const fromBackdrop = pressedBackdrop.current;
+        pressedBackdrop.current = false;
+        if (event.target === event.currentTarget && fromBackdrop) onClose();
       }}
       className={cn(
         'glass-elevated m-auto w-[min(480px,calc(100vw-32px))] rounded-panel p-0 text-fg',
@@ -78,7 +87,10 @@ export function Dialog({
           />
         </header>
         {children}
-        {footer && <footer className="flex items-center justify-end gap-2">{footer}</footer>}
+        {footer && (
+          // Wraps on narrow screens instead of pushing "Abbrechen" off the start edge.
+          <footer className="flex flex-wrap items-center justify-end gap-2">{footer}</footer>
+        )}
       </div>
     </dialog>
   );

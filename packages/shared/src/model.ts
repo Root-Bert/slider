@@ -17,14 +17,7 @@ export const rectSchema = z.object({ x: unit, y: unit, w: unit, h: unit });
 
 /** Each reviewer gets a default accent colour for pins, lines and drawings (BER-99). */
 /** Ordered by hue; picked so every pair (and PowerPoint orange) stays as far apart as possible. */
-export const ACCENT_COLORS = [
-  'red',
-  'yellow',
-  'green',
-  'cyan',
-  'blue',
-  'violet',
-] as const;
+export const ACCENT_COLORS = ['red', 'yellow', 'green', 'cyan', 'blue', 'violet'] as const;
 export const accentColorSchema = z.enum(ACCENT_COLORS);
 export type AccentColor = z.infer<typeof accentColorSchema>;
 
@@ -114,6 +107,7 @@ export const deckSchema = z.object({
   updatedAt: z.iso.datetime(),
   archivedAt: z.iso.datetime().nullable(),
   revisionNumber: z.number().int(),
+  /** Visible slides of the current revision – hidden ones (PowerPoint "Folie ausblenden") don't count. */
   slideCount: z.number().int(),
   openCommentCount: z.number().int(),
   thumbnailUrl: z.string().nullable(),

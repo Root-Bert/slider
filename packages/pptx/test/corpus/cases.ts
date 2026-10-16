@@ -482,4 +482,64 @@ export const CASES: CorpusCase[] = [
     v1: asPowerPointWin(simpleDeck(), PART_ORDER),
     v2: asPowerPointWin(move(simpleDeck(), 'budget', 1), PART_ORDER),
   },
+  // ── sldId edge cases (review round 1) ─────────────────────────────────────
+  {
+    id: 'rewrite-most-slides',
+    title: 'Fast alle Folien neu formuliert',
+    description:
+      'v2 ist eine Übersetzung: vier von fünf Folien haben neue Texte (kaum gemeinsame Wörter), ' +
+      'die sldIds bleiben. Jede Folie muss über ihre sldId gefunden werden.',
+    tags: ['content'],
+    v1: simpleDeck(),
+    v2: [
+      (d: CorpusDeck) =>
+        edit(d, 'kickoff', { title: 'Project Atlas', body: 'Kick-off · product team · October' }),
+      (d: CorpusDeck) =>
+        edit(d, 'agenda', {
+          title: 'Overview',
+          body: ['Starting point and goals', 'Timeline and milestones', 'Money and people'],
+        }),
+      (d: CorpusDeck) =>
+        edit(d, 'ziele', {
+          title: 'Goals for next year',
+          body: ['Win new mid-sized customers', 'Onboarding in under ten minutes', 'Halve churn'],
+        }),
+      (d: CorpusDeck) =>
+        edit(d, 'zeitplan', { title: 'Timeline', body: ['Discovery', 'Beta', 'Launch'] }),
+    ].reduce((deck, step) => step(deck), simpleDeck()),
+  },
+  {
+    id: 'ppt-delete-last-insert',
+    title: 'PowerPoint: letzte Folie gelöscht, neue eingefügt',
+    description:
+      'Die Budgetfolie (höchste sldId 260) wird gelöscht und eine neue Folie eingefügt. ' +
+      'PowerPoint vergibt max + 1, also wieder 260 – die neue p14:creationId verrät, dass es ' +
+      'eine andere Folie ist.',
+    tags: ['producer', 'synthetic', 'structure'],
+    synthetic: synthetic('PowerPoint 365 für Windows'),
+    v1: asPowerPointWin(simpleDeck(), PART_ORDER),
+    v2: asPowerPointWin(insertAt(remove(simpleDeck(), 'budget'), 4, NEW_SLIDE), PART_ORDER),
+  },
+  {
+    id: 'google-insert-late',
+    title: 'Google Slides: Folie spät eingefügt',
+    description:
+      'Beide Versionen aus Google Slides; die neue Folie steht an Position 4 von 6. Die ' +
+      'sldIds der letzten beiden Folien zeigen jetzt auf ihre Vorgänger.',
+    tags: ['producer', 'synthetic', 'structure'],
+    synthetic: SYNTHETIC_GOOGLE,
+    v1: asGoogleSlides(simpleDeck()),
+    v2: asGoogleSlides(insertAt(simpleDeck(), 3, NEW_SLIDE)),
+  },
+  {
+    id: 'google-delete-late',
+    title: 'Google Slides: Folie spät gelöscht',
+    description:
+      'Beide Versionen aus Google Slides; die vierte von fünf Folien ist gelöscht, die ' +
+      'Budgetfolie rückt auf deren sldId.',
+    tags: ['producer', 'synthetic', 'structure'],
+    synthetic: SYNTHETIC_GOOGLE,
+    v1: asGoogleSlides(simpleDeck()),
+    v2: asGoogleSlides(remove(simpleDeck(), 'zeitplan')),
+  },
 ];

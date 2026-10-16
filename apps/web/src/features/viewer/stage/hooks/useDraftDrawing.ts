@@ -11,6 +11,7 @@ import { toSlidePoint } from '../../lib/geometry';
 import { appendPoint, isShapeTool, strokesBounds } from '../lib/stroke-path';
 import { useViewerData } from '../../state/viewer-data';
 import { useViewerDispatch, type PenTool } from '../../state/viewer-state';
+import { useViewerToast } from '../../state/viewer-toast';
 
 const MAX_POINTS = 2000;
 
@@ -34,6 +35,7 @@ export function useDraftDrawing({
   const dispatch = useViewerDispatch();
   const { deck } = useViewerData();
   const createComment = useCreateComment(deck.id);
+  const showToast = useViewerToast();
   const [stroke, setStroke] = useState<PathStroke | null>(null);
   // Saved strokes stay on screen until the stored drawing replaces them.
   const [saving, setSaving] = useState<PathStroke[]>([]);
@@ -42,17 +44,19 @@ export function useDraftDrawing({
     const rect = strokesBounds([saved]);
     if (!rect) return;
     setSaving((current) => [...current, saved]);
-    createComment.mutate(
-      {
+    // Per stroke through the promise: `mutate`'s own callbacks run only for the latest call, so a
+    // stroke drawn while the one before is still saving would leave that one's preview behind.
+    createComment
+      .mutateAsync({
         slideId: slide.id,
         parentId: null,
         body: '',
         anchor: { type: 'rect', rect, shapeRef: null },
         strokes: [saved],
-      },
-      {
+      })
+      .then(
         // Typing right away comments on it (`useViewerShortcuts`).
-        onSuccess: (comment) =>
+        (comment) =>
           dispatch({
             type: 'drawingSaved',
             slideId: slide.id,
@@ -60,9 +64,10 @@ export function useDraftDrawing({
             anchor: comment.anchor,
             strokes: comment.strokes,
           }),
-        onSettled: () => setSaving((current) => current.filter((item) => item !== saved)),
-      },
-    );
+        // The stroke leaves the slide – say why, instead of letting it vanish.
+        (error: Error) => showToast(error.message, 'danger'),
+      )
+      .finally(() => setSaving((current) => current.filter((item) => item !== saved)));
   };
 
   const pointOf = (event: PointerEvent) =>

@@ -1,10 +1,13 @@
 {
 	servers {
 		# Behind Cloudflare (orange cloud) every request arrives from a Cloudflare edge address.
-		# Trusting those ranges lets {client_ip} be the visitor (CF-Connecting-IP) instead, so
-		# Slider's rate limits work per person. Without Cloudflare, TRUSTED_PROXIES stays empty
-		# and only private ranges are trusted. See docs/self-hosting.md, "Cloudflare".
-		trusted_proxies static private_ranges {$TRUSTED_PROXIES}
+		# Trusting exactly those (TRUSTED_PROXIES) lets {client_ip} be the visitor (CF-Connecting-IP),
+		# so rate limits work per person. Without Cloudflare TRUSTED_PROXIES stays empty: nobody is
+		# trusted and {client_ip} is the connection's own address. Never trust private ranges here:
+		# Caddy is the edge, and Docker hands IPv6 visitors over from its bridge gateway (172.x, a
+		# private address) – they could then pick any IP via these headers and dodge the rate
+		# limits. See docs/self-hosting.md, "Cloudflare" and "IPv6".
+		trusted_proxies static {$TRUSTED_PROXIES}
 		client_ip_headers CF-Connecting-IP X-Forwarded-For
 	}
 }

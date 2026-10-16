@@ -14,6 +14,7 @@ import {
 import { accentColor } from '@/lib/accent';
 import { cn, Icon } from '@/ui';
 import { rafThrottle } from '@/lib/dom';
+import { smoothScroll } from '@/lib/motion';
 import { gapKey } from '../comments/lib/comment-selectors';
 import { slideLabel } from '../comments/lib/labels';
 import type { SlideBadge } from '../revisions/lib/revision-changes';
@@ -171,7 +172,8 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
       list.clientWidth,
       list.scrollWidth - list.clientWidth,
     );
-    if (Math.abs(next - list.scrollLeft) >= 1) list.scrollTo({ left: next, behavior: 'smooth' });
+    if (Math.abs(next - list.scrollLeft) >= 1)
+      list.scrollTo({ left: next, behavior: smoothScroll() });
   }, [activeSlideId, mini, slides]);
 
   const select = useCallback(
@@ -283,7 +285,8 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
   const activeIndex = activeSlideId ? slides.findIndex((slide) => slide.id === activeSlideId) : -1;
 
   return (
-    <nav aria-label="Folienübersicht" data-minimap>
+    // Its bracket moves with every frame of a sideways scroll: no reason to re-route the lines.
+    <nav aria-label="Folienübersicht" data-minimap data-connector-ignore>
       <div
         ref={listRef}
         className={cn(

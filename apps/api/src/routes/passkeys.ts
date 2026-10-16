@@ -26,7 +26,7 @@ import type { AppDeps } from '../deps';
 import { badRequest, notFound } from '../http/errors';
 import { rateLimit } from '../http/rate-limit';
 import { readJson } from '../http/validate';
-import { listIdentities, unlinkIdentity } from '../services/accounts';
+import { deletePasskey, listIdentities, unlinkIdentity } from '../services/accounts';
 import { safeReturnTo } from './auth';
 
 type Purpose = (typeof authChallenges.$inferSelect)['purpose'];
@@ -247,9 +247,12 @@ export function passkeysRoutes(deps: AppDeps) {
       })
 
       .delete('/passkeys/:id', viewer, async (c) => {
-        const row = await ownPasskey(accountId(c), c.req.param('id'));
-        await deps.db.delete(passkeys).where(eq(passkeys.id, row.id));
-        return c.body(null, 204);
+        const result = await deletePasskey(deps, accountId(c), c.req.param('id'));
+        if (result.ok) return c.body(null, 204);
+        if (result.error === 'not_found') throw notFound('Diesen Passkey gibt es nicht (mehr).');
+        throw badRequest(
+          'Das ist deine letzte Anmeldung. Verbinde vorher eine andere oder lege einen weiteren Passkey an.',
+        );
       })
 
       // ── Signing in with a passkey ──────────────────────────────────────

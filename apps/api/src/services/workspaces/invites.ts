@@ -24,7 +24,7 @@ import type { AppDeps } from '../../deps';
 import { ApiError, badRequest, forbidden, notFound } from '../../http/errors';
 import { inviteMail } from '../../mail/mailer';
 import { fileUrl } from '../../storage/blob-storage';
-import { assertSeatForInvite, assertSeatForJoin } from '../plans';
+import { assertSeatForInvite, assertSeatForJoin, lockWorkspaceRow } from '../plans';
 import { getRole, requireRole, stronger } from './roles';
 import { getWorkspace } from './workspaces';
 
@@ -310,7 +310,11 @@ async function acceptInvite(
   requireValidInvite(invite, now);
 
   await deps.db.transaction(async (tx) => {
-    if (!current) {
+    // Read the membership again under the workspace lock: two accepts at once (two tabs, a
+    // retried request) must not both insert it.
+    await lockWorkspaceRow(tx, invite.workspaceId);
+    const member = await getRole(tx, invite.workspaceId, user.id);
+    if (!member) {
       // Someone with a pending e-mail invite brings their reserved seat, even through a link.
       const reserved =
         Boolean(invite.email) ||
@@ -322,7 +326,7 @@ async function acceptInvite(
         role: invite.role,
         createdAt: now,
       });
-    } else if (stronger(current, invite.role) !== current) {
+    } else if (stronger(member, invite.role) !== member) {
       await tx
         .update(workspaceMembers)
         .set({ role: invite.role })
@@ -334,12 +338,12 @@ async function acceptInvite(
         );
     }
     // Link invites count people who joined through them; e-mail invites are used up.
-    if (invite.email || !current) {
+    if (invite.email || !member) {
       await tx
         .update(workspaceInvites)
         .set({
           ...(invite.email ? { acceptedAt: now } : {}),
-          ...(!current ? { useCount: sql`${workspaceInvites.useCount} + 1` } : {}),
+          ...(!member ? { useCount: sql`${workspaceInvites.useCount} + 1` } : {}),
         })
         .where(eq(workspaceInvites.id, invite.id));
     }

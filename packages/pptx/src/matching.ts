@@ -5,8 +5,11 @@ import type { ParsedSlide } from './types';
  * Slide matching between two revisions of a deck (BER-108). Pure and deterministic.
  *
  * 1. Phase A: slides with the same PowerPoint `sldId` are the same slide, however much their
- *    content changed – unless most `sldId` pairs disagree on content, which means the ids were
- *    reassigned (a deck rebuilt or renumbered); then all `sldId` pairs are dropped.
+ *    content changed – unless there is positive evidence against the pair: different
+ *    `p14:creationId`s (PowerPoint reused a freed id), or a pair that disagrees on content while
+ *    one of its slides has a clearly better content match elsewhere (ids shifted by position, as
+ *    Google Slides writes them). Such pairs are dropped; when most pairs are contradicted the ids
+ *    were reassigned wholesale and only `creationId`-confirmed pairs are kept.
  * 2. Phase B: the rest are paired by content similarity (text, title, layout, neighbours,
  *    position) with an optimal assignment, above {@link MATCH_THRESHOLD}.
  * 3. Unmatched new slides are `new`, unmatched old ones `deleted`. Matched slides are `modified`
@@ -28,6 +31,10 @@ export interface SlideFingerprint {
   renderHash?: string | null;
   /** {@link shapeSignature} of the shapes, used when no render hashes are available. */
   shapeSignature?: string | null;
+  /** `ParsedSlide.contentHash`: what the render cannot see (charts, SmartArt, media, fills). */
+  contentHash?: string | null;
+  /** `p14:creationId`: equal = same slide, different = a reused `sldId`. */
+  creationId?: number | null;
 }
 
 export type SlideMatchStatus = 'unchanged' | 'moved' | 'modified' | 'new' | 'deleted';
@@ -56,8 +63,13 @@ export const MATCH_THRESHOLD = 0.45;
  * A single disagreeing pair is still matched; only the deck-wide ratio matters.
  */
 const SLDID_MIN_TEXT_SIM = 0.25;
-/** With at least this many `sldId` pairs, fewer than half trusted means "renumbered". */
+/** With at least this many `sldId` pairs, more than half contradicted means "renumbered". */
 const RENUMBER_MIN_PAIRS = 3;
+/**
+ * An untrusted `sldId` pair is contradicted when one of its slides matches another slide by at
+ * least this much more content similarity (and above the match threshold).
+ */
+const SLDID_CONTRADICTION_MARGIN = 0.25;
 /** Above this size the O(n³) assignment gives way to a greedy best-first one. */
 const HUNGARIAN_MAX = 300;
 
@@ -93,6 +105,8 @@ export function fingerprintFromParsed(
   options: { key?: string; renderHash?: string | null } = {},
 ): SlideFingerprint {
   return fingerprintFromShapes({
+    contentHash: slide.contentHash,
+    creationId: slide.creationId,
     key: options.key ?? String(slide.index),
     sldId: slide.sldId,
     position: slide.index,
@@ -114,6 +128,8 @@ export function fingerprintFromShapes(input: {
   textHash: string | null;
   shapes: readonly ShapeLike[];
   renderHash?: string | null;
+  contentHash?: string | null;
+  creationId?: number | null;
 }): SlideFingerprint {
   return {
     key: input.key,
@@ -125,6 +141,8 @@ export function fingerprintFromShapes(input: {
     text: input.shapes.map((shape) => shape.text).join('\n'),
     renderHash: input.renderHash ?? null,
     shapeSignature: shapeSignature(input.shapes),
+    contentHash: input.contentHash ?? null,
+    creationId: input.creationId ?? null,
   };
 }
 
@@ -165,8 +183,14 @@ const prepare = (fps: readonly SlideFingerprint[]): Prepared[] =>
       titleTokens: tokens(fp.title),
     }));
 
+/** Content hashes differ (only when both sides have one – rows from before it have none). */
+const contentHashDiffers = (a: SlideFingerprint, b: SlideFingerprint) =>
+  Boolean(a.contentHash && b.contentHash && a.contentHash !== b.contentHash);
+
+/** Visually identical, and nothing the render cannot see (charts, media, …) differs either. */
 const renderEqual = (a: SlideFingerprint, b: SlideFingerprint) =>
-  Boolean(a.renderHash && b.renderHash && a.renderHash === b.renderHash);
+  Boolean(a.renderHash && b.renderHash && a.renderHash === b.renderHash) &&
+  !contentHashDiffers(a, b);
 
 function textSim(a: Prepared, b: Prepared): number | null {
   if (a.textTokens.size === 0 && b.textTokens.size === 0) return null;
@@ -223,6 +247,27 @@ function score(ctx: Context, a: Prepared, b: Prepared): number {
       1 - Math.abs(relative(a.index, ctx.prev.length) - relative(b.index, ctx.next.length)),
       WEIGHTS.position,
     ],
+  ];
+  let sum = 0;
+  let weight = 0;
+  for (const [value, w] of features) {
+    if (value === null) continue;
+    sum += value * w;
+    weight += w;
+  }
+  return weight === 0 ? 0 : sum / weight;
+}
+
+/**
+ * Content-only similarity (render, text, title, layout) – no neighbours or position, because
+ * it judges whether an `sldId` pair is contradicted by a better counterpart elsewhere.
+ */
+function contentSim(a: Prepared, b: Prepared): number {
+  if (renderEqual(a.fp, b.fp)) return 1;
+  const features: [number | null, number][] = [
+    [textSim(a, b), WEIGHTS.text],
+    [titleSim(a, b), WEIGHTS.title],
+    [layoutEq(a, b), WEIGHTS.layout],
   ];
   let sum = 0;
   let weight = 0;
@@ -368,6 +413,7 @@ export function longestIncreasingSubsequence(values: readonly number[]): Set<num
 const round2 = (n: number) => Math.round(Math.min(1, Math.max(0, n)) * 100) / 100;
 
 function contentChanged(a: SlideFingerprint, b: SlideFingerprint): boolean {
+  if (contentHashDiffers(a, b)) return true;
   if (a.renderHash && b.renderHash) return a.renderHash !== b.renderHash;
   if ((a.textHash ?? null) !== (b.textHash ?? null)) return true;
   if ((a.layoutName ?? null) !== (b.layoutName ?? null)) return true;
@@ -398,7 +444,8 @@ export function matchSlides(
     if (slide.fp.sldId !== null && !nextBySldId.has(slide.fp.sldId))
       nextBySldId.set(slide.fp.sldId, slide.index);
   }
-  const candidates: { p: number; n: number; trusted: boolean }[] = [];
+  const candidates: { p: number; n: number; trusted: boolean; sameCreation: boolean }[] = [];
+  const contradicted = new Set<number>(); // indexes into candidates
   const usedNext = new Set<number>();
   for (const slide of prev) {
     if (slide.fp.sldId === null) continue;
@@ -407,29 +454,53 @@ export function matchSlides(
     usedNext.add(n);
     const other = next[n];
     if (!other) continue;
+    const a = slide.fp.creationId ?? null;
+    const b = other.fp.creationId ?? null;
+    if (a !== null && b !== null) {
+      // PowerPoint's creationId settles it: same id = same slide, different = reused sldId.
+      if (a !== b) contradicted.add(candidates.length);
+      candidates.push({ p: slide.index, n, trusted: a === b, sameCreation: a === b });
+      continue;
+    }
     const text = textSim(slide, other);
     const trusted =
       renderEqual(slide.fp, other.fp) ||
       (text !== null && text >= SLDID_MIN_TEXT_SIM) ||
       (text === null && layoutEq(slide, other) !== 0);
-    candidates.push({ p: slide.index, n, trusted });
+    candidates.push({ p: slide.index, n, trusted, sameCreation: false });
   }
-  const trustedCount = candidates.filter((c) => c.trusted).length;
+  // An untrusted pair is only dropped on positive evidence: one of its slides has a clearly
+  // better content match among the slides not held by a trusted pair. A slide rewritten (or
+  // translated) beyond recognition keeps its sldId match when nothing better exists.
+  const heldPrev = new Set(candidates.filter((c) => c.trusted).map((c) => c.p));
+  const heldNext = new Set(candidates.filter((c) => c.trusted).map((c) => c.n));
+  candidates.forEach((c, i) => {
+    if (c.trusted || contradicted.has(i)) return;
+    const a = prev[c.p];
+    const b = next[c.n];
+    if (!a || !b) return;
+    const bar = Math.max(threshold, contentSim(a, b) + SLDID_CONTRADICTION_MARGIN);
+    const better =
+      next.some((o) => o.index !== c.n && !heldNext.has(o.index) && contentSim(a, o) >= bar) ||
+      prev.some((o) => o.index !== c.p && !heldPrev.has(o.index) && contentSim(o, b) >= bar);
+    if (better) contradicted.add(i);
+  });
   const renumbered =
-    candidates.length >= RENUMBER_MIN_PAIRS && trustedCount < candidates.length / 2;
+    candidates.length >= RENUMBER_MIN_PAIRS && contradicted.size > candidates.length / 2;
   const pairs: Pair[] = [];
-  if (!renumbered) {
-    // Same sldId = same slide, even when its content was rewritten (comments must follow it).
-    for (const c of candidates) ctx.anchors.set(c.p, c.n);
-    for (const [p, n] of ctx.anchors) {
-      const a = prev[p];
-      const b = next[n];
-      if (!a || !b) continue;
-      const exact =
-        renderEqual(a.fp, b.fp) || Boolean(a.fp.textHash && a.fp.textHash === b.fp.textHash);
-      const confidence = exact ? 1 : Math.min(1, 0.7 + 0.3 * score(ctx, a, b));
-      pairs.push({ p, n, confidence, matchedBy: 'sldId' });
-    }
+  // Same sldId = same slide, even when its content was rewritten (comments must follow it).
+  // When the ids were reassigned wholesale, only creationId-confirmed pairs are kept.
+  candidates.forEach((c, i) => {
+    if (renumbered ? c.sameCreation : !contradicted.has(i)) ctx.anchors.set(c.p, c.n);
+  });
+  for (const [p, n] of ctx.anchors) {
+    const a = prev[p];
+    const b = next[n];
+    if (!a || !b) continue;
+    const exact =
+      renderEqual(a.fp, b.fp) || Boolean(a.fp.textHash && a.fp.textHash === b.fp.textHash);
+    const confidence = exact ? 1 : Math.min(1, 0.7 + 0.3 * score(ctx, a, b));
+    pairs.push({ p, n, confidence, matchedBy: 'sldId' });
   }
 
   // Phase B: content similarity among the rest.

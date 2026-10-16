@@ -27,6 +27,19 @@ describe('stage registry reveal', () => {
     });
   });
 
+  it('jumps instead of panning when the user asked for reduced motion', () => {
+    vi.stubGlobal('window', { matchMedia: () => ({ matches: true }) });
+    try {
+      const { registry, scroller } = setup();
+      registry.revealSlide('s3');
+      const slide = layout.slides[2]!;
+      expect(scroller.scrollTo).not.toHaveBeenCalled();
+      expect(scroller.scrollLeft).toBe(slide.x + slide.w - 1440 + 48);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('jumps instantly by setting scrollLeft and leaves visible slides alone', () => {
     const { registry, scroller } = setup();
     registry.revealSlide('s1', { behavior: 'instant' });

@@ -9,14 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import { ACCENT_COLOR_NAMES } from '@/lib/accent';
-import {
-  Button,
-  ColorSwatches,
-  IconButton,
-  Toolbar,
-  ToolbarDivider,
-  type IconName,
-} from '@/ui';
+import { Button, ColorSwatches, IconButton, Toolbar, ToolbarDivider, type IconName } from '@/ui';
 import { isTypingTarget } from '@/lib/dom';
 import { RecorderPanel } from './RecorderPanel';
 import { hasInk, sketchPalette } from './lib/sketch';
@@ -42,8 +35,6 @@ interface SketchPanelProps {
   /** The drawing so far, or `null` while the paper is empty. */
   onChange: (sketch: Sketch | null) => void;
   autoFocus?: boolean;
-  /** Tab / Shift+Tab out of the panel – the composer moves to the next or previous format. */
-  onTab?: (backwards: boolean) => void;
   /** Sending and cancelling the comment, also right from the big view. */
   actions?: SketchActions;
 }
@@ -81,7 +72,6 @@ export function SketchPanel({
   aspect,
   onChange,
   autoFocus = false,
-  onTab,
   actions,
 }: SketchPanelProps) {
   const editor = useSheetEditor();
@@ -233,12 +223,8 @@ export function SketchPanel({
       else editor.undo();
       return;
     }
-    if (event.target !== rootRef.current || mod || event.altKey) return;
-    // Letters write the comment (`Composer`), so the tools have no letter keys.
-    if (event.key === 'Tab' && onTab) {
-      event.preventDefault();
-      onTab(event.shiftKey);
-    }
+    // Letters write the comment (`Composer`), so the tools have no letter keys; Tab moves the
+    // focus as usual (the drawing stays).
   };
 
   return (

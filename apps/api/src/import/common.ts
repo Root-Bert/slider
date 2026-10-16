@@ -32,7 +32,7 @@ export function toShape(shape: ParsedShape): Shape {
 }
 
 /** Shapes may hang off the slide; anchors only live on it. */
-function clampRect(rect: Rect): Rect {
+export function clampRect(rect: Rect): Rect {
   const x = clamp01(rect.x);
   const y = clamp01(rect.y);
   return {

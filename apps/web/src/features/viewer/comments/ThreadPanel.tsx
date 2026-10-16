@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
 import { accentColor } from '@/lib/accent';
+import { smoothScroll } from '@/lib/motion';
 import { formatRelativeTime, pluralize } from '@/lib/format';
 import { AvatarStack, Button, IconButton, Notice } from '@/ui';
 import { SidePanel, SidePanelHeader } from '../components/SidePanel';
@@ -11,6 +12,7 @@ import { useRevisionData } from '../state/revision-data';
 import { useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
+import { useRestoreFocus } from '../hooks/useRestoreFocus';
 import { ReplyComposer } from './ReplyComposer';
 import { ResolveButton } from './ResolveButton';
 import { ChangedSinceCommentNote } from './RevisionNotes';
@@ -49,6 +51,7 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
     root.slideId ??
     (root.anchor.type === 'gap' ? (root.anchor.afterSlideId ?? root.anchor.beforeSlideId) : null);
   const homeOnTrack = homeSlideId !== null && slideIndex.has(homeSlideId);
+  useRestoreFocus();
   useEffect(() => {
     panelRef.current?.focus({ preventScroll: true });
     // A thread of a deleted slide has no slide on the track to show.
@@ -62,7 +65,10 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
   const previousCount = useRef(replyCount);
   useEffect(() => {
     if (replyCount > previousCount.current)
-      historyRef.current?.scrollTo({ top: historyRef.current.scrollHeight, behavior: 'smooth' });
+      historyRef.current?.scrollTo({
+        top: historyRef.current.scrollHeight,
+        behavior: smoothScroll(),
+      });
     previousCount.current = replyCount;
   }, [replyCount]);
 

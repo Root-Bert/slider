@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AuthProviders, LoginProvider } from '@slider/shared';
 import { Button, ErrorText, GoogleMark, Icon, MicrosoftMark, Notice, PasskeyMark } from '@/ui';
 import {
@@ -62,6 +62,15 @@ function ProviderButton({
   primary: boolean;
 }) {
   const [leaving, setLeaving] = useState(false);
+  // Back from the identity provider (the browser's Back button, a common way to cancel), the
+  // page may come back from the back-forward cache with this state intact: clickable again.
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) setLeaving(false);
+    };
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, []);
   return (
     <Button
       size="lg"

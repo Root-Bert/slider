@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
-import { Archive, REL, relsPathOf, resolvePartPath } from '../src/archive';
+import { Archive, MAX_XML_PART, REL, relsPathOf, resolvePartPath } from '../src/archive';
 import { PptxError } from '../src/types';
 
 describe('relsPathOf', () => {
@@ -120,6 +120,63 @@ describe('Archive', () => {
     await expect(Archive.open(ole)).rejects.toMatchObject({ code: 'encrypted' });
     await expect(Archive.open(new TextEncoder().encode('kein zip'))).rejects.toMatchObject({
       code: 'not_pptx',
+    });
+  });
+});
+
+/** Patches the uncompressed size of every entry in local and central headers (forged zip bomb). */
+function forgeDeclaredSizes(zip: Uint8Array, size: number): Uint8Array {
+  const out = new Uint8Array(zip);
+  const view = new DataView(out.buffer);
+  for (let offset = 0; offset + 4 <= out.length; offset++) {
+    const signature = view.getUint32(offset, true);
+    if (signature === 0x04034b50) view.setUint32(offset + 22, size, true);
+    else if (signature === 0x02014b50) view.setUint32(offset + 24, size, true);
+  }
+  return out;
+}
+
+describe('Archive zip-bomb budget', () => {
+  async function bomb(path: string, bytes: number): Promise<Uint8Array> {
+    const zip = new JSZip();
+    zip.file(path, '<a>' + 'x'.repeat(bytes) + '</a>');
+    const packed = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+    return forgeDeclaredSizes(packed, 1000);
+  }
+
+  it('stops inflating an XML part that unpacks to more than it declares', async () => {
+    const archive = await Archive.open(await bomb('ppt/presentation.xml', 8 * 1024 ** 2));
+    await expect(archive.readXml('ppt/presentation.xml')).rejects.toMatchObject({
+      name: 'PptxError',
+      code: 'corrupt',
+    });
+  });
+
+  it('stops inflating a binary part that unpacks to more than it declares', async () => {
+    const archive = await Archive.open(await bomb('ppt/media/image1.png', 8 * 1024 ** 2));
+    await expect(archive.readBytes('ppt/media/image1.png')).rejects.toMatchObject({
+      name: 'PptxError',
+      code: 'corrupt',
+    });
+  });
+
+  it('rejects a part that declares more than the per-part cap without inflating it', async () => {
+    const zip = new JSZip();
+    zip.file('ppt/presentation.xml', '<a/>');
+    const packed = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+    const archive = await Archive.open(forgeDeclaredSizes(packed, MAX_XML_PART + 1));
+    await expect(archive.readXml('ppt/presentation.xml')).rejects.toMatchObject({
+      code: 'corrupt',
+    });
+  });
+
+  it('rejects a part that unpacks to less than it declares', async () => {
+    const zip = new JSZip();
+    zip.file('ppt/presentation.xml', '<a>' + 'x'.repeat(100) + '</a>');
+    const packed = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+    const archive = await Archive.open(forgeDeclaredSizes(packed, 5000));
+    await expect(archive.readXml('ppt/presentation.xml')).rejects.toMatchObject({
+      code: 'corrupt',
     });
   });
 });
