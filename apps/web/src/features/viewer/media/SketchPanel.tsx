@@ -6,7 +6,7 @@ import {
   type KeyboardEvent,
   type PointerEvent,
 } from 'react';
-import { cn, IconButton } from '@/ui';
+import { cn, Dialog, IconButton } from '@/ui';
 import { RecorderPanel } from './RecorderPanel';
 import {
   addPoint,
@@ -59,6 +59,8 @@ export function SketchPanel({
   const [penColor, setPenColor] = useState(palette[0] ?? '#141414');
   const [bold, setBold] = useState(false);
   const [memo, setMemo] = useState<Recording | null>(null);
+  /** The sheet blown up to most of the screen, for drawing with room to move. */
+  const [expanded, setExpanded] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -89,33 +91,9 @@ export function SketchPanel({
     setUndone([]);
   };
 
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.nativeEvent.isComposing) return;
-    const mod = event.metaKey || event.ctrlKey;
-    if (mod && event.key.toLowerCase() === 'z') {
-      // Before the viewer's own ⌘Z, which undoes strokes on the slide.
-      event.preventDefault();
-      if (event.shiftKey) redo();
-      else undo();
-      return;
-    }
-    if (event.target !== rootRef.current || mod || event.altKey) return;
-    // Letters write the comment (`Composer`), so the tools have no letter keys.
-    if (event.key === 'Tab' && onTab) {
-      event.preventDefault();
-      onTab(event.shiftKey);
-    }
-  };
-
-  return (
-    <div
-      ref={rootRef}
-      role="group"
-      tabIndex={-1}
-      aria-label="Bild zeichnen – ⌘Z: rückgängig"
-      onKeyDown={onKeyDown}
-      className="flex flex-col gap-2 rounded-control outline-none"
-    >
+  /** Canvas and tools – inline in the composer, and again in the big view (same strokes). */
+  const sheet = (big: boolean) => (
+    <>
       <SketchCanvas
         strokes={strokes}
         aspect={aspect}
@@ -201,7 +179,61 @@ export function SketchPanel({
           disabled={strokes.length === 0}
           onClick={clear}
         />
+        <IconButton
+          size="sm"
+          icon={big ? 'closeFullscreen' : 'openInFull'}
+          label={big ? 'Verkleinern (Esc)' : 'Groß zeichnen'}
+          onClick={() => setExpanded(!big)}
+        />
       </div>
+    </>
+  );
+
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.nativeEvent.isComposing) return;
+    const mod = event.metaKey || event.ctrlKey;
+    if (mod && event.key.toLowerCase() === 'z') {
+      // Before the viewer's own ⌘Z, which undoes strokes on the slide.
+      event.preventDefault();
+      if (event.shiftKey) redo();
+      else undo();
+      return;
+    }
+    if (event.target !== rootRef.current || mod || event.altKey) return;
+    // Letters write the comment (`Composer`), so the tools have no letter keys.
+    if (event.key === 'Tab' && onTab) {
+      event.preventDefault();
+      onTab(event.shiftKey);
+    }
+  };
+
+  return (
+    <div
+      ref={rootRef}
+      role="group"
+      tabIndex={-1}
+      aria-label="Bild zeichnen – ⌘Z: rückgängig"
+      onKeyDown={onKeyDown}
+      className="flex flex-col gap-2 rounded-control outline-none"
+    >
+      {sheet(false)}
+
+      {expanded && (
+        <Dialog
+          open
+          onClose={() => setExpanded(false)}
+          title="Bild zeichnen"
+          className="w-auto! max-w-none"
+        >
+          {/* About 80 % of the screen, in the slide's format: limited by width or by height. */}
+          <div
+            className="flex flex-col gap-2"
+            style={{ width: `min(calc(80vw - 48px), calc((80dvh - 160px) * ${aspect}))` }}
+          >
+            {sheet(true)}
+          </div>
+        </Dialog>
+      )}
 
       {/* Talking while drawing: the memo records on while the pen moves. */}
       <RecorderPanel kind="audio" deckId={deckId} onChange={setMemo} />
