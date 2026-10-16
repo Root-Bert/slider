@@ -276,7 +276,7 @@ describe('decks per organisation', () => {
       error: {
         code: 'plan_limit',
         message:
-          'Im Free-Plan sind 3 Präsentationen pro Organisation möglich. Lösche eine, um Platz zu schaffen.',
+          'Im Free-Plan sind 3 Reviews pro Organisation möglich. Lösche eine, um Platz zu schaffen.',
       },
     });
     const downloads = source.download.mock.calls.length;
@@ -333,7 +333,7 @@ describe('limits from the environment (self-hosting)', () => {
     expect((await upload()).status).toBe(201);
     const full = await upload();
     expect(full.status).toBe(403);
-    expect((await body(full)).error.message).toMatch(/ist eine Präsentation pro/);
+    expect((await body(full)).error.message).toMatch(/ist eine Review pro/);
     expect((await invite({ email: 'a@firma.de' })).status).toBe(201);
     expect((await invite({ email: 'b@firma.de' })).status).toBe(403);
     await ctx.deps.queue.idle();

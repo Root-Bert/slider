@@ -45,6 +45,8 @@ describe('DeckTitleInput', () => {
 
     lastOptions().onSuccess();
     expect(onDone).toHaveBeenCalledTimes(1);
+    // Still on the input: the card puts the focus back on the title.
+    expect(onDone).toHaveBeenCalledWith(true);
     fireEvent.blur(input);
     expect(api.mutate).toHaveBeenCalledTimes(1);
   });

@@ -44,9 +44,9 @@ export const deckState = (usage: WorkspaceUsage) => limitState(usage.decks, usag
 export const formatRatio = ({ used, max }: Pick<LimitState, 'used' | 'max'>) =>
   max === null ? String(used) : `${used}/${max}`;
 
-const decksWord = (n: number) => (n === 1 ? 'Präsentation' : 'Präsentationen');
+const decksWord = (n: number) => (n === 1 ? 'Review' : 'Reviews');
 
-/** Overview: "2 von 3 Präsentationen" / "5 Präsentationen". */
+/** Overview: "2 von 3 Reviews" / "5 Reviews". */
 export function formatDeckUsage(usage: WorkspaceUsage): string {
   const { used, max } = deckState(usage);
   return max === null ? `${used} ${decksWord(used)}` : `${used} von ${max} ${decksWord(max)}`;
@@ -55,7 +55,7 @@ export function formatDeckUsage(usage: WorkspaceUsage): string {
 /** Why "Neue Review" is off, matching the API's `plan_limit` message. */
 export function deckLimitMessage(workspace: Pick<Workspace, 'plan' | 'usage'>): string {
   const max = workspace.usage.maxDecks ?? 0;
-  return `Im ${planLabel(workspace.plan)} ${max === 1 ? 'ist eine Präsentation' : `sind ${max} Präsentationen`} pro Organisation möglich. Lösche eine, um Platz zu schaffen.`;
+  return `Im ${planLabel(workspace.plan)} ${max === 1 ? 'ist eine Review' : `sind ${max} Reviews`} pro Organisation möglich. Lösche eine, um Platz zu schaffen.`;
 }
 
 /** Invite form: "Noch 2 Plätze frei" / "Alle 5 Plätze belegt" / `null` without a limit. */

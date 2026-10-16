@@ -15,10 +15,11 @@
   "scripts": {
     "dev": "bun run --filter @slider/api --filter @slider/web dev",
     "build": "bun run --filter '*' build",
-    "start": "bun apps/api/src/server.ts",
+    "start": "NODE_ENV=production bun apps/api/src/server.ts",
     "typecheck": "bun run --filter '*' typecheck && tsc -p e2e && tsc -p test",
     "test": "vitest run",
     "e2e": "playwright test -c e2e/playwright.config.ts",
+    "e2e:bundle": "E2E_BUNDLE=1 playwright test -c e2e/playwright.config.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
     "seed": "bun run --filter @slider/api seed",

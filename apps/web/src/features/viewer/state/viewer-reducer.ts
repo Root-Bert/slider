@@ -1,4 +1,3 @@
-import type { AccentColor } from '@slider/shared';
 import { clampSplit } from '@/lib/preferences/split';
 import type { StatusFilter } from '../comments/lib/comment-selectors';
 import { draftReducer } from './draft-reducer';
@@ -6,7 +5,6 @@ import type { ViewerAction, ViewerState } from './viewer-types';
 
 export function createInitialState(options: {
   activeSlideId: string | null;
-  color: AccentColor;
   /** Restored split; `null` / missing is the default (Desktop-1 proportions). */
   split?: number | null;
   showChanges?: boolean;
@@ -18,7 +16,6 @@ export function createInitialState(options: {
   return {
     activeSlideId: options.activeSlideId,
     tool: null,
-    color: options.color,
     draft: null,
     lastDrawing: null,
     focusedThreadId: null,
@@ -28,6 +25,7 @@ export function createInitialState(options: {
     editingCommentId: null,
     // BER-101: done comments are hidden by default.
     statusFilter: options.statusFilter ?? 'open',
+    composingThreads: new Map(),
     personFilter: null,
     split: options.split == null ? null : clampSplit(options.split),
     showChanges: options.showChanges ?? true,
@@ -106,6 +104,13 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
         : next;
     case 'statusFilterChanged':
       return { ...next, statusFilter: action.filter };
+    case 'composingChanged': {
+      const count = (next.composingThreads.get(action.threadId) ?? 0) + (action.composing ? 1 : -1);
+      const composingThreads = new Map(next.composingThreads);
+      if (count > 0) composingThreads.set(action.threadId, count);
+      else composingThreads.delete(action.threadId);
+      return { ...next, composingThreads };
+    }
     case 'personFilterToggled':
       return {
         ...next,

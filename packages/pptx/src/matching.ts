@@ -192,6 +192,13 @@ const renderEqual = (a: SlideFingerprint, b: SlideFingerprint) =>
   Boolean(a.renderHash && b.renderHash && a.renderHash === b.renderHash) &&
   !contentHashDiffers(a, b);
 
+/** Same render, or the same (non-empty) text: as sure a counterpart as content can give. */
+const isExact = (a: Prepared, b: Prepared) =>
+  renderEqual(a.fp, b.fp) ||
+  (a.textTokens.size > 0 &&
+    Boolean(a.fp.textHash && a.fp.textHash === b.fp.textHash) &&
+    !contentHashDiffers(a.fp, b.fp));
+
 function textSim(a: Prepared, b: Prepared): number | null {
   if (a.textTokens.size === 0 && b.textTokens.size === 0) return null;
   if (a.fp.textHash && a.fp.textHash === b.fp.textHash) return 1;
@@ -444,7 +451,14 @@ export function matchSlides(
     if (slide.fp.sldId !== null && !nextBySldId.has(slide.fp.sldId))
       nextBySldId.set(slide.fp.sldId, slide.index);
   }
-  const candidates: { p: number; n: number; trusted: boolean; sameCreation: boolean }[] = [];
+  const candidates: {
+    p: number;
+    n: number;
+    trusted: boolean;
+    sameCreation: boolean;
+    /** Identical render or text: nothing elsewhere can be a better match. */
+    exact: boolean;
+  }[] = [];
   const contradicted = new Set<number>(); // indexes into candidates
   const usedNext = new Set<number>();
   for (const slide of prev) {
@@ -459,30 +473,41 @@ export function matchSlides(
     if (a !== null && b !== null) {
       // PowerPoint's creationId settles it: same id = same slide, different = reused sldId.
       if (a !== b) contradicted.add(candidates.length);
-      candidates.push({ p: slide.index, n, trusted: a === b, sameCreation: a === b });
+      candidates.push({ p: slide.index, n, trusted: a === b, sameCreation: a === b, exact: false });
       continue;
     }
     const text = textSim(slide, other);
+    const exact = isExact(slide, other);
     const trusted =
-      renderEqual(slide.fp, other.fp) ||
+      exact ||
       (text !== null && text >= SLDID_MIN_TEXT_SIM) ||
       (text === null && layoutEq(slide, other) !== 0);
-    candidates.push({ p: slide.index, n, trusted, sameCreation: false });
+    candidates.push({ p: slide.index, n, trusted, sameCreation: false, exact });
   }
-  // An untrusted pair is only dropped on positive evidence: one of its slides has a clearly
-  // better content match among the slides not held by a trusted pair. A slide rewritten (or
-  // translated) beyond recognition keeps its sldId match when nothing better exists.
-  const heldPrev = new Set(candidates.filter((c) => c.trusted).map((c) => c.p));
-  const heldNext = new Set(candidates.filter((c) => c.trusted).map((c) => c.n));
+  // Without a confirming creationId a pair is only dropped on positive evidence, judged against
+  // the slides not held by a confirmed (same creationId) or exact pair:
+  // - an untrusted pair, when one of its slides has a clearly better content match elsewhere;
+  // - a pair that merely shares some text (a common footer, project name or title pattern is
+  //   enough for that), when one of its slides has an exact counterpart elsewhere – the pair
+  //   itself is not exact. That is what ids renumbered by position look like (Google Slides,
+  //   LibreOffice) once neighbouring slides share text.
+  // A slide rewritten (or translated) beyond recognition keeps its sldId match when nothing
+  // better exists.
+  const held = candidates.filter((c) => c.sameCreation || c.exact);
+  const heldPrev = new Set(held.map((c) => c.p));
+  const heldNext = new Set(held.map((c) => c.n));
   candidates.forEach((c, i) => {
-    if (c.trusted || contradicted.has(i)) return;
+    if (c.sameCreation || c.exact || contradicted.has(i)) return;
     const a = prev[c.p];
     const b = next[c.n];
     if (!a || !b) return;
-    const bar = Math.max(threshold, contentSim(a, b) + SLDID_CONTRADICTION_MARGIN);
+    const isBetter = c.trusted
+      ? (x: Prepared, y: Prepared) => isExact(x, y)
+      : (x: Prepared, y: Prepared) =>
+          contentSim(x, y) >= Math.max(threshold, contentSim(a, b) + SLDID_CONTRADICTION_MARGIN);
     const better =
-      next.some((o) => o.index !== c.n && !heldNext.has(o.index) && contentSim(a, o) >= bar) ||
-      prev.some((o) => o.index !== c.p && !heldPrev.has(o.index) && contentSim(o, b) >= bar);
+      next.some((o) => o.index !== c.n && !heldNext.has(o.index) && isBetter(a, o)) ||
+      prev.some((o) => o.index !== c.p && !heldPrev.has(o.index) && isBetter(o, b));
     if (better) contradicted.add(i);
   });
   const renumbered =

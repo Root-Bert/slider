@@ -36,15 +36,16 @@ Try the upload flow with the generated sample deck:
 bun run sample       # writes packages/pptx/samples/slider-demo.pptx
 ```
 
-| Command             | What it does                                   |
-| ------------------- | ---------------------------------------------- |
-| `bun run dev`       | API + web with hot reload                      |
-| `bun run test`      | All unit and API tests (Vitest)                |
-| `bun run e2e`       | Browser smoke tests (Playwright, `e2e/`)       |
-| `bun run lint`      | ESLint (TypeScript, React hooks)               |
-| `bun run typecheck` | `tsc` for every workspace                      |
-| `bun run build`     | Production build (`apps/web/dist` is static)   |
-| `bun run seed`      | Reset the local database to the demo workspace |
+| Command              | What it does                                   |
+| -------------------- | ---------------------------------------------- |
+| `bun run dev`        | API + web with hot reload                      |
+| `bun run test`       | All unit and API tests (Vitest)                |
+| `bun run e2e`        | Browser smoke tests (Playwright, `e2e/`)       |
+| `bun run e2e:bundle` | The same against the production build          |
+| `bun run lint`       | ESLint (TypeScript, React hooks)               |
+| `bun run typecheck`  | `tsc` for every workspace                      |
+| `bun run build`      | Production build (`apps/web/dist` is static)   |
+| `bun run seed`       | Reset the local database to the demo workspace |
 
 > Use `bun run test`, not `bun test`: the suite runs on Vitest. `bun test` would start Bun's own
 > test runner, so it is blocked with a hint (`bunfig.toml`).
@@ -223,8 +224,9 @@ docker compose up -d
 ```
 
 A small VPS (2 vCPU, 4 GB) is enough for a team, at roughly 7 € a month and no per-user costs.
-CI (`.github/workflows/ci.yml`) builds the image on every pull request and smoke-tests it
-(`scripts/smoke-image.sh`). It publishes amd64 + arm64 only once every check is green: `:edge`
+CI (`.github/workflows/ci.yml`) builds the image for amd64 and arm64 on every pull request and
+smoke-tests both (`scripts/smoke-image.sh`, including a sample deck through LibreOffice to slide
+images; arm64 under emulation). It publishes amd64 + arm64 only once every check is green: `:edge`
 from `main`, `:1.2.3`/`:1.2`/`:1`/`:latest` from `v*` tags.
 
 Accounts are created on the first login (`SIGNUP=open`, the default; `invite` and `domains`
@@ -234,8 +236,8 @@ puts organisations on the free plan – 5 people (members plus pending e-mail in
 one own organisation per account, 5 GB of recordings. `PLAN_FREE_MAX_MEMBERS` /
 `PLAN_FREE_MAX_DECKS` / `MEDIA_QUOTA_BYTES` set single limits anyway (`0` = unlimited).
 
-Without Docker: `bun run build`, then `NODE_ENV=production bun apps/api/src/server.ts`
-(`bun run start`). `DATABASE_URL` switches from PGlite to a Postgres server; `GET /api/health`
+Without Docker: `bun run build`, then `bun run start` (`NODE_ENV=production bun
+apps/api/src/server.ts`). `DATABASE_URL` switches from PGlite to a Postgres server; `GET /api/health`
 checks the database. Step-by-step guide (German) with all variables, optional Authentik (OIDC),
 backups, updates and costs: [docs/self-hosting.md](docs/self-hosting.md).
 

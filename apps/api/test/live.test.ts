@@ -110,8 +110,12 @@ describe('live routes', () => {
     const firstHello = await nextOfType(first, 'hello');
     const second = await open(`/api/decks/${deck.deckId}/live`);
     const secondHello = await nextOfType(second, 'hello');
-    expect(secondHello.peers.map((peer) => peer.connectionId)).toEqual([firstHello.connectionId]);
-    expect((await nextOfType(first, 'peer')).peer.connectionId).toBe(secondHello.connectionId);
+    expect(secondHello.peers).toHaveLength(1);
+    // Peers know each other by a public id, never by the other's secret key from `hello`.
+    const firstPublic = secondHello.peers[0]?.connectionId ?? '';
+    const secondPublic = (await nextOfType(first, 'peer')).peer.connectionId;
+    expect(firstPublic).not.toBe(firstHello.connectionId);
+    expect(secondPublic).not.toBe(secondHello.connectionId);
 
     const slideId = deck.slideIds[0] ?? '';
     const moved = await ctx.request(`/api/live/${secondHello.connectionId}`, {
@@ -125,7 +129,7 @@ describe('live routes', () => {
     expect(moved.status).toBe(204);
     const peer = await nextOfType(first, 'peer');
     expect(peer.peer).toMatchObject({
-      connectionId: secondHello.connectionId,
+      connectionId: secondPublic,
       activeSlideId: slideId,
       cursor: { slideId, point: { x: 0.25, y: 0.75 } },
     });
@@ -136,7 +140,7 @@ describe('live routes', () => {
     expect(bye.status).toBe(204);
     expect(await nextOfType(first, 'leave')).toEqual({
       type: 'leave',
-      connectionId: secondHello.connectionId,
+      connectionId: secondPublic,
     });
   });
 
@@ -145,10 +149,11 @@ describe('live routes', () => {
     await nextOfType(watcher, 'hello');
     const leaving = await open(`/api/decks/${deck.deckId}/live`);
     const hello = await nextOfType(leaving, 'hello');
+    const leavingPublic = (await nextOfType(watcher, 'peer')).peer.connectionId;
     await leaving.close();
     expect(await nextOfType(watcher, 'leave')).toEqual({
       type: 'leave',
-      connectionId: hello.connectionId,
+      connectionId: leavingPublic,
     });
     const res = await ctx.request(`/api/live/${hello.connectionId}`, {
       method: 'POST',
@@ -173,13 +178,14 @@ describe('live routes', () => {
     await nextOfType(watcher, 'hello');
     const tab = crypto.randomUUID();
     const old = await open(`/api/decks/${deck.deckId}/live?tab=${tab}`);
-    const oldHello = await nextOfType(old, 'hello');
+    await nextOfType(old, 'hello');
+    const oldPublic = (await nextOfType(watcher, 'peer')).peer.connectionId;
     const again = await open(`/api/decks/${deck.deckId}/live?tab=${tab}`);
     const againHello = await nextOfType(again, 'hello');
-    expect(againHello.peers.map((p) => p.connectionId)).not.toContain(oldHello.connectionId);
+    expect(againHello.peers.map((p) => p.connectionId)).not.toContain(oldPublic);
     expect(await nextOfType(watcher, 'leave')).toEqual({
       type: 'leave',
-      connectionId: oldHello.connectionId,
+      connectionId: oldPublic,
     });
   });
 
@@ -190,7 +196,7 @@ describe('live routes', () => {
       const second = await open(`/api/decks/${deck.deckId}/live?tab=${tab}`);
       const secondHello = await nextOfType(second, 'hello');
       // Without a usable tab id the first connection stays.
-      expect(secondHello.peers.map((p) => p.connectionId)).toContain(firstHello.connectionId);
+      expect(secondHello.peers).toHaveLength(1);
       await first.close();
       await second.close();
       await ctx.request(`/api/live/${firstHello.connectionId}/leave`, { method: 'POST' });
@@ -208,6 +214,26 @@ describe('live routes', () => {
       error: { code: 'not_found', message: 'Diese Live-Verbindung gibt es nicht mehr.' },
     });
     expect((await ctx.request('/api/live/unknown/leave', { method: 'POST' })).status).toBe(204);
+  });
+
+  it("a peer's public id neither moves nor ends their connection", async () => {
+    const anna = await open(`/api/decks/${deck.deckId}/live`);
+    const annaHello = await nextOfType(anna, 'hello');
+    const ben = await open(`/api/decks/${deck.deckId}/live`);
+    const benHello = await nextOfType(ben, 'hello');
+    const annaPublic = benHello.peers[0]?.connectionId ?? '';
+    const spoof = await ctx.request(`/api/live/${annaPublic}`, {
+      method: 'POST',
+      json: { activeSlideId: deck.slideIds[0] ?? null, cursor: null, focusedThreadId: null },
+    });
+    expect(spoof.status).toBe(404);
+    await ctx.request(`/api/live/${annaPublic}/leave`, { method: 'POST' });
+    // Anna's own key still works: her connection is still there.
+    const own = await ctx.request(`/api/live/${annaHello.connectionId}`, {
+      method: 'POST',
+      json: { activeSlideId: null, cursor: null, focusedThreadId: null },
+    });
+    expect(own.status).toBe(204);
   });
 
   it('rejects malformed presence', async () => {
@@ -269,13 +295,14 @@ describe('live streams end', () => {
     const owner = await open(`/api/decks/${deck.deckId}/live`);
     await nextOfType(owner, 'hello');
     const stream = await open(`/api/decks/${deck.deckId}/live`, mia.cookie);
-    const hello = await nextOfType(stream, 'hello');
+    await nextOfType(stream, 'hello');
+    const miaPublic = (await nextOfType(owner, 'peer')).peer.connectionId;
     await ctx.deps.db.delete(workspaceMembers).where(eq(workspaceMembers.userId, mia.user.id));
 
     await ended(stream);
     expect(await nextOfType(owner, 'leave')).toEqual({
       type: 'leave',
-      connectionId: hello.connectionId,
+      connectionId: miaPublic,
     });
     const again = await ctx.request(`/api/decks/${deck.deckId}/live`, { cookie: mia.cookie });
     expect(again.status).toBe(404);

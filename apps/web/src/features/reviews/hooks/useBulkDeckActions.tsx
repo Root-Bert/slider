@@ -7,7 +7,7 @@ import { DeleteDeckDialog } from '../components/DeleteDeckDialog';
 import { MoveDecksDialog } from '../components/MoveDecksDialog';
 import { failureMessage, movedMessage, withCount } from '../lib/bulk-messages';
 import { usePinnedDecks } from './usePinnedDecks';
-import { MAX_PINNED, pinDeck, unpinDeck } from '../lib/pinned-decks';
+import { MAX_PINNED } from '../lib/pinned-decks';
 
 const NO_IDS: readonly string[] = [];
 
@@ -79,13 +79,17 @@ function useBulkRerender(onNotify: ShowToast) {
  */
 export function useBulkDeckActions(
   decks: readonly Deck[],
-  { onNotify, onDone }: { onNotify: ShowToast; onDone: () => void },
+  {
+    workspaceId,
+    onNotify,
+    onDone,
+  }: { workspaceId: string; onNotify: ShowToast; onDone: () => void },
 ) {
   const [deleting, setDeleting] = useState<readonly Deck[] | null>(null);
   const [moving, setMoving] = useState<readonly Deck[] | null>(null);
   const update = useUpdateDecks();
   const rerender = useBulkRerender(onNotify);
-  const pins = usePinnedDecks();
+  const pins = usePinnedDecks(workspaceId);
 
   const count = decks.length;
   const managed = decks.filter((deck) => deck.permissions.canManage);
@@ -97,10 +101,10 @@ export function useBulkDeckActions(
 
   const togglePinned = () => {
     if (allPinned) {
-      decks.forEach((deck) => unpinDeck(deck.id));
+      decks.forEach((deck) => pins.unpin(deck.id));
     } else {
       const unpinned = decks.filter((deck) => !pins.isPinned(deck.id));
-      const left = unpinned.filter((deck) => !pinDeck(deck.id)).length;
+      const left = unpinned.filter((deck) => !pins.pin(deck.id)).length;
       if (left > 0) {
         onNotify(`Höchstens ${MAX_PINNED} Reviews angepinnt – ${reviews(left)} nicht angepinnt.`);
       }
@@ -174,7 +178,7 @@ export function useBulkDeckActions(
       decks={deleting}
       onClose={() => setDeleting(null)}
       onDeleted={(result) => {
-        result.done.forEach((entry) => unpinDeck(entry.deckId));
+        result.done.forEach((entry) => pins.unpin(entry.deckId));
         setDeleting(null);
         const failure = failureMessage(result, 'gelöscht');
         onNotify(

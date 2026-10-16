@@ -10,8 +10,9 @@ Stand Oktober 2026 – Preise und Versionen sind Näherungswerte, bitte vor dem 
 > die gefilterte Produktions-Installation (`bun install --production --filter @slider/api`),
 > außerdem der Start ohne Secret und Login samt Einrichtungsseite und automatischem Neustart
 > (Supervisor, ohne Docker). Das Image baut die CI (`.github/workflows/ci.yml`) bei jedem Pull
-> Request und startet es zum Test (`scripts/smoke-image.sh`: Health-Check, Web-App,
-> Einrichtungslink, LibreOffice, sauberes Stoppen); veröffentlicht wird es nur von `main` und
+> Request für amd64 und arm64 und startet beide zum Test (`scripts/smoke-image.sh`: Health-Check,
+> Web-App, Einrichtungslink, ein Beispiel-Deck durch LibreOffice zu Folienbildern, sauberes
+> Stoppen; arm64 unter Emulation); veröffentlicht wird es nur von `main` und
 > `v*`-Tags und erst, wenn alle Prüfungen grün sind. Beim ersten echten `docker compose up` trotzdem
 > genau hinschauen (siehe [Fehlersuche](#fehlersuche)).
 
@@ -83,8 +84,8 @@ Alle Daten liegen im Volume `slider-data` – das ist das, was gesichert werden 
   - Nur Slider: 2 vCPU, 4 GB RAM, 40 GB SSD reichen für ein Team (z. B. Hetzner CX23).
   - Mit Authentik: **8 GB RAM** einplanen (Authentik braucht laut Doku mind. 2 CPU-Kerne und
     2 GB RAM zusätzlich), z. B. Hetzner CX33.
-  - x86 (amd64) ist der Normalfall. ARM (z. B. Hetzner CAX) sollte gehen – alle Basis-Images und
-    `@napi-rs/canvas` gibt es für arm64 –, ist aber ungetestet.
+  - x86 (amd64) ist der Normalfall. ARM (z. B. Hetzner CAX) geht auch: Die CI startet das
+    arm64-Image vor jeder Veröffentlichung zum Test (unter Emulation, nicht auf echter ARM-Hardware).
 - Eine (Sub-)Domain, z. B. `slider.firma.de`, deren A-/AAAA-Record auf den Server zeigt.
 - Mindestens ein Login-Weg: Microsoft (Entra), Google oder OIDC (z. B. Authentik). Ohne startet
   Slider trotzdem, lässt aber niemanden hinein: Das Log zeigt dann den Einrichtungslink, über den
@@ -130,7 +131,7 @@ Alle Daten liegen im Volume `slider-data` – das ist das, was gesichert werden 
    Redirect-URI `https://slider.firma.de/api/auth/microsoft/callback` ergänzen (Typ _Web_).
 
 Ohne Docker geht es auch: `bun install --frozen-lockfile && bun run build`, dann
-`NODE_ENV=production bun apps/api/src/server.ts` (oder `bun run start`). Die Konfiguration kommt
+`bun run start` (= `NODE_ENV=production bun apps/api/src/server.ts`). Die Konfiguration kommt
 dann aus der Umgebung; Bun liest zusätzlich eine `.env` im aktuellen Ordner, falls vorhanden –
 eine fehlende `.env` ist kein Fehler. Davor einen Reverse-Proxy mit HTTPS setzen.
 

@@ -6,6 +6,7 @@ import { providerLoginUrl } from '@/features/auth';
 import { useAuthProviders, useLogout, useMe, usePasskeys } from '@/lib/api';
 import {
   Avatar,
+  ErrorText,
   Icon,
   IconButton,
   ListRow,
@@ -61,7 +62,10 @@ export function AccountMenu() {
             subtitle={user.email}
           />
           {hintWanted && passkeys.data?.length === 0 && (
-            <div className="mx-1 mb-1.5 flex items-start gap-2.5 rounded-control bg-surface-1 py-2.5 pr-1.5 pl-3">
+            <div
+              data-passkey-hint
+              className="mx-1 mb-1.5 flex items-start gap-2.5 rounded-control bg-surface-1 py-2.5 pr-1.5 pl-3"
+            >
               <PasskeyMark size={18} className="mt-0.5 text-fg-muted" />
               <button
                 type="button"
@@ -80,7 +84,15 @@ export function AccountMenu() {
                 icon="close"
                 label="Hinweis ausblenden"
                 size="sm"
-                onClick={() => {
+                onClick={(event) => {
+                  // The focused button goes away with the hint: the focus moves on to the next
+                  // item instead of dropping to <body>.
+                  const hint = event.currentTarget.closest('[data-passkey-hint]');
+                  const next = [
+                    ...(hint?.parentElement?.querySelectorAll<HTMLElement>('a[href], button') ??
+                      []),
+                  ].find((element) => !hint?.contains(element));
+                  next?.focus();
                   dismissPasskeyHint();
                   setHintWanted(false);
                 }}
@@ -147,6 +159,11 @@ export function AccountMenu() {
           >
             Abmelden
           </MenuItem>
+          {logout.isError && (
+            <ErrorText role="alert" size="xs" className="px-3 pt-0.5 pb-1.5">
+              Abmelden hat nicht geklappt – bitte erneut versuchen.
+            </ErrorText>
+          )}
         </>
       )}
     </HeaderPopover>

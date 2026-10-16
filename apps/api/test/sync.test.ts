@@ -448,6 +448,49 @@ describe('errors keep the last revision', () => {
   });
 });
 
+describe('import attempts after an outage', () => {
+  it('failed source checks before an edit do not use up the import attempts', async () => {
+    const { ctx, source, deckId } = await setup({ v3: presentation(EDITED) });
+    // The source is unreachable for a while (e.g. the Microsoft login expired) …
+    source.error = sourceUnreachable();
+    for (let i = 0; i < 5; i++) expect((await sync(ctx, deckId)).status).toBe('error');
+    expect((await deckRow(ctx, deckId)).syncState.consecutiveFailures).toBe(5);
+
+    // … then it is back with an edited file, whose first import fails for a passing reason.
+    source.error = null;
+    source.token = 'c2';
+    source.bytes = pptxBytes('renderer-bug');
+    expect((await sync(ctx, deckId)).status).toBe('error');
+    expect((await deckRow(ctx, deckId)).syncState).toMatchObject({
+      failedToken: null,
+      consecutiveFailures: 1,
+      importFailures: { token: 'c2', count: 1 },
+    });
+
+    // The scheduler tries the same file again, and this time it imports.
+    source.bytes = pptxBytes('v3');
+    const scheduler = new SyncScheduler({
+      db: ctx.deps.db,
+      clock: ctx.clock,
+      log: silentLogger,
+      sync: ctx.deps.sync,
+      config: ctx.deps.config,
+    });
+    for (let i = 0; i < 240; i++) {
+      ctx.clock.advance(30_000);
+      await scheduler.tick();
+      await ctx.deps.queue.idle();
+    }
+    expect(await revisionRows(ctx, deckId)).toHaveLength(2);
+    expect((await deckRow(ctx, deckId)).syncState).toMatchObject({
+      consecutiveFailures: 0,
+      failedToken: null,
+      importFailures: null,
+      lastSyncError: null,
+    });
+  });
+});
+
 describe('revisions and diffs', () => {
   it('exposes revisions, per-slide changes and deleted slides', async () => {
     const { ctx, source, deckId } = await setup({ v2: presentation(V2_SLIDES) });

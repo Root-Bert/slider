@@ -1,7 +1,20 @@
-/** Escapes text for XML character data and attribute values. */
+/**
+ * Escapes text for XML character data and attribute values. Characters XML 1.0 does not allow
+ * at all (C0 controls other than tab/LF/CR, U+FFFE/U+FFFF, lone surrogates) – which a slide can
+ * carry as `&#11;` and the like – would make the whole SVG unreadable, so they are dropped;
+ * vertical tab and form feed (line breaks in some producers) become a space.
+ */
 export function escapeXml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => XML_ESCAPES[char] ?? char);
+  return value
+    .replace(XML_ILLEGAL, (char) => (char === '\u000b' || char === '\u000c' ? ' ' : ''))
+    .replace(/[&<>"']/g, (char) => XML_ESCAPES[char] ?? char);
 }
+
+const XML_ILLEGAL = new RegExp(
+  '[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\ufffe\\uffff]' +
+    '|[\\ud800-\\udbff](?![\\udc00-\\udfff])|(?<![\\ud800-\\udbff])[\\udc00-\\udfff]',
+  'g',
+);
 
 const XML_ESCAPES: Record<string, string> = {
   '&': '&amp;',

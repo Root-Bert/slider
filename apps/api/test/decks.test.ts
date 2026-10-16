@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { deckSchema, slideSchema, viewerSchema, type Deck } from '@slider/shared';
 import { z } from 'zod';
 import { decks, revisions } from '../src/db/schema';
+import { IMPORTS_PER_HOUR } from '../src/http/import-limit';
 import { fileUrl } from '../src/storage/file-urls';
 import {
   createReadyDeck,
@@ -204,6 +205,44 @@ describe('POST /api/decks/link', () => {
     });
     expect(res.status).toBe(400);
     expect(await res.json()).toMatchObject({ error: { code: 'unsupported_link' } });
+  });
+
+  it('caps imports per account and hour, failed ones and every import route included', async () => {
+    await ctx.cleanup();
+    ctx = await createTestContext({ config: { limited: true } });
+    const { deckId } = await createReadyDeck(ctx);
+    for (let i = 0; i < IMPORTS_PER_HOUR.limited; i++) {
+      const res = await ctx.request('/api/decks/link', {
+        method: 'POST',
+        json: { url: 'https://example.com/page.html' },
+      });
+      expect(res.status).toBe(400);
+    }
+    const refused = await ctx.request('/api/decks/link', {
+      method: 'POST',
+      json: { url: 'https://example.com/page.html' },
+    });
+    expect(refused.status).toBe(429);
+    expect(Number(refused.headers.get('retry-after'))).toBeGreaterThan(0);
+    expect(await refused.json()).toMatchObject({ error: { code: 'rate_limited' } });
+    // The same budget covers uploads, new versions and re-rendering.
+    const upload = await ctx.request('/api/decks/upload', {
+      method: 'POST',
+      body: uploadForm('Neu.pptx', new Uint8Array([0x50, 0x4b, 3, 4])),
+    });
+    expect(upload.status).toBe(429);
+    expect((await ctx.request(`/api/decks/${deckId}/rerender`, { method: 'POST' })).status).toBe(
+      429,
+    );
+    ctx.clock.advance(60 * 60_000);
+    expect(
+      (
+        await ctx.request('/api/decks/link', {
+          method: 'POST',
+          json: { url: 'https://example.com/page.html' },
+        })
+      ).status,
+    ).toBe(400);
   });
 
   it('says how to set up the Microsoft login when it is not configured', async () => {

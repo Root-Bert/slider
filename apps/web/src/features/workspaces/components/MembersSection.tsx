@@ -39,7 +39,6 @@ export function MembersSection({
   onNotify: ShowToast;
 }) {
   const members = useMembers(workspace.id);
-  const updateRole = useUpdateMemberRole(workspace.id);
   const remove = useRemoveMember(workspace.id);
   const [removing, setRemoving] = useState<WorkspaceMember | null>(null);
   const list = members.data ?? [];
@@ -47,23 +46,14 @@ export function MembersSection({
   const canInvite = canManageMembers(workspace.role);
   const seats = seatState(workspace.usage);
 
-  const changeRole = (member: WorkspaceMember, role: WorkspaceRole) =>
-    updateRole.mutate(
-      { userId: member.userId, role },
-      {
-        onSuccess: () => onNotify(`${member.name} ist jetzt ${ROLE_LABELS[role]}`),
-        onError: (error) => onNotify(error.message, 'danger'),
-      },
-    );
-
   return (
     <Section
       id={canInvite ? INVITE_SECTION_ID : undefined}
       title="Mitglieder"
       description={
         canInvite
-          ? 'Wer in dieser Organisation Präsentationen sieht und kommentiert. Einladungen per E-Mail und Links gelten 7 Tage.'
-          : 'Wer in dieser Organisation Präsentationen sieht und kommentiert.'
+          ? 'Wer in dieser Organisation Reviews sieht und kommentiert. Einladungen per E-Mail und Links gelten 7 Tage.'
+          : 'Wer in dieser Organisation Reviews sieht und kommentiert.'
       }
       aside={
         canInvite &&
@@ -79,71 +69,17 @@ export function MembersSection({
         <ErrorText>{members.error.message}</ErrorText>
       ) : (
         <RowList variant="hover">
-          {list.map((member) => {
-            const self = member.userId === userId;
-            const lastAdmin = isLastAdmin(member.role, adminCount);
-            const roles = lastAdmin ? [] : assignableRoles(workspace.role);
-            return (
-              <ListRow
-                key={member.userId}
-                variant="hover"
-                size="body"
-                leading={<Avatar author={{ ...member, type: 'owner' }} size={32} />}
-                title={
-                  <>
-                    {member.name}
-                    {self && <span className="font-normal text-fg-subtle"> (Du)</span>}
-                  </>
-                }
-                badge={
-                  member.isCreator && (
-                    <span title={CREATOR_HINT} className="flex">
-                      <Badge tone="info">{CREATOR_LABEL}</Badge>
-                    </span>
-                  )
-                }
-                subtitle={member.email}
-                trailing={
-                  roles.length > 0 ? (
-                    <Select<WorkspaceRole>
-                      size="sm"
-                      aria-label={`Rolle von ${member.name}`}
-                      value={member.role}
-                      disabled={
-                        updateRole.isPending && updateRole.variables?.userId === member.userId
-                      }
-                      onChange={(role) => role !== member.role && changeRole(member, role)}
-                      options={WORKSPACE_ROLES.filter((role) => roles.includes(role)).map(
-                        (role) => ({ value: role, label: ROLE_LABELS[role] }),
-                      )}
-                      className="w-[120px] shrink-0"
-                    />
-                  ) : (
-                    <span
-                      className="flex w-[120px] shrink-0 justify-end"
-                      title={
-                        lastAdmin ? 'Der einzige Admin – ernenne zuerst jemand anderen.' : undefined
-                      }
-                    >
-                      <Badge>{ROLE_LABELS[member.role]}</Badge>
-                    </span>
-                  )
-                }
-                actionSlot={
-                  !self &&
-                  canRemoveMember(workspace.role) && (
-                    <IconButton
-                      icon="close"
-                      size="sm"
-                      iconSize={18}
-                      label={`${member.name} entfernen`}
-                      onClick={() => setRemoving(member)}
-                    />
-                  )
-                }
-              />
-            );
-          })}
+          {list.map((member) => (
+            <MemberRow
+              key={member.userId}
+              workspace={workspace}
+              member={member}
+              self={member.userId === userId}
+              adminCount={adminCount}
+              onRemove={() => setRemoving(member)}
+              onNotify={onNotify}
+            />
+          ))}
         </RowList>
       )}
 
@@ -162,11 +98,16 @@ export function MembersSection({
 
       <ConfirmDialog
         open={removing !== null}
-        onClose={() => setRemoving(null)}
+        onClose={() => {
+          setRemoving(null);
+          remove.reset();
+        }}
         title={removing ? `${removing.name} entfernen?` : ''}
-        description="Die Person verliert den Zugriff auf alle Präsentationen dieser Organisation. Ihre Präsentationen und Kommentare bleiben erhalten."
+        description="Die Person verliert den Zugriff auf alle Reviews dieser Organisation. Ihre Reviews und Kommentare bleiben erhalten."
         confirmLabel="Entfernen"
         pending={remove.isPending}
+        // In the dialog: a toast would sit behind its backdrop.
+        error={remove.error?.message}
         onConfirm={() =>
           removing &&
           remove.mutate(
@@ -176,11 +117,99 @@ export function MembersSection({
                 onNotify(`${removing.name} entfernt`);
                 setRemoving(null);
               },
-              onError: (error) => onNotify(error.message, 'danger'),
             },
           )
         }
       />
     </Section>
+  );
+}
+
+function MemberRow({
+  workspace,
+  member,
+  self,
+  adminCount,
+  onRemove,
+  onNotify,
+}: {
+  workspace: Workspace;
+  member: WorkspaceMember;
+  self: boolean;
+  adminCount: number;
+  onRemove: () => void;
+  onNotify: ShowToast;
+}) {
+  // One mutation per row: a shared one only calls back for its latest `mutate`, so a quick
+  // second role change would swallow the first one's error.
+  const updateRole = useUpdateMemberRole(workspace.id);
+  const lastAdmin = isLastAdmin(member.role, adminCount);
+  const roles = lastAdmin ? [] : assignableRoles(workspace.role);
+
+  const changeRole = (role: WorkspaceRole) =>
+    updateRole.mutate(
+      { userId: member.userId, role },
+      {
+        onSuccess: () => onNotify(`${member.name} ist jetzt ${ROLE_LABELS[role]}`),
+        onError: (error) => onNotify(error.message, 'danger'),
+      },
+    );
+
+  return (
+    <ListRow
+      variant="hover"
+      size="body"
+      leading={<Avatar author={{ ...member, type: 'owner' }} size={32} />}
+      title={
+        <>
+          {member.name}
+          {self && <span className="font-normal text-fg-subtle"> (du)</span>}
+        </>
+      }
+      badge={
+        member.isCreator && (
+          <span title={CREATOR_HINT} className="flex">
+            <Badge tone="info">{CREATOR_LABEL}</Badge>
+          </span>
+        )
+      }
+      subtitle={member.email}
+      trailing={
+        roles.length > 0 ? (
+          <Select<WorkspaceRole>
+            size="sm"
+            aria-label={`Rolle von ${member.name}`}
+            value={member.role}
+            disabled={updateRole.isPending}
+            onChange={(role) => role !== member.role && changeRole(role)}
+            options={WORKSPACE_ROLES.filter((role) => roles.includes(role)).map((role) => ({
+              value: role,
+              label: ROLE_LABELS[role],
+            }))}
+            // Phones: as wide as the longest role, so the name keeps the room.
+            className="shrink-0 sm:w-[120px]"
+          />
+        ) : (
+          <span
+            className="flex shrink-0 justify-end sm:w-[120px]"
+            title={lastAdmin ? 'Der einzige Admin – ernenne zuerst jemand anderen.' : undefined}
+          >
+            <Badge>{ROLE_LABELS[member.role]}</Badge>
+          </span>
+        )
+      }
+      actionSlot={
+        !self &&
+        canRemoveMember(workspace.role) && (
+          <IconButton
+            icon="close"
+            size="sm"
+            iconSize={18}
+            label={`${member.name} entfernen`}
+            onClick={onRemove}
+          />
+        )
+      }
+    />
   );
 }

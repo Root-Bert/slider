@@ -1,13 +1,16 @@
 import { EventEmitter } from 'node:events';
 import type { ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  ConversionAborted,
   createLibreOfficePdf,
   findSoffice,
+  resumeConversions,
   stopRunningConversions,
 } from '../src/import/libreoffice';
 import { silentLogger } from '../src/logger';
@@ -106,6 +109,40 @@ describe('createLibreOfficePdf (BER-94)', () => {
     expect(child.kill).toHaveBeenCalledWith('SIGKILL');
   });
 
+  it.skipIf(process.platform === 'win32')(
+    'kills the whole process group of a real conversion on timeout, not just the launcher',
+    async () => {
+      // Like Linux `soffice`: a launcher script whose real work runs in a child (`soffice.bin`).
+      const dir = await mkdtemp(path.join(tmpdir(), 'slider-soffice-test-'));
+      try {
+        const pidFile = path.join(dir, 'worker.pid');
+        const binary = path.join(dir, 'soffice');
+        await writeFile(binary, `#!/bin/sh\nsleep 60 &\necho $! > "${pidFile}"\nwait\n`, {
+          mode: 0o755,
+        });
+        // Generous enough that the launcher has started its worker even on a busy CI runner.
+        const convert = createLibreOfficePdf({ binary, log: silentLogger, timeoutMs: 3000 });
+        await expect(convert(new Uint8Array([1]))).rejects.toThrow('timed out after 3000 ms');
+
+        const worker = Number(await readFile(pidFile, 'utf8'));
+        expect(worker).toBeGreaterThan(0);
+        const alive = () => {
+          try {
+            process.kill(worker, 0);
+            return true;
+          } catch {
+            return false;
+          }
+        };
+        // Re-parented to PID 1 and reaped there once killed.
+        await vi.waitFor(() => expect(alive()).toBe(false), { timeout: 5000 });
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    15_000,
+  );
+
   it('kills running conversions and removes their temp folder on shutdown', async () => {
     const { spawn, calls } = fakeSoffice('hang');
     const convert = createLibreOfficePdf({ binary: 'soffice', log: silentLogger, spawn });
@@ -114,16 +151,24 @@ describe('createLibreOfficePdf (BER-94)', () => {
     const dir = path.dirname(calls[0]?.args.at(-1) ?? '');
     expect(existsSync(dir)).toBe(true);
 
-    stopRunningConversions();
-    // Synchronously: the process exits right after, before the conversion's own clean-up runs.
-    expect(existsSync(dir)).toBe(false);
-    const child = spawn.mock.results[0]?.value as ChildProcess;
-    expect(child.kill).toHaveBeenCalledWith('SIGKILL');
-    await expect(result).rejects.toThrow('exited with SIGKILL');
+    try {
+      stopRunningConversions();
+      // Synchronously: the process exits right after, before the conversion's own clean-up runs.
+      expect(existsSync(dir)).toBe(false);
+      const child = spawn.mock.results[0]?.value as ChildProcess;
+      expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+      // Not a failure of the deck: imports let it through instead of keeping the SVG preview.
+      await expect(result).rejects.toBeInstanceOf(ConversionAborted);
+      // Nothing new starts while the server goes down.
+      await expect(convert(new Uint8Array([1]))).rejects.toBeInstanceOf(ConversionAborted);
+      expect(calls).toHaveLength(1);
 
-    // Finished conversions are forgotten: nothing left to kill.
-    stopRunningConversions();
-    expect(child.kill).toHaveBeenCalledTimes(1);
+      // Finished conversions are forgotten: nothing left to kill.
+      stopRunningConversions();
+      expect(child.kill).toHaveBeenCalledTimes(1);
+    } finally {
+      resumeConversions();
+    }
   });
 });
 

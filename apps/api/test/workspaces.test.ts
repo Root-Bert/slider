@@ -596,6 +596,73 @@ describe('invitations', () => {
     expect((await ctx.request('/api/join/unknown-token-unknown-token')).status).toBe(404);
   });
 
+  it("removing or demoting an admin revokes their invites, so they can't rejoin", async () => {
+    const bob = await member('Bob', 'admin');
+    const carl = await member('Carl', 'admin');
+    const bobLink = await invite({ role: 'admin' }, bob.cookie);
+    const bobMail = await invite({ email: 'bob.privat@extern.de', role: 'admin' }, bob.cookie);
+    const carlLink = await invite({ role: 'member' }, carl.cookie);
+    const mine = await invite({ role: 'member' });
+
+    expect(
+      (
+        await ctx.request(`/api/workspaces/${ctx.workspaceId}/members/${bob.user.id}`, {
+          method: 'DELETE',
+        })
+      ).status,
+    ).toBe(204);
+    expect(
+      (
+        await ctx.request(`/api/workspaces/${ctx.workspaceId}/members/${carl.user.id}`, {
+          method: 'PATCH',
+          json: { role: 'member' },
+        })
+      ).status,
+    ).toBe(200);
+
+    const join = (token: string, cookie: string) =>
+      ctx.request(`/api/join/${token}`, { method: 'POST', cookie });
+    const back = await join(bobLink.token, bob.cookie);
+    expect(back.status).toBe(410);
+    expect(await json(back)).toMatchObject({ error: { code: 'link_revoked' } });
+    const privat = await signedInUser(ctx, { name: 'Bob privat', email: 'bob.privat@extern.de' });
+    expect((await join(bobMail.token, privat.cookie)).status).toBe(410);
+    expect((await join(carlLink.token, privat.cookie)).status).toBe(410);
+    // Invites of the remaining admin keep working.
+    expect((await join(mine.token, privat.cookie)).status).toBe(200);
+
+    const listed = (await json(
+      await ctx.request(`/api/workspaces/${ctx.workspaceId}/invites`),
+    )) as unknown as { id: string }[];
+    expect(listed.map((row) => row.id)).toEqual([mine.invite.id]);
+  });
+
+  it('an invite whose creator is no admin any more is refused, even if never revoked', async () => {
+    const bob = await member('Bob', 'admin');
+    const link = await invite({ role: 'admin' }, bob.cookie);
+    // As if he had been demoted before invites were revoked on demotion.
+    await ctx.deps.db
+      .update(workspaceMembers)
+      .set({ role: 'reviewer' })
+      .where(eq(workspaceMembers.userId, bob.user.id));
+    expect(await json(await ctx.request(`/api/join/${link.token}`))).toMatchObject({
+      state: 'revoked',
+    });
+    const anna = await signedInUser(ctx, { name: 'Anna', email: 'anna@extern.de' });
+    const res = await ctx.request(`/api/join/${link.token}`, {
+      method: 'POST',
+      cookie: anna.cookie,
+    });
+    expect(res.status).toBe(410);
+    expect(await json(res)).toMatchObject({ error: { code: 'link_revoked' } });
+    // Bob himself stays a reviewer: his old link grants nothing.
+    const own = await ctx.request(`/api/join/${link.token}`, {
+      method: 'POST',
+      cookie: bob.cookie,
+    });
+    expect(await json(own)).toMatchObject({ workspace: { role: 'reviewer' } });
+  });
+
   it('pending e-mail invites show up in /me and can be accepted there', async () => {
     const created = await invite({ email: 'lena@firma.de', role: 'member' });
     const lena = await signedInUser(ctx, { name: 'Lena', email: 'lena@firma.de' });

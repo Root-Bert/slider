@@ -116,6 +116,10 @@ describe('InviteForm', () => {
     const link = screen.getByRole('textbox', { name: 'Einladungslink' }) as HTMLInputElement;
     expect(link.value).toBe('https://slider.example/join/abcdefghijklmnop');
     expect(link.readOnly).toBe(true);
+    // Named even on phones, where its visible label is hidden.
+    expect(screen.getByRole('button', { name: 'Link kopieren' }).getAttribute('aria-label')).toBe(
+      'Link kopieren',
+    );
 
     await userEvent.click(screen.getByRole('button', { name: 'Schließen' }));
     expect(screen.queryByRole('textbox', { name: 'Einladungslink' })).toBeNull();

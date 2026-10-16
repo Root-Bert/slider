@@ -1,6 +1,7 @@
 import type { Comment, MediaKind as RecordingKind } from '@slider/shared';
 import { useState } from 'react';
 import { IconButton, SegmentedControl } from '@/ui';
+import { useKeepThreadListed } from './hooks/useKeepThreadListed';
 import { MEDIA_KINDS, MEDIA_SOON, type MediaKindId } from './lib/media-kinds';
 import { RecordReplyDialog } from '../media/RecordReplyDialog';
 import { SketchReplyDialog } from '../media/SketchReplyDialog';
@@ -55,6 +56,8 @@ export function MediaReplyButtons({
   size?: 'sm' | 'md';
 }) {
   const [open, setOpen] = useState<Exclude<MediaKindId, 'text'> | null>(null);
+  // Resolved by someone else mid-recording: the card (and this dialog) must stay.
+  useKeepThreadListed(root.id, open !== null);
   return (
     <>
       {MEDIA_KINDS.filter((kind) => kind.id !== 'text').map((kind) => {

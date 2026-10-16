@@ -33,6 +33,8 @@ export interface ThreadFilter {
   status: StatusFilter;
   /** Avatar filter (BER-105): only these thread ids; `null`/absent = no such filter. */
   threadIds?: ReadonlySet<string> | null;
+  /** Listed whatever their status: threads being replied to (see `composingThreads`). */
+  keep?: ReadonlySet<string> | null;
 }
 
 export interface StatusCounts {
@@ -81,7 +83,9 @@ export function buildThreads(comments: readonly Comment[]): Thread[] {
 
 export function matchesFilter(thread: Thread, filter: ThreadFilter): boolean {
   if (filter.threadIds && !filter.threadIds.has(thread.id)) return false;
-  return filter.status === 'all' || thread.root.status === filter.status;
+  return (
+    filter.status === 'all' || thread.root.status === filter.status || !!filter.keep?.has(thread.id)
+  );
 }
 
 export const filterThreads = (threads: readonly Thread[], filter: ThreadFilter): Thread[] =>

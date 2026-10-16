@@ -140,6 +140,24 @@ describe('Menu', () => {
   });
 });
 
+describe('Menu positioning', () => {
+  const wrapperOf = (container: HTMLElement) => container.firstElementChild as HTMLElement;
+
+  it('anchors its panel to a relative wrapper by default', () => {
+    const { container } = render(<Menu label="Aktionen" actions={makeActions().actions} />);
+    expect(wrapperOf(container).classList.contains('relative')).toBe(true);
+  });
+
+  it('keeps a position the caller sets – `relative` would override `absolute` in the CSS', () => {
+    const { container } = render(
+      <Menu label="Aktionen" actions={makeActions().actions} className="absolute top-2 right-2" />,
+    );
+    const wrapper = wrapperOf(container);
+    expect(wrapper.classList.contains('absolute')).toBe(true);
+    expect(wrapper.classList.contains('relative')).toBe(false);
+  });
+});
+
 describe('ContextMenu', () => {
   it('renders the menu into the body at the pointer and closes on Escape', async () => {
     const { actions } = makeActions();

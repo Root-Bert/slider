@@ -12,10 +12,16 @@ import { NotAuthorized, SetupForm } from './SetupForm';
 const apiRequest = vi.hoisted(() => vi.fn());
 let fail: Error | null = null;
 let restart: 'manual' | 'automatic' = 'manual';
+const me = vi.hoisted(() => ({ user: null as { name: string; email: string } | null }));
+const logout = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 vi.mock('@/lib/api-client', () => ({
   apiRequest: (...args: unknown[]) => {
     apiRequest(...args);
     return fail ? Promise.reject(fail) : Promise.resolve({ restart });
+  },
+  api: {
+    get: () => Promise.resolve({ user: me.user, viewer: {} }),
+    post: () => logout(),
   },
 }));
 
@@ -69,6 +75,22 @@ describe('NotAuthorized', () => {
     const link = screen.getByRole('link', { name: 'Als Admin anmelden' });
     expect(link.getAttribute('href')).toContain('/login');
     expect(link.getAttribute('href')).toContain('einrichtung');
+  });
+
+  it('signed in with another account: says which, and signs out before the login', async () => {
+    me.user = { name: 'Anna', email: 'anna@firma.de' };
+    const assign = vi.fn();
+    vi.stubGlobal('location', { ...window.location, assign });
+    render(wrap(<NotAuthorized status={status({}, { hasAccount: true })} />));
+    const button = await screen.findByRole('button', { name: 'Mit anderem Konto anmelden' });
+    expect(screen.getByText(/Du bist als Anna \(anna@firma\.de\) angemeldet/)).toBeTruthy();
+    // The login would send this account straight back here.
+    expect(screen.queryByRole('link', { name: 'Als Admin anmelden' })).toBeNull();
+    await userEvent.click(button);
+    expect(logout).toHaveBeenCalledOnce();
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('/login?returnTo=%2Feinrichtung'));
+    vi.unstubAllGlobals();
+    me.user = null;
   });
 
   it('before it: points to the setup link in the server log', () => {

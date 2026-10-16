@@ -32,11 +32,13 @@ const EMPTY: Thread[] = [];
 /**
  * Applies the comment filter bar (status) and the avatar filter (your avatar:
  * threads that @mention you; someone else's: threads they wrote in) to the deck's threads.
+ * A thread being replied to stays listed, whatever its status now (`useKeepThreadListed`).
  */
 export function useCommentThreads(): VisibleThreads {
   const { threads, threadsBySlide, gapThreads, slideIndex, mentionedThreadIds, viewer } =
     useViewerData();
-  const { statusFilter, personFilter } = useViewerState();
+  const { statusFilter, personFilter, composingThreads } = useViewerState();
+  const keep = useMemo(() => new Set(composingThreads.keys()), [composingThreads]);
 
   const threadIds = useMemo(() => {
     if (personFilter === null) return null;
@@ -49,8 +51,8 @@ export function useCommentThreads(): VisibleThreads {
   }, [personFilter, viewer.author.id, mentionedThreadIds, threads]);
 
   const filter = useMemo<ThreadFilter>(
-    () => ({ status: statusFilter, threadIds }),
-    [statusFilter, threadIds],
+    () => ({ status: statusFilter, threadIds, keep }),
+    [statusFilter, threadIds, keep],
   );
 
   const marksBySlide = useMemo(

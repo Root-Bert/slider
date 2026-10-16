@@ -14,7 +14,13 @@ import type { z } from 'zod';
 import { deckAccess, requireDeckAccess } from '../auth/access';
 import { displayAuthor } from '../authors';
 import type { Executor } from '../db/client';
-import { comments, deletedPptxComments, media as mediaRows, type CommentRow, type DeckRow } from '../db/schema';
+import {
+  comments,
+  deletedPptxComments,
+  media as mediaRows,
+  type CommentRow,
+  type DeckRow,
+} from '../db/schema';
 import type { AppDeps } from '../deps';
 import { badRequest, forbidden, notFound } from '../http/errors';
 import { touchDeck } from './decks';
@@ -53,19 +59,42 @@ export function toCommentDto(
   };
 }
 
-/** Roots and replies of a deck, oldest first; the client builds the threads. */
+/** Comment lists being loaded, per database and `deck:generation`. */
+const loadingComments = new WeakMap<Executor, Map<string, Promise<Comment[]>>>();
+
+/**
+ * Roots and replies of a deck, oldest first; the client builds the threads. Every change makes
+ * every open viewer refetch the whole list at once (live `comments` event): those requests share
+ * one query – the list is the same for everyone who may see the deck. Only requests after the
+ * same change share one (`LiveHub.commentsGeneration`), so nobody gets a list from before it.
+ */
 export async function listComments(
   deps: AppDeps,
   viewer: Viewer,
   deckId: string,
 ): Promise<Comment[]> {
   await requireDeckAccess(deps.db, viewer, deckId, 'view');
-  const rows = await deps.db
+  if (!deps.live) return loadComments(deps.db, deckId);
+  let loading = loadingComments.get(deps.db);
+  if (!loading) {
+    loading = new Map();
+    loadingComments.set(deps.db, loading);
+  }
+  const key = `${deckId}:${deps.live.commentsGeneration(deckId)}`;
+  const running = loading.get(key);
+  if (running) return running;
+  const load = loadComments(deps.db, deckId).finally(() => loading.delete(key));
+  loading.set(key, load);
+  return load;
+}
+
+async function loadComments(db: Executor, deckId: string): Promise<Comment[]> {
+  const rows = await db
     .select()
     .from(comments)
     .where(eq(comments.deckId, deckId))
     .orderBy(asc(comments.createdAt), asc(comments.id));
-  return withMedia(deps.db, rows);
+  return withMedia(db, rows);
 }
 
 /** DTOs with their recordings attached. */

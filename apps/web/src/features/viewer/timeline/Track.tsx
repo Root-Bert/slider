@@ -25,11 +25,10 @@ interface TrackProps {
  * deck doesn't re-render it.
  */
 export function Track({ layout, range, snap }: TrackProps) {
-  const { slides, gapThreads, canComment } = useViewerData();
+  const { slides, gapThreads, canComment, viewer } = useViewerData();
   const {
     activeSlideId,
     tool,
-    color,
     draft,
     focusedThreadId,
     hoveredThreadId,
@@ -78,7 +77,8 @@ export function Track({ layout, range, snap }: TrackProps) {
           draft={draft?.slideId === slide.id ? draft : null}
           tool={canComment ? tool : null}
           canSelect={canComment && tool === null}
-          color={color}
+          // Live, not captured once: picking a new colour mid-session changes pen and frames too.
+          color={viewer.author.color}
           badge={showChanges ? (badges.get(slide.id) ?? null) : null}
           badgeVersion={revisionNumber}
           boxMode={boxes}

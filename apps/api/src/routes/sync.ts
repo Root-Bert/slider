@@ -5,6 +5,7 @@ import { deckAccess, requireDeckAccess } from '../auth/access';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import type { AppDeps } from '../deps';
 import { badRequest, fileTooLarge, notAPowerPoint } from '../http/errors';
+import { importLimit } from '../http/import-limit';
 import { hasPdfRenderer } from '../import/office-pages';
 import { isSyncEnabled } from '../services/deck-sync';
 import {
@@ -20,6 +21,7 @@ const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
 /** Versions and automatic updates of a deck (BER-107, BER-108, BER-109 API). */
 export function syncRoutes(deps: AppDeps) {
   const viewer = viewerMiddleware(deps);
+  const imports = importLimit(deps);
   const maxBytes = deps.config.maxUploadBytes;
 
   return (
@@ -46,7 +48,7 @@ export function syncRoutes(deps: AppDeps) {
        * meanwhile (e.g. pictures compressed so Office accepts it) is imported as a new version
        * instead – Office cannot render the old revision from the new file.
        */
-      .post('/decks/:deckId/rerender', viewer, async (c) => {
+      .post('/decks/:deckId/rerender', viewer, imports, async (c) => {
         const deck = await requireDeckAccess(deps.db, c.var.viewer, c.req.param('deckId'), 'own');
         if (deck.importState.status !== 'ready' || !deck.currentRevisionId) {
           throw badRequest('Die Präsentation wird gerade noch importiert.');
@@ -89,6 +91,7 @@ export function syncRoutes(deps: AppDeps) {
       .post(
         '/decks/:deckId/revisions',
         viewer,
+        imports,
         bodyLimit({
           maxSize: maxBytes + MULTIPART_OVERHEAD_BYTES,
           onError: (c) => c.json(fileTooLarge(maxBytes).toBody(), 413),

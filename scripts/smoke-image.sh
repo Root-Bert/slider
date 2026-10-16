@@ -6,12 +6,19 @@
 #
 # Starts the image the way docs/self-hosting.md does (production, nothing but SLIDER_URL) and
 # checks what only shows up at runtime: the API answers /api/health, the built web app is served,
-# the first start prints the setup link, tini is PID 1, @napi-rs/canvas and LibreOffice load, and
-# `docker stop` shuts down cleanly (exit code 0).
+# the first start prints the setup link, tini is PID 1, @napi-rs/canvas and LibreOffice load, the
+# sample deck goes through the default slide renderer (LibreOffice → PDF → WebP, on Bun, as user
+# `bun`; scripts/smoke-convert.ts), and `docker stop` shuts down cleanly (exit code 0).
+#
+# SMOKE_PLATFORM=linux/arm64 runs an image of another platform (CI: under QEMU); SMOKE_WAIT
+# raises the 90 s start budget for that.
 set -euo pipefail
 
 image=${1:?usage: scripts/smoke-image.sh <image> [host port]}
 port=${2:-18787}
+wait_seconds=${SMOKE_WAIT:-90}
+platform=${SMOKE_PLATFORM:+--platform=${SMOKE_PLATFORM}}
+root=$(cd "$(dirname "$0")/.." && pwd)
 name="slider-smoke-$$"
 base="http://127.0.0.1:${port}"
 
@@ -22,13 +29,14 @@ fail() {
 }
 trap 'docker rm -f "$name" >/dev/null 2>&1 || true' EXIT
 
-docker run -d --name "$name" -p "127.0.0.1:${port}:8787" \
+# shellcheck disable=SC2086 # empty without SMOKE_PLATFORM
+docker run -d $platform --name "$name" -p "127.0.0.1:${port}:8787" \
   -e NODE_ENV=production -e SLIDER_URL="http://localhost:${port}" \
   "$image" >/dev/null
 
 echo "Waiting for ${base}/api/health …"
 healthy=false
-for _ in $(seq 1 90); do
+for _ in $(seq 1 "$wait_seconds"); do
   if [ "$(docker inspect -f '{{.State.Running}}' "$name")" != true ]; then
     fail "the container exited during start"
   fi
@@ -38,7 +46,7 @@ for _ in $(seq 1 90); do
   fi
   sleep 1
 done
-[ "$healthy" = true ] || fail "/api/health did not answer {\"ok\":true} within 90 s"
+[ "$healthy" = true ] || fail "/api/health did not answer {\"ok\":true} within ${wait_seconds} s"
 echo "ok   /api/health"
 
 curl -fsS "${base}/" | grep -q '<div id="root">' || fail "/ does not serve the web app's index.html"
@@ -58,6 +66,13 @@ echo "ok   @napi-rs/canvas"
 
 docker exec "$name" soffice --version >/dev/null || fail "LibreOffice (soffice) does not run"
 echo "ok   LibreOffice"
+
+# The sample deck is not part of the image (.dockerignore), so it is copied in with the script.
+docker cp "${root}/packages/pptx/samples/slider-demo.pptx" "${name}:/tmp/smoke-deck.pptx"
+docker cp "${root}/scripts/smoke-convert.ts" "${name}:/tmp/smoke-convert.ts"
+converted=$(docker exec -w /app/apps/api "$name" bun /tmp/smoke-convert.ts /tmp/smoke-deck.pptx) ||
+  fail "the sample deck did not convert to slide images (LibreOffice → PDF → WebP)"
+echo "ok   slide images: ${converted}"
 
 docker stop -t 20 "$name" >/dev/null
 code=$(docker inspect -f '{{.State.ExitCode}}' "$name")

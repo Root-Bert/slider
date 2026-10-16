@@ -259,9 +259,18 @@ export async function previewInvite(deps: AppDeps, token: string): Promise<JoinP
     inviterName: row.inviterName ?? null,
     role: invite.role,
     email: invite.email ? maskEmail(invite.email) : null,
-    state: inviteState(invite, deps.clock.now()),
+    state: await effectiveState(deps.db, invite, deps.clock.now()),
     deck: await deckRef(deps.db, invite.deckId),
   };
+}
+
+async function effectiveState(
+  db: Executor,
+  invite: WorkspaceInviteRow,
+  now: Date,
+): Promise<InviteState> {
+  const state = inviteState(invite, now);
+  return state === 'valid' && !(await creatorIsAdmin(db, invite)) ? 'revoked' : state;
 }
 
 /** The shared deck of an invite, if it still exists. */
@@ -274,11 +283,21 @@ async function deckRef(db: Executor, deckId: string | null): Promise<DeckRef> {
   return deck ?? null;
 }
 
+/**
+ * An invite speaks for its creator: once they are no admin of the workspace any more (removed,
+ * left, demoted, account deleted), it counts as revoked – `removeMember` and `updateMemberRole`
+ * also revoke the rows themselves.
+ */
+async function creatorIsAdmin(db: Executor, invite: WorkspaceInviteRow): Promise<boolean> {
+  if (!invite.createdBy) return false;
+  return (await getRole(db, invite.workspaceId, invite.createdBy)) === 'admin';
+}
+
+const linkRevoked = () => new ApiError(410, 'link_revoked', 'Diese Einladung wurde zurückgezogen.');
+
 function requireValidInvite(invite: WorkspaceInviteRow, now: Date): void {
   const state = inviteState(invite, now);
-  if (state === 'revoked') {
-    throw new ApiError(410, 'link_revoked', 'Diese Einladung wurde zurückgezogen.');
-  }
+  if (state === 'revoked') throw linkRevoked();
   if (state === 'expired') {
     throw new ApiError(410, 'link_expired', 'Diese Einladung ist abgelaufen.');
   }
@@ -314,6 +333,11 @@ async function acceptInvite(
     // retried request) must not both insert it.
     await lockWorkspaceRow(tx, invite.workspaceId);
     const member = await getRole(tx, invite.workspaceId, user.id);
+    if (!(await creatorIsAdmin(tx, invite))) {
+      // Members just land in the workspace; nobody joins or gains a role through it.
+      if (member) return;
+      throw linkRevoked();
+    }
     if (!member) {
       // Someone with a pending e-mail invite brings their reserved seat, even through a link.
       const reserved =
@@ -382,6 +406,9 @@ export async function acceptInviteById(
   return join(deps, user, invite);
 }
 
+/** SQL twin of `creatorIsAdmin`. */
+const createdByAdmin = sql`exists (select 1 from ${workspaceMembers} where ${workspaceMembers.workspaceId} = ${workspaceInvites.workspaceId} and ${workspaceMembers.userId} = ${workspaceInvites.createdBy} and ${workspaceMembers.role} = 'admin')`;
+
 /** Valid e-mail invites for this address, in workspaces the user is not in yet. */
 export async function pendingInvitesFor(
   db: Executor,
@@ -405,6 +432,7 @@ export async function pendingInvitesFor(
         isNull(workspaceInvites.revokedAt),
         isNull(workspaceInvites.acceptedAt),
         gt(workspaceInvites.expiresAt, now),
+        createdByAdmin,
         sql`not exists (select 1 from ${workspaceMembers} where ${workspaceMembers.workspaceId} = ${workspaceInvites.workspaceId} and ${workspaceMembers.userId} = ${user.id})`,
       ),
     )
@@ -435,6 +463,7 @@ export async function hasPendingEmailInvite(
         isNull(workspaceInvites.revokedAt),
         isNull(workspaceInvites.acceptedAt),
         gt(workspaceInvites.expiresAt, now),
+        createdByAdmin,
       ),
     )
     .limit(1);

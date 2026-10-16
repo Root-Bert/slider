@@ -1,9 +1,10 @@
-import { and, asc, eq, inArray, isNull, or } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { Database } from '../db/client';
-import { decks, revisions, slideVersions, type DeckRow, type SlideRenderer } from '../db/schema';
+import { decks, revisions, slideVersions, type SlideRenderer } from '../db/schema';
 import type { Logger } from '../logger';
 import { blobKeys } from '../storage/blob-storage';
 import type { ImportDeps } from './import-deck';
+import { ConversionAborted } from './libreoffice';
 import { hasPdfRenderer, renderSlidePages, type SlidePagesDeps } from './office-pages';
 
 /** The PDF renderers a server has – see {@link SlidePagesDeps}. */
@@ -178,6 +179,11 @@ export async function rerenderJob(deps: ImportDeps, job: ImportJob): Promise<voi
       deps.log.info(`Deck ${job.deckId}: slide images not re-rendered (${outcome.reason})`);
     }
   } catch (error) {
+    if (error instanceof ConversionAborted) {
+      // Shutdown: still untried, so the next start's backfill renders it again.
+      deps.log.info(`Re-rendering deck ${job.deckId} stopped by shutdown`);
+      return;
+    }
     deps.log.error(`Re-rendering the slides of deck ${job.deckId} failed`, error);
     // Once per revision: a revision that fails is not retried at every start (the ⋯ menu can).
     await markTried(deps.db, job.revisionId).catch(() => {});
@@ -194,28 +200,32 @@ export async function findRerenderCandidates(
   db: Database,
   renderers: SlideRenderers,
 ): Promise<ImportJob[]> {
+  // Nothing better to offer: no need to look at a single slide.
+  if (!renderers.officePdf && !renderers.libreOfficePdf) return [];
+  // One row per deck, aggregated in SQL – not every slide of every deck with its deck row.
+  const untried = sql<boolean>`bool_or(${slideVersions.renderer} is null)`;
+  const better = sql<boolean>`coalesce(bool_or(${slideVersions.renderer} in ('office', 'libreoffice')), false)`;
   const rows = await db
-    .select({ deck: decks, renderer: slideVersions.renderer })
+    .select({
+      deckId: decks.id,
+      revisionId: revisions.id,
+      importState: decks.importState,
+      source: decks.source,
+      sourceRef: decks.sourceRef,
+    })
     .from(decks)
     .innerJoin(revisions, eq(revisions.id, decks.currentRevisionId))
     .innerJoin(slideVersions, eq(slideVersions.revisionId, revisions.id))
-    .where(eq(revisions.status, 'ready'));
-  const byDeck = new Map<string, { deck: DeckRow; renderers: (SlideRenderer | null)[] }>();
-  for (const row of rows) {
-    const entry = byDeck.get(row.deck.id) ?? { deck: row.deck, renderers: [] };
-    entry.renderers.push(row.renderer);
-    byDeck.set(row.deck.id, entry);
-  }
-  const jobs: ImportJob[] = [];
-  for (const { deck, renderers: used } of byDeck.values()) {
-    if (deck.importState.status !== 'ready' || !deck.currentRevisionId) continue;
-    const untried = used.some((renderer) => renderer === null);
-    const better = used.some((renderer) => renderer === 'office' || renderer === 'libreoffice');
-    if (!untried || better) continue;
-    if (!hasPdfRenderer(renderers, deck)) continue;
-    jobs.push({ deckId: deck.id, revisionId: deck.currentRevisionId, kind: 'rerender' });
-  }
-  return jobs;
+    .where(eq(revisions.status, 'ready'))
+    .groupBy(decks.id, revisions.id)
+    .having(and(untried, sql`not ${better}`));
+  return rows
+    .filter(
+      (row) =>
+        row.importState.status === 'ready' &&
+        hasPdfRenderer(renderers, { source: row.source, sourceRef: row.sourceRef }),
+    )
+    .map((row) => ({ deckId: row.deckId, revisionId: row.revisionId, kind: 'rerender' as const }));
 }
 
 /**

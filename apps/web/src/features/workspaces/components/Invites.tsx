@@ -145,7 +145,6 @@ export function InviteForm({ workspace, onNotify }: { workspace: Workspace; onNo
 /** Open and past invitations; admins revoke open ones. */
 export function InviteList({ workspace, onNotify }: { workspace: Workspace; onNotify: ShowToast }) {
   const invites = useWorkspaceInvites(workspace.id);
-  const revoke = useRevokeWorkspaceInvite(workspace.id);
 
   if (invites.isSuccess && invites.data.length === 0) return null;
   return (
@@ -160,14 +159,9 @@ export function InviteList({ workspace, onNotify }: { workspace: Workspace; onNo
           {sortInvites(invites.data).map((invite) => (
             <InviteRow
               key={invite.id}
+              workspaceId={workspace.id}
               invite={invite}
-              revoking={revoke.isPending && revoke.variables === invite.id}
-              onRevoke={() =>
-                revoke.mutate(invite.id, {
-                  onSuccess: () => onNotify('Einladung zurückgezogen'),
-                  onError: (error) => onNotify(error.message, 'danger'),
-                })
-              }
+              onNotify={onNotify}
             />
           ))}
         </RowList>
@@ -212,7 +206,13 @@ function CreatedInvite({
               onFocus={(event) => event.currentTarget.select()}
               className="min-w-0 flex-1"
             />
-            <Button size="field" icon="contentCopy" onClick={() => void copy(created.url)}>
+            <Button
+              size="field"
+              icon="contentCopy"
+              // The label is hidden on phones; the button keeps its name.
+              aria-label={COPY_LABELS[state]}
+              onClick={() => void copy(created.url)}
+            >
               <span className="max-sm:hidden">{COPY_LABELS[state]}</span>
             </Button>
           </div>
@@ -235,14 +235,23 @@ function CreatedInvite({
 }
 
 function InviteRow({
+  workspaceId,
   invite,
-  revoking,
-  onRevoke,
+  onNotify,
 }: {
+  workspaceId: string;
   invite: WorkspaceInvite;
-  revoking: boolean;
-  onRevoke: () => void;
+  onNotify: ShowToast;
 }) {
+  // One mutation per row: a shared one only calls back for its latest `mutate` and tracks only
+  // its latest variables, so a second revoke would hide the first one's spinner and error.
+  const revoke = useRevokeWorkspaceInvite(workspaceId);
+  const revoking = revoke.isPending;
+  const onRevoke = () =>
+    revoke.mutate(invite.id, {
+      onSuccess: () => onNotify('Einladung zurückgezogen'),
+      onError: (error) => onNotify(error.message, 'danger'),
+    });
   const open = invite.state === 'valid';
   const detail = [
     invite.createdBy ? `von ${invite.createdBy.name}` : null,

@@ -85,6 +85,13 @@ export async function upsertPptxComments(
     .where(and(eq(comments.deckId, deckId), eq(comments.source, 'pptx')));
   const byExternalId = new Map(existing.map((row) => [row.externalId, row]));
   const idByExternalId = new Map(existing.map((row) => [row.externalId ?? '', row.id]));
+  // Legacy rows the file no longer has under their old id: PowerPoint for Microsoft 365 may have
+  // turned them into modern comments (new ids) – see `takeOverLegacy`.
+  const desiredIds = new Set(desired.map((item) => item.externalId));
+  const legacyLeft = existing.filter(
+    (row) =>
+      row.externalId !== null && isLegacyId(row.externalId) && !desiredIds.has(row.externalId),
+  );
   const counts: PptxCommentCounts = {
     inserted: 0,
     updated: 0,
@@ -98,7 +105,14 @@ export async function upsertPptxComments(
     const parentId =
       item.parentExternalId === null ? null : (idByExternalId.get(item.parentExternalId) ?? null);
     if (item.parentExternalId !== null && parentId === null) continue;
-    const row = byExternalId.get(item.externalId);
+    let row = byExternalId.get(item.externalId);
+    if (!row && !isLegacyId(item.externalId)) {
+      row = await takeOverLegacy(db, legacyLeft, item, parentId);
+      if (row) {
+        byExternalId.set(item.externalId, row);
+        idByExternalId.set(item.externalId, row.id);
+      }
+    }
     if (!row) {
       const id = await insert(db, deckId, item, parentId, now);
       idByExternalId.set(item.externalId, id);
@@ -127,6 +141,44 @@ export async function upsertPptxComments(
     .returning({ id: comments.id });
   counts.removed = removed.length;
   return counts;
+}
+
+/** Legacy comments are keyed `authorId:idx` (replies `<root>/<reply>`), modern ones by `{GUID}`. */
+const isLegacyId = (externalId: string) =>
+  externalId.split('/').every((part) => /^[^{}:]*:[^{}:]*$/.test(part));
+
+/** How far apart the two creation times of one converted comment may be (time zones). */
+const CONVERSION_TIME_SLACK_MS = 26 * 60 * 60 * 1000;
+
+/**
+ * A modern comment that is a converted legacy one takes over the legacy row – with its Slider
+ * replies, status and author link – instead of arriving as a duplicate while the original is
+ * flagged removed. Same slide, same thread position (root, or reply of the same root), same text
+ * and about the same creation time (legacy times carry no time zone); the closest one wins. The
+ * row gets the new id here; the caller's update applies the rest.
+ */
+async function takeOverLegacy(
+  db: Executor,
+  candidates: CommentRow[],
+  item: Desired,
+  parentId: string | null,
+): Promise<CommentRow | undefined> {
+  if (!item.body.trim()) return undefined;
+  let best: { row: CommentRow; distance: number } | undefined;
+  for (const row of candidates) {
+    if (row.slideId !== item.slideId || row.parentId !== parentId) continue;
+    if (row.body.trim() !== item.body.trim()) continue;
+    const distance = Math.abs(row.createdAt.getTime() - item.createdAt.getTime());
+    if (distance > CONVERSION_TIME_SLACK_MS) continue;
+    if (!best || distance < best.distance) best = { row, distance };
+  }
+  if (!best) return undefined;
+  candidates.splice(candidates.indexOf(best.row), 1);
+  await db
+    .update(comments)
+    .set({ externalId: item.externalId })
+    .where(eq(comments.id, best.row.id));
+  return { ...best.row, externalId: item.externalId };
 }
 
 function toDesired(

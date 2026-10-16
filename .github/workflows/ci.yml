@@ -43,7 +43,7 @@ jobs:
   e2e:
     name: End-to-end (Playwright)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
@@ -70,6 +70,9 @@ jobs:
         if: steps.browsers.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
       - run: bun run e2e
+      # Once more against the production build, served by the API itself (WEB_DIST_DIR) like in
+      # the container: built chunks, lazy routes, SPA fallback, document headers.
+      - run: bun run e2e:bundle
       - name: Upload report and traces
         if: failure()
         uses: actions/upload-artifact@v4
@@ -111,25 +114,40 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bunx vitest run --project api
 
-  # Builds the Dockerfile (amd64) and starts it like a self-hoster would, on every PR as well.
+  # Builds the Dockerfile for both published platforms and starts each like a self-hoster would,
+  # on every PR as well. arm64 (e.g. Hetzner CAX) is built and run under QEMU, hence the longer
+  # budgets. The builds go to their own cache scope, which the publish job then builds from.
   image-smoke:
-    name: Container image (build + smoke test)
+    name: Container image ${{ matrix.arch }} (build + smoke test)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    env:
+      SMOKE_PLATFORM: linux/${{ matrix.arch }}
+      SMOKE_WAIT: ${{ matrix.arch == 'arm64' && 600 || 90 }}
     steps:
       - uses: actions/checkout@v5
+      - if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64
+          platforms: linux/${{ matrix.arch }}
           push: false
           load: true
           tags: slider:smoke
-          cache-from: type=gha
+          cache-from: |
+            type=gha,scope=smoke-${{ matrix.arch }}
+            type=gha
+          cache-to: type=gha,mode=max,scope=smoke-${{ matrix.arch }}
       - run: scripts/smoke-image.sh slider:smoke
 
-  # Publishes amd64 + arm64 – only for main and v* tags, and only when everything above passed.
+  # Publishes amd64 + arm64 – only for main and v* tags, and only when everything above passed
+  # (image-smoke: both platforms).
   image:
     name: Publish image
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -165,7 +183,11 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
+          # The layers image-smoke built and tested, so the pushed image is the one that ran.
+          cache-from: |
+            type=gha,scope=smoke-amd64
+            type=gha,scope=smoke-arm64
+            type=gha
           cache-to: type=gha,mode=max
 
   secrets:

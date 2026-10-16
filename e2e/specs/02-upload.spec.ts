@@ -2,7 +2,8 @@ import { expect, SAMPLE_DECK, SAMPLE_SLIDES, shot, test } from '../support';
 
 test('uploading a PPTX imports it and opens the viewer', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Neue Review' }).click();
+  // The toolbar button; the empty review list offers a second one.
+  await page.getByRole('button', { name: 'Neue Review' }).first().click();
   await expect(page).toHaveURL(/\/neu/);
   await expect(page.getByRole('heading', { level: 1, name: 'Neue Review' })).toBeVisible();
 

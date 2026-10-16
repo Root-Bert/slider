@@ -18,14 +18,17 @@ export function filesRoutes(deps: AppDeps) {
     if (!isValidKey(key)) throw notFound();
     const validFor = verifyFileUrl(key, c.req.query('exp'), c.req.query('sig'));
     if (validFor === null) throw forbidden('Dieser Link ist abgelaufen oder ungültig.');
-    const data = await deps.storage.get(key);
-    if (!data) throw notFound();
+    // Streamed: a big slide or original is never held in memory whole, once per viewer.
+    const size = await deps.storage.size(key);
+    const data = size === null ? null : await deps.storage.stream(key);
+    if (size === null || !data) throw notFound();
 
     const contentType = contentTypeForKey(key);
     c.header('Content-Type', contentType);
     // Keys are content-unique, but the link expires: cache no longer than it is valid.
     c.header('Cache-Control', `private, max-age=${validFor}, immutable`);
     if (contentType === 'image/svg+xml') c.header('Content-Security-Policy', SVG_CSP);
+    c.header('Content-Length', String(size));
     return c.body(data);
   });
 }

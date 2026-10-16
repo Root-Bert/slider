@@ -210,6 +210,30 @@ describe('setup page after the first account', () => {
     expect((await status({}, admin.cookie)).body.authorized).toBe(true);
   });
 
+  it('refuses to remove the last login unless the admin can still sign in with a passkey', async () => {
+    const admin = await signedInUser(ctx, { name: 'Robert', email: 'robert@firma.de' });
+    await claim(admin.user.id);
+    expect((await save(GOOGLE, {}, admin.cookie)).status).toBe(200);
+
+    const removeAll = { GOOGLE_CLIENT_ID: null, GOOGLE_CLIENT_SECRET: null };
+    const refused = await save(removeAll, {}, admin.cookie);
+    expect(refused.status).toBe(400);
+    expect(JSON.stringify(await refused.json())).toMatch(/Passkey/);
+    expect(await readStoredSettings(ctx.deps.db, ctx.deps.config.secret)).toEqual(GOOGLE);
+    // Other changes still save while a login remains.
+    expect((await save({ SIGNUP: 'open' }, {}, admin.cookie)).status).toBe(200);
+
+    await ctx.deps.db.insert(passkeys).values({
+      id: 'pk-1',
+      userId: admin.user.id,
+      credentialId: 'cred-1',
+      publicKey: 'key',
+      deviceType: 'singleDevice',
+      name: 'YubiKey',
+    });
+    expect((await save(removeAll, {}, admin.cookie)).status).toBe(200);
+  });
+
   it('keeps the token file until the server sees the first account', () => {
     expect(readSetupToken(dataDir)).toBe(token);
   });

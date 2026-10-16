@@ -36,11 +36,44 @@ export const fileTooLarge = (maxBytes: number) =>
     `Die Datei ist zu groß (maximal ${Math.floor(maxBytes / 1024 / 1024)} MB).`,
   );
 
-function describeZodError(error: ZodError): string {
+/**
+ * The first validation problem in German, for the toast: zod's own messages are English and
+ * name the field by its JSON path. The path only shows where no German text says what is wrong.
+ */
+export function describeZodError(error: ZodError): string {
   const issue = error.issues[0];
   if (!issue) return 'Ungültige Anfrage.';
-  const path = issue.path.join('.');
-  return path ? `${path}: ${issue.message}` : issue.message;
+  const field = issue.path.join('.');
+  const generic = field ? `Ungültige Eingabe (${field}).` : 'Ungültige Anfrage.';
+  switch (issue.code) {
+    // Our own refinements speak German already.
+    case 'custom':
+      return issue.message || generic;
+    case 'invalid_format':
+      if (issue.format === 'email') return 'Bitte gib eine gültige E-Mail-Adresse ein.';
+      if (issue.format === 'url') return 'Bitte gib eine gültige Adresse (URL) ein.';
+      return generic;
+    case 'too_big': {
+      const max = Number(issue.maximum);
+      if (issue.origin === 'string') return `Zu lang (höchstens ${max} Zeichen).`;
+      if (issue.origin === 'array' || issue.origin === 'set') {
+        return `Zu viele Einträge (höchstens ${max}).`;
+      }
+      return generic;
+    }
+    case 'too_small': {
+      const min = Number(issue.minimum);
+      if (issue.origin === 'string') {
+        return min <= 1 ? 'Bitte fülle das Feld aus.' : `Zu kurz (mindestens ${min} Zeichen).`;
+      }
+      if (issue.origin === 'array' || issue.origin === 'set') {
+        return `Zu wenige Einträge (mindestens ${min}).`;
+      }
+      return generic;
+    }
+    default:
+      return generic;
+  }
 }
 
 export function errorHandler(log: Logger): ErrorHandler {

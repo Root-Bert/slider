@@ -2,6 +2,7 @@ import type { Comment } from '@slider/shared';
 import { useUpdateComment } from '@/lib/api';
 import { Button, cn, Icon, SegmentedControl } from '@/ui';
 import { useStageRegistry } from '../state/stage-registry';
+import { useViewerToast } from '../state/viewer-toast';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
 
 /** "In PowerPoint entfernt" (Figma F2): the comment was deleted in the file but stays here. */
@@ -38,6 +39,7 @@ export function ChangedSinceCommentNote({
   className?: string;
 }) {
   const update = useUpdateComment(deckId);
+  const showToast = useViewerToast();
   return (
     <div
       data-changed-since-comment
@@ -60,7 +62,10 @@ export function ChangedSinceCommentNote({
           icon="check"
           onClick={(event) => {
             event.stopPropagation();
-            update.mutate({ commentId: comment.id, status: 'done' });
+            // Optimistic: a failure reopens the thread – say why.
+            update
+              .mutateAsync({ commentId: comment.id, status: 'done' })
+              .catch((error: Error) => showToast(error.message, 'danger'));
           }}
           title="Als erledigt markieren"
           className="ml-1"

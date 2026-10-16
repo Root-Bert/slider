@@ -6,11 +6,18 @@ import { defineConfig, devices } from '@playwright/test';
  * on their own ports, so a running `bun run dev` (5173/8787) is never touched.
  *
  *   bun run e2e                 # all specs
+ *   bun run e2e:bundle          # the same specs against the production build, served by the API
  *   E2E_SHOTS=1 bun run e2e     # plus full-page screenshots (folder: E2E_SHOTS_DIR)
+ *
+ * Bundle mode (`E2E_BUNDLE=1`) runs no Vite: it builds apps/web, and the API serves apps/web/dist
+ * itself (WEB_DIST_DIR) like the container does – built chunks, lazy routes, the SPA fallback and
+ * the document headers the API sets. Only the dev login stays (NODE_ENV=development).
  */
 const API_PORT = 18787;
 const WEB_PORT = 15173;
-const WEB_ORIGIN = `http://localhost:${WEB_PORT}`;
+const BUNDLE = !!process.env.E2E_BUNDLE;
+const API_ORIGIN = `http://localhost:${API_PORT}`;
+const WEB_ORIGIN = BUNDLE ? API_ORIGIN : `http://localhost:${WEB_PORT}`;
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const dataDir = fileURLToPath(new URL('./.data', import.meta.url));
 const CI = !!process.env.CI;
@@ -50,11 +57,15 @@ export default defineConfig({
     {
       // Every run starts on an empty instance. (Wiped here, not at the top of this file: the
       // config is evaluated again in every worker, while the server is already running.)
-      command: `rm -rf "${dataDir}" && bun apps/api/src/server.ts`,
+      command: [
+        `rm -rf "${dataDir}"`,
+        ...(BUNDLE ? ['bun run --cwd apps/web vite build --logLevel warn'] : []),
+        'bun apps/api/src/server.ts',
+      ].join(' && '),
       cwd: repoRoot,
-      url: `http://localhost:${API_PORT}/api/health`,
+      url: `${API_ORIGIN}/api/health`,
       reuseExistingServer: false,
-      timeout: 60_000,
+      timeout: BUNDLE ? 240_000 : 60_000,
       // Request logs stay quiet; warnings and errors (stderr) show up in the test output.
       stdout: 'ignore',
       env: {
@@ -67,15 +78,20 @@ export default defineConfig({
         SYNC_POLL_INTERVAL_MS: '0',
         // Deterministic and fast: the built-in SVG preview, even where LibreOffice is installed.
         LIBREOFFICE_PATH: '/nonexistent/soffice',
+        ...(BUNDLE ? { WEB_DIST_DIR: 'apps/web/dist' } : {}),
       },
     },
-    {
-      command: `bun run --cwd apps/web vite --port ${WEB_PORT} --strictPort`,
-      cwd: repoRoot,
-      url: WEB_ORIGIN,
-      reuseExistingServer: false,
-      timeout: 60_000,
-      env: { SLIDER_API_URL: `http://localhost:${API_PORT}` },
-    },
+    ...(BUNDLE
+      ? []
+      : [
+          {
+            command: `bun run --cwd apps/web vite --port ${WEB_PORT} --strictPort`,
+            cwd: repoRoot,
+            url: WEB_ORIGIN,
+            reuseExistingServer: false,
+            timeout: 60_000,
+            env: { SLIDER_API_URL: API_ORIGIN },
+          },
+        ]),
   ],
 });

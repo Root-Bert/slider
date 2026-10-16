@@ -9,10 +9,8 @@ import {
   type Rect,
   type Shape,
   type Slide,
-  type UpdateCommentInput,
 } from '@slider/shared';
 import { memo, useMemo, useRef, type PointerEvent } from 'react';
-import { useUpdateComment } from '@/lib/api';
 import { cn } from '@/ui';
 import { accentColor } from '@/lib/accent';
 import {
@@ -30,6 +28,7 @@ import { markLabel } from '../comments/lib/labels';
 import { strokePath, strokesBounds, textBox } from './lib/stroke-path';
 import { dragTextBox, startFontSize } from './lib/text-box';
 import { DraftMark } from './DraftMark';
+import { useSaveMark } from './hooks/useSaveMark';
 import { EditableFrame } from './EditableFrame';
 import { Pin, type MarkState } from './Pin';
 import { FrameEdges, RectFrame } from './RectFrame';
@@ -92,11 +91,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
 }: AnnotationLayerProps) {
   const dispatch = useViewerDispatch();
   const { viewer, deck, canComment } = useViewerData();
-  const update = useUpdateComment(deck.id);
-  // Per call, not `mutate`'s options: those run only for the latest call of this one mutation, so a
-  // second drag before the first is stored would leave the first frame's preview standing.
-  const save = (input: UpdateCommentInput & { commentId: string }, done: () => void) =>
-    void update.mutateAsync(input).then(done, done);
+  const save = useSaveMark(deck.id);
   const layerRef = useRef<HTMLDivElement>(null);
   const registry = useStageRegistry();
   // A box being dragged: its badge follows it live.

@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { contentTypeForKey, isValidKey } from '../src/storage/blob-storage';
 import { configureFileUrls, fileUrl, fileUrlAt, verifyFileUrl } from '../src/storage/file-urls';
 import { FsBlobStorage } from '../src/storage/fs-blob-storage';
@@ -94,6 +94,24 @@ describe('GET /files/*', () => {
       expect((await ctx.request(url.replace(/sig=./, 'sig=x'))).status).toBe(403);
       // A link signed for one file opens no other.
       expect((await ctx.request(url.replace('a.svg', 'b.svg'))).status).toBe(403);
+    } finally {
+      await ctx.cleanup();
+    }
+  });
+
+  it('streams the file with its length instead of reading it into memory', async () => {
+    const ctx = await createTestContext();
+    try {
+      const key = 'decks/x/slides/big.svg';
+      const body = `<svg>${'x'.repeat(200_000)}</svg>`;
+      await ctx.deps.storage.put(key, new TextEncoder().encode(body));
+      const get = vi.spyOn(ctx.deps.storage, 'get');
+      const res = await ctx.request(fileUrl(key));
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-length')).toBe(String(body.length));
+      expect(await res.text()).toBe(body);
+      expect(get).not.toHaveBeenCalled();
+      expect((await ctx.request(fileUrl('decks/x/slides/gone.svg'))).status).toBe(404);
     } finally {
       await ctx.cleanup();
     }

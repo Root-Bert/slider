@@ -187,8 +187,8 @@ export function LeaveSection({
         alone
           ? 'Du bist allein in dieser Organisation. Lade jemanden ein und übergib sie, oder lösche sie.'
           : mustHandOver
-            ? 'Du verlierst den Zugriff auf die Präsentationen dieser Organisation. Als einziger Admin übergibst du sie beim Verlassen an ein anderes Mitglied – danach kannst du eine neue eigene gründen.'
-            : 'Du verlierst den Zugriff auf die Präsentationen dieser Organisation. Deine Präsentationen und Kommentare bleiben hier.'
+            ? 'Du verlierst den Zugriff auf die Reviews dieser Organisation. Als einziger Admin übergibst du sie beim Verlassen an ein anderes Mitglied – danach kannst du eine neue eigene gründen.'
+            : 'Du verlierst den Zugriff auf die Reviews dieser Organisation. Deine Reviews und Kommentare bleiben hier.'
       }
       aside={
         <Button
@@ -263,7 +263,7 @@ export function DeleteSection({
     <Section
       tone="danger"
       title="Organisation löschen"
-      description="Löscht die Organisation mit allen Präsentationen, Kommentaren, Aufnahmen und Einladungen. Das lässt sich nicht rückgängig machen."
+      description="Löscht die Organisation mit allen Reviews, Kommentaren, Aufnahmen und Einladungen. Das lässt sich nicht rückgängig machen."
       aside={
         <Button variant="danger" icon="delete" onClick={() => setConfirming(true)}>
           Löschen
@@ -276,8 +276,8 @@ export function DeleteSection({
         title={`„${workspace.name}“ endgültig löschen?`}
         description={
           <>
-            Alle Präsentationen, Kommentare und Mitgliedschaften gehen verloren. Tippe zur
-            Bestätigung den Namen der Organisation ein.
+            Alle Reviews, Kommentare und Mitgliedschaften gehen verloren. Tippe zur Bestätigung den
+            Namen der Organisation ein.
           </>
         }
         confirmLabel="Endgültig löschen"

@@ -43,7 +43,7 @@ describe('LiveHub', () => {
         connectionId: bId,
         peers: [
           {
-            connectionId: aId,
+            connectionId: hub.peerIdOf(aId),
             author: anna,
             activeSlideId: null,
             cursor: null,
@@ -56,14 +56,17 @@ describe('LiveHub', () => {
     expect(a.events.at(-1)).toEqual({
       type: 'peer',
       peer: {
-        connectionId: bId,
+        connectionId: hub.peerIdOf(bId),
         author: ben,
         activeSlideId: null,
         cursor: null,
         focusedThreadId: null,
       },
     });
-    expect(hub.peers('deck').map((p) => p.connectionId)).toEqual([aId, bId]);
+    expect(hub.peers('deck').map((p) => p.connectionId)).toEqual([
+      hub.peerIdOf(aId),
+      hub.peerIdOf(bId),
+    ]);
     expect(hub.has(aId)).toBe(true);
     hub.leave(aId);
     hub.leave(bId);
@@ -88,12 +91,16 @@ describe('LiveHub', () => {
     const watcher = inbox();
     const watcherId = hub.join('deck', ben, watcher.send);
     const first = hub.join('deck', anna, inbox().send, { tab: 'tab-aaaa', replaces: null });
+    const firstPeer = hub.peerIdOf(first);
     const second = hub.join('deck', anna, inbox().send, { tab: 'tab-aaaa', replaces: null });
 
     expect(hub.has(first)).toBe(false);
     expect(hub.has(second)).toBe(true);
-    expect(watcher.events).toContainEqual({ type: 'leave', connectionId: first });
-    expect(hub.peers('deck').map((p) => p.connectionId)).toEqual([watcherId, second]);
+    expect(watcher.events).toContainEqual({ type: 'leave', connectionId: firstPeer });
+    expect(hub.peers('deck').map((p) => p.connectionId)).toEqual([
+      hub.peerIdOf(watcherId),
+      hub.peerIdOf(second),
+    ]);
     hub.leave(watcherId);
     hub.leave(second);
   });
@@ -133,7 +140,7 @@ describe('LiveHub', () => {
     expect(hub.update(aId, presence('slide-1'))).toBe(true);
     expect(b.events.at(-1)).toEqual({
       type: 'peer',
-      peer: { connectionId: aId, author: anna, ...presence('slide-1') },
+      peer: { connectionId: hub.peerIdOf(aId), author: anna, ...presence('slide-1') },
     });
     // The sender hears nothing about its own move.
     expect(a.events).toHaveLength(aBefore);
@@ -145,7 +152,9 @@ describe('LiveHub', () => {
     // A moved cursor alone is a change.
     hub.update(aId, presence('slide-1', 0.7));
     expect(b.events).toHaveLength(count + 1);
-    expect(hub.peers('deck').find((p) => p.connectionId === aId)?.cursor?.point.x).toBe(0.7);
+    expect(
+      hub.peers('deck').find((p) => p.connectionId === hub.peerIdOf(aId))?.cursor?.point.x,
+    ).toBe(0.7);
     hub.leave(aId);
     hub.leave(bId);
   });
@@ -164,6 +173,7 @@ describe('LiveHub', () => {
   it('sweep drops connections silent for longer than LIVE_STALE_MS, keeps the others', () => {
     const { hub, inbox, advance } = setup();
     const stale = hub.join('deck', anna, inbox().send);
+    const stalePeer = hub.peerIdOf(stale);
     const watcher = inbox();
     const fresh = hub.join('deck', ben, watcher.send);
     advance(LIVE_STALE_MS - 1);
@@ -175,8 +185,30 @@ describe('LiveHub', () => {
     hub.sweep();
     expect(hub.has(stale)).toBe(false);
     expect(hub.has(fresh)).toBe(true);
-    expect(watcher.events.at(-1)).toEqual({ type: 'leave', connectionId: stale });
+    expect(watcher.events.at(-1)).toEqual({ type: 'leave', connectionId: stalePeer });
     hub.leave(fresh);
+  });
+
+  it('peers only ever see public ids, which neither move nor end a connection', () => {
+    const { hub, inbox } = setup();
+    const a = inbox();
+    const b = inbox();
+    const aKey = hub.join('deck', anna, a.send);
+    const bKey = hub.join('deck', ben, b.send);
+    hub.update(aKey, presence('slide-1'));
+    const seenByBen = JSON.stringify(b.events);
+    expect(seenByBen).not.toContain(aKey);
+    expect(JSON.stringify(a.events)).not.toContain(bKey);
+
+    const annaPublic = hub.peerIdOf(aKey)!;
+    expect(seenByBen).toContain(annaPublic);
+    // Ben knows Anna's public id – it gets him nowhere.
+    expect(hub.update(annaPublic, presence('slide-9'))).toBe(false);
+    hub.leave(annaPublic);
+    expect(hub.has(aKey)).toBe(true);
+    expect(hub.peers('deck').find((p) => p.author.id === 'anna')?.activeSlideId).toBe('slide-1');
+    hub.leave(aKey);
+    hub.leave(bKey);
   });
 
   it('removes the room with its last connection; leaving twice is harmless', () => {

@@ -18,11 +18,10 @@ export const ROLE_LABELS: Record<WorkspaceRole, string> = {
 };
 
 export const ROLE_HINTS: Record<WorkspaceRole, string> = {
-  viewer: 'Präsentationen nur ansehen – so teilst du eine Präsentation.',
-  reviewer: 'Präsentationen ansehen und kommentieren.',
-  member: 'Zusätzlich eigene Präsentationen anlegen.',
-  admin:
-    'Alles: Mitglieder, Einladungen, alle Präsentationen, die Organisation umbenennen und löschen.',
+  viewer: 'Reviews nur ansehen – so teilst du eine Review.',
+  reviewer: 'Reviews ansehen und kommentieren.',
+  member: 'Zusätzlich eigene Reviews anlegen.',
+  admin: 'Alles: Mitglieder, Einladungen, alle Reviews, die Organisation umbenennen und löschen.',
 };
 
 /** Not a role – who founded the organisation. Nobody becomes creator, you are or aren't. */

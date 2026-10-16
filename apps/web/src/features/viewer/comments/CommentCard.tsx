@@ -14,6 +14,7 @@ import { pluralize } from '@/lib/format';
 import { AutosizeTextarea, AvatarStack, Button, cn, IconButton, ToolbarDivider } from '@/ui';
 import { isRemovedInPowerPoint, type Thread } from './lib/comment-selectors';
 import { MediaReplyButtons } from './MediaTabs';
+import { useKeepThreadListed } from './hooks/useKeepThreadListed';
 import { useReplyDraft } from './hooks/useReplyDraft';
 import { LiveThreadMarker } from '../live/LiveThreadMarker';
 import { useViewerDispatch } from '../state/viewer-state';
@@ -297,6 +298,7 @@ function ReplyBar({
     },
   });
   const hasDraft = body.length > 0;
+  useKeepThreadListed(root.id, hasDraft);
 
   // Each sent reply pushes the field down; keep it in view while it has focus.
   useEffect(() => {

@@ -59,20 +59,35 @@ function readRuns(paragraph: XmlElement, defaults: TextDefaults, scheme: ColorSc
     // Text fields (`a:fld`, e.g. slide numbers) carry their last rendered value like a run.
     if (element.name !== 'a:r' && element.name !== 'a:fld') continue;
     const properties = child(element, 'a:rPr');
+    const fieldType = element.name === 'a:fld' ? (attr(element, 'type') ?? '') : null;
     runs.push({
       text: child(element, 'a:t')?.text ?? '',
       sizePt: hundredthsToPoints(intAttr(properties, 'sz')) ?? defaults.sizePt,
       bold: boolAttr(properties, 'b') ?? false,
       italic: boolAttr(properties, 'i') ?? false,
       color: solidFillOf(properties, scheme),
+      ...(fieldType !== null && isVolatileField(fieldType) && { volatileField: fieldType }),
     });
   }
   return runs;
 }
 
-/** Plain text of paragraphs, joined with `\n`. */
+/**
+ * Slide numbers and auto-updating dates: PowerPoint rewrites their cached text on every save,
+ * so an insert near the top (or a save on the next day) would change every later slide.
+ */
+const isVolatileField = (type: string): boolean => /^(slidenum|datetime\d*)$/i.test(type);
+
+/** Plain text of paragraphs, joined with `\n`. Volatile fields are left out (see ParsedRun). */
 export function paragraphsToText(paragraphs: ParsedParagraph[]): string {
-  return paragraphs.map((paragraph) => paragraph.runs.map((run) => run.text).join('')).join('\n');
+  return paragraphs
+    .map((paragraph) =>
+      paragraph.runs
+        .filter((run) => run.volatileField === undefined)
+        .map((run) => run.text)
+        .join(''),
+    )
+    .join('\n');
 }
 
 /** Plain text of any element containing `a:p` paragraphs (comment bodies, table cells). */

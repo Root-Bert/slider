@@ -5,6 +5,7 @@ import { z } from 'zod';
 import {
   ApiError,
   badRequest,
+  describeZodError,
   errorHandler,
   fileTooLarge,
   forbidden,
@@ -13,7 +14,7 @@ import {
   notFoundHandler,
 } from '../src/http/errors';
 import { parseRange } from '../src/http/range';
-import { readJson } from '../src/http/validate';
+import { MAX_JSON_BODY_BYTES, readJson } from '../src/http/validate';
 import type { Logger } from '../src/logger';
 
 describe('parseRange edge cases', () => {
@@ -73,12 +74,73 @@ describe('readJson', () => {
     });
   });
 
-  it('turns schema violations into a 400 naming the field', async () => {
+  it('turns schema violations into a 400 with a German message', async () => {
     const res = await post('{"name":""}');
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: { code: string; message: string } };
-    expect(body.error.code).toBe('bad_request');
-    expect(body.error.message).toMatch(/^name: /);
+    expect(body.error).toEqual({ code: 'bad_request', message: 'Bitte fülle das Feld aus.' });
+  });
+
+  it('describes the usual validation problems in German, never in zod English', () => {
+    const schema = z.object({
+      email: z.email().max(320),
+      name: z.string().min(2).max(5),
+      tags: z.array(z.string()).max(1),
+      count: z.number(),
+      box: z.number().refine((n) => n > 0, { message: 'Die Box braucht eine Größe.' }),
+    });
+    const message = (value: Record<string, unknown>) => {
+      const result = schema.safeParse({
+        email: 'a@firma.de',
+        name: 'Anna',
+        tags: [],
+        count: 1,
+        box: 1,
+        ...value,
+      });
+      return result.success ? null : describeZodError(result.error);
+    };
+    // The client's simple check lets these through; zod does not.
+    expect(message({ email: 'müller@firma.de' })).toBe(
+      'Bitte gib eine gültige E-Mail-Adresse ein.',
+    );
+    expect(message({ email: 'a@b.c' })).toBe('Bitte gib eine gültige E-Mail-Adresse ein.');
+    expect(message({ name: 'Annabell' })).toBe('Zu lang (höchstens 5 Zeichen).');
+    expect(message({ name: 'A' })).toBe('Zu kurz (mindestens 2 Zeichen).');
+    expect(message({ tags: ['a', 'b'] })).toBe('Zu viele Einträge (höchstens 1).');
+    expect(message({ count: 'eins' })).toBe('Ungültige Eingabe (count).');
+    expect(message({ box: -1 })).toBe('Die Box braucht eine Größe.');
+  });
+
+  it('refuses bodies over the cap with a 413, declared or streamed', async () => {
+    const big = `{"name":"${'a'.repeat(MAX_JSON_BODY_BYTES)}"}`;
+    const declared = await post(big);
+    expect(declared.status).toBe(413);
+    expect(await declared.json()).toEqual({
+      error: { code: 'bad_request', message: 'Die Anfrage ist zu groß.' },
+    });
+
+    // No Content-Length (chunked): counted while reading, cut off at the cap.
+    let sent = 0;
+    const chunk = new TextEncoder().encode('a'.repeat(64 * 1024));
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        sent += chunk.byteLength;
+        if (sent > 100 * MAX_JSON_BODY_BYTES) controller.close();
+        else controller.enqueue(chunk);
+      },
+    });
+    const streamed = await app().request('/', {
+      method: 'POST',
+      body: endless,
+      headers: { 'Content-Type': 'application/json' },
+      duplex: 'half',
+    } as RequestInit);
+    expect(streamed.status).toBe(413);
+    expect(sent).toBeLessThan(2 * MAX_JSON_BODY_BYTES);
+
+    const fits = await post(`{"name":"${'a'.repeat(MAX_JSON_BODY_BYTES - 100)}"}`);
+    expect(fits.status).toBe(200);
   });
 });
 

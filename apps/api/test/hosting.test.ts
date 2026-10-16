@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadConfig, type HostingConfig } from '../src/config';
 import { clientAddress } from '../src/http/rate-limit';
-import { createTestContext, type TestContext } from './helpers';
+import { createReadyDeck, createTestContext, type TestContext } from './helpers';
 
 const quiet = () => {};
 const hosting = (overrides: Partial<HostingConfig> = {}): HostingConfig => ({
@@ -89,6 +89,30 @@ describe('web app from the API', () => {
     expect(asset.headers.get('cache-control')).toContain('immutable');
     const icon = await ctx.request('/favicon.svg');
     expect(icon.headers.get('cache-control')).toBe('no-cache');
+  });
+
+  it('compresses the web app and API JSON for clients that accept gzip, never the live stream', async () => {
+    const script = `console.log(${JSON.stringify('x'.repeat(5000))})`;
+    await writeFile(path.join(dist, 'assets', 'big-abc123.js'), script);
+    const gzip = { headers: { 'Accept-Encoding': 'gzip' } };
+    const asset = await ctx.request('/assets/big-abc123.js', gzip);
+    expect(asset.headers.get('content-encoding')).toBe('gzip');
+    expect(asset.headers.get('vary')).toContain('Accept-Encoding');
+    const unzipped = new Response(asset.body!.pipeThrough(new DecompressionStream('gzip')));
+    expect(await unzipped.text()).toBe(script);
+
+    // Without Accept-Encoding nothing is compressed.
+    expect((await ctx.request('/assets/big-abc123.js')).headers.get('content-encoding')).toBeNull();
+
+    const { deckId } = await createReadyDeck(ctx, { slideCount: 40 });
+    const slides = await ctx.request(`/api/decks/${deckId}/slides`, gzip);
+    expect(slides.headers.get('content-type')).toContain('application/json');
+    expect(slides.headers.get('content-encoding')).toBe('gzip');
+
+    const live = await ctx.request(`/api/decks/${deckId}/live`, gzip);
+    expect(live.headers.get('content-type')).toContain('text/event-stream');
+    expect(live.headers.get('content-encoding')).toBeNull();
+    await live.body?.cancel();
   });
 
   it('answers 404 for missing files instead of index.html', async () => {

@@ -13,16 +13,18 @@ const api = vi.hoisted(() => ({
   rename: vi.fn(),
   remove: vi.fn(),
   register: vi.fn(),
+  /** What the dialogs' mutations report as failed. */
+  error: null as Error | null,
 }));
 
 vi.mock('@/lib/api', () => ({
   useIdentities: () => api.identities,
   useAuthProviders: () => ({ data: { providers: api.providers, devLogin: false } }),
-  useUnlinkIdentity: () => ({ mutate: api.unlink, isPending: false }),
+  useUnlinkIdentity: () => ({ mutate: api.unlink, isPending: false, error: api.error }),
   usePasskeys: () => api.passkeys,
   useRegisterPasskey: () => ({ mutate: api.register, isPending: false }),
-  useRenamePasskey: () => ({ mutate: api.rename, isPending: false }),
-  useDeletePasskey: () => ({ mutate: api.remove, isPending: false }),
+  useRenamePasskey: () => ({ mutate: api.rename, isPending: false, error: api.error }),
+  useDeletePasskey: () => ({ mutate: api.remove, isPending: false, error: api.error }),
 }));
 
 vi.mock('@/lib/passkeys', () => ({
@@ -141,7 +143,7 @@ describe('PasskeysSection', () => {
     expect(onNotify).toHaveBeenCalledWith('Name gespeichert');
   });
 
-  it('removes a passkey after confirming; a failure becomes a danger toast', async () => {
+  it('removes a passkey after confirming', async () => {
     const onNotify = vi.fn();
     api.passkeys.data = [passkey()];
     render(<PasskeysSection onNotify={onNotify} />);
@@ -150,8 +152,27 @@ describe('PasskeysSection', () => {
     const dialog = screen.getByRole('dialog', { name: '„MacBook“ entfernen?', hidden: true });
     await userEvent.click(within(dialog).getByRole('button', { name: 'Entfernen', hidden: true }));
     expect(api.remove).toHaveBeenCalledWith('pk1', expect.anything());
-    const { onError } = api.remove.mock.calls[0]![1] as { onError: (error: Error) => void };
-    onError(new Error('Nicht gefunden'));
-    expect(onNotify).toHaveBeenCalledWith('Nicht gefunden', 'danger');
+    const { onSuccess } = api.remove.mock.calls[0]![1] as { onSuccess: () => void };
+    onSuccess();
+    expect(onNotify).toHaveBeenCalledWith('Passkey entfernt');
   });
+
+  it.each([
+    ['Entfernen', '„MacBook“ entfernen?'],
+    ['Umbenennen', 'Passkey umbenennen'],
+  ])(
+    '%s: a failure shows in the dialog, not in a toast behind its backdrop',
+    async (item, title) => {
+      api.error = new Error('Nicht gefunden');
+      const onNotify = vi.fn();
+      api.passkeys.data = [passkey()];
+      render(<PasskeysSection onNotify={onNotify} />);
+      await userEvent.click(screen.getByRole('button', { name: 'Aktionen für „MacBook“' }));
+      await userEvent.click(screen.getByRole('menuitem', { name: item }));
+      const dialog = screen.getByRole('dialog', { name: title, hidden: true });
+      expect(within(dialog).getByText('Nicht gefunden')).toBeTruthy();
+      expect(onNotify).not.toHaveBeenCalled();
+      api.error = null;
+    },
+  );
 });

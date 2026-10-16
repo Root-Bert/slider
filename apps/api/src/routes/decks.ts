@@ -13,6 +13,7 @@ import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import { decks, type DeckRow } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { ApiError, badRequest, fileTooLarge, notAPowerPoint } from '../http/errors';
+import { importLimit } from '../http/import-limit';
 import { readJson } from '../http/validate';
 import { withPickerLogin } from '../sources/onedrive-picker';
 import type { RemoteFile, SourceAdapter, SourceContext } from '../sources/source-adapter';
@@ -78,6 +79,7 @@ const unsupportedLink = () =>
 
 export function decksRoutes(deps: AppDeps) {
   const viewer = viewerMiddleware(deps);
+  const imports = importLimit(deps);
   const maxBytes = deps.config.maxUploadBytes;
 
   return (
@@ -96,6 +98,7 @@ export function decksRoutes(deps: AppDeps) {
       .post(
         '/decks/upload',
         viewer,
+        imports,
         bodyLimit({
           maxSize: maxBytes + MULTIPART_OVERHEAD_BYTES,
           onError: (c) => c.json(fileTooLarge(maxBytes).toBody(), 413),
@@ -133,7 +136,7 @@ export function decksRoutes(deps: AppDeps) {
         },
       )
 
-      .post('/decks/link', viewer, async (c) => {
+      .post('/decks/link', viewer, imports, async (c) => {
         const { viewer } = c.var;
         requireOwner(viewer);
         const { url, workspaceId: requested } = await readJson(c, linkBodySchema);
@@ -158,7 +161,7 @@ export function decksRoutes(deps: AppDeps) {
       })
 
       /** A file picked in Microsoft's OneDrive file picker. */
-      .post('/decks/drive-item', viewer, async (c) => {
+      .post('/decks/drive-item', viewer, imports, async (c) => {
         const { viewer } = c.var;
         requireOwner(viewer);
         const input = await readJson(c, importDriveItemInputSchema);

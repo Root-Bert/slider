@@ -52,6 +52,12 @@ export interface DeckSyncStateRow {
   importingRevisionId?: string | null;
   /** Token of a file that failed to import; not downloaded again until the token changes. */
   failedToken?: string | null;
+  /**
+   * Failed imports of one file version in a row (not parse errors). Counted apart from failed
+   * source checks, which `consecutiveFailures` counts too: an outage before an edit must not use
+   * up the import's attempts.
+   */
+  importFailures?: { token: string | null; count: number } | null;
   /** Last check through the content hash (sources without ETag/cTag). */
   lastContentCheckAt?: string;
 }

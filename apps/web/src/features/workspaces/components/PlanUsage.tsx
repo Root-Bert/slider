@@ -101,7 +101,7 @@ export function UsageSection({ workspace }: { workspace: Workspace }) {
           }
         />
         <UsageMeter
-          label="Präsentationen"
+          label="Reviews"
           state={deckState(usage)}
           hint={usage.maxDecks !== null ? 'Archivierte zählen mit.' : undefined}
         />

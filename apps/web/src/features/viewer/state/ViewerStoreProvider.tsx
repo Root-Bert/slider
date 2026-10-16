@@ -47,7 +47,6 @@ export function ViewerStoreProvider({
     return createInitialState({
       activeSlideId:
         initial ?? all.slides.find((slide) => !slide.hidden)?.id ?? all.slides[0]?.id ?? null,
-      color: all.viewer.author.color,
       split: loadStoredSplit(),
       boxMode: loadStoredBoxMode(),
       ...preferences,

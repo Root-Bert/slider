@@ -23,6 +23,8 @@ vi.mock('../state/viewer-data', () => ({
   }),
 }));
 vi.mock('../state/viewer-toast', () => ({ useViewerToast: () => showToast }));
+const dispatch = vi.fn();
+vi.mock('../state/viewer-state', () => ({ useViewerDispatch: () => dispatch }));
 vi.mock('../media/RecordReplyDialog', () => ({
   RecordReplyDialog: ({ kind }: { kind: string }) => <div role="dialog" aria-label={kind} />,
 }));
@@ -37,6 +39,7 @@ beforeEach(() => {
   createReply.isError = false;
   createReply.error = null;
   showToast.mockClear();
+  dispatch.mockClear();
 });
 
 describe('ReplyComposer', () => {
@@ -74,6 +77,12 @@ describe('ReplyComposer', () => {
     render(<ReplyComposer root={root} deckId="deck-1" />);
     await userEvent.click(screen.getByRole('button', { name: 'Mit Video antworten' }));
     expect(screen.getByRole('dialog', { name: 'video' })).toBeTruthy();
+    // While the dialog is open, the thread stays listed even if someone else resolves it.
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'composingChanged',
+      threadId: 'r1',
+      composing: true,
+    });
   });
 
   it('suggests people after @ and inserts the picked name', async () => {

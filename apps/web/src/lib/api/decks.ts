@@ -16,14 +16,6 @@ export const useDecks = (workspaceId: string) =>
     refetchInterval: (query) => (query.state.data?.some(isImporting) ? IMPORT_POLL_MS * 2 : false),
   });
 
-/** The decks of every workspace I belong to – `GET /decks` without `workspaceId`. */
-export const useAllDecks = () =>
-  useQuery({
-    queryKey: queryKeys.allDecks,
-    queryFn: () => api.get<Deck[]>('/decks'),
-    refetchInterval: (query) => (query.state.data?.some(isImporting) ? IMPORT_POLL_MS * 2 : false),
-  });
-
 /** Polls while the deck is importing so the progress view advances (BER-97). */
 export const useDeck = (deckId: string) =>
   useQuery({

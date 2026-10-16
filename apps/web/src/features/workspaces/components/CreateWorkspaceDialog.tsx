@@ -11,7 +11,7 @@ export function CreateWorkspaceDialog({ open, onClose }: { open: boolean; onClos
       open={open}
       onClose={onClose}
       title="Neue Organisation"
-      description="Ein eigener Bereich mit eigenen Präsentationen und Mitgliedern. Du bist ihr Creator und Admin und kannst weitere Admins ernennen."
+      description="Ein eigener Bereich mit eigenen Reviews und Mitgliedern. Du bist ihr Creator und Admin und kannst weitere Admins ernennen."
     >
       {open && (
         <CreateWorkspaceForm

@@ -88,7 +88,7 @@ async function partIdentity(archive: Archive, slidePath: string, relId: string):
   if (rel.external) return `external:${rel.target}`;
   if (rel.target.endsWith('.xml')) {
     try {
-      const part = await archive.readXml(rel.target);
+      const part = await archive.readXml(rel.target, { retain: false });
       // One level deep: a chart's embedded workbook or style parts do not count on their own.
       return part ? await sha256Hex(await canonical(part, null, () => false)) : 'missing';
     } catch {

@@ -9,6 +9,7 @@ const api = vi.hoisted(() => ({
   providers: [] as { id: string }[],
   passkeys: [] as unknown[] | undefined,
   logout: vi.fn(),
+  logoutFailed: false,
   hintDismissed: false,
   dismissHint: vi.fn(),
 }));
@@ -16,7 +17,7 @@ const api = vi.hoisted(() => ({
 vi.mock('@/lib/api', () => ({
   useMe: () => ({ data: api.me }),
   useAuthProviders: () => ({ data: { providers: api.providers } }),
-  useLogout: () => ({ mutate: api.logout, isPending: false }),
+  useLogout: () => ({ mutate: api.logout, isPending: false, isError: api.logoutFailed }),
   usePasskeys: () => ({ data: api.passkeys }),
 }));
 
@@ -134,8 +135,27 @@ describe('AccountMenu', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Hinweis ausblenden' }));
     expect(api.dismissHint).toHaveBeenCalledOnce();
     expect(screen.queryByRole('button', { name: /Schneller anmelden/ })).toBeNull();
-    // The menu stays open.
+    // The menu stays open, and the focus moves on instead of dropping to <body>.
     expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Konto & Anmeldung' }));
+  });
+
+  it('an item that closes the menu hands the focus back to the trigger', async () => {
+    const trigger = setup();
+    await userEvent.click(trigger);
+    await userEvent.click(screen.getByRole('button', { name: 'Einstellungen' }));
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('says so when signing out failed', async () => {
+    api.logoutFailed = true;
+    const trigger = setup();
+    await userEvent.click(trigger);
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Abmelden hat nicht geklappt – bitte erneut versuchen.',
+    );
+    api.logoutFailed = false;
   });
 
   it('signs out', async () => {

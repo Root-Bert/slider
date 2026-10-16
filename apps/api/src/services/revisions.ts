@@ -1,7 +1,13 @@
-import { and, asc, desc, eq, inArray, notInArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import type { DeckStatus, DeletedSlide, Revision, RevisionDiff } from '@slider/shared';
 import type { Executor } from '../db/client';
-import { comments, revisions, slideVersions, type DeckRow } from '../db/schema';
+import {
+  comments,
+  revisions,
+  slideVersions,
+  type DeckRow,
+  type RevisionDiffRecord,
+} from '../db/schema';
 import { notFound } from '../http/errors';
 import type { RenderProgress } from '../import/render-progress';
 import { fileUrl } from '../storage/blob-storage';
@@ -86,19 +92,35 @@ export async function listDeletedSlides(db: Executor, deck: DeckRow): Promise<De
         notInArray(slideVersions.slideId, current),
       ),
     );
-  // Confidence and position come from the diff of the revision that removed the slide.
-  const diffs = await db
-    .select({ diff: revisions.diff })
+  if (gone.length === 0) return [];
+  // Confidence and position come from the diff of the (latest) revision that removed the slide.
+  // Only the small `deleted` lists are read, not the per-slide diffs of every revision.
+  const deletedLists = await db
+    .select({
+      deleted: sql<RevisionDiffRecord['deleted']>`${revisions.diff} -> 'deleted'`,
+    })
     .from(revisions)
-    .where(and(eq(revisions.deckId, deck.id), eq(revisions.status, 'ready')))
-    .orderBy(asc(revisions.number));
+    .where(
+      and(
+        eq(revisions.deckId, deck.id),
+        eq(revisions.status, 'ready'),
+        sql`jsonb_array_length(coalesce(${revisions.diff} -> 'deleted', '[]'::jsonb)) > 0`,
+      ),
+    )
+    .orderBy(desc(revisions.number));
   const info = new Map<string, { previousPosition: number; confidence: number } | null>(
     gone.map((row) => [row.slideId, null]),
   );
-  for (const { diff } of diffs) {
-    for (const entry of diff?.deleted ?? []) {
-      if (info.has(entry.slideId)) info.set(entry.slideId, entry);
+  const open = new Set(info.keys());
+  for (const { deleted } of deletedLists) {
+    for (const entry of deleted) {
+      if (!open.delete(entry.slideId)) continue;
+      info.set(entry.slideId, {
+        previousPosition: entry.previousPosition,
+        confidence: entry.confidence,
+      });
     }
+    if (open.size === 0) break;
   }
   return loadDeletedSlides(db, deck.id, info);
 }

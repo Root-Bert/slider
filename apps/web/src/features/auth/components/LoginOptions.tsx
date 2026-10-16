@@ -25,15 +25,20 @@ export function LoginOptions({ config, returnTo }: { config: AuthProviders; retu
   const [passkeys] = useState(passkeysSupported);
 
   if (providers.length === 0) {
+    // Passkeys keep working without any provider: an admin who switched every login off on the
+    // setup page signs in with one and turns a provider back on.
     return (
-      <Notice tone="warning" variant="plain" title="Anmeldung nicht eingerichtet">
-        Für diese Slider-Instanz ist noch keine Anmeldung konfiguriert. Wer Slider betreibt, findet
-        im Server-Log einen Einrichtungslink (
-        <code className="rounded-badge bg-surface-2 px-1 py-0.5 text-xs text-fg-muted">
-          /einrichtung#token=…
-        </code>
-        ) und richtet dort Microsoft, Google oder SSO ein.
-      </Notice>
+      <div className="flex w-full flex-col gap-3">
+        <Notice tone="warning" variant="plain" title="Anmeldung nicht eingerichtet">
+          Für diese Slider-Instanz ist keine Anmeldung über Microsoft, Google oder SSO eingerichtet.
+          Wer Slider betreibt, richtet sie unter{' '}
+          <code className="rounded-badge bg-surface-2 px-1 py-0.5 text-xs text-fg-muted">
+            /einrichtung
+          </code>{' '}
+          ein – vor dem ersten Konto mit dem Einrichtungslink aus dem Server-Log.
+        </Notice>
+        {passkeys && <PasskeyButton returnTo={returnTo} />}
+      </div>
     );
   }
 

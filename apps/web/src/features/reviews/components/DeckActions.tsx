@@ -3,7 +3,7 @@ import type { Deck } from '@slider/shared';
 import { useDeckStatus, useInvalidateSlideImages, useRerenderDeck, useUpdateDeck } from '@/lib/api';
 import { ContextMenu, Menu, type IconButtonVariant, type MenuAction, type ShowToast } from '@/ui';
 import { usePinnedDecks } from '../hooks/usePinnedDecks';
-import { MAX_PINNED, pinDeck, unpinDeck } from '../lib/pinned-decks';
+import { MAX_PINNED } from '../lib/pinned-decks';
 import { DeleteDeckDialog } from './DeleteDeckDialog';
 import { MoveDecksDialog } from './MoveDecksDialog';
 import { movedMessage } from '../hooks/useMoveDecks';
@@ -93,7 +93,7 @@ export function DeckActions({
   const [moving, setMoving] = useState(false);
   const update = useUpdateDeck(deck.id);
   const rerender = useRerender(deck, onNotify);
-  const pins = usePinnedDecks();
+  const pins = usePinnedDecks(deck.workspaceId);
   const pinned = pins.isPinned(deck.id);
   const archived = deck.archivedAt !== null;
 
@@ -109,11 +109,11 @@ export function DeckActions({
     );
 
   const pinAction: MenuAction = pinned
-    ? { label: 'Lösen', icon: 'pushPin', onSelect: () => unpinDeck(deck.id) }
+    ? { label: 'Lösen', icon: 'pushPin', onSelect: () => pins.unpin(deck.id) }
     : {
         label: 'Anpinnen',
         icon: 'pushPin',
-        onSelect: () => pinDeck(deck.id),
+        onSelect: () => pins.pin(deck.id),
         disabled: pins.full,
         title: pins.full
           ? `Höchstens ${MAX_PINNED} Reviews angepinnt – löse zuerst einen.`
@@ -168,7 +168,7 @@ export function DeckActions({
           decks={[deck]}
           onClose={() => setDeleting(false)}
           onDeleted={() => {
-            unpinDeck(deck.id);
+            pins.unpin(deck.id);
             setDeleting(false);
             onNotify(`„${deck.title}“ gelöscht`);
           }}

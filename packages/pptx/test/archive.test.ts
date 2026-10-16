@@ -1,6 +1,14 @@
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
-import { Archive, MAX_XML_PART, REL, relsPathOf, resolvePartPath } from '../src/archive';
+import {
+  Archive,
+  MAX_XML_PART,
+  MAX_XML_RATIO,
+  MAX_XML_TOTAL,
+  REL,
+  relsPathOf,
+  resolvePartPath,
+} from '../src/archive';
 import { PptxError } from '../src/types';
 
 describe('relsPathOf', () => {
@@ -178,5 +186,80 @@ describe('Archive zip-bomb budget', () => {
     await expect(archive.readXml('ppt/presentation.xml')).rejects.toMatchObject({
       code: 'corrupt',
     });
+  });
+});
+
+describe('Archive inflate budget (honest headers)', () => {
+  const MiB = 1024 ** 2;
+  /** XML part of exactly `bytes` bytes – deflates about 1000:1, like a real zip bomb. */
+  const xmlOf = (bytes: number) => '<a>' + 'x'.repeat(bytes - 7) + '</a>';
+  /** Bytes that do not compress, to make an upload as large as a real deck with images. */
+  const noise = (bytes: number) => {
+    const out = new Uint8Array(bytes);
+    for (let offset = 0; offset < bytes; offset += 65536) {
+      crypto.getRandomValues(out.subarray(offset, offset + 65536));
+    }
+    return out;
+  };
+  async function deck(parts: Record<string, string | Uint8Array>): Promise<Uint8Array> {
+    const zip = new JSZip();
+    for (const [path, content] of Object.entries(parts)) zip.file(path, content);
+    return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+  }
+
+  it('refuses an XML part above the per-part cap even when its header is honest', async () => {
+    const upload = await deck({ 'ppt/slides/slide1.xml': xmlOf(MAX_XML_PART + 1) });
+    const archive = await Archive.open(upload);
+    await expect(archive.readXml('ppt/slides/slide1.xml')).rejects.toMatchObject({
+      code: 'corrupt',
+    });
+  });
+
+  it('caps all XML of a small upload by its size, counting every part once', async () => {
+    const upload = await deck({
+      'ppt/slides/slide1.xml': xmlOf(5 * MiB),
+      'ppt/slides/slide2.xml': xmlOf(5 * MiB),
+    });
+    expect(upload.byteLength * MAX_XML_RATIO).toBeLessThan(10 * MiB);
+    const archive = await Archive.open(upload);
+    await archive.readXml('ppt/slides/slide1.xml', { retain: false });
+    // Reading the same part again does not spend the budget twice.
+    await archive.readXml('ppt/slides/slide1.xml', { retain: false });
+    await expect(archive.readXml('ppt/slides/slide2.xml')).rejects.toMatchObject({
+      code: 'corrupt',
+      message: 'The file unpacks to more data than Slider accepts.',
+    });
+  });
+
+  it('caps all XML of one file, however large the upload is', async () => {
+    const parts: Record<string, string | Uint8Array> = { 'ppt/media/image1.png': noise(MiB) };
+    const count = Math.floor(MAX_XML_TOTAL / (9 * MiB)) + 1;
+    for (let i = 1; i <= count; i++) parts[`ppt/slides/slide${i}.xml`] = xmlOf(9 * MiB);
+    const upload = await deck(parts);
+    expect(upload.byteLength * MAX_XML_RATIO).toBeGreaterThan(MAX_XML_TOTAL);
+    const archive = await Archive.open(upload);
+    for (let i = 1; i < count; i++) {
+      await archive.readXml(`ppt/slides/slide${i}.xml`, { retain: false });
+    }
+    await expect(archive.readXml(`ppt/slides/slide${count}.xml`)).rejects.toMatchObject({
+      code: 'corrupt',
+    });
+    // Parses ~64 MiB of XML; slow when the whole suite runs in parallel.
+  }, 30_000);
+
+  it('keeps reading a normal deck', async () => {
+    const archive = await Archive.open(
+      await deck({ 'ppt/slides/slide1.xml': xmlOf(2 * MiB), 'ppt/media/image1.png': noise(MiB) }),
+    );
+    expect((await archive.readXml('ppt/slides/slide1.xml'))?.name).toBe('a');
+    expect((await archive.readBytes('ppt/media/image1.png'))?.byteLength).toBe(MiB);
+  });
+
+  it('does not keep the DOM of a part read with retain: false', async () => {
+    const archive = await Archive.open(await deck({ 'ppt/slides/slide1.xml': '<a/>' }));
+    const first = await archive.readXml('ppt/slides/slide1.xml', { retain: false });
+    expect(await archive.readXml('ppt/slides/slide1.xml', { retain: false })).not.toBe(first);
+    const kept = await archive.readXml('ppt/slides/slide1.xml');
+    expect(await archive.readXml('ppt/slides/slide1.xml')).toBe(kept);
   });
 });

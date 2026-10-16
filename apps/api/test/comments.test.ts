@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   commentSchema,
   viewerSchema,
@@ -8,6 +8,7 @@ import {
 } from '@slider/shared';
 import { comments, workspaceMembers } from '../src/db/schema';
 import { externalAuthor } from '../src/authors';
+import { MAX_JSON_BODY_BYTES } from '../src/http/validate';
 import {
   createReadyDeck,
   createTestContext,
@@ -87,6 +88,25 @@ describe('creating comments', () => {
     expect(comment.strokes).toHaveLength(1);
   });
 
+  it('accepts the largest drawing (50 strokes of 2000 points), over the general JSON cap', async () => {
+    const points = Array.from({ length: 2000 }, (_, i) => ({
+      x: 0.123456789012345 + i / 1e6,
+      y: 0.987654321098765 - i / 1e6,
+    }));
+    const input: CreateCommentInput = {
+      slideId: slide(0),
+      body: '',
+      anchor: { type: 'rect', rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, shapeRef: null },
+      strokes: Array.from({ length: 50 }, () => ({
+        tool: 'pen' as const,
+        color: 'yellow' as const,
+        points,
+      })),
+    };
+    expect(JSON.stringify(input).length).toBeGreaterThan(MAX_JSON_BODY_BYTES);
+    expect((await create(input)).strokes).toHaveLength(50);
+  });
+
   it('rejects comments with neither text nor drawing', async () => {
     const res = await post(pinComment(slide(0), '   '));
     expect(res.status).toBe(400);
@@ -122,6 +142,29 @@ describe('creating comments', () => {
       anchor: { type: 'gap', afterSlideId: slide(0), beforeSlideId: slide(1) },
     });
     expect(withSlide.status).toBe(400);
+  });
+});
+
+describe('listing after a change', () => {
+  it('viewers refetching at once share one query, yet never get the list from before a change', async () => {
+    await create(pinComment(slide(0), 'Eins'));
+    const list = () => ctx.request(`/api/decks/${deck.deckId}/comments`);
+    const select = vi.spyOn(ctx.deps.db, 'select');
+    await list();
+    const single = select.mock.calls.length;
+    select.mockClear();
+    const results = await Promise.all(Array.from({ length: 10 }, list));
+    const bodies = await Promise.all(results.map((res) => res.json()));
+    expect(new Set(bodies.map((body) => JSON.stringify(body))).size).toBe(1);
+    expect(select.mock.calls.length).toBeLessThan(10 * single);
+    select.mockRestore();
+
+    // A request while a load is running, right after a change, waits for its own.
+    const before = list();
+    await create(pinComment(slide(0), 'Zwei'));
+    const after = commentSchema.array().parse(await (await list()).json());
+    expect(after.map((c) => c.body)).toEqual(['Eins', 'Zwei']);
+    await before;
   });
 });
 

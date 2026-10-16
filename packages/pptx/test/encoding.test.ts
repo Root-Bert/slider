@@ -13,6 +13,15 @@ describe('escapeXml', () => {
     expect(escapeXml('')).toBe('');
   });
 
+  it('drops characters XML 1.0 does not allow; vertical tab and form feed become a space', () => {
+    const nonCharacters = String.fromCharCode(0xfffe) + 'f' + String.fromCharCode(0xffff);
+    expect(escapeXml(`a\u0000b\u0001c\u0008d\u001fe${nonCharacters}g`)).toBe('abcdefg');
+    expect(escapeXml('a\u000bb\u000cc')).toBe('a b c');
+    expect(escapeXml('tab\tlf\ncr\r')).toBe('tab\tlf\ncr\r');
+    expect(escapeXml('lone \ud800 and \udc00 surrogates')).toBe('lone  and  surrogates');
+    expect(escapeXml('emoji 😀 stays')).toBe('emoji 😀 stays');
+  });
+
   it('escapes an existing entity again', () => {
     expect(escapeXml('&amp;')).toBe('&amp;amp;');
   });

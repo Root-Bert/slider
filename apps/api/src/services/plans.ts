@@ -35,7 +35,7 @@ export const workspaceFullMessage = () =>
 export const seatsFullMessage = (max: number) =>
   `Die Organisation hat bereits ${max} von ${max} Plätzen belegt.`;
 export const decksFullMessage = (max: number) =>
-  `Im Free-Plan ${max === 1 ? 'ist eine Präsentation' : `sind ${max} Präsentationen`} pro Organisation möglich. Lösche eine, um Platz zu schaffen.`;
+  `Im Free-Plan ${max === 1 ? 'ist eine Review' : `sind ${max} Reviews`} pro Organisation möglich. Lösche eine, um Platz zu schaffen.`;
 
 // ── Counting ────────────────────────────────────────────────────────────────
 

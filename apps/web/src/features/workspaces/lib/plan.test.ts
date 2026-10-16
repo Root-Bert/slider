@@ -51,10 +51,10 @@ describe('formatting', () => {
   it('formats usage for the settings and the overview', () => {
     expect(formatRatio(limitState(3, 5))).toBe('3/5');
     expect(formatRatio(limitState(3, null))).toBe('3');
-    expect(formatDeckUsage(usage())).toBe('2 von 3 Präsentationen');
-    expect(formatDeckUsage(usage({ decks: 1, maxDecks: 1 }))).toBe('1 von 1 Präsentation');
-    expect(formatDeckUsage(usage({ decks: 7, maxDecks: null }))).toBe('7 Präsentationen');
-    expect(formatDeckUsage(usage({ decks: 1, maxDecks: null }))).toBe('1 Präsentation');
+    expect(formatDeckUsage(usage())).toBe('2 von 3 Reviews');
+    expect(formatDeckUsage(usage({ decks: 1, maxDecks: 1 }))).toBe('1 von 1 Review');
+    expect(formatDeckUsage(usage({ decks: 7, maxDecks: null }))).toBe('7 Reviews');
+    expect(formatDeckUsage(usage({ decks: 1, maxDecks: null }))).toBe('1 Review');
   });
 
   it('names plans', () => {
@@ -64,10 +64,10 @@ describe('formatting', () => {
 
   it('explains a full organisation like the API does', () => {
     expect(deckLimitMessage({ plan: 'free', usage: usage({ decks: 3 }) })).toBe(
-      'Im Free-Plan sind 3 Präsentationen pro Organisation möglich. Lösche eine, um Platz zu schaffen.',
+      'Im Free-Plan sind 3 Reviews pro Organisation möglich. Lösche eine, um Platz zu schaffen.',
     );
     expect(deckLimitMessage({ plan: 'free', usage: usage({ maxDecks: 1 }) })).toMatch(
-      /^Im Free-Plan ist eine Präsentation pro Organisation möglich\./,
+      /^Im Free-Plan ist eine Review pro Organisation möglich\./,
     );
   });
 

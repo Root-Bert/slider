@@ -28,8 +28,9 @@ interface SegmentedControlProps<T extends string> {
   /** `soft`: segments sit in a tinted, padded track. `none`: bare (inside a glass pill). */
   track?: 'none' | 'soft';
   /**
-   * `radio` (default): a radio group of filter chips. `tabs`: a tab list with roving focus
-   * (arrow keys, Home/End); disabled tabs stay visible but are skipped.
+   * `radio` (default): a radio group of filter chips. `tabs`: a tab list. Both have roving focus
+   * (one Tab stop; arrow keys, Home/End select and focus the next segment, disabled ones are
+   * skipped), so the arrows never reach page shortcuts behind it. Disabled tabs stay visible.
    */
   mode?: 'radio' | 'tabs';
   className?: string;
@@ -64,29 +65,33 @@ export function SegmentedControl<T extends string>({
 }: SegmentedControlProps<T>) {
   const tabs = mode === 'tabs';
   const enabled = segments.filter((segment) => !segment.disabled);
-  // Roving focus: the selected tab takes Tab; the first enabled one if none is selected.
+  // Roving focus: the selected segment takes Tab; the first enabled one if none is selected.
   const focusable = enabled.some((segment) => segment.value === value) ? value : enabled[0]?.value;
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!tabs || enabled.length === 0) return;
+    if (enabled.length === 0) return;
     const index = enabled.findIndex((segment) => segment.value === value);
+    // A radio group also moves with ↑/↓ (WAI-ARIA radio group); a horizontal tab list doesn't.
+    const forward = event.key === 'ArrowRight' || (!tabs && event.key === 'ArrowDown');
+    const backward = event.key === 'ArrowLeft' || (!tabs && event.key === 'ArrowUp');
     let next: number;
-    switch (event.key) {
-      case 'ArrowRight':
+    switch (true) {
+      case forward:
         next = (index + 1) % enabled.length;
         break;
-      case 'ArrowLeft':
+      case backward:
         next = index <= 0 ? enabled.length - 1 : index - 1;
         break;
-      case 'Home':
+      case event.key === 'Home':
         next = 0;
         break;
-      case 'End':
+      case event.key === 'End':
         next = enabled.length - 1;
         break;
       default:
         return;
     }
+    // Handled: page shortcuts (e.g. the viewer's ←/→ slide navigation) skip prevented keys.
     event.preventDefault();
     const target = enabled[next]!;
     onChange(target.value);
@@ -98,7 +103,7 @@ export function SegmentedControl<T extends string>({
     <div
       role={tabs ? 'tablist' : 'radiogroup'}
       aria-label={label}
-      onKeyDown={tabs ? onKeyDown : undefined}
+      onKeyDown={onKeyDown}
       className={cn(
         'flex items-center',
         track === 'soft' ? cn('w-fit', trackClasses[size], trackTone[tone]) : 'gap-1',
@@ -118,7 +123,7 @@ export function SegmentedControl<T extends string>({
           tone={tone}
           onClick={() => onChange(segment.value)}
           role={tabs ? 'tab' : 'radio'}
-          tabIndex={tabs ? (segment.value === focusable ? 0 : -1) : undefined}
+          tabIndex={segment.value === focusable ? 0 : -1}
         >
           {segment.label}
         </FilterChip>

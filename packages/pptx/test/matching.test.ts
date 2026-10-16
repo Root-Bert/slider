@@ -344,6 +344,48 @@ describe('matchSlides: sldId pairs need positive evidence against them', () => {
     ]);
   });
 
+  it('ids by position plus a shared footer: an exact twin elsewhere beats the shifted id', () => {
+    const footer = 'Vertraulich Projekt Phoenix Strategieworkshop Oktober 2026 Muster AG';
+    const bodies = [
+      'Ausgangslage Marktanteil sinkt seit drei Quartalen',
+      'Zielbild Wachstum durch neue Produktlinien',
+      'Kundensegmente Fokus auf Handel und Industrie',
+      'Wettbewerb Drei neue Anbieter mit Preisdruck',
+      'Maßnahmen Preisanpassung und Partnerprogramm',
+      'Risiken Abhängigkeit von einem Zulieferer',
+    ];
+    const deck = (texts: string[]) =>
+      texts.map((text, i) => fp(text.split(' ')[0] ?? '', 256 + i, i, `${text} ${footer}`));
+    const prev = deck(bodies);
+    const next = deck(bodies.filter((_, i) => i !== 1)); // Zielbild deleted, ids renumbered
+    const results = matchSlides(prev, next);
+    expect(pairs(results)).toEqual([
+      'Ausgangslage>Ausgangslage:unchanged',
+      'Kundensegmente>Kundensegmente:unchanged',
+      'Maßnahmen>Maßnahmen:unchanged',
+      'Risiken>Risiken:unchanged',
+      'Wettbewerb>Wettbewerb:unchanged',
+      'Zielbild>-:deleted',
+    ]);
+  });
+
+  it('a slide edited in place keeps its sldId despite a shared footer', () => {
+    const footer = 'Vertraulich Projekt Phoenix Muster AG';
+    const prev = [
+      fp('a', 256, 0, `Agenda Ziele Budget ${footer}`),
+      fp('b', 257, 1, `Budget Personal Sachkosten ${footer}`),
+      fp('c', 258, 2, `Zeitplan Pilot Rollout ${footer}`),
+    ];
+    const next = [prev[0], fp('b', 257, 1, `Budget Personal Reisen ${footer}`), prev[2]].map(
+      (slide) => slide as SlideFingerprint,
+    );
+    expect(pairs(matchSlides(prev, next))).toEqual([
+      'a>a:unchanged',
+      'b>b:modified',
+      'c>c:unchanged',
+    ]);
+  });
+
   it('a reused sldId with a different creationId is a different slide', () => {
     const prev = [
       fp('a', 256, 0, 'Agenda Ziele Budget', { creationId: 1 }),

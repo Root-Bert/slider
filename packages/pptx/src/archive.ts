@@ -6,13 +6,49 @@ import { attr, children, parseXml, XmlSyntaxError, type XmlElement } from './xml
 const OLE_SIGNATURE = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 
 /**
- * Inflated size caps – a small upload must not unpack into gigabytes (zip bomb). The declared
- * sizes come from the file itself, so they are only trusted together with `inflate`, which stops
- * as soon as an entry produces more bytes than it declared (or than its cap).
+ * Inflated size caps – a small upload must not unpack into gigabytes (zip bomb). Repetitive XML
+ * deflates about 1000:1 and its DOM costs up to ~30× its size in memory, so the caps follow what
+ * real decks need (slide XML is KBs to a few MB), not what the file's headers claim:
+ *
+ * - every part has a cap of its own ({@link MAX_XML_PART}, {@link MAX_BINARY_PART});
+ * - all XML of one file together unpacks to at most {@link MAX_XML_TOTAL}, and to at most
+ *   {@link MAX_XML_RATIO} times the size of the upload (with a small floor for tiny files);
+ * - all parts together unpack to at most {@link MAX_TOTAL_INFLATED}.
+ *
+ * The budgets are per {@link Archive} and count each part once. A part is refused up front when
+ * its declared size does not fit; `inflate` stops as soon as an entry produces more bytes than
+ * it declared, so a forged header cannot get more than that through either.
  */
-const MAX_TOTAL_UNCOMPRESSED = 2 * 1024 ** 3;
-export const MAX_XML_PART = 100 * 1024 ** 2;
+const MAX_TOTAL_DECLARED = 2 * 1024 ** 3;
+export const MAX_XML_PART = 10 * 1024 ** 2;
+export const MAX_XML_TOTAL = 64 * 1024 ** 2;
+export const MAX_XML_RATIO = 100;
+const XML_BUDGET_FLOOR = 8 * 1024 ** 2;
 export const MAX_BINARY_PART = 300 * 1024 ** 2;
+export const MAX_TOTAL_INFLATED = 512 * 1024 ** 2;
+
+const TOO_LARGE = 'The file unpacks to more data than Slider accepts.';
+
+/** Bytes one archive may still inflate. A part counts once, however often it is read. */
+class InflateBudget {
+  private readonly counted = new Set<string>();
+
+  constructor(
+    private xmlLeft: number,
+    private totalLeft: number,
+  ) {}
+
+  /** Reserves `size` bytes for the first read of `path`; throws when they do not fit. */
+  reserve(path: string, size: number, xml: boolean): void {
+    if (this.counted.has(path)) return;
+    if (size > this.totalLeft || (xml && size > this.xmlLeft)) {
+      throw new PptxError('corrupt', TOO_LARGE);
+    }
+    this.counted.add(path);
+    this.totalLeft -= size;
+    if (xml) this.xmlLeft -= size;
+  }
+}
 
 /** Size the zip's central directory declares for an entry (JSZip keeps it internally). */
 const declaredSize = (entry: JSZip.JSZipObject): number =>
@@ -120,7 +156,10 @@ export class Archive {
   private readonly xmlCache = new Map<string, XmlElement | null>();
   private readonly relsCache = new Map<string, Relationship[]>();
 
-  private constructor(private readonly zip: JSZip) {}
+  private constructor(
+    private readonly zip: JSZip,
+    private readonly budget: InflateBudget,
+  ) {}
 
   static async open(data: Uint8Array | ArrayBuffer): Promise<Archive> {
     const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
@@ -137,10 +176,12 @@ export class Archive {
     zip.forEach((_, entry) => {
       total += declaredSize(entry);
     });
-    if (total > MAX_TOTAL_UNCOMPRESSED) {
-      throw new PptxError('corrupt', 'The file unpacks to more data than Slider accepts.');
-    }
-    return new Archive(zip);
+    if (total > MAX_TOTAL_DECLARED) throw new PptxError('corrupt', TOO_LARGE);
+    const xmlBudget = Math.min(
+      MAX_XML_TOTAL,
+      Math.max(XML_BUDGET_FLOOR, MAX_XML_RATIO * bytes.byteLength),
+    );
+    return new Archive(zip, new InflateBudget(xmlBudget, MAX_TOTAL_INFLATED));
   }
 
   has(path: string): boolean {
@@ -160,16 +201,32 @@ export class Archive {
 
   async readBytes(path: string): Promise<Uint8Array | null> {
     const entry = this.zip.file(path);
-    return entry ? inflate(path, entry, MAX_BINARY_PART) : null;
+    return entry ? this.inflate(path, entry, MAX_BINARY_PART, false) : null;
   }
 
-  /** Parsed XML of a part, or `null` if the part does not exist. */
-  async readXml(path: string): Promise<XmlElement | null> {
+  /** Inflates an entry within its own cap and the archive's budget. */
+  private async inflate(
+    path: string,
+    entry: JSZip.JSZipObject,
+    cap: number,
+    xml: boolean,
+  ): Promise<Uint8Array> {
+    const declared = declaredSize(entry);
+    if (declared > cap) throw new PptxError('corrupt', `${path} is too large.`);
+    this.budget.reserve(path, declared, xml);
+    return inflate(path, entry, cap);
+  }
+
+  /**
+   * Parsed XML of a part, or `null` if the part does not exist. Parts that are read only once
+   * (slides, chart parts) pass `retain: false`, so their DOM is not kept for the whole import.
+   */
+  async readXml(path: string, options: { retain?: boolean } = {}): Promise<XmlElement | null> {
     if (this.xmlCache.has(path)) return this.xmlCache.get(path) ?? null;
     const entry = this.zip.file(path);
     let element: XmlElement | null = null;
     if (entry) {
-      const bytes = await inflate(path, entry, MAX_XML_PART);
+      const bytes = await this.inflate(path, entry, MAX_XML_PART, true);
       const source = new TextDecoder('utf-8').decode(bytes).replace(/^\uFEFF/, '');
       try {
         element = parseXml(source);
@@ -180,7 +237,7 @@ export class Archive {
         throw error;
       }
     }
-    this.xmlCache.set(path, element);
+    if (options.retain !== false) this.xmlCache.set(path, element);
     return element;
   }
 

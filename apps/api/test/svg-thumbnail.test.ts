@@ -62,6 +62,19 @@ describe('svgThumbnail', () => {
       expect((await storage.get(keys.imageKey))?.byteLength).toBe(Buffer.byteLength(svg));
       expect((await storage.size(keys.thumbnailKey)) ?? Infinity).toBeLessThan(svg.length / 5);
 
+      // A photo far bigger than the full slide shows it: the full SVG carries it at most at
+      // page resolution (2400 px wide), not at its original size.
+      const small = (href: string) =>
+        `<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">` +
+        `<image x="0" y="0" width="480" height="270" preserveAspectRatio="none" href="${href}"/></svg>`;
+      const big = small(await photo(1600, 900));
+      const scaled = await storeSlideRender(storage, 'd1', 'r1', big, null);
+      const stored = new TextDecoder().decode((await storage.get(scaled.imageKey)) ?? undefined);
+      expect(stored.length).toBeLessThan(big.length / 2);
+      const fullHref = /href="data:image\/webp;base64,([^"]+)"/.exec(stored)?.[1] ?? '';
+      // 480 of 1920 units at 2400 px: 600 px wide.
+      expect((await loadImage(Buffer.from(fullHref, 'base64'))).width).toBeLessThanOrEqual(602);
+
       const plain = slide('data:image/svg+xml;base64,PHN2Zy8+');
       const same = await storeSlideRender(storage, 'd1', 'r1', plain, null);
       expect(same.thumbnailKey).toBe(same.imageKey);

@@ -1,7 +1,13 @@
-import { and, asc, count, eq } from 'drizzle-orm';
+import { and, asc, count, eq, isNull } from 'drizzle-orm';
 import type { WorkspaceMember, WorkspaceRole } from '@slider/shared';
 import type { Executor } from '../../db/client';
-import { users, workspaceMembers, workspaces, type UserRow } from '../../db/schema';
+import {
+  users,
+  workspaceInvites,
+  workspaceMembers,
+  workspaces,
+  type UserRow,
+} from '../../db/schema';
 import { badRequest, forbidden, notFound } from '../../http/errors';
 import { lockWorkspaceRow } from '../plans';
 import { atLeast, getRole, RANK, requireRole } from './roles';
@@ -48,6 +54,25 @@ async function adminCount(db: Executor, workspaceId: string): Promise<number> {
   return row?.count ?? 0;
 }
 
+/**
+ * Withdraws the open invites someone created here, once they are no admin of the workspace any
+ * more (removed, left or demoted): their links must not let them – or anyone they handed one to –
+ * back in. `acceptInvite` also refuses invites whose creator is no admin, for older rows.
+ */
+async function revokeInvitesBy(db: Executor, workspaceId: string, userId: string): Promise<void> {
+  await db
+    .update(workspaceInvites)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(workspaceInvites.workspaceId, workspaceId),
+        eq(workspaceInvites.createdBy, userId),
+        isNull(workspaceInvites.revokedAt),
+        isNull(workspaceInvites.acceptedAt),
+      ),
+    );
+}
+
 const lastAdmin = () =>
   badRequest('Eine Organisation braucht mindestens einen Admin. Ernenne zuerst jemand anderen.');
 
@@ -76,6 +101,7 @@ export async function updateMemberRole(
       .where(
         and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, targetId)),
       );
+    if (current === 'admin' && role !== 'admin') await revokeInvitesBy(tx, workspaceId, targetId);
     const [row] = await tx
       .select({ user: users, member: workspaceMembers, creatorId: workspaces.createdBy })
       .from(workspaceMembers)
@@ -136,5 +162,6 @@ export async function removeMember(
       .where(
         and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, targetId)),
       );
+    await revokeInvitesBy(tx, workspaceId, targetId);
   });
 }

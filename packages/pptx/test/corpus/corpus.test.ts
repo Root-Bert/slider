@@ -94,6 +94,11 @@ const INTENTS: Record<string, (e: Expected) => void> = {
     expect(match(e, 'neu').position).toBe(0);
     expect(slide(e.next, 'neu').sldId).toBe(261);
   },
+  'insert-start-slide-numbers': (e) => {
+    // Every later slide got a new number (and the date changed): still unchanged.
+    expectChanges(e, { neu: 'new' }, { matchedBy: 'sldId' });
+    expect(match(e, 'neu').position).toBe(0);
+  },
   'insert-middle': (e) => {
     expectChanges(e, { neu: 'new' }, { matchedBy: 'sldId' });
     expect(match(e, 'neu').position).toBe(2);
@@ -278,6 +283,19 @@ const INTENTS: Record<string, (e: Expected) => void> = {
   'google-delete-late': (e) => {
     expectChanges(e, { zeitplan: 'deleted' });
     expect(match(e, 'budget').prev).toBe('budget');
+  },
+  // A shared footer makes neighbours look alike; the shifted ids must still not win.
+  'google-insert-footer': (e) => {
+    expectChanges(e, { neu: 'new' });
+    expectGoogleExport(e.next);
+  },
+  'google-delete-footer': (e) => {
+    expectChanges(e, { agenda: 'deleted' });
+    expectGoogleExport(e.next);
+  },
+  'google-move-footer': (e) => {
+    expectChanges(e, { budget: 'moved' });
+    expectGoogleExport(e.next);
   },
 };
 

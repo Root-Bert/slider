@@ -57,44 +57,47 @@ CI runs it as part of `bun run test` (Vitest picks up `packages/*`); nothing ext
 ```
 
 Fingerprints are built like production: `fingerprintFromShapes` over the shapes with the API's
-bbox clamping (`apps/api/src/import/common.ts`) and `renderHash = sha256(renderSlideSvg)`.
+bbox clamping (`apps/api/src/import/common.ts`) and
+`renderHash = sha256(svgForRenderHash(renderSlideSvg))`.
 Labels come from the case definition, never from parsing, so a renumbered sldId cannot change
 the keys. Confidences are rounded to two decimals.
 
 ## Cases
 
-| id                                                  | covers                                                                                                                                                            |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `basis-simple`                                      | five plain slides (title, text, picture, table), nothing changed                                                                                                  |
-| `basis-hidden`                                      | two hidden slides (middle and end), nothing changed                                                                                                               |
-| `basis-groups`                                      | group shapes, one nested, nothing changed                                                                                                                         |
-| `basis-sections`                                    | seven slides in three sections, nothing changed                                                                                                                   |
-| `insert-start` / `insert-middle` / `insert-end`     | one new slide at position 1 / 3 / 6                                                                                                                               |
-| `delete-middle`                                     | one slide deleted                                                                                                                                                 |
-| `move-slide`                                        | one slide moved from the end to position 3                                                                                                                        |
-| `move-section`                                      | a three-slide section moved to the end                                                                                                                            |
-| `duplicate`                                         | PowerPoint "Duplicate slide": identical copy, new sldId                                                                                                           |
-| `reuse-slides`                                      | "Reuse slides → keep source formatting": a slide from another deck with its own master and layout (`1_Title and Content`) and the same title as an existing slide |
-| `text-changed`                                      | body text edited                                                                                                                                                  |
-| `image-swapped`                                     | picture replaced (same box, other pixels)                                                                                                                         |
-| `layout-changed`                                    | layout switched, text unchanged                                                                                                                                   |
-| `groups-text-changed`                               | text changed inside a nested group                                                                                                                                |
-| `hide` / `unhide`                                   | `show="0"` set / removed                                                                                                                                          |
-| `comments-modern`                                   | modern comments anchored to a shape, a point and the slide                                                                                                        |
-| `comments-legacy`                                   | legacy comments (`p:cmLst`) by two authors                                                                                                                        |
-| `comments-threads`                                  | modern thread gets two more replies                                                                                                                               |
-| `comments-legacy-threads`                           | legacy replies (`p15:threadingInfo`)                                                                                                                              |
-| `comments-resolved`                                 | modern comments resolved / closed / still open                                                                                                                    |
-| `comments-moved-slide`                              | commented slide moved; the comment stays with its sldId                                                                                                           |
-| `google-roundtrip`                                  | PowerPoint deck (sections, comments, grown sldIds) → Google Slides download, no edits _(synthetic)_                                                               |
-| `google-insert` / `google-move`                     | both versions from Google Slides, with an insert / a move _(synthetic)_                                                                                           |
-| `google-hidden`                                     | skipped slides from Google Slides, one unhidden _(synthetic)_                                                                                                     |
-| `producer-win` / `producer-mac` / `producer-online` | the same edit (text, thread answered and resolved, new comment) saved by PowerPoint for Windows / 2019 for Mac / the web _(synthetic)_                            |
-| `producer-win-to-online`                            | saved on Windows, re-saved unchanged on the web _(synthetic)_                                                                                                     |
-| `producer-win-move`                                 | PowerPoint move with stable part names, rIds and creationIds _(synthetic)_                                                                                        |
-| `rewrite-most-slides`                               | four of five slides translated, sldIds kept: all still matched by sldId                                                                                           |
-| `ppt-delete-last-insert`                            | last slide deleted, new one inserted on the reused max sldId, told apart by creationId _(synthetic)_                                                              |
-| `google-insert-late` / `google-delete-late`         | Google Slides insert / delete late in the deck: shifted sldIds are not trusted _(synthetic)_                                                                      |
+| id                                                                     | covers                                                                                                                                                            |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `basis-simple`                                                         | five plain slides (title, text, picture, table), nothing changed                                                                                                  |
+| `basis-hidden`                                                         | two hidden slides (middle and end), nothing changed                                                                                                               |
+| `basis-groups`                                                         | group shapes, one nested, nothing changed                                                                                                                         |
+| `basis-sections`                                                       | seven slides in three sections, nothing changed                                                                                                                   |
+| `insert-start` / `insert-middle` / `insert-end`                        | one new slide at position 1 / 3 / 6                                                                                                                               |
+| `delete-middle`                                                        | one slide deleted                                                                                                                                                 |
+| `move-slide`                                                           | one slide moved from the end to position 3                                                                                                                        |
+| `move-section`                                                         | a three-slide section moved to the end                                                                                                                            |
+| `duplicate`                                                            | PowerPoint "Duplicate slide": identical copy, new sldId                                                                                                           |
+| `reuse-slides`                                                         | "Reuse slides → keep source formatting": a slide from another deck with its own master and layout (`1_Title and Content`) and the same title as an existing slide |
+| `text-changed`                                                         | body text edited                                                                                                                                                  |
+| `image-swapped`                                                        | picture replaced (same box, other pixels)                                                                                                                         |
+| `layout-changed`                                                       | layout switched, text unchanged                                                                                                                                   |
+| `groups-text-changed`                                                  | text changed inside a nested group                                                                                                                                |
+| `hide` / `unhide`                                                      | `show="0"` set / removed                                                                                                                                          |
+| `comments-modern`                                                      | modern comments anchored to a shape, a point and the slide                                                                                                        |
+| `comments-legacy`                                                      | legacy comments (`p:cmLst`) by two authors                                                                                                                        |
+| `comments-threads`                                                     | modern thread gets two more replies                                                                                                                               |
+| `comments-legacy-threads`                                              | legacy replies (`p15:threadingInfo`)                                                                                                                              |
+| `comments-resolved`                                                    | modern comments resolved / closed / still open                                                                                                                    |
+| `comments-moved-slide`                                                 | commented slide moved; the comment stays with its sldId                                                                                                           |
+| `google-roundtrip`                                                     | PowerPoint deck (sections, comments, grown sldIds) → Google Slides download, no edits _(synthetic)_                                                               |
+| `google-insert` / `google-move`                                        | both versions from Google Slides, with an insert / a move _(synthetic)_                                                                                           |
+| `google-hidden`                                                        | skipped slides from Google Slides, one unhidden _(synthetic)_                                                                                                     |
+| `producer-win` / `producer-mac` / `producer-online`                    | the same edit (text, thread answered and resolved, new comment) saved by PowerPoint for Windows / 2019 for Mac / the web _(synthetic)_                            |
+| `producer-win-to-online`                                               | saved on Windows, re-saved unchanged on the web _(synthetic)_                                                                                                     |
+| `producer-win-move`                                                    | PowerPoint move with stable part names, rIds and creationIds _(synthetic)_                                                                                        |
+| `rewrite-most-slides`                                                  | four of five slides translated, sldIds kept: all still matched by sldId                                                                                           |
+| `ppt-delete-last-insert`                                               | last slide deleted, new one inserted on the reused max sldId, told apart by creationId _(synthetic)_                                                              |
+| `google-insert-late` / `google-delete-late`                            | Google Slides insert / delete late in the deck: shifted sldIds are not trusted _(synthetic)_                                                                      |
+| `google-insert-footer` / `google-delete-footer` / `google-move-footer` | Google Slides insert / delete / move with the same footer line on every slide: shared text does not make the shifted sldIds trustworthy _(synthetic)_             |
+| `insert-start-slide-numbers`                                           | insert at the start in a deck with slide numbers and an auto date: renumbered fields do not mark slides as modified                                               |
 
 ## Synthetic cases
 

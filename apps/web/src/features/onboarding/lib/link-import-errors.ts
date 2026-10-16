@@ -70,9 +70,9 @@ export function noAccessFromLoginError(kind: string, host: string, link: string)
 }
 
 /**
- * `/neu?msError=<kind>` without `?link=`: a Microsoft connect started elsewhere ("Verbinden" in
- * /konto, the account menu, the OneDrive picker) failed – the API sends every such failure
- * here. Every kind gets the login banner, not only `account_limit`.
+ * `/neu?msError=<kind>` without `?link=`: a Microsoft connect started on /neu (the account menu,
+ * the OneDrive picker) failed – started on another page, the API sends it to /konto?linkError=.
+ * Every kind gets the login banner, not only `account_limit`.
  */
 export function connectErrorFrom(params: URLSearchParams): LoginError | null {
   if (params.get('link')) return null;

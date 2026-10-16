@@ -1,4 +1,4 @@
-import type { AccentColor, Anchor, PathStrokeTool, Rect, Stroke } from '@slider/shared';
+import type { Anchor, PathStrokeTool, Rect, Stroke } from '@slider/shared';
 import type { StatusFilter } from '../comments/lib/comment-selectors';
 
 /**
@@ -79,8 +79,6 @@ export interface PreviousView {
 export interface ViewerState {
   activeSlideId: string | null;
   tool: Tool | null;
-  /** The viewer's own colour – drawings match their comment's connector line. */
-  color: AccentColor;
   draft: Draft | null;
   /** The latest freehand, arrow or marker drawing while its tool is still picked. */
   lastDrawing: SavedDrawing | null;
@@ -92,6 +90,12 @@ export interface ViewerState {
   /** "Bearbeiten" from a card's context menu: the thread panel opens with this comment's editor. */
   editingCommentId: string | null;
   statusFilter: StatusFilter;
+  /**
+   * Threads someone is replying to right now (typed reply, open voice/video/sketch dialog), with
+   * how many fields hold them. They stay listed even when they stop matching the status filter –
+   * e.g. someone else resolves one – so the card and the draft or recording in it don't vanish.
+   */
+  composingThreads: ReadonlyMap<string, number>;
   /**
    * Avatar filter (bottom right): the viewer's own id = threads that @mention them (BER-105),
    * someone else's = threads they wrote in. `null` = everyone.
@@ -168,6 +172,8 @@ export type ViewerAction =
   /** Inline thread collapsed: drops the focus unless the panel shows that thread. */
   | { type: 'threadUnfocused'; threadId: string }
   | { type: 'statusFilterChanged'; filter: StatusFilter }
+  /** A reply field of the thread started (`true`) or stopped (`false`) holding a draft. */
+  | { type: 'composingChanged'; threadId: string; composing: boolean }
   /** Click on an avatar: filters by that person, a second click clears it. */
   | { type: 'personFilterToggled'; authorId: string }
   /** `null` resets the split to the default. */

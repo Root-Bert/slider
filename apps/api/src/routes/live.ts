@@ -39,22 +39,22 @@ export function liveRoutes(deps: AppDeps, hub: LiveHub) {
           }
         };
         return streamSSE(c, async (stream) => {
-          const connectionId = hub.join(
+          const connectionKey = hub.join(
             deck.id,
             author,
             (event) => {
               if (stream.aborted || stream.closed) return;
               stream
                 .writeSSE({ event: LIVE_EVENT, data: JSON.stringify(event) })
-                .catch(() => hub.leave(connectionId));
+                .catch(() => hub.leave(connectionKey));
             },
             tab,
             () => {
               void stream.close().catch(() => {});
             },
           );
-          stream.onAbort(() => hub.leave(connectionId));
-          const open = () => !stream.aborted && !stream.closed && hub.has(connectionId);
+          stream.onAbort(() => hub.leave(connectionKey));
+          const open = () => !stream.aborted && !stream.closed && hub.has(connectionKey);
           let checkedAt = Date.now();
           try {
             // Ends once the hub dropped the connection (goodbye, timeout, shutdown) or access is
@@ -69,26 +69,28 @@ export function liveRoutes(deps: AppDeps, hub: LiveHub) {
               await stream.write(': ping\n\n');
             }
           } finally {
-            hub.leave(connectionId);
+            hub.leave(connectionKey);
           }
         });
       })
 
       /**
        * Presence of one connection, posted while the pointer moves (throttled by the client).
-       * No session lookup per move: the connection id from `hello` is the credential.
+       * No session lookup per move: the secret key from `hello` is the credential. Unknown keys
+       * are turned away before the body is read.
        */
-      .post('/live/:connectionId', async (c) => {
+      .post('/live/:key', async (c) => {
+        const key = c.req.param('key');
+        const gone = () => notFound('Diese Live-Verbindung gibt es nicht mehr.');
+        if (!hub.has(key)) throw gone();
         const input = await readJson(c, livePresenceInputSchema);
-        if (!hub.update(c.req.param('connectionId'), input)) {
-          throw notFound('Diese Live-Verbindung gibt es nicht mehr.');
-        }
+        if (!hub.update(key, input)) throw gone();
         return c.body(null, 204);
       })
 
       /** Goodbye (viewer closed, tab gone – sent as a beacon): the others drop the cursor now. */
-      .post('/live/:connectionId/leave', (c) => {
-        hub.leave(c.req.param('connectionId'));
+      .post('/live/:key/leave', (c) => {
+        hub.leave(c.req.param('key'));
         return c.body(null, 204);
       })
   );

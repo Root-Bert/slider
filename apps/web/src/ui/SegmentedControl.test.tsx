@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { FilterChip, SegmentedControl, type Segment } from './SegmentedControl';
 
 const classes = (element: Element) => element.getAttribute('class')!.split(/\s+/);
@@ -94,6 +94,40 @@ describe('SegmentedControl (radio)', () => {
     expect(classes(screen.getByRole('radio', { name: 'Offen' }))).toEqual(
       expect.arrayContaining(['bg-selected', 'font-medium', 'h-8']),
     );
+  });
+});
+
+describe('SegmentedControl (radio keyboard)', () => {
+  function Radios() {
+    const [value, setValue] = useState<Filter>('all');
+    return (
+      <SegmentedControl label="Filtern" segments={FILTERS} value={value} onChange={setValue} />
+    );
+  }
+
+  it('selects with the arrow keys, has one Tab stop and keeps the keys from the page', async () => {
+    // Stands in for a page shortcut listener (the viewer's ←/→ slide navigation on `window`).
+    const prevented: boolean[] = [];
+    const onKey = (event: KeyboardEvent) => prevented.push(event.defaultPrevented);
+    window.addEventListener('keydown', onKey);
+    onTestFinished(() => window.removeEventListener('keydown', onKey));
+    render(<Radios />);
+    const all = screen.getByRole('radio', { name: /Alle/ });
+    const open = screen.getByRole('radio', { name: 'Offen' });
+    expect(all.tabIndex).toBe(0);
+    expect(open.tabIndex).toBe(-1);
+
+    await userEvent.click(all);
+    await userEvent.keyboard('{ArrowRight}');
+    expect(open.getAttribute('aria-checked')).toBe('true');
+    expect(document.activeElement).toBe(open);
+    expect(open.tabIndex).toBe(0);
+    // "Erledigt" is disabled: skipped, wraps to the first.
+    await userEvent.keyboard('{ArrowDown}');
+    expect(document.activeElement).toBe(all);
+    await userEvent.keyboard('{ArrowUp}');
+    expect(document.activeElement).toBe(open);
+    expect(prevented).toEqual([true, true, true]);
   });
 });
 

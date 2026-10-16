@@ -163,13 +163,14 @@ function UnlinkDialog({
       }
       confirmLabel="Trennen"
       pending={unlink.isPending}
+      // In the dialog: a toast would sit behind its backdrop.
+      error={unlink.error?.message}
       onConfirm={() =>
         unlink.mutate(identity.id, {
           onSuccess: () => {
             onNotify(`${label} getrennt`);
             onClose();
           },
-          onError: (error) => onNotify(error.message, 'danger'),
         })
       }
     />
@@ -316,7 +317,6 @@ function RenameDialog({
           onNotify('Name gespeichert');
           onClose();
         },
-        onError: (error) => onNotify(error.message, 'danger'),
       },
     );
   };
@@ -329,6 +329,8 @@ function RenameDialog({
       confirmLabel="Speichern"
       confirmDisabled={!parsed.success}
       pending={rename.isPending}
+      // In the dialog: a toast would sit behind its backdrop.
+      error={rename.error?.message}
       onConfirm={save}
     >
       <form
@@ -368,13 +370,14 @@ function RemoveDialog({
       description="Mit diesem Passkey kannst du dich dann nicht mehr anmelden. Lösche ihn danach auch im Passwort-Manager deines Geräts."
       confirmLabel="Entfernen"
       pending={remove.isPending}
+      // In the dialog: a toast would sit behind its backdrop.
+      error={remove.error?.message}
       onConfirm={() =>
         remove.mutate(passkey.id, {
           onSuccess: () => {
             onNotify('Passkey entfernt');
             onClose();
           },
-          onError: (error) => onNotify(error.message, 'danger'),
         })
       }
     />

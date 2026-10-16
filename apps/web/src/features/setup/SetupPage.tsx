@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { SETUP_TOKEN_HEADER, type SetupStatus } from '@slider/shared';
 import { apiRequest } from '@/lib/api-client';
 import { SettingsLayout } from '@/shell/layouts/SettingsLayout';
-import { Notice, Spinner } from '@/ui';
+import { Button, Notice, Spinner } from '@/ui';
 import { NotAuthorized, SetupForm } from './components/SetupForm';
 import { takeSetupToken } from './lib/setup-form';
 
@@ -18,7 +18,14 @@ export function Component() {
   const status = useQuery({
     queryKey: ['setup'],
     queryFn: () => apiRequest<SetupStatus>('/setup', { headers }),
+    // Back from the Entra or Google console tab: keep the form as typed.
+    refetchOnWindowFocus: false,
   });
+  const retry = (
+    <Button size="sm" variant="secondary" icon="refresh" onClick={() => void status.refetch()}>
+      Erneut versuchen
+    </Button>
+  );
 
   return (
     <SettingsLayout
@@ -30,10 +37,21 @@ export function Component() {
     >
       {status.isPending ? (
         <Spinner size="2xl" className="text-fg-subtle" />
+      ) : status.data?.settings ? (
+        // A failed refetch (the server still restarting) keeps the data: the form stays, with
+        // what was typed, and says so above it.
+        <div className="flex flex-col gap-6">
+          {status.isError && (
+            <Notice tone="danger" title="Nicht neu geladen" footer={retry}>
+              {status.error.message}
+            </Notice>
+          )}
+          <SetupForm status={status.data} settings={status.data.settings} headers={headers} />
+        </div>
       ) : status.isError ? (
-        <Notice tone="danger">{status.error.message}</Notice>
-      ) : status.data.settings ? (
-        <SetupForm status={status.data} settings={status.data.settings} headers={headers} />
+        <Notice tone="danger" footer={retry}>
+          {status.error.message}
+        </Notice>
       ) : (
         <NotAuthorized status={status.data} />
       )}

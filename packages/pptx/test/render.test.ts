@@ -1,6 +1,8 @@
+import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
 import { parseXml } from '../src/xml';
-import type { ParsedSlide } from '../src';
+import { openPptx, svgForRenderHash, type ParsedSlide } from '../src';
+import { buildPptx } from './fixtures/build-pptx';
 import { TINY_PNG } from './fixtures/png';
 import { defined, openDeck } from './helpers';
 
@@ -41,6 +43,51 @@ describe('renderSlideSvg', () => {
     expect(svg).toContain('A &amp; B');
     expect(svg).not.toContain('" onload="');
     expect(() => parseXml(svg)).not.toThrow();
+  });
+
+  it('drops characters XML does not allow, so the SVG stays well-formed', async () => {
+    // Some generators write control characters as numeric references (`&#11;`), which the
+    // parser decodes – they must not end up in the SVG, or browsers refuse the whole image.
+    const zip = await JSZip.loadAsync(await buildPptx({ slides: [{ title: 'MARKE' }] }));
+    const slide = defined(zip.file('ppt/slides/slide1.xml'));
+    const xml = (await slide.async('string')).replace(
+      'MARKE',
+      'Hi&#1;there&#xB;x&#xFFFE;&#xD800;!',
+    );
+    zip.file('ppt/slides/slide1.xml', xml);
+    const pptx = await openPptx(await zip.generateAsync({ type: 'uint8array' }));
+    const svg = await pptx.renderSlideSvg(firstSlide(pptx.presentation.slides));
+
+    expect(svg).toContain('>Hithere x!</span>');
+    const illegal = [...svg]
+      .map((char) => char.codePointAt(0) ?? 0)
+      .filter((code) => (code < 0x20 && ![0x9, 0xa, 0xd].includes(code)) || code === 0xfffe)
+      .concat([...svg].filter((char) => /^[\ud800-\udfff]$/.test(char)).map(() => 0xd800));
+    expect(illegal).toEqual([]);
+  });
+
+  it('shows slide numbers and dates, but leaves them out of the render hash source', async () => {
+    const render = async (slideNumber: string, date: string) => {
+      const pptx = await openDeck({
+        slides: [{ title: 'Agenda', footer: { text: 'Muster AG', slideNumber, date } }],
+      });
+      const slide = firstSlide(pptx.presentation.slides);
+      return { slide, svg: await pptx.renderSlideSvg(slide) };
+    };
+    const before = await render('2', '16.10.2026');
+    const after = await render('3', '17.10.2026');
+
+    expect(before.svg).toContain('>2</span>');
+    expect(before.svg).toContain('>16.10.2026</span>');
+    expect(after.svg).not.toBe(before.svg);
+    expect(svgForRenderHash(after.svg)).toBe(svgForRenderHash(before.svg));
+    expect(svgForRenderHash(before.svg)).toContain('Muster AG');
+    expect(() => parseXml(svgForRenderHash(before.svg))).not.toThrow();
+    expect(after.slide.textHash).toBe(before.slide.textHash);
+    // Slides without such fields hash exactly as before.
+    const plain = await openDeck({ slides: [{ title: 'Agenda' }] });
+    const plainSvg = await plain.renderSlideSvg(firstSlide(plain.presentation.slides));
+    expect(svgForRenderHash(plainSvg)).toBe(plainSvg);
   });
 
   it('inlines pictures as base64 data URIs and draws fills in z-order', async () => {

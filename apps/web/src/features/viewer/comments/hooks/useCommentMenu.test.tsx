@@ -5,7 +5,8 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useCommentMenu } from './useCommentMenu';
 
 const me = { id: 'u1', name: 'Rita', color: 'violet' } as Author;
-const update = { mutate: vi.fn() };
+const update = { mutateAsync: vi.fn() };
+const showToast = vi.fn();
 const remove = {
   mutate: vi.fn(),
   isPending: false,
@@ -21,6 +22,7 @@ vi.mock('@/lib/api', () => ({
 }));
 vi.mock('@/lib/api/comment-cache', () => ({ isPendingComment: () => false }));
 vi.mock('../../state/viewer-data', () => ({ useViewerData: () => data }));
+vi.mock('../../state/viewer-toast', () => ({ useViewerToast: () => showToast }));
 
 beforeAll(() => {
   // happy-dom may lack the modal API.
@@ -36,7 +38,8 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  update.mutate.mockClear();
+  update.mutateAsync.mockReset().mockResolvedValue({});
+  showToast.mockClear();
   remove.mutate.mockReset();
   remove.isError = false;
   remove.error = null;
@@ -86,7 +89,16 @@ describe('useCommentMenu', () => {
     render(<Harness comment={comment()} isRoot />);
     expect(actionLabels()).toEqual(['Erledigt', 'Bearbeiten', 'Löschen']);
     await select('Erledigt');
-    expect(update.mutate).toHaveBeenCalledWith({ commentId: 'c1', status: 'done' });
+    expect(update.mutateAsync).toHaveBeenCalledWith({ commentId: 'c1', status: 'done' });
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('says why a status toggle flipped back', async () => {
+    update.mutateAsync.mockRejectedValue(new Error('Keine Berechtigung'));
+    render(<Harness comment={comment({ status: 'done' })} isRoot />);
+    await select('Wieder öffnen');
+    expect(update.mutateAsync).toHaveBeenCalledWith({ commentId: 'c1', status: 'open' });
+    await vi.waitFor(() => expect(showToast).toHaveBeenCalledWith('Keine Berechtigung', 'danger'));
   });
 
   it('gives others’ replies no actions unless the viewer manages the deck', () => {

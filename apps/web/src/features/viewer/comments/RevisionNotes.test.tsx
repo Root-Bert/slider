@@ -4,7 +4,8 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChangedSinceCommentNote, RemovedInPowerPointNote } from './RevisionNotes';
 
-const update = { mutate: vi.fn() };
+const update = { mutateAsync: vi.fn() };
+const showToast = vi.fn();
 const dispatch = vi.fn();
 const revealSlide = vi.fn();
 const state = { previousView: null as { slideId: string; threadId: string } | null };
@@ -14,13 +15,15 @@ vi.mock('../state/viewer-state', () => ({
   useViewerState: () => state,
   useViewerDispatch: () => dispatch,
 }));
+vi.mock('../state/viewer-toast', () => ({ useViewerToast: () => showToast }));
 vi.mock('../state/stage-registry', () => ({ useStageRegistry: () => ({ revealSlide }) }));
 
 const comment = (patch: Partial<Comment> = {}) =>
   ({ id: 't1', slideId: 's1', status: 'open', ...patch }) as Comment;
 
 beforeEach(() => {
-  update.mutate.mockClear();
+  update.mutateAsync.mockReset().mockResolvedValue({});
+  showToast.mockClear();
   dispatch.mockClear();
   revealSlide.mockClear();
   state.previousView = null;
@@ -72,7 +75,17 @@ describe('ChangedSinceCommentNote', () => {
     const resolve = screen.getByRole('button', { name: 'Erledigt' });
     expect(resolve.getAttribute('title')).toBe('Als erledigt markieren');
     await userEvent.click(resolve);
-    expect(update.mutate).toHaveBeenCalledWith({ commentId: 't1', status: 'done' });
+    expect(update.mutateAsync).toHaveBeenCalledWith({ commentId: 't1', status: 'done' });
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('says why the thread reopened when resolving failed', async () => {
+    update.mutateAsync.mockRejectedValue(new Error('Keine Verbindung zum Server.'));
+    render(<ChangedSinceCommentNote comment={comment()} deckId="deck-1" canResolve />);
+    await userEvent.click(screen.getByRole('button', { name: 'Erledigt' }));
+    await vi.waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('Keine Verbindung zum Server.', 'danger'),
+    );
   });
 
   it('hides the quick action without rights and the switch without a slide', () => {

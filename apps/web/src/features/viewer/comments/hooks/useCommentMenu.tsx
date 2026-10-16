@@ -4,6 +4,7 @@ import { isPendingComment } from '@/lib/api/comment-cache';
 import { useDeleteComment, useUpdateComment } from '@/lib/api';
 import { Button, ConfirmDialog, ContextMenu, type MenuAction } from '@/ui';
 import { useViewerData } from '../../state/viewer-data';
+import { useViewerToast } from '../../state/viewer-toast';
 
 interface CommentMenuOptions {
   comment: Comment;
@@ -23,6 +24,7 @@ interface CommentMenuOptions {
  */
 export function useCommentMenu({ comment, deckId, isRoot, onEdit, onDeleted }: CommentMenuOptions) {
   const { viewer, canComment, canManage } = useViewerData();
+  const showToast = useViewerToast();
   const update = useUpdateComment(deckId);
   const remove = useDeleteComment(deckId);
   const [contextAt, setContextAt] = useState<{ x: number; y: number } | null>(null);
@@ -38,7 +40,11 @@ export function useCommentMenu({ comment, deckId, isRoot, onEdit, onDeleted }: C
       actions.push({
         label: done ? 'Wieder öffnen' : 'Erledigt',
         icon: done ? 'undo' : 'check',
-        onSelect: () => update.mutate({ commentId: comment.id, status: done ? 'open' : 'done' }),
+        // The toggle is optimistic: if it fails it flips back, so say why.
+        onSelect: () =>
+          void update
+            .mutateAsync({ commentId: comment.id, status: done ? 'open' : 'done' })
+            .catch((error: Error) => showToast(error.message, 'danger')),
       });
     if (own && canComment && comment.source === 'app')
       actions.push({ label: 'Bearbeiten', icon: 'edit', onSelect: onEdit });

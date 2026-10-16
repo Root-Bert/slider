@@ -81,6 +81,27 @@ export function simpleDeck(): CorpusDeck {
   };
 }
 
+/** The same footer line on every slide, as corporate templates have it. */
+export const SHARED_FOOTER =
+  'Vertraulich · Projekt Atlas · Muster AG · Strategieworkshop Oktober 2026';
+
+/**
+ * Header & Footer on every slide: optional footer text and date, and the slide number – each
+ * slide's cached field value is its position, as PowerPoint rewrites it on save.
+ */
+export function withFooter(
+  deck: CorpusDeck,
+  footer: { text?: string; date?: string; slideNumbers?: boolean },
+): CorpusDeck {
+  return mapSlides(deck, (_, index) => ({
+    footer: {
+      ...(footer.text !== undefined && { text: footer.text }),
+      ...(footer.date !== undefined && { date: footer.date }),
+      ...(footer.slideNumbers && { slideNumber: String(index + 1) }),
+    },
+  }));
+}
+
 /** Five slides, two hidden (one in the middle, one at the end). */
 export function hiddenSlidesDeck(): CorpusDeck {
   return {

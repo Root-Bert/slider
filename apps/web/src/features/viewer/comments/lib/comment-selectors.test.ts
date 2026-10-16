@@ -49,6 +49,14 @@ describe('filters and counts', () => {
     expect(filterThreads(threads, { status: 'done' })).toHaveLength(2);
   });
 
+  it('keeps threads being replied to, whatever their status – not past the avatar filter', () => {
+    const done = threads[1]!;
+    const keep = new Set([done.id]);
+    expect(filterThreads(threads, { status: 'open', keep })).toContain(done);
+    expect(filterThreads(threads, { status: 'open', keep })).toHaveLength(3);
+    expect(filterThreads(threads, { status: 'open', keep, threadIds: new Set() })).toEqual([]);
+  });
+
   it('counts per status', () => {
     expect(countByStatus(threads)).toEqual({ all: 4, open: 2, done: 2 });
   });

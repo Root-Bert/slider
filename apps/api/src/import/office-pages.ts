@@ -4,8 +4,8 @@ import type { Logger } from '../logger';
 import { isGraphRef, OFFICE_FILE_TOO_BIG, OfficePdfError } from '../sources/microsoft-graph';
 import type { SourceAdapters } from '../sources/source-adapter';
 import { blobKeys, type BlobStorage } from '../storage/blob-storage';
-import type { PptxToPdf } from './libreoffice';
-import { rasterizePdf, type PageImages } from './pdf-pages';
+import { ConversionAborted, type PptxToPdf } from './libreoffice';
+import { PAGE_IMAGE_WIDTH, rasterizePdf, type PageImages } from './pdf-pages';
 import { svgThumbnail } from './svg-thumbnail';
 
 type PdfRenderer = Exclude<SlideRenderer, 'svg'>;
@@ -84,17 +84,18 @@ export interface SlidePagesDeps {
 /** Whether {@link renderSlidePages} has anything better than the SVG preview for this deck. */
 export const hasPdfRenderer = (
   deps: Pick<SlidePagesDeps, 'officePdf' | 'libreOfficePdf'>,
-  deck: DeckRow,
+  deck: Pick<DeckRow, 'source' | 'sourceRef'>,
 ): boolean => Boolean(deps.libreOfficePdf) || (Boolean(deps.officePdf) && isLinkedDeck(deck));
 
-const isLinkedDeck = (deck: DeckRow) => deck.source !== 'upload' && deck.sourceRef !== null;
+const isLinkedDeck = (deck: Pick<DeckRow, 'source' | 'sourceRef'>) =>
+  deck.source !== 'upload' && deck.sourceRef !== null;
 
 /**
  * The slides' pictures as PowerPoint draws them (BER-94): Office's PDF of the linked file, else
  * LibreOffice's PDF of the revision's own PPTX, rasterised per page. Neither PDF has pages for
  * hidden slides, so pages map onto the visible slides in order. A PDF whose page count differs
- * from the visible slides cannot be mapped and is skipped. Never throws: whatever fails falls
- * back to the next renderer and finally to the SVG preview.
+ * from the visible slides cannot be mapped and is skipped. Whatever fails falls back to the next
+ * renderer and finally to the SVG preview; it only throws {@link ConversionAborted} (shutdown).
  */
 export async function renderSlidePages(
   deps: SlidePagesDeps,
@@ -127,6 +128,8 @@ export async function renderSlidePages(
         try {
           return await libreOfficePdf(pptx);
         } catch (error) {
+          // Shutdown: no SVG fallback – the import or re-render resumes on the next start.
+          if (error instanceof ConversionAborted) throw error;
           deps.log.warn(`LibreOffice could not convert deck ${deck.id}; using the preview`, error);
           return null;
         }
@@ -178,7 +181,11 @@ function officeFailureMessage(error: unknown, sizeBytes: number): string {
 export const slideRenderer = (result: SlidePages, page: PageImages | null): SlideRenderer | null =>
   page ? result.renderer : result.renderer === null ? null : 'svg';
 
-/** Stores a slide's picture: the PDF page when there is one, else the SVG preview. */
+/**
+ * Stores a slide's picture: the PDF page when there is one, else the SVG preview – with its
+ * pictures scaled to what the full slide ({@link PAGE_IMAGE_WIDTH}) and the thumbnail show.
+ * The render hash is the caller's, of the unscaled SVG.
+ */
 export async function storeSlideRender(
   storage: BlobStorage,
   deckId: string,
@@ -188,11 +195,14 @@ export async function storeSlideRender(
 ): Promise<{ imageKey: string; thumbnailKey: string }> {
   if (!page) {
     const imageKey = blobKeys.slideRender(deckId, revisionId, 'svg');
-    await storage.put(imageKey, new TextEncoder().encode(svg));
-    // Same SVG with its pictures scaled down: a photo slide would otherwise put megabytes into
-    // every minimap and deck card.
-    const thumbnail = await svgThumbnail(svg);
-    if (thumbnail === svg) return { imageKey, thumbnailKey: imageKey };
+    // Pictures no larger than a PDF page would show them: a photo deck would otherwise send
+    // every viewer several MB per slide.
+    const full = await svgThumbnail(svg, PAGE_IMAGE_WIDTH);
+    await storage.put(imageKey, new TextEncoder().encode(full));
+    // Same SVG with its pictures scaled down further: a photo slide would otherwise put
+    // megabytes into every minimap and deck card.
+    const thumbnail = await svgThumbnail(full);
+    if (thumbnail === full) return { imageKey, thumbnailKey: imageKey };
     const thumbnailKey = blobKeys.slideRender(deckId, revisionId, 'svg');
     await storage.put(thumbnailKey, new TextEncoder().encode(thumbnail));
     return { imageKey, thumbnailKey };

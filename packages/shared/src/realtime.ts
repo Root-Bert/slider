@@ -29,12 +29,16 @@ export type LivePresenceInput = z.infer<typeof livePresenceInputSchema>;
 
 /** One open viewer (a browser tab) – the same person may be here twice. */
 export interface LivePeer extends LivePresenceInput {
+  /** Public id of the connection – not the secret key its own `hello` carries. */
   connectionId: string;
   author: Author;
 }
 
 export type LiveEvent =
-  /** First event of a stream: your connection id (the key for posting presence) and who is here. */
+  /**
+   * First event of a stream: your connection's secret key (for posting presence and goodbye; the
+   * others know you by a different, public id) and who is here.
+   */
   | { type: 'hello'; connectionId: string; peers: LivePeer[] }
   /** Someone joined, moved, switched slides or opened a comment. */
   | { type: 'peer'; peer: LivePeer }

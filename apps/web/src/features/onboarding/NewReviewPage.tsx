@@ -22,7 +22,7 @@ export function Component() {
     return (
       <CenteredMessage
         title="Nur ansehen und kommentieren"
-        message={`Als Reviewer in „${workspace.name}“ kannst du keine Präsentationen hinzufügen. Bitte einen Admin, dich zum Mitglied zu machen.`}
+        message={`Als Reviewer in „${workspace.name}“ kannst du keine Reviews anlegen. Bitte einen Admin, dich zum Mitglied zu machen.`}
       >
         <TextLink to={routes.workspace(workspace.id)} variant="underline" size="sm">
           Zurück zu den Reviews
@@ -33,7 +33,7 @@ export function Component() {
   if (deckState(workspace.usage).full) {
     // The plan's deck limit (BER-130) – the API would refuse the import anyway.
     return (
-      <CenteredMessage title="Keine Präsentation mehr frei" message={deckLimitMessage(workspace)}>
+      <CenteredMessage title="Keine Review mehr frei" message={deckLimitMessage(workspace)}>
         <TextLink to={routes.workspace(workspace.id)} variant="underline" size="sm">
           Zu den Reviews
         </TextLink>

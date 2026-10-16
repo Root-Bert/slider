@@ -1,9 +1,12 @@
 import type { Author } from '@slider/shared';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { author } from '../lib/test-fixtures';
 import { ParticipantAvatars } from './ParticipantAvatars';
+
+/** `LONG_PRESS_MS` in the component. */
+const LONG_PRESS_MS = 500;
 
 const mocks = vi.hoisted(() => ({
   data: {
@@ -239,5 +242,69 @@ describe('ParticipantAvatars', () => {
       authorId: 'me',
     });
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('Shift+F10 opens the picker from the keyboard (macOS has no menu key) and focuses it', async () => {
+    mocks.live = [{ author: anna, activeSlideId: 's2' }];
+    render(<ParticipantAvatars />);
+    const trigger = avatar('Nur Kommentare von Anna');
+    expect(trigger.getAttribute('aria-keyshortcuts')).toBe('Shift+F10');
+    trigger.focus();
+    await userEvent.keyboard('{Shift>}{F10}{/Shift}');
+    const dialog = screen.getByRole('dialog', { name: 'Farbe für Anna' });
+    expect(within(dialog).getByRole('radio', { name: 'Grün' })).toBe(document.activeElement);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Zu Folie 2 springen' }));
+    expect(mocks.goToSlide).toHaveBeenCalledWith(1);
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('the menu key opens it too', () => {
+    render(<ParticipantAvatars />);
+    expect(fireEvent.keyDown(ownAvatar(), { key: 'ContextMenu' })).toBe(false);
+    expect(screen.getByRole('dialog', { name: 'Deine Farbe' })).toBeTruthy();
+  });
+
+  it('a long press on touch opens the picker instead of filtering; a tap still filters', () => {
+    vi.useFakeTimers();
+    try {
+      render(<ParticipantAvatars />);
+      const trigger = avatar('Nur Kommentare von Anna');
+      const touch = { pointerType: 'touch', clientX: 10, clientY: 10 };
+
+      fireEvent.pointerDown(trigger, touch);
+      act(() => vi.advanceTimersByTime(LONG_PRESS_MS));
+      expect(screen.getByRole('dialog', { name: 'Farbe für Anna' })).toBeTruthy();
+      fireEvent.pointerUp(trigger, touch);
+      // Android follows with its own contextmenu: the picker stays open.
+      fireEvent.contextMenu(trigger);
+      fireEvent.click(trigger);
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      expect(mocks.dispatch).not.toHaveBeenCalled();
+
+      fireEvent.pointerDown(trigger, touch);
+      act(() => vi.advanceTimersByTime(100));
+      fireEvent.pointerUp(trigger, touch);
+      fireEvent.click(trigger);
+      expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith({
+        type: 'personFilterToggled',
+        authorId: 'anna',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a touch that moves (a scroll) opens nothing', () => {
+    vi.useFakeTimers();
+    try {
+      render(<ParticipantAvatars />);
+      const trigger = avatar('Nur Kommentare von Anna');
+      fireEvent.pointerDown(trigger, { pointerType: 'touch', clientX: 10, clientY: 10 });
+      fireEvent.pointerMove(trigger, { pointerType: 'touch', clientX: 10, clientY: 40 });
+      act(() => vi.advanceTimersByTime(LONG_PRESS_MS));
+      expect(screen.queryByRole('dialog')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

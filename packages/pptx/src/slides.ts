@@ -27,7 +27,7 @@ export async function parseSlide(
   layout: LayoutContext,
   presentationGuides: EmuGuide[],
 ): Promise<ParsedSlide> {
-  const slide = await archive.readXml(ref.path);
+  const slide = await archive.readXml(ref.path, { retain: false });
   if (!slide) throw new PptxError('corrupt', `Missing slide part ${ref.path}`);
   const cSld = child(slide, 'p:cSld');
 

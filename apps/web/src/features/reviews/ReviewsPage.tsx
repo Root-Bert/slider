@@ -4,7 +4,7 @@ import type { Deck, DeckFolder } from '@slider/shared';
 import { routes } from '@/lib/routes';
 import { AppHeader } from '@/shell/AppHeader';
 import { pluralize } from '@/lib/format';
-import { useAllDecks, useDecks, useDeleteFolder, useFolders } from '@/lib/api';
+import { useDecks, useFolders } from '@/lib/api';
 import { useAccount } from '@/features/auth';
 import {
   canCreateDecks,
@@ -16,7 +16,6 @@ import {
 import { accentColor, isLightAccent } from '@/lib/accent';
 import {
   Button,
-  ConfirmDialog,
   ContextMenu,
   Icon,
   Menu,
@@ -26,6 +25,7 @@ import {
   useToast,
   type MenuAction,
 } from '@/ui';
+import { DeleteFolderDialog } from './components/DeleteFolderDialog';
 import { DeckCollection, DeckCollectionSkeleton, type DeckView } from './components/DeckCollection';
 import { DeckSearch } from './components/DeckSearch';
 import { EmptyState } from './components/EmptyState';
@@ -75,14 +75,12 @@ export function Component() {
   const limitNoticeId = useId();
   const decksQuery = useDecks(workspace.id);
   const decks = decksQuery.data ?? NO_DECKS;
-  const allDecksQuery = useAllDecks();
   const { openedAt } = useLastVisits();
-  const { isPinned } = usePinnedDecks();
+  const { isPinned } = usePinnedDecks(workspace.id);
   const [toast, showToast] = useToast();
   const foldersQuery = useFolders(workspace.id);
   const folders = foldersQuery.data ?? NO_FOLDERS;
   const folderDialog = useFolderDialog(workspace.id);
-  const deleteFolder = useDeleteFolder(workspace.id);
   const moveDecks = useMoveDecks();
   const [deletingFolder, setDeletingFolder] = useState<DeckFolder | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -115,16 +113,25 @@ export function Component() {
   // Multi-select: ⌘/Shift-click, ⌘A or a selection box dragged over empty space.
   const selection = useDeckSelection(visible.map((deck) => deck.id));
   const selectedDecks = visible.filter((deck) => selection.selected.has(deck.id));
-  const bulk = useBulkDeckActions(selectedDecks, { onNotify: showToast, onDone: selection.clear });
+  const bulk = useBulkDeckActions(selectedDecks, {
+    workspaceId: workspace.id,
+    onNotify: showToast,
+    onDone: selection.clear,
+  });
   const pageRef = useRef<HTMLDivElement>(null);
   const marquee = useMarqueeSelect(pageRef, selection.marquee);
   const [selectionMenuAt, setSelectionMenuAt] = useState<{ x: number; y: number } | null>(null);
 
-  // A pinned deck deleted elsewhere would otherwise hold one of the few pin slots forever.
-  const allDecks = allDecksQuery.isSuccess ? allDecksQuery.data : undefined;
+  // A pinned deck deleted (or moved away) elsewhere would otherwise hold one of the few pin
+  // slots of this workspace forever.
+  const loadedDecks = decksQuery.isSuccess ? decksQuery.data : undefined;
   useEffect(() => {
-    if (allDecks) prunePinnedDecks(new Set(allDecks.map((deck) => deck.id)));
-  }, [allDecks]);
+    if (loadedDecks)
+      prunePinnedDecks(
+        { userId: user.id, workspaceId: workspace.id },
+        new Set(loadedDecks.map((deck) => deck.id)),
+      );
+  }, [loadedDecks, user.id, workspace.id]);
   const goToNew =
     mayCreate && !decksFull ? () => void navigate(routes.newReview(workspace.id)) : undefined;
 
@@ -181,7 +188,9 @@ export function Component() {
   return (
     <div
       ref={pageRef}
-      className="dot-grid relative min-h-full"
+      // The cards' thumbnail glow reaches past the page gutter: clipped, so phones don't scroll
+      // sideways (clip, not hidden – no scroll container, sticky bars keep working).
+      className="dot-grid relative min-h-full overflow-x-clip"
       // Selection in the viewer's own reviewer colour, like their comments (BER-99).
       style={
         {
@@ -374,21 +383,14 @@ export function Component() {
         />
       )}
       {deletingFolder && (
-        <ConfirmDialog
+        <DeleteFolderDialog
+          workspaceId={workspace.id}
+          folder={deletingFolder}
           onClose={() => setDeletingFolder(null)}
-          title={`Ordner „${deletingFolder.name}“ löschen?`}
-          description="Die Reviews darin bleiben erhalten und stehen danach wieder direkt in der Übersicht."
-          confirmLabel="Ordner löschen"
-          confirmDisabled={deleteFolder.isPending}
-          onConfirm={() =>
-            deleteFolder.mutate(deletingFolder.id, {
-              onSuccess: () => {
-                showToast(`Ordner „${deletingFolder.name}“ gelöscht`);
-                setDeletingFolder(null);
-              },
-              onError: (error) => showToast(error.message, 'danger'),
-            })
-          }
+          onDeleted={() => {
+            showToast(`Ordner „${deletingFolder.name}“ gelöscht`);
+            setDeletingFolder(null);
+          }}
         />
       )}
       {marquee.box && (

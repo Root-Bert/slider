@@ -1,6 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import type { ImportState } from '@slider/shared';
-import { PptxError } from '@slider/pptx';
+import { PptxError, svgForRenderHash } from '@slider/pptx';
 import type { Clock } from '../clock';
 import type { Database, Executor } from '../db/client';
 import { decks, revisions, slides, slideVersions } from '../db/schema';
@@ -8,7 +8,7 @@ import type { Logger } from '../logger';
 import { blobKeys, type BlobStorage } from '../storage/blob-storage';
 import { importSyncRevision } from '../sync/sync-import';
 import { deleteOrphanSlides, sha256Hex, toShape } from './common';
-import type { PptxToPdf } from './libreoffice';
+import { ConversionAborted, type PptxToPdf } from './libreoffice';
 import { renderSlidePages, slideRenderer, storeSlideRender, type OfficePdf } from './office-pages';
 import type { OpenPptx } from './pptx';
 import { upsertPptxComments, type ImportedSlide } from './pptx-comments';
@@ -44,7 +44,8 @@ class DeckGoneError extends Error {}
 
 /**
  * Turns an uploaded PPTX into slides, renders and comments (BER-94, BER-97).
- * Never throws: every outcome ends in `ready` or `failed` on the deck.
+ * Never throws: every outcome ends in `ready` or `failed` on the deck – except a shutdown in the
+ * middle, which leaves it `running` for {@link findInterruptedImports}.
  */
 export async function importDeck(deps: ImportDeps, job: ImportJob): Promise<void> {
   if (job.kind === 'sync') {
@@ -60,6 +61,11 @@ export async function importDeck(deps: ImportDeps, job: ImportJob): Promise<void
   } catch (error) {
     if (error instanceof DeckGoneError) {
       await deps.storage.deletePrefix(blobKeys.deckPrefix(job.deckId));
+      return;
+    }
+    if (error instanceof ConversionAborted) {
+      // Shutdown: the deck stays `running`, and the next start imports it again.
+      deps.log.info(`Import of deck ${job.deckId} stopped by shutdown; resumes on the next start`);
       return;
     }
     if (!(error instanceof PptxError)) deps.log.error(`Import of deck ${job.deckId} failed`, error);
@@ -158,7 +164,11 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
     const keys = await storeSlideRender(storage, deckId, revisionId, svg, page);
     await db
       .update(slideVersions)
-      .set({ ...keys, renderHash: sha256Hex(svg), renderer: slideRenderer(rendered, page) })
+      .set({
+        ...keys,
+        renderHash: sha256Hex(svgForRenderHash(svg)),
+        renderer: slideRenderer(rendered, page),
+      })
       .where(eq(slideVersions.id, slide.versionId));
   }
 

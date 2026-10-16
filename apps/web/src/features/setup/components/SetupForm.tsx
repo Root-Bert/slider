@@ -11,9 +11,10 @@ import {
 } from '@slider/shared';
 import { routes } from '@/lib/routes';
 import { apiRequest } from '@/lib/api-client';
-import { workspaceKeys } from '@/lib/api';
+import { useLogout, useMe, workspaceKeys } from '@/lib/api';
 import {
   Button,
+  ErrorText,
   Notice,
   Section,
   Select,
@@ -33,16 +34,7 @@ import {
 
 /** Before the first account: where the setup link is. Afterwards: only the admin. */
 export function NotAuthorized({ status }: { status: SetupStatus }) {
-  if (status.hasAccount) {
-    return (
-      <Notice tone="warning">
-        Nur der Admin dieser Slider-Instanz kann die Einrichtung ändern.{' '}
-        <TextLink to={routes.login('/einrichtung')} variant="inline">
-          Als Admin anmelden
-        </TextLink>
-      </Notice>
-    );
-  }
+  if (status.hasAccount) return <AdminOnly />;
   return (
     <Notice tone="warning">
       Öffne den Einrichtungslink aus dem Server-Log – er endet auf <Code>/einrichtung#token=…</Code>
@@ -50,6 +42,57 @@ export function NotAuthorized({ status }: { status: SetupStatus }) {
     </Notice>
   );
 }
+
+/**
+ * Signed out: a link to the login. Signed in with an account that isn't the admin: the login
+ * would send it straight back here, so it signs out first and then offers the login.
+ */
+function AdminOnly() {
+  const user = useMe().data?.user;
+  const logout = useLogout();
+  if (!user) {
+    return (
+      <Notice tone="warning">
+        Nur der Admin dieser Slider-Instanz kann die Einrichtung ändern.{' '}
+        <TextLink to={routes.login(SETUP_PATH)} variant="inline">
+          Als Admin anmelden
+        </TextLink>
+      </Notice>
+    );
+  }
+  return (
+    <Notice
+      tone="warning"
+      footer={
+        <div className="flex flex-col items-start gap-1.5">
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={logout.isPending}
+            onClick={() =>
+              logout.mutate(undefined, {
+                // A full page load: everything cached belongs to the account signed out.
+                onSuccess: () => window.location.assign(routes.login(SETUP_PATH)),
+              })
+            }
+          >
+            Mit anderem Konto anmelden
+          </Button>
+          {logout.error && (
+            <ErrorText role="alert" size="xs">
+              Abmelden hat nicht geklappt – bitte erneut versuchen.
+            </ErrorText>
+          )}
+        </div>
+      }
+    >
+      Nur der Admin dieser Slider-Instanz kann die Einrichtung ändern. Du bist als{' '}
+      {`${user.name} (${user.email})`} angemeldet.
+    </Notice>
+  );
+}
+
+const SETUP_PATH = '/einrichtung';
 
 type Settings = NonNullable<SetupStatus['settings']>;
 

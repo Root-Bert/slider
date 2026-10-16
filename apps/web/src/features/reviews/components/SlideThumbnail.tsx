@@ -31,9 +31,11 @@ export function SlideThumbnail({ glow = false, glowClassName, ...props }: SlideT
           glowClassName,
         )}
       >
+        {/* Lazy like the frame: an eager copy would fetch every card's thumbnail on load. */}
         <img
           src={props.src}
           alt=""
+          loading="lazy"
           decoding="async"
           draggable={false}
           className="size-full object-cover"

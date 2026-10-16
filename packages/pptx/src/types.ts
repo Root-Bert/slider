@@ -88,6 +88,12 @@ export interface ParsedRun {
   italic: boolean;
   /** `#rrggbb`, if specified. */
   color: string | null;
+  /**
+   * Set for fields whose cached text PowerPoint rewrites on every save (`a:fld` of type
+   * `slidenum` or `datetime*`). Their text is shown, but kept out of `ParsedShape.text`,
+   * `textHash` and the render hash, so it does not mark slides as changed.
+   */
+  volatileField?: string;
 }
 
 export type ParsedCommentAnchor =

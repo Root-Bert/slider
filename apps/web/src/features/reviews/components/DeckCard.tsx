@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import type { Deck } from '@slider/shared';
 import { routes } from '@/lib/routes';
@@ -13,9 +13,33 @@ import { DeckStatusBadge, ImportOverlay, OriginChips, SlideCountChip } from './D
 import { OpenCommentsButton } from './OpenComments';
 import { SlideThumbnail } from './SlideThumbnail';
 
+/**
+ * Renaming in place: the title link turns into an input. Ended with Enter or Escape, the focus
+ * goes back to the title link – the input it was on is gone, and it would drop to <body>.
+ */
+function useInPlaceRename() {
+  const [renaming, setRenaming] = useState(false);
+  const titleRef = useRef<HTMLAnchorElement>(null);
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (renaming || !refocus.current) return;
+    refocus.current = false;
+    titleRef.current?.focus();
+  }, [renaming]);
+  return {
+    renaming,
+    titleRef,
+    startRename: () => setRenaming(true),
+    endRename: (hadFocus: boolean) => {
+      refocus.current = hadFocus;
+      setRenaming(false);
+    },
+  };
+}
+
 /** Marks a deck pinned to the top of the list. */
-function PinnedMark({ deckId }: { deckId: string }) {
-  if (!usePinnedDecks().isPinned(deckId)) return null;
+function PinnedMark({ deck }: { deck: Deck }) {
+  if (!usePinnedDecks(deck.workspaceId).isPinned(deck.id)) return null;
   return (
     <Icon
       name="pushPin"
@@ -105,7 +129,7 @@ export function DeckCard({ deck, selected = false, onNotify }: DeckItemProps) {
   const { onContextMenu, ...contextMenu } = useDeckContextMenu();
   const [commentsSlot, setCommentsSlot] = useState<HTMLElement | null>(null);
   const [commentsOpen, setCommentsOpen] = useState(false);
-  const [renaming, setRenaming] = useState(false);
+  const { renaming, startRename, endRename, titleRef } = useInPlaceRename();
   return (
     <article
       // An open comments list switches the hover look off (`:not([data-comments-open])`).
@@ -145,7 +169,7 @@ export function DeckCard({ deck, selected = false, onNotify }: DeckItemProps) {
           deck={deck}
           onNotify={onNotify}
           {...contextMenu}
-          onRename={() => setRenaming(true)}
+          onRename={startRename}
           triggerVariant="glass"
           // Above the stretched title link.
           className={cn('absolute top-2 right-2 z-(--z-raised)', REVEAL_ON_HOVER)}
@@ -156,12 +180,13 @@ export function DeckCard({ deck, selected = false, onNotify }: DeckItemProps) {
       </div>
 
       <div className="flex min-w-0 items-center gap-2">
-        <PinnedMark deckId={deck.id} />
+        <PinnedMark deck={deck} />
         <h3 className={cn('text-lg font-medium text-fg', renaming ? 'min-w-0 flex-1' : 'truncate')}>
           {renaming ? (
-            <DeckTitleInput deck={deck} onDone={() => setRenaming(false)} onNotify={onNotify} />
+            <DeckTitleInput deck={deck} onDone={endRename} onNotify={onNotify} />
           ) : (
             <Link
+              ref={titleRef}
               to={routes.deck(deck.id)}
               className="outline-none transition-colors duration-200 group-[:hover:not(:has([data-deck-footer]:hover)):not([data-comments-open])]:text-primary-hover after:absolute after:inset-0 after:content-['']"
             >
@@ -187,7 +212,7 @@ export function DeckCard({ deck, selected = false, onNotify }: DeckItemProps) {
 export function DeckRow({ deck, selected = false, onNotify }: DeckItemProps) {
   const { onContextMenu, ...contextMenu } = useDeckContextMenu();
   const [commentsOpen, setCommentsOpen] = useState(false);
-  const [renaming, setRenaming] = useState(false);
+  const { renaming, startRename, endRename, titleRef } = useInPlaceRename();
   return (
     <article
       data-comments-open={commentsOpen || undefined}
@@ -214,14 +239,15 @@ export function DeckRow({ deck, selected = false, onNotify }: DeckItemProps) {
 
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <div className="flex min-w-0 items-center gap-2">
-          <PinnedMark deckId={deck.id} />
+          <PinnedMark deck={deck} />
           <h3
             className={cn('text-sm font-medium text-fg', renaming ? 'min-w-0 flex-1' : 'truncate')}
           >
             {renaming ? (
-              <DeckTitleInput deck={deck} onDone={() => setRenaming(false)} onNotify={onNotify} />
+              <DeckTitleInput deck={deck} onDone={endRename} onNotify={onNotify} />
             ) : (
               <Link
+                ref={titleRef}
                 to={routes.deck(deck.id)}
                 className="outline-none transition-colors duration-200 group-[:hover:not(:has([data-deck-footer]:hover)):not([data-comments-open])]:text-primary-hover after:absolute after:inset-0 after:content-['']"
               >
@@ -245,7 +271,7 @@ export function DeckRow({ deck, selected = false, onNotify }: DeckItemProps) {
         deck={deck}
         onNotify={onNotify}
         {...contextMenu}
-        onRename={() => setRenaming(true)}
+        onRename={startRename}
         className="z-(--z-raised) shrink-0"
       />
     </article>

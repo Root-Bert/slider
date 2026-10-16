@@ -4,6 +4,7 @@ import {
   matchSlides,
   PptxError,
   relinkDeletedSlides,
+  svgForRenderHash,
   type ParsedSlide,
   type SlideFingerprint,
 } from '@slider/pptx';
@@ -17,6 +18,7 @@ import {
   type SlideRenderer,
 } from '../db/schema';
 import { deleteOrphanSlides, sha256Hex, toShape } from '../import/common';
+import { ConversionAborted } from '../import/libreoffice';
 import { renderSlidePages, slideRenderer, storeSlideRender } from '../import/office-pages';
 import type { ImportDeps } from '../import/import-deck';
 import { upsertPptxComments, type ImportedSlide } from '../import/pptx-comments';
@@ -82,7 +84,7 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
         position,
         ...keys,
         shapes: parsed.shapes.map(toShape),
-        renderHash: sha256Hex(svg),
+        renderHash: sha256Hex(svgForRenderHash(svg)),
         renderer: slideRenderer(rendered, page),
       });
     }
@@ -283,10 +285,16 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
         pending: null,
         importingRevisionId: null,
         failedToken: null,
+        importFailures: null,
       });
     });
     deps.log.info(`Deck ${deckId}: revision ${revision.number} imported`);
   } catch (error) {
+    if (error instanceof ConversionAborted) {
+      // Shutdown: the revision stays pending, and the next start imports it again.
+      deps.log.info(`Sync import of deck ${deckId} stopped by shutdown; resumes on the next start`);
+      return;
+    }
     if (!(error instanceof PptxError)) {
       deps.log.error(`Sync import of deck ${deckId} revision ${revisionId} failed`, error);
     }
@@ -299,9 +307,13 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
       (revision.contentSha256 ? `sha256:${revision.contentSha256}` : null);
     const parseFailed = error instanceof PptxError;
     // A file that cannot be parsed is skipped until it changes. Anything else may be transient
-    // (storage, database): the same file is tried again, but with the backoff of failed checks,
-    // and after a few failures in a row it is skipped too – a manual "Neu rendern" still tries.
-    const failures = parseFailed ? null : (deck.syncState.consecutiveFailures ?? 0) + 1;
+    // (storage, database): the same file is tried again with a backoff, and after a few failed
+    // imports of it in a row it is skipped too – a manual "Neu rendern" still tries. Only import
+    // attempts of this very file count, not the failed source checks before it.
+    const previous = deck.syncState.importFailures;
+    const failures = parseFailed
+      ? null
+      : (previous && previous.token === token ? previous.count : 0) + 1;
     await mergeSyncState(db, deckId, {
       lastSyncError: {
         code: parseFailed ? 'parse_failed' : 'internal',
@@ -313,6 +325,7 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
         ? {}
         : {
             consecutiveFailures: failures,
+            importFailures: { token, count: failures },
             nextCheckAt: new Date(
               now.getTime() +
                 syncBackoffMs(deps.syncPollMs || DEFAULT_SYNC_POLL_INTERVAL_MS, failures),

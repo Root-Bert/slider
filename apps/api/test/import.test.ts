@@ -5,8 +5,9 @@ import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { commentSchema, deckSchema, slideSchema, type Deck } from '@slider/shared';
 import { PptxError, type ParsedComment } from '@slider/pptx';
-import { comments, decks, userIdentities, users } from '../src/db/schema';
+import { comments, decks, slideVersions, userIdentities, users } from '../src/db/schema';
 import { findInterruptedImports, importDeck } from '../src/import/import-deck';
+import { ConversionAborted, type PptxToPdf } from '../src/import/libreoffice';
 import type { OpenPptx } from '../src/import/pptx';
 import { toAnchor, upsertPptxComments } from '../src/import/pptx-comments';
 import { silentLogger } from '../src/logger';
@@ -17,6 +18,7 @@ import {
   stubPptx,
   type TestContext,
 } from './helpers';
+import { makePdf } from './pdf';
 
 let ctx: TestContext | undefined;
 afterEach(async () => {
@@ -197,6 +199,36 @@ describe('after a restart', () => {
   });
 });
 
+describe('shutdown during rendering', () => {
+  it('leaves the import to resume instead of finishing with SVG previews', async () => {
+    let aborting = true;
+    const libreOfficePdf: PptxToPdf = async () => {
+      if (aborting) throw new ConversionAborted();
+      return makePdf(3);
+    };
+    ctx = await createTestContext({ openPptx: stubPptx({}, 3), libreOfficePdf });
+    const cut = await upload(ctx);
+    expect(cut.import.status).toBe('running');
+    const rows = await ctx.deps.db
+      .select({ renderer: slideVersions.renderer })
+      .from(slideVersions)
+      .where(eq(slideVersions.revisionId, cut.currentRevisionId ?? ''));
+    expect(rows.some((row) => row.renderer === 'svg')).toBe(false);
+
+    // Next start: picked up again and rendered properly.
+    aborting = false;
+    const jobs = await findInterruptedImports(ctx.deps.db);
+    expect(jobs).toEqual([{ deckId: cut.id, revisionId: cut.currentRevisionId, kind: 'initial' }]);
+    for (const job of jobs) ctx.deps.queue.enqueue(job);
+    await ctx.deps.queue.idle();
+    const after = await ctx.deps.db
+      .select({ renderer: slideVersions.renderer })
+      .from(slideVersions)
+      .where(eq(slideVersions.revisionId, cut.currentRevisionId ?? ''));
+    expect(after.map((row) => row.renderer)).toEqual(['libreoffice', 'libreoffice', 'libreoffice']);
+  });
+});
+
 describe('upsertPptxComments', () => {
   const parsed = (text: string): ParsedComment[] => [
     {
@@ -257,6 +289,87 @@ describe('upsertPptxComments', () => {
     expect(rows.find((row) => row.externalId === 'author1:1')?.body).toBe('Dann');
     const reply = rows.find((row) => row.externalId === '{guid}/{reply}');
     expect(reply?.parentId).toBe(rows.find((row) => row.externalId === '{guid}')?.id);
+  });
+
+  it('legacy comments converted to modern ones by PowerPoint 365 keep their row, replies and status', async () => {
+    ctx = await createTestContext();
+    const { deckId, slideIds } = await createReadyDeck(ctx, { slideCount: 1 });
+    const slides = new Map([[7, { slideId: slideIds[0] ?? '', shapes: [] }]]);
+    const legacy: ParsedComment = {
+      externalId: 'author1:1',
+      format: 'legacy',
+      sldId: 7,
+      author: { name: 'Lena Wolf', initials: 'LW' },
+      // Legacy times carry no time zone.
+      createdAt: '2025-03-01T10:00:00.000',
+      text: 'Bitte die Zahlen prüfen.',
+      status: 'open',
+      anchor: { type: 'point', point: { x: 0.2, y: 0.3 } },
+      replies: [
+        {
+          externalId: 'author2:1',
+          author: { name: 'Max Kern', initials: null },
+          createdAt: '2025-03-01T11:00:00.000',
+          text: 'Mach ich.',
+        },
+      ],
+    };
+    const other: ParsedComment = {
+      ...legacy,
+      externalId: 'author1:2',
+      text: 'Andere Folie, anderer Text',
+      replies: [],
+    };
+    await upsertPptxComments(ctx.deps.db, deckId, [legacy, other], slides, new Date());
+    const before = await ctx.deps.db.select().from(comments).where(eq(comments.deckId, deckId));
+    const root = before.find((row) => row.externalId === 'author1:1');
+    // In Slider: resolved, and answered.
+    await ctx.deps.db
+      .update(comments)
+      .set({ status: 'done' })
+      .where(eq(comments.id, root?.id ?? ''));
+    const answer = await ctx.request(`/api/decks/${deckId}/comments`, {
+      method: 'POST',
+      json: { slideId: slideIds[0], body: 'Danke!', parentId: root?.id, anchor: { type: 'slide' } },
+    });
+    expect(answer.status).toBe(201);
+
+    const modern: ParsedComment = {
+      ...legacy,
+      externalId: '{0F6E3A2B-1C4D-4E5F-8A9B-0C1D2E3F4A5B}',
+      format: 'modern',
+      createdAt: '2025-03-01T09:00:00.000Z',
+      replies: [
+        {
+          externalId: '{9A8B7C6D-5E4F-4A3B-8C2D-1E0F9A8B7C6D}',
+          author: { name: 'Max Kern', initials: null },
+          createdAt: '2025-03-01T10:00:00.000Z',
+          text: 'Mach ich.',
+        },
+      ],
+    };
+    const counts = await upsertPptxComments(
+      ctx.deps.db,
+      deckId,
+      [modern, other],
+      slides,
+      new Date(),
+    );
+    expect(counts).toMatchObject({ inserted: 0, removed: 0 });
+
+    const after = await ctx.deps.db.select().from(comments).where(eq(comments.deckId, deckId));
+    expect(after).toHaveLength(before.length + 1);
+    const taken = after.find((row) => row.id === root?.id);
+    expect(taken).toMatchObject({
+      externalId: modern.externalId,
+      status: 'done',
+      removedInSourceAt: null,
+    });
+    const replies = after.filter((row) => row.parentId === root?.id);
+    expect(replies.map((row) => row.body).sort()).toEqual(['Danke!', 'Mach ich.']);
+    expect(replies.find((row) => row.body === 'Mach ich.')?.externalId).toBe(
+      `${modern.externalId}/${modern.replies[0]?.externalId}`,
+    );
   });
 
   it('keeps a status changed in Slider across re-imports', async () => {

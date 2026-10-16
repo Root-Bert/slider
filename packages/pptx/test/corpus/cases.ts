@@ -12,7 +12,9 @@ import {
   MIRA,
   ROADMAP_V2_PNG,
   sectionsDeck,
+  SHARED_FOOTER,
   simpleDeck,
+  withFooter,
 } from './bases';
 import {
   duplicate,
@@ -126,6 +128,20 @@ export const CASES: CorpusCase[] = [
     tags: ['structure'],
     v1: simpleDeck(),
     v2: insertAt(simpleDeck(), 0, NEW_SLIDE),
+  },
+  {
+    id: 'insert-start-slide-numbers',
+    title: 'Folie am Anfang eingefügt, mit Foliennummern und Datum',
+    description:
+      'Wie insert-start, aber mit Kopf- und Fußzeile (Foliennummer, automatisches Datum). ' +
+      'PowerPoint schreibt beim Speichern jede Foliennummer und das Datum neu; die Folien ' +
+      'selbst sind unverändert.',
+    tags: ['structure', 'content'],
+    v1: withFooter(simpleDeck(), { date: '16.10.2026', slideNumbers: true }),
+    v2: withFooter(insertAt(simpleDeck(), 0, NEW_SLIDE), {
+      date: '17.10.2026',
+      slideNumbers: true,
+    }),
   },
   {
     id: 'insert-middle',
@@ -541,5 +557,38 @@ export const CASES: CorpusCase[] = [
     synthetic: SYNTHETIC_GOOGLE,
     v1: asGoogleSlides(simpleDeck()),
     v2: asGoogleSlides(remove(simpleDeck(), 'zeitplan')),
+  },
+  {
+    id: 'google-insert-footer',
+    title: 'Google Slides: Folie eingefügt, gemeinsame Fußzeile',
+    description:
+      'Wie google-insert, aber alle Folien tragen dieselbe Fußzeile. Der gemeinsame Text macht ' +
+      'benachbarte Folien ähnlich genug, dass die verschobenen sldIds plausibel wirken.',
+    tags: ['producer', 'synthetic', 'structure'],
+    synthetic: SYNTHETIC_GOOGLE,
+    v1: asGoogleSlides(withFooter(simpleDeck(), { text: SHARED_FOOTER })),
+    v2: asGoogleSlides(withFooter(insertAt(simpleDeck(), 1, NEW_SLIDE), { text: SHARED_FOOTER })),
+  },
+  {
+    id: 'google-delete-footer',
+    title: 'Google Slides: Folie gelöscht, gemeinsame Fußzeile',
+    description:
+      'Beide Versionen aus Google Slides mit derselben Fußzeile auf jeder Folie; die Agenda ist ' +
+      'gelöscht, jede spätere Folie rückt auf die sldId ihres Vorgängers.',
+    tags: ['producer', 'synthetic', 'structure'],
+    synthetic: SYNTHETIC_GOOGLE,
+    v1: asGoogleSlides(withFooter(simpleDeck(), { text: SHARED_FOOTER })),
+    v2: asGoogleSlides(withFooter(remove(simpleDeck(), 'agenda'), { text: SHARED_FOOTER })),
+  },
+  {
+    id: 'google-move-footer',
+    title: 'Google Slides: Folie verschoben, gemeinsame Fußzeile',
+    description:
+      'Wie google-move, aber alle Folien tragen dieselbe Fußzeile; die Budgetfolie wandert an ' +
+      'Position 2.',
+    tags: ['producer', 'synthetic', 'structure'],
+    synthetic: SYNTHETIC_GOOGLE,
+    v1: asGoogleSlides(withFooter(simpleDeck(), { text: SHARED_FOOTER })),
+    v2: asGoogleSlides(withFooter(move(simpleDeck(), 'budget', 1), { text: SHARED_FOOTER })),
   },
 ];

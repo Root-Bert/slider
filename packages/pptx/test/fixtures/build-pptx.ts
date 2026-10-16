@@ -95,6 +95,11 @@ export interface SlideSpec {
   firstShapeId?: number;
   /** Writes the inherited placeholder boxes as explicit `a:xfrm`, as Google Slides does. */
   explicitPlaceholderBoxes?: boolean;
+  /**
+   * Footer placeholders as "Insert → Header & Footer" writes them: footer text, and the date and
+   * slide number as `a:fld`s carrying their cached value (PowerPoint rewrites it on every save).
+   */
+  footer?: { text?: string; date?: string; slideNumber?: string };
 }
 
 export type ShapeSpec = RectSpec | PictureSpec | GroupSpec | TableSpec;
@@ -395,6 +400,36 @@ class PptxWriter {
         ph,
         paragraphs,
         explicit ? (isTitleLayout ? TITLE_LAYOUT_SUBTITLE_BOX : MASTER_BODY_BOX) : undefined,
+      );
+    }
+    const footer = slide.footer;
+    if (footer?.date !== undefined) {
+      xml += fieldPlaceholderXml(
+        context,
+        'Date Placeholder',
+        '<p:ph type="dt" sz="half" idx="10"/>',
+        FOOTER_DATE_BOX,
+        'datetime1',
+        footer.date,
+      );
+    }
+    if (footer?.text !== undefined) {
+      xml += placeholderXml(
+        context,
+        'Footer Placeholder',
+        '<p:ph type="ftr" sz="quarter" idx="11"/>',
+        [footer.text],
+        FOOTER_TEXT_BOX,
+      );
+    }
+    if (footer?.slideNumber !== undefined) {
+      xml += fieldPlaceholderXml(
+        context,
+        'Slide Number Placeholder',
+        '<p:ph type="sldNum" sz="quarter" idx="12"/>',
+        FOOTER_NUMBER_BOX,
+        'slidenum',
+        footer.slideNumber,
       );
     }
     return xml;
@@ -706,6 +741,32 @@ function placeholderXml(
     `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${label} ${id - 1}"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr>` +
     `<p:nvPr>${ph}</p:nvPr></p:nvSpPr>${spPr}` +
     `<p:txBody><a:bodyPr/><a:lstStyle/>${paragraphs.map((text) => paragraphXml(text)).join('')}</p:txBody></p:sp>`
+  );
+}
+
+/** PowerPoint's 16:9 footer row: date left, footer text centred, slide number right. */
+const FOOTER_DATE_BOX = { x: 838_200, y: 6_356_350, w: 2_743_200, h: 365_125 };
+const FOOTER_TEXT_BOX = { x: 4_038_600, y: 6_356_350, w: 4_114_800, h: 365_125 };
+const FOOTER_NUMBER_BOX = { x: 8_610_600, y: 6_356_350, w: 2_743_200, h: 365_125 };
+
+/** A footer placeholder holding one text field (`a:fld`) with its cached value. */
+function fieldPlaceholderXml(
+  context: SlideContext,
+  label: string,
+  ph: string,
+  box: EmuBox,
+  type: string,
+  value: string,
+): string {
+  const id = takeId(context);
+  const field =
+    `<a:fld id="${guid(7, id)}" type="${type}"><a:rPr lang="de-DE"/>` +
+    `<a:t>${escapeXml(value)}</a:t></a:fld>`;
+  return (
+    `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${label} ${id - 1}"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr>` +
+    `<p:nvPr>${ph}</p:nvPr></p:nvSpPr>` +
+    `<p:spPr>${xfrmXml(box)}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>` +
+    `<p:txBody><a:bodyPr/><a:lstStyle/><a:p>${field}<a:endParaRPr lang="de-DE"/></a:p></p:txBody></p:sp>`
   );
 }
 

@@ -68,10 +68,42 @@ describe('readParagraphs', () => {
         runs: [
           { text: 'Umsatz', sizePt: 18, bold: true, italic: false, color: '#111111' },
           { text: '\n', sizePt: 12, bold: false, italic: false, color: null },
-          { text: '3', sizePt: 12, bold: false, italic: true, color: null },
+          {
+            text: '3',
+            sizePt: 12,
+            bold: false,
+            italic: true,
+            color: null,
+            volatileField: 'slidenum',
+          },
         ],
       },
     ]);
+  });
+
+  it('marks slide numbers and dates as volatile and leaves them out of the plain text', () => {
+    const body = parseXml(
+      '<p:txBody><a:p><a:r><a:t>Folie </a:t></a:r>' +
+        '<a:fld type="slidenum"><a:t>3</a:t></a:fld>' +
+        '<a:r><a:t> · </a:t></a:r>' +
+        '<a:fld type="datetime1"><a:t>17.10.2026</a:t></a:fld>' +
+        '<a:fld type="datetime"><a:t>Oktober</a:t></a:fld>' +
+        '<a:fld type="other"><a:t>bleibt</a:t></a:fld></a:p></p:txBody>',
+    );
+    const paragraphs = readParagraphs(body, NO_TEXT_DEFAULTS, scheme);
+    expect(paragraphs[0]?.runs.map((run) => run.volatileField)).toEqual([
+      undefined,
+      'slidenum',
+      undefined,
+      'datetime1',
+      'datetime',
+      undefined,
+    ]);
+    // Shown in the render, but not part of what matching compares.
+    expect(paragraphs[0]?.runs.map((run) => run.text).join('')).toBe(
+      'Folie 3 · 17.10.2026Oktoberbleibt',
+    );
+    expect(paragraphsToText(paragraphs)).toBe('Folie  · bleibt');
   });
 
   it('prefers the shape list style over inherited defaults, then falls back to left', () => {

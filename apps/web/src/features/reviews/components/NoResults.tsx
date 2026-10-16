@@ -22,12 +22,12 @@ export function NoResults({
         message={
           onAdd
             ? 'Füge eine PowerPoint per OneDrive- oder SharePoint-Link hinzu oder lade eine PPTX hoch – Feedback landet direkt auf der Folie.'
-            : 'In dieser Organisation gibt es noch keine Präsentationen. Sobald jemand eine hinzufügt, erscheint sie hier.'
+            : 'In dieser Organisation gibt es noch keine Reviews. Sobald jemand eine anlegt, erscheint sie hier.'
         }
         action={
           onAdd && (
             <Button icon="add" onClick={onAdd}>
-              Präsentation hinzufügen
+              Neue Review
             </Button>
           )
         }

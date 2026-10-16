@@ -32,6 +32,8 @@ export const GOOGLE_COOKIE = 'slider_google';
 const COOKIE_MAX_AGE = 10 * 60;
 /** Where "connect Microsoft for file access" returns to by default: the import page. */
 const DEFAULT_RETURN_TO = '/neu';
+/** The account page (`/konto`): shows `?linkError=` after a failed "Verbinden". */
+const ACCOUNT_PATH = '/konto';
 const DEFAULT_LOGIN_RETURN_TO = '/';
 
 const oauthStateSchema = z.object({
@@ -107,13 +109,18 @@ export function authRoutes(deps: AppDeps) {
 
   /**
    * Back to the start page with the link prefilled and the reason, so A3 can explain it. A login
-   * started in a deck (the sync banner's "sign in again") goes back to that deck instead.
+   * started in a deck (the sync banner's "sign in again") goes back to that deck instead; one
+   * started anywhere else ("Verbinden" in /konto, the account menu) goes to /konto with
+   * `?linkError=`, like the Google and SSO connects – the only page that explains it for everyone.
    */
   const connectFailed = (c: Context, returnTo: string, kind: MicrosoftErrorKind) => {
     const back = new URL(returnTo, config.webOrigin);
     if (back.pathname.startsWith('/d/')) {
       back.searchParams.set('msError', kind);
       return toWeb(c, back.pathname + back.search);
+    }
+    if (back.pathname !== DEFAULT_RETURN_TO) {
+      return linkFailed(c, back.pathname === ACCOUNT_PATH ? returnTo : ACCOUNT_PATH, kind);
     }
     const target = new URL(DEFAULT_RETURN_TO, config.webOrigin);
     const link = back.searchParams.get('link');

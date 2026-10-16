@@ -22,18 +22,38 @@ type Spawn = (command: string, args: string[], options: { detached: boolean }) =
  * they would outlive the server: {@link stopRunningConversions} takes them down on shutdown.
  */
 const running = new Map<ChildProcess, string>();
+/** Set by {@link stopRunningConversions}: the process is going down. */
+let stopping = false;
+
+/**
+ * A conversion cut off by shutdown – not a failure of the deck. Imports and re-renders let it
+ * through instead of falling back to the SVG preview, so the next start resumes them.
+ */
+export class ConversionAborted extends Error {
+  constructor() {
+    super('LibreOffice conversion stopped: the server is shutting down');
+    this.name = 'ConversionAborted';
+  }
+}
 
 /**
  * Kills every running conversion (whole process group) and removes its temp folder right away –
  * for shutdown and the restart after `/einrichtung`, where the process exits before the
- * conversions' own clean-up would run. Their imports are picked up again on the next start.
+ * conversions' own clean-up would run. They and any conversion started afterwards end in
+ * {@link ConversionAborted}; their imports are picked up again on the next start.
  */
 export function stopRunningConversions(): void {
+  stopping = true;
   for (const [child, dir] of running) {
     kill(child);
     rmSync(dir, { recursive: true, force: true });
   }
   running.clear();
+}
+
+/** Undoes {@link stopRunningConversions} – for tests; a real server never comes back from it. */
+export function resumeConversions(): void {
+  stopping = false;
 }
 
 export interface FindSofficeOptions {
@@ -151,6 +171,10 @@ function run(
   dir: string,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (stopping) {
+      reject(new ConversionAborted());
+      return;
+    }
     // Own process group: on Linux `soffice` is a script that starts `soffice.bin`; a timeout
     // must take both down.
     const child = spawn(binary, args, { detached: true });
@@ -168,12 +192,13 @@ function run(
     child.on('error', (error) => {
       clearTimeout(timer);
       running.delete(child);
-      reject(error);
+      reject(stopping ? new ConversionAborted() : error);
     });
     child.on('close', (code, signal) => {
       clearTimeout(timer);
       running.delete(child);
-      if (timedOut) reject(new Error(`LibreOffice timed out after ${timeoutMs} ms`));
+      if (stopping) reject(new ConversionAborted());
+      else if (timedOut) reject(new Error(`LibreOffice timed out after ${timeoutMs} ms`));
       else if (code === 0) resolve();
       else {
         reject(

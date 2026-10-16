@@ -30,6 +30,19 @@ interface Canvas {
   scale: number;
 }
 
+const FIELD_ATTRIBUTE = 'data-field';
+/** A marked field span and its (escaped, so `<`-free) text. */
+const FIELD_SPAN = new RegExp(`(<span ${FIELD_ATTRIBUTE}="[^"]*"[^>]*>)[^<]*(</span>)`, 'g');
+
+/**
+ * What the render hash of a slide is computed from: its SVG with the values of slide-number and
+ * date fields left out (they change on every save without the slide changing). Identical to the
+ * SVG for slides without such fields, so hashes stored before this stay comparable.
+ */
+export function svgForRenderHash(svg: string): string {
+  return svg.replace(FIELD_SPAN, '$1$2');
+}
+
 export async function renderSlideSvg(
   slide: ParsedSlide,
   size: { cx: number; cy: number },
@@ -148,7 +161,11 @@ function renderParagraph(paragraph: ParsedParagraph, pxPerPoint: number): string
       if (run.italic) style.push('font-style:italic');
       const color = safeColor(run.color);
       if (color) style.push(`color:${color}`);
-      return `<span style="${style.join(';')}">${escapeXml(run.text)}</span>`;
+      // Volatile fields are marked, so `svgForRenderHash` can leave their value out.
+      const field = run.volatileField
+        ? ` ${FIELD_ATTRIBUTE}="${escapeXml(run.volatileField)}"`
+        : '';
+      return `<span${field} style="${style.join(';')}">${escapeXml(run.text)}</span>`;
     })
     .join('');
   const style = `margin:0;min-height:1.2em;text-align:${paragraph.align};font-size:${num(paragraphSize)}px`;

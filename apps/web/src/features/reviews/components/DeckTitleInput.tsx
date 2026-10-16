@@ -17,7 +17,8 @@ export function DeckTitleInput({
   className,
 }: {
   deck: Deck;
-  onDone: () => void;
+  /** The edit ended; `hadFocus`: by Enter or Escape, not by leaving the field. */
+  onDone: (hadFocus: boolean) => void;
   onNotify: ShowToast;
   className?: string;
 }) {
@@ -34,7 +35,7 @@ export function DeckTitleInput({
 
   const finish = () => {
     settled.current = true;
-    onDone();
+    onDone(document.activeElement === ref.current);
   };
 
   const save = () => {

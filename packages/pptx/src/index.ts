@@ -11,5 +11,6 @@
  */
 export * from './types';
 export { openPptx, type PptxPackage } from './package';
+export { svgForRenderHash } from './render/svg';
 export * from './matching';
 export { normaliseText, textHash } from './hash';

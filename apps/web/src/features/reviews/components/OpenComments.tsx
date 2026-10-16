@@ -140,10 +140,8 @@ function OpenCommentsPopover({
   className?: string;
 }) {
   const headingId = useId();
-  const queryClient = useQueryClient();
   const comments = useComments(deck.id);
   const slides = useSlides(deck.id);
-  const update = useUpdateComment(deck.id);
   // Ticked threads stay in the list (struck through) until the popover closes, so a mis-click
   // can be undone in place.
   const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set());
@@ -165,24 +163,6 @@ function OpenCommentsPopover({
       else next.delete(commentId);
       return next;
     });
-
-  const toggle = (comment: Comment) => {
-    const resolve = !ticked.has(comment.id);
-    setDone(comment.id, resolve);
-    update.mutate(
-      { commentId: comment.id, status: resolve ? 'done' : 'open' },
-      {
-        // Not saved (offline, role changed, rate limit): the row goes back to how it was, and
-        // says so – the cache is rolled back by `useUpdateComment`.
-        onError: (error) => {
-          setDone(comment.id, !resolve);
-          onNotify?.(error.message, 'danger');
-        },
-        // The card's "n offen" comes from the deck list.
-        onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.deckLists }),
-      },
-    );
-  };
 
   return (
     <PopoverPanel
@@ -226,7 +206,8 @@ function OpenCommentsPopover({
                   }
                   done={ticked.has(thread.id)}
                   canResolve={canResolve}
-                  onToggle={() => toggle(thread.root)}
+                  onDoneChange={(done) => setDone(thread.root.id, done)}
+                  onNotify={onNotify}
                   onOpen={onClose}
                 />
               </li>
@@ -244,7 +225,9 @@ interface OpenThreadItemProps {
   slideNumber: number | undefined;
   done: boolean;
   canResolve: boolean;
-  onToggle: () => void;
+  /** Ticked (or unticked) in the list – also called back when saving failed. */
+  onDoneChange: (done: boolean) => void;
+  onNotify?: ShowToast;
   onOpen: () => void;
 }
 
@@ -255,13 +238,36 @@ function OpenThreadItem({
   slideNumber,
   done,
   canResolve,
-  onToggle,
+  onDoneChange,
+  onNotify,
   onOpen,
 }: OpenThreadItemProps) {
   const [expanded, setExpanded] = useState(false);
   const repliesId = useId();
   const { root, replies } = thread;
   const to = routes.deck(deckId, root.slideId);
+  const queryClient = useQueryClient();
+  // One mutation per row: a shared one only calls back for its latest `mutate`, so a quick
+  // second tick elsewhere would swallow this row's error and rollback.
+  const update = useUpdateComment(deckId);
+
+  const toggle = () => {
+    const resolve = !done;
+    onDoneChange(resolve);
+    update.mutate(
+      { commentId: root.id, status: resolve ? 'done' : 'open' },
+      {
+        // Not saved (offline, role changed, rate limit): the row goes back to how it was, and
+        // says so – the cache is rolled back by `useUpdateComment`.
+        onError: (error) => {
+          onDoneChange(!resolve);
+          onNotify?.(error.message, 'danger');
+        },
+        // The card's "n offen" comes from the deck list.
+        onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.deckLists }),
+      },
+    );
+  };
 
   return (
     <div className="flex items-center gap-3 rounded-control py-1.5 pr-1.5 pl-2 transition-colors hover:bg-surface-1">
@@ -342,7 +348,7 @@ function OpenThreadItem({
           aria-pressed={done}
           label={done ? 'Wieder öffnen' : 'Als erledigt markieren'}
           title={done ? 'Erledigt – klicken zum Wiederöffnen' : 'Als erledigt markieren'}
-          onClick={onToggle}
+          onClick={toggle}
         />
       )}
     </div>

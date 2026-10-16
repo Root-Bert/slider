@@ -53,9 +53,9 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
   // Back from the Microsoft login only `?link=` survives – the last workspace stands in.
   useEffect(() => rememberWorkspace(workspace.id), [workspace.id]);
 
-  // A Microsoft connect that failed ("Verbinden" in /konto or the account menu, the picker):
-  // the API lands every such failure here. (With `?link=`, the link form explains it.) Read
-  // once, then off the URL.
+  // A Microsoft connect started on this page that failed (the account menu, the picker): the
+  // API lands it here; started elsewhere it goes to /konto?linkError=. (With `?link=`, the link
+  // form explains it.) Read once, then off the URL.
   const [searchParams, setSearchParams] = useSearchParams();
   const [connectError] = useState(() => connectErrorFrom(searchParams));
   useEffect(() => {

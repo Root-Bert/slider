@@ -5,6 +5,7 @@ import { useDraftDrawing } from './hooks/useDraftDrawing';
 import { isBareDrawing, type Thread } from '../comments/lib/comment-selectors';
 import { STROKE_STYLE } from './lib/stroke-path';
 import { useViewerData } from '../state/viewer-data';
+import { useViewerToast } from '../state/viewer-toast';
 import type { PenTool, Tool } from '../state/viewer-state';
 import { StrokePath } from './StrokePath';
 
@@ -77,6 +78,8 @@ function segmentDistance(p: Point, a: Point, b: Point): number {
 function EraserSurface({ boxRef, threads }: Pick<DrawingSurfaceProps, 'boxRef' | 'threads'>) {
   const { deck, viewer } = useViewerData();
   const erase = useEraseDrawing(deck.id);
+  const showToast = useViewerToast();
+  /** Erased (or being erased) during this tool session – a wipe passes each stroke many times. */
   const erased = useRef(new Set<string>());
   const wiping = useRef(false);
 
@@ -107,8 +110,14 @@ function EraserSurface({ boxRef, threads }: Pick<DrawingSurfaceProps, 'boxRef' |
         );
       });
       if (!hit) continue;
-      erased.current.add(thread.id);
-      erase.mutate(thread.id);
+      const id = thread.id;
+      erased.current.add(id);
+      // Per call (`mutateAsync`): `mutate`'s options would only run for the latest erase. On
+      // failure the drawing comes back – erasable again, and the user learns why.
+      erase.mutateAsync(id).catch((error: Error) => {
+        erased.current.delete(id);
+        showToast(error.message, 'danger');
+      });
     }
   };
 

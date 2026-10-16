@@ -20,7 +20,7 @@ import {
   stripEmpty,
   withStoredSettings,
 } from '../config';
-import { users } from '../db/schema';
+import { passkeys, users } from '../db/schema';
 import type { AppDeps, InstanceControl } from '../deps';
 import { badRequest, forbidden, notFound } from '../http/errors';
 import { rateLimit } from '../http/rate-limit';
@@ -58,6 +58,26 @@ export function setupRoutes(deps: AppDeps) {
       .from(users)
       .where(eq(users.id, current.author.id));
     return user?.admin === true;
+  };
+
+  /** Whether the settings as stored now (before this save) offer a login. */
+  const hadLogin = (env: NodeJS.ProcessEnv, stored: Partial<Record<SetupKey, string>>) => {
+    try {
+      return hasLogin(loadConfig(withStoredSettings(env, stored), () => {}));
+    } catch {
+      return hasLogin(deps.config);
+    }
+  };
+
+  const adminHasPasskey = async (c: Context<OptionalViewerEnv>) => {
+    const current = c.var.viewer;
+    if (current?.kind !== 'owner') return false;
+    const [row] = await deps.db
+      .select({ id: passkeys.id })
+      .from(passkeys)
+      .where(eq(passkeys.userId, current.author.id))
+      .limit(1);
+    return row !== undefined;
   };
 
   const restartMode = () => (instance().restart ? 'automatic' : 'manual');
@@ -142,6 +162,16 @@ export function setupRoutes(deps: AppDeps) {
         if (candidate.env === 'production' && candidate.auth.bootstrapEmails.length === 0) {
           throw badRequest('Gib deine E-Mail-Adresse an – mit ihr wirst du Admin dieser Instanz.');
         }
+      } else if (
+        !hasLogin(candidate) &&
+        hadLogin(control.env, stored) &&
+        !(await adminHasPasskey(c))
+      ) {
+        // Without Microsoft, Google or SSO only passkeys still sign in: removing the last login
+        // without one would lock the admin (and everyone else) out once the session ends.
+        throw badRequest(
+          'Ohne Microsoft, Google oder SSO kannst du dich nur noch mit einem Passkey anmelden. Lege zuerst unter Konto einen Passkey an oder behalte einen Anmeldeweg.',
+        );
       }
 
       await saveStoredSettings(deps.db, deps.config.secret, values, deps.clock.now());

@@ -27,6 +27,10 @@ export interface MenuAction {
   title?: string;
 }
 
+/** A `position` utility without variant (`absolute`, `fixed`, `sticky`) among the classes. */
+const isPositioned = (className: string | undefined) =>
+  className?.split(/\s+/).some((token) => /^(absolute|fixed|sticky)$/.test(token)) ?? false;
+
 interface MenuProps {
   /** Accessible name of the trigger, e.g. "Aktionen für „Q4 Strategie“". */
   label: string;
@@ -56,7 +60,10 @@ export function Menu({
   const { open, setOpen, close, wrapperRef, triggerRef, panelId } = usePopover();
 
   return (
-    <div ref={wrapperRef} className={cn('relative', className)}>
+    // The panel is anchored to this wrapper, so it must be positioned – `relative` unless the
+    // caller places it itself (`absolute top-2 right-2` on a card): `cn` doesn't merge
+    // conflicting utilities, and `.relative` comes later in the CSS, so it would win.
+    <div ref={wrapperRef} className={cn(!isPositioned(className) && 'relative', className)}>
       <IconButton
         ref={triggerRef}
         icon="moreHoriz"

@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { compress } from 'hono/compress';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { secureHeaders } from 'hono/secure-headers';
@@ -36,6 +37,10 @@ export function createApp(appDeps: AppDeps) {
     const livePosts = `${API_PREFIX}/live/`;
     app.use((c, next) => (c.req.path.startsWith(livePosts) ? next() : log(c, next)));
   }
+  // gzip for the web app, the API's JSON and SVG slides – also behind a proxy that doesn't
+  // compress (nginx's and Traefik's defaults). Skips the live stream (text/event-stream, it would
+  // be buffered), ranges and what is compressed already (WebP, audio, video).
+  app.use(compress());
   // `same-site`: the web dev server (another port on localhost) may embed slide images.
   // `same-origin-allow-popups`: the OneDrive file picker is a Microsoft popup that talks back to
   // the page through `window.opener` – plain `same-origin` would cut that link.

@@ -9,18 +9,18 @@ const MIN_BYTES = 32 * 1024;
 const WEBP_QUALITY = 85;
 
 /**
- * The SVG preview as a thumbnail (BER-94): the SVG renderer embeds every picture at full size
- * (a 3 MB photo makes a 4 MB slide), but the minimap, filmstrip and deck cards show it at most
- * {@link PAGE_THUMBNAIL_WIDTH} px wide. So each embedded raster picture is scaled down to what
- * it covers at that width (sharp at 2× already included in the thumbnail width) and re-encoded
- * as WebP. Text and shapes stay vector – the browser renders them as before. Returns the input
- * unchanged when nothing got smaller.
+ * The SVG preview for a given pixel width (BER-94): the SVG renderer embeds every picture at
+ * full size (a 3 MB photo makes a 4 MB slide), but the minimap, filmstrip and deck cards show it
+ * at most {@link PAGE_THUMBNAIL_WIDTH} px wide, the full slide at most `PAGE_IMAGE_WIDTH` – like
+ * the PDF pages. So each embedded raster picture is scaled down to what it covers at `width`
+ * (sharp at 2× already included in those widths) and re-encoded as WebP. Text and shapes stay
+ * vector – the browser renders them as before. Returns the input unchanged when nothing got
+ * smaller.
  */
-export async function svgThumbnail(svg: string): Promise<string> {
+export async function svgThumbnail(svg: string, width = PAGE_THUMBNAIL_WIDTH): Promise<string> {
   const slideWidth = Number(/<svg\b[^>]*\bwidth="([\d.]+)"/.exec(svg)?.[1]);
   if (!slideWidth) return svg;
-  const scale = PAGE_THUMBNAIL_WIDTH / slideWidth;
-  if (scale >= 1) return svg;
+  const scale = width / slideWidth;
 
   let changed = false;
   const parts: string[] = [];

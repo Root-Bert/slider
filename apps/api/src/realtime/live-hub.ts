@@ -25,6 +25,11 @@ export interface LiveHubTiming {
 }
 
 interface Connection extends LivePeer {
+  /**
+   * The connection's secret, sent only in its own `hello`: presence posts and goodbyes are
+   * accepted by it alone. Everyone else in the deck sees the public `connectionId`.
+   */
+  key: string;
   deckId: string;
   send: Send;
   close: Close | null;
@@ -49,7 +54,9 @@ export interface LiveTab {
  */
 export class LiveHub {
   private readonly rooms = new Map<string, Map<string, Connection>>();
+  /** By secret key; rooms are by public connection id. */
   private readonly connections = new Map<string, Connection>();
+  private readonly commentGenerations = new Map<string, number>();
   private sweeper: ReturnType<typeof setInterval> | null = null;
   readonly heartbeatMs: number;
   readonly accessCheckMs: number;
@@ -63,8 +70,10 @@ export class LiveHub {
   }
 
   /**
-   * Opens a connection; `send` gets the `hello` (with the others already here) right away. The
-   * id is the connection's secret: presence updates are accepted by it alone.
+   * Opens a connection; `send` gets the `hello` (with the others already here) right away.
+   * Returns the connection's secret key – the `connectionId` of its `hello`, the only id presence
+   * updates and goodbyes are accepted by. Peers learn a different, public id, so knowing someone's
+   * peer id lets nobody move their cursor or kick them out.
    *
    * A closed stream isn't reported reliably, so after a reload the old connection would linger
    * until it times out: a connection of the same person from the same or the replaced tab goes
@@ -79,10 +88,11 @@ export class LiveHub {
   ): string {
     for (const old of [...(this.rooms.get(deckId)?.values() ?? [])]) {
       const sameTab = old.tab !== null && (old.tab === tab || old.tab === replaces);
-      if (sameTab && old.author.id === author.id) this.leave(old.connectionId);
+      if (sameTab && old.author.id === author.id) this.leave(old.key);
     }
     const connection: Connection = {
       connectionId: crypto.randomUUID(),
+      key: crypto.randomUUID(),
       deckId,
       author,
       activeSlideId: null,
@@ -100,24 +110,31 @@ export class LiveHub {
     }
     send({
       type: 'hello',
-      connectionId: connection.connectionId,
+      connectionId: connection.key,
       peers: [...room.values()].map(toPeer),
     });
     room.set(connection.connectionId, connection);
-    this.connections.set(connection.connectionId, connection);
+    this.connections.set(connection.key, connection);
     this.broadcast(deckId, { type: 'peer', peer: toPeer(connection) }, connection.connectionId);
     this.startSweeper();
-    return connection.connectionId;
+    return connection.key;
   }
 
-  has(connectionId: string): boolean {
-    return this.connections.has(connectionId);
+  /** Whether the connection with this secret key is open. */
+  has(key: string): boolean {
+    return this.connections.has(key);
   }
 
-  leave(connectionId: string): void {
-    const connection = this.connections.get(connectionId);
+  /** The public id the others know the connection by (tests, diagnostics). */
+  peerIdOf(key: string): string | null {
+    return this.connections.get(key)?.connectionId ?? null;
+  }
+
+  leave(key: string): void {
+    const connection = this.connections.get(key);
     if (!connection) return;
-    this.connections.delete(connectionId);
+    const { connectionId } = connection;
+    this.connections.delete(key);
     const room = this.rooms.get(connection.deckId);
     room?.delete(connectionId);
     if (room?.size === 0) this.rooms.delete(connection.deckId);
@@ -139,8 +156,8 @@ export class LiveHub {
    * Presence (or just a heartbeat, when nothing changed). `false` when the connection is gone
    * (server restarted, timed out) – the client reconnects.
    */
-  update(connectionId: string, input: LivePresenceInput): boolean {
-    const connection = this.connections.get(connectionId);
+  update(key: string, input: LivePresenceInput): boolean {
+    const connection = this.connections.get(key);
     if (!connection) return false;
     connection.lastSeen = this.now();
     if (
@@ -153,13 +170,26 @@ export class LiveHub {
     connection.activeSlideId = input.activeSlideId;
     connection.cursor = input.cursor;
     connection.focusedThreadId = input.focusedThreadId;
-    this.broadcast(connection.deckId, { type: 'peer', peer: toPeer(connection) }, connectionId);
+    this.broadcast(
+      connection.deckId,
+      { type: 'peer', peer: toPeer(connection) },
+      connection.connectionId,
+    );
     return true;
   }
 
   /** Comments of a deck changed: everyone there refetches them (the author too – other tabs). */
   commentsChanged(deckId: string): void {
+    this.commentGenerations.set(deckId, this.commentsGeneration(deckId) + 1);
     this.broadcast(deckId, { type: 'comments' });
+  }
+
+  /**
+   * Counts {@link commentsChanged} per deck: the refetches one change sets off may share one
+   * query, but never one that started before the change.
+   */
+  commentsGeneration(deckId: string): number {
+    return this.commentGenerations.get(deckId) ?? 0;
   }
 
   /** Open connections of a deck (tests, diagnostics). */
@@ -171,7 +201,7 @@ export class LiveHub {
   sweep(): void {
     const cutoff = this.now() - LIVE_STALE_MS;
     for (const connection of [...this.connections.values()]) {
-      if (connection.lastSeen < cutoff) this.leave(connection.connectionId);
+      if (connection.lastSeen < cutoff) this.leave(connection.key);
     }
   }
 

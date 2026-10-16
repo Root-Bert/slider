@@ -2,8 +2,8 @@ import { asc, eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { deckSchema, deckStatusSchema, slideSchema, type Deck } from '@slider/shared';
 import { decks, slideVersions } from '../src/db/schema';
-import type { PptxToPdf } from '../src/import/libreoffice';
-import { findRerenderCandidates, rerenderRevision } from '../src/import/rerender';
+import { ConversionAborted, type PptxToPdf } from '../src/import/libreoffice';
+import { findRerenderCandidates, rerenderJob, rerenderRevision } from '../src/import/rerender';
 import { silentLogger } from '../src/logger';
 import {
   createReadyDeck,
@@ -137,6 +137,25 @@ describe('rerenderRevision (BER-94)', () => {
     for (const row of after) expect(await ctx.deps.storage.get(row.imageKey)).not.toBeNull();
   });
 
+  it('a re-render cut off by shutdown stays untried, so the next start renders it again', async () => {
+    const libreOffice = switchableLibreOffice();
+    ctx = await createTestContext({ openPptx: threeSlides(), libreOfficePdf: libreOffice.convert });
+    const deck = await importedDeck(ctx);
+    await makeLegacy(ctx, deck);
+    const aborting: PptxToPdf = async () => {
+      throw new ConversionAborted();
+    };
+    await rerenderJob(importDeps(ctx, aborting), {
+      deckId: deck.id,
+      revisionId: deck.currentRevisionId ?? '',
+      kind: 'rerender',
+    });
+    expect((await versionsOf(ctx, deck)).map((row) => row.renderer)).toEqual([null, null, null]);
+    expect(
+      await findRerenderCandidates(ctx.deps.db, { libreOfficePdf: libreOffice.convert }),
+    ).toEqual([{ deckId: deck.id, revisionId: deck.currentRevisionId, kind: 'rerender' }]);
+  });
+
   it('skips revisions whose file is gone or whose slides no longer match', async () => {
     const libreOffice = switchableLibreOffice();
     libreOffice.state.pages = 2;
@@ -170,6 +189,28 @@ describe('findRerenderCandidates', () => {
     ]);
     // Nothing better installed: nothing to do (the rows stay `null` for later).
     expect(await findRerenderCandidates(ctx.deps.db, {})).toEqual([]);
+    // Office renders linked decks only: an upload is no candidate for it.
+    const officePdf = async () => makePdf(1);
+    expect(await findRerenderCandidates(ctx.deps.db, { officePdf })).toEqual([]);
+    // A deck that already has a better picture somewhere is not re-rendered at start-up.
+    const [first] = await versionsOf(ctx, deck);
+    await ctx.deps.db
+      .update(slideVersions)
+      .set({ renderer: 'libreoffice' })
+      .where(eq(slideVersions.id, first?.id ?? ''));
+    expect(await findRerenderCandidates(ctx.deps.db, renderers)).toEqual([]);
+    await makeLegacy(ctx, deck);
+    await ctx.deps.db
+      .update(decks)
+      .set({ source: 'onedrive', sourceRef: 'drives/d1/items/i1' })
+      .where(eq(decks.id, deck.id));
+    expect(await findRerenderCandidates(ctx.deps.db, { officePdf })).toEqual([
+      { deckId: deck.id, revisionId: deck.currentRevisionId, kind: 'rerender' },
+    ]);
+    await ctx.deps.db
+      .update(decks)
+      .set({ source: 'upload', sourceRef: null })
+      .where(eq(decks.id, deck.id));
 
     // The job runs once; a failure marks the revision as tried.
     ctx.deps.queue.enqueue({

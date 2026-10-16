@@ -133,6 +133,21 @@ describe('Microsoft login routes', () => {
     expect(location.searchParams.get('msError')).toBe('denied');
   });
 
+  it('sends a failed "Verbinden" from /konto or another page to /konto with linkError', async () => {
+    ctx = await configured();
+    for (const [returnTo, expected] of [
+      ['/konto', '/konto?linkError=denied'],
+      ['/w/w1/einstellungen', '/konto?linkError=denied'],
+    ] as const) {
+      const { state, cookie } = await startLogin(returnTo);
+      const res = await ctx.request(
+        `/api/auth/microsoft/callback?state=${state}&error=access_denied`,
+        { cookie },
+      );
+      expect(res.headers.get('location')).toBe(`http://localhost:5173${expected}`);
+    }
+  });
+
   it('maps an admin consent error from Microsoft', async () => {
     ctx = await configured();
     const { state, cookie } = await startLogin();

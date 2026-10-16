@@ -7,7 +7,7 @@ import {
   type ViewerState,
 } from './viewer-state';
 
-const initial = createInitialState({ activeSlideId: 's1', color: 'red' });
+const initial = createInitialState({ activeSlideId: 's1' });
 const run = (...actions: ViewerAction[]) => actions.reduce<ViewerState>(viewerReducer, initial);
 
 const stroke = (x: number): Stroke => ({
@@ -20,6 +20,27 @@ const stroke = (x: number): Stroke => ({
 });
 
 describe('viewerReducer', () => {
+  it('keeps no copy of the viewer’s colour – it is read live from the viewer data', () => {
+    // A copy taken at mount went stale when the colour was changed mid-session: pen previews and
+    // draft frames kept the old one.
+    expect('color' in initial).toBe(false);
+  });
+
+  it('counts the reply fields holding a thread, so it stays listed until the last one lets go', () => {
+    const hold = (composing: boolean): ViewerAction => ({
+      type: 'composingChanged',
+      threadId: 't1',
+      composing,
+    });
+    expect(initial.composingThreads.size).toBe(0);
+    // A typed reply and an open video dialog on the same thread.
+    const both = run(hold(true), hold(true));
+    expect(both.composingThreads.get('t1')).toBe(2);
+    const one = viewerReducer(both, hold(false));
+    expect(one.composingThreads.has('t1')).toBe(true);
+    expect(viewerReducer(one, hold(false)).composingThreads.has('t1')).toBe(false);
+  });
+
   it('defaults to open comments only (BER-101)', () => {
     expect(initial.statusFilter).toBe('open');
   });
@@ -183,7 +204,7 @@ describe('viewerReducer', () => {
 
   it('starts at the default split unless a stored split is passed in', () => {
     expect(initial.split).toBeNull();
-    const restored = createInitialState({ activeSlideId: 's1', color: 'red', split: 0.6 });
+    const restored = createInitialState({ activeSlideId: 's1', split: 0.6 });
     expect(restored.split).toBe(0.6);
   });
 
@@ -251,9 +272,9 @@ describe('viewerReducer', () => {
       const hidden = run({ type: 'showChangesSet', show: false });
       expect(hidden.showChanges).toBe(false);
       expect(viewerReducer(hidden, { type: 'showChangesSet', show: true }).showChanges).toBe(true);
-      expect(
-        createInitialState({ activeSlideId: null, color: 'red', showChanges: false }),
-      ).toMatchObject({ showChanges: false });
+      expect(createInitialState({ activeSlideId: null, showChanges: false })).toMatchObject({
+        showChanges: false,
+      });
     });
   });
 });

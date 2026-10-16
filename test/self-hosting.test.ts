@@ -60,6 +60,60 @@ describe('publishing the container image', () => {
       expect(script).toContain(check);
     }
   });
+
+  it('runs the default slide renderer (real LibreOffice → PDF → WebP on Bun) in the image', () => {
+    const script = read('scripts/smoke-image.sh');
+    // The sample deck is not in the image (.dockerignore), so the script copies it in.
+    expect(read('.dockerignore')).toMatch(/^packages\/\*\/samples$/m);
+    expect(script).toMatch(/docker cp "\$\{root\}\/packages\/pptx\/samples\/slider-demo\.pptx"/);
+    expect(script).toMatch(/docker cp "\$\{root\}\/scripts\/smoke-convert\.ts"/);
+    expect(script).toMatch(/docker exec -w \/app\/apps\/api "\$name" bun \/tmp\/smoke-convert\.ts/);
+    const convert = read('scripts/smoke-convert.ts');
+    for (const used of ['createLibreOfficePdf', 'findSoffice', 'rasterizePdf', '!s.hidden']) {
+      expect(convert).toContain(used);
+    }
+  });
+
+  it('starts every published platform before it is pushed, and publishes those builds', () => {
+    const smoke = jobs.get('image-smoke') ?? '';
+    const image = jobs.get('image') ?? '';
+    const published = (/^ {10}platforms: (.+)$/m.exec(image)?.[1] ?? '').split(',');
+    expect(published).toEqual(['linux/amd64', 'linux/arm64']);
+    const tested = (/^ {8}arch: \[([^\]]*)\]/m.exec(smoke)?.[1] ?? '')
+      .split(',')
+      .map((arch) => `linux/${arch.trim()}`);
+    expect(tested.sort()).toEqual(published.sort());
+    expect(smoke).toMatch(/platforms: linux\/\$\{\{ matrix\.arch \}\}/);
+    expect(smoke).toMatch(/SMOKE_PLATFORM: linux\/\$\{\{ matrix\.arch \}\}/);
+    expect(smoke).toMatch(/docker\/setup-qemu-action/);
+    expect(read('scripts/smoke-image.sh')).toMatch(/\$\{SMOKE_PLATFORM:\+--platform=/);
+    // The publish job builds from the layers the smoke test ran.
+    expect(smoke).toContain('cache-to: type=gha,mode=max,scope=smoke-${{ matrix.arch }}');
+    for (const arch of ['amd64', 'arm64']) expect(image).toContain(`type=gha,scope=smoke-${arch}`);
+  });
+});
+
+describe('the production web bundle', () => {
+  it('is loaded in a browser by CI: the e2e specs run again against the API-served build', () => {
+    const scripts = (JSON.parse(read('package.json')) as { scripts: Record<string, string> })
+      .scripts;
+    expect(scripts['e2e:bundle']).toMatch(/^E2E_BUNDLE=1 playwright test /);
+    const e2e = jobsOf(read('.github/workflows/ci.yml')).get('e2e') ?? '';
+    expect(e2e).toMatch(/^ {6}- run: bun run e2e:bundle$/m);
+    const config = read('e2e/playwright.config.ts');
+    expect(config).toMatch(/WEB_DIST_DIR: 'apps\/web\/dist'/);
+    expect(config).toMatch(/vite build/);
+  });
+});
+
+describe('starting without Docker', () => {
+  it('`bun run start` runs in production, as the docs promise', () => {
+    const scripts = (JSON.parse(read('package.json')) as { scripts: Record<string, string> })
+      .scripts;
+    expect(scripts.start).toBe('NODE_ENV=production bun apps/api/src/server.ts');
+    expect(read('README.md')).toContain('`bun run start`');
+    expect(read('docs/self-hosting.md')).toContain('`bun run start`');
+  });
 });
 
 describe('API tests on a real Postgres server', () => {
