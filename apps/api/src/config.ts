@@ -34,6 +34,8 @@ export interface Config {
   devOwner: { name: string; email: string };
   /** Login, sessions and who may sign up (BER-129). */
   auth: AuthConfig;
+  /** Outgoing mail for invitations; `null` until SMTP_URL and MAIL_FROM are set. */
+  smtp: SmtpConfig | null;
   /** Requests per minute and IP on `/api/invites/*`. */
   inviteRateLimit: number;
   /** Entra app for OneDrive/SharePoint links (BER-92); `null` until MS_CLIENT_ID and MS_CLIENT_SECRET are set. */
@@ -115,6 +117,12 @@ export interface OidcConfig {
 
 export const GOOGLE_ISSUER = 'https://accounts.google.com';
 
+export interface SmtpConfig {
+  /** e.g. `smtps://user:pass@mail.example.com:465` */
+  url: string;
+  /** e.g. `Slider <slider@example.com>` */
+  from: string;
+}
 
 export interface SyncConfig {
   /** How often link decks are checked for changes; `0` turns polling off (manual sync still works). */
@@ -187,6 +195,11 @@ const envSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   GOOGLE_REDIRECT_URI: z.url().optional(),
+  SMTP_URL: z
+    .string()
+    .regex(/^smtps?:\/\//, 'SMTP_URL muss mit smtp:// oder smtps:// beginnen.')
+    .optional(),
+  MAIL_FROM: z.string().min(3).optional(),
   MEDIA_DIR: z.string().min(1).optional(),
   /** `0` = unlimited. */
   MEDIA_QUOTA_BYTES: z.coerce.number().int().min(0).optional(),
@@ -276,6 +289,11 @@ export function loadConfig(
           authorizeParams: { prompt: 'select_account' },
         }
       : null;
+  if (Boolean(parsed.SMTP_URL) !== Boolean(parsed.MAIL_FROM)) {
+    throw new Error('SMTP_URL and MAIL_FROM must be set together.');
+  }
+  const smtp =
+    parsed.SMTP_URL && parsed.MAIL_FROM ? { url: parsed.SMTP_URL, from: parsed.MAIL_FROM } : null;
   const hasLoginProvider = Boolean(microsoft || oidc || google);
   // Production without any login starts anyway: the setup page (`/einrichtung`) configures one.
   if (parsed.NODE_ENV === 'production' && parsed.AUTH_DEV_LOGIN) {
@@ -328,6 +346,7 @@ export function loadConfig(
       sessionTtlDays: parsed.SESSION_TTL_DAYS,
       bootstrapEmails,
     },
+    smtp,
     inviteRateLimit: parsed.INVITE_RATE_LIMIT,
     microsoft,
     sync: { pollIntervalMs: parsed.SYNC_POLL_INTERVAL_MS, debounceMs: parsed.SYNC_DEBOUNCE_MS },

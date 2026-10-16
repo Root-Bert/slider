@@ -227,6 +227,8 @@ export const createdWorkspaceInviteSchema = z.object({
   invite: workspaceInviteSchema,
   /** `${SLIDER_URL}/join/<token>` */
   url: z.string(),
+  /** The invitation went out by mail (SMTP configured); otherwise the link is sent by hand. */
+  emailSent: z.boolean(),
 });
 export type CreatedWorkspaceInvite = z.infer<typeof createdWorkspaceInviteSchema>;
 

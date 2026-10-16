@@ -10,6 +10,7 @@ import {
   type WorkspaceRole,
 } from '@slider/shared';
 import { decks, workspaceInvites, workspaceMembers } from '../src/db/schema';
+import { FailingMailer, RecordingMailer } from '../src/mail/mailer';
 import {
   createReadyDeck,
   createTestContext,
@@ -532,6 +533,43 @@ describe('invitations', () => {
     expect(after.workspaces).toEqual([
       expect.objectContaining({ id: ctx.workspaceId, role: 'member' }),
     ]);
+  });
+});
+
+describe('invitation mails', () => {
+  it('without SMTP nothing is sent and the link is shown to copy', async () => {
+    const created = await invite({ email: 'lena@firma.de' });
+    expect(created.emailSent).toBe(false);
+  });
+
+  it('mails e-mail invites with the link, answers going to the inviter', async () => {
+    const mailer = new RecordingMailer();
+    await ctx.cleanup();
+    ctx = await createTestContext({ mailer });
+    const created = await invite({ email: 'Lena@Firma.de', role: 'reviewer' });
+    expect(created.emailSent).toBe(true);
+    expect(mailer.sent).toHaveLength(1);
+    const [mail] = mailer.sent;
+    expect(mail).toMatchObject({
+      to: 'lena@firma.de',
+      replyTo: 'robert@q4-team.de',
+      subject: 'Robert Hofmann lädt dich zu „Meine Organisation“ ein',
+    });
+    expect(mail?.text).toContain(created.url);
+    expect(mail?.html).toContain(`href="${created.url}"`);
+
+    // Links are passed on by hand, never mailed.
+    expect((await invite({})).emailSent).toBe(false);
+    expect(mailer.sent).toHaveLength(1);
+  });
+
+  it('keeps the invite when the mail server refuses, so the link can be sent by hand', async () => {
+    await ctx.cleanup();
+    ctx = await createTestContext({ mailer: new FailingMailer() });
+    const created = await invite({ email: 'lena@firma.de' });
+    expect(created.emailSent).toBe(false);
+    expect(created.invite.state).toBe('valid');
+    expect(await ctx.deps.db.select().from(workspaceInvites)).toHaveLength(1);
   });
 });
 

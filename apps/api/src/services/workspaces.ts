@@ -26,6 +26,7 @@ import {
 } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { ApiError, badRequest, forbidden, notFound } from '../http/errors';
+import { inviteMail } from '../mail/mailer';
 import { blobKeys, fileUrl } from '../storage/blob-storage';
 import { deleteDeck } from './decks';
 import {
@@ -627,9 +628,51 @@ async function insertInvite(
       .returning();
   });
   if (!row) throw new Error('Invite insert returned no row');
+  const url = inviteUrl(deps, token);
+
+  let emailSent = false;
+  if (email && deps.mailer.configured) {
+    const [workspace] = await deps.db
+      .select({ name: workspaces.name })
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId));
+    const outro = `Die Einladung gilt ${days} Tage und nur für ${email}. Antworten auf diese Mail gehen an ${actor.name}.`;
+    try {
+      await deps.mailer.send(
+        inviteMail(
+          input.deck
+            ? {
+                to: email,
+                replyTo: actor.email,
+                subject: `${actor.name} teilt „${input.deck.title}“ mit dir`,
+                heading: 'Eine Präsentation für dich',
+                intro: `${actor.name} hat die Präsentation „${input.deck.title}“ mit dir geteilt, damit du sie ansehen kannst.`,
+                button: 'Präsentation ansehen',
+                url,
+                outro,
+              }
+            : {
+                to: email,
+                replyTo: actor.email,
+                subject: `${actor.name} lädt dich zu „${workspace?.name ?? 'Slider'}“ ein`,
+                heading: 'Du bist eingeladen',
+                intro: `${actor.name} hat dich in die Slider-Organisation „${workspace?.name ?? ''}“ eingeladen, um Präsentationen zu prüfen und zu kommentieren.`,
+                button: 'Einladung annehmen',
+                url,
+                outro,
+              },
+        ),
+      );
+      emailSent = true;
+    } catch (error) {
+      // The invite stands either way – the dialog then shows the link to send by hand.
+      deps.log.warn(`Invite mail to ${email} failed`, error);
+    }
+  }
   return {
     invite: toInviteDto(row, { id: actor.id, name: actor.name }, now, input.deck),
-    url: inviteUrl(deps, token),
+    url,
+    emailSent,
   };
 }
 

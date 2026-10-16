@@ -21,6 +21,7 @@ import type { OpenPptx } from '../src/import/pptx';
 import { InProcessQueue, type ImportJob } from '../src/import/queue';
 import { RenderProgress } from '../src/import/render-progress';
 import { silentLogger } from '../src/logger';
+import { NullMailer, type Mailer } from '../src/mail/mailer';
 import { DEFAULT_PLAN_LIMITS } from '../src/services/plans';
 import { upsertUser } from '../src/services/users';
 import { ensurePersonalWorkspace } from '../src/services/workspaces';
@@ -58,6 +59,7 @@ export const testConfig = (overrides: Partial<Config> = {}): Config => ({
     sessionTtlDays: 30,
     bootstrapEmails: [],
   },
+  smtp: null,
   inviteRateLimit: 1000,
   microsoft: null,
   // Polling is driven by hand in tests (`SyncScheduler.tick`); the debounce default applies.
@@ -155,6 +157,8 @@ export async function createTestContext(
     lookup?: LookupAll;
     /** Replaces individual source adapters, e.g. with a fake OneDrive (no network). */
     sources?: Partial<SourceAdapters>;
+    /** e.g. a `RecordingMailer` – invitations are only mailed with a configured mailer. */
+    mailer?: Mailer;
     /** Fake passkey verification (no real authenticator in tests). */
     webauthn?: WebAuthn;
   } = {},
@@ -216,6 +220,7 @@ export async function createTestContext(
     oidc: config.auth.oidc ? new OidcClient(config.auth.oidc, clock, fetch) : null,
     google: config.auth.google ? new OidcClient(config.auth.google, clock, fetch) : null,
     webauthn: options.webauthn,
+    mailer: options.mailer ?? new NullMailer(),
     ownerId: owner.id,
   };
   const app = createApp(deps);

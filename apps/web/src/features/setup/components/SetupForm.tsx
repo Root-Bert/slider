@@ -16,7 +16,14 @@ import { useCopyToClipboard } from '@/features/sharing/hooks/useCopyToClipboard'
 import { apiRequest } from '@/lib/api-client';
 import { workspaceKeys } from '@/lib/workspace-queries';
 import { Button, Icon, Select, Spinner, TextField } from '@/ui';
-import { collectChanges, initialDraft, type SetupDraft } from '../lib/setup-form';
+import {
+  collectChanges,
+  EMPTY_SMTP,
+  initialDraft,
+  smtpUrl,
+  type SetupDraft,
+  type SmtpParts,
+} from '../lib/setup-form';
 
 /** Before the first account: where the setup link is. Afterwards: only the admin. */
 export function NotAuthorized({ status }: { status: SetupStatus }) {
@@ -55,6 +62,7 @@ export function SetupForm({
   const queryClient = useQueryClient();
   const { fields } = settings;
   const [draft, setDraft] = useState<SetupDraft>(() => initialDraft(fields));
+  const [smtp, setSmtp] = useState<SmtpParts>(EMPTY_SMTP);
   const [removed, setRemoved] = useState<ReadonlySet<SetupKey>>(new Set());
   const [phase, setPhase] = useState<'edit' | 'restarting' | 'saved'>('edit');
 
@@ -74,11 +82,15 @@ export function SetupForm({
       await queryClient.invalidateQueries({ queryKey: ['setup'] });
       await queryClient.invalidateQueries({ queryKey: workspaceKeys.providers });
       setRemoved(new Set());
+      setSmtp(EMPTY_SMTP);
       setPhase('saved');
     },
   });
 
-  const submit = () => save.mutate(collectChanges(fields, draft, removed));
+  const submit = () => {
+    const withSmtp = { ...draft, SMTP_URL: smtpUrl(smtp) };
+    save.mutate(collectChanges(fields, withSmtp, removed));
+  };
 
   const stored = (keys: SetupKey[]) =>
     keys.some((key) => fields[key].source === 'stored' && !removed.has(key));
@@ -101,6 +113,7 @@ export function SetupForm({
     ) : null;
 
   const signup = (draft.SIGNUP || 'open') as SignupMode;
+  const smtpFromEnv = fields.SMTP_URL.source === 'env';
 
   return (
     <form
@@ -199,6 +212,54 @@ export function SetupForm({
         )}
         {signup === 'domains' &&
           field('SIGNUP_DOMAINS', 'Domains', { placeholder: 'firma.de, firma.com' })}
+      </SettingsSection>
+
+      <SettingsSection
+        title="E-Mail"
+        description="Optional: Einladungen direkt per Mail verschicken. Ohne gibt es den Link zum Weitergeben. Jeder SMTP-Zugang passt, z. B. Brevo oder das Postfach beim Domain-Hoster."
+        aside={removeButton(['SMTP_URL', 'MAIL_FROM'])}
+      >
+        {smtpFromEnv ? (
+          <EnvHint name="SMTP_URL" />
+        ) : (
+          <>
+            {fields.SMTP_URL.set && !removed.has('SMTP_URL') && (
+              <p className="text-[13px] text-fg-subtle">
+                Ein Mailserver ist gespeichert. Zum Ändern alle Felder neu ausfüllen.
+              </p>
+            )}
+            <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
+              <TextField
+                label="SMTP-Server"
+                placeholder="smtp-relay.brevo.com"
+                value={smtp.host}
+                onChange={(e) => setSmtp({ ...smtp, host: e.target.value })}
+              />
+              <TextField
+                label="Port"
+                inputMode="numeric"
+                value={smtp.port}
+                hint={smtp.port === '465' ? 'TLS' : 'STARTTLS'}
+                onChange={(e) => setSmtp({ ...smtp, port: e.target.value })}
+              />
+              <TextField
+                label="Benutzer"
+                autoComplete="off"
+                value={smtp.user}
+                onChange={(e) => setSmtp({ ...smtp, user: e.target.value })}
+              />
+              <TextField
+                label="Passwort"
+                type="password"
+                autoComplete="new-password"
+                value={smtp.password}
+                onChange={(e) => setSmtp({ ...smtp, password: e.target.value })}
+                className="sm:col-span-1"
+              />
+            </div>
+          </>
+        )}
+        {field('MAIL_FROM', 'Absender', { placeholder: 'Slider <slider@firma.de>' })}
       </SettingsSection>
 
       {save.isError && <Notice tone="danger">{save.error.message}</Notice>}

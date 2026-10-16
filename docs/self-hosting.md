@@ -157,6 +157,7 @@ die Umgebungsvariable hat dann Vorrang.
 | `GOOGLE_REDIRECT_URI`                                 | nein                       | Standard `${SLIDER_URL}/api/auth/google/callback` – genau so bei Google eintragen.                                                                                                                                                                                                        |
 | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | eine Login-Art (Seite)     | z. B. Authentik: `https://auth.firma.de/application/o/slider/`.                                                                                                                                                                                                                           |
 | `OIDC_LABEL`, `OIDC_SCOPES`, `OIDC_REDIRECT_URI`      | nein                       | Button-Text, Scopes (`openid profile email`), Redirect (Standard `${SLIDER_URL}/api/auth/oidc/callback`).                                                                                                                                                                                 |
+| `SMTP_URL`, `MAIL_FROM`                               | nein (Seite)               | Einladungen per Mail, z. B. `smtp://<login>:<key>@smtp-relay.brevo.com:587` und `Slider <einladung@send.firma.de>`. Nur zusammen. Ohne: Der Einladungslink wird zum Weitergeben angezeigt. Siehe [E-Mail](#e-mail-einladungen-optional).                                                  |
 | `SESSION_TTL_DAYS`                                    | nein                       | Login-Dauer, Standard 30.                                                                                                                                                                                                                                                                 |
 | `MAX_UPLOAD_BYTES`                                    | nein                       | Max. PPTX-Größe, Standard 200 MB.                                                                                                                                                                                                                                                         |
 | `MEDIA_QUOTA_BYTES`, `MAX_MEDIA_BYTES`                | nein                       | Speicher für Sprach-/Video-Kommentare pro Deck-Besitzer (Standard unbegrenzt, `0` = unbegrenzt) bzw. pro Aufnahme (100 MB).                                                                                                                                                               |
@@ -300,6 +301,31 @@ Anmeldung** (`/konto`) an; danach gibt es auf der Login-Seite „Mit Passkey anm
 - Gespeichert werden nur öffentlicher Schlüssel und Signaturzähler; ein Datenbank-Leak verrät
   keine Anmeldedaten. Wird ein Konto gelöscht, verschwinden seine Passkeys mit.
 
+## E-Mail (Einladungen, optional)
+
+Slider verschickt nur **Einladungen** per Mail – angemeldet wird sich über Microsoft, Google, SSO
+oder Passkey. Ohne SMTP zeigt der Einladungsdialog den Link zum Weitergeben an; mit SMTP geht die
+Einladung direkt an die Adresse. Antworten auf die Mail gehen per `Reply-To` an die Person, die
+eingeladen hat. Schlägt der Versand fehl, bleibt die Einladung bestehen und der Link wird angezeigt.
+
+Jeder SMTP-Zugang geht: das Postfach beim eigenen Domain-Hoster, der Firmen-Mailserver oder ein
+Versanddienst. Mit Blick auf DSGVO einen Anbieter mit Sitz und Daten in der EU wählen und den
+Auftragsverarbeitungsvertrag abschließen (Stand Oktober 2026):
+
+| Dienst                                          | `SMTP_URL`                                           | Gratis        | Hinweise                                                                                                                                                     |
+| ----------------------------------------------- | ---------------------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [Brevo](https://www.brevo.com/free-smtp-server) | `smtp://<LOGIN>:<SMTP_KEY>@smtp-relay.brevo.com:587` | 300 Mails/Tag | Frankreich. Login und SMTP-Key unter _SMTP & API → SMTP_ (nicht der API-Key). Login enthält `@` → als `%40` schreiben. Öffnungs-/Klick-Tracking ausschalten. |
+| Postfach beim Hoster (IONOS, all-inkl, …)       | `smtps://<adresse>:<passwort>@<smtp-host>:465`       | meist inkl.   | Für ein paar Einladungen am Tag völlig ausreichend.                                                                                                          |
+
+Absender-Domain beim Dienst verifizieren (SPF/DKIM), sonst landen Mails im Spam. Bewährt hat sich
+eine eigene Subdomain nur für den Versand, z. B. `MAIL_FROM=Slider <einladung@send.firma.de>` –
+so bleibt der Ruf der Hauptdomain unberührt. Sonderzeichen in Login und Passwort URL-kodieren
+(`@` → `%40`, `/` → `%2F`, `+` → `%2B`). Auf der Einrichtungsseite trägt man Server, Port,
+Benutzer und Passwort einzeln ein; Port 465 heißt TLS, andere STARTTLS.
+
+**Lokal ohne SMTP:** In der Entwicklung (`bun run dev`) ohne `SMTP_URL` werden Einladungen nicht
+verschickt, sondern mit Link in der API-Konsole ausgegeben.
+
 ## Cloudflare (DNS und Schutz davor)
 
 Liegt die Domain bei Cloudflare, bleibt Slider trotzdem auf dem eigenen Server – Cloudflare
@@ -420,6 +446,7 @@ lesen, `docker compose pull && docker compose up -d` in `deploy/authentik`.
 | Domain                                                       | ca. 1 €               | (ca. 5–15 € pro Jahr)                                                                        |
 | Microsoft Entra App-Registrierung, Login, Graph-Dateizugriff | 0 €                   | Registrierung, Anmeldung und delegierter Lesezugriff über Graph kosten nichts.               |
 | Authentik                                                    | 0 €                   | Open Source; kostet nur RAM (größerer Server, s. o.).                                        |
+| E-Mail (SMTP, optional)                                      | 0 €                   | Gratis-Kontingent eines Versanddienstes oder vorhandenes Postfach.                           |
 | Let's Encrypt-Zertifikate                                    | 0 €                   | Caddy holt und erneuert sie automatisch.                                                     |
 
 **Realistisch: ca. 7 € im Monat** (nur Slider) bzw. **ca. 11–13 €** mit Authentik und Backups.

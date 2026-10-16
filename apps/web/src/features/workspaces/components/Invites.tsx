@@ -40,13 +40,19 @@ export function InviteForm({ workspace, onNotify }: { workspace: Workspace; onNo
   const inviteByEmail = () => {
     setEmailTouched(true);
     if (!emailValid) return;
+    const address = email.trim();
     create.mutate(
-      { email: email.trim(), role },
+      { email: address, role },
       {
         onSuccess: (result) => {
           setEmail('');
           setEmailTouched(false);
-          setCreated(result);
+          if (result.emailSent) {
+            setCreated(null);
+            onNotify(`Einladung an ${address} verschickt`);
+          } else {
+            setCreated(result);
+          }
         },
         onError: (error) => onNotify(error.message, 'danger'),
       },

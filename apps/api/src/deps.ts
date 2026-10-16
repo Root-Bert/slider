@@ -8,6 +8,7 @@ import type { ImportJob, JobQueue } from './import/queue';
 import type { RenderProgress } from './import/render-progress';
 import type { SlideRenderers } from './import/rerender';
 import type { Logger } from './logger';
+import type { Mailer } from './mail/mailer';
 import type { LiveHub } from './realtime/live-hub';
 import type { SourceAdapters } from './sources/source-adapter';
 import type { BlobStorage } from './storage/blob-storage';
@@ -41,6 +42,8 @@ export interface AppDeps {
   google: OidcClient | null;
   /** Passkey ceremonies; defaults to `@simplewebauthn/server` (tests inject fakes). */
   webauthn?: WebAuthn;
+  /** Invitation mails; without SMTP a `DevMailer` in development, else a `NullMailer`. */
+  mailer: Mailer;
   /**
    * The `users.id` of the dev owner (see {@link Config.devOwner}) – only with `auth.devLogin`,
    * else `null`.
