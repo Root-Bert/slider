@@ -37,6 +37,9 @@ import { locationLabel } from './lib/labels';
 import { draftSubmission } from '../stage/lib/text-box';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, useViewerState, type Draft } from '../state/viewer-state';
+import { draftHasContent } from '../state/draft-reducer';
+import { useViewerToast } from '../state/viewer-toast';
+import { useHoldUnsavedWork } from '../lib/unsaved-work';
 import { MentionMenu } from './MentionMenu';
 import { isModEnter, isModKey } from '@/lib/keyboard';
 
@@ -58,6 +61,9 @@ function ComposerPopover({ draft }: { draft: Draft }) {
   const [tab, setTab] = useState<MediaKindId>('text');
   const [recording, setRecording] = useState<Recording | null>(null);
   const [sketch, setSketch] = useState<Sketch | null>(null);
+  // A recording running or paused: not in `recording` until it is stopped.
+  const [recordingRunning, setRecordingRunning] = useState(false);
+  const showToast = useViewerToast();
   const popoverRef = useRef<HTMLFormElement>(null);
   const commentRef = useRef<HTMLTextAreaElement>(null);
   const narrow = useIsNarrow();
@@ -112,7 +118,22 @@ function ComposerPopover({ draft }: { draft: Draft }) {
     setTab(next);
     setRecording(null);
     setSketch(null);
+    setRecordingRunning(false);
   };
+
+  // What only the composer holds keeps the draft from being replaced by a click on another slide
+  // (`keepsDraft`) – and, with the draft's own strokes and slide text, from leaving unasked.
+  const held =
+    body.trim() !== '' || recording !== null || recordingRunning || sketch !== null || pending;
+  useEffect(() => {
+    dispatch({ type: 'draftHeld', held });
+  }, [dispatch, held]);
+  useHoldUnsavedWork(held || draftHasContent(draft));
+  // A click that would have started another comment was ignored: say why.
+  const nudge = draft.nudge ?? 0;
+  useEffect(() => {
+    if (nudge > 0) showToast('Dein Kommentar ist noch offen – sende oder verwirf ihn zuerst.');
+  }, [nudge, showToast]);
 
   // Focus outside the composer – after a click on the slide: Tab moves into it (Shift+Tab to its
   // last control), typing writes the comment. Inside, Tab moves the focus as usual – the kinds
@@ -213,7 +234,14 @@ function ComposerPopover({ draft }: { draft: Draft }) {
 
       {recordingTab && (
         // Remount per kind: switching tabs turns the previous device off.
-        <RecorderPanel key={tab} kind={tab} deckId={deck.id} onChange={setRecording} autoFocus />
+        <RecorderPanel
+          key={tab}
+          kind={tab}
+          deckId={deck.id}
+          onChange={setRecording}
+          onRecordingChange={setRecordingRunning}
+          autoFocus
+        />
       )}
 
       {imageTab && (

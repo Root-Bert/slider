@@ -41,15 +41,15 @@ const member = (userId: string, name: string, role: WorkspaceMember['role']): Wo
 
 afterEach(() => vi.restoreAllMocks());
 
-function setup() {
+function setup(
+  members = [
+    member('rob', 'Robert', 'admin'),
+    member('anna', 'Anna', 'member'),
+    member('ben', 'Ben', 'member'),
+  ],
+) {
   vi.spyOn(api, 'get').mockImplementation(async (path: string) =>
-    path.endsWith('/members')
-      ? [
-          member('rob', 'Robert', 'admin'),
-          member('anna', 'Anna', 'member'),
-          member('ben', 'Ben', 'member'),
-        ]
-      : [],
+    path.endsWith('/members') ? members : [],
   );
   const onNotify = vi.fn();
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -98,6 +98,34 @@ describe('MembersSection', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Ben entfernen' }));
     const again = screen.getByRole('dialog', { name: 'Ben entfernen?', hidden: true });
     expect(within(again).queryByText('Keine Verbindung zum Server.')).toBeNull();
+    client.clear();
+  });
+
+  it('asks before an admin demotes themselves; a cancel changes nothing', async () => {
+    const patch = vi.spyOn(api, 'patch').mockResolvedValue({});
+    const { onNotify, client } = setup([
+      member('rob', 'Robert', 'admin'),
+      member('anna', 'Anna', 'admin'),
+    ]);
+    const own = (await screen.findByLabelText('Rolle von Robert')) as HTMLSelectElement;
+    await userEvent.selectOptions(own, 'member');
+    expect(patch).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('dialog', { name: 'Selbst Mitglied werden?', hidden: true });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen', hidden: true }));
+    expect(patch).not.toHaveBeenCalled();
+    expect(own.value).toBe('admin');
+
+    await userEvent.selectOptions(own, 'member');
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Mitglied werden', hidden: true }),
+    );
+    expect(patch).toHaveBeenCalledOnce();
+    expect(patch.mock.calls[0]![1]).toEqual({ role: 'member' });
+    await vi.waitFor(() => expect(onNotify).toHaveBeenCalledWith('Du bist jetzt Mitglied'));
+
+    // Another admin's role changes right away, as before.
+    await userEvent.selectOptions(screen.getByLabelText('Rolle von Anna'), 'member');
+    expect(patch).toHaveBeenCalledTimes(2);
     client.clear();
   });
 });

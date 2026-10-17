@@ -53,7 +53,7 @@ const sizeClasses = {
 
 /**
  * A row in a menu, popover or option list: icon, label, trailing content. Hover and keyboard
- * focus share one look (`bg-hover`), so the pointer and the arrow keys never mark two rows.
+ * focus share the `bg-hover` tint; keyboard focus adds an inset mention-blue ring (WCAG 1.4.11).
  */
 export function MenuItem<T extends ElementType = 'button'>({
   as,
@@ -100,7 +100,8 @@ export function MenuItem<T extends ElementType = 'button'>({
         interactive &&
           (disabled
             ? 'cursor-default'
-            : 'hover:bg-hover focus-visible:bg-hover focus-visible:outline-none'),
+            : // The tint alone is ~1.3:1 on glass: keyboard focus adds the inset mention ring.
+              'hover:bg-hover focus-visible:bg-hover focus-visible:ring-2 focus-visible:ring-mention focus-visible:outline-none focus-visible:ring-inset'),
         disabled && dimDisabled && 'opacity-40',
         selected && 'bg-surface-2',
         danger ? 'text-danger' : 'text-fg',

@@ -3,6 +3,7 @@ import {
   activeTotals,
   countByFolder,
   countByTab,
+  isEmptyFolder,
   onlyFolderTiles,
   selectDecks,
 } from './deck-filters';
@@ -114,6 +115,30 @@ describe('folders', () => {
 
   it('counts active decks per folder', () => {
     expect(countByFolder(filed)).toEqual(new Map([['f1', 1]]));
+  });
+
+  it('collects the archived decks of every folder in the top-level archive', () => {
+    // Archiving keeps the folder, and the folder tile only counts active decks.
+    const archive = { ...opts, tab: 'archive' } as const;
+    expect(ids(selectDecks(filed, { ...archive, folder: null }))).toEqual(['old']);
+    expect(ids(selectDecks(filed, { ...archive, folder: 'f1' }))).toEqual(['old']);
+    expect(ids(selectDecks(filed, { ...archive, folder: 'f2' }))).toEqual([]);
+    expect(countByTab(filed, null)).toEqual({ all: 1, open: 0, archive: 1 });
+    expect(countByTab(filed, 'f1')).toEqual({ all: 1, open: 0, archive: 1 });
+    expect(countByTab(filed, 'f2')).toEqual({ all: 0, open: 0, archive: 0 });
+  });
+});
+
+describe('isEmptyFolder', () => {
+  it('only for an open folder without any deck and no search', () => {
+    expect(isEmptyFolder({ folderOpen: true, query: '', decksInFolder: 0 })).toBe(true);
+    expect(isEmptyFolder({ folderOpen: true, query: ' Q4 ', decksInFolder: 0 })).toBe(false);
+    expect(isEmptyFolder({ folderOpen: false, query: '', decksInFolder: 0 })).toBe(false);
+  });
+
+  it('not when the folder has decks that just do not match the tab', () => {
+    // E.g. "Offen" in a folder whose decks have no open comments: the tab's empty state says why.
+    expect(isEmptyFolder({ folderOpen: true, query: '', decksInFolder: 3 })).toBe(false);
   });
 });
 

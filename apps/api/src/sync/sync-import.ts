@@ -17,7 +17,12 @@ import {
   type RevisionDiffRecord,
   type SlideRenderer,
 } from '../db/schema';
-import { beginImportAttempt, endImportAttempt, ImportCrashLoop } from '../import/attempts';
+import {
+  beginImportAttempt,
+  endImportAttempt,
+  ImportCrashLoop,
+  importsStopping,
+} from '../import/attempts';
 import { deleteOrphanSlides, sha256Hex, toShape } from '../import/common';
 import { ConversionAborted } from '../import/libreoffice';
 import { renderSlidePages, slideRenderer, storeSlideRender } from '../import/office-pages';
@@ -28,6 +33,69 @@ import { blobKeys } from '../storage/blob-storage';
 import { parseFailedMessage } from './errors';
 import { DEFAULT_SYNC_POLL_INTERVAL_MS } from '../config';
 import { mergeSyncState, syncBackoffMs } from './state';
+
+type SlideVersionRow = typeof slideVersions.$inferSelect;
+
+/**
+ * The previous revision's fingerprints computed by *this* code from its stored file – not the
+ * hashes stored at its import. Those came from the parser and renderer of back then; after an
+ * update that changes either (e.g. slide-number fields left out of the text hash), every slide
+ * would look "modified" on the next sync, and without exact hashes the renumber guard of slide
+ * matching cannot stop comments from moving to a neighbour. `null` (the stored rows are used)
+ * when the file is gone, cannot be read any more or does not match the stored slides.
+ */
+async function currentFingerprints(
+  deps: ImportDeps,
+  deckId: string,
+  revisionId: string,
+  rows: SlideVersionRow[],
+): Promise<SlideFingerprint[] | null> {
+  if (rows.length === 0) return null;
+  const [revision] = await deps.db
+    .select({ pptxKey: revisions.pptxKey })
+    .from(revisions)
+    .where(eq(revisions.id, revisionId));
+  const bytes = revision?.pptxKey ? await deps.storage.get(revision.pptxKey) : null;
+  if (!bytes) return null;
+  try {
+    const document = await deps.openPptx(bytes);
+    const parsed = document.presentation.slides;
+    const sameSlides =
+      parsed.length === rows.length &&
+      parsed.every((slide, i) => {
+        const row = rows[i];
+        return row !== undefined && (row.pptxSldId === null || row.pptxSldId === slide.sldId);
+      });
+    if (!sameSlides) return null;
+    const fingerprints: SlideFingerprint[] = [];
+    for (const [i, slide] of parsed.entries()) {
+      const row = rows[i]!;
+      const svg = await document.renderSlideSvg(slide);
+      fingerprints.push(
+        fingerprintFromShapes({
+          key: row.slideId,
+          sldId: slide.sldId,
+          position: row.position,
+          title: slide.title,
+          layoutName: slide.layoutName,
+          textHash: slide.textHash,
+          shapes: slide.shapes.map(toShape),
+          renderHash: sha256Hex(svgForRenderHash(svg)),
+          contentHash: slide.contentHash,
+          creationId: slide.creationId,
+        }),
+      );
+    }
+    return fingerprints;
+  } catch (error) {
+    if (error instanceof ConversionAborted) throw error;
+    deps.log.warn(
+      `Deck ${deckId}: previous file could not be read again, matching with stored hashes`,
+      error,
+    );
+    return null;
+  }
+}
 
 /**
  * A file whose import fails this often in a row for another reason than a parse error (e.g. a
@@ -61,6 +129,18 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
   let stopped = false;
   try {
     await beginImportAttempt(db, revisionId);
+    const previousRevisionId = deck.currentRevisionId;
+    const previous = previousRevisionId
+      ? await db
+          .select()
+          .from(slideVersions)
+          .where(eq(slideVersions.revisionId, previousRevisionId))
+          .orderBy(asc(slideVersions.position))
+      : [];
+    // Before the new file is opened, so the two documents are never in memory at once.
+    const rebuilt = previousRevisionId
+      ? await currentFingerprints(deps, deckId, previousRevisionId, previous)
+      : null;
     const bytes = revision.pptxKey ? await storage.get(revision.pptxKey) : null;
     if (!bytes) throw new Error(`Original file of revision ${revisionId} is missing`);
     const document = await deps.openPptx(bytes);
@@ -76,6 +156,9 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
       renderHash: string;
       renderer: SlideRenderer | null;
     }[] = [];
+    // Images of an earlier run cut off before publishing (crash, restart): nothing refers to a
+    // pending revision's slides yet, so they go before this run stores its own.
+    await storage.deletePrefix(blobKeys.slideRenderPrefix(deckId, revisionId));
     const rendered = await renderSlidePages(deps, deck, revision, bytes, presentation.slides);
     for (const [position, parsed] of presentation.slides.entries()) {
       // The SVG is rendered either way: its hash is what slide matching compares (BER-108).
@@ -92,14 +175,6 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
       });
     }
 
-    const previousRevisionId = deck.currentRevisionId;
-    const previous = previousRevisionId
-      ? await db
-          .select()
-          .from(slideVersions)
-          .where(eq(slideVersions.revisionId, previousRevisionId))
-          .orderBy(asc(slideVersions.position))
-      : [];
     const toFingerprint = async (row: typeof slideVersions.$inferSelect) => {
       let renderHash = row.renderHash;
       if (renderHash === null) {
@@ -123,8 +198,8 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
         creationId: row.creationId,
       });
     };
-    const prevFingerprints: SlideFingerprint[] = [];
-    for (const row of previous) prevFingerprints.push(await toFingerprint(row));
+    const prevFingerprints: SlideFingerprint[] = rebuilt ?? [];
+    if (!rebuilt) for (const row of previous) prevFingerprints.push(await toFingerprint(row));
     const nextFingerprints = planned.map((slide) =>
       fingerprintFromShapes({
         key: String(slide.position),
@@ -293,7 +368,7 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
     });
     deps.log.info(`Deck ${deckId}: revision ${revision.number} imported`);
   } catch (error) {
-    if (error instanceof ConversionAborted) {
+    if (error instanceof ConversionAborted || importsStopping()) {
       // Shutdown: the revision stays pending, and the next start imports it again.
       stopped = true;
       deps.log.info(`Sync import of deck ${deckId} stopped by shutdown; resumes on the next start`);

@@ -7,7 +7,7 @@ import { decks, revisions, slides, slideVersions } from '../db/schema';
 import type { Logger } from '../logger';
 import { blobKeys, type BlobStorage } from '../storage/blob-storage';
 import { importSyncRevision } from '../sync/sync-import';
-import { beginImportAttempt, endImportAttempt, ImportCrashLoop } from './attempts';
+import { beginImportAttempt, endImportAttempt, ImportCrashLoop, importsStopping } from './attempts';
 import { deleteOrphanSlides, sha256Hex, toShape } from './common';
 import { ConversionAborted, type PptxToPdf } from './libreoffice';
 import { renderSlidePages, slideRenderer, storeSlideRender, type OfficePdf } from './office-pages';
@@ -67,7 +67,7 @@ export async function importDeck(deps: ImportDeps, job: ImportJob): Promise<void
       await deps.storage.deletePrefix(blobKeys.deckPrefix(job.deckId));
       return;
     }
-    if (error instanceof ConversionAborted) {
+    if (error instanceof ConversionAborted || importsStopping()) {
       // Shutdown: the deck stays `running`, and the next start imports it again.
       stopped = true;
       deps.log.info(`Import of deck ${job.deckId} stopped by shutdown; resumes on the next start`);
@@ -186,9 +186,12 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
   }
 
   await running({ status: 'running', step: 'comments', progress: null });
-  const slidesBySldId = new Map<number, ImportedSlide>(
-    planned.map(({ parsed, slideId, shapes }) => [parsed.sldId, { slideId, shapes }]),
-  );
+  // PowerPoint comments follow the sldId. With duplicate sldIds the first slide keeps them – the
+  // same rule as a sync (sync-import.ts), so the next sync never moves them to another slide.
+  const slidesBySldId = new Map<number, ImportedSlide>();
+  for (const { parsed, slideId, shapes } of planned) {
+    if (!slidesBySldId.has(parsed.sldId)) slidesBySldId.set(parsed.sldId, { slideId, shapes });
+  }
   await db.transaction((tx) =>
     upsertPptxComments(tx, deckId, presentation.comments, slidesBySldId, deps.clock.now()),
   );

@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ContextMenu, Menu, type MenuAction } from '@/ui';
+import { anchoredMenuPosition } from './menu-position';
 
 const makeActions = () => {
   const rename = vi.fn();
@@ -155,6 +156,62 @@ describe('Menu positioning', () => {
     const wrapper = wrapperOf(container);
     expect(wrapper.classList.contains('absolute')).toBe(true);
     expect(wrapper.classList.contains('relative')).toBe(false);
+  });
+});
+
+describe('Menu inside a glass card', () => {
+  it('portals the open panel into <body>, out of the card’s stacking context', async () => {
+    render(
+      <ol>
+        <li className="glass" data-testid="card">
+          <Menu label="Aktionen" actions={makeActions().actions} />
+        </li>
+        <li className="glass">Nächste Antwort</li>
+      </ol>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Aktionen' }));
+    const menu = screen.getByRole('menu', { name: 'Aktionen' });
+    expect(screen.getByTestId('card').contains(menu)).toBe(false);
+    expect(menu.parentElement?.parentElement).toBe(document.body);
+    expect(menu.parentElement?.className).toContain('fixed');
+    expect(menu.parentElement?.className).toContain('z-(--z-popover)');
+    // Still inside for the outside-press check: an item click runs its action.
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Löschen' }));
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('Tab from a portalled item continues after the trigger', async () => {
+    render(
+      <>
+        <Menu label="Aktionen" actions={makeActions().actions} />
+        <button type="button">Danach</button>
+      </>,
+    );
+    screen.getByRole('button', { name: 'Aktionen' }).focus();
+    await userEvent.keyboard('{ArrowDown}');
+    await userEvent.keyboard('{Tab}');
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Danach' }));
+  });
+});
+
+describe('anchoredMenuPosition', () => {
+  const viewport = { width: 400, height: 800 };
+  const menu = { width: 192, height: 80 };
+
+  it('opens below the trigger, right edges aligned', () => {
+    const trigger = { top: 100, bottom: 132, right: 380 };
+    expect(anchoredMenuPosition(trigger, menu, viewport)).toEqual({ left: 188, top: 136 });
+  });
+
+  it('flips above the trigger near the bottom edge', () => {
+    const trigger = { top: 740, bottom: 772, right: 380 };
+    expect(anchoredMenuPosition(trigger, menu, viewport)).toEqual({ left: 188, top: 656 });
+  });
+
+  it('stays inside the viewport at the left edge', () => {
+    const trigger = { top: 100, bottom: 132, right: 40 };
+    expect(anchoredMenuPosition(trigger, menu, viewport).left).toBe(8);
   });
 });
 

@@ -19,6 +19,8 @@ export interface BlobStorage {
   delete(key: string): Promise<void>;
   /** Removes every blob whose key starts with `prefix` (which must end in `/`). */
   deletePrefix(prefix: string): Promise<void>;
+  /** Keys of every blob under `prefix` (which must end in `/`); `[]` when there are none. */
+  list(prefix: string): Promise<string[]>;
 }
 
 const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;

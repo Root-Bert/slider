@@ -46,6 +46,7 @@ import {
   activeTotals,
   countByFolder,
   countByTab,
+  isEmptyFolder,
   DECK_SORTS,
   inFolder,
   onlyFolderTiles,
@@ -55,7 +56,7 @@ import {
 } from './lib/deck-filters';
 import { useLastVisits } from './hooks/useLastVisits';
 import { usePinnedDecks } from './hooks/usePinnedDecks';
-import { prunePinnedDecks } from './lib/pinned-decks';
+import { pinnableDeckIds, prunePinnedDecks } from './lib/pinned-decks';
 
 const DECK_VIEWS = ['grid', 'list'] as const satisfies readonly DeckView[];
 const NO_DECKS: readonly Deck[] = [];
@@ -108,14 +109,14 @@ export function Component() {
   const marquee = useMarqueeSelect(pageRef, selection.marquee);
   const [selectionMenuAt, setSelectionMenuAt] = useState<{ x: number; y: number } | null>(null);
 
-  // A pinned deck deleted (or moved away) elsewhere would otherwise hold one of the few pin
-  // slots of this workspace forever.
+  // A pinned deck deleted, moved away or archived (here or elsewhere) would otherwise hold one
+  // of the few pin slots of this workspace while no pin shows on "Alle".
   const loadedDecks = decksQuery.isSuccess ? decksQuery.data : undefined;
   useEffect(() => {
     if (loadedDecks)
       prunePinnedDecks(
         { userId: user.id, workspaceId: workspace.id },
-        new Set(loadedDecks.map((deck) => deck.id)),
+        pinnableDeckIds(loadedDecks),
       );
   }, [loadedDecks, user.id, workspace.id]);
   const goToNew =
@@ -243,7 +244,7 @@ export function Component() {
             search={<DeckSearch value={query} onChange={setQuery} />}
             tab={tab}
             onTabChange={setTab}
-            counts={countByTab(inScope)}
+            counts={countByTab(decks, folder)}
             sort={sort}
             onSortChange={setSort}
             view={view}
@@ -310,7 +311,12 @@ export function Component() {
                 </Button>
               }
             />
-          ) : visible.length === 0 && openFolder && !query.trim() ? (
+          ) : visible.length === 0 &&
+            isEmptyFolder({
+              folderOpen: Boolean(openFolder),
+              query,
+              decksInFolder: inScope.length,
+            }) ? (
             <EmptyState
               title="Der Ordner ist leer"
               message={

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { commentSchema, type Comment, type CreateMediaCommentInput } from '@slider/shared';
 import { workspaceMembers } from '../src/db/schema';
 import { parseRange } from '../src/http/range';
+import { MEDIA_UPLOADS_PER_HOUR } from '../src/routes/media';
 import { sniffMediaContainer } from '../src/services/media';
 import {
   createReadyDeck,
@@ -194,6 +195,31 @@ describe('voice and video comments', () => {
     const outsider = await signedInUser(ctx, { name: 'Fremd', email: 'fremd@example.com' });
     const res = await ctx.request(media!.url, { cookie: outsider.cookie });
     expect(res.status).toBe(404);
+  });
+
+  it('checks deck access before reading the body', async () => {
+    const outsider = await signedInUser(ctx, { name: 'Fremd', email: 'fremd@example.com' });
+    // Far over the body limit: refused as "not found", never buffered and refused as too large.
+    const res = await upload(voiceComment(), webm(12 * 1024 * 1024), 'audio/webm', outsider.cookie);
+    expect(res.status).toBe(404);
+    const missing = await ctx.request('/api/decks/gibt-es-nicht/media-comments', {
+      method: 'POST',
+      body: new FormData(),
+    });
+    expect(missing.status).toBe(404);
+  });
+
+  it('caps uploads per account and hour, failed ones included', async () => {
+    for (let i = 0; i < MEDIA_UPLOADS_PER_HOUR.limited; i++) {
+      const res = await upload(voiceComment(), new Uint8Array(100).fill(1));
+      expect(res.status).toBe(415);
+    }
+    const refused = await upload(voiceComment());
+    expect(refused.status).toBe(429);
+    expect(Number(refused.headers.get('retry-after'))).toBeGreaterThan(0);
+    expect(await refused.json()).toMatchObject({ error: { code: 'rate_limited' } });
+    ctx.clock.advance(60 * 60_000);
+    expect((await upload(voiceComment())).status).toBe(201);
   });
 
   it('deletes the recordings with their thread', async () => {

@@ -202,9 +202,12 @@ function DeckHeading({ deck, failed = false }: { deck: Deck; failed?: boolean })
   );
 }
 
-function ImportFailed({ deck, error }: { deck: Deck; error: string }) {
+export function ImportFailed({ deck, error }: { deck: Deck; error: string }) {
   const navigate = useNavigate();
   const remove = useDeleteDeck();
+  // Removing it or uploading another file is for whoever may manage the deck; everyone else
+  // (reviewers, viewers, other members) is told who can.
+  const { canManage } = deck.permissions;
 
   return (
     <div className="flex flex-col gap-4">
@@ -212,23 +215,37 @@ function ImportFailed({ deck, error }: { deck: Deck; error: string }) {
       <div role="alert" className="flex flex-col gap-1">
         <h2 className="text-sm font-medium text-fg">Import fehlgeschlagen</h2>
         <p className="text-body text-fg-subtle">{error}</p>
+        {!canManage && (
+          <p className="text-body text-fg-subtle">
+            Bitte {deck.owner.name}, die Präsentation erneut hochzuladen.
+          </p>
+        )}
         {remove.error && <ErrorText size="xs">{remove.error.message}</ErrorText>}
       </div>
-      <div className="flex flex-wrap justify-end gap-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          loading={remove.isPending}
-          onClick={() =>
-            remove.mutate(deck.id, { onSuccess: () => void navigate(routes.reviews()) })
-          }
-        >
-          Entfernen
-        </Button>
-        <Button size="sm" icon="upload" onClick={() => void navigate(routes.newReview())}>
-          Andere Datei hochladen
-        </Button>
-      </div>
+      {canManage && (
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            loading={remove.isPending}
+            onClick={() =>
+              remove.mutate(deck.id, {
+                onSuccess: () => void navigate(routes.workspace(deck.workspaceId)),
+              })
+            }
+          >
+            Entfernen
+          </Button>
+          {/* Into the deck's workspace – not whichever one was used last. */}
+          <Button
+            size="sm"
+            icon="upload"
+            onClick={() => void navigate(routes.newReview(deck.workspaceId))}
+          >
+            Andere Datei hochladen
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

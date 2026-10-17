@@ -330,6 +330,56 @@ describe('Microsoft login routes', () => {
     expect(forgotten?.msRefreshToken).toBeNull();
   });
 
+  it('keeps the refresh token when Microsoft is down, throttling or refuses the app itself', async () => {
+    let answer: () => Response = () => Response.json({}, { status: 500 });
+    ctx = await configured(async (input, init) => {
+      const body = new URLSearchParams(String(init?.body));
+      if (String(input).endsWith('/token') && body.get('grant_type') === 'refresh_token') {
+        return answer();
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    });
+    await ctx.deps.db
+      .update(users)
+      .set({ msRefreshToken: await encryptToken(SECRET, 'rt-1') })
+      .where(eq(users.id, ctx.ownerId));
+    const stored = async () =>
+      (await ctx.deps.db.select().from(users).where(eq(users.id, ctx.ownerId)))[0]?.msRefreshToken;
+
+    const outcomes: [() => Response, string][] = [
+      [() => Response.json({}, { status: 503 }), 'source_unreachable'],
+      [
+        () =>
+          Response.json(
+            { error: 'temporarily_unavailable', error_description: 'AADSTS50196' },
+            { status: 400 },
+          ),
+        'source_unreachable',
+      ],
+      [() => new Response('slow down', { status: 429 }), 'source_unreachable'],
+      [
+        () =>
+          Response.json(
+            { error: 'invalid_client', error_description: 'AADSTS7000222: secret expired' },
+            { status: 401 },
+          ),
+        'microsoft_not_configured',
+      ],
+    ];
+    for (const [response, code] of outcomes) {
+      answer = response;
+      await expect(
+        ctx.deps.microsoft.getAccessToken(ctx.ownerId, { forceRefresh: true }),
+      ).rejects.toMatchObject({ code });
+      expect(await stored()).not.toBeNull();
+    }
+
+    answer = () => Response.json({ access_token: 'at-9', expires_in: 3600 });
+    expect(await ctx.deps.microsoft.getAccessToken(ctx.ownerId, { forceRefresh: true })).toBe(
+      'at-9',
+    );
+  });
+
   it('never asks Microsoft for write scopes, even when `access=write` is requested', async () => {
     ctx = await configured();
     const res = await ctx.request(

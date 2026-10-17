@@ -60,11 +60,25 @@ describe('apiRequest', () => {
   });
 
   it('falls back to a generic error for non-JSON failures', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>', { status: 502 })));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>', { status: 500 })));
     await expect(api.get('/x')).rejects.toMatchObject({
-      status: 502,
+      status: 500,
       code: 'internal',
       message: 'Etwas ist schiefgelaufen. Bitte versuche es erneut.',
+    });
+  });
+
+  it('explains a reverse proxy’s HTML 413 and 502–504', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>', { status: 413 })));
+    await expect(api.post('/x', new FormData())).rejects.toMatchObject({
+      status: 413,
+      code: 'file_too_large',
+      message: expect.stringContaining('client_max_body_size'),
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>', { status: 504 })));
+    await expect(api.get('/x')).rejects.toMatchObject({
+      status: 504,
+      message: expect.stringContaining('nicht erreichbar'),
     });
   });
 
@@ -124,6 +138,16 @@ describe('uploadWithProgress', () => {
     Object.assign(FakeXhr.last, { status: 500, response: null });
     FakeXhr.last.onload?.();
     await expect(broken).rejects.toMatchObject({ status: 500, code: 'internal' });
+
+    // nginx's HTML 413 (client_max_body_size, 1 MB by default): `response` is null.
+    const proxied = uploadWithProgress('/upload', new FormData(), () => undefined);
+    Object.assign(FakeXhr.last, { status: 413, response: null });
+    FakeXhr.last.onload?.();
+    await expect(proxied).rejects.toMatchObject({
+      status: 413,
+      code: 'file_too_large',
+      message: expect.stringContaining('Upload-Limit des Reverse-Proxys'),
+    });
   });
 
   it('aborts with an AbortError', async () => {

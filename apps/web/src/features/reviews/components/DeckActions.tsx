@@ -3,7 +3,6 @@ import type { Deck } from '@slider/shared';
 import { useDeckStatus, useInvalidateSlideImages, useRerenderDeck, useUpdateDeck } from '@/lib/api';
 import { ContextMenu, Menu, type IconButtonVariant, type MenuAction, type ShowToast } from '@/ui';
 import { usePinnedDecks } from '../hooks/usePinnedDecks';
-import { MAX_PINNED } from '../lib/pinned-decks';
 import { DeleteDeckDialog } from './DeleteDeckDialog';
 import { MoveDecksDialog } from './MoveDecksDialog';
 import { movedMessage } from '../hooks/useMoveDecks';
@@ -115,9 +114,7 @@ export function DeckActions({
         icon: 'pushPin',
         onSelect: () => pins.pin(deck.id),
         disabled: pins.full,
-        title: pins.full
-          ? `Höchstens ${MAX_PINNED} Reviews angepinnt – löse zuerst einen.`
-          : undefined,
+        title: pins.full ? pins.limitMessage() : undefined,
       };
 
   // Reviewers and members on other people's decks can only pin them (BER-129).

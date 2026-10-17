@@ -209,6 +209,23 @@ describe('documented settings', () => {
     expect(docs).not.toMatch(/startet Slider ohne Login-Weg nicht/);
     expect(read('apps/api/src/routes/setup.ts')).not.toMatch(/Anmeldeweg ein \(E-Mail/);
   });
+
+  it('tells .env.example readers that production starts without a login, via the setup page', () => {
+    // config.ts starts production without any login provider and logs the setup link.
+    expect(read('apps/api/src/config.ts')).toMatch(/Production without any login starts anyway/);
+    const env = read('.env.example');
+    const example = env.slice(env.indexOf('# ── Login'), env.indexOf('BOOTSTRAP_EMAIL='));
+    expect(example).toMatch(/passkeys/);
+    expect(example).not.toMatch(/required\s+in production/i);
+    expect(example).toMatch(/\/einrichtung/);
+    expect(example).toMatch(/values set here win/i);
+  });
+
+  it('does not claim the image was never built, next to saying CI builds it', () => {
+    const note = docs.slice(docs.indexOf('> **Hinweis:**'), docs.indexOf('## Aufbau'));
+    expect(note).toMatch(/scripts\/smoke-image\.sh/);
+    expect(note).not.toMatch(/nicht\s*(>\s*)?mit\s*(>\s*)?Docker gebaut/);
+  });
 });
 
 describe('restoring a backup', () => {

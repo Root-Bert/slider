@@ -20,6 +20,17 @@ describe('MenuItem', () => {
     expect(onClick).toHaveBeenCalledOnce();
   });
 
+  it('marks keyboard focus with a 2px inset mention ring, not just the hover tint', () => {
+    render(<MenuItem>Umbenennen</MenuItem>);
+    expect(classesOf(screen.getByRole('button', { name: 'Umbenennen' }))).toEqual(
+      expect.arrayContaining([
+        'focus-visible:ring-2',
+        'focus-visible:ring-inset',
+        'focus-visible:ring-mention',
+      ]),
+    );
+  });
+
   it('maps inset, size, tone and selected to tokens', () => {
     render(
       <>

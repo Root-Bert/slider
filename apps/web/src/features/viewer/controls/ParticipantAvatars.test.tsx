@@ -307,4 +307,52 @@ describe('ParticipantAvatars', () => {
       vi.useRealTimers();
     }
   });
+
+  describe('the person filter', () => {
+    const labels = () =>
+      within(screen.getByRole('group', { name: 'Teilnehmende' }))
+        .getAllByRole('button')
+        .map((button) => button.getAttribute('aria-label'));
+
+    it('keeps the filtered avatar after a live viewer who never commented left', () => {
+      const ben = author('ben', { name: 'Ben' });
+      mocks.live = [{ author: ben, activeSlideId: 's1' }];
+      mocks.state.personFilter = 'ben';
+      const view = render(<ParticipantAvatars />);
+      expect(avatar('Nur Kommentare von Ben').getAttribute('aria-pressed')).toBe('true');
+
+      mocks.live = [];
+      view.rerender(<ParticipantAvatars />);
+      const kept = avatar('Nur Kommentare von Ben');
+      // Still the switch to turn the filter off – no live dot any more.
+      expect(kept.getAttribute('aria-pressed')).toBe('true');
+      expect(within(kept).queryByLabelText('gerade da')).toBeNull();
+
+      // Off: once they are gone, so is their avatar.
+      mocks.state.personFilter = null;
+      view.rerender(<ParticipantAvatars />);
+      expect(screen.queryByRole('button', { name: 'Nur Kommentare von Ben' })).toBeNull();
+    });
+
+    it('never hides the filtered avatar in the "+n" chip when live people push it back', () => {
+      mocks.data.deck.participants = [anna];
+      mocks.state.personFilter = 'anna';
+      mocks.live = ['b', 'c', 'd', 'e', 'f', 'g'].map((id) => ({
+        author: author(id, { name: id.toUpperCase() }),
+        activeSlideId: 's1',
+      }));
+      render(<ParticipantAvatars />);
+      expect(avatar('Nur Kommentare von Anna').getAttribute('aria-pressed')).toBe('true');
+      expect(labels()).toEqual([
+        'Nur Kommentare von B',
+        'Nur Kommentare von C',
+        'Nur Kommentare von D',
+        'Nur Kommentare von E',
+        'Nur Kommentare von Anna',
+        'Kommentare zeigen, in denen du erwähnt wirst',
+      ]);
+      // The chip names who it holds now.
+      expect(screen.getByText('+2').closest('[title]')?.getAttribute('title')).toBe('F, G');
+    });
+  });
 });

@@ -82,7 +82,32 @@ const NAMED_ENTITIES: Record<string, string> = {
   apos: "'",
 };
 
+/**
+ * Characters XML 1.0 forbids (C0 controls other than tab, LF and CR) and unpaired UTF-16
+ * surrogates. The validator lets them through as raw characters and as numeric references
+ * (`&#0;`, `&#xD800;`), but downstream they are poison: Postgres rejects U+0000 in `text` and
+ * both U+0000 and lone surrogates in `jsonb`, so one such character would fail the whole import.
+ */
+const UNSTORABLE = new RegExp(
+  '[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f]' +
+    '|[\\ud800-\\udbff](?![\\udc00-\\udfff])|(?<![\\ud800-\\udbff])[\\udc00-\\udfff]',
+  'g',
+);
+
+/**
+ * Drops illegal controls and unpaired surrogates; vertical tab and form feed (line breaks in
+ * some producers) become a space – the same rules the SVG renderer applies.
+ */
+function sanitizeText(value: string): string {
+  return value.replace(UNSTORABLE, (char) => (char === '\u000b' || char === '\u000c' ? ' ' : ''));
+}
+
+/** Decodes entities and numeric references, then normalises the result to storable text. */
 function decodeEntities(value: string): string {
+  return sanitizeText(decodeReferences(value));
+}
+
+function decodeReferences(value: string): string {
   return value.replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi, (match, entity: string) => {
     if (entity.startsWith('#')) {
       const isHex = entity[1] === 'x' || entity[1] === 'X';

@@ -1,5 +1,5 @@
 import { createReadStream } from 'node:fs';
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { assertValidKey, type BlobStorage } from './blob-storage';
@@ -52,6 +52,28 @@ export class FsBlobStorage implements BlobStorage {
   async deletePrefix(prefix: string): Promise<void> {
     if (!prefix.endsWith('/')) throw new Error(`Prefix must end with "/": ${prefix}`);
     await rm(this.resolve(prefix.slice(0, -1)), { recursive: true, force: true });
+  }
+
+  async list(prefix: string): Promise<string[]> {
+    if (!prefix.endsWith('/')) throw new Error(`Prefix must end with "/": ${prefix}`);
+    let entries;
+    try {
+      entries = await readdir(this.resolve(prefix.slice(0, -1)), {
+        recursive: true,
+        withFileTypes: true,
+      });
+    } catch (error) {
+      if (
+        isNotFound(error) ||
+        (error instanceof Error && 'code' in error && error.code === 'ENOTDIR')
+      )
+        return [];
+      throw error;
+    }
+    return entries
+      .filter((entry) => entry.isFile())
+      .map((entry) => path.relative(this.root, path.join(entry.parentPath, entry.name)))
+      .map((relative) => relative.split(path.sep).join('/'));
   }
 
   /** Maps a key to a path inside the root; the second check is defence in depth. */

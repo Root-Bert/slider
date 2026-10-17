@@ -47,6 +47,15 @@ describe('FsBlobStorage', () => {
     expect(await storage.get('decks/b/3.svg')).not.toBeNull();
   });
 
+  it('lists the keys under a prefix, nested ones included', async () => {
+    await storage.put('decks/a/1.svg', new Uint8Array([1]));
+    await storage.put('decks/a/x/2.svg', new Uint8Array([2]));
+    await storage.put('decks/ab/3.svg', new Uint8Array([3]));
+    expect((await storage.list('decks/a/')).sort()).toEqual(['decks/a/1.svg', 'decks/a/x/2.svg']);
+    expect(await storage.list('decks/none/')).toEqual([]);
+    expect(await storage.list('decks/a/1.svg/')).toEqual([]);
+  });
+
   it.each([
     '../secret',
     'decks/../../etc/passwd',

@@ -6,6 +6,7 @@ import { useViewerToast } from '../state/viewer-toast';
 import { MEDIA_LABELS } from './lib/recording';
 import { RecorderPanel } from './RecorderPanel';
 import { useCreateMediaComment } from './hooks/useMediaComment';
+import { useHoldUnsavedWork } from '../lib/unsaved-work';
 import type { Recording } from './hooks/useRecorder';
 import { isModEnter } from '@/lib/keyboard';
 
@@ -22,9 +23,12 @@ export function RecordReplyDialog({
   onClose: () => void;
 }) {
   const [recording, setRecording] = useState<Recording | null>(null);
+  const [recordingRunning, setRecordingRunning] = useState(false);
   const [note, setNote] = useState('');
   const create = useCreateMediaComment(deckId);
   const showToast = useViewerToast();
+  // Leaving the review would drop the recording and abort its upload: ask first.
+  useHoldUnsavedWork(recording !== null || recordingRunning || create.isPending);
 
   // Cancelling (button, Esc, backdrop) also aborts a running upload: nothing is sent.
   const cancel = () => {
@@ -64,7 +68,14 @@ export function RecordReplyDialog({
       }
     >
       <div className="flex flex-col gap-3">
-        <RecorderPanel kind={kind} deckId={deckId} onChange={setRecording} autoStart autoFocus />
+        <RecorderPanel
+          kind={kind}
+          deckId={deckId}
+          onChange={setRecording}
+          onRecordingChange={setRecordingRunning}
+          autoStart
+          autoFocus
+        />
         {recording && (
           <div className="field-well rounded-control-sm px-3 py-2">
             <AutosizeTextarea

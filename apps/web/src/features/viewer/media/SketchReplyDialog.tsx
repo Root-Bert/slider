@@ -7,6 +7,7 @@ import { useViewerToast } from '../state/viewer-toast';
 import { DEFAULT_SKETCH_ASPECT, exportSketch } from './lib/sketch';
 import { SketchPanel, type Sketch } from './SketchPanel';
 import { useCreateMediaComment } from './hooks/useMediaComment';
+import { useHoldUnsavedWork } from '../lib/unsaved-work';
 import { isModEnter } from '@/lib/keyboard';
 
 /** Reply to a thread with a drawn image, optionally with a voice memo recorded while drawing. */
@@ -27,6 +28,8 @@ export function SketchReplyDialog({
   const [note, setNote] = useState('');
   const create = useCreateMediaComment(deckId);
   const showToast = useViewerToast();
+  // Leaving the review would drop the sketch and abort its upload: ask first.
+  useHoldUnsavedWork(sketch !== null || note.trim() !== '' || create.isPending);
 
   // Cancelling (button, Esc, backdrop) also aborts a running upload: nothing is sent.
   const cancel = () => {

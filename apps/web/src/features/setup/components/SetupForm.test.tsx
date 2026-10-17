@@ -151,6 +151,40 @@ describe('SetupForm', () => {
     expect(await screen.findByText(/Starte den Slider-Server neu/)).toBeTruthy();
   });
 
+  it('locks a removed section and offers "Rückgängig" – nothing typed is dropped silently', async () => {
+    renderForm(
+      status({
+        MS_CLIENT_ID: { source: 'stored', value: 'old-id', set: true },
+        MS_CLIENT_SECRET: { source: 'stored', value: null, set: true },
+        SMTP_URL: { source: 'stored', value: null, set: true },
+      }),
+    );
+    const microsoft = within(section('Microsoft'));
+    const clientId = () => microsoft.getByLabelText(/Client-ID/) as HTMLInputElement;
+    await userEvent.click(microsoft.getByRole('button', { name: 'Entfernen' }));
+    expect(clientId().disabled).toBe(true);
+
+    // Changed their mind: undo, then type the new app's ID – that is what gets saved.
+    await userEvent.click(microsoft.getByRole('button', { name: 'Rückgängig' }));
+    expect(microsoft.getByRole('button', { name: 'Entfernen' })).toBeTruthy();
+    expect(clientId().disabled).toBe(false);
+    await userEvent.clear(clientId());
+    await userEvent.type(clientId(), 'new-id');
+
+    // The SMTP fields lock the same way.
+    const mail = within(section('E-Mail'));
+    await userEvent.click(mail.getByRole('button', { name: 'Entfernen' }));
+    expect((mail.getByLabelText('SMTP-Server') as HTMLInputElement).disabled).toBe(true);
+    expect(mail.getByText(/wird beim Speichern entfernt/)).toBeTruthy();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+    expect(apiRequest).toHaveBeenLastCalledWith('/setup', {
+      method: 'PUT',
+      body: { values: { MS_CLIENT_ID: 'new-id', SMTP_URL: null } },
+      headers: { 'X-Setup-Token': 't' },
+    });
+  });
+
   it('shows a failed save', async () => {
     fail = new Error('Speichern fehlgeschlagen');
     renderForm();

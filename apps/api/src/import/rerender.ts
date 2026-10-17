@@ -2,6 +2,8 @@ import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { Database } from '../db/client';
 import { decks, revisions, slideVersions, type SlideRenderer } from '../db/schema';
 import type { Logger } from '../logger';
+import { blobKeys } from '../storage/blob-storage';
+import { beginImportAttempt, endImportAttempt, ImportCrashLoop, importsStopping } from './attempts';
 import type { ImportDeps } from './import-deck';
 import { ConversionAborted } from './libreoffice';
 import { hasPdfRenderer, renderSlidePages, type SlidePagesDeps } from './office-pages';
@@ -80,6 +82,7 @@ export async function rerenderRevision(
     });
   if (!sameSlides) return skipped('slides of the file do not match the revision');
 
+  await deleteUnusedRenders(deps, deckId, id);
   const rendered = await renderSlidePages(deps, deck, revision, bytes, parsed);
   if (rendered.renderer === null) return skipped('no renderer available');
   await db
@@ -150,6 +153,29 @@ export async function rerenderRevision(
   return { status: 'rendered', renderer, replaced: swaps.length };
 }
 
+/**
+ * Slide images of the revision that no slide version shows – left by an earlier re-render cut off
+ * between storing its pages and the swap (crash, restart). The queue runs one job at a time and
+ * a ready revision gets no new pages otherwise, so none of them belongs to a running job.
+ */
+async function deleteUnusedRenders(
+  { db, storage, log }: ImportDeps,
+  deckId: string,
+  revisionId: string,
+): Promise<void> {
+  const keys = await storage.list(blobKeys.slideRenderPrefix(deckId, revisionId));
+  if (keys.length === 0) return;
+  const used = new Set<string>();
+  const rows = await db
+    .select({ imageKey: slideVersions.imageKey, thumbnailKey: slideVersions.thumbnailKey })
+    .from(slideVersions)
+    .where(or(inArray(slideVersions.imageKey, keys), inArray(slideVersions.thumbnailKey, keys)));
+  for (const row of rows) used.add(row.imageKey).add(row.thumbnailKey);
+  const unused = keys.filter((key) => !used.has(key));
+  if (unused.length > 0) log.info(`Deck ${deckId}: removing ${unused.length} unused slide images`);
+  for (const key of unused) await storage.delete(key);
+}
+
 /** Rows that were never tried with a better renderer now have been: `null` → `svg`. */
 async function markTried(db: Database, revisionId: string): Promise<void> {
   await db
@@ -158,10 +184,17 @@ async function markTried(db: Database, revisionId: string): Promise<void> {
     .where(and(eq(slideVersions.revisionId, revisionId), isNull(slideVersions.renderer)));
 }
 
-/** The queue's `rerender` job: never throws, only logs; reports progress while it runs. */
+/**
+ * The queue's `rerender` job: never throws, only logs; reports progress while it runs. Each run
+ * is counted on the revision before any rendering (like an import, see `attempts.ts`): a deck
+ * whose rendering kills the process is given up after a few starts instead of crash-looping the
+ * server from the start-up backfill.
+ */
 export async function rerenderJob(deps: ImportDeps, job: ImportJob): Promise<void> {
   let changed = false;
+  let stopped = false;
   try {
+    await beginImportAttempt(deps.db, job.revisionId);
     const outcome = await rerenderRevision(deps, job.deckId, job.revisionId);
     changed = outcome.status === 'rendered';
     if (outcome.status === 'rendered') {
@@ -174,15 +207,21 @@ export async function rerenderJob(deps: ImportDeps, job: ImportJob): Promise<voi
       deps.log.info(`Deck ${job.deckId}: slide images not re-rendered (${outcome.reason})`);
     }
   } catch (error) {
-    if (error instanceof ConversionAborted) {
+    if (error instanceof ConversionAborted || importsStopping()) {
       // Shutdown: still untried, so the next start's backfill renders it again.
+      stopped = true;
       deps.log.info(`Re-rendering deck ${job.deckId} stopped by shutdown`);
       return;
     }
-    deps.log.error(`Re-rendering the slides of deck ${job.deckId} failed`, error);
+    if (error instanceof ImportCrashLoop) {
+      deps.log.warn(`Deck ${job.deckId}: ${error.message}; keeping the preview images`);
+    } else {
+      deps.log.error(`Re-rendering the slides of deck ${job.deckId} failed`, error);
+    }
     // Once per revision: a revision that fails is not retried at every start (the ⋯ menu can).
     await markTried(deps.db, job.revisionId).catch(() => {});
   } finally {
+    await endImportAttempt(deps.db, job.revisionId, { stopped }).catch(() => {});
     deps.renderProgress?.finish(job.deckId, changed, deps.clock.now());
   }
 }

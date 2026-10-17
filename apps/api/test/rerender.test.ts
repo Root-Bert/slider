@@ -1,10 +1,12 @@
 import { asc, eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { deckSchema, deckStatusSchema, slideSchema, type Deck } from '@slider/shared';
-import { decks, slideVersions } from '../src/db/schema';
+import { decks, revisions, slideVersions } from '../src/db/schema';
+import { MAX_IMPORT_ATTEMPTS } from '../src/import/attempts';
 import { ConversionAborted, type PptxToPdf } from '../src/import/libreoffice';
 import { findRerenderCandidates, rerenderJob, rerenderRevision } from '../src/import/rerender';
 import { silentLogger } from '../src/logger';
+import { blobKeys } from '../src/storage/blob-storage';
 import {
   createReadyDeck,
   createTestContext,
@@ -154,6 +156,61 @@ describe('rerenderRevision (BER-94)', () => {
     expect(
       await findRerenderCandidates(ctx.deps.db, { libreOfficePdf: libreOffice.convert }),
     ).toEqual([{ deckId: deck.id, revisionId: deck.currentRevisionId, kind: 'rerender' }]);
+  });
+
+  it('counts each run before rendering and gives up a deck whose rendering kills the process', async () => {
+    const libreOffice = switchableLibreOffice();
+    ctx = await createTestContext({ openPptx: threeSlides(), libreOfficePdf: libreOffice.convert });
+    const deck = await importedDeck(ctx);
+    await makeLegacy(ctx, deck);
+    const revisionId = deck.currentRevisionId ?? '';
+    const attempts = async () =>
+      (await ctx!.deps.db.select().from(revisions).where(eq(revisions.id, revisionId)))[0]
+        ?.importAttempts;
+    const job = { deckId: deck.id, revisionId, kind: 'rerender' as const };
+    const seen: (number | undefined)[] = [];
+    const counting: PptxToPdf = async () => {
+      seen.push(await attempts());
+      // A shutdown here takes the run back; a process that dies here leaves it counted.
+      throw new ConversionAborted();
+    };
+
+    // The run is on record while it renders, so a run the process dies in counts.
+    await rerenderJob(importDeps(ctx, counting), job);
+    expect(seen).toEqual([1]);
+
+    // As many crashed runs as allowed: the next start's backfill gives up instead of dying again.
+    await ctx.deps.db
+      .update(revisions)
+      .set({ importAttempts: MAX_IMPORT_ATTEMPTS })
+      .where(eq(revisions.id, revisionId));
+    await rerenderJob(importDeps(ctx, counting), job);
+    expect(seen).toHaveLength(1);
+    expect((await versionsOf(ctx, deck)).map((row) => row.renderer)).toEqual(['svg', 'svg', 'svg']);
+    expect(await attempts()).toBe(0);
+    expect(
+      await findRerenderCandidates(ctx.deps.db, { libreOfficePdf: libreOffice.convert }),
+    ).toEqual([]);
+  });
+
+  it('removes slide images a re-render cut off before its swap left behind', async () => {
+    const libreOffice = switchableLibreOffice();
+    ctx = await createTestContext({ openPptx: threeSlides(), libreOfficePdf: libreOffice.convert });
+    const deck = await importedDeck(ctx);
+    await makeLegacy(ctx, deck);
+    const revisionId = deck.currentRevisionId ?? '';
+    const stray = blobKeys.slideRender(deck.id, revisionId, 'webp');
+    await ctx.deps.storage.put(stray, new Uint8Array([1, 2, 3]));
+
+    libreOffice.state.pages = 2;
+    const outcome = await rerenderRevision(importDeps(ctx, libreOffice.convert), deck.id);
+    expect(outcome.status).toBe('rendered');
+    expect(await ctx.deps.storage.get(stray)).toBeNull();
+    const rows = await versionsOf(ctx, deck);
+    const live = new Set(rows.flatMap((row) => [row.imageKey, row.thumbnailKey]));
+    expect(
+      new Set(await ctx.deps.storage.list(blobKeys.slideRenderPrefix(deck.id, revisionId))),
+    ).toEqual(live);
   });
 
   it('skips revisions whose file is gone or whose slides no longer match', async () => {

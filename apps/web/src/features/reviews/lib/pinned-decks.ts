@@ -1,3 +1,4 @@
+import type { Deck } from '@slider/shared';
 import { createStoredStore } from '@/lib/storage';
 
 /**
@@ -77,4 +78,18 @@ export function prunePinnedDecks(scope: PinScope, existing: ReadonlySet<string>)
   const current = pinnedIn(pinnedDecksStore.getSnapshot(), scope);
   const kept = current.filter((id) => existing.has(id));
   if (kept.length !== current.length) setPins(scope, kept);
+}
+
+/**
+ * The decks that may keep a pin: the workspace's decks that aren't archived. An archived deck
+ * is out of sight on "Alle" and gives its slot back – from any tab, whoever archived it.
+ * Decks in folders keep theirs: they are pinned to the top of their folder.
+ */
+export const pinnableDeckIds = (decks: readonly Deck[]): ReadonlySet<string> =>
+  new Set(decks.filter((deck) => deck.archivedAt === null).map((deck) => deck.id));
+
+/** Why "Anpinnen" is off: names the pinned decks, which may sit in folders out of sight. */
+export function pinLimitMessage(pinnedTitles: readonly string[]): string {
+  const named = pinnedTitles.length > 0 ? ` (${pinnedTitles.map((t) => `„${t}“`).join(', ')})` : '';
+  return `Höchstens ${MAX_PINNED} Reviews angepinnt${named} – löse zuerst einen.`;
 }

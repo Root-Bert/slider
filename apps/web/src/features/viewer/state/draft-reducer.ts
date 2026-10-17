@@ -25,8 +25,48 @@ const placedTextRect = (box: TextBoxDraft): Rect => ({
   h: Math.max(box.minHeight, 0.01),
 });
 
-export function draftReducer(draft: Draft | null, action: ViewerAction): Draft | null {
+/**
+ * Something in the draft would be lost if another draft took its place: strokes drawn for it,
+ * text written on the slide, or what the composer holds (text, a recording, a sketch, an upload
+ * running – `held`).
+ */
+export function draftHasContent(draft: Draft | null): boolean {
+  if (!draft) return false;
+  return (
+    !!draft.held ||
+    (draft.commentId === null && draft.strokes.length > 0) ||
+    !!draft.textBox?.text.trim()
+  );
+}
+
+/**
+ * The action would start another draft – or drop the text written on the slide – while the open
+ * one has content: it is ignored (the click only makes its slide active), and the composer is
+ * nudged to say why. Sending or discarding it first is up to the person.
+ */
+export function keepsDraft(draft: Draft | null, action: ViewerAction): boolean {
+  if (!draft || !draftHasContent(draft)) return false;
   switch (action.type) {
+    case 'anchorPlaced':
+      // On the same slide the mark moves – unless that would drop a text box with text in it.
+      return draft.slideId !== action.slideId || !!draft.textBox?.text.trim();
+    case 'textBoxPlaced':
+    case 'strokeAdded':
+      return draft.slideId !== action.slideId;
+    case 'gapDraftStarted':
+      return true;
+    case 'drawingCommentStarted':
+      return draft.commentId !== action.commentId;
+    default:
+      return false;
+  }
+}
+
+export function draftReducer(draft: Draft | null, action: ViewerAction): Draft | null {
+  if (draft && keepsDraft(draft, action)) return { ...draft, nudge: (draft.nudge ?? 0) + 1 };
+  switch (action.type) {
+    case 'draftHeld':
+      return !draft || !!draft.held === action.held ? draft : { ...draft, held: action.held };
     case 'anchorPlaced':
       // Placing a mark on another slide starts over; on the same slide the drawing is kept
       // (a text box makes way – the mark is the anchor now).

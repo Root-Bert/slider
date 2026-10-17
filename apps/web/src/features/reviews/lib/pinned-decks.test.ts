@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stubBrokenStorage, stubStorage } from '@/test/storage';
+import { makeDeck } from './deck-fixture';
 
 const KEY = 'slider.reviews.pinned.v2';
 const ROB_A = { userId: 'rob', workspaceId: 'a' };
@@ -59,6 +60,26 @@ describe('pinned decks', () => {
     expect(pinnedIn(pins, ROB_A)).toEqual(['b']);
     // Another account signing in on this browser doesn't lose its pins.
     expect(pinnedIn(pins, ANNA_A)).toEqual(['a', 'z']);
+  });
+
+  it('gives the slots of archived decks back; decks in folders keep theirs', async () => {
+    stubStorage({ [KEY]: '{"rob/a":["gone","filed","old"]}' });
+    const { pinnableDeckIds, pinnedDecksStore, pinnedIn, prunePinnedDecks } = await load();
+    const decks = [
+      makeDeck({ id: 'filed', folderId: 'f1' }),
+      makeDeck({ id: 'old', archivedAt: '2026-09-01T00:00:00Z' }),
+    ];
+    prunePinnedDecks(ROB_A, pinnableDeckIds(decks));
+    expect(pinnedIn(pinnedDecksStore.getSnapshot(), ROB_A)).toEqual(['filed']);
+  });
+
+  it('names the pinned decks in the limit message', async () => {
+    stubStorage();
+    const { pinLimitMessage } = await load();
+    expect(pinLimitMessage(['Q4', 'Board'])).toBe(
+      'Höchstens 3 Reviews angepinnt („Q4“, „Board“) – löse zuerst einen.',
+    );
+    expect(pinLimitMessage([])).toBe('Höchstens 3 Reviews angepinnt – löse zuerst einen.');
   });
 
   it('loads at most the limit and only strings', async () => {

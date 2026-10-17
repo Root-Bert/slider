@@ -2,7 +2,7 @@ import { and, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { Clock } from '../clock';
 import type { Config } from '../config';
 import type { Database } from '../db/client';
-import { decks } from '../db/schema';
+import { decks, revisions } from '../db/schema';
 import type { Logger } from '../logger';
 import { SYNC_ACTIVE_WINDOW_MS, type SyncService } from './sync-service';
 
@@ -94,6 +94,9 @@ export class SyncScheduler {
           sql`${decks.importState}->>'status' = 'ready'`,
           sql`greatest(${decks.lastViewedAt}, ${decks.updatedAt}) >= ${activeSince}::timestamptz`,
           sql`(${nextCheckAt} is null or ${nextCheckAt} <= ${nowIso}::timestamptz)`,
+          // A queued import answers every check with "queued" and never moves `nextCheckAt`:
+          // without this, a backlog of them would take every slot of every tick.
+          sql`not exists (select 1 from ${revisions} where ${revisions.deckId} = ${decks.id} and ${revisions.status} = 'pending')`,
         ),
       )
       .orderBy(sql`${nextCheckAt} asc nulls first`, decks.id)

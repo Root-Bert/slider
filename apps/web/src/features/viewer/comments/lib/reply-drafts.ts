@@ -11,6 +11,8 @@ const listeners = new Set<() => void>();
 
 export const replyDrafts = {
   get: (threadId: string): string => drafts.get(threadId) ?? '',
+  /** Some thread has an unsent reply – kept across the app, but not across a reload. */
+  hasAny: (): boolean => drafts.size > 0,
   set(threadId: string, next: string | ((current: string) => string)) {
     const body = typeof next === 'function' ? next(replyDrafts.get(threadId)) : next;
     if (body === replyDrafts.get(threadId)) return;

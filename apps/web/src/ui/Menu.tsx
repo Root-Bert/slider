@@ -6,6 +6,7 @@ import {
   type CSSProperties,
   type KeyboardEvent,
   type MouseEvent,
+  type ReactNode,
   type RefObject,
 } from 'react';
 import { createPortal } from 'react-dom';
@@ -13,6 +14,7 @@ import { cn } from './cn';
 import type { IconName } from './Icon';
 import { IconButton, type IconButtonSize, type IconButtonVariant } from './IconButton';
 import { MenuItem } from './MenuItem';
+import { anchoredMenuPosition } from './menu-position';
 import { PopoverPanel } from './Popover';
 import { useDismiss } from './hooks/useDismiss';
 import { usePopover } from './hooks/usePopover';
@@ -57,12 +59,11 @@ export function Menu({
 }: MenuProps) {
   // Only a keyboard-opened menu puts focus on its first item; a click shouldn't pre-select one.
   const [openedByKeyboard, setOpenedByKeyboard] = useState(false);
-  const { open, setOpen, close, wrapperRef, triggerRef, panelId } = usePopover();
+  const { open, setOpen, close, wrapperRef, triggerRef, panelRef, panelId } = usePopover();
 
   return (
-    // The panel is anchored to this wrapper, so it must be positioned – `relative` unless the
-    // caller places it itself (`absolute top-2 right-2` on a card): `cn` doesn't merge
-    // conflicting utilities, and `.relative` comes later in the CSS, so it would win.
+    // `relative` unless the caller places the wrapper itself (`absolute top-2 right-2` on a
+    // card): `cn` doesn't merge conflicting utilities, and `.relative` comes later in the CSS.
     <div ref={wrapperRef} className={cn(!isPositioned(className) && 'relative', className)}>
       <IconButton
         ref={triggerRef}
@@ -89,18 +90,87 @@ export function Menu({
         className={triggerClassName}
       />
       {open && (
-        <MenuList
-          id={panelId}
-          label={label}
-          actions={actions}
-          onClose={close}
-          focusFirst={openedByKeyboard}
-          // Focus goes back to the trigger first, so a dialog opened by the action restores it on close.
-          returnFocusTo={triggerRef}
-          anchored
-        />
+        <AnchoredMenu anchorRef={triggerRef} panelRef={panelRef}>
+          <MenuList
+            id={panelId}
+            label={label}
+            actions={actions}
+            onClose={close}
+            focusFirst={openedByKeyboard}
+            // Focus goes back to the trigger first, so a dialog opened by the action restores it on close.
+            returnFocusTo={triggerRef}
+          />
+        </AnchoredMenu>
       )}
     </div>
+  );
+}
+
+/**
+ * Where menus are portalled: `<body>` – or, while something is fullscreen (the viewer, F), that
+ * element, since the browser shows nothing outside it then.
+ */
+const portalRoot = (): Element => document.fullscreenElement ?? document.body;
+
+/**
+ * The `Menu` panel, portalled into `<body>` and placed from the trigger's rect. Inline it would
+ * share the stacking context of the nearest `glass` card (backdrop-filter creates one), so the
+ * next glass sibling – the reply or folder tile below – would paint over it and take its taps.
+ */
+function AnchoredMenu({
+  anchorRef,
+  panelRef,
+  children,
+}: {
+  anchorRef: RefObject<HTMLElement | null>;
+  panelRef: RefObject<HTMLElement | null>;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  // Hidden until measured, so it never flashes at the top left corner.
+  const [position, setPosition] = useState<CSSProperties>({
+    left: 0,
+    top: 0,
+    visibility: 'hidden',
+  });
+
+  useLayoutEffect(() => {
+    const place = () => {
+      const trigger = anchorRef.current;
+      const menu = ref.current;
+      if (!trigger || !menu) return;
+      const { width, height } = menu.getBoundingClientRect();
+      setPosition(
+        anchoredMenuPosition(
+          trigger.getBoundingClientRect(),
+          { width, height },
+          { width: window.innerWidth, height: window.innerHeight },
+        ),
+      );
+    };
+    place();
+    // The trigger moves with its scroll container: follow it instead of drifting away.
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [anchorRef]);
+
+  return createPortal(
+    <div
+      ref={(element) => {
+        ref.current = element;
+        // Counts as inside for `useDismiss`, although it is no longer in the wrapper.
+        panelRef.current = element;
+      }}
+      className="fixed z-(--z-popover)"
+      style={position}
+    >
+      {children}
+    </div>,
+    portalRoot(),
   );
 }
 
@@ -148,7 +218,7 @@ export function ContextMenu({ label, actions, at, onClose }: ContextMenuProps) {
     <div ref={ref} className="fixed z-(--z-popover)" style={position}>
       <MenuList label={label} actions={actions} onClose={onClose} focusFirst={false} />
     </div>,
-    document.body,
+    portalRoot(),
   );
 }
 
@@ -160,8 +230,6 @@ interface MenuListProps {
   returnFocusTo?: RefObject<HTMLElement | null>;
   /** Focus the first item (keyboard) or only the menu itself (pointer), so ↑/↓ still work. */
   focusFirst?: boolean;
-  /** Below the trigger, right-aligned (`Menu`); otherwise placed by the caller (`ContextMenu`). */
-  anchored?: boolean;
 }
 
 /** The open menu: ↑/↓/Home/End move between the enabled items, Tab closes. */
@@ -172,7 +240,6 @@ function MenuList({
   onClose,
   returnFocusTo,
   focusFirst = true,
-  anchored = false,
 }: MenuListProps) {
   const menuRef = useRef<HTMLElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -203,6 +270,9 @@ function MenuList({
       event.preventDefault();
       if (count > 0) itemRefs.current[enabled[(target + count) % count]!]?.focus();
     } else if (event.key === 'Tab') {
+      // The menu lives in `<body>`: from the trigger, Tab's default moves on to the control
+      // after (Shift+Tab: before) it, as if the menu had never been open.
+      returnFocusTo?.current?.focus();
       onClose();
     }
   };
@@ -222,10 +292,7 @@ function MenuList({
       aria-label={label}
       tabIndex={-1}
       onKeyDown={handleKeyDown}
-      position={anchored ? 'anchored' : 'none'}
-      side="bottom"
-      align="end"
-      offset="sm"
+      position="none"
       padding="sm"
       className="min-w-48 outline-none"
     >

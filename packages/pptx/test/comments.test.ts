@@ -80,6 +80,24 @@ describe('modern comments (BER-112)', () => {
       { type: 'point', point: { x: 1, y: 0 } },
     ]);
   });
+
+  it('drops NUL and other XML-illegal controls from titles and comments', async () => {
+    const { presentation } = await openDeck({
+      slides: [
+        {
+          title: 'Agen\u0000da\u0001',
+          comments: [{ author: 'Le\u0000na', text: 'Bitte\u0000 prüfen\u001F' }],
+        },
+      ],
+    });
+
+    expect(presentation.slides[0]?.title).toBe('Agenda');
+    expect(presentation.comments[0]).toMatchObject({
+      author: { name: 'Lena' },
+      text: 'Bitte prüfen',
+    });
+    expect(JSON.stringify(presentation)).not.toMatch(/\\u000|\\u001/);
+  });
 });
 
 describe('legacy comments (BER-113)', () => {

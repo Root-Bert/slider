@@ -9,6 +9,7 @@ import {
   useActiveWorkspace,
 } from '@/features/workspaces';
 import { NewReview } from './components/NewReview';
+import { noCreateMessage } from './lib/no-create';
 
 /**
  * A1 "Neue Review" (BER-91, BER-92) with the A3 "no access" state.
@@ -20,10 +21,7 @@ export function Component() {
   if (!workspace) return <Navigate to={routes.reviews()} replace />;
   if (!canCreateDecks(workspace.role)) {
     return (
-      <CenteredMessage
-        title="Nur ansehen und kommentieren"
-        message={`Als Reviewer in „${workspace.name}“ kannst du keine Reviews anlegen. Bitte einen Admin, dich zum Mitglied zu machen.`}
-      >
+      <CenteredMessage title="Keine Berechtigung zum Anlegen" message={noCreateMessage(workspace)}>
         <TextLink to={routes.workspace(workspace.id)} variant="underline" size="sm">
           Zurück zu den Reviews
         </TextLink>

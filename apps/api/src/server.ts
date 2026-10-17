@@ -6,6 +6,7 @@ import { OidcClient } from './auth/oidc';
 import { systemClock } from './clock';
 import { dataPaths, loadBootConfig } from './config';
 import { openDatabase } from './db/client';
+import { releaseRunningImportAttempts } from './import/attempts';
 import { findInterruptedImports, importDeck } from './import/import-deck';
 import { createOfficePdf } from './import/office-pages';
 import { createLibreOfficePdf, findSoffice, stopRunningConversions } from './import/libreoffice';
@@ -164,6 +165,10 @@ async function main(): Promise<void> {
     scheduler.stop();
     // LibreOffice runs in its own process group and would outlive this process.
     stopRunningConversions();
+    // A running import is cut off, not crashed: its run must not count towards giving up.
+    const imports = releaseRunningImportAttempts(db).catch((error: unknown) =>
+      log.error('Could not release the running imports', error),
+    );
     // Open viewers hold a live stream each, which would keep `close` from ever finishing; the
     // browsers reconnect once the server is back.
     live.closeAll();
@@ -174,7 +179,9 @@ async function main(): Promise<void> {
       // Interrupted imports are picked up again on the next start. PGlite must be closed cleanly
       // or it runs crash recovery on the next start – but never wait for it forever.
       await Promise.race([
-        database.close().catch((error: unknown) => log.error('Closing the database failed', error)),
+        imports
+          .then(() => database.close())
+          .catch((error: unknown) => log.error('Closing the database failed', error)),
         new Promise((resolve) => setTimeout(resolve, 3_000).unref()),
       ]);
       process.exit(exitCode);

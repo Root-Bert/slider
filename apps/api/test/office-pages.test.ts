@@ -55,6 +55,7 @@ function memoryStorage() {
       blobs.delete(key);
     },
     deletePrefix: async () => {},
+    list: async (prefix: string) => [...blobs.keys()].filter((key) => key.startsWith(prefix)),
   } satisfies BlobStorage;
   return { storage, blobs };
 }

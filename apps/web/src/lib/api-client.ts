@@ -19,6 +19,29 @@ const fromBody = (status: number, error: ApiErrorBody['error']) =>
 
 const FALLBACK_MESSAGE = 'Etwas ist schiefgelaufen. Bitte versuche es erneut.';
 
+/**
+ * An error without Slider's JSON body – it came from a reverse proxy in front of the API (an
+ * HTML error page). Its status still says what happened: nginx answers an upload above its
+ * `client_max_body_size` (1 MB by default) with 413 before Slider sees the request.
+ */
+export function proxyError(status: number): ApiError {
+  if (status === 413) {
+    return new ApiError(
+      status,
+      'file_too_large',
+      'Die Datei ist für diesen Server zu groß. Der Betreiber muss das Upload-Limit des Reverse-Proxys erhöhen (z. B. nginx client_max_body_size).',
+    );
+  }
+  if (status === 502 || status === 503 || status === 504) {
+    return new ApiError(
+      status,
+      'internal',
+      'Der Server ist gerade nicht erreichbar. Bitte versuche es gleich noch einmal.',
+    );
+  }
+  return new ApiError(status, 'internal', FALLBACK_MESSAGE);
+}
+
 async function toApiError(response: Response): Promise<ApiError> {
   try {
     const body = (await response.json()) as Partial<ApiErrorBody>;
@@ -26,7 +49,7 @@ async function toApiError(response: Response): Promise<ApiError> {
   } catch {
     // Non-JSON error (proxy down, HTML error page) – fall through.
   }
-  return new ApiError(response.status, 'internal', FALLBACK_MESSAGE);
+  return proxyError(response.status);
 }
 
 type JsonBody = Record<string, unknown> | unknown[];
@@ -90,11 +113,7 @@ export function uploadWithProgress<T>(
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) return resolve(xhr.response as T);
       const body = xhr.response as Partial<ApiErrorBody> | null;
-      reject(
-        body?.error
-          ? fromBody(xhr.status, body.error)
-          : new ApiError(xhr.status, 'internal', FALLBACK_MESSAGE),
-      );
+      reject(body?.error ? fromBody(xhr.status, body.error) : proxyError(xhr.status));
     };
     xhr.onerror = () => reject(new ApiError(0, 'internal', 'Keine Verbindung zum Server.'));
     const aborted = () => new DOMException('Upload abgebrochen', 'AbortError');

@@ -50,12 +50,23 @@ export type FolderScope = string | null | '*';
 export const inFolder = (deck: Deck, scope: FolderScope) =>
   scope === '*' || (deck.folderId ?? null) === scope;
 
-export function countByTab(decks: readonly Deck[]): Record<ReviewTab, number> {
-  return {
-    all: decks.filter(TAB_PREDICATES.all).length,
-    open: decks.filter(TAB_PREDICATES.open).length,
-    archive: decks.filter(TAB_PREDICATES.archive).length,
-  };
+/**
+ * The scope a tab really looks at. Archiving keeps a deck's folder, but the folder tiles only
+ * count active decks – so the top-level "Archiv" collects the archived decks of every folder,
+ * or a deck archived inside a folder would seem gone.
+ */
+export const tabScope = (tab: ReviewTab, folder: FolderScope): FolderScope =>
+  tab === 'archive' && folder === null ? '*' : folder;
+
+/** Tab badges for the decks in `folder` (default: all), with the top-level archive as above. */
+export function countByTab(
+  decks: readonly Deck[],
+  folder: FolderScope = '*',
+): Record<ReviewTab, number> {
+  const count = (tab: ReviewTab) =>
+    decks.filter((deck) => inFolder(deck, tabScope(tab, folder)) && TAB_PREDICATES[tab](deck))
+      .length;
+  return { all: count('all'), open: count('open'), archive: count('archive') };
 }
 
 const normalize = (text: string) =>
@@ -83,7 +94,7 @@ export function selectDecks(
   const needle = normalize(query.trim());
   const bySort = comparators(openedAt)[sort];
   return decks
-    .filter((deck) => inFolder(deck, folder))
+    .filter((deck) => inFolder(deck, tabScope(tab, folder)))
     .filter(TAB_PREDICATES[tab])
     .filter((deck) => needle === '' || normalize(deck.title).includes(needle))
     .sort((a, b) => Number(isPinned(b.id)) - Number(isPinned(a.id)) || bySort(a, b));
@@ -106,6 +117,22 @@ export function activeTotals(decks: readonly Deck[]) {
     reviews: active.length,
     openComments: active.reduce((sum, deck) => sum + deck.openCommentCount, 0),
   };
+}
+
+/**
+ * "Der Ordner ist leer" only for an open folder without any deck – a folder whose decks just
+ * don't match the tab ("Offen", "Archiv") gets the tab's own empty state instead.
+ */
+export function isEmptyFolder({
+  folderOpen,
+  query,
+  decksInFolder,
+}: {
+  folderOpen: boolean;
+  query: string;
+  decksInFolder: number;
+}): boolean {
+  return folderOpen && query.trim() === '' && decksInFolder === 0;
 }
 
 /**

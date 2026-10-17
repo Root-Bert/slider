@@ -115,6 +115,8 @@ export function SetupForm({
 
   const set = (key: SetupKey) => (value: string) => setDraft((d) => ({ ...d, [key]: value }));
   const remove = (keys: SetupKey[]) => setRemoved((r) => new Set([...r, ...keys]));
+  const undoRemove = (keys: SetupKey[]) =>
+    setRemoved((r) => new Set([...r].filter((key) => !keys.includes(key))));
 
   const save = useMutation({
     mutationFn: (values: SaveSetupInput['values']) =>
@@ -170,15 +172,21 @@ export function SetupForm({
       {...props}
     />
   );
+  // A removed section is locked (its fields would be dropped on save) until "Rückgängig".
   const removeButton = (keys: SetupKey[]) =>
     stored(keys) ? (
       <Button variant="ghost" size="sm" icon="delete" onClick={() => remove(keys)}>
         Entfernen
       </Button>
+    ) : keys.some((key) => removed.has(key)) ? (
+      <Button variant="ghost" size="sm" icon="undo" onClick={() => undoRemove(keys)}>
+        Rückgängig
+      </Button>
     ) : null;
 
   const signup = (draft.SIGNUP || 'open') as SignupMode;
   const smtpFromEnv = fields.SMTP_URL.source === 'env';
+  const smtpRemoved = removed.has('SMTP_URL');
 
   return (
     <form
@@ -286,20 +294,24 @@ export function SetupForm({
           <EnvHint name="SMTP_URL" />
         ) : (
           <>
-            {fields.SMTP_URL.set && !removed.has('SMTP_URL') && (
+            {fields.SMTP_URL.set && (
               <p className="text-body text-fg-subtle">
-                Ein Mailserver ist gespeichert. Zum Ändern alle Felder neu ausfüllen.
+                {smtpRemoved
+                  ? 'Der gespeicherte Mailserver wird beim Speichern entfernt.'
+                  : 'Ein Mailserver ist gespeichert. Zum Ändern alle Felder neu ausfüllen.'}
               </p>
             )}
             <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
               <TextField
                 label="SMTP-Server"
+                disabled={smtpRemoved}
                 placeholder="smtp-relay.brevo.com"
                 value={smtp.host}
                 onChange={(e) => setSmtp({ ...smtp, host: e.target.value })}
               />
               <TextField
                 label="Port"
+                disabled={smtpRemoved}
                 inputMode="numeric"
                 value={smtp.port}
                 hint={smtp.port === '465' ? 'TLS' : 'STARTTLS'}
@@ -307,12 +319,14 @@ export function SetupForm({
               />
               <TextField
                 label="Benutzer"
+                disabled={smtpRemoved}
                 autoComplete="off"
                 value={smtp.user}
                 onChange={(e) => setSmtp({ ...smtp, user: e.target.value })}
               />
               <TextField
                 label="Passwort"
+                disabled={smtpRemoved}
                 type="password"
                 autoComplete="new-password"
                 value={smtp.password}
@@ -410,6 +424,7 @@ function SetupTextField({
           : props.placeholder
       }
       hint={removed ? 'Wird beim Speichern entfernt' : hint}
+      disabled={removed}
       className={props.className}
     />
   );

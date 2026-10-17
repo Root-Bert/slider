@@ -4,6 +4,8 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RecorderState, Recording } from '../media/hooks/useRecorder';
 import type { Draft } from '../state/viewer-state';
+import { unsavedWork } from '../lib/unsaved-work';
+import { ViewerToastContext } from '../state/viewer-toast';
 import { Composer } from './Composer';
 
 const me = { id: 'u1', name: 'Rita Roth', color: 'violet', type: 'owner' } as Author;
@@ -20,6 +22,7 @@ const recorder = {
   reset: vi.fn(),
 };
 let draft: Draft;
+const dispatch = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   useCreateComment: () => createComment,
@@ -51,7 +54,7 @@ vi.mock('../state/viewer-data', () => ({
 }));
 vi.mock('../state/viewer-state', () => ({
   useViewerState: () => ({ draft }),
-  useViewerDispatch: () => vi.fn(),
+  useViewerDispatch: () => dispatch,
 }));
 
 const recording: Recording = {
@@ -64,6 +67,7 @@ const recording: Recording = {
 };
 
 beforeEach(() => {
+  dispatch.mockClear();
   recorder.state = { status: 'idle' };
   recorder.reset.mockClear();
   createComment.mutate.mockClear();
@@ -146,5 +150,42 @@ describe('Composer', () => {
     act(() => (document.activeElement as HTMLElement).blur());
     await userEvent.tab({ shift: true });
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Abbrechen' }));
+  });
+
+  it('holds the draft while it has text: no click replaces it, leaving asks first', async () => {
+    const view = render(<Composer />);
+    expect(dispatch).not.toHaveBeenCalledWith({ type: 'draftHeld', held: true });
+    expect(unsavedWork.has()).toBe(false);
+    await userEvent.type(screen.getByRole('combobox', { name: 'Kommentar' }), 'Logo');
+    expect(dispatch).toHaveBeenLastCalledWith({ type: 'draftHeld', held: true });
+    expect(unsavedWork.has()).toBe(true);
+    view.unmount();
+    expect(unsavedWork.has()).toBe(false);
+  });
+
+  it('holds a finished recording even without text', async () => {
+    recorder.state = { status: 'recorded', recording };
+    render(<Composer />);
+    await userEvent.click(screen.getByRole('tab', { name: /Audio/ }));
+    expect(dispatch).toHaveBeenLastCalledWith({ type: 'draftHeld', held: true });
+  });
+
+  it('says why a click elsewhere was ignored', () => {
+    const showToast = vi.fn();
+    const view = render(
+      <ViewerToastContext value={showToast}>
+        <Composer />
+      </ViewerToastContext>,
+    );
+    expect(showToast).not.toHaveBeenCalled();
+    draft = { ...draft, held: true, nudge: 1 };
+    view.rerender(
+      <ViewerToastContext value={showToast}>
+        <Composer />
+      </ViewerToastContext>,
+    );
+    expect(showToast).toHaveBeenCalledWith(
+      'Dein Kommentar ist noch offen – sende oder verwirf ihn zuerst.',
+    );
   });
 });

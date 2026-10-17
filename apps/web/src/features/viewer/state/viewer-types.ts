@@ -64,6 +64,13 @@ export interface Draft {
    * hidden. The composer stays with what is written in it but can't send.
    */
   slideGone?: boolean;
+  /**
+   * The composer holds what the draft itself doesn't – text, a recording (running or finished),
+   * a sketch – or is sending it (`draftHeld`). Then a click elsewhere doesn't replace the draft.
+   */
+  held?: boolean;
+  /** Counts the clicks that would have replaced this draft but were ignored (`keepsDraft`). */
+  nudge?: number;
 }
 
 /** One's own drawing just saved: typing right away comments on it (`drawingCommentStarted`). */
@@ -178,6 +185,8 @@ export type ViewerAction =
   | { type: 'textBoxMeasured'; rect: Rect }
   | { type: 'undo' }
   | { type: 'redo' }
+  /** The composer started (`true`) or stopped holding unsent content (see `Draft.held`). */
+  | { type: 'draftHeld'; held: boolean }
   | { type: 'draftCancelled' }
   | { type: 'draftSubmitted' }
   | { type: 'threadHovered'; threadId: string | null }

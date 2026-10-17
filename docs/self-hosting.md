@@ -3,18 +3,17 @@
 Kurz und praktisch: Slider auf einem eigenen kleinen Server für ein Unternehmen betreiben.
 Stand Oktober 2026 – Preise und Versionen sind Näherungswerte, bitte vor dem Bestellen prüfen.
 
-> **Hinweis:** Das Docker-Image (`Dockerfile`) und die Compose-Dateien sind bisher **nicht mit
-> Docker gebaut/getestet** worden (auf der Entwicklungsmaschine gibt es kein Docker). Getestet sind
-> die Teile darunter: API gegen einen echten Postgres-Server inkl. Migrationen, Auslieferung der
-> Web-App durch die API, Health-Check, sauberes Herunterfahren, die Caddyfile (`caddy adapt`) und
-> die gefilterte Produktions-Installation (`bun install --production --filter @slider/api`),
-> außerdem der Start ohne Secret und Login samt Einrichtungsseite und automatischem Neustart
-> (Supervisor, ohne Docker). Das Image baut die CI (`.github/workflows/ci.yml`) bei jedem Pull
-> Request für amd64 und arm64 und startet beide zum Test (`scripts/smoke-image.sh`: Health-Check,
-> Web-App, Einrichtungslink, ein Beispiel-Deck durch LibreOffice zu Folienbildern, sauberes
-> Stoppen; arm64 unter Emulation); veröffentlicht wird es nur von `main` und
-> `v*`-Tags und erst, wenn alle Prüfungen grün sind. Beim ersten echten `docker compose up` trotzdem
-> genau hinschauen (siehe [Fehlersuche](#fehlersuche)).
+> **Hinweis:** Das Docker-Image (`Dockerfile`) baut die CI (`.github/workflows/ci.yml`) bei jedem
+> Pull Request für amd64 und arm64 und startet beide zum Test (`scripts/smoke-image.sh`:
+> Health-Check, Web-App, Einrichtungslink, ein Beispiel-Deck durch LibreOffice zu Folienbildern,
+> sauberes Stoppen; arm64 unter Emulation); veröffentlicht wird es nur von `main` und `v*`-Tags und
+> erst, wenn alle Prüfungen grün sind. Außerdem getestet: API gegen einen echten Postgres-Server
+> inkl. Migrationen, Auslieferung der Web-App durch die API, Health-Check, sauberes Herunterfahren,
+> die Caddyfile (`caddy adapt`), die gefilterte Produktions-Installation
+> (`bun install --production --filter @slider/api`) und der Start ohne Secret und Login samt
+> Einrichtungsseite und automatischem Neustart. Die Compose-Dateien (`deploy/`) startet die CI
+> nicht; beim ersten echten `docker compose up` deshalb genau hinschauen (siehe
+> [Fehlersuche](#fehlersuche)).
 
 ## Aufbau
 
@@ -77,6 +76,12 @@ Was dabei automatisch passiert:
   selbst, nginx braucht `http2 on;`). Jede offene Präsentation hält eine Live-Verbindung; über
   HTTP/1.1 erlaubt der Browser nur sechs Verbindungen pro Server für alle Tabs zusammen.
   Slider gibt sie in Tabs im Hintergrund frei, mit vielen sichtbaren Fenstern hilft nur HTTP/2.
+- **Upload-Limit des Proxys:** nginx lässt ohne Weiteres nur 1 MB pro Anfrage durch und lehnt
+  jede echte PowerPoint mit 413 ab, bevor Slider sie sieht (Slider meldet dann „Die Datei ist für
+  diesen Server zu groß …“). In nginx `client_max_body_size 200m;` setzen (passend zu
+  `MAX_UPLOAD_BYTES`); die Live-Verbindung schaltet nginx' Puffer selbst ab
+  (`X-Accel-Buffering: no`). Caddy und Traefik begrenzen von sich aus nicht;
+  Cloudflare siehe [unten](#cloudflare-dns-und-schutz-davor) (100 MB im Free-Plan).
 - Ein festes Release statt `:edge` (Stand von `main`): `ghcr.io/root-bert/slider:1`, sobald
   Versionen getaggt sind.
 

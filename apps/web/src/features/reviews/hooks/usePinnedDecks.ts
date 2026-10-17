@@ -1,8 +1,11 @@
 import { useSyncExternalStore } from 'react';
-import { useMe } from '@/lib/api';
+import type { Deck } from '@slider/shared';
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys, useMe } from '@/lib/api';
 import {
   MAX_PINNED,
   pinDeck,
+  pinLimitMessage,
   pinnedDecksStore,
   pinnedIn,
   prunePinnedDecks,
@@ -19,9 +22,16 @@ export function usePinnedDecks(workspaceId: string) {
   const userId = useMe().data?.user?.id;
   const scope: PinScope | null = userId ? { userId, workspaceId } : null;
   const ids = scope ? pinnedIn(pins, scope) : [];
+  const queryClient = useQueryClient();
   return {
     isPinned: (deckId: string) => ids.includes(deckId),
     full: ids.length >= MAX_PINNED,
+    /** The reason when `full`, naming the pinned decks from the loaded deck list. */
+    limitMessage: () => {
+      const decks = queryClient.getQueryData<Deck[]>(queryKeys.deckList(workspaceId)) ?? [];
+      const titles = ids.flatMap((id) => decks.find((deck) => deck.id === id)?.title ?? []);
+      return pinLimitMessage(titles);
+    },
     /** False when every slot is taken. */
     pin: (deckId: string) => (scope ? pinDeck(scope, deckId) : false),
     unpin: (deckId: string) => {

@@ -6,6 +6,7 @@ import type { MenuAction, ShowToast } from '@/ui';
 import { DeleteDeckDialog } from '../components/DeleteDeckDialog';
 import { MoveDecksDialog } from '../components/MoveDecksDialog';
 import { failureMessage, movedMessage, withCount } from '../lib/bulk-messages';
+import { bulkRerenderProgress } from '../lib/bulk-rerender';
 import { usePinnedDecks } from './usePinnedDecks';
 import { MAX_PINNED } from '../lib/pinned-decks';
 
@@ -24,21 +25,20 @@ function useBulkRerender(onNotify: ShowToast) {
   const invalidateDecks = useInvalidateDecks();
   const [following, setFollowing] = useState<{ ids: readonly string[]; startedAt: number }>();
   const statuses = useDeckStatuses(following?.ids ?? NO_IDS);
-  // Only a status fetched after the start counts – the cache may still hold an older one.
-  const done = following
-    ? statuses.filter(
-        (status) => status.dataUpdatedAt >= following.startedAt && !status.data?.rendering,
-      ).length
-    : 0;
-  const finished = following !== undefined && done === following.ids.length;
+  const progress = following ? bulkRerenderProgress(statuses, following.startedAt) : undefined;
+  const done = progress ? progress.done + progress.gone : 0;
+  const gone = progress?.gone ?? 0;
+  const finished = progress?.finished ?? false;
 
   const announced = useRef<typeof following>(undefined);
   useEffect(() => {
     if (!finished || !following || announced.current === following) return;
     announced.current = following;
     void invalidateDecks();
-    onNotify(`${reviews(following.ids.length)} neu gerendert`);
-  }, [finished, following, invalidateDecks, onNotify]);
+    // Decks deleted (or no longer shared) meanwhile aren't reported as rendered.
+    const rendered = following.ids.length - gone;
+    if (rendered > 0) onNotify(`${reviews(rendered)} neu gerendert`);
+  }, [finished, following, gone, invalidateDecks, onNotify]);
 
   const busy = rerender.isPending || (following !== undefined && !finished);
   const start = (decks: readonly Deck[]) => {
@@ -137,10 +137,7 @@ export function useBulkDeckActions(
       icon: 'pushPin',
       onSelect: togglePinned,
       disabled: !allPinned && pins.full,
-      title:
-        !allPinned && pins.full
-          ? `Höchstens ${MAX_PINNED} Reviews angepinnt – löse zuerst einen.`
-          : undefined,
+      title: !allPinned && pins.full ? pins.limitMessage() : undefined,
     },
     {
       label: rerender.busy ? rerender.label : withCount('Neu rendern', renderable.length, count),

@@ -104,18 +104,90 @@ describe('viewerReducer', () => {
     expect(state.draft?.strokes).toHaveLength(2);
   });
 
-  it('keeps strokes when a mark is placed on the same slide, starts over on another', () => {
+  it('keeps strokes when a mark is placed on the same slide; an empty draft starts over on another', () => {
     const anchor = { type: 'point' as const, point: { x: 0.5, y: 0.5 }, shapeRef: null };
-    let state = run(
+    const state = run(
       { type: 'strokeAdded', slideId: 's1', stroke: stroke(0.1) },
       { type: 'anchorPlaced', slideId: 's1', anchor },
     );
     expect(state.draft).toMatchObject({ anchor, anchorFromStrokes: false });
     expect(state.draft?.strokes).toHaveLength(1);
 
-    state = viewerReducer(state, { type: 'anchorPlaced', slideId: 's2', anchor });
-    expect(state.draft?.strokes).toHaveLength(0);
-    expect(state.draft?.slideId).toBe('s2');
+    const empty = run({ type: 'anchorPlaced', slideId: 's1', anchor });
+    expect(
+      viewerReducer(empty, { type: 'anchorPlaced', slideId: 's2', anchor }).draft,
+    ).toMatchObject({ slideId: 's2', strokes: [] });
+  });
+
+  describe('an open draft with content', () => {
+    const anchor = { type: 'point' as const, point: { x: 0.5, y: 0.5 }, shapeRef: null };
+    const box = { x: 0.2, y: 0.3, width: null, minHeight: 0, fontSize: 0.04 };
+    // Text typed in the composer (or a recording, a sketch, an upload running).
+    const held = run(
+      { type: 'anchorPlaced', slideId: 's1', anchor },
+      { type: 'draftHeld', held: true },
+    );
+
+    it('is not replaced by a click on another slide – the composer is nudged instead', () => {
+      const state = viewerReducer(held, { type: 'anchorPlaced', slideId: 's2', anchor });
+      expect(state.draft).toMatchObject({ slideId: 's1', anchor, held: true, nudge: 1 });
+      expect(
+        viewerReducer(state, { type: 'anchorPlaced', slideId: 's3', anchor }).draft?.nudge,
+      ).toBe(2);
+    });
+
+    it('is not replaced by a text box, a shape, a gap or a drawing’s comment elsewhere', () => {
+      const others: ViewerAction[] = [
+        { type: 'textBoxPlaced', slideId: 's2', box },
+        { type: 'strokeAdded', slideId: 's2', stroke: stroke(0.1) },
+        { type: 'gapDraftStarted', afterSlideId: 's1', beforeSlideId: 's2' },
+        { type: 'drawingCommentStarted', slideId: 's1', commentId: 'c9', anchor, strokes: [] },
+      ];
+      for (const action of others)
+        expect(viewerReducer(held, action).draft).toMatchObject({
+          slideId: 's1',
+          anchor,
+          nudge: 1,
+        });
+    });
+
+    it('keeps focus and the thread panel when the click is ignored', () => {
+      const focused = viewerReducer(held, {
+        type: 'threadFocused',
+        threadId: 't1',
+        openPanel: true,
+      });
+      const state = viewerReducer(focused, { type: 'anchorPlaced', slideId: 's2', anchor });
+      expect(state).toMatchObject({ focusedThreadId: 't1', threadPanelOpen: true });
+    });
+
+    it('still moves its mark on the same slide', () => {
+      const moved = { ...anchor, point: { x: 0.1, y: 0.1 } };
+      const state = viewerReducer(held, { type: 'anchorPlaced', slideId: 's1', anchor: moved });
+      expect(state.draft).toMatchObject({ anchor: moved, held: true });
+      expect(state.draft?.nudge).toBeUndefined();
+    });
+
+    it('counts strokes drawn for it and text written on the slide as content', () => {
+      const drawn = run({ type: 'strokeAdded', slideId: 's1', stroke: stroke(0.1) });
+      expect(
+        viewerReducer(drawn, { type: 'anchorPlaced', slideId: 's2', anchor }).draft,
+      ).toMatchObject({ slideId: 's1', nudge: 1 });
+      const written = run(
+        { type: 'textBoxPlaced', slideId: 's1', box },
+        { type: 'textBoxChanged', patch: { text: 'Hallo' } },
+      );
+      // Not even a mark on the same slide drops the text written there.
+      const sameSlide = viewerReducer(written, { type: 'anchorPlaced', slideId: 's1', anchor });
+      expect(sameSlide.draft?.textBox?.text).toBe('Hallo');
+    });
+
+    it('can be replaced again once the composer lets go', () => {
+      const released = viewerReducer(held, { type: 'draftHeld', held: false });
+      expect(
+        viewerReducer(released, { type: 'anchorPlaced', slideId: 's2', anchor }).draft?.slideId,
+      ).toBe('s2');
+    });
   });
 
   it('places a text box as the anchor, keeps its text when re-placed and follows its size', () => {
@@ -153,13 +225,15 @@ describe('viewerReducer', () => {
     });
     expect(state.draft?.textBox).toMatchObject({ x: 0.6, text: 'Hallo', measured: null });
 
-    // Another slide starts over; a mark on the same slide replaces the text box.
-    expect(
-      viewerReducer(state, { type: 'textBoxPlaced', slideId: 's2', box }).draft?.textBox?.text,
-    ).toBe('');
+    // The stroke keeps the draft from another slide; a mark on the same slide replaces the box
+    // once it has no text in it.
+    const blank = viewerReducer(state, { type: 'textBoxChanged', patch: { text: '' } });
+    expect(viewerReducer(blank, { type: 'textBoxPlaced', slideId: 's2', box }).draft?.slideId).toBe(
+      's1',
+    );
     const anchor = { type: 'point' as const, point: { x: 0.5, y: 0.5 }, shapeRef: null };
     expect(
-      viewerReducer(state, { type: 'anchorPlaced', slideId: 's1', anchor }).draft?.textBox,
+      viewerReducer(blank, { type: 'anchorPlaced', slideId: 's1', anchor }).draft?.textBox,
     ).toBeNull();
   });
 

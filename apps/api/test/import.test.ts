@@ -6,7 +6,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { commentSchema, deckSchema, slideSchema, type Deck } from '@slider/shared';
 import { PptxError, type ParsedComment } from '@slider/pptx';
 import { comments, decks, revisions, slideVersions, userIdentities, users } from '../src/db/schema';
-import { MAX_IMPORT_ATTEMPTS } from '../src/import/attempts';
+import {
+  MAX_IMPORT_ATTEMPTS,
+  releaseRunningImportAttempts,
+  resumeImports,
+} from '../src/import/attempts';
+import { backfillFileAuthors } from '../src/import/file-author-backfill';
 import { findInterruptedImports, importDeck } from '../src/import/import-deck';
 import { ConversionAborted, type PptxToPdf } from '../src/import/libreoffice';
 import type { OpenPptx } from '../src/import/pptx';
@@ -115,6 +120,32 @@ describe('import pipeline', () => {
     );
     const again = deckSchema.parse(await (await ctx.request(`/api/decks/${deck.id}`)).json());
     expect(again).toMatchObject({ import: { status: 'ready' }, slideCount: 2 });
+  });
+
+  it('with duplicate sldIds the first slide gets the PowerPoint comments, as in a sync', async () => {
+    const parsed: ParsedComment[] = [
+      {
+        externalId: '{D}',
+        format: 'modern',
+        sldId: 300,
+        author: { name: 'Anna Becker', initials: 'AB' },
+        createdAt: null,
+        text: 'Doppelt?',
+        status: 'open',
+        anchor: { type: 'slide' },
+        replies: [],
+      },
+    ];
+    const slides = [parsedSlide(300, 0), parsedSlide(300, 1)];
+    ctx = await createTestContext({ openPptx: stubPptx({ slides, comments: parsed }) });
+    const deck = await upload(ctx);
+    const list = slideSchema
+      .array()
+      .parse(await (await ctx.request(`/api/decks/${deck.id}/slides`)).json());
+    const [comment] = commentSchema
+      .array()
+      .parse(await (await ctx.request(`/api/decks/${deck.id}/comments`)).json());
+    expect(comment?.slideId).toBe(list[0]?.id);
   });
 
   it('imports PowerPoint comments with replies and maps anchors', async () => {
@@ -249,6 +280,48 @@ describe('imports that kill the process', () => {
   });
 });
 
+describe('file author backfill', () => {
+  it('reads only finished imports, and marks each file before opening it', async () => {
+    ctx = await createTestContext({ openPptx: stubPptx({}, 2) });
+    const ready = await upload(ctx);
+    const failed = await upload(ctx, 'Kaputt.pptx');
+    const running = await upload(ctx, 'Läuft.pptx');
+    await ctx.deps.db
+      .update(decks)
+      .set({ importState: { status: 'failed', error: 'zu groß' } })
+      .where(eq(decks.id, failed.id));
+    await ctx.deps.db
+      .update(decks)
+      .set({ importState: { status: 'running', step: 'rendering', progress: null } })
+      .where(eq(decks.id, running.id));
+    await ctx.deps.db.update(revisions).set({ fileAuthor: null });
+    const author = async (revisionId: string | null | undefined) =>
+      (
+        await ctx!.deps.db
+          .select()
+          .from(revisions)
+          .where(eq(revisions.id, revisionId ?? ''))
+      )[0]?.fileAuthor;
+
+    const opened: (string | null | undefined)[] = [];
+    const parse = stubPptx({ author: 'Ada' }, 2);
+    await backfillFileAuthors({
+      ...ctx.deps,
+      log: silentLogger,
+      openPptx: async (bytes) => {
+        // Already marked: a file the process dies in is not opened again on the next start.
+        opened.push(await author(ready.currentRevisionId));
+        return parse(bytes);
+      },
+    });
+    expect(opened).toEqual(['']);
+    expect(await author(ready.currentRevisionId)).toBe('Ada');
+    // A failed import may be the file that crashed the process; a running one sets it itself.
+    expect(await author(failed.currentRevisionId)).toBeNull();
+    expect(await author(running.currentRevisionId)).toBeNull();
+  });
+});
+
 describe('shutdown during rendering', () => {
   it('leaves the import to resume instead of finishing with SVG previews', async () => {
     let aborting = true;
@@ -282,6 +355,47 @@ describe('shutdown during rendering', () => {
       .from(slideVersions)
       .where(eq(slideVersions.revisionId, cut.currentRevisionId ?? ''));
     expect(after.map((row) => row.renderer)).toEqual(['libreoffice', 'libreoffice', 'libreoffice']);
+  });
+});
+
+describe('shutdown in any phase of an import', () => {
+  afterEach(() => resumeImports());
+
+  it('never counts as a crash, however often it happens', async () => {
+    let shuttingDown = true;
+    const parse = stubPptx({}, 2);
+    const openPptx: OpenPptx = async (bytes) => {
+      if (shuttingDown) {
+        // Shutdown while parsing: the attempts are released, then the database closes under us.
+        await releaseRunningImportAttempts(ctx!.deps.db);
+        throw new Error('database is closed');
+      }
+      return parse(bytes);
+    };
+    ctx = await createTestContext({ openPptx });
+    const deck = await upload(ctx);
+    const revisionId = deck.currentRevisionId ?? '';
+    const attempts = async () =>
+      (await ctx!.deps.db.select().from(revisions).where(eq(revisions.id, revisionId)))[0]
+        ?.importAttempts;
+    expect(deck.import.status).toBe('running');
+    expect(await attempts()).toBe(0);
+
+    for (let restart = 0; restart <= MAX_IMPORT_ATTEMPTS; restart++) {
+      resumeImports();
+      const jobs = await findInterruptedImports(ctx.deps.db);
+      expect(jobs).toEqual([{ deckId: deck.id, revisionId, kind: 'initial' }]);
+      for (const job of jobs) ctx.deps.queue.enqueue(job);
+      await ctx.deps.queue.idle();
+      expect(await attempts()).toBe(0);
+    }
+
+    resumeImports();
+    shuttingDown = false;
+    for (const job of await findInterruptedImports(ctx.deps.db)) ctx.deps.queue.enqueue(job);
+    await ctx.deps.queue.idle();
+    const done = deckSchema.parse(await (await ctx.request(`/api/decks/${deck.id}`)).json());
+    expect(done.import).toEqual({ status: 'ready' });
   });
 });
 

@@ -4,6 +4,7 @@ import type { MicrosoftConfig } from '../config';
 import { advisoryXactLock, type Executor } from '../db/client';
 import { users } from '../db/schema';
 import type { Logger } from '../logger';
+import { ApiError } from '../http/errors';
 import { microsoftConsentRequired, sourceUnreachable } from '../sources/errors';
 import { validateIdToken, type IdTokenClaims } from './id-token';
 import { decryptToken, encryptToken, toBase64Url } from './token-crypto';
@@ -48,6 +49,8 @@ export class MicrosoftAuthError extends Error {
     /** `error` code from Microsoft, e.g. `invalid_grant`. */
     readonly error: string,
     description = '',
+    /** HTTP status of the token endpoint's answer, when there was one. */
+    readonly status?: number,
   ) {
     super(`${error}: ${description}`);
     this.name = 'MicrosoftAuthError';
@@ -72,6 +75,37 @@ export function mapMicrosoftError(error: string, description = ''): MicrosoftErr
   if (error === 'access_denied') return 'denied';
   return 'failed';
 }
+
+/** Microsoft is down or throttling: try again later, the grant itself is fine. */
+const TRANSIENT_TOKEN_ERRORS = new Set(['temporarily_unavailable', 'server_error']);
+/**
+ * The app registration itself is refused (e.g. MS_CLIENT_SECRET expired or wrong): every user's
+ * grant is still valid and works again once the admin fixes the registration.
+ */
+const APP_TOKEN_ERRORS = new Set(['invalid_client', 'unauthorized_client']);
+
+/**
+ * What a failed refresh means for the stored refresh token: `transient` and `app` keep it,
+ * `grant` (revoked, expired, password changed, interaction required …) drops it.
+ */
+export function refreshFailure(error: MicrosoftAuthError): 'transient' | 'app' | 'grant' {
+  if (
+    TRANSIENT_TOKEN_ERRORS.has(error.error) ||
+    error.status === 429 ||
+    (error.status !== undefined && error.status >= 500)
+  ) {
+    return 'transient';
+  }
+  if (APP_TOKEN_ERRORS.has(error.error)) return 'app';
+  return 'grant';
+}
+
+export const microsoftAppRejected = () =>
+  new ApiError(
+    401,
+    'microsoft_not_configured',
+    'Microsoft lehnt die Anmeldung dieses Servers ab – vermutlich ist MS_CLIENT_SECRET abgelaufen oder falsch. Trage ein gültiges Secret in die .env ein und starte Slider neu; die Verbindungen der Nutzer bleiben erhalten.',
+  );
 
 export interface Pkce {
   state: string;
@@ -156,6 +190,7 @@ async function requestToken(
       mapMicrosoftError(error, body.error_description),
       error,
       body.error_description,
+      response.status,
     );
   }
   return {
@@ -359,9 +394,19 @@ export class MicrosoftTokens {
       if (!(error instanceof MicrosoftAuthError)) throw error;
       if (error.kind === 'admin_consent') throw microsoftConsentRequired();
       this.deps.log.warn(`Microsoft token refresh failed for user ${userId}: ${error.message}`);
-      // invalid_grant (revoked, expired, password changed) and friends: sign in again.
-      await this.forget(userId);
-      return null;
+      switch (refreshFailure(error)) {
+        case 'transient':
+          // An outage or throttling must not cost anyone their connection.
+          throw sourceUnreachable(
+            'Microsoft ist gerade nicht erreichbar. Bitte versuche es gleich noch einmal.',
+          );
+        case 'app':
+          throw microsoftAppRejected();
+        case 'grant':
+          // invalid_grant (revoked, expired, password changed) and friends: sign in again.
+          await this.forget(userId);
+          return null;
+      }
     }
   }
 

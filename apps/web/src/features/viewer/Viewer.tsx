@@ -4,6 +4,7 @@ import { CommentFilterBar } from './comments/CommentFilterBar';
 import { Composer } from './comments/Composer';
 import { MediaReplyDialog } from './comments/MediaTabs';
 import { ThreadPanel } from './comments/ThreadPanel';
+import { LeaveGuard } from './components/LeaveGuard';
 import { ParticipantAvatars } from './controls/ParticipantAvatars';
 import { RevisionControls, UploadRevisionControl } from './controls/RevisionControls';
 import { SessionControls } from './controls/SessionControls';
@@ -89,6 +90,7 @@ export function Viewer() {
         <ThreadPanel />
         <MediaReplyDialog />
         <DeletedSlidesPanel />
+        <LeaveGuard />
         {/* Above the thread panel and popovers (`--z-toast`). */}
         <Toast toast={toast} />
       </div>

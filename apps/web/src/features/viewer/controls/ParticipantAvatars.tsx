@@ -1,5 +1,5 @@
 import type { AccentColor, Author } from '@slider/shared';
-import { useEffect, useId, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useUpdateMe } from '@/lib/api';
 import {
   Avatar,
@@ -37,19 +37,37 @@ const LONG_PRESS_SLOP = 10;
  */
 export function ParticipantAvatars() {
   const { deck, viewer } = useViewerData();
+  const { personFilter } = useViewerState();
   const live = useLivePeople();
   const liveSlide = new Map(live.map((person) => [person.author.id, person.activeSlideId]));
-  const others = [
+  const present = [
     // You are already the last avatar – your other windows don't add you twice.
     ...live.map((person) => person.author).filter((author) => author.id !== viewer.author.id),
     ...deck.participants.filter(
       (person) => person.id !== viewer.author.id && !liveSlide.has(person.id),
     ),
   ];
+  // The avatar is the filter's only switch: while it is on, the person stays – also after they
+  // left the deck (a live viewer who never commented) – so a click can turn it off again.
+  const filteredPerson = useFilteredPerson(personFilter, present);
+  const others =
+    filteredPerson && !present.some((person) => person.id === filteredPerson.id)
+      ? [...present, filteredPerson]
+      : present;
   // No "+1" chip: it would take the slot the one avatar needs, so that one is shown instead.
   const shown = others.length === MAX_OTHERS + 1 ? others.length : MAX_OTHERS;
-  const visible = others.slice(0, shown);
-  const overflow = others.length - visible.length;
+  const filteredAt = others.findIndex((person) => person.id === personFilter);
+  // …and never hides in the "+n" chip, which can't be clicked: it takes the last slot.
+  const listed =
+    filteredAt >= shown
+      ? [
+          ...others.slice(0, shown - 1),
+          others[filteredAt]!,
+          ...others.slice(shown - 1).filter((_, index) => index !== filteredAt - shown + 1),
+        ]
+      : others;
+  const visible = listed.slice(0, shown);
+  const overflow = listed.length - visible.length;
 
   return (
     <div role="group" aria-label="Teilnehmende" className="flex items-center gap-1.5">
@@ -71,7 +89,7 @@ export function ParticipantAvatars() {
             <AvatarOverflow
               count={overflow}
               size={32}
-              title={others
+              title={listed
                 .slice(shown)
                 .map((person) => person.name)
                 .join(', ')}
@@ -83,6 +101,23 @@ export function ParticipantAvatars() {
       <AvatarColorPicker author={viewer.author} self />
     </div>
   );
+}
+
+/** The person the comments are filtered by, as last seen among the avatars (`null`: none). */
+function useFilteredPerson(personFilter: string | null, present: readonly Author[]): Author | null {
+  const current = present.find((person) => person.id === personFilter) ?? null;
+  const [remembered, setRemembered] = useState<Author | null>(current);
+  // Adjusted while rendering (no effect): the avatar must not blink out for a frame.
+  // Compared by value: the live list hands out new objects.
+  if (
+    current &&
+    (current.id !== remembered?.id ||
+      current.name !== remembered.name ||
+      current.color !== remembered.color)
+  )
+    setRemembered(current);
+  if (personFilter === null) return null;
+  return current ?? (remembered?.id === personFilter ? remembered : null);
 }
 
 interface AvatarColorPickerProps {

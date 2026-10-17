@@ -10,17 +10,18 @@ import {
   syncResultSchema,
   type SyncResult,
 } from '@slider/shared';
-import { decks, revisions } from '../src/db/schema';
+import { decks, revisions, slideVersions } from '../src/db/schema';
 import { MAX_IMPORT_ATTEMPTS } from '../src/import/attempts';
 import { findInterruptedImports, importDeck } from '../src/import/import-deck';
 import { silentLogger } from '../src/logger';
+import { blobKeys } from '../src/storage/blob-storage';
 import {
   microsoftLoginRequired,
   sourceForbidden,
   sourceNotFound,
   sourceUnreachable,
 } from '../src/sources/errors';
-import { SyncScheduler, syncTickMs } from '../src/sync/scheduler';
+import { SYNC_MAX_DECKS_PER_TICK, SyncScheduler, syncTickMs } from '../src/sync/scheduler';
 import { SYNC_IMPORT_MAX_ATTEMPTS } from '../src/sync/sync-import';
 import { createTestContext, pinComment, type TestContext } from './helpers';
 import {
@@ -277,6 +278,27 @@ describe('scheduler', () => {
     const checked = await scheduler.tick();
     expect(checked.sort()).toEqual([deckId, recentlyViewed].sort());
     expect(source.getChangeToken).toHaveBeenCalledTimes(2);
+  });
+
+  it('decks with a queued import do not take the slots of other decks', async () => {
+    const { ctx, source, deckId, scheduler } = await withScheduler();
+    for (let i = 0; i < SYNC_MAX_DECKS_PER_TICK; i++) {
+      const id = await createLinkDeck(ctx, source);
+      await ctx.deps.db.insert(revisions).values({
+        id: crypto.randomUUID(),
+        deckId: id,
+        number: 2,
+        status: 'pending',
+        pptxKey: null,
+      });
+      // Due long before the other deck, as a pending deck's stale `nextCheckAt` is.
+      await ctx.deps.db
+        .update(decks)
+        .set({ syncState: { nextCheckAt: new Date(0).toISOString() } })
+        .where(eq(decks.id, id));
+    }
+    const checked = await scheduler.tick();
+    expect(checked).toEqual([deckId]);
   });
 
   it('opening a deck marks it as viewed, at most hourly', async () => {
@@ -716,6 +738,65 @@ describe('robustness', () => {
 
     release();
     await ctx.deps.queue.idle();
+  });
+
+  it('a resumed sync import removes the slide images of the run that was cut off', async () => {
+    const { ctx, source, deckId, pptx } = await setup(
+      { v2: presentation(EDITED) },
+      { config: { sync: { pollIntervalMs: 0, debounceMs: 0 } } },
+    );
+    const release = pptx.gate('v2');
+    source.token = 'c2';
+    source.bytes = pptxBytes('v2');
+    const queued = await ctx.deps.sync.checkDeck(deckId);
+    const revisionId = (queued as { revisionId: string }).revisionId;
+    // What an earlier run stored before the process went down.
+    const stray = blobKeys.slideRender(deckId, revisionId, 'webp');
+    await ctx.deps.storage.put(stray, new Uint8Array([1, 2, 3]));
+    release();
+    await ctx.deps.queue.idle();
+
+    expect((await deckRow(ctx, deckId)).currentRevisionId).toBe(revisionId);
+    expect(await ctx.deps.storage.get(stray)).toBeNull();
+    const stored = await ctx.deps.storage.list(blobKeys.slideRenderPrefix(deckId, revisionId));
+    expect(stored.length).toBeGreaterThan(0);
+    for (const slide of await slidesOf(ctx, deckId)) {
+      expect((await ctx.request(slide.imageUrl)).status).toBe(200);
+    }
+  });
+
+  it('matches against fingerprints of the current code, not hashes stored by an older release', async () => {
+    const { ctx, source, deckId } = await setup({ v2: presentation(BASE_SLIDES) });
+    const before = await slidesOf(ctx, deckId);
+    const { currentRevisionId } = await deckRow(ctx, deckId);
+    // What an older parser and renderer stored (e.g. slide numbers still in the text hash).
+    await ctx.deps.db
+      .update(slideVersions)
+      .set({ textHash: 'old-text-hash', renderHash: 'old-render-hash', contentHash: null })
+      .where(eq(slideVersions.revisionId, currentRevisionId ?? ''));
+
+    source.token = 'c2';
+    source.bytes = pptxBytes('v2');
+    expect((await sync(ctx, deckId)).status).toBe('updated');
+    const after = await slidesOf(ctx, deckId);
+    expect(after.map((slide) => slide.id)).toEqual(before.map((slide) => slide.id));
+    expect(after.map((slide) => slide.change?.status ?? 'unchanged')).toEqual(
+      after.map(() => 'unchanged'),
+    );
+  });
+
+  it('falls back to the stored hashes when the previous file is gone', async () => {
+    const { ctx, source, deckId } = await setup({ v2: presentation(EDITED) });
+    const before = await slidesOf(ctx, deckId);
+    const [current] = await revisionRows(ctx, deckId);
+    await ctx.deps.storage.delete(current?.pptxKey ?? '');
+
+    source.token = 'c2';
+    source.bytes = pptxBytes('v2');
+    expect((await sync(ctx, deckId)).status).toBe('updated');
+    const after = await slidesOf(ctx, deckId);
+    expect(after.map((slide) => slide.id)).toEqual(before.map((slide) => slide.id));
+    expect(after[1]?.change?.status).toBe('modified');
   });
 
   it('migrated defaults: revisions are ready and sync state is empty', async () => {

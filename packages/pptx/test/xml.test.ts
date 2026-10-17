@@ -28,6 +28,15 @@ describe('parseXml', () => {
     expect(attr(findByLocalName(root, 'spMk'), 'id')).toBe('7');
   });
 
+  it('strips characters Postgres cannot store from text and attributes', () => {
+    const root = parseXml(
+      '<a t="x&#0;y&#x1F;&#xD800;"><b>hi&#0;&#xDC00;\u0000\u0007&#xB;&#x1F600;&#xD83D;&#xDE00;\t\n</b></a>',
+    );
+
+    expect(attr(root, 't')).toBe('xy');
+    expect(child(root, 'b')?.text).toBe('hi 😀😀\t\n');
+  });
+
   it('rejects malformed documents', () => {
     expect(() => parseXml('<a><b></a>')).toThrow(XmlSyntaxError);
   });

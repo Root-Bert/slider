@@ -1,6 +1,6 @@
 import { clampSplit } from '@/lib/preferences/split';
 import type { StatusFilter } from '../comments/lib/comment-selectors';
-import { draftReducer } from './draft-reducer';
+import { draftReducer, keepsDraft } from './draft-reducer';
 import type { ViewerAction, ViewerState } from './viewer-types';
 
 export function createInitialState(options: {
@@ -63,6 +63,8 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
     case 'gapDraftStarted':
     case 'textBoxPlaced':
     case 'drawingCommentStarted':
+      // Ignored for an open draft with content: focus and panels stay as they are.
+      if (keepsDraft(state.draft, action)) return next;
       // Composing a new comment takes over the focus.
       return { ...next, focusedThreadId: null, threadPanelOpen: false, lastDrawing: null };
     case 'draftSubmitted':
