@@ -32,7 +32,10 @@ interface SketchPanelProps {
   authorName: string;
   /** Width / height of the sheet – the slide being commented on, so the sketch matches it. */
   aspect: number;
-  /** The drawing so far, or `null` while the paper is empty. */
+  /**
+   * The drawing so far – with the text still being written on it – or `null` while there is
+   * nothing to send: the paper is empty, or the voice memo is still recording (it would be lost).
+   */
   onChange: (sketch: Sketch | null) => void;
   autoFocus?: boolean;
   /** Sending and cancelling the comment, also right from the big view. */
@@ -80,6 +83,8 @@ export function SketchPanel({
   const [tool, setTool] = useState<SheetTool>(null);
   const [penColor, setPenColor] = useState<AccentColor>(color);
   const [memo, setMemo] = useState<Recording | null>(null);
+  /** The memo records (or pauses): sending now would leave it behind, so there's no sketch yet. */
+  const [memoRecording, setMemoRecording] = useState(false);
   /** The sheet blown up to most of the screen, for drawing with room to move. */
   const [expanded, setExpanded] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -88,10 +93,13 @@ export function SketchPanel({
     if (autoFocus) rootRef.current?.focus({ preventScroll: true });
   }, [autoFocus]);
 
+  // Text being written counts as written: ⌘↵ in its field, or Senden, sends it along.
+  const { settledStrokes } = editor;
+  const inked = hasInk(settledStrokes);
   const report = useEffectEvent((value: Sketch | null) => onChange(value));
   useEffect(() => {
-    report(hasInk(strokes) ? { strokes, memo } : null);
-  }, [strokes, memo]);
+    report(inked && !memoRecording ? { strokes: settledStrokes, memo } : null);
+  }, [inked, settledStrokes, memo, memoRecording]);
 
   const selectedStroke = selected === null ? undefined : strokes[selected];
 
@@ -232,6 +240,9 @@ export function SketchPanel({
       ref={rootRef}
       role="group"
       tabIndex={-1}
+      // In a reply <Dialog> its own focus effect runs while the dialog is still closed: the
+      // dialog focuses it once open.
+      data-autofocus={autoFocus || undefined}
       aria-label="Bild zeichnen – ⌘Z: rückgängig"
       onKeyDown={onKeyDown}
       className="flex flex-col gap-2 rounded-control outline-none"
@@ -270,7 +281,17 @@ export function SketchPanel({
       )}
 
       {/* Talking while drawing: the memo records on while the pen moves. */}
-      <RecorderPanel kind="audio" deckId={deckId} onChange={setMemo} />
+      <RecorderPanel
+        kind="audio"
+        deckId={deckId}
+        onChange={setMemo}
+        onRecordingChange={setMemoRecording}
+      />
+      {memoRecording && inked && (
+        <p role="status" className="text-caption text-fg-subtle">
+          Beende erst die Aufnahme – dann kannst du senden.
+        </p>
+      )}
     </div>
   );
 }

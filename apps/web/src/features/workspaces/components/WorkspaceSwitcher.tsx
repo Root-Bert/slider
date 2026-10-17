@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import { routes } from '@/lib/routes';
 import { useMe } from '@/lib/api';
 import { Icon, MenuDivider, MenuHeading, MenuItem, Toast, useToast } from '@/ui';
-import { ROLE_LABELS } from '../lib/roles';
+import { ROLE_LABELS, switcherLabel } from '../lib/roles';
 import { useActiveWorkspace } from '../hooks/useWorkspace';
 import { CreateWorkspaceDialog } from './CreateWorkspaceDialog';
 import { JoinWorkspaceDialog } from './JoinWorkspaceDialog';
@@ -26,9 +26,7 @@ export function WorkspaceSwitcher() {
   const canCreate = me?.limits?.canCreateWorkspace ?? true;
   if (!me?.user) return null;
 
-  const label = current
-    ? `Organisation: ${current.name}${invites.length > 0 ? `, ${invites.length} Einladungen` : ''}`
-    : 'Organisationen';
+  const label = switcherLabel(current?.name ?? null, invites.length);
 
   return (
     <>

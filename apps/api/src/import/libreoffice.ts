@@ -4,6 +4,7 @@ import { access, constants, mkdtemp, readFile, rm, writeFile } from 'node:fs/pro
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { withoutExternalLinks } from '@slider/pptx';
 import type { Logger } from '../logger';
 
 /** A PPTX turned into a PDF by an office suite (LibreOffice), for uploads (BER-94). */
@@ -11,6 +12,9 @@ export type PptxToPdf = (pptx: Uint8Array) => Promise<Uint8Array>;
 
 /** A conversion that takes longer is killed; the slides keep their SVG preview. */
 export const LIBREOFFICE_TIMEOUT_MS = 120_000;
+
+/** LibreOffice's import filter for .pptx (OOXML presentations). */
+const PPTX_IMPORT_FILTER = 'Impress MS PowerPoint 2007 XML';
 
 /** Where LibreOffice lives when it is not on the PATH (the macOS app bundle). */
 const WELL_KNOWN_SOFFICE = ['/Applications/LibreOffice.app/Contents/MacOS/soffice'];
@@ -111,7 +115,9 @@ export interface LibreOfficeOptions {
  * its own LibreOffice profile (`-env:UserInstallation`), so conversions can run side by side
  * without fighting over the profile lock; the folder is removed afterwards. A run that takes
  * longer than {@link LIBREOFFICE_TIMEOUT_MS} is killed (with its whole process group).
- * Like PowerPoint's PDF, LibreOffice's leaves hidden slides out.
+ * Like PowerPoint's PDF, LibreOffice's leaves hidden slides out. The deck is handed over
+ * without its external links ({@link withoutExternalLinks}); a deck that is not a readable
+ * package is not converted at all.
  */
 export function createLibreOfficePdf({
   binary,
@@ -124,7 +130,9 @@ export function createLibreOfficePdf({
     try {
       const input = path.join(dir, 'deck.pptx');
       const outDir = path.join(dir, 'out');
-      await writeFile(input, pptx);
+      // LibreOffice loads linked pictures, media and OLE links while it draws the PDF: an
+      // uploaded deck must not make the server fetch internal URLs or read local files.
+      await writeFile(input, await withoutExternalLinks(pptx));
       await run(
         spawn,
         binary,
@@ -135,6 +143,8 @@ export function createLibreOfficePdf({
           '--nolockcheck',
           '--nologo',
           '--nodefault',
+          // The PowerPoint import only – no content sniffing into other formats.
+          `--infilter=${PPTX_IMPORT_FILTER}`,
           '--convert-to',
           'pdf',
           '--outdir',

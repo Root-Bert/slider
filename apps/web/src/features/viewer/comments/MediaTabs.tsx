@@ -1,10 +1,11 @@
 import type { Comment, MediaKind as RecordingKind } from '@slider/shared';
-import { useState } from 'react';
 import { IconButton, SegmentedControl } from '@/ui';
 import { useKeepThreadListed } from './hooks/useKeepThreadListed';
 import { MEDIA_KINDS, MEDIA_SOON, type MediaKindId } from './lib/media-kinds';
 import { RecordReplyDialog } from '../media/RecordReplyDialog';
 import { SketchReplyDialog } from '../media/SketchReplyDialog';
+import { useViewerData } from '../state/viewer-data';
+import { useViewerDispatch, useViewerState, type MediaReply } from '../state/viewer-state';
 
 /** Text / Audio / Video / Bild switch of the composers (Figma B2, B4 "Tabs"). */
 export function MediaTabs({
@@ -36,7 +37,7 @@ export function MediaTabs({
   );
 }
 
-const REPLY_LABELS: Record<Exclude<MediaKindId, 'text'>, { label: string; title: string }> = {
+const REPLY_LABELS: Record<MediaReply['kind'], { label: string; title: string }> = {
   audio: { label: 'Mit Sprachkommentar antworten', title: 'Sprachkommentar' },
   video: { label: 'Mit Video antworten', title: 'Video' },
   image: { label: 'Mit Bild antworten', title: 'Bild zeichnen' },
@@ -44,24 +45,15 @@ const REPLY_LABELS: Record<Exclude<MediaKindId, 'text'>, { label: string; title:
 
 /**
  * Audio / Video / Bild icons beside a reply field. Text needs no button – typing is the text
- * reply. Mic and camera open the recorder, Bild the sheet to draw on.
+ * reply. Mic and camera open the recorder, Bild the sheet to draw on – in `MediaReplyDialog`,
+ * which outlives this field (the card may be windowed out or turn compact meanwhile).
  */
-export function MediaReplyButtons({
-  root,
-  deckId,
-  size = 'sm',
-}: {
-  root: Comment;
-  deckId: string;
-  size?: 'sm' | 'md';
-}) {
-  const [open, setOpen] = useState<Exclude<MediaKindId, 'text'> | null>(null);
-  // Resolved by someone else mid-recording: the card (and this dialog) must stay.
-  useKeepThreadListed(root.id, open !== null);
+export function MediaReplyButtons({ root, size = 'sm' }: { root: Comment; size?: 'sm' | 'md' }) {
+  const dispatch = useViewerDispatch();
   return (
     <>
       {MEDIA_KINDS.filter((kind) => kind.id !== 'text').map((kind) => {
-        const id = kind.id as Exclude<MediaKindId, 'text'>;
+        const id = kind.id as MediaReply['kind'];
         return (
           <IconButton
             key={id}
@@ -71,21 +63,53 @@ export function MediaReplyButtons({
             variant="subtle"
             size={size === 'sm' ? 'compact' : 'sm'}
             iconSize={18}
-            onClick={() => setOpen(id)}
+            onClick={() =>
+              dispatch({ type: 'mediaReplyOpened', reply: { threadId: root.id, kind: id } })
+            }
           />
         );
       })}
-      {(open === 'audio' || open === 'video') && (
-        <RecordReplyDialog
-          root={root}
-          deckId={deckId}
-          kind={open satisfies RecordingKind}
-          onClose={() => setOpen(null)}
-        />
-      )}
-      {open === 'image' && (
-        <SketchReplyDialog root={root} deckId={deckId} onClose={() => setOpen(null)} />
-      )}
     </>
+  );
+}
+
+/** The open voice, video or sketch reply dialog (`mediaReply`), rendered once by the viewer. */
+export function MediaReplyDialog() {
+  const { mediaReply } = useViewerState();
+  const { deck, threadById } = useViewerData();
+  const thread = mediaReply ? threadById.get(mediaReply.threadId) : undefined;
+  if (!mediaReply || !thread) return null;
+  return (
+    <MediaReplyDialogView
+      key={`${thread.id}:${mediaReply.kind}`}
+      root={thread.root}
+      deckId={deck.id}
+      kind={mediaReply.kind}
+    />
+  );
+}
+
+function MediaReplyDialogView({
+  root,
+  deckId,
+  kind,
+}: {
+  root: Comment;
+  deckId: string;
+  kind: MediaReply['kind'];
+}) {
+  const dispatch = useViewerDispatch();
+  // Resolved by someone else mid-recording: the thread stays listed with its card.
+  useKeepThreadListed(root.id, true);
+  const close = () => dispatch({ type: 'mediaReplyClosed' });
+  return kind === 'image' ? (
+    <SketchReplyDialog root={root} deckId={deckId} onClose={close} />
+  ) : (
+    <RecordReplyDialog
+      root={root}
+      deckId={deckId}
+      kind={kind satisfies RecordingKind}
+      onClose={close}
+    />
   );
 }

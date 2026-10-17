@@ -56,6 +56,13 @@ describe('GapDivider', () => {
     });
   });
 
+  it('always shows the ⊕ and its gap in the hairline on touch screens (no hover there)', () => {
+    renderGap();
+    expect(addButton()!.className).toContain('pointer-coarse:opacity-100');
+    const hairline = document.querySelector('[data-gap-key] > span[aria-hidden]')!;
+    expect(hairline.className).toContain('pointer-coarse:[mask-image:');
+  });
+
   it('keeps the ⊕ shown while drafting there', () => {
     renderGap({ isDrafting: true });
     expect(addButton()!.className).toContain('opacity-100');

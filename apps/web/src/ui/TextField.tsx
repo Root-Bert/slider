@@ -52,6 +52,9 @@ export function TextField({
           id={inputId}
           aria-invalid={error ? true : undefined}
           aria-describedby={message ? messageId : undefined}
+          // React's own autoFocus misses a field in a <Dialog> that isn't open yet; the dialog
+          // focuses it once it is (`Dialog`).
+          data-autofocus={props.autoFocus || undefined}
           className="h-full min-w-0 flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-fg-subtle"
           {...props}
         />

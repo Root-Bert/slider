@@ -1,4 +1,5 @@
 import type { Anchor, Rect, Stroke } from '@slider/shared';
+import { placeGap } from '../comments/lib/comment-selectors';
 import { strokesBounds } from '../stage/lib/stroke-path';
 import type { Draft, TextBoxDraft, ViewerAction } from './viewer-types';
 
@@ -134,13 +135,28 @@ export function draftReducer(draft: Draft | null, action: ViewerAction): Draft |
       return null;
     case 'slidesReplaced': {
       if (!draft) return draft;
-      const ids = new Set(action.slideIds);
-      if (draft.slideId !== null) return ids.has(draft.slideId) ? draft : null;
-      if (draft.anchor.type !== 'gap') return draft;
-      const { afterSlideId, beforeSlideId } = draft.anchor;
-      return (afterSlideId && !ids.has(afterSlideId)) || (beforeSlideId && !ids.has(beforeSlideId))
-        ? null
-        : draft;
+      // A new revision (or hiding slides) took the draft's slide away: the draft – and what is
+      // written, recorded or drawn in the composer – stays, flagged, until it is discarded or the
+      // slide is back. A gap draft moves along to where its gap is now (`placeGap`).
+      let slideGone: boolean;
+      let anchor = draft.anchor;
+      if (draft.slideId !== null) slideGone = !action.slideIds.includes(draft.slideId);
+      else if (anchor.type !== 'gap') return draft;
+      else {
+        const place = placeGap(
+          anchor,
+          action.slideIds.map((id) => ({ id })),
+        );
+        slideGone = place === null;
+        if (
+          place &&
+          (place.afterSlideId !== anchor.afterSlideId ||
+            place.beforeSlideId !== anchor.beforeSlideId)
+        )
+          anchor = { type: 'gap', ...place };
+      }
+      if (anchor === draft.anchor && slideGone === !!draft.slideGone) return draft;
+      return { ...draft, anchor, slideGone };
     }
     default:
       return draft;

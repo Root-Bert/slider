@@ -101,7 +101,11 @@ interface Connection {
   heartbeat: ReturnType<typeof setInterval>;
   onComments: () => void;
   closed: boolean;
+  /** The tab is hidden: the stream is let go until it shows again (`suspend`). */
+  suspended: boolean;
 }
+
+const isHidden = () => typeof document !== 'undefined' && document.hidden;
 
 let current: Connection | null = null;
 
@@ -124,14 +128,26 @@ export function connectLive(deckId: string, onComments: () => void): () => void 
     }, LIVE_HEARTBEAT_MS),
     onComments,
     closed: false,
+    suspended: isHidden(),
   };
   current = connection;
-  open(connection);
+  if (!connection.suspended) open(connection);
   // Closing the tab: say goodbye, so the others drop our cursor right away.
   const onPageHide = () => sayGoodbye(connection);
   window.addEventListener('pagehide', onPageHide);
+  // A hidden tab lets go of its stream: over HTTP/1.1 a browser opens six connections per
+  // server, shared by all tabs – six open decks would hold them all and stall every request.
+  // Shown again, it says hello anew, which also refetches the comments it missed.
+  const onVisibilityChange = () => {
+    if (isHidden()) suspend(connection);
+    else resume(connection);
+  };
+  if (typeof document !== 'undefined')
+    document.addEventListener('visibilitychange', onVisibilityChange);
   return () => {
     window.removeEventListener('pagehide', onPageHide);
+    if (typeof document !== 'undefined')
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     sayGoodbye(connection);
     connection.closed = true;
     clearInterval(connection.heartbeat);
@@ -151,12 +167,14 @@ function open(connection: Connection) {
     withCredentials: true,
   });
   connection.source = source;
+  // Events of a stream let go meanwhile (suspended, reconnected) are stale.
+  const stale = () => connection.closed || connection.source !== source;
   source.addEventListener(LIVE_EVENT, (message) => {
-    if (connection.closed) return;
+    if (stale()) return;
     handle(connection, JSON.parse((message as MessageEvent<string>).data) as LiveEvent);
   });
   source.addEventListener('error', () => {
-    if (connection.closed) return;
+    if (stale()) return;
     connection.connectionId = null;
     setSnapshot({ connected: false });
     // The browser retries on its own while the stream merely dropped; after an HTTP error
@@ -172,15 +190,40 @@ function sayGoodbye(connection: Connection) {
   navigator.sendBeacon(`${API_PREFIX}/live/${encodeURIComponent(connectionId)}/leave`);
 }
 
+/** Lets go of the stream while the tab is hidden; the others drop our cursor and avatar. */
+function suspend(connection: Connection) {
+  if (connection.closed || connection.suspended) return;
+  connection.suspended = true;
+  sayGoodbye(connection);
+  connection.source?.close();
+  connection.source = null;
+  connection.connectionId = null;
+  if (connection.reconnect) clearTimeout(connection.reconnect);
+  connection.reconnect = null;
+  if (connection.timer) clearTimeout(connection.timer);
+  connection.timer = null;
+  if (current === connection) {
+    lastMoved.clear();
+    setSnapshot({ connected: false, peers: new Map() });
+  }
+}
+
+function resume(connection: Connection) {
+  if (connection.closed || !connection.suspended) return;
+  connection.suspended = false;
+  connection.dirty = true;
+  open(connection);
+}
+
 function scheduleReconnect(connection: Connection) {
-  if (connection.closed || connection.reconnect) return;
+  if (connection.closed || connection.suspended || connection.reconnect) return;
   sayGoodbye(connection);
   connection.source?.close();
   connection.connectionId = null;
   setSnapshot({ connected: false });
   connection.reconnect = setTimeout(() => {
     connection.reconnect = null;
-    if (!connection.closed) open(connection);
+    if (!connection.closed && !connection.suspended) open(connection);
   }, RECONNECT_MS);
 }
 

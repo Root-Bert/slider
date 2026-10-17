@@ -15,12 +15,28 @@ import {
 } from '../src/import/libreoffice';
 import { silentLogger } from '../src/logger';
 import { makePdf } from './pdf';
+import { storedZip, unzipText } from './zip';
+
+const IMAGE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image';
+const SLIDE_RELS = 'ppt/slides/_rels/slide1.xml.rels';
+/** A package with one internal and two external links (a linked picture, a local file). */
+const DECK = storedZip({
+  'ppt/slides/slide1.xml': '<p:sld/>',
+  [SLIDE_RELS]:
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    `<Relationship Id="rId1" Type="${IMAGE}" Target="../media/image1.png"/>` +
+    `<Relationship Id="rId2" Type="${IMAGE}" Target="http://169.254.169.254/latest" TargetMode="External"/>` +
+    `<Relationship Id="rId3" Type="${IMAGE}" Target="file:///etc/passwd" TargetMode="External"/>` +
+    '</Relationships>',
+});
 
 type Behaviour = 'pdf' | 'nothing' | 'fail' | 'hang';
 
 /** A fake `soffice`: reads the arguments like LibreOffice would and writes `<outdir>/deck.pdf`. */
 function fakeSoffice(behaviour: Behaviour) {
   const calls: { command: string; args: string[] }[] = [];
+  /** The `deck.pptx` each run was given. */
+  const inputs: Uint8Array[] = [];
   const spawn = vi.fn((command: string, args: string[]) => {
     calls.push({ command, args });
     const child = new EventEmitter() as ChildProcess;
@@ -36,6 +52,7 @@ function fakeSoffice(behaviour: Behaviour) {
     void (async () => {
       // Like a real process: events only after `spawn` returned and listeners are attached.
       await new Promise((resolve) => setImmediate(resolve));
+      inputs.push(new Uint8Array(await readFile(args.at(-1) ?? '')));
       if (behaviour === 'hang') return;
       const outDir = args[args.indexOf('--outdir') + 1] ?? '';
       if (behaviour === 'pdf') {
@@ -48,14 +65,14 @@ function fakeSoffice(behaviour: Behaviour) {
     })();
     return child;
   });
-  return { spawn, calls };
+  return { spawn, calls, inputs };
 }
 
 describe('createLibreOfficePdf (BER-94)', () => {
   it('converts headless with its own profile and cleans up its temp folder', async () => {
     const { spawn, calls } = fakeSoffice('pdf');
     const convert = createLibreOfficePdf({ binary: '/opt/soffice', log: silentLogger, spawn });
-    const pdf = await convert(new Uint8Array([80, 75, 3, 4]));
+    const pdf = await convert(DECK);
     expect(new TextDecoder().decode(pdf.subarray(0, 5))).toBe('%PDF-');
 
     const [call] = calls;
@@ -71,10 +88,24 @@ describe('createLibreOfficePdf (BER-94)', () => {
     expect(existsSync(path.dirname(input))).toBe(false);
   });
 
+  it('hands LibreOffice the deck without external links, through the PowerPoint filter only', async () => {
+    const { spawn, calls, inputs } = fakeSoffice('pdf');
+    const convert = createLibreOfficePdf({ binary: 'soffice', log: silentLogger, spawn });
+    await convert(DECK);
+    expect(calls[0]?.args).toContain('--infilter=Impress MS PowerPoint 2007 XML');
+    const rels = unzipText(inputs[0] ?? new Uint8Array())[SLIDE_RELS] ?? '';
+    expect(rels).toContain('Target="../media/image1.png"');
+    expect(rels).not.toMatch(/169\.254|file:|External/);
+
+    // What is not a readable package is not converted at all.
+    await expect(convert(new Uint8Array([1, 2, 3]))).rejects.toThrow();
+    expect(calls).toHaveLength(1);
+  });
+
   it('gives every run its own profile, so runs can overlap', async () => {
     const { spawn, calls } = fakeSoffice('pdf');
     const convert = createLibreOfficePdf({ binary: 'soffice', log: silentLogger, spawn });
-    await Promise.all([convert(new Uint8Array([1])), convert(new Uint8Array([2]))]);
+    await Promise.all([convert(DECK), convert(DECK)]);
     const profiles = calls.map(({ args }) => args[0]);
     expect(new Set(profiles).size).toBe(2);
   });
@@ -85,15 +116,13 @@ describe('createLibreOfficePdf (BER-94)', () => {
       log: silentLogger,
       spawn: fakeSoffice('fail').spawn,
     });
-    await expect(failing(new Uint8Array([1]))).rejects.toThrow(
-      /exited with 1.*could not be loaded/,
-    );
+    await expect(failing(DECK)).rejects.toThrow(/exited with 1.*could not be loaded/);
     const silent = createLibreOfficePdf({
       binary: 'soffice',
       log: silentLogger,
       spawn: fakeSoffice('nothing').spawn,
     });
-    await expect(silent(new Uint8Array([1]))).rejects.toThrow('LibreOffice wrote no PDF');
+    await expect(silent(DECK)).rejects.toThrow('LibreOffice wrote no PDF');
   });
 
   it('kills a conversion that takes too long', async () => {
@@ -104,7 +133,7 @@ describe('createLibreOfficePdf (BER-94)', () => {
       spawn,
       timeoutMs: 20,
     });
-    await expect(convert(new Uint8Array([1]))).rejects.toThrow('timed out after 20 ms');
+    await expect(convert(DECK)).rejects.toThrow('timed out after 20 ms');
     const child = spawn.mock.results[0]?.value as ChildProcess;
     expect(child.kill).toHaveBeenCalledWith('SIGKILL');
   });
@@ -122,7 +151,7 @@ describe('createLibreOfficePdf (BER-94)', () => {
         });
         // Generous enough that the launcher has started its worker even on a busy CI runner.
         const convert = createLibreOfficePdf({ binary, log: silentLogger, timeoutMs: 3000 });
-        await expect(convert(new Uint8Array([1]))).rejects.toThrow('timed out after 3000 ms');
+        await expect(convert(DECK)).rejects.toThrow('timed out after 3000 ms');
 
         const worker = Number(await readFile(pidFile, 'utf8'));
         expect(worker).toBeGreaterThan(0);
@@ -146,7 +175,7 @@ describe('createLibreOfficePdf (BER-94)', () => {
   it('kills running conversions and removes their temp folder on shutdown', async () => {
     const { spawn, calls } = fakeSoffice('hang');
     const convert = createLibreOfficePdf({ binary: 'soffice', log: silentLogger, spawn });
-    const result = convert(new Uint8Array([1]));
+    const result = convert(DECK);
     await vi.waitFor(() => expect(calls).toHaveLength(1));
     const dir = path.dirname(calls[0]?.args.at(-1) ?? '');
     expect(existsSync(dir)).toBe(true);
@@ -160,7 +189,7 @@ describe('createLibreOfficePdf (BER-94)', () => {
       // Not a failure of the deck: imports let it through instead of keeping the SVG preview.
       await expect(result).rejects.toBeInstanceOf(ConversionAborted);
       // Nothing new starts while the server goes down.
-      await expect(convert(new Uint8Array([1]))).rejects.toBeInstanceOf(ConversionAborted);
+      await expect(convert(DECK)).rejects.toBeInstanceOf(ConversionAborted);
       expect(calls).toHaveLength(1);
 
       // Finished conversions are forgotten: nothing left to kill.

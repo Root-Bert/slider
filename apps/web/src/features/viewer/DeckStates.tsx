@@ -10,11 +10,11 @@ export function DeckError({ error }: { error: Error }) {
   const isFinal = status >= 400 && status < 500;
   const [title, message] =
     status === 404
-      ? ['Review nicht gefunden', 'Dieses Review gibt es nicht (mehr) oder der Link ist falsch.']
+      ? ['Review nicht gefunden', 'Diese Review gibt es nicht (mehr) oder der Link ist falsch.']
       : status === 401 || status === 403
         ? [
             'Kein Zugriff',
-            'Du hast keinen Zugriff auf dieses Review. Bitte den Besitzer um einen neuen Link.',
+            'Du hast keinen Zugriff auf diese Review. Bitte eine Admin-Person der Organisation, dich einzuladen.',
           ]
         : ['Das hat nicht geklappt', error.message];
 

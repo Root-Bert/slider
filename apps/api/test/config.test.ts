@@ -243,6 +243,22 @@ describe('loadConfig', () => {
       }
     });
 
+    it('refuses a plain-http SLIDER_URL in production except on localhost (Secure cookies)', () => {
+      const prod = (url: string) =>
+        loadConfig(
+          { NODE_ENV: 'production', SLIDER_SECRET: 'x'.repeat(32), SLIDER_URL: url },
+          quiet,
+        );
+      expect(() => prod('http://192.168.1.10:8787')).toThrow(/https:\/\//);
+      expect(() => prod('http://slider.firma.de')).toThrow(/https:\/\//);
+      for (const url of ['http://localhost:8787', 'http://127.0.0.1:8787', 'http://[::1]:8787']) {
+        expect(prod(url).webOrigin).toBe(url);
+      }
+      expect(loadConfig({ SLIDER_URL: 'http://192.168.1.10:8787' }, quiet).webOrigin).toBe(
+        'http://192.168.1.10:8787',
+      );
+    });
+
     it('generates SLIDER_SECRET once into the data folder when it is not set', () => {
       const dir = mkdtempSync(path.join(tmpdir(), 'slider-config-'));
       try {

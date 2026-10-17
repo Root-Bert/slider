@@ -73,6 +73,10 @@ Was dabei automatisch passiert:
   kann das weiter tun.
 - Hinter dem Proxy `-e TRUST_PROXY=1` setzen, damit Rate-Limits die echte Besucher-IP sehen –
   aber nur, wenn Port 8787 nicht öffentlich erreichbar ist (`-p 127.0.0.1:8787:8787`).
+- Der Proxy sollte **HTTP/2** sprechen (Caddy, Traefik mit TLS und Cloudflare tun das von
+  selbst, nginx braucht `http2 on;`). Jede offene Präsentation hält eine Live-Verbindung; über
+  HTTP/1.1 erlaubt der Browser nur sechs Verbindungen pro Server für alle Tabs zusammen.
+  Slider gibt sie in Tabs im Hintergrund frei, mit vielen sichtbaren Fenstern hilft nur HTTP/2.
 - Ein festes Release statt `:edge` (Stand von `main`): `ghcr.io/root-bert/slider:1`, sobald
   Versionen getaggt sind.
 
@@ -441,11 +445,35 @@ docker run --rm -v slider_slider-data:/data -v /opt/backups:/backup debian:bookw
   `restic`/`borg`). Alte Backups rotieren.
 - Hetzner-Server-Backups (+20 %) sind ein bequemes Sicherheitsnetz, ersetzen aber kein
   `pg_dump` (Snapshots einer laufenden Datenbank sind nicht garantiert konsistent).
-- Wiederherstellen: `docker compose exec -T postgres pg_restore -U slider -d slider --clean < datei.dump`
-  und das Tar-Archiv zurück ins Volume entpacken.
 - Ohne `DATABASE_URL` (PGlite) liegt die Datenbank in `/data/db`: dann Slider kurz stoppen und
   das Volume sichern.
 - Authentik: `docker compose exec -T authentik-db pg_dump -U authentik -Fc authentik > …`.
+
+### Wiederherstellen
+
+Datenbank und `/data` gehören zusammen: `/data/secret` verschlüsselt die gespeicherten
+Einstellungen der Einrichtungsseite und die Microsoft-Verbindungen in der Datenbank. Ohne das
+passende `secret` (oder denselben `SLIDER_SECRET`) sind sie nach dem Wiederherstellen unlesbar.
+Slider liest `secret` und die Einstellungen nur beim Start, deshalb muss Slider während des
+Wiederherstellens gestoppt sein und danach neu starten:
+
+```bash
+cd /opt/slider/deploy
+# 1. Slider stoppen (Postgres läuft weiter; auf einem neuen Server: docker compose up -d postgres)
+docker compose stop slider
+# 2. Datenbank zurückspielen
+docker compose exec -T postgres pg_restore -U slider -d slider --clean --if-exists < /opt/backups/slider-DATUM.dump
+# 3. Dateien samt secret zurück ins Volume entpacken
+docker run --rm -v slider_slider-data:/data -v /opt/backups:/backup debian:bookworm-slim \
+  tar xzf /backup/slider-data-DATUM.tar.gz -C /data
+# 4. Slider starten: liest secret und Einstellungen neu
+docker compose up -d slider
+```
+
+Auf einem neuen Server hat ein vorheriges `docker compose up -d` schon ein neues `secret` erzeugt
+und einen Einrichtungslink ausgegeben; Schritt 3 überschreibt das `secret`, Schritt 4 übernimmt
+es. Ohne `DATABASE_URL` (PGlite) entfällt Schritt 2: das Tar-Archiv enthält die Datenbank
+(`/data/db`).
 
 ## Updates
 
@@ -523,6 +551,9 @@ Sprach-/Video-Kommentare. Deshalb:
 
 - `docker compose logs slider` – Konfigurationsfehler stehen beim Start im Log
   (z. B. „SLIDER_URL must be set in production“, „BOOTSTRAP_EMAIL is not set“).
+- „SLIDER_URL must start with https:// in production“ → Login-Cookies sind im Produktivbetrieb
+  `Secure` und Browser verwerfen sie auf `http://`; Slider hinter HTTPS stellen (z. B. Caddy aus
+  `deploy/`). Nur `http://localhost` geht ohne HTTPS.
 - Einrichtungslink verloren → er steht bei jedem Start im Log, solange es kein Konto gibt
   (`docker logs slider`); die Datei `/data/setup-token` hält ihn.
 - Login-Seite sagt „Anmeldung nicht eingerichtet“ → noch kein Anmeldeweg: Einrichtungslink aus

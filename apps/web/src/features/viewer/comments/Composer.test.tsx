@@ -66,6 +66,7 @@ const recording: Recording = {
 beforeEach(() => {
   recorder.state = { status: 'idle' };
   recorder.reset.mockClear();
+  createComment.mutate.mockClear();
   draft = {
     slideId: 's3',
     anchor: { type: 'point', point: { x: 0.5, y: 0.5 }, shapeRef: null },
@@ -83,16 +84,36 @@ describe('Composer', () => {
     expect(screen.getByRole('dialog', { name: 'Neuer Kommentar · Folie 3' })).toBeTruthy();
   });
 
+  it('keeps what is written when the slide leaves the deck, but no longer sends it', async () => {
+    const view = render(<Composer />);
+    const field = screen.getByRole('combobox', { name: 'Kommentar' });
+    await userEvent.type(field, 'Logo zu klein');
+    // A synced revision deleted (or hid) the slide.
+    draft = { ...draft, slideGone: true };
+    view.rerender(<Composer />);
+    expect(screen.getByRole('combobox', { name: 'Kommentar' })).toHaveProperty(
+      'value',
+      'Logo zu klein',
+    );
+    expect(screen.getByRole('alert').textContent).toContain('nicht mehr zu sehen');
+    expect(screen.getByRole('button', { name: /Senden/ })).toHaveProperty('disabled', true);
+    await userEvent.type(
+      screen.getByRole('combobox', { name: 'Kommentar' }),
+      '{Meta>}{Enter}{/Meta}',
+    );
+    expect(createComment.mutate).not.toHaveBeenCalled();
+  });
+
   it('stops the comment at the length the API takes', () => {
     render(<Composer />);
-    expect(screen.getByRole('textbox', { name: 'Kommentar' }).getAttribute('maxlength')).toBe(
+    expect(screen.getByRole('combobox', { name: 'Kommentar' }).getAttribute('maxlength')).toBe(
       String(MAX_COMMENT_BODY_LENGTH),
     );
   });
 
   it('Tab from the comment field reaches Abbrechen and Senden', async () => {
     render(<Composer />);
-    const field = screen.getByRole('textbox', { name: 'Kommentar' });
+    const field = screen.getByRole('combobox', { name: 'Kommentar' });
     expect(document.activeElement).toBe(field);
     await userEvent.type(field, 'Zu klein');
     await userEvent.tab();

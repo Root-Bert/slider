@@ -2,7 +2,6 @@ import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { Database } from '../db/client';
 import { decks, revisions, slideVersions, type SlideRenderer } from '../db/schema';
 import type { Logger } from '../logger';
-import { blobKeys } from '../storage/blob-storage';
 import type { ImportDeps } from './import-deck';
 import { ConversionAborted } from './libreoffice';
 import { hasPdfRenderer, renderSlidePages, type SlidePagesDeps } from './office-pages';
@@ -99,18 +98,14 @@ export async function rerenderRevision(
     imageKey: string;
     thumbnailKey: string;
   }[] = [];
-  const written: string[] = [];
+  // The page images are already stored under new keys (renderSlidePages).
+  const written = rendered.pages.flatMap((page) =>
+    page ? [page.imageKey, page.thumbnailKey] : [],
+  );
   try {
     for (const [i, row] of rows.entries()) {
       const page = rendered.pages[i];
-      if (page) {
-        const imageKey = blobKeys.slideRender(deckId, id, 'webp');
-        const thumbnailKey = blobKeys.slideRender(deckId, id, 'webp');
-        written.push(imageKey, thumbnailKey);
-        await storage.put(imageKey, page.image);
-        await storage.put(thumbnailKey, page.thumbnail);
-        swaps.push({ id: row.id, from: row, imageKey, thumbnailKey });
-      }
+      if (page) swaps.push({ id: row.id, from: row, ...page });
       deps.renderProgress?.running(deckId, i + 1, total);
     }
     await db.transaction(async (tx) => {

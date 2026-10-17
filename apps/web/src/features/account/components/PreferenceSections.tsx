@@ -69,7 +69,7 @@ export function WorkSection() {
   return (
     <Section
       title="Arbeiten"
-      description="So öffnet sich jedes Review. Gilt für diesen Browser – im Review selbst kannst du alles weiterhin umschalten."
+      description="So öffnet sich jede Review. Gilt für diesen Browser – in der Review selbst kannst du alles weiterhin umschalten."
     >
       <div className="flex flex-col divide-y divide-hairline">
         <Toggle

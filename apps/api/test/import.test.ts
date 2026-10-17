@@ -5,7 +5,8 @@ import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { commentSchema, deckSchema, slideSchema, type Deck } from '@slider/shared';
 import { PptxError, type ParsedComment } from '@slider/pptx';
-import { comments, decks, slideVersions, userIdentities, users } from '../src/db/schema';
+import { comments, decks, revisions, slideVersions, userIdentities, users } from '../src/db/schema';
+import { MAX_IMPORT_ATTEMPTS } from '../src/import/attempts';
 import { findInterruptedImports, importDeck } from '../src/import/import-deck';
 import { ConversionAborted, type PptxToPdf } from '../src/import/libreoffice';
 import type { OpenPptx } from '../src/import/pptx';
@@ -199,6 +200,55 @@ describe('after a restart', () => {
   });
 });
 
+describe('imports that kill the process', () => {
+  it('count each run before parsing and give up after repeated crashes instead of crash-looping', async () => {
+    const seen: number[] = [];
+    const parse = stubPptx({}, 2);
+    let revisionId = '';
+    const attempts = async () =>
+      (await ctx!.deps.db.select().from(revisions).where(eq(revisions.id, revisionId)))[0]
+        ?.importAttempts;
+    const openPptx: OpenPptx = async (bytes) => {
+      if (revisionId) seen.push((await attempts()) ?? -1);
+      return parse(bytes);
+    };
+    ctx = await createTestContext({ openPptx });
+    const deck = await upload(ctx);
+    revisionId = deck.currentRevisionId ?? '';
+    expect(await attempts()).toBe(0);
+
+    const crashedRuns = async (count: number) => {
+      await ctx!.deps.db
+        .update(revisions)
+        .set({ importAttempts: count })
+        .where(eq(revisions.id, revisionId));
+      await ctx!.deps.db
+        .update(decks)
+        .set({ importState: { status: 'running', step: 'rendering', progress: null } })
+        .where(eq(decks.id, deck.id));
+      for (const job of await findInterruptedImports(ctx!.deps.db)) ctx!.deps.queue.enqueue(job);
+      await ctx!.deps.queue.idle();
+      return deckSchema.parse(await (await ctx!.request(`/api/decks/${deck.id}`)).json());
+    };
+
+    // Fewer crashes than the limit: the import is simply tried again – and the run is on record
+    // before the file is parsed, so a run the process dies in counts.
+    expect((await crashedRuns(MAX_IMPORT_ATTEMPTS - 1)).import).toEqual({ status: 'ready' });
+    expect(seen).toEqual([MAX_IMPORT_ATTEMPTS]);
+    expect(await attempts()).toBe(0);
+
+    // As many crashes as allowed: the next start gives up instead of dying again.
+    const failed = await crashedRuns(MAX_IMPORT_ATTEMPTS);
+    expect(failed.import).toEqual({
+      status: 'failed',
+      error: expect.stringMatching(/^Import abgebrochen – die Datei ist zu groß oder beschädigt/),
+    });
+    expect(seen).toHaveLength(1);
+    expect(await attempts()).toBe(0);
+    expect(await findInterruptedImports(ctx.deps.db)).toEqual([]);
+  });
+});
+
 describe('shutdown during rendering', () => {
   it('leaves the import to resume instead of finishing with SVG previews', async () => {
     let aborting = true;
@@ -214,6 +264,12 @@ describe('shutdown during rendering', () => {
       .from(slideVersions)
       .where(eq(slideVersions.revisionId, cut.currentRevisionId ?? ''));
     expect(rows.some((row) => row.renderer === 'svg')).toBe(false);
+    // A shutdown is no crash: it does not count towards giving up.
+    const [revision] = await ctx.deps.db
+      .select()
+      .from(revisions)
+      .where(eq(revisions.id, cut.currentRevisionId ?? ''));
+    expect(revision?.importAttempts).toBe(0);
 
     // Next start: picked up again and rendered properly.
     aborting = false;
@@ -456,7 +512,12 @@ describe('toAnchor', () => {
     expect(toAnchor({ type: 'point', point: { x: 0.7, y: 0.7 } }, shapes)).toEqual({
       type: 'point',
       point: { x: 0.7, y: 0.7 },
-      shapeRef: { shapeId: '4', offset: { x: expect.closeTo(0.5), y: expect.closeTo(0.5) } },
+      shapeRef: {
+        shapeId: '4',
+        offset: { x: expect.closeTo(0.5), y: expect.closeTo(0.5) },
+        name: 'Bild',
+        bbox: shapes[0]!.bbox,
+      },
     });
   });
 

@@ -59,6 +59,11 @@ export interface Draft {
   commentId: string | null;
   /** The comment's first characters – typed right after drawing, before the composer opened. */
   initialBody?: string;
+  /**
+   * Its slide (gap: both neighbours) left the shown slides – deleted by a new revision or
+   * hidden. The composer stays with what is written in it but can't send.
+   */
+  slideGone?: boolean;
 }
 
 /** One's own drawing just saved: typing right away comments on it (`drawingCommentStarted`). */
@@ -67,6 +72,12 @@ export interface SavedDrawing {
   commentId: string;
   anchor: Anchor;
   strokes: Stroke[];
+}
+
+/** A reply dialog for a thread: record (voice, video) or draw (image). */
+export interface MediaReply {
+  threadId: string;
+  kind: 'audio' | 'video' | 'image';
 }
 
 /** A slide shown as it was when a comment was written (`previousView`). */
@@ -96,6 +107,12 @@ export interface ViewerState {
    * e.g. someone else resolves one – so the card and the draft or recording in it don't vanish.
    */
   composingThreads: ReadonlyMap<string, number>;
+  /**
+   * The voice, video or sketch reply dialog that is open. Held here, not in the card that opened
+   * it, so it outlives that card – windowed out by scrolling, or turned compact by a narrower
+   * column – with the recording or drawing in it.
+   */
+  mediaReply: MediaReply | null;
   /**
    * Avatar filter (bottom right): the viewer's own id = threads that @mention them (BER-105),
    * someone else's = threads they wrote in. `null` = everyone.
@@ -174,6 +191,8 @@ export type ViewerAction =
   | { type: 'statusFilterChanged'; filter: StatusFilter }
   /** A reply field of the thread started (`true`) or stopped (`false`) holding a draft. */
   | { type: 'composingChanged'; threadId: string; composing: boolean }
+  | { type: 'mediaReplyOpened'; reply: MediaReply }
+  | { type: 'mediaReplyClosed' }
   /** Click on an avatar: filters by that person, a second click clears it. */
   | { type: 'personFilterToggled'; authorId: string }
   /** `null` resets the split to the default. */

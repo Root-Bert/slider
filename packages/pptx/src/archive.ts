@@ -260,6 +260,34 @@ export class Archive {
     return relationships;
   }
 
+  /**
+   * The package re-zipped with every relationship part rebuilt from the relationships it may
+   * keep: internal ones with a plain part path as target. External targets (`TargetMode=
+   * "External"`: linked pictures, media, OLE objects, hyperlinks) are dropped, so an office
+   * suite that renders the file – LibreOffice for the slide images – never fetches a URL or a
+   * local file an uploaded deck points at (SSRF past the URL import's address checks).
+   *
+   * Every part is written from what this reader saw (duplicate zip entries collapse into one),
+   * and relationship parts are generated, not patched, so no XML or zip trick survives into the
+   * copy. Relationship parts count against the archive's inflate budget like any XML part.
+   */
+  async withoutExternalRelationships(): Promise<Uint8Array> {
+    const relsPaths: string[] = [];
+    this.zip.forEach((path, entry) => {
+      if (!entry.dir && /\.rels$/i.test(path)) relsPaths.push(path);
+    });
+    for (const relsPath of relsPaths) {
+      const root = await this.readXml(relsPath, { retain: false });
+      const kept = (root?.children ?? []).filter(isInternalRelationship).map((element) => ({
+        id: attr(element, 'Id') ?? '',
+        type: attr(element, 'Type') ?? '',
+        target: attr(element, 'Target') ?? '',
+      }));
+      this.zip.file(relsPath, relationshipsXml(kept));
+    }
+    return this.zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+  }
+
   async relationshipById(partPath: string, id: string): Promise<Relationship | undefined> {
     return (await this.relationships(partPath)).find((rel) => rel.id === id && !rel.external);
   }
@@ -267,6 +295,43 @@ export class Archive {
   async relationshipsOfType(partPath: string, type: string): Promise<Relationship[]> {
     return (await this.relationships(partPath)).filter((rel) => rel.type === type && !rel.external);
   }
+}
+
+/** A URI scheme (`http:`, `file:`, `smb:` …) – never part of an internal part path. */
+const URI_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
+
+/**
+ * Only an unprefixed `Relationship` that is explicitly or implicitly internal and targets a
+ * plain path (no scheme, no `//host`) – anything else could make a renderer leave the package.
+ */
+function isInternalRelationship(element: XmlElement): boolean {
+  const mode = attr(element, 'TargetMode');
+  const target = attr(element, 'Target') ?? '';
+  return (
+    element.name === 'Relationship' &&
+    (mode === undefined || mode === 'Internal') &&
+    !URI_SCHEME.test(target) &&
+    !target.startsWith('//') &&
+    !target.startsWith('\\\\')
+  );
+}
+
+const escapeXmlAttribute = (value: string): string =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/[\t\n\r]/g, (char) => `&#${char.charCodeAt(0)};`);
+
+function relationshipsXml(relationships: { id: string; type: string; target: string }[]): string {
+  const items = relationships
+    .map(
+      ({ id, type, target }) =>
+        `<Relationship Id="${escapeXmlAttribute(id)}" Type="${escapeXmlAttribute(type)}" Target="${escapeXmlAttribute(target)}"/>`,
+    )
+    .join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${items}</Relationships>`;
 }
 
 /** `ppt/slides/slide1.xml` → `ppt/slides/_rels/slide1.xml.rels` */

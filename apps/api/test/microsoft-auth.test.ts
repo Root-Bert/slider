@@ -96,7 +96,7 @@ describe('Microsoft login routes', () => {
     expect(cookie).toMatch(/^slider_ms_oauth=/);
     expect(cookie).toMatch(/HttpOnly/i);
     expect(cookie).toMatch(/SameSite=Lax/i);
-    expect(cookie).toMatch(/Path=\/api\/auth\/microsoft/);
+    expect(cookie).toMatch(/Path=\/;/);
   });
 
   async function startLogin(returnTo = '/neu?link=https%3A%2F%2F1drv.ms%2Fp%2Fc%2Fx') {

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router';
@@ -184,6 +184,57 @@ describe('SetupForm', () => {
     await userEvent.click(within(section('Microsoft')).getByRole('button', { name: 'Entfernen' }));
     await userEvent.click(screen.getByRole('button', { name: 'Speichern' }));
     await waitFor(() => expect(clientId().value).toBe(''), { timeout: 3000 });
+    restart = 'manual';
+    vi.unstubAllGlobals();
+  });
+
+  it('a server that does not come back is reported as such, next to the button', async () => {
+    restart = 'automatic';
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let up = false;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        if (!up) throw new TypeError('Failed to fetch');
+        return new Response('{}', { status: 200 });
+      }),
+    );
+    const s = status();
+    s.settings.restart = 'automatic';
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    client.setQueryData(['setup'], s);
+    render(
+      wrap(
+        <SetupForm status={s} settings={s.settings} headers={{ 'X-Setup-Token': 't' }} />,
+        client,
+      ),
+    );
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await user.type(within(section('Google')).getByLabelText('Client-ID'), 'x');
+    await user.click(screen.getByRole('button', { name: 'Speichern' }));
+    await act(() => vi.advanceTimersByTimeAsync(40_000));
+
+    const warning = await screen.findByRole('alert');
+    expect(warning.textContent).toContain('Slider antwortet noch nicht');
+    expect(screen.queryByText(/übernommen/)).toBeNull();
+    // Below the last section, right above "Speichern" – where the admin clicked.
+    const saveButton = screen.getByRole('button', { name: 'Speichern' });
+    expect(
+      section('E-Mail').compareDocumentPosition(warning) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      warning.compareDocumentPosition(saveButton) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    up = true;
+    await user.click(screen.getByRole('button', { name: 'Erneut prüfen' }));
+    await act(() => vi.advanceTimersByTimeAsync(2_000));
+    expect((await screen.findByRole('status')).textContent).toContain(
+      'Gespeichert und übernommen.',
+    );
+    expect(screen.queryByText('Slider antwortet noch nicht')).toBeNull();
+
+    vi.useRealTimers();
     restart = 'manual';
     vi.unstubAllGlobals();
   });

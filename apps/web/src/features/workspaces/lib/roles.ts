@@ -4,6 +4,7 @@ import {
   type WorkspaceInvite,
   type WorkspaceRole,
 } from '@slider/shared';
+import { pluralize } from '@/lib/format';
 
 /**
  * Workspace role rules on the client – mirrors `apps/api/src/services/workspaces.ts`, only to
@@ -51,6 +52,14 @@ export const canRemoveMember = (actor: WorkspaceRole) => canManageMembers(actor)
 /** The last admin can neither leave nor be demoted – the API refuses, the UI says why upfront. */
 export const isLastAdmin = (role: WorkspaceRole, adminCount: number) =>
   role === 'admin' && adminCount <= 1;
+
+/** Accessible name of the header's organisation switcher, with the pending invites. */
+export const switcherLabel = (workspaceName: string | null, pendingInvites: number): string =>
+  workspaceName === null
+    ? 'Organisationen'
+    : `Organisation: ${workspaceName}${
+        pendingInvites > 0 ? `, ${pluralize(pendingInvites, 'Einladung', 'Einladungen')}` : ''
+      }`;
 
 export const INVITE_STATE_LABELS: Record<WorkspaceInvite['state'], string> = {
   valid: 'Offen',

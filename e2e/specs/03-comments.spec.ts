@@ -9,7 +9,7 @@ test('comment, reply and resolve – all of it survives a reload', async ({ page
 
   // New comment on slide 3 (box mode: a click on the slide comments on the box under it).
   await page.getByRole('img', { name: 'Umsatz nach Region' }).click({ position: { x: 30, y: 30 } });
-  const composer = page.getByRole('textbox', { name: 'Kommentar', exact: true });
+  const composer = page.getByRole('combobox', { name: 'Kommentar', exact: true });
   await expect(composer).toBeVisible();
   await composer.fill(text);
   await page.getByRole('button', { name: /^Senden/ }).click();
@@ -21,7 +21,7 @@ test('comment, reply and resolve – all of it survives a reload', async ({ page
   await card.getByRole('button', { name: 'Thread von Robert Hofmann öffnen' }).click();
   const thread = page.getByRole('complementary', { name: 'Thread · Folie 3' });
   await expect(thread).toBeVisible();
-  const replyField = thread.getByRole('textbox', { name: 'Antwort an Robert Hofmann' });
+  const replyField = thread.getByRole('combobox', { name: 'Antwort an Robert Hofmann' });
   await expect(replyField).toBeVisible();
   await replyField.fill(reply);
   await replyField.press('Enter');
@@ -29,8 +29,10 @@ test('comment, reply and resolve – all of it survives a reload', async ({ page
   await shot(page, 'comment-thread');
 
   // Resolve the thread.
-  await thread.getByRole('button', { name: 'Als erledigt markieren' }).click();
-  await expect(thread.getByRole('button', { name: 'Wieder öffnen' })).toBeVisible();
+  await thread.getByRole('button', { name: 'Erledigen', exact: true, pressed: false }).click();
+  await expect(
+    thread.getByRole('button', { name: 'Erledigt', exact: true, pressed: true }),
+  ).toBeVisible();
 
   // Wait for the server, then reload.
   await expect
@@ -52,6 +54,8 @@ test('comment, reply and resolve – all of it survives a reload', async ({ page
   await expect(doneCard).toBeVisible();
   await doneCard.getByRole('button', { name: 'Thread von Robert Hofmann öffnen' }).click();
   await expect(thread.getByRole('list', { name: 'Antworten' }).getByText(reply)).toBeVisible();
-  await expect(thread.getByRole('button', { name: 'Wieder öffnen' })).toBeVisible();
+  await expect(
+    thread.getByRole('button', { name: 'Erledigt', exact: true, pressed: true }),
+  ).toBeVisible();
   await shot(page, 'comment-after-reload');
 });

@@ -15,7 +15,7 @@ import { accentColor } from '@/lib/accent';
 import { cn, Icon } from '@/ui';
 import { rafThrottle } from '@/lib/dom';
 import { smoothScroll } from '@/lib/motion';
-import { gapKey } from '../comments/lib/comment-selectors';
+import { gapKey, openCountBySlide } from '../comments/lib/comment-selectors';
 import { slideLabel } from '../comments/lib/labels';
 import type { SlideBadge } from '../revisions/lib/revision-changes';
 import { ChangeBadge } from '../revisions/ChangeBadge';
@@ -61,7 +61,10 @@ interface MinimapProps {
  * moves with the split handle, right under the track.
  */
 export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
-  const { slides, gapThreads } = useViewerData();
+  const { slides, gapThreads, threads } = useViewerData();
+  // From the comments already here: current after every own action and live event, without
+  // downloading the whole slide list again for it.
+  const openCounts = useMemo(() => openCountBySlide(threads), [threads]);
   const { activeSlideId, showChanges, deletedPanelOpen } = useViewerState();
   const { badges, deletedSlides } = useRevisionData();
   const deletedW = deletedSlides.length > 0 ? (narrow ? DELETED_W_NARROW : DELETED_W) : 0;
@@ -324,6 +327,7 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
                   w={box.w}
                   h={mini.h}
                   isActive={index === activeIndex}
+                  openCount={openCounts.get(slide.id) ?? 0}
                   gapColor={gapColor}
                   badge={showChanges ? (badges.get(slide.id) ?? null) : null}
                   onSelect={select}
@@ -441,6 +445,8 @@ interface ThumbnailProps {
   w: number;
   h: number;
   isActive: boolean;
+  /** Open comments on the slide (gap comments sit between slides, they don't count). */
+  openCount: number;
   /** Accent of a "missing slide" comment between this slide and the next (BER-103). */
   gapColor: string | null;
   /** Change of the latest revision while changes are shown (Figma D2). */
@@ -456,11 +462,11 @@ const Thumbnail = memo(function Thumbnail({
   w,
   h,
   isActive,
+  openCount: count,
   gapColor,
   badge,
   onSelect,
 }: ThumbnailProps) {
-  const count = slide.openCommentCount;
   const label = `${slideLabel(index)}${slide.title ? `: ${slide.title}` : ''}${
     count ? ` – ${count} offene${count === 1 ? 'r' : ''} Kommentar${count === 1 ? '' : 'e'}` : ''
   }${badge ? ` – ${badge.description}` : ''}`;

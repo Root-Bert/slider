@@ -7,6 +7,7 @@ import { decks, revisions, slides, slideVersions } from '../db/schema';
 import type { Logger } from '../logger';
 import { blobKeys, type BlobStorage } from '../storage/blob-storage';
 import { importSyncRevision } from '../sync/sync-import';
+import { beginImportAttempt, endImportAttempt, ImportCrashLoop } from './attempts';
 import { deleteOrphanSlides, sha256Hex, toShape } from './common';
 import { ConversionAborted, type PptxToPdf } from './libreoffice';
 import { renderSlidePages, slideRenderer, storeSlideRender, type OfficePdf } from './office-pages';
@@ -38,6 +39,8 @@ const PPTX_ERROR_MESSAGES: Record<PptxError['code'], string> = {
   corrupt: 'Die Datei ist beschädigt und konnte nicht gelesen werden.',
 };
 const GENERIC_FAILURE = 'Import fehlgeschlagen. Bitte erneut versuchen.';
+const CRASH_LOOP_FAILURE =
+  'Import abgebrochen – die Datei ist zu groß oder beschädigt. Bitte verkleinert oder neu gespeichert erneut hochladen.';
 
 /** Thrown when the deck was deleted while its import was running. */
 class DeckGoneError extends Error {}
@@ -56,6 +59,7 @@ export async function importDeck(deps: ImportDeps, job: ImportJob): Promise<void
     await rerenderJob(deps, job);
     return;
   }
+  let stopped = false;
   try {
     await runImport(deps, job);
   } catch (error) {
@@ -65,17 +69,25 @@ export async function importDeck(deps: ImportDeps, job: ImportJob): Promise<void
     }
     if (error instanceof ConversionAborted) {
       // Shutdown: the deck stays `running`, and the next start imports it again.
+      stopped = true;
       deps.log.info(`Import of deck ${job.deckId} stopped by shutdown; resumes on the next start`);
       return;
     }
     if (!(error instanceof PptxError)) deps.log.error(`Import of deck ${job.deckId} failed`, error);
-    const message = error instanceof PptxError ? PPTX_ERROR_MESSAGES[error.code] : GENERIC_FAILURE;
+    const message =
+      error instanceof PptxError
+        ? PPTX_ERROR_MESSAGES[error.code]
+        : error instanceof ImportCrashLoop
+          ? CRASH_LOOP_FAILURE
+          : GENERIC_FAILURE;
     await setImportState(
       deps,
       job.deckId,
       { status: 'failed', error: message },
       { touch: true },
     ).catch(() => {});
+  } finally {
+    await endImportAttempt(deps.db, job.revisionId, { stopped }).catch(() => {});
   }
 }
 
@@ -91,6 +103,7 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
   if (!revision) throw new DeckGoneError();
   const [deck] = await db.select().from(decks).where(eq(decks.id, deckId));
   if (!deck) throw new DeckGoneError();
+  await beginImportAttempt(db, revisionId);
   const bytes = revision.pptxKey ? await storage.get(revision.pptxKey) : null;
   if (!bytes) throw new Error(`Original file of revision ${revisionId} is missing`);
 
@@ -212,7 +225,8 @@ async function setImportState(
 
 /**
  * Finds imports interrupted by a restart and queues them again, so no deck hangs in
- * "Import läuft" forever. Revisions without an original file (demo data) are skipped.
+ * "Import läuft" forever. Revisions without an original file (demo data) are skipped. An import
+ * whose runs keep dying with the process gives up on its next run (./attempts).
  */
 export async function findInterruptedImports(db: Database): Promise<ImportJob[]> {
   const rows = await db

@@ -10,6 +10,7 @@ import { useCreateWorkspaceInvite, useRevokeWorkspaceInvite, useWorkspaceInvites
 import {
   Badge,
   Button,
+  ConfirmDialog,
   ErrorText,
   Icon,
   IconButton,
@@ -19,7 +20,6 @@ import {
   Notice,
   RowList,
   Select,
-  Spinner,
   TextField,
   useCopyToClipboard,
   type ShowToast,
@@ -46,9 +46,14 @@ export function InviteForm({ workspace, onNotify }: { workspace: Workspace; onNo
   const emailValid = EMAIL_PATTERN.test(email.trim());
   const seats = seatState(workspace.usage);
   const seatsHint = seatsLine(workspace.usage);
-  const pendingKind = create.isPending ? (create.variables.email ? 'email' : 'link') : null;
+  // One mutation for both actions: a second `mutate` while the first runs would drop the first
+  // one's callbacks (TanStack keeps only the latest), and with them its toast or one-time link.
+  // So both buttons wait until it is done.
+  const busy = create.isPending;
+  const pendingKind = busy ? (create.variables.email ? 'email' : 'link') : null;
 
   const inviteByEmail = () => {
+    if (busy) return;
     setEmailTouched(true);
     if (!emailValid) return;
     const address = email.trim();
@@ -71,6 +76,7 @@ export function InviteForm({ workspace, onNotify }: { workspace: Workspace; onNo
   };
 
   const createLink = () =>
+    !busy &&
     create.mutate(
       { role },
       {
@@ -120,7 +126,7 @@ export function InviteForm({ workspace, onNotify }: { workspace: Workspace; onNo
           type="submit"
           size="field"
           icon="send"
-          disabled={seats.full}
+          disabled={seats.full || busy}
           loading={pendingKind === 'email'}
         >
           Einladen
@@ -130,6 +136,7 @@ export function InviteForm({ workspace, onNotify }: { workspace: Workspace; onNo
           size="field"
           icon="link"
           title="Einladungslink für alle, die ihn bekommen (7 Tage gültig)"
+          disabled={busy}
           loading={pendingKind === 'link'}
           onClick={createLink}
         >
@@ -246,13 +253,23 @@ function InviteRow({
   // One mutation per row: a shared one only calls back for its latest `mutate` and tracks only
   // its latest variables, so a second revoke would hide the first one's spinner and error.
   const revoke = useRevokeWorkspaceInvite(workspaceId);
-  const revoking = revoke.isPending;
+  const [confirming, setConfirming] = useState(false);
+  const closeConfirm = () => {
+    setConfirming(false);
+    revoke.reset();
+  };
   const onRevoke = () =>
     revoke.mutate(invite.id, {
-      onSuccess: () => onNotify('Einladung zurückgezogen'),
-      onError: (error) => onNotify(error.message, 'danger'),
+      onSuccess: () => {
+        onNotify('Einladung zurückgezogen');
+        setConfirming(false);
+      },
     });
   const open = invite.state === 'valid';
+  // Names the target, so every row's button says which invite it revokes.
+  const revokeLabel = invite.email
+    ? `Einladung an ${invite.email} zurückziehen`
+    : `Einladungslink (${ROLE_LABELS[invite.role]}) zurückziehen`;
   const detail = [
     invite.createdBy ? `von ${invite.createdBy.name}` : null,
     open ? formatExpiry(invite.expiresAt) : null,
@@ -282,18 +299,37 @@ function InviteRow({
         </Badge>
       }
       actionSlot={
-        open &&
-        (revoking ? (
-          <Spinner size={16} className="text-fg-subtle" />
-        ) : (
-          <IconButton
-            icon="delete"
-            size="sm"
-            iconSize={18}
-            label="Einladung zurückziehen"
-            onClick={onRevoke}
-          />
-        ))
+        open && (
+          <>
+            <IconButton
+              icon="delete"
+              size="sm"
+              iconSize={18}
+              label={revokeLabel}
+              onClick={() => setConfirming(true)}
+            />
+            {confirming && (
+              <ConfirmDialog
+                onClose={closeConfirm}
+                title={
+                  invite.email
+                    ? `Einladung an ${invite.email} zurückziehen?`
+                    : 'Einladungslink zurückziehen?'
+                }
+                description={
+                  invite.email
+                    ? 'Der Link in der Einladungs-Mail funktioniert danach nicht mehr. Der Platz wird wieder frei.'
+                    : 'Der Link funktioniert danach für niemanden mehr, auch nicht für alle, die ihn schon bekommen haben.'
+                }
+                confirmLabel="Zurückziehen"
+                pending={revoke.isPending}
+                // In the dialog: a toast would sit behind its backdrop.
+                error={revoke.error?.message}
+                onConfirm={onRevoke}
+              />
+            )}
+          </>
+        )
       }
     />
   );

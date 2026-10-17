@@ -382,11 +382,16 @@ export async function signedInUser(
   return { user, cookie: `${SESSION_COOKIE}=${token}` };
 }
 
-/** The `slider_session=…` pair a response sets, or `null` (deletions don't count). */
+/**
+ * The `slider_session=…` pair a response sets (`__Host-slider_session` on an https production
+ * instance), or `null` (deletions don't count).
+ */
 export function sessionCookieFrom(response: Response): string | null {
   for (const header of response.headers.getSetCookie()) {
     const pair = header.split(';')[0] ?? '';
-    if (pair.startsWith(`${SESSION_COOKIE}=`) && pair !== `${SESSION_COOKIE}=`) return pair;
+    const name = pair.slice(0, pair.indexOf('='));
+    const named = name === SESSION_COOKIE || name === `__Host-${SESSION_COOKIE}`;
+    if (named && pair !== `${name}=`) return pair;
   }
   return null;
 }

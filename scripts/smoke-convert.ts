@@ -39,17 +39,15 @@ if (!binary) throw new Error('soffice not found');
 
 const started = Date.now();
 const pdf = await createLibreOfficePdf({ binary, log: silentLogger, timeoutMs })(deck);
-const pages = await rasterizePdf(pdf);
-
 const ascii = (bytes: Uint8Array, from: number, to: number) =>
   new TextDecoder().decode(bytes.subarray(from, to));
 const isWebp = (bytes: Uint8Array) =>
   bytes.length > 12 && ascii(bytes, 0, 4) === 'RIFF' && ascii(bytes, 8, 12) === 'WEBP';
 
-if (pages.length !== visible) {
-  throw new Error(`${pages.length} page images for ${visible} visible slides`);
-}
-for (const [i, page] of pages.entries()) {
+const pages = await rasterizePdf(pdf, async (page, i) => {
   if (!isWebp(page.image) || !isWebp(page.thumbnail)) throw new Error(`page ${i + 1} is no WebP`);
+});
+if (pages !== visible) {
+  throw new Error(`${pages} page images for ${visible} visible slides`);
 }
-console.info(`${pages.length} slides → WebP in ${Math.round((Date.now() - started) / 1000)} s`);
+console.info(`${pages} slides → WebP in ${Math.round((Date.now() - started) / 1000)} s`);

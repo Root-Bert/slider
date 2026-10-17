@@ -26,6 +26,7 @@ export function createInitialState(options: {
     // BER-101: done comments are hidden by default.
     statusFilter: options.statusFilter ?? 'open',
     composingThreads: new Map(),
+    mediaReply: null,
     personFilter: null,
     split: options.split == null ? null : clampSplit(options.split),
     showChanges: options.showChanges ?? true,
@@ -111,6 +112,10 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
       else composingThreads.delete(action.threadId);
       return { ...next, composingThreads };
     }
+    case 'mediaReplyOpened':
+      return { ...next, mediaReply: action.reply };
+    case 'mediaReplyClosed':
+      return next.mediaReply === null ? next : { ...next, mediaReply: null };
     case 'personFilterToggled':
       return {
         ...next,
@@ -141,13 +146,15 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
     case 'threadsReplaced': {
       const keepFocus = next.focusedThreadId === null || action.threadIds.has(next.focusedThreadId);
       const keepHover = next.hoveredThreadId === null || action.threadIds.has(next.hoveredThreadId);
-      if (keepFocus && keepHover) return next;
+      const keepReply = next.mediaReply === null || action.threadIds.has(next.mediaReply.threadId);
+      if (keepFocus && keepHover && keepReply) return next;
       return {
         ...next,
         ...(keepFocus
           ? {}
           : { focusedThreadId: null, threadPanelOpen: false, editingCommentId: null }),
         hoveredThreadId: keepHover ? next.hoveredThreadId : null,
+        mediaReply: keepReply ? next.mediaReply : null,
       };
     }
     case 'slidesReplaced': {

@@ -8,7 +8,7 @@ import {
   type OfficePdf,
 } from '../src/import/office-pages';
 import type { PptxToPdf } from '../src/import/libreoffice';
-import { rasterizePdf } from '../src/import/pdf-pages';
+import { PageCountMismatch, rasterizePdf, type PageImages } from '../src/import/pdf-pages';
 import { silentLogger } from '../src/logger';
 import {
   OFFICE_FILE_TOO_BIG,
@@ -16,6 +16,7 @@ import {
   OfficePdfError,
 } from '../src/sources/microsoft-graph';
 import type { SourceAdapter, SourceAdapters } from '../src/sources/source-adapter';
+import type { BlobStorage } from '../src/storage/blob-storage';
 import { createTestContext, parsedSlide, stubPptx, type TestContext } from './helpers';
 import { makePdf } from './pdf';
 
@@ -40,9 +41,32 @@ const pdfOf =
   async () =>
     makePdf(pages);
 
+/** Blob storage in memory, for the page images {@link renderSlidePages} stores. */
+function memoryStorage() {
+  const blobs = new Map<string, Uint8Array>();
+  const storage = {
+    put: vi.fn(async (key: string, data: Uint8Array) => {
+      blobs.set(key, data);
+    }),
+    get: async (key: string) => (blobs.get(key) as Uint8Array<ArrayBuffer> | undefined) ?? null,
+    size: async (key: string) => blobs.get(key)?.length ?? null,
+    stream: async () => null,
+    delete: async (key: string) => {
+      blobs.delete(key);
+    },
+    deletePrefix: async () => {},
+  } satisfies BlobStorage;
+  return { storage, blobs };
+}
+
 describe('rasterizePdf', () => {
   it('renders every page to a full-size and a thumbnail WebP', async () => {
-    const pages = await rasterizePdf(makePdf(2));
+    const pages: PageImages[] = [];
+    const count = await rasterizePdf(makePdf(2), async (page, index) => {
+      expect(index).toBe(pages.length);
+      pages.push(page);
+    });
+    expect(count).toBe(2);
     expect(pages).toHaveLength(2);
     for (const page of pages) {
       expect([...page.image.slice(0, 4)]).toEqual(WEBP_MAGIC);
@@ -50,10 +74,26 @@ describe('rasterizePdf', () => {
       expect(page.thumbnail.length).toBeLessThan(page.image.length);
     }
   });
+  it('hands each page over before drawing the next, and refuses a wrong page count up front', async () => {
+    const order: string[] = [];
+    await rasterizePdf(makePdf(3), async (_, index) => {
+      order.push(`page ${index}`);
+      await Promise.resolve();
+      order.push(`stored ${index}`);
+    });
+    expect(order).toEqual(['page 0', 'stored 0', 'page 1', 'stored 1', 'page 2', 'stored 2']);
+
+    const onPage = vi.fn(async () => {});
+    await expect(rasterizePdf(makePdf(3), onPage, { expectedPages: 2 })).rejects.toBeInstanceOf(
+      PageCountMismatch,
+    );
+    expect(onPage).not.toHaveBeenCalled();
+  });
 });
 
 describe('renderSlidePages (BER-94)', () => {
   const deps = (officePdf?: OfficePdf, libreOfficePdf?: PptxToPdf | null) => ({
+    storage: memoryStorage().storage,
     officePdf,
     libreOfficePdf,
     log: silentLogger,
@@ -71,6 +111,43 @@ describe('renderSlidePages (BER-94)', () => {
     );
     expect(result.renderer).toBe('office');
     expect(result.pages.map((page) => page !== null)).toEqual([true, false, true]);
+  });
+
+  it('stores each page as it is drawn and keeps only its keys', async () => {
+    const { storage, blobs } = memoryStorage();
+    const result = await renderSlidePages(
+      { ...deps(pdfOf(2)), storage },
+      deckRow(),
+      revisionRow(),
+      pptx,
+      slides([false, false]),
+    );
+    expect(result.pages).toEqual([
+      {
+        imageKey: expect.stringMatching(/^decks\/deck-1\/rev-1\/slides\/.+\.webp$/),
+        thumbnailKey: expect.any(String),
+      },
+      { imageKey: expect.any(String), thumbnailKey: expect.any(String) },
+    ]);
+    for (const page of result.pages) {
+      expect([...(blobs.get(page!.imageKey) ?? []).slice(0, 4)]).toEqual(WEBP_MAGIC);
+      expect([...(blobs.get(page!.thumbnailKey) ?? []).slice(0, 4)]).toEqual(WEBP_MAGIC);
+    }
+  });
+
+  it('draws no page of a PDF with the wrong page count, then tries the next renderer', async () => {
+    const { storage, blobs } = memoryStorage();
+    const result = await renderSlidePages(
+      { ...deps(pdfOf(3), async () => makePdf(2)), storage },
+      deckRow(),
+      revisionRow(),
+      pptx,
+      slides([false, false]),
+    );
+    expect(result.renderer).toBe('libreoffice');
+    // Only LibreOffice's two pages were drawn and stored – none of Office's three.
+    expect(storage.put).toHaveBeenCalledTimes(4);
+    expect(blobs.size).toBe(4);
   });
 
   it('uses no page at all when the page count does not match the visible slides', async () => {
@@ -220,7 +297,12 @@ describe('createOfficePdf', () => {
       );
     };
     const result = await renderSlidePages(
-      { officePdf: tooBig, libreOfficePdf: async () => makePdf(1), log: silentLogger },
+      {
+        storage: memoryStorage().storage,
+        officePdf: tooBig,
+        libreOfficePdf: async () => makePdf(1),
+        log: silentLogger,
+      },
       deckRow(),
       revisionRow(),
       new Uint8Array(153_600_000),

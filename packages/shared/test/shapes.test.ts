@@ -11,6 +11,7 @@ import {
 import {
   hitTestShapes,
   rectShapeRefAt,
+  refShape,
   resolveRectAnchor,
   resolveShapeRef,
   shapeRefAt,
@@ -85,6 +86,47 @@ describe('shapeRefForRect', () => {
     expect(ref.size?.w).toBeCloseTo(1 / 3);
     expect(ref.size?.h).toBe(1);
     expect(ref.offset.y).toBe(0);
+  });
+});
+
+describe('shape ids renumbered by the producer', () => {
+  // Google Slides / LibreOffice number shapes in order: one added earlier shifts the ids.
+  const chart = { id: '57', name: 'Diagramm', bbox: { x: 0.5, y: 0.4, w: 0.4, h: 0.5 }, text: '' };
+  const title = { id: '57', name: 'Titel', bbox: { x: 0.05, y: 0.05, w: 0.9, h: 0.15 }, text: '' };
+  const renumbered = [title, { ...chart, id: '67' }];
+
+  it('keeps a pin in place instead of jumping to the shape that inherited the id', () => {
+    const point = { x: 0.7, y: 0.6 };
+    const ref = shapeRefAt([chart], point)!;
+    expect(ref).toMatchObject({ shapeId: '57', name: 'Diagramm', bbox: chart.bbox });
+    expect(refShape(renumbered, ref)).toBeNull();
+    expect(resolveShapeRef(renumbered, ref)).toBeNull();
+  });
+
+  it('keeps a box in place instead of rescaling it to the other shape', () => {
+    const box = { x: 0.6, y: 0.5, w: 0.2, h: 0.2 };
+    const ref = rectShapeRefAt([chart], box)!;
+    expect(resolveRectAnchor(renumbered, box, ref)).toBe(box);
+  });
+
+  it('still follows the shape when it moved or was renamed, not both', () => {
+    const ref = shapeRefForRect(chart, chart.bbox);
+    const moved = { ...chart, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 } };
+    expect(refShape([moved], ref)).toBe(moved);
+    const renamed = { ...chart, name: 'Chart 3', bbox: { x: 0.55, y: 0.4, w: 0.4, h: 0.5 } };
+    expect(refShape([renamed], ref)).toBe(renamed);
+    expect(refShape([{ ...moved, name: 'Chart 3' }], ref)).toBeNull();
+  });
+
+  it('recognises a renamed line by touching its old place', () => {
+    const line = { id: '9', name: 'Linie', bbox: { x: 0.2, y: 0.5, w: 0.6, h: 0 }, text: '' };
+    const ref = shapeRefForRect(line, { x: 0.3, y: 0.45, w: 0.2, h: 0.1 });
+    expect(refShape([{ ...line, name: 'Gerade' }], ref)?.id).toBe('9');
+    expect(refShape([{ ...line, name: 'Gerade', bbox: { ...line.bbox, y: 0.9 } }], ref)).toBeNull();
+  });
+
+  it('trusts the id alone for references stored before names and boxes', () => {
+    expect(refShape(renumbered, { shapeId: '57', offset: { x: 0.5, y: 0.5 } })).toBe(title);
   });
 });
 

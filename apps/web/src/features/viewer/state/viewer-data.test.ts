@@ -102,6 +102,19 @@ describe('withoutHiddenSlides', () => {
     expect(shown.slideIndex.get('s3')).toBe(1);
     expect(shown.slideIndex.has('s2')).toBe(false);
   });
+
+  it('moves a gap comment next to a hidden slide to the gap that is shown instead', () => {
+    // Written between s1 and the hidden s2 while hidden slides showed.
+    const gap = comment({
+      slideId: null,
+      anchor: { type: 'gap', afterSlideId: 's1', beforeSlideId: 's2' },
+    });
+    const all = deriveViewerData(deck(), slides, [gap], viewer);
+    expect(all.gapThreads.get('s1→s2')?.map((t) => t.id)).toEqual([gap.id]);
+    const shown = withoutHiddenSlides(all);
+    expect([...shown.gapThreads.keys()]).toEqual(['s1→s3']);
+    expect(shown.threadsBySlide.get('s1')?.map((t) => t.id)).toEqual([gap.id]);
+  });
 });
 
 describe('nearestShownSlideId', () => {

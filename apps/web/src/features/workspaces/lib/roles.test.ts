@@ -10,6 +10,7 @@ import {
   formatExpiry,
   isLastAdmin,
   sortInvites,
+  switcherLabel,
 } from './roles';
 
 describe('role ranks', () => {
@@ -76,5 +77,14 @@ describe('formatExpiry', () => {
     expect(formatExpiry('2026-10-09T13:00:00Z', now)).toBe('noch 1 Tag gültig');
     expect(formatExpiry('2026-10-08T18:00:00Z', now)).toBe('noch heute gültig');
     expect(formatExpiry('2026-10-08T11:00:00Z', now)).toBe('abgelaufen');
+  });
+});
+
+describe('switcherLabel', () => {
+  it('names the organisation and counts invites in singular and plural', () => {
+    expect(switcherLabel('Nord', 0)).toBe('Organisation: Nord');
+    expect(switcherLabel('Nord', 1)).toBe('Organisation: Nord, 1 Einladung');
+    expect(switcherLabel('Nord', 3)).toBe('Organisation: Nord, 3 Einladungen');
+    expect(switcherLabel(null, 2)).toBe('Organisationen');
   });
 });

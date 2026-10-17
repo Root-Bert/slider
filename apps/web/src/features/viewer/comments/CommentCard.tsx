@@ -15,7 +15,9 @@ import { AutosizeTextarea, AvatarStack, Button, cn, IconButton, ToolbarDivider }
 import { isRemovedInPowerPoint, type Thread } from './lib/comment-selectors';
 import { MediaReplyButtons } from './MediaTabs';
 import { useKeepThreadListed } from './hooks/useKeepThreadListed';
+import { useMentions } from './hooks/useMentions';
 import { useReplyDraft } from './hooks/useReplyDraft';
+import { MentionMenu } from './MentionMenu';
 import { LiveThreadMarker } from '../live/LiveThreadMarker';
 import { useViewerDispatch } from '../state/viewer-state';
 import { AuthorLine } from './AuthorLine';
@@ -297,6 +299,7 @@ function ReplyBar({
       onCancel?.();
     },
   });
+  const mentions = useMentions(body, setBody, textareaRef);
   const hasDraft = body.length > 0;
   useKeepThreadListed(root.id, hasDraft);
 
@@ -321,8 +324,10 @@ function ReplyBar({
           : 'invisible opacity-0 group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100',
       )}
     >
-      <div className="min-w-0 flex-1 py-[5px]">
+      <div className="relative min-w-0 flex-1 py-[5px]">
+        <MentionMenu mentions={mentions} />
         <AutosizeTextarea
+          {...mentions.fieldProps}
           ref={textareaRef}
           aria-label={`Antwort an ${root.author.name}`}
           maxLength={MAX_COMMENT_BODY_LENGTH}
@@ -330,10 +335,12 @@ function ReplyBar({
           value={body}
           maxHeight={120}
           onChange={(event) => {
-            setBody(event.target.value);
+            mentions.fieldProps.onChange(event);
             if (event.target.value.length > 0) onCompose();
           }}
-          onKeyDown={onKeyDown}
+          onKeyDown={(event) => {
+            if (!mentions.onKeyDown(event)) onKeyDown(event);
+          }}
           className="text-body leading-4.5 text-fg placeholder:text-fg-subtle"
         />
       </div>
@@ -349,7 +356,7 @@ function ReplyBar({
           disabled={!canSend}
         />
       )}
-      <MediaReplyButtons root={root} deckId={deckId} />
+      <MediaReplyButtons root={root} />
       <ToolbarDivider size="sm" className="mb-1.5" />
       <ResolveButton comment={root} deckId={deckId} />
     </form>

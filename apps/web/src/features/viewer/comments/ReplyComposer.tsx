@@ -83,7 +83,7 @@ export function ReplyComposer({
             title="Verwerfen (Esc)"
             variant="subtle"
             size="xs"
-            onClick={onCancel}
+            onClick={draft.cancel}
           />
           <IconButton
             type="submit"
@@ -109,7 +109,7 @@ export function ReplyComposer({
       <div className="flex items-end gap-2">
         <div className="field-well focus-field flex min-h-10 min-w-0 flex-1 items-end gap-0.5 rounded-control py-1.5 pr-1 pl-3.5">
           <div className="min-w-0 flex-1 py-[5px]">{field}</div>
-          <MediaReplyButtons root={root} deckId={deckId} />
+          <MediaReplyButtons root={root} />
         </div>
         <IconButton
           type="submit"

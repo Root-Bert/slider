@@ -5,7 +5,7 @@ import { isGraphRef, OFFICE_FILE_TOO_BIG, OfficePdfError } from '../sources/micr
 import type { SourceAdapters } from '../sources/source-adapter';
 import { blobKeys, type BlobStorage } from '../storage/blob-storage';
 import { ConversionAborted, type PptxToPdf } from './libreoffice';
-import { PAGE_IMAGE_WIDTH, rasterizePdf, type PageImages } from './pdf-pages';
+import { PAGE_IMAGE_WIDTH, PageCountMismatch, rasterizePdf } from './pdf-pages';
 import { svgThumbnail } from './svg-thumbnail';
 
 type PdfRenderer = Exclude<SlideRenderer, 'svg'>;
@@ -67,13 +67,24 @@ export interface SlidePages {
    * tried and failed, every slide keeps its SVG preview. `null`: none was available to try.
    */
   renderer: SlideRenderer | null;
-  /** One entry per slide, in order; `null` where the slide keeps its SVG preview (hidden ones). */
-  pages: (PageImages | null)[];
+  /**
+   * One entry per slide, in order: the stored WebP image and thumbnail of its PDF page, or
+   * `null` where the slide keeps its SVG preview (hidden ones).
+   */
+  pages: (StoredPage | null)[];
   /** Why Office was tried and not used (German, for the deck card); `null` otherwise. */
   officeFailure: string | null;
 }
 
+/** A PDF page's images, already in blob storage under the revision's prefix. */
+export interface StoredPage {
+  imageKey: string;
+  thumbnailKey: string;
+}
+
 export interface SlidePagesDeps {
+  /** Where page images go the moment they are drawn. */
+  storage: BlobStorage;
   /** Office's PDF of linked decks. */
   officePdf?: OfficePdf;
   /** LibreOffice's PDF of any PPTX; `null`/absent when LibreOffice is not installed. */
@@ -140,22 +151,37 @@ export async function renderSlidePages(
   for (const candidate of candidates) {
     const pdf = await candidate.pdf();
     if (!pdf) continue;
-    let pages: PageImages[];
+    // Each page goes to storage as soon as it is drawn, so a long deck never holds all its
+    // images in memory; the page count is checked before the first page is drawn.
+    const pages: StoredPage[] = [];
     try {
-      pages = await rasterizePdf(pdf);
+      await rasterizePdf(
+        pdf,
+        async (images) => {
+          const page = {
+            imageKey: blobKeys.slideRender(deck.id, revision.id, 'webp'),
+            thumbnailKey: blobKeys.slideRender(deck.id, revision.id, 'webp'),
+          };
+          pages.push(page);
+          await deps.storage.put(page.imageKey, images.image);
+          await deps.storage.put(page.thumbnailKey, images.thumbnail);
+        },
+        { expectedPages: visible },
+      );
     } catch (error) {
+      await deleteStoredPages(deps.storage, pages);
+      if (error instanceof PageCountMismatch) {
+        deps.log.warn(
+          `PDF (${candidate.renderer}) of deck ${deck.id} has ${error.pages} pages for ${visible} visible slides`,
+        );
+        if (candidate.renderer === 'office') {
+          officeFailure = `Das PDF von Microsoft hat ${error.pages} Seiten für ${visible} sichtbare Folien.`;
+        }
+        continue;
+      }
       deps.log.warn(`PDF (${candidate.renderer}) of deck ${deck.id} could not be rendered`, error);
       if (candidate.renderer === 'office')
         officeFailure = 'Das PDF von Microsoft ist nicht lesbar.';
-      continue;
-    }
-    if (pages.length !== visible) {
-      deps.log.warn(
-        `PDF (${candidate.renderer}) of deck ${deck.id} has ${pages.length} pages for ${visible} visible slides`,
-      );
-      if (candidate.renderer === 'office') {
-        officeFailure = `Das PDF von Microsoft hat ${pages.length} Seiten für ${visible} sichtbare Folien.`;
-      }
       continue;
     }
     let next = 0;
@@ -168,6 +194,14 @@ export async function renderSlidePages(
   return { renderer: hasPdfRenderer(deps, deck) ? 'svg' : null, pages: none, officeFailure };
 }
 
+/** Removes the images of a PDF that was given up half-way; best effort. */
+async function deleteStoredPages(storage: BlobStorage, pages: StoredPage[]): Promise<void> {
+  for (const page of pages) {
+    await storage.delete(page.imageKey).catch(() => {});
+    await storage.delete(page.thumbnailKey).catch(() => {});
+  }
+}
+
 /** The deck card's reason for a failed Office PDF; a too-big file names its size. */
 function officeFailureMessage(error: unknown, sizeBytes: number): string {
   if (!(error instanceof Error)) return 'Microsoft liefert kein PDF.';
@@ -178,38 +212,32 @@ function officeFailureMessage(error: unknown, sizeBytes: number): string {
 }
 
 /** `slide_versions.renderer` of one slide of a {@link renderSlidePages} result. */
-export const slideRenderer = (result: SlidePages, page: PageImages | null): SlideRenderer | null =>
+export const slideRenderer = (result: SlidePages, page: StoredPage | null): SlideRenderer | null =>
   page ? result.renderer : result.renderer === null ? null : 'svg';
 
 /**
- * Stores a slide's picture: the PDF page when there is one, else the SVG preview – with its
- * pictures scaled to what the full slide ({@link PAGE_IMAGE_WIDTH}) and the thumbnail show.
- * The render hash is the caller's, of the unscaled SVG.
+ * A slide's picture: the PDF page when there is one (already stored), else the SVG preview –
+ * stored with its pictures scaled to what the full slide ({@link PAGE_IMAGE_WIDTH}) and the
+ * thumbnail show. The render hash is the caller's, of the unscaled SVG.
  */
 export async function storeSlideRender(
   storage: BlobStorage,
   deckId: string,
   revisionId: string,
   svg: string,
-  page: PageImages | null,
+  page: StoredPage | null,
 ): Promise<{ imageKey: string; thumbnailKey: string }> {
-  if (!page) {
-    const imageKey = blobKeys.slideRender(deckId, revisionId, 'svg');
-    // Pictures no larger than a PDF page would show them: a photo deck would otherwise send
-    // every viewer several MB per slide.
-    const full = await svgThumbnail(svg, PAGE_IMAGE_WIDTH);
-    await storage.put(imageKey, new TextEncoder().encode(full));
-    // Same SVG with its pictures scaled down further: a photo slide would otherwise put
-    // megabytes into every minimap and deck card.
-    const thumbnail = await svgThumbnail(full);
-    if (thumbnail === full) return { imageKey, thumbnailKey: imageKey };
-    const thumbnailKey = blobKeys.slideRender(deckId, revisionId, 'svg');
-    await storage.put(thumbnailKey, new TextEncoder().encode(thumbnail));
-    return { imageKey, thumbnailKey };
-  }
-  const imageKey = blobKeys.slideRender(deckId, revisionId, 'webp');
-  const thumbnailKey = blobKeys.slideRender(deckId, revisionId, 'webp');
-  await storage.put(imageKey, page.image);
-  await storage.put(thumbnailKey, page.thumbnail);
+  if (page) return { imageKey: page.imageKey, thumbnailKey: page.thumbnailKey };
+  const imageKey = blobKeys.slideRender(deckId, revisionId, 'svg');
+  // Pictures no larger than a PDF page would show them: a photo deck would otherwise send
+  // every viewer several MB per slide.
+  const full = await svgThumbnail(svg, PAGE_IMAGE_WIDTH);
+  await storage.put(imageKey, new TextEncoder().encode(full));
+  // Same SVG with its pictures scaled down further: a photo slide would otherwise put
+  // megabytes into every minimap and deck card.
+  const thumbnail = await svgThumbnail(full);
+  if (thumbnail === full) return { imageKey, thumbnailKey: imageKey };
+  const thumbnailKey = blobKeys.slideRender(deckId, revisionId, 'svg');
+  await storage.put(thumbnailKey, new TextEncoder().encode(thumbnail));
   return { imageKey, thumbnailKey };
 }

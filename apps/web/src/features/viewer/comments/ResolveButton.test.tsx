@@ -22,8 +22,9 @@ describe('ResolveButton', () => {
         <ResolveButton comment={comment('open')} deckId="deck-1" />
       </div>,
     );
-    const button = screen.getByRole('button', { name: 'Als erledigt markieren' });
-    expect(button.getAttribute('aria-pressed')).toBe('false');
+    // A toggle with a stable name: "Erledigt, not pressed" – the action is the tooltip.
+    const button = screen.getByRole('button', { name: 'Erledigt', pressed: false });
+    expect(button.getAttribute('title')).toBe('Als erledigt markieren');
     expect(button.textContent).toBe('');
     await userEvent.click(button);
     expect(update.mutate).toHaveBeenCalledWith({ commentId: 'c1', status: 'done' });
@@ -32,23 +33,21 @@ describe('ResolveButton', () => {
 
   it('reopens a done thread and shows it pressed in the success colour', async () => {
     render(<ResolveButton comment={comment('done')} deckId="deck-1" />);
-    const button = screen.getByRole('button', { name: 'Wieder öffnen' });
-    expect(button.getAttribute('aria-pressed')).toBe('true');
+    const button = screen.getByRole('button', { name: 'Erledigt', pressed: true });
     expect(button.getAttribute('title')).toBe('Erledigt – klicken zum Wiederöffnen');
     expect(button.className).toContain('text-success');
     await userEvent.click(button);
     expect(update.mutate).toHaveBeenCalledWith({ commentId: 'c1', status: 'open' });
   });
 
-  it('shows the label in the chip variant', () => {
+  it('is named by its visible label in the chip variant', () => {
     const { rerender } = render(
       <ResolveButton comment={comment('open')} deckId="deck-1" variant="chip" />,
     );
-    expect(screen.getByRole('button', { name: 'Als erledigt markieren' }).textContent).toBe(
-      'Erledigen',
-    );
+    // The accessible name is the visible text (WCAG 2.5.3), pressed says the state.
+    expect(screen.getByRole('button', { name: 'Erledigen', pressed: false })).toBeTruthy();
     rerender(<ResolveButton comment={comment('done')} deckId="deck-1" variant="chip" />);
-    const done = screen.getByRole('button', { name: 'Wieder öffnen' });
+    const done = screen.getByRole('button', { name: 'Erledigt', pressed: true });
     expect(done.textContent).toBe('Erledigt');
     expect(done.className).toContain('bg-success/10');
   });

@@ -31,7 +31,9 @@ const html = (status = 200) =>
   new Response('<html>Anmelden</html>', { status, headers: { 'content-type': 'text/html' } });
 
 /** Routes requests by URL prefix; records every call. */
-function mockFetch(routes: Record<string, (init?: RequestInit) => Response>) {
+function mockFetch(
+  routes: Record<string, (init: RequestInit | undefined, url: string) => Response>,
+) {
   const calls: { url: string; init?: RequestInit }[] = [];
   const fetch = vi.fn<FetchLike>(async (input, init) => {
     const url = String(input);
@@ -40,7 +42,7 @@ function mockFetch(routes: Record<string, (init?: RequestInit) => Response>) {
       .sort((a, b) => b.length - a.length)
       .find((prefix) => url.startsWith(prefix));
     if (!match) throw new Error(`Unexpected request: ${url}`);
-    return routes[match]!(init);
+    return routes[match]!(init, url);
   });
   return { fetch, calls };
 }
@@ -367,7 +369,29 @@ describe('DirectUrlAdapter', () => {
       context,
     );
     expect(remote.fileName).toBe('Board Deck.pptx');
-    expect(remote.ref).toBe('https://raw.githubusercontent.com/o/r/main/Board%20Deck.pptx');
+    // The pasted link stays the reference; the redirect target may be a one-off URL.
+    expect(remote.ref).toBe('https://github.com/o/r/raw/main/x.pptx');
+  });
+
+  it('keeps syncing through redirects to short-lived signed URLs', async () => {
+    // GitHub release assets: every request redirects to a fresh signed URL; old ones expire.
+    let signature = 0;
+    const { fetch } = mockFetch({
+      'https://github.com/': () =>
+        redirect(`https://release-assets.githubusercontent.com/deck.pptx?sig=${++signature}`),
+      'https://release-assets.githubusercontent.com/': (_init, url) =>
+        url.endsWith(`sig=${signature}`)
+          ? new Response(PPTX, { headers: { etag: `"v${signature}"` } })
+          : new Response(null, { status: 403 }),
+    });
+    const { sources } = adapters({ fetch });
+    const remote = await sources.url.resolve(
+      link('https://github.com/o/r/releases/download/v1/deck.pptx'),
+      context,
+    );
+    const stored = { ...remote, bytes: undefined };
+    expect(await sources.url.getChangeToken(stored, context)).toBe('"v2"');
+    expect(await sources.url.download(stored, context)).toEqual(PPTX);
   });
 
   it('rejects an HTML page behind a .pptx URL', async () => {

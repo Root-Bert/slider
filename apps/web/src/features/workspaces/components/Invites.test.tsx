@@ -18,7 +18,13 @@ vi.mock('@/lib/api', () => ({
     isPending: api.createPending,
     variables: api.createVariables,
   }),
-  useRevokeWorkspaceInvite: () => ({ mutate: api.revoke, isPending: false, variables: undefined }),
+  useRevokeWorkspaceInvite: () => ({
+    mutate: api.revoke,
+    reset: vi.fn(),
+    isPending: false,
+    error: null,
+    variables: undefined,
+  }),
   useWorkspaceInvites: () => api.invites,
 }));
 
@@ -125,6 +131,23 @@ describe('InviteForm', () => {
     expect(screen.queryByRole('textbox', { name: 'Einladungslink' })).toBeNull();
   });
 
+  it('while one invite is sending, neither button starts another (its result would be lost)', async () => {
+    api.createPending = true;
+    api.createVariables = { email: 'anna@firma.de' };
+    render(<InviteForm workspace={makeWorkspace()} onNotify={vi.fn()} />);
+    const link = screen.getByRole('button', { name: 'Link' }) as HTMLButtonElement;
+    expect(link.disabled).toBe(true);
+    expect((screen.getByRole('button', { name: /Einladen/ }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    await userEvent.click(link);
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'E-Mail-Adresse' }),
+      'ben@firma.de{Enter}',
+    );
+    expect(api.create).not.toHaveBeenCalled();
+  });
+
   it('locks e-mail invites when every seat is taken, but still offers a link', () => {
     render(
       <InviteForm workspace={makeWorkspace({ seatsUsed: 5, members: 5 })} onNotify={vi.fn()} />,
@@ -176,13 +199,36 @@ describe('InviteList', () => {
     const used = rows.find((row) => row !== open)!;
     expect(used.textContent).toContain('Einladungslink');
     expect(used.textContent).toContain('2× verwendet');
-    expect(within(used).queryByRole('button', { name: 'Einladung zurückziehen' })).toBeNull();
+    expect(within(used).queryByRole('button', { name: /zurückziehen/ })).toBeNull();
 
-    await userEvent.click(within(open).getByRole('button', { name: 'Einladung zurückziehen' }));
+    // Named after its target; asks first, like every other removal.
+    await userEvent.click(
+      within(open).getByRole('button', { name: 'Einladung an anna@firma.de zurückziehen' }),
+    );
+    expect(api.revoke).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('dialog', { name: 'Einladung an anna@firma.de zurückziehen?' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Zurückziehen' }));
     expect(api.revoke).toHaveBeenCalledWith('open', expect.anything());
     const { onSuccess } = api.revoke.mock.calls[0]![1] as { onSuccess: () => void };
-    onSuccess();
+    act(() => onSuccess());
     expect(onNotify).toHaveBeenCalledWith('Einladung zurückgezogen');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('cancelling the confirmation revokes nothing; link rows name their role', async () => {
+    api.invites = {
+      isPending: false,
+      isError: false,
+      isSuccess: true,
+      data: [makeInvite({ id: 'link', role: 'viewer' })],
+    };
+    render(<InviteList workspace={makeWorkspace()} onNotify={vi.fn()} />);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Einladungslink (Betrachter) zurückziehen' }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(api.revoke).not.toHaveBeenCalled();
   });
 
   it('shows a failed list as an error line', () => {

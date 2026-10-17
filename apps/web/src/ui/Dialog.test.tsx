@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { Dialog } from './Dialog';
+import { TextField } from './TextField';
 
 function setup() {
   const onClose = vi.fn();
@@ -33,5 +34,23 @@ describe('Dialog', () => {
     setup();
     const footer = screen.getByRole('button', { name: 'OK', hidden: true }).parentElement!;
     expect(footer.className).toContain('flex-wrap');
+  });
+
+  it('gives the focus to an autoFocus field, not to the close button', () => {
+    // As in browsers: opening runs the dialog focusing steps – the first focusable element (the
+    // header's close button) – after React's autoFocus already ran on the closed dialog.
+    const showModal = vi
+      .spyOn(HTMLDialogElement.prototype, 'showModal')
+      .mockImplementation(function (this: HTMLDialogElement) {
+        this.setAttribute('open', '');
+        this.querySelector<HTMLElement>('button')?.focus();
+      });
+    render(
+      <Dialog open onClose={vi.fn()} title="Neuer Ordner">
+        <TextField aria-label="Name des Ordners" autoFocus />
+      </Dialog>,
+    );
+    expect(document.activeElement).toBe(screen.getByLabelText('Name des Ordners'));
+    showModal.mockRestore();
   });
 });

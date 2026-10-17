@@ -1,6 +1,5 @@
 import type { Context } from 'hono';
 import { Hono } from 'hono';
-import { deleteCookie, getSignedCookie, setSignedCookie } from 'hono/cookie';
 import { z } from 'zod';
 import type { AuthProviders, LoginError, LoginProvider } from '@slider/shared';
 import { emailVerifiedFalse, type IdTokenClaims } from '../auth/id-token';
@@ -11,6 +10,7 @@ import {
   MicrosoftAuthError,
   type MicrosoftErrorKind,
 } from '../auth/microsoft';
+import { readSignedCookie, removeCookie, writeSignedCookie } from '../auth/cookies';
 import { endSession, startSession } from '../auth/session';
 import { optionalViewerMiddleware, type OptionalViewerEnv } from '../auth/viewer';
 import type { AppDeps } from '../deps';
@@ -24,9 +24,11 @@ import {
 } from '../services/accounts';
 import { microsoftNotConfigured } from '../sources/errors';
 
-/** Short-lived cookies that carry PKCE state, nonce and `returnTo` from `/login` to `/callback`. */
+/**
+ * Short-lived cookies that carry PKCE state, nonce and `returnTo` from `/login` to `/callback`.
+ * `Path=/` and told apart by name only, so production can use `__Host-` names (../auth/cookies).
+ */
 export const MS_OAUTH_COOKIE = 'slider_ms_oauth';
-const MS_COOKIE_PATH = '/api/auth/microsoft';
 export const OIDC_COOKIE = 'slider_oidc';
 export const GOOGLE_COOKIE = 'slider_google';
 const COOKIE_MAX_AGE = 10 * 60;
@@ -138,24 +140,15 @@ export function authRoutes(deps: AppDeps) {
     return toWeb(c, returnTo);
   };
 
-  const writeState = (c: Context, name: string, path: string, payload: OAuthState) =>
-    setSignedCookie(
-      c,
-      name,
-      Buffer.from(JSON.stringify(payload)).toString('base64url'),
-      config.secret,
-      {
-        path,
-        httpOnly: true,
-        sameSite: 'Lax',
-        secure: config.env === 'production',
-        maxAge: COOKIE_MAX_AGE,
-      },
-    );
+  const writeState = (c: Context, name: string, payload: OAuthState) =>
+    writeSignedCookie(c, config, name, Buffer.from(JSON.stringify(payload)).toString('base64url'), {
+      sameSite: 'Lax',
+      maxAge: COOKIE_MAX_AGE,
+    });
 
-  const readState = async (c: Context, name: string, path: string) => {
-    const raw = await getSignedCookie(c, config.secret, name);
-    deleteCookie(c, name, { path });
+  const readState = async (c: Context, name: string) => {
+    const raw = await readSignedCookie(c, config, name);
+    removeCookie(c, config, name);
     return raw ? parseState(raw) : null;
   };
 
@@ -163,13 +156,11 @@ export function authRoutes(deps: AppDeps) {
     google: {
       client: () => deps.google,
       cookie: GOOGLE_COOKIE,
-      path: '/api/auth/google',
       notConfigured: 'Die Anmeldung mit Google ist nicht eingerichtet.',
     },
     oidc: {
       client: () => deps.oidc,
       cookie: OIDC_COOKIE,
-      path: '/api/auth/oidc',
       notConfigured: 'Die Anmeldung per SSO ist nicht eingerichtet.',
     },
   } satisfies Record<OidcProviderId, unknown>;
@@ -193,7 +184,7 @@ export function authRoutes(deps: AppDeps) {
       deps.log.warn(`${id} discovery failed`, error);
       return connect ? linkFailed(c, returnTo, 'failed') : loginFailed(c, 'failed', returnTo);
     }
-    await writeState(c, provider.cookie, provider.path, {
+    await writeState(c, provider.cookie, {
       state: pkce.state,
       verifier: pkce.verifier,
       nonce: pkce.nonce,
@@ -207,7 +198,7 @@ export function authRoutes(deps: AppDeps) {
   const oidcCallback = (id: OidcProviderId) => async (c: Context<OptionalViewerEnv>) => {
     const provider = OIDC_PROVIDERS[id];
     const client = provider.client();
-    const saved = await readState(c, provider.cookie, provider.path);
+    const saved = await readState(c, provider.cookie);
     const query = c.req.query();
     const returnTo = saved?.returnTo ?? DEFAULT_LOGIN_RETURN_TO;
     const connect = saved?.mode === 'connect';
@@ -305,7 +296,7 @@ export function authRoutes(deps: AppDeps) {
         const requested = c.req.query('access');
         // The picker consent only adds to a signed-in account's Microsoft connection.
         const access = requested === 'picker' && signedIn ? 'picker' : 'read';
-        await writeState(c, MS_OAUTH_COOKIE, MS_COOKIE_PATH, {
+        await writeState(c, MS_OAUTH_COOKIE, {
           state: pkce.state,
           verifier: pkce.verifier,
           nonce: pkce.nonce,
@@ -321,7 +312,7 @@ export function authRoutes(deps: AppDeps) {
       })
 
       .get('/auth/microsoft/callback', viewer, async (c) => {
-        const saved = await readState(c, MS_OAUTH_COOKIE, MS_COOKIE_PATH);
+        const saved = await readState(c, MS_OAUTH_COOKIE);
         const query = c.req.query();
         const mode = saved?.mode ?? 'connect';
         const returnTo = saved?.returnTo ?? DEFAULT_RETURN_TO;

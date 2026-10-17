@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import {
   countByStatus,
   filterThreads,
+  gapKey,
   isBareDrawing,
   type StatusCounts,
   type Thread,
@@ -35,7 +36,7 @@ const EMPTY: Thread[] = [];
  * A thread being replied to stays listed, whatever its status now (`useKeepThreadListed`).
  */
 export function useCommentThreads(): VisibleThreads {
-  const { threads, threadsBySlide, gapThreads, slideIndex, mentionedThreadIds, viewer } =
+  const { threads, threadsBySlide, gapThreads, slides, slideIndex, mentionedThreadIds, viewer } =
     useViewerData();
   const { statusFilter, personFilter, composingThreads } = useViewerState();
   const keep = useMemo(() => new Set(composingThreads.keys()), [composingThreads]);
@@ -55,20 +56,25 @@ export function useCommentThreads(): VisibleThreads {
     [statusFilter, threadIds, keep],
   );
 
+  // Gap threads sit under their divider – except those in front of the first slide (where they
+  // sit now, `placeGap`), which has no divider before it.
+  const firstSlideId = slides[0]?.id;
+  const inFront = useMemo(
+    () => new Set(firstSlideId ? (gapThreads.get(gapKey(null, firstSlideId)) ?? []) : []),
+    [gapThreads, firstSlideId],
+  );
   const marksBySlide = useMemo(
     () =>
       new Map(
         [...threadsBySlide].map(([slideId, list]) => [
           slideId,
           filterThreads(
-            list.filter(
-              ({ root: { anchor } }) => anchor.type !== 'gap' || anchor.afterSlideId === null,
-            ),
+            list.filter((thread) => thread.root.anchor.type !== 'gap' || inFront.has(thread)),
             filter,
           ),
         ]),
       ),
-    [threadsBySlide, filter],
+    [threadsBySlide, inFront, filter],
   );
 
   const bySlide = useMemo(
@@ -97,10 +103,12 @@ export function useCommentThreads(): VisibleThreads {
   const counts = useMemo(
     () =>
       countByStatus(
-        threadsOnCurrentSlides(threads, slideIndex).filter((thread) => !isBareDrawing(thread)),
+        threadsOnCurrentSlides(threads, slides, slideIndex).filter(
+          (thread) => !isBareDrawing(thread),
+        ),
         threadIds,
       ),
-    [threads, slideIndex, threadIds],
+    [threads, slides, slideIndex, threadIds],
   );
 
   return { filter, bySlide, marksBySlide, byGap, counts };

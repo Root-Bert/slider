@@ -221,7 +221,7 @@ describe('viewerReducer', () => {
       expect(state).toBe(initial);
     });
 
-    it('falls back when the active slide was deleted and drops its draft', () => {
+    it('falls back when the active slide was deleted and keeps its draft, flagged', () => {
       const state = run(
         { type: 'anchorPlaced', slideId: 's1', anchor: { type: 'slide' } },
         { type: 'slideHovered', slideId: 's1' },
@@ -229,15 +229,45 @@ describe('viewerReducer', () => {
       );
       expect(state.activeSlideId).toBe('s3');
       expect(state.hoveredSlideId).toBeNull();
-      expect(state.draft).toBeNull();
+      // What is written, recorded or drawn in the composer is not thrown away.
+      expect(state.draft).toMatchObject({ slideId: 's1', slideGone: true });
+      // The slide is back (hidden slides shown again): the draft can be sent again.
+      const back = viewerReducer(state, {
+        type: 'slidesReplaced',
+        slideIds: ['s1', 's2', 's3'],
+        fallbackSlideId: 's1',
+      });
+      expect(back.draft).toMatchObject({ slideId: 's1', slideGone: false });
     });
 
-    it('drops a gap draft whose neighbour is gone', () => {
-      const state = run(
-        { type: 'gapDraftStarted', afterSlideId: 's1', beforeSlideId: 's2' },
-        { type: 'slidesReplaced', slideIds: ['s1', 's3'], fallbackSlideId: 's1' },
-      );
-      expect(state.draft).toBeNull();
+    it('moves a gap draft along when its neighbours were separated', () => {
+      const started = run({ type: 'gapDraftStarted', afterSlideId: 's1', beforeSlideId: 's2' });
+      // Unchanged order: the very same draft.
+      const same = viewerReducer(started, {
+        type: 'slidesReplaced',
+        slideIds: ['s0', 's1', 's2'],
+        fallbackSlideId: 's1',
+      });
+      expect(same.draft).toBe(started.draft);
+      // A slide inserted between them: the gap after s1 is in front of the new slide now.
+      const inserted = viewerReducer(started, {
+        type: 'slidesReplaced',
+        slideIds: ['s1', 'new', 's2'],
+        fallbackSlideId: 's1',
+      });
+      expect(inserted.draft?.anchor).toEqual({
+        type: 'gap',
+        afterSlideId: 's1',
+        beforeSlideId: 'new',
+      });
+      expect(inserted.draft?.slideGone).toBe(false);
+      // Both neighbours gone: kept, flagged.
+      const gone = viewerReducer(started, {
+        type: 'slidesReplaced',
+        slideIds: ['s3'],
+        fallbackSlideId: 's3',
+      });
+      expect(gone.draft).toMatchObject({ slideId: null, slideGone: true });
     });
 
     it('closes the panel of a thread deleted meanwhile, keeps it while the thread is there', () => {

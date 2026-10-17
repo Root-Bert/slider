@@ -1,6 +1,7 @@
 import { PptxError } from '@slider/pptx';
 import type { SyncError, SyncErrorCode } from '@slider/shared';
 import { ApiError } from '../http/errors';
+import { ImportCrashLoop } from '../import/attempts';
 
 /**
  * Maps whatever went wrong during an automatic update to a {@link SyncError} with a German
@@ -92,4 +93,11 @@ export function toSyncError(
 
 /** The banner text for a new file that cannot be parsed. */
 export const parseFailedMessage = (error: unknown): string =>
-  error instanceof PptxError ? PARSE_MESSAGES[error.code] : SYNC_MESSAGES.internal;
+  error instanceof PptxError
+    ? PARSE_MESSAGES[error.code]
+    : error instanceof ImportCrashLoop
+      ? CRASH_LOOP_MESSAGE
+      : SYNC_MESSAGES.internal;
+
+const CRASH_LOOP_MESSAGE =
+  'Die neue Version ist zu groß oder beschädigt – ihr Import wurde mehrmals abgebrochen. Es bleibt die letzte Version sichtbar.';

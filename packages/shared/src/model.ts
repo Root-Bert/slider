@@ -189,12 +189,16 @@ export type Slide = z.infer<typeof slideSchema>;
  * Ties an anchor to a PowerPoint shape so it follows the shape across revisions (BER-111).
  * `offset`: the point (a box's centre) relative to the shape's bounds. `size`: a box's size
  * relative to them, so it also grows and shrinks with the shape – boxes without it (older ones)
- * only move along.
+ * only move along. `name` and `bbox`: the shape as it was when bound, so a shape that merely
+ * inherited the id (producers like Google Slides renumber them) is not mistaken for it; older
+ * references without them trust the id alone.
  */
 export const shapeRefSchema = z.object({
   shapeId: z.string(),
   offset: pointSchema,
   size: z.object({ w: z.number().positive(), h: z.number().positive() }).optional(),
+  name: z.string().optional(),
+  bbox: rectSchema.optional(),
 });
 export type ShapeRef = z.infer<typeof shapeRefSchema>;
 

@@ -1,5 +1,6 @@
 import type { AccentColor } from '@slider/shared';
 import { ACCENT_COLORS } from '@slider/shared';
+import type { KeyboardEvent } from 'react';
 import { accentColor, ACCENT_COLOR_NAMES, onAccentClass } from '@/lib/accent';
 import { cn } from './cn';
 import { Icon } from './Icon';
@@ -58,11 +59,43 @@ export function ColorSwatches({
   className,
 }: ColorSwatchesProps) {
   const fill = variant === 'fill';
+  // A radio group (WAI-ARIA): one Tab stop – the picked colour, else the first – and the arrow
+  // keys, Home and End pick and move.
+  const focusable = value && colors.includes(value) ? value : colors[0];
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!fill || disabled || colors.length === 0) return;
+    const index = focusable ? colors.indexOf(focusable) : 0;
+    let next: number;
+    switch (event.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+        next = (index + 1) % colors.length;
+        break;
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        next = (index - 1 + colors.length) % colors.length;
+        break;
+      case 'Home':
+        next = 0;
+        break;
+      case 'End':
+        next = colors.length - 1;
+        break;
+      default:
+        return;
+    }
+    // Handled: page shortcuts (the viewer's ←/→ slide navigation) skip prevented keys.
+    event.preventDefault();
+    const color = colors[next]!;
+    onChange(color);
+    event.currentTarget.querySelector<HTMLElement>(`[data-swatch="${color}"]`)?.focus();
+  };
   return (
     <div
       role={fill ? 'radiogroup' : 'group'}
       aria-labelledby={labelledBy}
       aria-label={labelledBy ? undefined : label}
+      onKeyDown={onKeyDown}
       className={cn('flex items-center', className)}
     >
       {colors.map((color) => {
@@ -80,6 +113,8 @@ export function ColorSwatches({
             key={color}
             type="button"
             role={fill ? 'radio' : undefined}
+            data-swatch={color}
+            tabIndex={fill && color !== focusable ? -1 : undefined}
             aria-checked={fill ? selected : undefined}
             aria-pressed={fill ? undefined : selected}
             aria-label={name}

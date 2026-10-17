@@ -1,27 +1,29 @@
 import type { Comment } from '@slider/shared';
-import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useRef, type FormEvent, type KeyboardEvent } from 'react';
 import { useCreateReply } from '@/lib/api';
+import { useReplyDraftBody } from '../lib/reply-drafts';
 import { replyInput } from '../lib/replies';
 import { useViewerData } from '../../state/viewer-data';
 import { useViewerToast } from '../../state/viewer-toast';
 
 interface ReplyDraftOptions {
-  /** Esc in the field. Without it, Esc bubbles up to the viewer. */
+  /** Esc in the field – discards the draft. Without it, Esc bubbles up to the viewer. */
   onCancel?: (() => void) | undefined;
   onSent?: (() => void) | undefined;
 }
 
 /**
- * Text reply draft shared by all reply fields. Enter sends, Shift+Enter adds a line. The reply
- * shows up right away (optimistic) and the field clears but keeps focus; on failure the text
- * comes back and the error shows as a toast.
+ * Text reply draft shared by all reply fields of a thread, kept per thread (`reply-drafts`) so
+ * it outlives the field. Enter sends, Shift+Enter adds a line. The reply shows up right away
+ * (optimistic) and the field clears but keeps focus; on failure the text comes back and the
+ * error shows as a toast – also when the field is gone by then (another thread, scrolled away).
  */
 export function useReplyDraft(root: Comment, deckId: string, options: ReplyDraftOptions = {}) {
   const { viewer } = useViewerData();
   const showToast = useViewerToast();
   const createReply = useCreateReply(deckId, viewer.author);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [body, setBody] = useState('');
+  const [body, setBody] = useReplyDraftBody(root.id);
   const canSend = body.trim().length > 0 && !createReply.isPending;
 
   const submit = (event?: FormEvent) => {
@@ -30,17 +32,21 @@ export function useReplyDraft(root: Comment, deckId: string, options: ReplyDraft
     const sent = body;
     // Clear right away – the reply is already in the thread; restored if the request fails.
     setBody('');
-    createReply.mutate(
-      { input: replyInput(root, sent), root },
-      {
-        onSuccess: () => options.onSent?.(),
-        onError: (error) => {
-          setBody((current) => current || sent);
-          showToast(error.message, 'danger');
-        },
+    // The promise, not `mutate`'s callbacks: those are skipped once the field has unmounted.
+    createReply.mutateAsync({ input: replyInput(root, sent), root }).then(
+      () => options.onSent?.(),
+      (error: Error) => {
+        setBody((current) => current || sent);
+        showToast(error.message, 'danger');
       },
     );
     textareaRef.current?.focus();
+  };
+
+  // Kept per thread, so discarding has to clear it – else it comes back with the next field.
+  const cancel = () => {
+    setBody('');
+    options.onCancel?.();
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -51,7 +57,7 @@ export function useReplyDraft(root: Comment, deckId: string, options: ReplyDraft
       // Handled here, so the viewer doesn't also close the panel.
       event.preventDefault();
       event.stopPropagation();
-      options.onCancel();
+      cancel();
     }
   };
 
@@ -61,6 +67,7 @@ export function useReplyDraft(root: Comment, deckId: string, options: ReplyDraft
     setBody,
     canSend,
     submit,
+    cancel,
     onKeyDown,
     textareaRef,
     error: createReply.isError ? createReply.error : null,

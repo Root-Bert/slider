@@ -10,9 +10,12 @@ import {
   groupThreadsBySlide,
   isImplicitFrame,
   isStrokeOnly,
+  openCountBySlide,
+  placeGap,
   sortThreadsByAnchor,
   sortThreadsClockwise,
   connectorExits,
+  threadsByDeletedSlide,
   threadsOnCurrentSlides,
 } from './comment-selectors';
 import { author, comment, slide } from '../../lib/test-fixtures';
@@ -60,6 +63,27 @@ describe('filters and counts', () => {
   it('counts per status', () => {
     expect(countByStatus(threads)).toEqual({ all: 4, open: 2, done: 2 });
   });
+
+  it('counts open threads per slide like the slide list does', () => {
+    const counts = openCountBySlide(
+      buildThreads([
+        comment({ slideId: 's1' }),
+        comment({ slideId: 's1' }),
+        comment({ slideId: 's1', status: 'done' }),
+        comment({ slideId: 's1', sourceStatus: 'removed_in_pptx' }),
+        comment({ slideId: 's2' }),
+        comment({ slideId: 's2', parentId: 'elsewhere' }),
+        comment({
+          slideId: null,
+          anchor: { type: 'gap', afterSlideId: 's1', beforeSlideId: 's2' },
+        }),
+      ]),
+    );
+    expect([...counts]).toEqual([
+      ['s1', 2],
+      ['s2', 1],
+    ]);
+  });
 });
 
 describe('threadsOnCurrentSlides', () => {
@@ -69,9 +93,48 @@ describe('threadsOnCurrentSlides', () => {
       comment({ slideId: 'deleted' }),
       comment({ slideId: null }),
     ]);
-    const kept = threadsOnCurrentSlides(threads, new Set(['s1', 's2']));
+    const kept = threadsOnCurrentSlides(threads, [slide('s1', 0), slide('s2', 1)]);
     expect(kept.map((thread) => thread.root.slideId)).toEqual(['s1', null]);
     expect(countByStatus(kept).all).toBe(2);
+  });
+
+  it('counts a gap comment while one neighbour is left, not once both are gone', () => {
+    const between = (afterSlideId: string | null, beforeSlideId: string | null) =>
+      comment({ slideId: null, anchor: { type: 'gap', afterSlideId, beforeSlideId } });
+    const kept = between('gone', 's2');
+    const lost = between('gone', 'gone too');
+    const threads = buildThreads([kept, lost]);
+    expect(
+      threadsOnCurrentSlides(threads, [slide('s1', 0), slide('s2', 1)]).map((t) => t.id),
+    ).toEqual([kept.id]);
+  });
+});
+
+describe('placeGap', () => {
+  const order = [slide('s1', 0), slide('new', 1), slide('s2', 2), slide('s3', 3)];
+  const at = (afterSlideId: string | null, beforeSlideId: string | null) =>
+    placeGap({ afterSlideId, beforeSlideId }, order);
+
+  it('keeps a gap whose neighbours are still neighbours', () => {
+    expect(at('s2', 's3')).toEqual({ afterSlideId: 's2', beforeSlideId: 's3' });
+    expect(at(null, 's1')).toEqual({ afterSlideId: null, beforeSlideId: 's1' });
+    expect(at('s3', null)).toEqual({ afterSlideId: 's3', beforeSlideId: null });
+  });
+
+  it('follows the slide before the gap when a slide was inserted or moved there', () => {
+    expect(at('s1', 's2')).toEqual({ afterSlideId: 's1', beforeSlideId: 'new' });
+    expect(at('s3', 's1')).toEqual({ afterSlideId: 's3', beforeSlideId: null });
+  });
+
+  it('falls back to the slide after the gap, or the deck’s end, when the one before is gone', () => {
+    expect(at('gone', 's2')).toEqual({ afterSlideId: 'new', beforeSlideId: 's2' });
+    expect(at('gone', 's1')).toEqual({ afterSlideId: null, beforeSlideId: 's1' });
+    expect(at('gone', null)).toEqual({ afterSlideId: 's3', beforeSlideId: null });
+  });
+
+  it('has no place once both neighbours are gone, or without slides', () => {
+    expect(at('gone', 'gone too')).toBeNull();
+    expect(placeGap({ afterSlideId: null, beforeSlideId: null }, [])).toBeNull();
   });
 });
 
@@ -92,10 +155,46 @@ describe('grouping', () => {
   it('keys gap threads by their neighbours', () => {
     const gap = comment({
       slideId: null,
-      anchor: { type: 'gap', afterSlideId: 's1', beforeSlideId: null },
+      anchor: { type: 'gap', afterSlideId: 's2', beforeSlideId: null },
     });
-    const groups = gapThreadsByGap(buildThreads([gap, comment()]));
-    expect([...groups.keys()]).toEqual([gapKey('s1', null)]);
+    const groups = gapThreadsByGap(buildThreads([gap, comment()]), slides);
+    expect([...groups.keys()]).toEqual([gapKey('s2', null)]);
+  });
+
+  it('keys and lists a gap thread where it sits now when its neighbours were separated', () => {
+    // Written between s1 and s2; a later version inserted a slide there and deleted s2.
+    const gap = comment({
+      slideId: null,
+      anchor: { type: 'gap', afterSlideId: 's1', beforeSlideId: 's2' },
+    });
+    const now = [slide('s1', 0), slide('new', 1), slide('s3', 2)];
+    const threads = buildThreads([gap]);
+    expect([...gapThreadsByGap(threads, now).keys()]).toEqual([gapKey('s1', 'new')]);
+    // Its slide before is gone: in front of the slide after it, listed under the one before that.
+    const moved = buildThreads([
+      comment({
+        slideId: null,
+        anchor: { type: 'gap', afterSlideId: 'gone', beforeSlideId: 's3' },
+      }),
+    ]);
+    expect([...gapThreadsByGap(moved, now).keys()]).toEqual([gapKey('new', 's3')]);
+    expect(groupThreadsBySlide(moved, now).get('new')).toHaveLength(1);
+  });
+
+  it('lists a gap thread under its deleted slide only once both neighbours are gone', () => {
+    const gap = (afterSlideId: string | null, beforeSlideId: string | null) =>
+      comment({ slideId: null, anchor: { type: 'gap', afterSlideId, beforeSlideId } });
+    const stillPlaced = gap('d1', 's1');
+    const bothGone = gap('d1', 'd2');
+    const afterGone = gap('hidden', 'd2');
+    const onDeleted = comment({ slideId: 'd2' });
+    const groups = threadsByDeletedSlide(
+      buildThreads([stillPlaced, bothGone, afterGone, onDeleted]),
+      ['d1', 'd2'],
+      slides,
+    );
+    expect(groups.get('d1')!.map((t) => t.id)).toEqual([bothGone.id]);
+    expect(groups.get('d2')!.map((t) => t.id)).toEqual([afterGone.id, onDeleted.id]);
   });
 });
 

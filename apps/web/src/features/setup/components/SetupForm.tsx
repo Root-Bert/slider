@@ -110,7 +110,8 @@ export function SetupForm({
   const [draft, setDraft] = useState<SetupDraft>(() => initialDraft(fields));
   const [smtp, setSmtp] = useState<SmtpParts>(EMPTY_SMTP);
   const [removed, setRemoved] = useState<ReadonlySet<SetupKey>>(new Set());
-  const [phase, setPhase] = useState<'edit' | 'restarting' | 'saved'>('edit');
+  // `unreachable`: saved, but the restarted server didn't answer in time (or `/setup` didn't load).
+  const [phase, setPhase] = useState<'edit' | 'restarting' | 'saved' | 'unreachable'>('edit');
 
   const set = (key: SetupKey) => (value: string) => setDraft((d) => ({ ...d, [key]: value }));
   const remove = (keys: SetupKey[]) => setRemoved((r) => new Set([...r, ...keys]));
@@ -123,21 +124,35 @@ export function SetupForm({
         setPhase('saved');
         return;
       }
-      setPhase('restarting');
-      await waitForRestart();
-      await queryClient.invalidateQueries({ queryKey: ['setup'] });
-      await queryClient.invalidateQueries({ queryKey: workspaceKeys.providers });
-      // The form stays mounted across the refetch: start over from what the server now has, or
-      // removed values would still show (and be sent again with the next save).
-      const fresh = queryClient.getQueryData<SetupStatus>(['setup'])?.settings;
-      if (fresh) setDraft(initialDraft(fresh.fields));
-      setRemoved(new Set());
-      setSmtp(EMPTY_SMTP);
-      setPhase('saved');
+      await reload();
     },
   });
 
+  /** After the restart: wait for the server, then load what it now has. */
+  const reload = async () => {
+    setPhase('restarting');
+    if (!(await waitForRestart())) {
+      setPhase('unreachable');
+      return;
+    }
+    await queryClient.invalidateQueries({ queryKey: ['setup'] });
+    await queryClient.invalidateQueries({ queryKey: workspaceKeys.providers });
+    // "Übernommen" only once the restarted server answered `/setup` too.
+    if (queryClient.getQueryState(['setup'])?.status === 'error') {
+      setPhase('unreachable');
+      return;
+    }
+    // The form stays mounted across the refetch: start over from what the server now has, or
+    // removed values would still show (and be sent again with the next save).
+    const fresh = queryClient.getQueryData<SetupStatus>(['setup'])?.settings;
+    if (fresh) setDraft(initialDraft(fresh.fields));
+    setRemoved(new Set());
+    setSmtp(EMPTY_SMTP);
+    setPhase('saved');
+  };
+
   const submit = () => {
+    setPhase('edit');
     const withSmtp = { ...draft, SMTP_URL: smtpUrl(smtp) };
     save.mutate(collectChanges(fields, withSmtp, removed));
   };
@@ -173,8 +188,6 @@ export function SetupForm({
         submit();
       }}
     >
-      {phase === 'saved' && <Saved status={status} manual={settings.restart === 'manual'} />}
-
       <Section
         title="Adresse"
         description="Kommt aus SLIDER_URL. Alle Links und Weiterleitungen zeigen dorthin."
@@ -312,7 +325,28 @@ export function SetupForm({
         {field('MAIL_FROM', 'Absender', { placeholder: 'Slider <slider@firma.de>' })}
       </Section>
 
-      {save.isError && <Notice tone="danger">{save.error.message}</Notice>}
+      {save.isError && (
+        <Notice tone="danger" role="alert">
+          {save.error.message}
+        </Notice>
+      )}
+      {/* The result sits next to the button that was pressed, at the bottom of a long form. */}
+      {phase === 'saved' && <Saved status={status} manual={settings.restart === 'manual'} />}
+      {phase === 'unreachable' && (
+        <Notice
+          tone="warning"
+          role="alert"
+          title="Slider antwortet noch nicht"
+          footer={
+            <Button size="sm" variant="secondary" icon="refresh" onClick={() => void reload()}>
+              Erneut prüfen
+            </Button>
+          }
+        >
+          Die Änderungen sind gespeichert, aber der Server ist nach dem Neustart nicht erreichbar.
+          Prüfe das Server-Log, zum Beispiel mit <Code>docker logs slider</Code>.
+        </Notice>
+      )}
       <div className="flex flex-wrap items-center justify-end gap-3">
         {phase === 'restarting' && (
           <span className="flex items-center gap-2 text-body text-fg-subtle">
@@ -405,13 +439,13 @@ function RedirectUri({ uri }: { uri: string }) {
 function Saved({ status, manual }: { status: SetupStatus; manual: boolean }) {
   if (manual) {
     return (
-      <Notice tone="warning">
+      <Notice tone="warning" role="status">
         Gespeichert. Starte den Slider-Server neu, damit die Änderungen gelten.
       </Notice>
     );
   }
   return (
-    <Notice tone="success">
+    <Notice tone="success" role="status">
       Gespeichert und übernommen.{' '}
       {!status.hasAccount && status.loginConfigured && (
         <>
@@ -438,18 +472,25 @@ const Code = ({ children }: { children: ReactNode }) => (
   <code className="rounded-badge bg-surface-2 px-1 py-0.5 text-xs text-fg-muted">{children}</code>
 );
 
-/** After saving the server restarts: wait until it answers again (at most ~30 s). */
-async function waitForRestart(): Promise<void> {
-  await sleep(1000);
-  for (let attempt = 0; attempt < 30; attempt++) {
+/**
+ * After saving the server restarts: wait until it answers again (at most ~30 s). `false` when it
+ * didn't – the page must not claim the change took effect.
+ */
+async function waitForRestart(): Promise<boolean> {
+  await sleep(RESTART_POLL_MS);
+  for (let attempt = 0; attempt < RESTART_ATTEMPTS; attempt++) {
     try {
       const res = await fetch(`${API_PREFIX}/health`, { cache: 'no-store' });
-      if (res.ok) return;
+      if (res.ok) return true;
     } catch {
       // Still down.
     }
-    await sleep(1000);
+    await sleep(RESTART_POLL_MS);
   }
+  return false;
 }
+
+const RESTART_POLL_MS = 1000;
+const RESTART_ATTEMPTS = 30;
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));

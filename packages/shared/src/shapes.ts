@@ -24,12 +24,47 @@ export function hitTestShapes(shapes: readonly Shape[], point: Point): Shape | n
 
 export function shapeRefAt(shapes: readonly Shape[], point: Point): ShapeRef | null {
   const shape = hitTestShapes(shapes, point);
-  return shape ? { shapeId: shape.id, offset: offsetInRect(shape.bbox, point) } : null;
+  return shape
+    ? { shapeId: shape.id, offset: offsetInRect(shape.bbox, point), ...identityOf(shape) }
+    : null;
+}
+
+/** What a reference remembers of its shape to recognise it again (see {@link refShape}). */
+function identityOf(shape: Shape): Pick<ShapeRef, 'name' | 'bbox'> {
+  return { name: shape.name, bbox: { ...shape.bbox } };
+}
+
+/** Below this an axis counts as degenerate (lines), compared by touching instead of overlap. */
+const FLAT = 1e-6;
+
+/** Whether two intervals cover at least half of the shorter one (or touch, when it is flat). */
+function axisOverlaps(start: number, size: number, otherStart: number, otherSize: number): boolean {
+  const overlap = Math.min(start + size, otherStart + otherSize) - Math.max(start, otherStart);
+  const shorter = Math.min(size, otherSize);
+  return shorter <= FLAT ? overlap >= -FLAT : overlap >= shorter / 2;
+}
+
+function boxesOverlap(a: Rect, b: Rect): boolean {
+  return axisOverlaps(a.x, a.w, b.x, b.w) && axisOverlaps(a.y, a.h, b.y, b.h);
+}
+
+/**
+ * The shape a reference is bound to, or `null` when it is gone. The id alone is not enough:
+ * producers like Google Slides or LibreOffice renumber shapes, so another object can inherit it.
+ * A candidate counts as the same shape when it kept its name, or – renamed – still largely
+ * covers the place it had. References from before names and boxes were stored trust the id.
+ */
+export function refShape(shapes: readonly Shape[], ref: ShapeRef): Shape | null {
+  const shape = shapes.find((candidate) => candidate.id === ref.shapeId);
+  if (!shape) return null;
+  if (ref.name === undefined && ref.bbox === undefined) return shape;
+  if (ref.name !== undefined && shape.name === ref.name) return shape;
+  return ref.bbox && boxesOverlap(ref.bbox, shape.bbox) ? shape : null;
 }
 
 /** Resolves a shape reference back to slide coordinates, or `null` when the shape is gone. */
 export function resolveShapeRef(shapes: readonly Shape[], ref: ShapeRef): Point | null {
-  const shape = shapes.find((candidate) => candidate.id === ref.shapeId);
+  const shape = refShape(shapes, ref);
   return shape ? pointInRect(shape.bbox, ref.offset) : null;
 }
 
@@ -40,6 +75,7 @@ export function shapeRefForRect(shape: Shape, rect: Rect): ShapeRef {
     shapeId: shape.id,
     offset: offsetInRect(bbox, rectCenter(rect)),
     size: { w: bbox.w > 0 ? rect.w / bbox.w : 1, h: bbox.h > 0 ? rect.h / bbox.h : 1 },
+    ...identityOf(shape),
   };
 }
 
@@ -51,10 +87,11 @@ export function rectShapeRefAt(shapes: readonly Shape[], rect: Rect): ShapeRef |
 
 /**
  * Where a bound box sits now: around its shape's current place, scaled with it (with `size`) or
- * just moved along (older boxes). The stored `rect` while the shape is gone.
+ * just moved along (older boxes). The stored `rect` while the shape is gone (or the id now
+ * belongs to another shape).
  */
 export function resolveRectAnchor(shapes: readonly Shape[], rect: Rect, ref: ShapeRef): Rect {
-  const shape = shapes.find((candidate) => candidate.id === ref.shapeId);
+  const shape = refShape(shapes, ref);
   if (!shape) return rect;
   const { bbox } = shape;
   const center = pointInRect(bbox, ref.offset);

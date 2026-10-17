@@ -22,6 +22,9 @@ export interface Mentions {
   fieldProps: {
     onChange: (event: ChangeEvent<HTMLTextAreaElement>) => void;
     onSelect: (event: SyntheticEvent<HTMLTextAreaElement>) => void;
+    /** A textarea may be a combobox (ARIA 1.2): screen readers then follow the active option. */
+    role: 'combobox';
+    'aria-expanded': boolean;
     'aria-autocomplete': 'list';
     'aria-controls': string | undefined;
     'aria-activedescendant': string | undefined;
@@ -106,6 +109,8 @@ export function useMentions(
         setCaret(event.target.selectionEnd);
       },
       onSelect: (event) => setCaret(event.currentTarget.selectionEnd),
+      role: 'combobox',
+      'aria-expanded': open,
       'aria-autocomplete': 'list',
       'aria-controls': open ? listId : undefined,
       'aria-activedescendant': open ? optionId(activeIndex) : undefined,

@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { cn, Toast, useFullscreen, useToast } from '@/ui';
 import { CommentFilterBar } from './comments/CommentFilterBar';
 import { Composer } from './comments/Composer';
+import { MediaReplyDialog } from './comments/MediaTabs';
 import { ThreadPanel } from './comments/ThreadPanel';
 import { ParticipantAvatars } from './controls/ParticipantAvatars';
 import { RevisionControls, UploadRevisionControl } from './controls/RevisionControls';
@@ -86,6 +87,7 @@ export function Viewer() {
 
         <Composer />
         <ThreadPanel />
+        <MediaReplyDialog />
         <DeletedSlidesPanel />
         {/* Above the thread panel and popovers (`--z-toast`). */}
         <Toast toast={toast} />

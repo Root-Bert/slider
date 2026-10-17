@@ -553,6 +553,44 @@ describe('bootstrap (first account of the instance)', () => {
     expect((await me(cookie)).body.user).toMatchObject({ isInstanceAdmin: true });
   });
 
+  it('production on https: __Host- cookies, so a sibling subdomain cannot plant state or sessions', async () => {
+    const idp = fakeOidc();
+    await oidcInstance(
+      idp,
+      { env: 'production', webOrigin: 'https://slider.firma.de' },
+      { signup: 'open' },
+    );
+    const start = await ctx.request('/api/auth/oidc/login?returnTo=%2F');
+    const stateHeader = start.headers.get('set-cookie') ?? '';
+    expect(stateHeader).toMatch(/^__Host-slider_oidc=/);
+    expect(stateHeader).toMatch(/Path=\/;/);
+    expect(stateHeader).toMatch(/Secure/);
+    expect(stateHeader).not.toMatch(/Domain=/i);
+    const hostState = stateHeader.split(';')[0] ?? '';
+    const authorize = location(start);
+    idp.nonce = authorize.searchParams.get('nonce') ?? '';
+    const callback = (cookie: string) =>
+      ctx.request(
+        `/api/auth/oidc/callback?state=${authorize.searchParams.get('state')}&code=the-code`,
+        { cookie },
+      );
+
+    // A genuinely signed state cookie under the plain name – what `Domain=.firma.de` could plant.
+    const planted = await callback(hostState.replace(/^__Host-/, ''));
+    expect(planted.headers.get('location')).toMatch(/error=failed/);
+    expect(sessionCookieFrom(planted)).toBeNull();
+
+    const res = await callback(hostState);
+    const session = sessionCookieFrom(res) ?? '';
+    expect(session).toMatch(/^__Host-slider_session=/);
+    expect(res.headers.getSetCookie().find((h) => h.startsWith('__Host-slider_session='))).toMatch(
+      /Secure/,
+    );
+    expect((await me(session)).body.user).toMatchObject({ email: 'anna@firma.de' });
+    // The same token under the plain name is not a session.
+    expect((await me(session.replace(/^__Host-/, ''))).status).toBe(401);
+  });
+
   it('two simultaneous first logins: only one claims the instance', async () => {
     ctx = await createTestContext({ config: authConfig({ signup: 'open' }) });
     const login = (subject: string, email: string) =>

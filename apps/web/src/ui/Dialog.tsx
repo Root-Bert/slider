@@ -14,7 +14,8 @@ export interface DialogProps {
 
 /**
  * UI kit "Modal". Built on the native <dialog> element, so focus trapping,
- * Escape-to-close and the top layer come from the browser.
+ * Escape-to-close and the top layer come from the browser. Opening focuses the first element
+ * with `data-autofocus` (a TextField with `autoFocus`), else the browser picks.
  */
 export function Dialog({
   open,
@@ -37,6 +38,11 @@ export function Dialog({
     const returnFocus =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (!dialog.open) dialog.showModal();
+    // The field meant to take the keys: React focuses `autoFocus` fields while committing, when
+    // this dialog is still closed (display: none), so the browser would pick the close button.
+    // Fields and panels that want the focus carry `data-autofocus` (the kit's TextField does
+    // for `autoFocus`).
+    dialog.querySelector<HTMLElement>('[data-autofocus]')?.focus();
     return () => {
       if (dialog.open) dialog.close();
       if (returnFocus?.isConnected) returnFocus.focus();

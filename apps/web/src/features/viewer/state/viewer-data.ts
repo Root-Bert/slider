@@ -26,7 +26,7 @@ export interface ViewerData {
   threadById: ReadonlyMap<string, Thread>;
   /** All threads per home slide, unfiltered. */
   threadsBySlide: ReadonlyMap<string, Thread[]>;
-  /** Gap threads keyed by `gapKey(after, before)`. */
+  /** Gap threads keyed by `gapKey` of the gap they sit at in `slides` (`placeGap`), unfiltered. */
   gapThreads: ReadonlyMap<string, Thread[]>;
   /** Names that count as @mentions when rendering bodies. */
   participantNames: string[];
@@ -91,7 +91,7 @@ export function deriveViewerData(
     threads,
     threadById: new Map(threads.map((thread) => [thread.id, thread])),
     threadsBySlide: groupThreadsBySlide(threads, slides),
-    gapThreads: gapThreadsByGap(threads),
+    gapThreads: gapThreadsByGap(threads, slides),
     participantNames: names,
     mentionable: [...people.values()].filter((person) => person.id !== viewer.author.id),
     mentionedThreadIds: new Set(
@@ -121,6 +121,7 @@ export function withoutHiddenSlides(data: ViewerData): ViewerData {
     slides,
     slideIndex: new Map(slides.map((slide, index) => [slide.id, index])),
     threadsBySlide: groupThreadsBySlide(data.threads, slides),
+    gapThreads: gapThreadsByGap(data.threads, slides),
   };
 }
 

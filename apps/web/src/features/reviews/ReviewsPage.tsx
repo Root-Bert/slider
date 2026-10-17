@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { useNavigate } from 'react-router';
 import type { Deck, DeckFolder } from '@slider/shared';
 import { routes } from '@/lib/routes';
 import { AppHeader } from '@/shell/AppHeader';
@@ -40,6 +40,7 @@ import { useDeckSelection } from './hooks/useDeckSelection';
 import { useFolderDialog } from './hooks/useFolderDialog';
 import { useMarqueeSelect } from './hooks/useMarqueeSelect';
 import { movedMessage, useMoveDecks } from './hooks/useMoveDecks';
+import { useOpenFolder } from './hooks/useOpenFolder';
 import { useStoredChoice } from './hooks/useStoredChoice';
 import {
   activeTotals,
@@ -59,8 +60,6 @@ import { prunePinnedDecks } from './lib/pinned-decks';
 const DECK_VIEWS = ['grid', 'list'] as const satisfies readonly DeckView[];
 const NO_DECKS: readonly Deck[] = [];
 const NO_FOLDERS: readonly DeckFolder[] = [];
-/** The open folder lives in the URL, so back/forward and links work. */
-const FOLDER_PARAM = 'ordner';
 
 /**
  * G1 "Reviews" – every deck of one workspace, whoever added it (BER-121, BER-129).
@@ -83,26 +82,13 @@ export function Component() {
   const folderDialog = useFolderDialog(workspace.id);
   const moveDecks = useMoveDecks();
   const [deletingFolder, setDeletingFolder] = useState<DeckFolder | null>(null);
-  const [searchParams, setSearchParams] = useSearchParams();
-  const folderId = searchParams.get(FOLDER_PARAM);
-  const openFolder = folderId ? folders.find((folder) => folder.id === folderId) : undefined;
-  const openFolderById = (id: string | null) =>
-    setSearchParams((params) => {
-      const next = new URLSearchParams(params);
-      if (id) next.set(FOLDER_PARAM, id);
-      else next.delete(FOLDER_PARAM);
-      return next;
-    });
+  const { openFolder, openFolderById } = useOpenFolder(folders, foldersQuery.isSuccess);
 
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState<ReviewTab>('all');
   const [sort, setSort] = useStoredChoice('slider.reviews.sort', DECK_SORTS, 'opened');
   const [view, setView] = useStoredChoice('slider.reviews.view', DECK_VIEWS, 'grid');
 
-  // A folder deleted elsewhere (or a stale link): back to the top level.
-  useEffect(() => {
-    if (folderId && foldersQuery.isSuccess && !openFolder) openFolderById(null);
-  });
   const folder: FolderScope = openFolder ? openFolder.id : query.trim() ? '*' : null;
   const atTop = folder === null;
 
@@ -294,7 +280,7 @@ export function Component() {
           <FolderTiles
             folders={folders}
             counts={folderCounts}
-            onOpen={openFolderById}
+            onOpen={(id) => openFolderById(id)}
             manage={
               mayCreate
                 ? {

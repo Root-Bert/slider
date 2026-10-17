@@ -171,7 +171,7 @@ async function main(): Promise<void> {
 
     let pages: number;
     try {
-      pages = (await rasterizePdf(pdf!)).length;
+      pages = await rasterizePdf(pdf!, async () => {});
     } catch (error) {
       fail('PDF rastern', error);
     }

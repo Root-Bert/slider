@@ -23,9 +23,11 @@ interface GapDividerProps {
  */
 const HAIRLINE_GAP =
   '[mask-image:linear-gradient(#000_calc(50%-28px),transparent_calc(50%-28px),transparent_calc(50%+28px),#000_calc(50%+28px))]';
+/** Touch screens have no hover: there the ⊕ – and its gap in the hairline – always shows. */
 const HAIRLINE_GAP_ON_HOVER =
   'group-hover:[mask-image:linear-gradient(#000_calc(50%-28px),transparent_calc(50%-28px),transparent_calc(50%+28px),#000_calc(50%+28px))] ' +
-  'group-focus-within:[mask-image:linear-gradient(#000_calc(50%-28px),transparent_calc(50%-28px),transparent_calc(50%+28px),#000_calc(50%+28px))]';
+  'group-focus-within:[mask-image:linear-gradient(#000_calc(50%-28px),transparent_calc(50%-28px),transparent_calc(50%+28px),#000_calc(50%+28px))] ' +
+  'pointer-coarse:[mask-image:linear-gradient(#000_calc(50%-28px),transparent_calc(50%-28px),transparent_calc(50%+28px),#000_calc(50%+28px))]';
 
 /**
  * Hairline between two slides with a ⊕ that appears on hover and starts a "hier fehlt eine
@@ -79,7 +81,7 @@ export const GapDivider = memo(function GapDivider({
               isDrafting ? 'text-fg' : 'text-fg-muted hover:text-fg',
               pinned
                 ? 'opacity-100'
-                : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+                : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100',
             )}
           >
             <Icon name="addCircle" size={tight ? 'xl' : '2xl'} />

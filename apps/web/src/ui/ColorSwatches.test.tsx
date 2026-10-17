@@ -1,5 +1,7 @@
+import type { AccentColor } from '@slider/shared';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { ColorSwatches } from './ColorSwatches';
 
@@ -48,6 +50,38 @@ describe('ColorSwatches (fill)', () => {
     );
     expect(classes(red())).toEqual(expect.arrayContaining(['size-8', 'ring-offset-canvas']));
     expect(red().querySelector('svg')!.getAttribute('width')).toBe('16');
+  });
+
+  it('is one Tab stop that the arrow keys move through, keeping them from the page', async () => {
+    function Harness({ onKey }: { onKey: (prevented: boolean) => void }) {
+      const [value, setValue] = useState<AccentColor>('green');
+      return (
+        <div onKeyDown={(event) => onKey(event.defaultPrevented)}>
+          <ColorSwatches label="Farbe" value={value} onChange={setValue} />
+        </div>
+      );
+    }
+    const onKey = vi.fn();
+    render(<Harness onKey={onKey} />);
+    const radios = screen.getAllByRole('radio');
+    // Only the picked colour takes Tab.
+    expect(radios.filter((radio) => radio.tabIndex === 0)).toHaveLength(1);
+    await userEvent.tab();
+    const green = screen.getByRole('radio', { name: 'Grün' });
+    expect(document.activeElement).toBe(green);
+
+    await userEvent.keyboard('{ArrowRight}');
+    const next = radios[radios.indexOf(green) + 1]!;
+    expect(next.getAttribute('aria-checked')).toBe('true');
+    expect(document.activeElement).toBe(next);
+    // The viewer's ←/→ slide navigation skips the handled key.
+    expect(onKey).toHaveBeenLastCalledWith(true);
+
+    await userEvent.keyboard('{Home}');
+    expect(radios[0]!.getAttribute('aria-checked')).toBe('true');
+    await userEvent.keyboard('{ArrowLeft}');
+    expect(radios.at(-1)!.getAttribute('aria-checked')).toBe('true');
+    expect(document.activeElement).toBe(radios.at(-1));
   });
 
   it('stops reacting while disabled', async () => {

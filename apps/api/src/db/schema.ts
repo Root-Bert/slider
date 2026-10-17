@@ -326,6 +326,12 @@ export const revisions = pgTable(
      * for Microsoft's conversion; `null` when Office drew them or was not tried.
      */
     officeFailure: text('office_failure'),
+    /**
+     * Import runs of this revision that started and never finished – the process died (OOM
+     * kill, native crash). Back to 0 when a run ends; past the limit the import gives up
+     * instead of crash-looping the server on every start.
+     */
+    importAttempts: integer('import_attempts').notNull().default(0),
   },
   (t) => [
     unique('revisions_deck_number_unique').on(t.deckId, t.number),

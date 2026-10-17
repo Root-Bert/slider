@@ -1,5 +1,5 @@
 import { isTextStroke, type AccentColor, type Rect, type Stroke } from '@slider/shared';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { textStrokeFromDraft } from '../../stage/lib/text-box';
 import type { TextBoxDraft, TextBoxPatch } from '../../state/viewer-state';
 
@@ -8,6 +8,24 @@ export interface SheetText {
   box: TextBoxDraft;
   color: AccentColor;
   index: number | null;
+}
+
+/**
+ * `strokes` with `text` written into them, as finishing it does: a new text added, an edited one
+ * replaced, an emptied one gone (an empty box written into stays a box). The same array when
+ * nothing changes.
+ */
+export function strokesWithText(strokes: Stroke[], text: SheetText): Stroke[] {
+  const stroke = textStrokeFromDraft(text.box, text.color);
+  const { index } = text;
+  if (!stroke) {
+    const replaced = index === null ? undefined : strokes[index];
+    return replaced && isTextStroke(replaced)
+      ? strokes.filter((_, other) => other !== index)
+      : strokes;
+  }
+  if (index === null) return [...strokes, stroke];
+  return strokes.map((other, at) => (at === index ? stroke : other));
 }
 
 /**
@@ -29,23 +47,23 @@ export function useSheetEditor() {
     setSelected(select);
   };
 
+  // Memoised: the sheet reports it to its composer on every change.
+  const settledStrokes = useMemo(
+    () => (text ? strokesWithText(strokes, text) : strokes),
+    [strokes, text],
+  );
+
   const finishText = () => {
     if (!text) return;
     setText(null);
-    const stroke = textStrokeFromDraft(text.box, text.color);
-    const { index } = text;
-    const replaced = index === null ? undefined : strokes[index];
-    if (!stroke) {
-      // Emptied text goes; an empty box written into stays a box.
-      if (replaced && isTextStroke(replaced)) commit(strokes.filter((_, other) => other !== index));
-      return;
-    }
-    if (index === null) commit([...strokes, stroke]);
-    else commit(strokes.map((other, at) => (at === index ? stroke : other)));
+    const next = strokesWithText(strokes, text);
+    if (next !== strokes) commit(next);
   };
 
   return {
     strokes,
+    /** The strokes with the text being written finished – what the sheet shows, for sending. */
+    settledStrokes,
     selected,
     text,
     canUndo: past.length > 0,

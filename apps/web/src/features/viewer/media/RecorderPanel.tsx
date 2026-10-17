@@ -30,6 +30,8 @@ interface RecorderPanelProps {
   deckId: string;
   /** The finished recording, or `null` while there is none (again). */
   onChange: (recording: Recording | null) => void;
+  /** Whether a recording is running or paused – it isn't finished (`onChange`) until stopped. */
+  onRecordingChange?: (recording: boolean) => void;
   /** Start recording right away (audio), e.g. after a click on the reply bar's mic. */
   autoStart?: boolean;
   /** Take the keyboard on opening: Space and ↵ work right away. */
@@ -81,6 +83,7 @@ function RecorderBody({
   kind,
   deckId,
   onChange,
+  onRecordingChange,
   autoStart = false,
   autoFocus = false,
   source,
@@ -133,6 +136,8 @@ function RecorderBody({
 
   const report = useEffectEvent((value: Recording | null) => onChange(value));
   useEffect(() => report(recording), [recording]);
+  const reportRecording = useEffectEvent((value: boolean) => onRecordingChange?.(value));
+  useEffect(() => reportRecording(recordingNow), [recordingNow]);
 
   const remaining = MAX_MEDIA_DURATION_MS - elapsedMs;
 
@@ -141,6 +146,9 @@ function RecorderBody({
       ref={rootRef}
       role="group"
       tabIndex={-1}
+      // In a reply <Dialog> its own focus effect runs while the dialog is still closed: the
+      // dialog focuses it once open.
+      data-autofocus={autoFocus || undefined}
       aria-label={
         kind === 'audio'
           ? 'Sprachkommentar – Leertaste: Aufnahme starten/pausieren, ↵: beenden'

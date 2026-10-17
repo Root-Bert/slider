@@ -9,7 +9,10 @@ export const useSlides = (deckId: string, enabled = true) =>
     queryKey: queryKeys.slides(deckId),
     queryFn: () => api.get<Slide[]>(`/decks/${deckId}/slides`),
     enabled,
-    // Its image URLs are signed and expire (see `SIGNED_URL_STALE_MS`).
+    // Its image URLs are signed and expire (see `SIGNED_URL_STALE_MS`): reloaded before they do,
+    // also on coming back to the tab – but not on every focus, it holds every slide's shapes.
+    // A new revision or re-render reloads it anyway (`useInvalidateRevision`).
+    staleTime: SIGNED_URL_STALE_MS,
     refetchInterval: SIGNED_URL_STALE_MS,
   });
 

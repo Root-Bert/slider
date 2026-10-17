@@ -33,20 +33,18 @@ const invite = (id: string, email: string): WorkspaceInvite => ({
 afterEach(() => vi.restoreAllMocks());
 
 describe('InviteList revoking', () => {
-  it('two quick revokes keep their own spinner and their own error', async () => {
+  it('asks first, shows a failure in the dialog and keeps focus on the row', async () => {
     vi.spyOn(api, 'get').mockResolvedValue([
       invite('a', 'anna@firma.de'),
       invite('b', 'ben@firma.de'),
     ]);
     let failFirst: (error: Error) => void = () => {};
-    vi.spyOn(api, 'delete')
-      .mockImplementationOnce(
-        () =>
-          new Promise((_resolve, reject) => {
-            failFirst = reject;
-          }),
-      )
-      .mockImplementationOnce(() => new Promise(() => {}));
+    const remove = vi.spyOn(api, 'delete').mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          failFirst = reject;
+        }),
+    );
     const onNotify = vi.fn();
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
@@ -54,18 +52,30 @@ describe('InviteList revoking', () => {
         <InviteList workspace={workspace} onNotify={onNotify} />
       </QueryClientProvider>,
     );
-    const row = async (email: string) =>
-      (await screen.findAllByRole('listitem')).find((item) => item.textContent?.includes(email))!;
-    const revokeButton = async (email: string) =>
-      within(await row(email)).queryByRole('button', { name: 'Einladung zurückziehen' });
+    const trash = await screen.findByRole('button', {
+      name: 'Einladung an anna@firma.de zurückziehen',
+    });
+    expect(
+      screen.getByRole('button', { name: 'Einladung an ben@firma.de zurückziehen' }),
+    ).toBeTruthy();
 
-    await userEvent.click((await revokeButton('anna@firma.de'))!);
-    await userEvent.click((await revokeButton('ben@firma.de'))!);
-    // The first one is still running: its spinner stays, no button to send it twice.
-    expect(await revokeButton('anna@firma.de')).toBeNull();
+    await userEvent.click(trash);
+    expect(remove).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('dialog');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Zurückziehen' }));
+    expect(remove).toHaveBeenCalledOnce();
+    // The row's button stays in place while the request runs.
+    expect(trash.isConnected).toBe(true);
 
     await act(async () => failFirst(new Error('Keine Verbindung zum Server.')));
-    expect(onNotify).toHaveBeenCalledWith('Keine Verbindung zum Server.', 'danger');
+    expect((await within(dialog).findByRole('alert')).textContent).toBe(
+      'Keine Verbindung zum Server.',
+    );
+    expect(onNotify).not.toHaveBeenCalled();
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(trash);
     client.clear();
   });
 });

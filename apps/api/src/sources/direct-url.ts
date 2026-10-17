@@ -33,7 +33,9 @@ export async function downloadPptx(
   const bytes = await readBodyCapped(response, http.maxBytes);
   if (!isPptxBytes(bytes)) throw notAPowerPoint(LINK_NOT_A_POWERPOINT_MESSAGE);
   return {
-    ref: finalUrl.href,
+    // The URL asked for, not the one after redirects: those are often short-lived signed
+    // download URLs (GitHub release assets, Dropbox `?dl=1`) that sync could not use later.
+    ref: url.href,
     fileName: fileNameFor(response, finalUrl),
     sizeBytes: bytes.byteLength,
     changeToken: changeTokenOf(response),

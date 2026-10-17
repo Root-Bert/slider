@@ -49,7 +49,9 @@ describe('DeleteDeckDialog', () => {
 
   it('a single deck: named in the title, closes only when it really went', async () => {
     const { onDeleted } = setup();
-    expect(screen.getByRole('dialog', { name: '„Q4 Strategie“ löschen?', hidden: true })).toBeTruthy();
+    expect(
+      screen.getByRole('dialog', { name: '„Q4 Strategie“ löschen?', hidden: true }),
+    ).toBeTruthy();
     expect(screen.getByText('Hochgeladene Datei')).toBeTruthy();
 
     await userEvent.click(confirm());

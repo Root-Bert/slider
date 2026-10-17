@@ -210,3 +210,31 @@ describe('documented settings', () => {
     expect(read('apps/api/src/routes/setup.ts')).not.toMatch(/Anmeldeweg ein \(E-Mail/);
   });
 });
+
+describe('restoring a backup', () => {
+  const docs = read('docs/self-hosting.md');
+  const section = docs.slice(docs.indexOf('### Wiederherstellen'), docs.indexOf('\n## Updates'));
+  const steps = /```bash\n([\s\S]*?)```/.exec(section)?.[1] ?? '';
+  const at = (pattern: RegExp) => steps.search(pattern);
+
+  it('stops Slider, restores database and /data, then starts it so it reads the restored secret', () => {
+    // The secret and the setup-page settings are read only at boot.
+    expect(read('apps/api/src/config.ts')).toMatch(/loadOrCreateSecret/);
+    const stop = at(/^docker compose stop slider$/m);
+    const restore = at(/pg_restore -U slider -d slider --clean --if-exists/);
+    const untar = at(/tar xzf \/backup\/slider-data-[^ ]+\.tar\.gz -C \/data/);
+    const start = at(/^docker compose up -d slider$/m);
+    expect([stop, restore, untar, start].every((i) => i >= 0)).toBe(true);
+    expect(stop).toBeLessThan(restore);
+    expect(restore).toBeLessThan(untar);
+    expect(untar).toBeLessThan(start);
+    // Into the same volume the backup command archived.
+    expect(docs).toMatch(/-v slider_slider-data:\/data[^\n]*\n {2}tar czf/);
+    expect(steps).toMatch(/-v slider_slider-data:\/data/);
+  });
+
+  it('says that /data/secret must be restored together with the database', () => {
+    expect(section).toMatch(/`\/data\/secret`/);
+    expect(section).toMatch(/unlesbar/);
+  });
+});

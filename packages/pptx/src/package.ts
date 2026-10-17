@@ -27,3 +27,14 @@ export async function openPptx(data: Uint8Array | ArrayBuffer): Promise<PptxPack
     renderSlideSvg: (slide) => renderSlideSvg(slide, presentation.size, readFile),
   };
 }
+
+/**
+ * A copy of the PPTX that an office suite can render without leaving the package: every
+ * external relationship (linked pictures, media, OLE links, hyperlinks) is dropped. For
+ * LibreOffice's slide images – an uploaded deck must not make the server fetch URLs or files.
+ *
+ * @throws {PptxError} like {@link openPptx} for files that are not a readable package.
+ */
+export async function withoutExternalLinks(data: Uint8Array | ArrayBuffer): Promise<Uint8Array> {
+  return (await Archive.open(data)).withoutExternalRelationships();
+}

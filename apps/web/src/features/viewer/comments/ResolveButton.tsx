@@ -26,7 +26,8 @@ export function ResolveButton({
     event.stopPropagation();
     update.mutate({ commentId: comment.id, status: done ? 'open' : 'done' });
   };
-  const name = done ? 'Wieder öffnen' : 'Als erledigt markieren';
+  // A toggle: the name says what it switches, `aria-pressed` whether it's on ("Erledigt,
+  // gedrückt"); what a click does is the tooltip's.
   const title = done ? 'Erledigt – klicken zum Wiederöffnen' : 'Als erledigt markieren';
 
   return (
@@ -38,10 +39,10 @@ export function ResolveButton({
       )}
       {variant === 'chip' ? (
         // A toggle with a text label and a success state: no kit Button has that look.
+        // Named by its visible text ("Erledigen" / "Erledigt"), so voice control finds it.
         <button
           type="button"
           aria-pressed={done}
-          aria-label={name}
           title={title}
           onClick={onClick}
           className={cn(
@@ -55,7 +56,7 @@ export function ResolveButton({
       ) : (
         <IconButton
           icon="check"
-          label={name}
+          label="Erledigt"
           title={title}
           variant="subtle"
           size="compact"

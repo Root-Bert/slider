@@ -245,3 +245,63 @@ describe('closing', () => {
     expect(sendBeacon).toHaveBeenCalledWith('/api/live/me/leave');
   });
 });
+
+describe('hidden tabs', () => {
+  const page = { hidden: false, listeners: new Set<() => void>() };
+  const setHidden = (hidden: boolean) => {
+    page.hidden = hidden;
+    for (const listener of page.listeners) listener();
+  };
+  beforeEach(() => {
+    page.hidden = false;
+    page.listeners.clear();
+    vi.stubGlobal('document', {
+      get hidden() {
+        return page.hidden;
+      },
+      addEventListener: (_type: string, listener: () => void) => page.listeners.add(listener),
+      removeEventListener: (_type: string, listener: () => void) => page.listeners.delete(listener),
+    });
+  });
+
+  it('lets go of the stream while hidden and says hello again when shown', async () => {
+    const live = await load();
+    const onComments = vi.fn();
+    const close = live.connectLive('d1', onComments);
+    const first = latest();
+    first.emit({ type: 'hello', connectionId: 'me', peers: [peer('p1')] } as LiveEvent);
+    await vi.advanceTimersByTimeAsync(0);
+    fetch.mockClear();
+
+    // Hidden: the connection is freed for the other tabs, and the others see us leave.
+    setHidden(true);
+    expect(first.close).toHaveBeenCalled();
+    expect(sendBeacon).toHaveBeenCalledWith('/api/live/me/leave');
+    expect(live.getLiveSnapshot()).toEqual({ connected: false, peers: new Map() });
+    // No heartbeat, no reconnect while hidden; a late event of the old stream is ignored.
+    now += LIVE_HEARTBEAT_MS * 2;
+    await vi.advanceTimersByTimeAsync(LIVE_HEARTBEAT_MS * 2);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(FakeEventSource.all).toHaveLength(1);
+    first.emit({ type: 'hello', connectionId: 'old', peers: [peer('p2')] } as LiveEvent);
+    expect(live.getLiveSnapshot().connected).toBe(false);
+
+    // Shown again: a new stream; its hello refetches the comments missed meanwhile.
+    setHidden(false);
+    expect(FakeEventSource.all).toHaveLength(2);
+    latest().emit({ type: 'hello', connectionId: 'me2', peers: [] } as LiveEvent);
+    expect(live.getLiveSnapshot().connected).toBe(true);
+    expect(onComments).toHaveBeenCalledTimes(2);
+    close();
+    expect(page.listeners.size).toBe(0);
+  });
+
+  it('opens no stream for a deck opened in a background tab until it shows', async () => {
+    page.hidden = true;
+    const live = await load();
+    live.connectLive('d1', () => undefined);
+    expect(FakeEventSource.all).toHaveLength(0);
+    setHidden(false);
+    expect(FakeEventSource.all).toHaveLength(1);
+  });
+});

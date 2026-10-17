@@ -4,7 +4,7 @@ import { smoothScroll } from '@/lib/motion';
 import { formatRelativeTime, pluralize } from '@/lib/format';
 import { AvatarStack, Button, IconButton, Notice } from '@/ui';
 import { SidePanel, SidePanelHeader } from '../components/SidePanel';
-import type { Thread } from './lib/comment-selectors';
+import { homeSlideId as threadHomeSlideId, placeGap, type Thread } from './lib/comment-selectors';
 import { locationLabel } from './lib/labels';
 import { collapseReplies } from './lib/replies';
 import { isChangedSinceComment } from '../revisions/lib/revision-changes';
@@ -29,7 +29,7 @@ export function ThreadPanel() {
 }
 
 function ThreadPanelView({ thread }: { thread: Thread }) {
-  const { deck, canComment, slideIndex } = useViewerData();
+  const { deck, canComment, slides, slideIndex } = useViewerData();
   const { modifiedAt, deletedSlides } = useRevisionData();
   const dispatch = useViewerDispatch();
   const registry = useStageRegistry();
@@ -40,16 +40,19 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
   const { root, replies } = thread;
   const { hidden, visible } = collapseReplies(replies, showAll);
   const deletedSlide = deletedSlides.find((slide) => slide.slideId === root.slideId);
+  // A gap comment is named after the gap it sits at now – its neighbours may have moved apart.
+  const gap =
+    root.anchor.type === 'gap' ? (placeGap(root.anchor, slides, slideIndex) ?? root.anchor) : null;
   const location = deletedSlide
     ? `Gelöschte Folie ${deletedSlide.previousPosition + 1}`
-    : locationLabel(root.anchor, root.slideId, (id) => slideIndex.get(id));
+    : locationLabel(gap ? { type: 'gap', ...gap } : root.anchor, root.slideId, (id) =>
+        slideIndex.get(id),
+      );
   const changedSince = isChangedSinceComment(root, modifiedAt);
 
   // Focus moves into the panel; the thread's slide becomes active and comes into view (gap
   // threads: the slide before the gap).
-  const homeSlideId =
-    root.slideId ??
-    (root.anchor.type === 'gap' ? (root.anchor.afterSlideId ?? root.anchor.beforeSlideId) : null);
+  const homeSlideId = threadHomeSlideId(root, slides, slideIndex);
   const homeOnTrack = homeSlideId !== null && slideIndex.has(homeSlideId);
   useRestoreFocus();
   useEffect(() => {

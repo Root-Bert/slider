@@ -1,13 +1,14 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { and, eq, gt } from 'drizzle-orm';
 import type { Context } from 'hono';
-import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { sessions, users, type UserRow } from '../db/schema';
 import type { AppDeps } from '../deps';
+import { readCookie, removeCookie, writeCookie } from './cookies';
 
 /**
  * Login sessions (BER-129). The cookie carries 256 random bits; the database only knows their
- * SHA-256, so neither a database dump nor a log line can be replayed as a cookie.
+ * SHA-256, so neither a database dump nor a log line can be replayed as a cookie. In production
+ * the browser sees it as `__Host-slider_session` (see ./cookies).
  */
 export const SESSION_COOKIE = 'slider_session';
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -21,11 +22,8 @@ export const hashToken = (token: string) => createHash('sha256').update(token).d
 const ttlMs = (deps: AppDeps) => deps.config.auth.sessionTtlDays * DAY_MS;
 
 function setSessionCookie(c: Context, deps: AppDeps, token: string): void {
-  setCookie(c, SESSION_COOKIE, token, {
-    path: '/',
-    httpOnly: true,
+  writeCookie(c, deps.config, SESSION_COOKIE, token, {
     sameSite: 'Lax',
-    secure: deps.config.env === 'production',
     maxAge: Math.floor(ttlMs(deps) / 1000),
   });
 }
@@ -48,7 +46,7 @@ export async function startSession(c: Context, deps: AppDeps, userId: string): P
 
 /** The signed-in user, or `null`; renews the session (and its cookie) at most once a day. */
 export async function loadSessionUser(c: Context, deps: AppDeps): Promise<UserRow | null> {
-  const token = getCookie(c, SESSION_COOKIE);
+  const token = readCookie(c, deps.config, SESSION_COOKIE);
   if (!token) return null;
   const now = deps.clock.now();
   const [row] = await deps.db
@@ -58,7 +56,7 @@ export async function loadSessionUser(c: Context, deps: AppDeps): Promise<UserRo
     .where(and(eq(sessions.tokenHash, hashToken(token)), gt(sessions.expiresAt, now)));
   if (!row) {
     // Expired, logged out elsewhere or unknown: drop the stale cookie.
-    deleteCookie(c, SESSION_COOKIE, { path: '/' });
+    removeCookie(c, deps.config, SESSION_COOKIE);
     return null;
   }
   if (now.getTime() - row.session.lastSeenAt.getTime() >= RENEW_AFTER_MS) {
@@ -73,7 +71,7 @@ export async function loadSessionUser(c: Context, deps: AppDeps): Promise<UserRo
 
 /** Logs this browser out: deletes the session row and the cookie. */
 export async function endSession(c: Context, deps: AppDeps): Promise<void> {
-  const token = getCookie(c, SESSION_COOKIE);
+  const token = readCookie(c, deps.config, SESSION_COOKIE);
   if (token) await deps.db.delete(sessions).where(eq(sessions.tokenHash, hashToken(token)));
-  deleteCookie(c, SESSION_COOKIE, { path: '/' });
+  removeCookie(c, deps.config, SESSION_COOKIE);
 }

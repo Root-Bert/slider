@@ -91,6 +91,19 @@ export function matchesFilter(thread: Thread, filter: ThreadFilter): boolean {
 export const filterThreads = (threads: readonly Thread[], filter: ThreadFilter): Thread[] =>
   threads.filter((thread) => matchesFilter(thread, filter));
 
+/**
+ * Open threads per slide id, as the slide list's `openCommentCount` counts them: open roots on
+ * the slide, not those deleted in PowerPoint (gap comments sit between slides).
+ */
+export function openCountBySlide(threads: readonly Thread[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const { root } of threads) {
+    if (!root.slideId || root.status !== 'open' || isRemovedInPowerPoint(root)) continue;
+    counts.set(root.slideId, (counts.get(root.slideId) ?? 0) + 1);
+  }
+  return counts;
+}
+
 /** Counts for the Alle / Offen / Erledigt chips; respects the avatar filter but not the status. */
 export function countByStatus(
   threads: readonly Thread[],
@@ -105,27 +118,72 @@ export function countByStatus(
   return counts;
 }
 
+/** The two neighbours of a gap; `null` sides mean "before the first" / "after the last" slide. */
+export interface GapSides {
+  afterSlideId: string | null;
+  beforeSlideId: string | null;
+}
+
+type SlideOrder = readonly { id: string }[];
+
+const indexSlides = (slides: SlideOrder) =>
+  new Map(slides.map((slide, index) => [slide.id, index]));
+
 /**
- * Threads that are listed on the current slides – i.e. without those on slides a later
- * revision deleted (they live in "Gelöschte Folien"). Threads without a slide stay.
+ * Where a gap comment (or gap draft) sits in the current slide order. A gap stores the neighbours
+ * it was written between and is never re-anchored – a slide inserted there, or a neighbour moved,
+ * deleted or hidden, leaves it between two slides that aren't neighbours any more. It then goes
+ * to the gap after its slide before, else in front of its slide after (a `null` side: the start
+ * or end of the deck). `null` when neither neighbour is shown.
  */
-export function threadsOnCurrentSlides(
-  threads: readonly Thread[],
-  slideIds: ReadonlySet<string> | ReadonlyMap<string, unknown>,
-): Thread[] {
-  return threads.filter((thread) => {
-    const slideId = homeSlideId(thread.root, null);
-    return slideId === null || slideIds.has(slideId);
-  });
+export function placeGap(
+  gap: GapSides,
+  slides: SlideOrder,
+  slideIndex: ReadonlyMap<string, number> = indexSlides(slides),
+): GapSides | null {
+  const first = slides[0];
+  const last = slides.at(-1);
+  if (!first || !last) return null;
+  const { afterSlideId, beforeSlideId } = gap;
+  if (afterSlideId === null) return { afterSlideId: null, beforeSlideId: first.id };
+  const after = slideIndex.get(afterSlideId);
+  if (after !== undefined) return { afterSlideId, beforeSlideId: slides[after + 1]?.id ?? null };
+  if (beforeSlideId === null) return { afterSlideId: last.id, beforeSlideId: null };
+  const before = slideIndex.get(beforeSlideId);
+  if (before !== undefined) return { afterSlideId: slides[before - 1]?.id ?? null, beforeSlideId };
+  return null;
 }
 
 /**
- * The slide a thread is listed under. Gap comments belong to the slide *before* the gap
- * (or the first slide when the gap is in front of it).
+ * The slide a thread is listed under: its own slide; for gap comments the slide *before* the gap
+ * where it sits now (`placeGap`), or the first slide when that gap is in front of it. `null` for a
+ * gap comment with neither neighbour shown.
  */
-export function homeSlideId(comment: Comment, firstSlideId: string | null): string | null {
+export function homeSlideId(
+  comment: Pick<Comment, 'anchor' | 'slideId'>,
+  slides: SlideOrder,
+  slideIndex: ReadonlyMap<string, number> = indexSlides(slides),
+): string | null {
   if (comment.anchor.type !== 'gap') return comment.slideId;
-  return comment.anchor.afterSlideId ?? comment.anchor.beforeSlideId ?? firstSlideId;
+  const place = placeGap(comment.anchor, slides, slideIndex);
+  return place && (place.afterSlideId ?? place.beforeSlideId);
+}
+
+/**
+ * Threads that are listed on the current slides – i.e. without those on slides a later
+ * revision deleted (they live in "Gelöschte Folien") and gap comments with neither neighbour
+ * left. Threads without a slide stay.
+ */
+export function threadsOnCurrentSlides(
+  threads: readonly Thread[],
+  slides: SlideOrder,
+  slideIndex: ReadonlyMap<string, number> = indexSlides(slides),
+): Thread[] {
+  return threads.filter(({ root }) =>
+    root.anchor.type === 'gap'
+      ? placeGap(root.anchor, slides, slideIndex) !== null
+      : root.slideId === null || slideIndex.has(root.slideId),
+  );
 }
 
 /** Threads per slide id, in thread order. Every slide gets an entry (possibly empty). */
@@ -134,9 +192,9 @@ export function groupThreadsBySlide(
   slides: readonly Slide[],
 ): Map<string, Thread[]> {
   const groups = new Map<string, Thread[]>(slides.map((slide) => [slide.id, []]));
-  const firstSlideId = slides[0]?.id ?? null;
+  const slideIndex = indexSlides(slides);
   for (const thread of threads) {
-    const slideId = homeSlideId(thread.root, firstSlideId);
+    const slideId = homeSlideId(thread.root, slides, slideIndex);
     if (slideId) groups.get(slideId)?.push(thread);
   }
   return groups;
@@ -146,14 +204,48 @@ export function groupThreadsBySlide(
 export const gapKey = (afterSlideId: string | null, beforeSlideId: string | null) =>
   `${afterSlideId ?? 'start'}→${beforeSlideId ?? 'end'}`;
 
-/** Open gap threads per gap (BER-103) – used for markers on the stage and in the filmstrip. */
-export function gapThreadsByGap(threads: readonly Thread[]): Map<string, Thread[]> {
+/**
+ * Gap threads (BER-103) per gap of the current slide order, keyed by `gapKey` of where they sit
+ * now (`placeGap`) – for the dividers on the stage, the filmstrip, the columns and the lines.
+ */
+export function gapThreadsByGap(
+  threads: readonly Thread[],
+  slides: SlideOrder,
+): Map<string, Thread[]> {
   const groups = new Map<string, Thread[]>();
+  const slideIndex = indexSlides(slides);
   for (const thread of threads) {
     const { anchor } = thread.root;
     if (anchor.type !== 'gap') continue;
-    const key = gapKey(anchor.afterSlideId, anchor.beforeSlideId);
+    const place = placeGap(anchor, slides, slideIndex);
+    if (!place) continue;
+    const key = gapKey(place.afterSlideId, place.beforeSlideId);
     groups.set(key, [...(groups.get(key) ?? []), thread]);
+  }
+  return groups;
+}
+
+/**
+ * Threads per slide a later revision deleted ("Gelöschte Folien"; every deleted slide gets an
+ * entry). A gap comment stays on the track while one neighbour is shown (`placeGap`); with
+ * both gone it is listed under the deleted one before the gap, else the one after it.
+ */
+export function threadsByDeletedSlide(
+  threads: readonly Thread[],
+  deletedSlideIds: readonly string[],
+  slides: SlideOrder,
+): Map<string, Thread[]> {
+  const groups = new Map<string, Thread[]>(deletedSlideIds.map((id) => [id, []]));
+  const slideIndex = indexSlides(slides);
+  for (const thread of threads) {
+    const { anchor, slideId } = thread.root;
+    const home =
+      anchor.type !== 'gap'
+        ? slideId
+        : placeGap(anchor, slides, slideIndex)
+          ? null
+          : [anchor.afterSlideId, anchor.beforeSlideId].find((id) => id && groups.has(id));
+    if (home) groups.get(home)?.push(thread);
   }
   return groups;
 }

@@ -17,6 +17,7 @@ vi.mock('../../state/viewer-data', () => ({
     threads,
     threadsBySlide: new Map([['s1', threads]]),
     gapThreads: new Map(),
+    slides: [{ id: 's1' }],
     slideIndex: new Map([['s1', 0]]),
     mentionedThreadIds: new Set(),
     viewer: { author: author('me') },

@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   commentSchema,
   deckSchema,
@@ -11,6 +11,7 @@ import {
   type SyncResult,
 } from '@slider/shared';
 import { decks, revisions } from '../src/db/schema';
+import { MAX_IMPORT_ATTEMPTS } from '../src/import/attempts';
 import { findInterruptedImports, importDeck } from '../src/import/import-deck';
 import { silentLogger } from '../src/logger';
 import {
@@ -676,6 +677,45 @@ describe('robustness', () => {
     const rows = await revisionRows(ctx, deckId);
     expect(rows.map((r) => r.status)).toEqual(['ready', 'ready']);
     expect((await deckRow(ctx, deckId)).currentRevisionId).toBe(queued.revisionId);
+  });
+
+  it('a sync import that keeps killing the process is given up and its file skipped', async () => {
+    const { ctx, source, deckId, pptx } = await setup(
+      { v2: presentation(EDITED) },
+      { config: { sync: { pollIntervalMs: 0, debounceMs: 0 } } },
+    );
+    const release = pptx.gate('v2');
+    source.token = 'c2';
+    source.bytes = pptxBytes('v2');
+    const queued = await ctx.deps.sync.checkDeck(deckId);
+    expect(queued).toMatchObject({ status: 'queued', revisionId: expect.any(String) });
+    const revisionId = (queued as { revisionId: string }).revisionId;
+    const attempts = async () =>
+      (await ctx.deps.db.select().from(revisions).where(eq(revisions.id, revisionId)))[0]
+        ?.importAttempts;
+    // The held run counts before the file is even parsed – as a run the process dies in would.
+    await vi.waitFor(async () => expect(await attempts()).toBe(1));
+
+    // Two more runs died the same way; on the next start the import gives up.
+    await ctx.deps.db
+      .update(revisions)
+      .set({ importAttempts: MAX_IMPORT_ATTEMPTS })
+      .where(eq(revisions.id, revisionId));
+    const [job] = await findInterruptedImports(ctx.deps.db);
+    expect(job).toEqual({ deckId, revisionId, kind: 'sync' });
+    await importDeck({ ...ctx.deps, openPptx: pptx.open, log: silentLogger }, job!);
+    expect(await revisionRows(ctx, deckId)).toHaveLength(1);
+    expect((await deckRow(ctx, deckId)).syncState).toMatchObject({
+      failedToken: 'c2',
+      lastSyncError: {
+        code: 'parse_failed',
+        message: expect.stringMatching(/mehrmals abgebrochen/),
+      },
+    });
+    expect(await findInterruptedImports(ctx.deps.db)).toEqual([]);
+
+    release();
+    await ctx.deps.queue.idle();
   });
 
   it('migrated defaults: revisions are ready and sync state is empty', async () => {

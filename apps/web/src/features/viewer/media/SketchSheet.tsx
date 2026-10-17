@@ -206,9 +206,7 @@ export function SketchSheet({
       {...sheetEvents}
       className={cn(
         'relative w-full touch-none outline-none select-none [container-type:size]',
-        big
-          ? 'rounded-panel shadow-float'
-          : 'rounded-control ring-hairline-strong',
+        big ? 'rounded-panel shadow-float' : 'rounded-control ring-hairline-strong',
         interactive && tool === null && 'cursor-crosshair',
       )}
       style={{ aspectRatio: aspect, backgroundColor: SKETCH_BACKGROUND }}

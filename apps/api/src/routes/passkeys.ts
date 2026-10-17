@@ -1,7 +1,6 @@
 import { and, desc, eq, lt } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
-import { deleteCookie, getSignedCookie, setSignedCookie } from 'hono/cookie';
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
 import {
   loginIdentitySchema,
@@ -19,6 +18,7 @@ import {
   RP_NAME,
   simpleWebAuthn,
 } from '../auth/passkeys';
+import { readSignedCookie, removeCookie, writeSignedCookie } from '../auth/cookies';
 import { startSession } from '../auth/session';
 import { optionalViewerMiddleware, unauthorized, type OptionalViewerEnv } from '../auth/viewer';
 import { authChallenges, passkeys, users } from '../db/schema';
@@ -37,7 +37,6 @@ const CHALLENGE_COOKIES: Record<Purpose, string> = {
   passkey_register: 'slider_passkey_register',
   passkey_login: 'slider_passkey_login',
 };
-const COOKIE_PATH = '/api';
 
 const toPasskey = (row: PasskeyRow): Passkey => ({
   id: row.id,
@@ -84,11 +83,8 @@ export function passkeysRoutes(deps: AppDeps) {
       createdAt: now,
       expiresAt: new Date(now.getTime() + CHALLENGE_TTL_MS),
     });
-    await setSignedCookie(c, CHALLENGE_COOKIES[purpose], id, config.secret, {
-      path: COOKIE_PATH,
-      httpOnly: true,
+    await writeSignedCookie(c, config, CHALLENGE_COOKIES[purpose], id, {
       sameSite: 'Strict',
-      secure: config.env === 'production',
       maxAge: CHALLENGE_TTL_MS / 1000,
     });
   };
@@ -96,8 +92,8 @@ export function passkeysRoutes(deps: AppDeps) {
   /** Takes the pending challenge – single use: the row is deleted whether or not it verifies. */
   const takeChallenge = async (c: Context, purpose: Purpose) => {
     const name = CHALLENGE_COOKIES[purpose];
-    const id = await getSignedCookie(c, config.secret, name);
-    deleteCookie(c, name, { path: COOKIE_PATH });
+    const id = await readSignedCookie(c, config, name);
+    removeCookie(c, config, name);
     if (!id) return null;
     const [row] = await deps.db
       .delete(authChallenges)

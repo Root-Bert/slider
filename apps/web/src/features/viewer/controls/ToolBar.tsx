@@ -48,6 +48,10 @@ export function ToolBar({ className }: { className?: string }) {
   );
 }
 
+/**
+ * Every button here is a toggle: a stable name for what it switches, `aria-pressed` true or false
+ * (screen readers announce "Box-Modus, Umschalter, gedrückt"), the action in the tooltip.
+ */
 function ToolButtons() {
   const state = useViewerState();
   const { tool, boxMode, showGuides, showHiddenSlides } = state;
@@ -72,6 +76,7 @@ function ToolButtons() {
         }
         size="sm"
         active={tool === null}
+        aria-pressed={tool === null}
         onClick={() => dispatch({ type: 'toolSelected', tool: null })}
       />
       {/* Freehand, arrow and marker are bare drawings; their badge takes the comment. */}
@@ -82,34 +87,44 @@ function ToolButtons() {
           label={option.label}
           size="sm"
           active={tool === option.tool}
+          aria-pressed={tool === option.tool}
           onClick={() => dispatch({ type: 'toolSelected', tool: option.tool })}
         />
       ))}
       <ToolbarDivider />
       <IconButton
         icon="gridView"
-        label={`Box-Modus ${boxMode ? 'aus' : 'an'} (B) – ⌥ halten wechselt kurz`}
+        label="Box-Modus"
+        title={`Box-Modus ${boxMode ? 'aus' : 'an'} (B) – ⌥ halten wechselt kurz`}
+        aria-keyshortcuts="B"
         size="sm"
         active={boxes}
+        aria-pressed={boxes}
         onClick={() => dispatch({ type: 'boxModeToggled' })}
       />
       <IconButton
         icon="guides"
-        label={showGuides ? 'Hilfslinien ausblenden (G)' : 'Hilfslinien zeigen (G)'}
+        label="Hilfslinien zeigen"
+        title={showGuides ? 'Hilfslinien ausblenden (G)' : 'Hilfslinien zeigen (G)'}
+        aria-keyshortcuts="G"
         size="sm"
         active={showGuides}
+        aria-pressed={showGuides}
         onClick={() => dispatch({ type: 'showGuidesToggled' })}
       />
       {hiddenSlideCount > 0 && (
         <IconButton
           icon={showHiddenSlides ? 'visibility' : 'visibilityOff'}
-          label={
+          label={`Ausgeblendete Folien zeigen (${hiddenSlideCount})`}
+          title={
             showHiddenSlides
               ? 'Ausgeblendete Folien verbergen (H)'
               : `${hiddenSlideCount === 1 ? '1 ausgeblendete Folie' : `${hiddenSlideCount} ausgeblendete Folien`} zeigen (H)`
           }
+          aria-keyshortcuts="H"
           size="sm"
           active={showHiddenSlides}
+          aria-pressed={showHiddenSlides}
           onClick={() => dispatch({ type: 'showHiddenSlidesToggled' })}
         />
       )}

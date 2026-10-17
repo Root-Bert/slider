@@ -236,6 +236,23 @@ export function isLimitedInstance(webOrigin: string, demo: boolean | undefined):
   return demo ?? DEMO_HOSTS.includes(new URL(webOrigin).hostname);
 }
 
+/**
+ * https://, or plain http on this machine (localhost, 127.0.0.1, ::1) – the addresses where
+ * browsers keep `Secure` cookies.
+ */
+export function isSecureOrigin(origin: string): boolean {
+  const url = new URL(origin);
+  if (url.protocol === 'https:') return true;
+  const host = url.hostname;
+  return (
+    url.protocol === 'http:' &&
+    (host === 'localhost' ||
+      host.endsWith('.localhost') ||
+      host === '[::1]' ||
+      /^127(\.\d{1,3}){3}$/.test(host))
+  );
+}
+
 /** What the server needs before the database is open: data folder, secret, database. */
 export type BootConfig = Pick<Config, 'env' | 'dataDir' | 'secret' | 'hosting'>;
 
@@ -273,6 +290,13 @@ export function loadConfig(
     );
   }
   const webOrigin = (configuredUrl ?? 'http://localhost:5173').replace(/\/+$/, '');
+  if (parsed.NODE_ENV === 'production' && !isSecureOrigin(webOrigin)) {
+    // Login cookies are `Secure` in production; a browser drops them on a plain-http address,
+    // so nobody could ever sign in – and nothing else would say why.
+    throw new Error(
+      `SLIDER_URL must start with https:// in production (got ${webOrigin}): login cookies are Secure and browsers drop them on http://. Put Slider behind HTTPS, e.g. with the Caddy setup in deploy/.`,
+    );
+  }
   let secret = parsed.SLIDER_SECRET;
   if (!secret) {
     if (parsed.NODE_ENV === 'production') secret = loadOrCreateSecret(dataDir);

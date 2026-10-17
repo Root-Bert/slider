@@ -45,16 +45,16 @@ describe('Waveform', () => {
 
 describe('AudioPlayer', () => {
   it('plays and pauses, showing the stored duration', async () => {
-    const play = vi
-      .spyOn(HTMLMediaElement.prototype, 'play')
-      .mockImplementation(async function (this: HTMLMediaElement) {
-        this.dispatchEvent(new Event('play'));
-      });
-    const pause = vi
-      .spyOn(HTMLMediaElement.prototype, 'pause')
-      .mockImplementation(function (this: HTMLMediaElement) {
-        this.dispatchEvent(new Event('pause'));
-      });
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(async function (
+      this: HTMLMediaElement,
+    ) {
+      this.dispatchEvent(new Event('play'));
+    });
+    const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(function (
+      this: HTMLMediaElement,
+    ) {
+      this.dispatchEvent(new Event('pause'));
+    });
     const { container } = render(<AudioPlayer src="blob:a" durationMs={65_000} peaks={[0.4]} />);
     expect(container.textContent).toContain('1:05');
 

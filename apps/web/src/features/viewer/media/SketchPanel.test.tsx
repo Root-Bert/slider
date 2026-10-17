@@ -2,6 +2,7 @@ import type { Stroke } from '@slider/shared';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import type { Recording } from './hooks/useRecorder';
 import type { useSheetEditor } from './hooks/useSheetEditor';
 import { SketchPanel } from './SketchPanel';
 
@@ -27,10 +28,58 @@ vi.mock('./SketchSheet', () => ({
       <button type="button" onClick={() => editor.commit([...editor.strokes, line], 0)}>
         draw
       </button>
+      <button
+        type="button"
+        onClick={() =>
+          editor.startText({
+            box: { ...textBox, text: 'Logo hier' },
+            color: 'green',
+            index: null,
+          })
+        }
+      >
+        write
+      </button>
     </div>
   ),
 }));
-vi.mock('./RecorderPanel', () => ({ RecorderPanel: () => null }));
+
+const textBox = {
+  x: 0.2,
+  y: 0.2,
+  width: 0.3,
+  minHeight: 0.1,
+  fontSize: 0.05,
+  text: '',
+  measured: null,
+};
+const memo = { kind: 'audio', url: 'blob:memo' } as unknown as Recording;
+
+// The memo recorder: its buttons stand for starting, stopping (with the finished memo) a memo.
+vi.mock('./RecorderPanel', () => ({
+  RecorderPanel: ({
+    onChange,
+    onRecordingChange,
+  }: {
+    onChange: (recording: Recording | null) => void;
+    onRecordingChange?: (recording: boolean) => void;
+  }) => (
+    <>
+      <button type="button" onClick={() => onRecordingChange?.(true)}>
+        memo start
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          onRecordingChange?.(false);
+          onChange(memo);
+        }}
+      >
+        memo stop
+      </button>
+    </>
+  ),
+}));
 
 const renderPanel = (props: Partial<Parameters<typeof SketchPanel>[0]> = {}) => {
   const onChange = vi.fn();
@@ -130,5 +179,28 @@ describe('SketchPanel', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: /Senden/, hidden: true }));
     expect(onSend).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('dialog', { hidden: true })).toBeNull();
+  });
+
+  it('has nothing to send while the memo still records, so it is never sent without it', async () => {
+    const { onChange } = renderPanel();
+    await userEvent.click(screen.getByRole('button', { name: 'draw' }));
+    expect(onChange).toHaveBeenLastCalledWith({ strokes: [line], memo: null });
+
+    await userEvent.click(screen.getByRole('button', { name: 'memo start' }));
+    expect(onChange).toHaveBeenLastCalledWith(null);
+    expect(screen.getByRole('status').textContent).toContain('Beende erst die Aufnahme');
+
+    await userEvent.click(screen.getByRole('button', { name: 'memo stop' }));
+    expect(onChange).toHaveBeenLastCalledWith({ strokes: [line], memo });
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('reports text still being written on the sheet as part of the drawing', async () => {
+    const { onChange } = renderPanel();
+    await userEvent.click(screen.getByRole('button', { name: 'draw' }));
+    await userEvent.click(screen.getByRole('button', { name: 'write' }));
+    const sketch = onChange.mock.lastCall?.[0] as { strokes: Stroke[] } | null;
+    expect(sketch?.strokes).toHaveLength(2);
+    expect(sketch?.strokes[1]).toMatchObject({ tool: 'text', text: 'Logo hier', color: 'green' });
   });
 });

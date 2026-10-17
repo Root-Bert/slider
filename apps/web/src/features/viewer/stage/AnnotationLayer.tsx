@@ -3,6 +3,7 @@ import {
   isDrawing,
   isPathStroke,
   rectShapeRefAt,
+  refShape,
   type Anchor,
   type Comment,
   type Point,
@@ -398,7 +399,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
 function anchoredShape(anchor: Anchor, shapes: readonly Shape[]): Shape | null {
   if (anchor.type !== 'point' && anchor.type !== 'rect') return null;
   const ref = anchor.shapeRef;
-  return ref ? (shapes.find((shape) => shape.id === ref.shapeId) ?? null) : null;
+  return ref ? refShape(shapes, ref) : null;
 }
 
 /** Where a comment's badge sits: its point, the start of its drawing, or the area's corner. */

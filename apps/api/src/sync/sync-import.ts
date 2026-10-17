@@ -17,6 +17,7 @@ import {
   type RevisionDiffRecord,
   type SlideRenderer,
 } from '../db/schema';
+import { beginImportAttempt, endImportAttempt, ImportCrashLoop } from '../import/attempts';
 import { deleteOrphanSlides, sha256Hex, toShape } from '../import/common';
 import { ConversionAborted } from '../import/libreoffice';
 import { renderSlidePages, slideRenderer, storeSlideRender } from '../import/office-pages';
@@ -57,7 +58,9 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
     return;
   }
 
+  let stopped = false;
   try {
+    await beginImportAttempt(db, revisionId);
     const bytes = revision.pptxKey ? await storage.get(revision.pptxKey) : null;
     if (!bytes) throw new Error(`Original file of revision ${revisionId} is missing`);
     const document = await deps.openPptx(bytes);
@@ -292,6 +295,7 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
   } catch (error) {
     if (error instanceof ConversionAborted) {
       // Shutdown: the revision stays pending, and the next start imports it again.
+      stopped = true;
       deps.log.info(`Sync import of deck ${deckId} stopped by shutdown; resumes on the next start`);
       return;
     }
@@ -305,11 +309,12 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
     const token =
       revision.sourceChangeToken ??
       (revision.contentSha256 ? `sha256:${revision.contentSha256}` : null);
-    const parseFailed = error instanceof PptxError;
-    // A file that cannot be parsed is skipped until it changes. Anything else may be transient
-    // (storage, database): the same file is tried again with a backoff, and after a few failed
-    // imports of it in a row it is skipped too – a manual "Neu rendern" still tries. Only import
-    // attempts of this very file count, not the failed source checks before it.
+    // A file that cannot be parsed – or whose imports kept killing the process – is skipped
+    // until it changes. Anything else may be transient (storage, database): the same file is
+    // tried again with a backoff, and after a few failed imports of it in a row it is skipped
+    // too – a manual "Neu rendern" still tries. Only import attempts of this very file count,
+    // not the failed source checks before it.
+    const parseFailed = error instanceof PptxError || error instanceof ImportCrashLoop;
     const previous = deck.syncState.importFailures;
     const failures = parseFailed
       ? null
@@ -334,6 +339,8 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
       importingRevisionId: null,
       pending: null,
     }).catch(() => {});
+  } finally {
+    await endImportAttempt(db, revisionId, { stopped }).catch(() => {});
   }
 }
 

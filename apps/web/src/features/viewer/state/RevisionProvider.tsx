@@ -8,7 +8,7 @@ import {
   useRevisionDiffs,
   useRevisions,
 } from '@/lib/api';
-import type { Thread } from '../comments/lib/comment-selectors';
+import { threadsByDeletedSlide } from '../comments/lib/comment-selectors';
 import {
   currentRevision,
   oldestOpenComment,
@@ -123,14 +123,15 @@ export function RevisionProvider({ children }: { children: ReactNode }) {
     [slides, revisionCreatedAt, history],
   );
   const deletedSlides = useMemo(() => deleted.data ?? [], [deleted.data]);
-  const deletedThreads = useMemo(() => {
-    const result = new Map<string, Thread[]>(deletedSlides.map((slide) => [slide.slideId, []]));
-    for (const thread of threads) {
-      const slideId = thread.root.slideId;
-      if (slideId) result.get(slideId)?.push(thread);
-    }
-    return result;
-  }, [deletedSlides, threads]);
+  const deletedThreads = useMemo(
+    () =>
+      threadsByDeletedSlide(
+        threads,
+        deletedSlides.map((slide) => slide.slideId),
+        slides,
+      ),
+    [deletedSlides, threads, slides],
+  );
 
   const value = useMemo<RevisionData>(
     () => ({

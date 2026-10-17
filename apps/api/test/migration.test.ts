@@ -223,3 +223,33 @@ describe('migration 0027_slide_indexes', () => {
     );
   });
 });
+
+describe('migration 0028_import_attempts_url_ref', () => {
+  it('makes the pasted link the sync reference of plain-URL decks', async () => {
+    client = new PGlite();
+    const db = drizzle({ client });
+    await migrate(db, { migrationsFolder: await migrationsBefore('0028_import_attempts_url_ref') });
+    await client.exec(`
+      INSERT INTO users (id, name, email, color) VALUES ('u1', 'Rea', 'rea@q4-team.de', 'red');
+      INSERT INTO workspaces (id, name, slug, created_by) VALUES ('w1', 'Team', 'team', 'u1');
+      INSERT INTO decks
+        (id, workspace_id, owner_id, title, file_name, source, source_url, source_ref, import_state)
+      VALUES
+        ('d-url', 'w1', 'u1', 'A', 'a.pptx', 'url',
+          'https://github.com/o/r/releases/download/v1/a.pptx',
+          'https://release-assets.githubusercontent.com/a.pptx?sig=old', '{"status":"ready"}'),
+        ('d-sp', 'w1', 'u1', 'B', 'b.pptx', 'sharepoint', 'https://contoso.sharepoint.com/b.pptx',
+          'drives/b!x/items/1', '{"status":"ready"}');
+    `);
+
+    await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+
+    const { rows } = await client.query<{ id: string; source_ref: string }>(
+      'SELECT id, source_ref FROM decks ORDER BY id',
+    );
+    expect(rows).toEqual([
+      { id: 'd-sp', source_ref: 'drives/b!x/items/1' },
+      { id: 'd-url', source_ref: 'https://github.com/o/r/releases/download/v1/a.pptx' },
+    ]);
+  });
+});

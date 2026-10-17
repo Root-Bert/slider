@@ -10,7 +10,17 @@ import {
 } from 'react';
 import { isApplePlatform } from '@/lib/platform';
 import { useCreateComment, useDeleteComment } from '@/lib/api';
-import { AutosizeTextarea, Avatar, Button, cn, ErrorText, Kbd, ReturnKey, useIsNarrow } from '@/ui';
+import {
+  AutosizeTextarea,
+  Avatar,
+  Button,
+  cn,
+  ErrorText,
+  Kbd,
+  Notice,
+  ReturnKey,
+  useIsNarrow,
+} from '@/ui';
 import { accentAlpha } from '@/lib/accent';
 import { isTypingTarget } from '@/lib/dom';
 import { MediaTabs } from './MediaTabs';
@@ -82,11 +92,14 @@ function ComposerPopover({ draft }: { draft: Draft }) {
     forDrawing && body.trim() === '' ? null : draftSubmission(draft, body, author.color);
   // With a recording or a drawn image, text and drawing are optional: that is the comment (BER-116).
   const mediaReady = recordingTab ? recording !== null : imageTab ? sketch !== null : false;
-  const submission = mediaReady
-    ? (textSubmission ?? { body: body.trim(), anchor: draft.anchor, strokes: draft.strokes })
-    : recordingTab || imageTab
-      ? null
-      : textSubmission;
+  // The slide left the deck (new revision) or is hidden now: nothing to send it to.
+  const submission = draft.slideGone
+    ? null
+    : mediaReady
+      ? (textSubmission ?? { body: body.trim(), anchor: draft.anchor, strokes: draft.strokes })
+      : recordingTab || imageTab
+        ? null
+        : textSubmission;
   const canSend = submission !== null;
   const pending = createComment.isPending || createMediaComment.isPending;
   const error = createComment.error ?? createMediaComment.error;
@@ -256,6 +269,15 @@ function ComposerPopover({ draft }: { draft: Draft }) {
           className="text-body leading-5 text-fg"
         />
       </div>
+
+      {draft.slideGone && (
+        <Notice variant="tinted" tone="warning" size="sm" role="alert">
+          {draft.anchor.type === 'gap'
+            ? 'Die Folien um diese Lücke sind in der aktuellen Version nicht mehr zu sehen.'
+            : 'Diese Folie ist in der aktuellen Version nicht mehr zu sehen.'}{' '}
+          Senden geht so nicht mehr – kopiere deinen Text, bevor du abbrichst.
+        </Notice>
+      )}
 
       {error && (
         <ErrorText role="alert" size="xs">

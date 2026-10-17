@@ -23,12 +23,16 @@ export const useComments = (deckId: string, enabled = true, live = false) =>
     refetchInterval: live ? 120_000 : 15_000,
   });
 
+/**
+ * After a comment action: the comments and the deck (its count and participants). Not the slide
+ * list – every slide's shapes – just for its per-slide open counts: the viewer counts those from
+ * the comments (`openCountBySlide`).
+ */
 export function useInvalidateDeckFeedback(deckId: string) {
   const queryClient = useQueryClient();
   return () =>
     Promise.all([
       queryClient.invalidateQueries({ queryKey: queryKeys.comments(deckId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.slides(deckId) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.deck(deckId), exact: true }),
     ]);
 }
