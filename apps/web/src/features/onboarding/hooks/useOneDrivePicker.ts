@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Deck, FilePickerSession } from '@slider/shared';
 import { api, ApiError } from '@/lib/api-client';
-import { queryKeys, useImportDriveItem } from '@/lib/api';
+import { queryKeys, reportSessionError, useImportDriveItem } from '@/lib/api';
 import { runPicker, type PickedDriveItem } from '../lib/onedrive-picker';
 
 const FAILED_MESSAGE = 'Die OneDrive-Auswahl konnte nicht geöffnet werden.';
@@ -34,6 +34,8 @@ export function useOneDrivePicker(workspaceId: string, onImported: (deck: Deck) 
       window.location.assign(cause.loginUrl);
       return;
     }
+    // The picker session and token calls skip React Query: an ended session goes to the login.
+    reportSessionError(queryClient, cause);
     setError(cause instanceof ApiError ? cause.message : FAILED_MESSAGE);
   };
 

@@ -8,7 +8,7 @@ import type { Logger } from '../logger';
 import { blobKeys, type BlobStorage } from '../storage/blob-storage';
 import { importSyncRevision } from '../sync/sync-import';
 import { beginImportAttempt, endImportAttempt, ImportCrashLoop, importsStopping } from './attempts';
-import { deleteOrphanSlides, sha256Hex, toShape } from './common';
+import { deleteOrphanSlides, FINGERPRINT_VERSION, sha256Hex, toShape } from './common';
 import { ConversionAborted, type PptxToPdf } from './libreoffice';
 import { renderSlidePages, slideRenderer, storeSlideRender, type OfficePdf } from './office-pages';
 import type { OpenPptx } from './pptx';
@@ -129,6 +129,8 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
         slideWidthEmu: presentation.size.cx,
         slideHeightEmu: presentation.size.cy,
         fileAuthor: presentation.author,
+        // Set again once every slide is hashed below; a run cut off midway leaves none.
+        fingerprintVersion: null,
       })
       .where(eq(revisions.id, revisionId));
     if (planned.length === 0) return;
@@ -184,6 +186,11 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
       })
       .where(eq(slideVersions.id, slide.versionId));
   }
+  // Every hash is in: the next sync may compare against them without rebuilding.
+  await db
+    .update(revisions)
+    .set({ fingerprintVersion: FINGERPRINT_VERSION })
+    .where(eq(revisions.id, revisionId));
 
   await running({ status: 'running', step: 'comments', progress: null });
   // PowerPoint comments follow the sldId. With duplicate sldIds the first slide keeps them – the

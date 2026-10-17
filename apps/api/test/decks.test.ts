@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { deckSchema, slideSchema, viewerSchema, type Deck } from '@slider/shared';
+import { commentSchema, deckSchema, slideSchema, viewerSchema, type Deck } from '@slider/shared';
 import { z } from 'zod';
 import { decks, revisions } from '../src/db/schema';
 import { IMPORTS_PER_HOUR } from '../src/http/import-limit';
@@ -146,6 +146,54 @@ describe('decks', () => {
     expect(list.map((slide) => slide.id)).toEqual(slideIds);
     expect(list.map((slide) => slide.openCommentCount)).toEqual([0, 1, 0]);
     expect(list[0]?.imageUrl).toMatch(/^\/files\/decks\//);
+  });
+
+  it('does not count a drawing without a comment as open feedback until someone replies', async () => {
+    const { deckId, slideIds } = await createReadyDeck(ctx, { slideCount: 2 });
+    const drawing = commentSchema.parse(
+      await (
+        await ctx.request(`/api/decks/${deckId}/comments`, {
+          method: 'POST',
+          json: {
+            slideId: slideIds[0] ?? '',
+            body: '',
+            anchor: { type: 'rect', rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, shapeRef: null },
+            strokes: [
+              {
+                tool: 'pen',
+                color: 'yellow',
+                points: [
+                  { x: 0.1, y: 0.1 },
+                  { x: 0.2, y: 0.2 },
+                ],
+              },
+            ],
+          },
+        })
+      ).json(),
+    );
+    const counts = async () => ({
+      deck: deckSchema.parse(await (await ctx.request(`/api/decks/${deckId}`)).json())
+        .openCommentCount,
+      slides: slideSchema
+        .array()
+        .parse(await (await ctx.request(`/api/decks/${deckId}/slides`)).json())
+        .map((slide) => slide.openCommentCount),
+    });
+    expect(await counts()).toEqual({ deck: 0, slides: [0, 0] });
+
+    // A reply turns it into a thread – the viewer then shows a card for it, too.
+    const reply = await ctx.request(`/api/decks/${deckId}/comments`, {
+      method: 'POST',
+      json: {
+        slideId: slideIds[0] ?? '',
+        parentId: drawing.id,
+        body: 'Was ist hier gemeint?',
+        anchor: { type: 'slide' },
+      },
+    });
+    expect(reply.status).toBe(201);
+    expect(await counts()).toEqual({ deck: 1, slides: [1, 0] });
   });
 });
 

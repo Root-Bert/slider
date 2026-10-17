@@ -93,12 +93,15 @@ export const filterThreads = (threads: readonly Thread[], filter: ThreadFilter):
 
 /**
  * Open threads per slide id, as the slide list's `openCommentCount` counts them: open roots on
- * the slide, not those deleted in PowerPoint (gap comments sit between slides).
+ * the slide, not those deleted in PowerPoint (gap comments sit between slides) and not bare
+ * drawings – they are no comments, like in the columns and the Offen chip.
  */
 export function openCountBySlide(threads: readonly Thread[]): Map<string, number> {
   const counts = new Map<string, number>();
-  for (const { root } of threads) {
+  for (const thread of threads) {
+    const { root } = thread;
     if (!root.slideId || root.status !== 'open' || isRemovedInPowerPoint(root)) continue;
+    if (isBareDrawing(thread)) continue;
     counts.set(root.slideId, (counts.get(root.slideId) ?? 0) + 1);
   }
   return counts;

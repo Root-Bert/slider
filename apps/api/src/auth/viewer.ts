@@ -6,7 +6,7 @@ import { ownerAuthor } from '../authors';
 import { users, type UserRow } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { ApiError } from '../http/errors';
-import { loadSessionUser } from './session';
+import { loadSessionUser, type LoadSessionOptions } from './session';
 
 export type ViewerEnv = { Variables: { viewer: Viewer } };
 /** For routes anonymous callers may use too (login, public previews). */
@@ -36,8 +36,12 @@ export function optionalViewerMiddleware(deps: AppDeps) {
   });
 }
 
-export async function resolveViewer(c: Context, deps: AppDeps): Promise<Viewer | null> {
-  const user = await loadSessionUser(c, deps);
+export async function resolveViewer(
+  c: Context,
+  deps: AppDeps,
+  options?: LoadSessionOptions,
+): Promise<Viewer | null> {
+  const user = await loadSessionUser(c, deps, options);
   if (user) return userViewer(user);
   if (deps.config.auth.devLogin && deps.ownerId) return loadOwnerViewer(deps, deps.ownerId);
   return null;

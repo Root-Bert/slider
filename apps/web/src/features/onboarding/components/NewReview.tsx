@@ -16,6 +16,7 @@ import { useDeckUpload } from '../hooks/useDeckUpload';
 import { useLinkImport } from '../hooks/useLinkImport';
 import { useOneDrivePicker } from '../hooks/useOneDrivePicker';
 import { connectErrorFrom } from '../lib/link-import-errors';
+import { newReviewSubtitle } from '../lib/new-review-copy';
 import { PPTX_ACCEPT } from '../lib/upload-validation';
 
 /**
@@ -43,6 +44,7 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
   // on the first load). `pickerShown` keeps the panel's place until it has shrunk back.
   const picking = picker.dialog.open;
   const [pickerShown, setPickerShown] = useState(false);
+  const showPicker = oneDriveAvailable || picking || pickerShown;
   const [hasPicked, setHasPicked] = useState(false);
   if (picking && !hasPicked) setHasPicked(true);
   const riseIn = (step: number): { className?: string; style?: CSSProperties } =>
@@ -84,7 +86,7 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
         // Same place and type as "Reviews".
         <PageHeader
           title="Neue Review"
-          subtitle="Präsentation aus OneDrive oder SharePoint öffnen und Feedback direkt auf den Folien sammeln."
+          subtitle={newReviewSubtitle(showPicker)}
           subtitleSize="body"
           className="px-4 pt-2 md:px-14"
         />
@@ -108,7 +110,7 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
           <div className="flex flex-col gap-3">
             {/* First, so it opens up right under the heading. Also while `me` still loads: back
                 from the Microsoft consent it opens right away. */}
-            {!link.noAccess && (oneDriveAvailable || picking || pickerShown) && (
+            {!link.noAccess && showPicker && (
               <>
                 <OneDrivePicker
                   {...picker.dialog}

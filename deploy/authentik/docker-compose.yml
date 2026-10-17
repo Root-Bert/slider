@@ -3,7 +3,7 @@
 #
 #   cd deploy/authentik
 #   cp .env.example .env    # fill in
-#   docker compose up -d    # after deploy/docker-compose.yml is up (shared network "slider")
+#   docker compose up -d    # after deploy/docker-compose.yml is up (Caddy's network "slider")
 #   cp authentik.caddy ../sites/ && (cd .. && docker compose restart caddy)
 # With the shared Caddy (deploy/proxy): PROXY_NETWORK=web in .env, the domain written into
 # authentik.caddy, copied to ../proxy/sites/ instead.
@@ -50,7 +50,9 @@ services:
   authentik-server:
     <<: *authentik
     command: server
-    # Reached by Caddy over the shared network; not published on the host.
+    # The only service on Caddy's network ("proxy"), reached there as authentik-server:9000;
+    # not published on the host. Database and worker stay on this project's own network.
+    networks: [default, proxy]
     expose:
       - '9000'
 
@@ -64,7 +66,11 @@ volumes:
   authentik-templates:
 
 networks:
-  default:
-    # Slider's own network; with the shared Caddy of deploy/proxy set PROXY_NETWORK=web in .env.
+  # Private to Authentik (slider-authentik_default): its Postgres is reachable only from server
+  # and worker, never from Caddy, Slider or other apps.
+  default: {}
+  proxy:
+    # The network of the Caddy in front: Slider's own ("slider"), or with the shared Caddy of
+    # deploy/proxy PROXY_NETWORK=web in .env.
     name: ${PROXY_NETWORK:-slider}
     external: true

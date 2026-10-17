@@ -591,4 +591,53 @@ export const CASES: CorpusCase[] = [
     v1: asGoogleSlides(withFooter(simpleDeck(), { text: SHARED_FOOTER })),
     v2: asGoogleSlides(withFooter(move(simpleDeck(), 'budget', 1), { text: SHARED_FOOTER })),
   },
+  // ── Review round 5 ────────────────────────────────────────────────────────
+  {
+    id: 'google-insert-edits',
+    title: 'Google Slides: Folie eingefügt, kommentierte Folien überarbeitet',
+    description:
+      'Beide Versionen aus Google Slides mit gemeinsamer Fußzeile; nach dem Review steht eine ' +
+      'neue Folie am Anfang und die ersten drei Folien sind überarbeitet. Die verschobenen ' +
+      'sldIds dürfen keine Folie (und keinen Kommentar) eine Folie weiter schieben.',
+    tags: ['producer', 'synthetic', 'structure', 'content'],
+    synthetic: SYNTHETIC_GOOGLE,
+    v1: asGoogleSlides(withFooter(simpleDeck(), { text: SHARED_FOOTER })),
+    v2: asGoogleSlides(
+      withFooter(
+        insertAt(
+          [
+            (d: CorpusDeck) =>
+              edit(d, 'kickoff', { body: 'Kickoff · Produktteam und Vertrieb · Oktober 2026' }),
+            (d: CorpusDeck) =>
+              edit(d, 'agenda', {
+                body: ['Ausgangslage und Ziele', 'Zeitplan und Meilensteine', 'Budget und Team'],
+              }),
+            (d: CorpusDeck) => edit(d, 'ziele', { body: ZIELE_V2 }),
+          ].reduce((deck, step) => step(deck), simpleDeck()),
+          0,
+          NEW_SLIDE,
+        ),
+        { text: SHARED_FOOTER },
+      ),
+    ),
+  },
+  {
+    id: 'ppt-replace-slide-same-title',
+    title: 'PowerPoint: Folie ersetzt, gleicher Titel',
+    description:
+      'Die Zielefolie wird gelöscht und an ihrer Stelle eine neue Folie mit demselben Titel, ' +
+      'aber anderem Inhalt eingefügt (neue sldId, neue p14:creationId). Titel, Position und ' +
+      'Nachbarn allein machen sie nicht zur alten Folie.',
+    tags: ['producer', 'synthetic', 'structure'],
+    synthetic: synthetic('PowerPoint 365 für Windows'),
+    v1: asPowerPointWin(simpleDeck(), PART_ORDER),
+    v2: asPowerPointWin(
+      insertAt(remove(simpleDeck(), 'ziele'), 2, {
+        label: 'ziele-neu',
+        title: 'Ziele 2027',
+        body: ['Kundenstimmen aus den Interviews', 'Zitate der Pilotkunden'],
+      }),
+      [...PART_ORDER, 'ziele-neu'],
+    ),
+  },
 ];

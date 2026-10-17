@@ -332,6 +332,12 @@ export const revisions = pgTable(
      * instead of crash-looping the server on every start.
      */
     importAttempts: integer('import_attempts').notNull().default(0),
+    /**
+     * `FINGERPRINT_VERSION` of the code that computed this revision's slide hashes; `null` for
+     * revisions from before it was recorded. A sync rebuilds the hashes from the file only when
+     * it differs from the current version.
+     */
+    fingerprintVersion: integer('fingerprint_version'),
   },
   (t) => [
     unique('revisions_deck_number_unique').on(t.deckId, t.number),
@@ -451,6 +457,16 @@ export const deletedPptxComments = pgTable(
       .references(() => decks.id, { onDelete: 'cascade' }),
     externalId: text('external_id').notNull(),
     deletedAt: timestamptz('deleted_at').notNull().defaultNow(),
+    /**
+     * What recognises a legacy comment again after PowerPoint for Microsoft 365 turned it into a
+     * modern one with a new id (see `takeOverLegacy`): its slide, its parent comment (Slider id),
+     * the SHA-256 of its trimmed text – not the text itself – and its creation time. `null` for
+     * tombstones from before they were recorded.
+     */
+    slideId: text('slide_id'),
+    parentId: text('parent_id'),
+    bodyHash: text('body_hash'),
+    commentCreatedAt: timestamptz('comment_created_at'),
   },
   (t) => [primaryKey({ columns: [t.deckId, t.externalId] })],
 );

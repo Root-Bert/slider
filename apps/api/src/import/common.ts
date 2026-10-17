@@ -10,6 +10,15 @@ export const sha256Hex = (data: Uint8Array | string): string =>
   createHash('sha256').update(data).digest('hex');
 
 /**
+ * Version of the slide fingerprints (`textHash`, `contentHash`, `renderHash`, shapes) that
+ * `@slider/pptx` and the SVG renderer produce. Bump it with any change there that alters them
+ * for the same file (e.g. leaving slide-number fields out of the text hash): the next sync of
+ * every deck then rebuilds the previous revision's hashes once from its file, instead of
+ * seeing every slide as modified (sync-import.ts).
+ */
+export const FINGERPRINT_VERSION = 1;
+
+/**
  * Deletes slides of the deck that belong to no revision any more – but never a slide that has
  * comments: `comments.slide_id` cascades, and comments must never disappear (BER-109).
  */

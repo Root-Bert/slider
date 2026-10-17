@@ -178,23 +178,27 @@ export function LeaveSection({
   );
   const [picked, setPicked] = useState<string | null>(null);
   const successor = others.find((member) => member.userId === picked) ?? others[0];
-  const alone = mustHandOver && members.isSuccess && others.length === 0;
+  // No one to hand over to: really alone, or only viewers left (one needs another role first).
+  const noSuccessor = mustHandOver && members.isSuccess && others.length === 0;
+  const onlyViewers = noSuccessor && list.some((member) => member.userId !== userId);
 
   return (
     <Section
       title="Organisation verlassen"
       description={
-        alone
-          ? 'Du bist allein in dieser Organisation. Lade jemanden ein und übergib sie, oder lösche sie.'
-          : mustHandOver
-            ? 'Du verlierst den Zugriff auf die Reviews dieser Organisation. Als einziger Admin übergibst du sie beim Verlassen an ein anderes Mitglied – danach kannst du eine neue eigene gründen.'
-            : 'Du verlierst den Zugriff auf die Reviews dieser Organisation. Deine Reviews und Kommentare bleiben hier.'
+        onlyViewers
+          ? 'Außer dir sind hier nur Betrachter, und die können die Organisation nicht übernehmen. Gib einem von ihnen oben bei den Mitgliedern eine andere Rolle, dann kannst du sie übergeben und verlassen.'
+          : noSuccessor
+            ? 'Du bist allein in dieser Organisation. Lade jemanden ein und übergib sie, oder lösche sie.'
+            : mustHandOver
+              ? 'Du verlierst den Zugriff auf die Reviews dieser Organisation. Als einziger Admin übergibst du sie beim Verlassen an ein anderes Mitglied – danach kannst du eine neue eigene gründen.'
+              : 'Du verlierst den Zugriff auf die Reviews dieser Organisation. Deine Reviews und Kommentare bleiben hier.'
       }
       aside={
         <Button
           variant="secondary"
           icon="logout"
-          disabled={alone || (mustHandOver && !members.isSuccess)}
+          disabled={noSuccessor || (mustHandOver && !members.isSuccess)}
           onClick={() => setConfirming(true)}
         >
           Verlassen

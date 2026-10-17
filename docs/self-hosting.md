@@ -6,14 +6,15 @@ Stand Oktober 2026 – Preise und Versionen sind Näherungswerte, bitte vor dem 
 > **Hinweis:** Das Docker-Image (`Dockerfile`) baut die CI (`.github/workflows/ci.yml`) bei jedem
 > Pull Request für amd64 und arm64 und startet beide zum Test (`scripts/smoke-image.sh`:
 > Health-Check, Web-App, Einrichtungslink, ein Beispiel-Deck durch LibreOffice zu Folienbildern,
-> sauberes Stoppen; arm64 unter Emulation); veröffentlicht wird es nur von `main` und `v*`-Tags und
-> erst, wenn alle Prüfungen grün sind. Außerdem getestet: API gegen einen echten Postgres-Server
-> inkl. Migrationen, Auslieferung der Web-App durch die API, Health-Check, sauberes Herunterfahren,
-> die Caddyfile (`caddy adapt`), die gefilterte Produktions-Installation
+> Speichern der Einrichtungsseite mit automatischem Neustart im Container, sauberes Stoppen; arm64
+> unter Emulation); veröffentlicht wird es nur von `main` und `v*`-Tags und erst, wenn alle
+> Prüfungen grün sind. Außerdem getestet: API gegen einen echten Postgres-Server inkl. Migrationen,
+> Auslieferung der Web-App durch die API, Health-Check, sauberes Herunterfahren, beide Caddyfiles
+> samt mitgelieferter Site-Dateien mit und ohne Cloudflare (`caddy adapt --validate` im Image
+> `caddy:2`, `scripts/check-caddyfiles.sh`), die gefilterte Produktions-Installation
 > (`bun install --production --filter @slider/api`) und der Start ohne Secret und Login samt
-> Einrichtungsseite und automatischem Neustart. Die Compose-Dateien (`deploy/`) startet die CI
-> nicht; beim ersten echten `docker compose up` deshalb genau hinschauen (siehe
-> [Fehlersuche](#fehlersuche)).
+> Einrichtungsseite. Die Compose-Dateien (`deploy/`) startet die CI nicht; beim ersten echten
+> `docker compose up` deshalb genau hinschauen (siehe [Fehlersuche](#fehlersuche)).
 
 ## Aufbau
 
@@ -262,7 +263,9 @@ sondern wird mit `account_exists` abgelehnt, bis Google verbunden ist.
 ### Authentik (optional, eigener Identity Provider)
 
 Sinnvoll, wenn Kund:innen kein Microsoft 365 haben oder ein zentrales Login für mehrere Tools
-wollen. Läuft neben Slider auf demselben Server (Netzwerk `slider`, Caddy macht HTTPS).
+wollen. Läuft neben Slider auf demselben Server (Caddy macht HTTPS). Nur `authentik-server`
+hängt im Netz des Caddy (`slider`, mit geteiltem Proxy `web`); Authentiks Postgres und der Worker
+bleiben in einem eigenen, privaten Netz.
 
 1. DNS: `auth.firma.de` auf denselben Server zeigen lassen; in `deploy/.env`
    `AUTHENTIK_DOMAIN=auth.firma.de` setzen.
@@ -427,7 +430,8 @@ Internet ──443──▶ Caddy (deploy/proxy)  ── Netz „web“ ──�
    Der Dienstname muss im Netz `web` eindeutig sein (also nicht `app`, `web` oder `db`). Datenbanken
    der Apps gehören nicht ins Netz `web`.
 4. **Authentik** (falls genutzt): in `deploy/authentik/.env` `PROXY_NETWORK=web` setzen, die Domain
-   in `authentik.caddy` eintragen und die Datei nach `deploy/proxy/sites/` kopieren.
+   in `authentik.caddy` eintragen und die Datei nach `deploy/proxy/sites/` kopieren. Ins Netz `web`
+   kommt nur `authentik-server`, seine Datenbank bleibt privat.
 
 Tipp: Mit mehreren Apps lohnt ein RAM-Limit für Slider (LibreOffice braucht beim Umwandeln kurz
 einige hundert MB), z. B. in `docker-compose.shared-proxy.yml` unter `slider:` `mem_limit: 1g`.

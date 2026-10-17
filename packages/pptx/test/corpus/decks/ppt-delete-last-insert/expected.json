@@ -48,7 +48,7 @@
       "next": "neu",
       "status": "new",
       "moved": false,
-      "confidence": 0.7,
+      "confidence": 1,
       "matchedBy": null,
       "previousPosition": null,
       "position": 4
@@ -58,7 +58,7 @@
       "next": null,
       "status": "deleted",
       "moved": false,
-      "confidence": 0.7,
+      "confidence": 1,
       "matchedBy": null,
       "previousPosition": 4,
       "position": null

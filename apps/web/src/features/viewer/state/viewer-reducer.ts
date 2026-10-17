@@ -144,7 +144,9 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
     case 'deletedPanelSet':
       return action.open
         ? { ...next, deletedPanelOpen: true, threadPanelOpen: false, focusedThreadId: null }
-        : { ...next, deletedPanelOpen: false };
+        : next.deletedPanelOpen
+          ? { ...next, deletedPanelOpen: false }
+          : next;
     case 'threadsReplaced': {
       const keepFocus = next.focusedThreadId === null || action.threadIds.has(next.focusedThreadId);
       const keepHover = next.hoveredThreadId === null || action.threadIds.has(next.hoveredThreadId);

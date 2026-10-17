@@ -11,7 +11,7 @@ import {
 import type { ParsedComment, ParsedCommentAnchor } from '@slider/pptx';
 import type { Executor } from '../db/client';
 import { comments, deletedPptxComments, type CommentRow } from '../db/schema';
-import { clampRect } from './common';
+import { clampRect, sha256Hex } from './common';
 import { pptxAuthorResolver, type PptxAuthorResolver } from './pptx-authors';
 
 /** The slide a PowerPoint comment belongs to, looked up by its `sldId`. */
@@ -54,7 +54,8 @@ interface Desired {
  *   a comment resolved in Slider stays resolved while the file still says "open".
  * - Comments missing from the file are flagged `removed_in_source_at` – never deleted, so app
  *   replies on them survive. A comment that reappears is unflagged.
- * - Comments deleted in Slider leave a tombstone (`deleted_pptx_comments`) and stay deleted.
+ * - Comments deleted in Slider leave a tombstone (`deleted_pptx_comments`) and stay deleted –
+ *   a legacy one also after PowerPoint for Microsoft 365 converted it (`buryConvertedLegacy`).
  * - Authors whose Microsoft account belongs to a workspace member show as that member
  *   (`pptx-authors`); a re-import links comments imported before.
  *
@@ -71,14 +72,14 @@ export async function upsertPptxComments(
   // Deleted in Slider: never brought back, though the file still has them (replies of a deleted
   // root are skipped below, as their parent is missing).
   const tombstones = await db
-    .select({ externalId: deletedPptxComments.externalId })
+    .select()
     .from(deletedPptxComments)
     .where(eq(deletedPptxComments.deckId, deckId));
   const deleted = new Set(tombstones.map((row) => row.externalId));
   const resolveAuthor = await pptxAuthorResolver(db, deckId);
-  const desired = toDesired(parsed, slidesBySldId, resolveAuthor, now).filter(
-    (item) => !deleted.has(item.externalId),
-  );
+  const inFile = toDesired(parsed, slidesBySldId, resolveAuthor, now);
+  const fileIds = new Set(inFile.map((item) => item.externalId));
+  const desired = inFile.filter((item) => !deleted.has(item.externalId));
   const existing = await db
     .select()
     .from(comments)
@@ -91,6 +92,10 @@ export async function upsertPptxComments(
   const legacyLeft = existing.filter(
     (row) =>
       row.externalId !== null && isLegacyId(row.externalId) && !desiredIds.has(row.externalId),
+  );
+  // …and legacy comments deleted in Slider, which the conversion must not bring back.
+  const legacyBuried: Tombstone[] = tombstones.filter(
+    (row) => isLegacyId(row.externalId) && !fileIds.has(row.externalId),
   );
   const counts: PptxCommentCounts = {
     inserted: 0,
@@ -111,6 +116,9 @@ export async function upsertPptxComments(
       if (row) {
         byExternalId.set(item.externalId, row);
         idByExternalId.set(item.externalId, row.id);
+      } else if (await buryConvertedLegacy(db, legacyBuried, item, parentId, now)) {
+        // Its replies are skipped too: their parent is missing.
+        continue;
       }
     }
     if (!row) {
@@ -150,6 +158,58 @@ const isLegacyId = (externalId: string) =>
 /** How far apart the two creation times of one converted comment may be (time zones). */
 const CONVERSION_TIME_SLACK_MS = 26 * 60 * 60 * 1000;
 
+const bodyHash = (body: string) => sha256Hex(body.trim());
+
+type Tombstone = typeof deletedPptxComments.$inferInsert;
+
+/**
+ * The tombstone a PowerPoint comment deleted in Slider leaves: its id, plus what recognises a
+ * legacy one after PowerPoint for Microsoft 365 converted it to a modern comment (new id).
+ */
+export function pptxTombstone(
+  deckId: string,
+  row: Pick<CommentRow, 'externalId' | 'slideId' | 'parentId' | 'body' | 'createdAt'>,
+  deletedAt: Date,
+): Tombstone {
+  return {
+    deckId,
+    externalId: row.externalId ?? '',
+    deletedAt,
+    slideId: row.slideId,
+    parentId: row.parentId,
+    bodyHash: bodyHash(row.body),
+    commentCreatedAt: row.createdAt,
+  };
+}
+
+/** Same slide, same thread position, same text, about the same creation time. */
+function closestConverted<T>(
+  candidates: T[],
+  item: Desired,
+  parentId: string | null,
+  of: (candidate: T) => {
+    slideId: string | null;
+    parentId: string | null;
+    bodyHash: string | null;
+    createdAt: Date | null;
+  },
+): T | undefined {
+  if (!item.body.trim()) return undefined;
+  const hash = bodyHash(item.body);
+  let best: { candidate: T; distance: number } | undefined;
+  for (const candidate of candidates) {
+    const seen = of(candidate);
+    if (seen.slideId !== item.slideId || seen.parentId !== parentId) continue;
+    if (seen.bodyHash !== hash || seen.createdAt === null) continue;
+    const distance = Math.abs(seen.createdAt.getTime() - item.createdAt.getTime());
+    if (distance > CONVERSION_TIME_SLACK_MS) continue;
+    if (!best || distance < best.distance) best = { candidate, distance };
+  }
+  if (!best) return undefined;
+  candidates.splice(candidates.indexOf(best.candidate), 1);
+  return best.candidate;
+}
+
 /**
  * A modern comment that is a converted legacy one takes over the legacy row – with its Slider
  * replies, status and author link – instead of arriving as a duplicate while the original is
@@ -163,22 +223,40 @@ async function takeOverLegacy(
   item: Desired,
   parentId: string | null,
 ): Promise<CommentRow | undefined> {
-  if (!item.body.trim()) return undefined;
-  let best: { row: CommentRow; distance: number } | undefined;
-  for (const row of candidates) {
-    if (row.slideId !== item.slideId || row.parentId !== parentId) continue;
-    if (row.body.trim() !== item.body.trim()) continue;
-    const distance = Math.abs(row.createdAt.getTime() - item.createdAt.getTime());
-    if (distance > CONVERSION_TIME_SLACK_MS) continue;
-    if (!best || distance < best.distance) best = { row, distance };
-  }
-  if (!best) return undefined;
-  candidates.splice(candidates.indexOf(best.row), 1);
+  const row = closestConverted(candidates, item, parentId, (candidate) => ({
+    slideId: candidate.slideId,
+    parentId: candidate.parentId,
+    bodyHash: bodyHash(candidate.body),
+    createdAt: candidate.createdAt,
+  }));
+  if (!row) return undefined;
+  await db.update(comments).set({ externalId: item.externalId }).where(eq(comments.id, row.id));
+  return { ...row, externalId: item.externalId };
+}
+
+/**
+ * A modern comment that is a converted legacy one deleted in Slider stays deleted: it gets a
+ * tombstone of its own (so later imports skip it by id) instead of coming back as new.
+ */
+async function buryConvertedLegacy(
+  db: Executor,
+  candidates: Tombstone[],
+  item: Desired,
+  parentId: string | null,
+  now: Date,
+): Promise<boolean> {
+  const tombstone = closestConverted(candidates, item, parentId, (candidate) => ({
+    slideId: candidate.slideId ?? null,
+    parentId: candidate.parentId ?? null,
+    bodyHash: candidate.bodyHash ?? null,
+    createdAt: candidate.commentCreatedAt ?? null,
+  }));
+  if (!tombstone) return false;
   await db
-    .update(comments)
-    .set({ externalId: item.externalId })
-    .where(eq(comments.id, best.row.id));
-  return { ...best.row, externalId: item.externalId };
+    .insert(deletedPptxComments)
+    .values({ ...tombstone, externalId: item.externalId, deletedAt: now })
+    .onConflictDoNothing();
+  return true;
 }
 
 function toDesired(

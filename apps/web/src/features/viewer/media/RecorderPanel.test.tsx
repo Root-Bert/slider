@@ -87,6 +87,41 @@ describe('RecorderPanel', () => {
     expect(recorder.stop).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps the keyboard when the start and stop buttons swap', () => {
+    const view = renderPanel();
+    const rerender = () =>
+      view.rerender(<RecorderPanel kind="audio" deckId="d1" onChange={view.onChange} />);
+    screen.getByRole('button', { name: /Aufnahme starten/ }).focus();
+    fireEvent.keyDown(document.activeElement!, { key: ' ' });
+    expect(recorder.start).toHaveBeenCalledTimes(1);
+
+    recorder.state = { status: 'requesting' };
+    rerender();
+    recorder.state = { status: 'recording' };
+    rerender();
+    const stop = screen.getByRole('button', { name: 'Aufnahme beenden' });
+    expect(document.activeElement).toBe(stop);
+    fireEvent.keyDown(document.activeElement!, { key: 'Enter' });
+    expect(recorder.stop).toHaveBeenCalledTimes(1);
+
+    // The stop button goes: the panel takes the focus, Space plays the recording.
+    recorder.state = { status: 'recorded', recording: audioRecording };
+    rerender();
+    expect(document.activeElement).toBe(view.panel);
+  });
+
+  it('leaves the focus alone when it moved out of the panel', () => {
+    const outside = document.createElement('input');
+    document.body.append(outside);
+    const view = renderPanel();
+    screen.getByRole('button', { name: /Aufnahme starten/ }).focus();
+    outside.focus();
+    recorder.state = { status: 'recording' };
+    view.rerender(<RecorderPanel kind="audio" deckId="d1" onChange={view.onChange} />);
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
+  });
+
   it('resumes a paused recording', async () => {
     recorder.state = { status: 'paused' };
     const { panel } = renderPanel();

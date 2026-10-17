@@ -43,7 +43,9 @@ const upload = (cookie: string | undefined, workspaceId?: string) => {
   const form = new FormData();
   form.append('file', new File([new Uint8Array([0x50, 0x4b, 3, 4])], 'Neu.pptx'));
   if (workspaceId) form.append('workspaceId', workspaceId);
-  return ctx.request('/api/decks/upload', { method: 'POST', body: form, cookie });
+  // Like the web app: the target in the URL too, so it is checked before the file is read.
+  const query = workspaceId ? `?workspaceId=${workspaceId}` : '';
+  return ctx.request(`/api/decks/upload${query}`, { method: 'POST', body: form, cookie });
 };
 
 const invite = async (body: { email?: string; role?: string }, cookie?: string) => {

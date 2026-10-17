@@ -67,6 +67,20 @@ describe('OpenCommentsButton', () => {
         comment('c2', { body: 'Zweiter' }),
         comment('r1', { parentId: 'c1', body: 'Antwort' }),
         comment('c3', { status: 'done' }),
+        // A drawing without a comment: no card in the viewer, so no row here either.
+        comment('c4', {
+          body: '',
+          strokes: [
+            {
+              tool: 'pen',
+              color: 'red',
+              points: [
+                { x: 0.1, y: 0.1 },
+                { x: 0.2, y: 0.2 },
+              ],
+            },
+          ],
+        }),
       ],
     };
     api.mutate.mockReset();
@@ -92,7 +106,7 @@ describe('OpenCommentsButton', () => {
     expect(trigger().getAttribute('aria-expanded')).toBe('true');
     expect(trigger().getAttribute('aria-controls')).toBe(region.id);
     expect(onOpenChange).toHaveBeenLastCalledWith(true);
-    // Open roots only: the resolved one and the reply are not rows of their own.
+    // Open roots only: the resolved one, the reply and the bare drawing are not rows of their own.
     expect(screen.getByText('2 von 2 offen')).toBeTruthy();
     expect(screen.getAllByRole('button', { name: 'Als erledigt markieren' })).toHaveLength(2);
   });

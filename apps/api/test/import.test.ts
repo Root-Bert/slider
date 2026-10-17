@@ -542,6 +542,60 @@ describe('upsertPptxComments', () => {
     );
   });
 
+  it('legacy comments deleted in Slider stay deleted after PowerPoint 365 converted them', async () => {
+    ctx = await createTestContext();
+    const { deckId, slideIds } = await createReadyDeck(ctx, { slideCount: 1 });
+    const slides = new Map([[7, { slideId: slideIds[0] ?? '', shapes: [] }]]);
+    const legacy = (id: string, text: string, replies: ParsedComment['replies'] = []) =>
+      ({
+        externalId: id,
+        format: 'legacy',
+        sldId: 7,
+        author: { name: 'Lena Wolf', initials: 'LW' },
+        createdAt: '2025-03-01T10:00:00.000',
+        text,
+        status: 'open',
+        anchor: { type: 'slide' },
+        replies,
+      }) satisfies ParsedComment;
+    const reply = (id: string, text: string) => ({
+      externalId: id,
+      author: { name: 'Max Kern', initials: null },
+      createdAt: '2025-03-01T11:00:00.000',
+      text,
+    });
+    const gone = legacy('author1:1', 'Weg damit.', [reply('author2:1', 'Ok.')]);
+    const kept = legacy('author1:2', 'Bleibt.', [reply('author2:2', 'Antwort weg.')]);
+    await upsertPptxComments(ctx.deps.db, deckId, [gone, kept], slides, new Date());
+    const rows = await ctx.deps.db.select().from(comments).where(eq(comments.deckId, deckId));
+    const idOf = (externalId: string) => rows.find((row) => row.externalId === externalId)?.id;
+    // Deleted in Slider: one whole thread, and one reply of the other.
+    for (const id of [idOf('author1:1'), idOf('author1:2/author2:2')]) {
+      expect((await ctx.request(`/api/comments/${id}`, { method: 'DELETE' })).status).toBe(204);
+    }
+
+    const converted = (comment: ParsedComment, guid: string): ParsedComment => ({
+      ...comment,
+      externalId: `{${guid}}`,
+      format: 'modern',
+      createdAt: '2025-03-01T09:00:00.000Z',
+      replies: comment.replies.map((r, i) => ({
+        ...r,
+        externalId: `{${guid}-R${i}}`,
+        createdAt: '2025-03-01T10:00:00.000Z',
+      })),
+    });
+    const file = [converted(gone, 'AAAA'), converted(kept, 'BBBB')];
+    for (let run = 0; run < 2; run++) {
+      const counts = await upsertPptxComments(ctx.deps.db, deckId, file, slides, new Date());
+      expect(counts).toMatchObject({ inserted: 0, restored: 0 });
+    }
+
+    const after = await ctx.deps.db.select().from(comments).where(eq(comments.deckId, deckId));
+    expect(after.map((row) => row.externalId)).toEqual(['{BBBB}']);
+    expect(after[0]?.id).toBe(idOf('author1:2'));
+  });
+
   it('keeps a status changed in Slider across re-imports', async () => {
     ctx = await createTestContext();
     const { deckId, slideIds } = await createReadyDeck(ctx, { slideCount: 1 });

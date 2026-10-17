@@ -204,6 +204,13 @@
       "when": 1792223990357,
       "tag": "0028_import_attempts_url_ref",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1792229231419,
+      "tag": "0029_sync_fingerprints_and_tombstones",
+      "breakpoints": true
     }
   ]
 }

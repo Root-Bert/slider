@@ -9,17 +9,26 @@ import { formatExpiry, ROLE_LABELS } from '../lib/roles';
 export function PendingInvites({
   invites,
   onError,
+  onJoined,
   compact = false,
 }: {
   invites: readonly PendingInvite[];
   onError: ShowToast;
+  /** Accepted, right before going to the organisation or deck (the switcher closes its menu). */
+  onJoined?: () => void;
   /** In the switcher menu: tighter rows. */
   compact?: boolean;
 }) {
   return (
     <ul className="flex flex-col gap-1">
       {invites.map((invite) => (
-        <PendingInviteRow key={invite.id} invite={invite} onError={onError} compact={compact} />
+        <PendingInviteRow
+          key={invite.id}
+          invite={invite}
+          onError={onError}
+          onJoined={onJoined}
+          compact={compact}
+        />
       ))}
     </ul>
   );
@@ -28,18 +37,22 @@ export function PendingInvites({
 function PendingInviteRow({
   invite,
   onError,
+  onJoined,
   compact,
 }: {
   invite: PendingInvite;
   onError: ShowToast;
+  onJoined?: () => void;
   compact: boolean;
 }) {
   const navigate = useNavigate();
   const accept = useAcceptInvite();
   const join = () =>
     accept.mutate(invite.id, {
-      onSuccess: ({ workspace, deckId }) =>
-        void navigate(deckId ? routes.deck(deckId) : routes.workspace(workspace.id)),
+      onSuccess: ({ workspace, deckId }) => {
+        onJoined?.();
+        void navigate(deckId ? routes.deck(deckId) : routes.workspace(workspace.id));
+      },
       onError: (error) => onError(error.message, 'danger'),
     });
 

@@ -442,3 +442,133 @@ describe('matchSlides: content hash', () => {
     expect(matchSlides([fp(null)], [fp('b')])[0]?.status).toBe('unchanged');
   });
 });
+
+describe('matchSlides: review round 5 regressions', () => {
+  const slide = (
+    key: string,
+    sldId: number,
+    position: number,
+    title: string,
+    body: string,
+    extra: Partial<SlideFingerprint> = {},
+  ): SlideFingerprint => {
+    const text = `${title}\n${body}`;
+    return {
+      key,
+      sldId,
+      position,
+      title,
+      layoutName: 'TITLE_AND_BODY',
+      textHash: sha(text),
+      text,
+      renderHash: sha(`render:${text}`),
+      ...extra,
+    };
+  };
+  const pairs = (results: SlideMatchResult[]) =>
+    results.map((r) => `${r.prevKey ?? '-'}>${r.nextKey ?? '-'}:${r.status}`).sort();
+
+  // Google Slides / LibreOffice: ids renumbered by position, no creationIds, a shared footer.
+  const FOOTER = 'Projekt Apollo · Vertraulich · Quelle interne Analyse Oktober 2026';
+  const SLIDES: [string, string, string][] = [
+    [
+      'Ausgangslage',
+      'Marktanteil sinkt seit drei Quartalen',
+      'Marktanteil sinkt seit vier Quartalen, Druck im Handel',
+    ],
+    ['Kundenbefragung', 'Zufriedenheit 72 Prozent', 'Zufriedenheit 68 Prozent, Service kritisiert'],
+    ['Wettbewerb', 'Drei neue Anbieter', 'Drei neue Anbieter, einer mit Kampfpreisen'],
+    ['Maßnahmen', 'Preisanpassung Partnerprogramm', 'Preisanpassung Partnerprogramm Schulungen'],
+    ['Risiken', 'Abhängigkeit Zulieferer', 'Abhängigkeit Zulieferer und Logistik'],
+    ['Nächste Schritte', 'Pilot im Januar', 'Pilot im Januar mit zwei Regionen'],
+  ];
+  const googleDeck = (slides: [string, string][]) =>
+    slides.map(([title, body], i) => slide(title, 256 + i, i, title, `${body}\n${FOOTER}`));
+  const SUMMARY: [string, string] = [
+    'Executive Summary',
+    'Apollo startet im Handel, Pilot ab Januar',
+  ];
+
+  it.each([0, 1, 2, 3, 4, 6])(
+    'positional ids: insert at the front plus %i edited slides keeps every slide on itself',
+    (edited) => {
+      const prev = googleDeck(SLIDES.map(([title, body]) => [title, body]));
+      const next = googleDeck([
+        SUMMARY,
+        ...SLIDES.map(([title, body, v2], i): [string, string] => [title, i < edited ? v2 : body]),
+      ]);
+      const results = matchSlides(prev, next);
+      for (const r of results) if (r.prevKey && r.nextKey) expect(r.nextKey).toBe(r.prevKey);
+      expect(byStatus(results, 'new').map((r) => r.nextKey)).toEqual(['Executive Summary']);
+      expect(byStatus(results, 'deleted')).toEqual([]);
+      expect(byStatus(results, 'modified')).toHaveLength(edited);
+    },
+  );
+
+  it('positional ids: a deck-wide edit (date on every slide) plus an insert shifts nothing', () => {
+    const prev = googleDeck(SLIDES.map(([title, body]) => [title, `${body} Stand 01.10.`]));
+    const next = googleDeck([
+      [SUMMARY[0], `${SUMMARY[1]} Stand 15.10.`],
+      ...SLIDES.map(([title, body]): [string, string] => [title, `${body} Stand 15.10.`]),
+    ]);
+    const results = matchSlides(prev, next);
+    for (const r of results) if (r.prevKey && r.nextKey) expect(r.nextKey).toBe(r.prevKey);
+    expect(byStatus(results, 'new').map((r) => r.nextKey)).toEqual(['Executive Summary']);
+  });
+
+  it('positional ids: a move plus edits to the slides that shifted keeps every slide', () => {
+    const prev = googleDeck(SLIDES.map(([title, body]) => [title, body]));
+    const order = [0, 5, 1, 2, 3, 4]; // "Nächste Schritte" moved to position 1
+    const next = googleDeck(
+      order.map((i): [string, string] => {
+        const [title, body, v2] = SLIDES[i] ?? ['', '', ''];
+        return [title, i >= 1 && i <= 3 ? v2 : body];
+      }),
+    );
+    for (const r of matchSlides(prev, next)) expect(r.nextKey).toBe(r.prevKey);
+  });
+
+  it('a slide replaced by a new one (new creationId) with the same title is deleted + new', () => {
+    const prev = [
+      slide('willkommen', 256, 0, 'Willkommen', 'Kickoff Team Oktober', { creationId: 1 }),
+      slide('ziele', 257, 1, 'Ziele', 'Wachstum Marge Kunden', { creationId: 2 }),
+      slide('zahlen', 258, 2, 'Ergebnisse', 'Umsatz 4,2 Mio Marge 12 Prozent', { creationId: 3 }),
+      slide('danke', 259, 3, 'Danke', 'Fragen Diskussion', { creationId: 4 }),
+    ];
+    const next = [
+      prev[0],
+      prev[1],
+      slide('neu', 260, 2, 'Ergebnisse', 'Kundenstimmen Interviews Zitate', { creationId: 99 }),
+      prev[3],
+    ].map((s) => s as SlideFingerprint);
+    expect(pairs(matchSlides(prev, next))).toEqual([
+      '->neu:new',
+      'danke>danke:unchanged',
+      'willkommen>willkommen:unchanged',
+      'zahlen>-:deleted',
+      'ziele>ziele:unchanged',
+    ]);
+  });
+
+  it('a new creationId still matches on strong text evidence (slide moved by cut/paste)', () => {
+    const prev = [
+      slide('a', 256, 0, 'Willkommen', 'Kickoff Team Oktober', { creationId: 1 }),
+      slide('b', 257, 1, 'Ergebnisse', 'Umsatz 4,2 Mio Marge 12 Prozent Vorjahr', {
+        creationId: 2,
+      }),
+      slide('c', 258, 2, 'Danke', 'Fragen Diskussion', { creationId: 3 }),
+    ];
+    const next = [
+      prev[0],
+      { ...prev[2], position: 1 },
+      slide('b2', 259, 2, 'Ergebnisse', 'Umsatz 4,2 Mio Marge 13 Prozent Vorjahr', {
+        creationId: 50,
+      }),
+    ].map((s) => s as SlideFingerprint);
+    expect(matchSlides(prev, next).find((r) => r.nextKey === 'b2')).toMatchObject({
+      prevKey: 'b',
+      status: 'modified',
+      matchedBy: 'content',
+    });
+  });
+});

@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useEffectEvent,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent,
@@ -107,6 +108,17 @@ function RecorderBody({
     if (autoFocus) rootRef.current?.focus({ preventScroll: true });
   }, [autoFocus]);
 
+  // Starting and stopping swap the buttons: the one that had the focus is disabled, then gone,
+  // and the focus would drop to <body> – where Space and ↵ no longer reach the panel. So it moves
+  // on to the new record button (stop while recording), else to the panel itself.
+  const holdsFocus = useRef(false);
+  const phase = recording ? 'recorded' : recordingNow ? 'recording' : 'idle';
+  useLayoutEffect(() => {
+    const active = document.activeElement;
+    if (!holdsFocus.current || (active && active !== document.body)) return;
+    (recordButtonRef.current ?? rootRef.current)?.focus({ preventScroll: true });
+  }, [phase]);
+
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     // Tab moves the focus as usual: a finished recording must never go with a key press.
     if (isModKey(event) || event.altKey || event.nativeEvent.isComposing) return;
@@ -155,6 +167,14 @@ function RecorderBody({
           : 'Videokommentar – Leertaste: Aufnahme starten/pausieren, ↵: beenden'
       }
       onKeyDown={onKeyDown}
+      onFocus={() => {
+        holdsFocus.current = true;
+      }}
+      onBlur={(event) => {
+        // To somewhere else on the page – not to nowhere (a button removed or disabled under it).
+        const to = event.relatedTarget;
+        if (to && !event.currentTarget.contains(to)) holdsFocus.current = false;
+      }}
       className="flex flex-col gap-2 rounded-control outline-none"
     >
       {onSourceChange && !recording && !recordingNow && (

@@ -61,6 +61,27 @@ describe('publishing the container image', () => {
     }
   });
 
+  it('saves the setup page in the image and sees the supervisor restart the server', () => {
+    const script = read('scripts/smoke-image.sh');
+    expect(script).toMatch(/curl -fsS -X PUT "\$\{base\}\/api\/setup" -H "X-Setup-Token: /);
+    expect(script).toContain(`grep -q '"restart":"automatic"'`);
+    expect(script).toContain(`grep -q '"loginConfigured":true'`);
+    expect(script).toMatch(/\{\{\.RestartCount\}\}' "\$name"\)" = 0 \]/);
+    // The log lines it waits for are the ones supervisor and server really print.
+    const restarting = 'Restarting Slider to apply the new settings';
+    expect(script).toContain(`grep -q '${restarting}'`);
+    expect(read('apps/api/src/supervisor.ts')).toContain(restarting);
+    expect(script).toContain(`grep -q 'Settings from the setup page: '`);
+    expect(read('apps/api/src/services/instance-settings.ts')).toContain(
+      'Settings from the setup page: ${',
+    );
+    // Before the clean-shutdown check, so `docker stop` also covers the restarted server.
+    expect(script.indexOf('/api/setup')).toBeLessThan(script.indexOf('docker stop -t'));
+    const docs = read('docs/self-hosting.md');
+    const note = docs.slice(docs.indexOf('> **Hinweis:**'), docs.indexOf('## Aufbau'));
+    expect(note).toMatch(/Einrichtungsseite mit automatischem Neustart im Container/);
+  });
+
   it('runs the default slide renderer (real LibreOffice → PDF → WebP on Bun) in the image', () => {
     const script = read('scripts/smoke-image.sh');
     // The sample deck is not in the image (.dockerignore), so the script copies it in.
@@ -138,6 +159,76 @@ describe('Caddy at the edge', () => {
       expect(trusted).toEqual(['\t\ttrusted_proxies static {$TRUSTED_PROXIES}']);
     },
   );
+
+  it('has its Caddyfiles validated by CI with `caddy adapt`, as the docs say', () => {
+    const job = jobsOf(read('.github/workflows/ci.yml')).get('caddy') ?? '';
+    expect(job).toMatch(/^ {6}- run: scripts\/check-caddyfiles\.sh$/m);
+    expect(statSync(ROOT + 'scripts/check-caddyfiles.sh').mode & 0o111).not.toBe(0);
+    const script = read('scripts/check-caddyfiles.sh');
+    expect(script).toMatch(/caddy adapt --validate --adapter caddyfile/);
+    // The Caddy that Compose runs, with the files and sites it gets mounted.
+    for (const compose of ['deploy/docker-compose.yml', 'deploy/proxy/docker-compose.yml']) {
+      const image = /^ {4}image: (caddy:\S+)$/m.exec(read(compose))?.[1];
+      expect(script).toContain(`image=${image}`);
+    }
+    for (const used of [
+      '"${root}/deploy/Caddyfile"',
+      '"${root}/deploy/proxy/Caddyfile"',
+      '"${root}/deploy/authentik/authentik.caddy"',
+      '"${root}/deploy/proxy/examples"',
+      ':/etc/caddy/Caddyfile:ro',
+      ':/etc/caddy/sites:ro',
+    ]) {
+      expect(script).toContain(used);
+    }
+    // Without Cloudflare (empty list) and with the list the .env.example offers.
+    expect(script).toMatch(/for trusted in "" "\$cloudflare"; do/);
+    expect(script).toContain(`s/^# TRUSTED_PROXIES=//p' "\${root}/deploy/.env.example"`);
+    expect(read('deploy/.env.example')).toMatch(/^# TRUSTED_PROXIES=173\.245\.48\.0\/20 /m);
+    const docs = read('docs/self-hosting.md');
+    const note = docs.slice(docs.indexOf('> **Hinweis:**'), docs.indexOf('## Aufbau'));
+    expect(note).toContain('`scripts/check-caddyfiles.sh`');
+  });
+});
+
+describe('Authentik next to Slider', () => {
+  const compose = read('deploy/authentik/docker-compose.yml');
+  /** The YAML text of each service (anchors merged in by `<<:` are checked separately). */
+  const services = new Map<string, string>();
+  const body = compose.slice(compose.indexOf('\nservices:\n'), compose.indexOf('\nvolumes:\n'));
+  for (const part of body.split(/^ {2}(?=[a-z][\w-]*:\s*$)/m)) {
+    const id = /^([a-z][\w-]*):\s*\n/.exec(part)?.[1];
+    if (id) services.set(id, part);
+  }
+  const networks = compose.slice(compose.indexOf('\nnetworks:\n'));
+  const networksOf = (service: string) =>
+    (/^ {4}networks: \[([^\]]*)\]/m.exec(services.get(service) ?? '')?.[1] ?? 'default')
+      .split(',')
+      .map((network) => network.trim());
+
+  it('finds its services', () => {
+    expect([...services.keys()].sort()).toEqual([
+      'authentik-db',
+      'authentik-server',
+      'authentik-worker',
+    ]);
+  });
+
+  it("keeps its Postgres off Caddy's network, which other apps share with PROXY_NETWORK=web", () => {
+    // The project's own network, not an external one.
+    expect(networks).toMatch(/^ {2}default: \{\}$/m);
+    expect(networks).toMatch(
+      /^ {2}proxy:\n(?: {4}#.*\n)* {4}name: \$\{PROXY_NETWORK:-slider\}\n {4}external: true$/m,
+    );
+    // Shared settings of server and worker must not attach them anywhere.
+    const anchor = compose.slice(compose.indexOf('x-authentik:'), compose.indexOf('\nservices:'));
+    expect(anchor).not.toMatch(/networks:/);
+    expect(networksOf('authentik-db')).toEqual(['default']);
+    expect(networksOf('authentik-worker')).toEqual(['default']);
+    // Only the server is reached by Caddy (authentik.caddy → authentik-server:9000).
+    expect(networksOf('authentik-server')).toEqual(['default', 'proxy']);
+    expect(read('deploy/authentik/authentik.caddy')).toMatch(/reverse_proxy authentik-server:9000/);
+  });
 });
 
 describe('the container', () => {

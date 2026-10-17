@@ -278,7 +278,8 @@ const INTENTS: Record<string, (e: Expected) => void> = {
     expectChanges(e, { neu: 'new' });
     expect(match(e, 'zeitplan').prev).toBe('zeitplan');
     expect(match(e, 'budget').prev).toBe('budget');
-    expect(match(e, 'agenda').matchedBy).toBe('sldId');
+    // Positional ids with a shifted pair say nothing about any slide: content finds them all.
+    for (const m of e.matches) if (m.prev && m.next) expect(m.matchedBy, m.next).toBe('content');
   },
   'google-delete-late': (e) => {
     expectChanges(e, { zeitplan: 'deleted' });
@@ -296,6 +297,16 @@ const INTENTS: Record<string, (e: Expected) => void> = {
   'google-move-footer': (e) => {
     expectChanges(e, { budget: 'moved' });
     expectGoogleExport(e.next);
+  },
+  // Edited slides have no exact twin elsewhere; the shifted ids must still not win.
+  'google-insert-edits': (e) => {
+    expectChanges(e, { neu: 'new', kickoff: 'modified', agenda: 'modified', ziele: 'modified' });
+    expectGoogleExport(e.prev);
+    expectGoogleExport(e.next);
+  },
+  'ppt-replace-slide-same-title': (e) => {
+    expect(slide(e.next, 'ziele-neu').title).toBe(slide(e.prev, 'ziele').title);
+    expectChanges(e, { 'ziele-neu': 'new', ziele: 'deleted' }, { matchedBy: 'sldId' });
   },
 };
 

@@ -89,7 +89,7 @@ export function SketchReplyDialog({
             onCancel: cancel,
           }}
         />
-        <div className="field-well rounded-control-sm px-3 py-2">
+        <div className="field-well focus-field rounded-control-sm px-3 py-2">
           <AutosizeTextarea
             aria-label="Notiz zum Bild"
             maxLength={MAX_COMMENT_BODY_LENGTH}

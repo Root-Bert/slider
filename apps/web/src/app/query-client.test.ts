@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/api-client';
-import { queryKeys } from '@/lib/api';
+import { queryKeys, reportSessionError } from '@/lib/api';
 import { createQueryClient } from './query-client';
 
 const signedOut = () => new ApiError(401, 'unauthorized', 'Bitte melde dich an.');
@@ -57,5 +57,13 @@ describe('createQueryClient – session ended', () => {
       .fetchQuery({ queryKey: ['setup'], queryFn: () => Promise.reject(signedOut()) })
       .catch(() => {});
     expect(anonymous.redirect).not.toHaveBeenCalled();
+  });
+
+  it('an ended session reported by a call outside React Query (upload, picker) goes too', () => {
+    const { client, redirect } = setup();
+    reportSessionError(client, new ApiError(400, 'bad_request', 'Kaputt'));
+    expect(redirect).not.toHaveBeenCalled();
+    reportSessionError(client, signedOut());
+    expect(redirect).toHaveBeenCalledWith('/login?returnTo=%2Fw%2Fw1%3Fordner%3Df1');
   });
 });

@@ -12,6 +12,7 @@ import {
 } from '@slider/shared';
 import { decks, revisions, slideVersions } from '../src/db/schema';
 import { MAX_IMPORT_ATTEMPTS } from '../src/import/attempts';
+import { FINGERPRINT_VERSION } from '../src/import/common';
 import { findInterruptedImports, importDeck } from '../src/import/import-deck';
 import { silentLogger } from '../src/logger';
 import { blobKeys } from '../src/storage/blob-storage';
@@ -774,6 +775,11 @@ describe('robustness', () => {
       .update(slideVersions)
       .set({ textHash: 'old-text-hash', renderHash: 'old-render-hash', contentHash: null })
       .where(eq(slideVersions.revisionId, currentRevisionId ?? ''));
+    // …and an older release recorded no fingerprint version.
+    await ctx.deps.db
+      .update(revisions)
+      .set({ fingerprintVersion: null })
+      .where(eq(revisions.id, currentRevisionId ?? ''));
 
     source.token = 'c2';
     source.bytes = pptxBytes('v2');
@@ -783,6 +789,27 @@ describe('robustness', () => {
     expect(after.map((slide) => slide.change?.status ?? 'unchanged')).toEqual(
       after.map(() => 'unchanged'),
     );
+  });
+
+  it('uses the stored hashes of the current code without parsing the previous file again', async () => {
+    const pptx = versionedPptx({ v1: presentation(BASE_SLIDES), v2: presentation(EDITED) });
+    const open = vi.fn(pptx.open);
+    const { ctx, source, deckId } = await setup({}, { openPptx: open });
+    const [first] = await revisionRows(ctx, deckId);
+    expect(first?.fingerprintVersion).toBe(FINGERPRINT_VERSION);
+    const before = await slidesOf(ctx, deckId);
+    open.mockClear();
+
+    source.token = 'c2';
+    source.bytes = pptxBytes('v2');
+    expect((await sync(ctx, deckId)).status).toBe('updated');
+    // Only the new file: the previous revision's hashes were already this code's.
+    expect(open).toHaveBeenCalledTimes(1);
+    const after = await slidesOf(ctx, deckId);
+    expect(after.map((slide) => slide.id)).toEqual(before.map((slide) => slide.id));
+    expect(after[1]?.change?.status).toBe('modified');
+    const latest = (await revisionRows(ctx, deckId)).find((rev) => rev.id !== first?.id);
+    expect(latest?.fingerprintVersion).toBe(FINGERPRINT_VERSION);
   });
 
   it('falls back to the stored hashes when the previous file is gone', async () => {

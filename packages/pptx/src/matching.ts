@@ -6,12 +6,15 @@ import type { ParsedSlide } from './types';
  *
  * 1. Phase A: slides with the same PowerPoint `sldId` are the same slide, however much their
  *    content changed – unless there is positive evidence against the pair: different
- *    `p14:creationId`s (PowerPoint reused a freed id), or a pair that disagrees on content while
- *    one of its slides has a clearly better content match elsewhere (ids shifted by position, as
- *    Google Slides writes them). Such pairs are dropped; when most pairs are contradicted the ids
- *    were reassigned wholesale and only `creationId`-confirmed pairs are kept.
+ *    `p14:creationId`s (PowerPoint reused a freed id), or one of its slides has a clearly better
+ *    content match elsewhere (ids shifted by position, as Google Slides writes them). Such pairs
+ *    are dropped; when most pairs are contradicted – or the ids of both revisions simply count
+ *    up from 256 in slide order and any pair is contradicted – the ids were reassigned by
+ *    position and only `creationId`-confirmed pairs are kept.
  * 2. Phase B: the rest are paired by content similarity (text, title, layout, neighbours,
- *    position) with an optimal assignment, above {@link MATCH_THRESHOLD}.
+ *    position) with an optimal assignment, above {@link MATCH_THRESHOLD}. Two slides with
+ *    different `creationId`s are different slides unless their text is nearly the same
+ *    ({@link NEW_CREATION_MIN_TEXT_SIM}).
  * 3. Unmatched new slides are `new`, unmatched old ones `deleted`. Matched slides are `modified`
  *    when their content changed and `moved` when they left the longest run of slides that kept
  *    their relative order (so an insert does not mark every later slide as moved).
@@ -70,6 +73,14 @@ const RENUMBER_MIN_PAIRS = 3;
  * least this much more content similarity (and above the match threshold).
  */
 const SLDID_CONTRADICTION_MARGIN = 0.25;
+/**
+ * Phase B pairs two slides with different `creationId`s (PowerPoint says: different slides) only
+ * when they are exact twins or share at least this much text – a slide re-created by cut/paste
+ * or copied in from another deck, not a new slide that merely reuses the title and position.
+ */
+const NEW_CREATION_MIN_TEXT_SIM = 0.6;
+/** First `sldId` PowerPoint, Google Slides and LibreOffice assign. */
+const FIRST_SLD_ID = 256;
 /** Above this size the O(n³) assignment gives way to a greedy best-first one. */
 const HUNGARIAN_MAX = 300;
 
@@ -428,6 +439,18 @@ function contentChanged(a: SlideFingerprint, b: SlideFingerprint): boolean {
   return false;
 }
 
+/** Both slides carry a `creationId` and they differ. */
+const creationDiffers = (a: SlideFingerprint, b: SlideFingerprint) =>
+  a.creationId != null && b.creationId != null && a.creationId !== b.creationId;
+
+/**
+ * The ids count up from 256 in slide order and no slide has a `creationId`: what Google Slides
+ * and LibreOffice write on every export. Such ids follow the position, not the slide.
+ */
+const positionalIds = (slides: readonly Prepared[]) =>
+  slides.length > 0 &&
+  slides.every((s) => s.fp.sldId === FIRST_SLD_ID + s.index && s.fp.creationId == null);
+
 interface Pair {
   p: number;
   n: number;
@@ -485,12 +508,12 @@ export function matchSlides(
     candidates.push({ p: slide.index, n, trusted, sameCreation: false, exact });
   }
   // Without a confirming creationId a pair is only dropped on positive evidence, judged against
-  // the slides not held by a confirmed (same creationId) or exact pair:
-  // - an untrusted pair, when one of its slides has a clearly better content match elsewhere;
-  // - a pair that merely shares some text (a common footer, project name or title pattern is
-  //   enough for that), when one of its slides has an exact counterpart elsewhere – the pair
-  //   itself is not exact. That is what ids renumbered by position look like (Google Slides,
-  //   LibreOffice) once neighbouring slides share text.
+  // the slides not held by a confirmed (same creationId) or exact pair: one of its slides has a
+  // clearly better content match elsewhere. For a pair that merely shares some text (a common
+  // footer, project name or title pattern is enough for that) an exact counterpart elsewhere is
+  // evidence too – the pair itself is not exact. That is what ids renumbered by position look
+  // like (Google Slides, LibreOffice) once neighbouring slides share text; the margin test
+  // catches the shifted pairs whose slides were also edited.
   // A slide rewritten (or translated) beyond recognition keeps its sldId match when nothing
   // better exists.
   const held = candidates.filter((c) => c.sameCreation || c.exact);
@@ -501,17 +524,20 @@ export function matchSlides(
     const a = prev[c.p];
     const b = next[c.n];
     if (!a || !b) return;
-    const isBetter = c.trusted
-      ? (x: Prepared, y: Prepared) => isExact(x, y)
-      : (x: Prepared, y: Prepared) =>
-          contentSim(x, y) >= Math.max(threshold, contentSim(a, b) + SLDID_CONTRADICTION_MARGIN);
+    const bar = Math.max(threshold, contentSim(a, b) + SLDID_CONTRADICTION_MARGIN);
+    const isBetter = (x: Prepared, y: Prepared) =>
+      (c.trusted && isExact(x, y)) || contentSim(x, y) >= bar;
     const better =
       next.some((o) => o.index !== c.n && !heldNext.has(o.index) && isBetter(a, o)) ||
       prev.some((o) => o.index !== c.p && !heldPrev.has(o.index) && isBetter(o, b));
     if (better) contradicted.add(i);
   });
+  // Positional ids in both revisions: one shifted pair proves the ids follow the position, so
+  // none of them says anything about the slide (an insert plus edits to the slides that moved
+  // up would otherwise leave enough uncontradicted shifted pairs to slip past the ratio).
   const renumbered =
-    candidates.length >= RENUMBER_MIN_PAIRS && contradicted.size > candidates.length / 2;
+    (candidates.length >= RENUMBER_MIN_PAIRS && contradicted.size > candidates.length / 2) ||
+    (contradicted.size > 0 && positionalIds(prev) && positionalIds(next));
   const pairs: Pair[] = [];
   // Same sldId = same slide, even when its content was rewritten (comments must follow it).
   // When the ids were reassigned wholesale, only creationId-confirmed pairs are kept.
@@ -533,7 +559,15 @@ export function matchSlides(
   const matchedNext = new Set(pairs.map((pair) => pair.n));
   const restPrev = prev.filter((slide) => !matchedPrev.has(slide.index));
   const restNext = next.filter((slide) => !matchedNext.has(slide.index));
-  const scores = restPrev.map((a) => restNext.map((b) => score(ctx, a, b)));
+  const scores = restPrev.map((a) =>
+    restNext.map((b) =>
+      creationDiffers(a.fp, b.fp) &&
+      !isExact(a, b) &&
+      (textSim(a, b) ?? 0) < NEW_CREATION_MIN_TEXT_SIM
+        ? 0
+        : score(ctx, a, b),
+    ),
+  );
   const assignment = assignPairs(scores, threshold);
   assignment.forEach((c, r) => {
     const a = restPrev[r];

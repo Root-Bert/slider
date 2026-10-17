@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import type { ChildProcess } from 'node:child_process';
+import { spawnSync, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -158,13 +158,17 @@ describe('createLibreOfficePdf (BER-94)', () => {
         const alive = () => {
           try {
             process.kill(worker, 0);
-            return true;
           } catch {
             return false;
           }
+          // A killed worker can linger as a zombie until PID 1 reaps it, which takes a while on
+          // a loaded machine; `kill(pid, 0)` still succeeds then, but it no longer runs.
+          const state = spawnSync('ps', ['-o', 'stat=', '-p', String(worker)], {
+            encoding: 'utf8',
+          });
+          return !state.stdout.trim().startsWith('Z') && state.stdout.trim() !== '';
         };
-        // Re-parented to PID 1 and reaped there once killed.
-        await vi.waitFor(() => expect(alive()).toBe(false), { timeout: 5000 });
+        await vi.waitFor(() => expect(alive()).toBe(false), { timeout: 10_000, interval: 100 });
       } finally {
         await rm(dir, { recursive: true, force: true });
       }

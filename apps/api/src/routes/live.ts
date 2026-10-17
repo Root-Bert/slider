@@ -27,7 +27,8 @@ export function liveRoutes(deps: AppDeps, hub: LiveHub) {
         /** Still signed in as the same person, and still allowed to see the deck? */
         const stillAllowed = async () => {
           try {
-            const current = await resolveViewer(c, deps);
+            // Read-only: the response is already streaming, so a cookie write would throw.
+            const current = await resolveViewer(c, deps, { readOnly: true });
             if (current?.author.id !== author.id) return false;
             await requireDeckAccess(deps.db, current, deck.id, 'view');
             return true;

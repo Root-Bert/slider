@@ -113,7 +113,7 @@ function EditForm({
         save();
       }}
     >
-      <div className="field-well rounded-control-sm px-3 py-2">
+      <div className="field-well focus-field rounded-control-sm px-3 py-2">
         <AutosizeTextarea
           autoFocus
           aria-label="Kommentar bearbeiten"

@@ -53,3 +53,53 @@ export function importLimit(deps: AppDeps) {
   }
   return limiter;
 }
+
+/** Deck files (uploads and new versions) one account may send at once – each is buffered whole. */
+export const DECK_UPLOADS_IN_FLIGHT = 2;
+/** All accounts together: bounds the memory of parallel uploads (up to 200 MB each, copied). */
+export const DECK_UPLOADS_IN_FLIGHT_TOTAL = 4;
+
+const uploadSlots = new WeakMap<AppDeps, ReturnType<typeof createUploadSlot>>();
+
+function createUploadSlot() {
+  const byUser = new Map<string, number>();
+  let total = 0;
+  return createMiddleware<ViewerEnv>(async (c, next) => {
+    const userId = c.var.viewer.author.id;
+    const running = byUser.get(userId) ?? 0;
+    if (running >= DECK_UPLOADS_IN_FLIGHT || total >= DECK_UPLOADS_IN_FLIGHT_TOTAL) {
+      c.header('Retry-After', '5');
+      throw new ApiError(
+        429,
+        'rate_limited',
+        running >= DECK_UPLOADS_IN_FLIGHT
+          ? 'Deine anderen Präsentationen werden noch hochgeladen. Bitte warte einen Moment.'
+          : 'Gerade werden viele Präsentationen gleichzeitig hochgeladen. Bitte versuch es gleich noch einmal.',
+      );
+    }
+    byUser.set(userId, running + 1);
+    total += 1;
+    try {
+      await next();
+    } finally {
+      total -= 1;
+      const left = (byUser.get(userId) ?? 1) - 1;
+      if (left > 0) byUser.set(userId, left);
+      else byUser.delete(userId);
+    }
+  });
+}
+
+/**
+ * Caps deck files in flight, per account and in total, shared by `POST /decks/upload` and
+ * `POST /decks/:id/revisions`. Goes after the access check and {@link importLimit} and before
+ * `bodyLimit`, so a refused request is never buffered.
+ */
+export function deckUploadSlot(deps: AppDeps) {
+  let slot = uploadSlots.get(deps);
+  if (!slot) {
+    slot = createUploadSlot();
+    uploadSlots.set(deps, slot);
+  }
+  return slot;
+}

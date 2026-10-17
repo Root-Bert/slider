@@ -30,6 +30,7 @@ import {
   THUMB_GAP,
   THUMB_H,
 } from './lib/minimap';
+import { createClickGuard } from './lib/click-guard';
 import type { TrackLayout } from './lib/timeline-layout';
 import { useRevisionData } from '../state/revision-data';
 import { useStageRegistry } from '../state/stage-registry';
@@ -81,7 +82,8 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
     offset: number;
     active: boolean;
   }>(null);
-  const suppressClickRef = useRef(false);
+  // The click a bracket drag ends with must not select the thumbnail under the pointer.
+  const [clickGuard] = useState(createClickGuard);
   const [availableW, setAvailableW] = useState(0);
 
   const rowH = THUMB_H + 2 * MINIMAP_PAD;
@@ -181,11 +183,11 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
 
   const select = useCallback(
     (slideId: string) => {
-      if (suppressClickRef.current) return;
+      if (clickGuard.consume()) return;
       dispatch({ type: 'activeSlideChanged', slideId });
       registry.revealSlide(slideId, { align: 'nearest' });
     },
-    [dispatch, registry],
+    [clickGuard, dispatch, registry],
   );
 
   // Dragging the bracket scrolls the track. Mouse and pen only: touch pans the row natively.
@@ -241,7 +243,7 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
   }, [dragging]);
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    suppressClickRef.current = false;
+    clickGuard.reset();
     const bracket = bracketRef.current;
     if (event.pointerType === 'touch' || event.button !== 0 || !bracket) return;
     if (!overBracket(event.clientX)) return;
@@ -277,8 +279,7 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
   const onPointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
-    // The click that follows a drag must not select the thumbnail under the pointer.
-    suppressClickRef.current = drag.active;
+    if (drag.active) clickGuard.armAfterDrag();
     dragRef.current = null;
     setDragging(false);
     setGrab(event.currentTarget, overBracket(event.clientX) ? 'hover' : null);
@@ -351,7 +352,7 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
                   aria-label={`Gelöschte Folien (${deletedSlides.length}) anzeigen`}
                   title={`Gelöschte Folien (${deletedSlides.length})`}
                   onClick={() => {
-                    if (!suppressClickRef.current)
+                    if (!clickGuard.consume())
                       dispatch({ type: 'deletedPanelSet', open: !deletedPanelOpen });
                   }}
                   className={cn(

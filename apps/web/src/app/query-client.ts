@@ -1,7 +1,7 @@
 import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query';
 import type { MeResponse } from '@slider/shared';
 import { ApiError } from '@/lib/api-client';
-import { queryKeys } from '@/lib/api';
+import { queryKeys, setSessionErrorHandler } from '@/lib/api';
 import { currentPath, routes } from '@/lib/routes';
 
 /**
@@ -45,5 +45,7 @@ export function createQueryClient(redirect?: (path: string) => void): QueryClien
       },
     },
   });
+  // API calls outside React Query (upload, OneDrive picker) report through `reportSessionError`.
+  setSessionErrorHandler(client, onError);
   return client;
 }

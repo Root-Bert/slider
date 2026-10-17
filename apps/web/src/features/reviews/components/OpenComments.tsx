@@ -22,11 +22,15 @@ import {
 import {
   buildThreads,
   commentPreview,
+  isBareDrawing,
   isRemovedInPowerPoint,
   type Thread,
 } from '@/features/viewer';
 
-/** Open threads as the card counts them: roots, open, not deleted in the PowerPoint file. */
+/**
+ * Open threads as the card counts them: roots, open, not deleted in the PowerPoint file. Bare
+ * drawings (no text, recording or reply) are left out below – the viewer shows no card for them.
+ */
 const isOpenThread = (comment: Comment) =>
   comment.parentId === null && comment.status === 'open' && !isRemovedInPowerPoint(comment);
 
@@ -149,7 +153,9 @@ function OpenCommentsPopover({
 
   const threads = buildThreads(
     (comments.data ?? []).filter((comment) => !isRemovedInPowerPoint(comment)),
-  ).filter(({ root }) => isOpenThread(root) || ticked.has(root.id));
+  ).filter(
+    (thread) => (isOpenThread(thread.root) && !isBareDrawing(thread)) || ticked.has(thread.root.id),
+  );
   const slideNumber = new Map(
     (slides.data ?? [])
       .filter((slide) => !slide.hidden)

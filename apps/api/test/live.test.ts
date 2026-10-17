@@ -1,7 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import type { LiveEvent } from '@slider/shared';
-import { workspaceMembers } from '../src/db/schema';
+import { sessions, workspaceMembers } from '../src/db/schema';
 import { LiveHub } from '../src/realtime/live-hub';
 import {
   createReadyDeck,
@@ -306,6 +306,46 @@ describe('live streams end', () => {
     });
     const again = await ctx.request(`/api/decks/${deck.deckId}/live`, { cookie: mia.cookie });
     expect(again.status).toBe(404);
+  });
+
+  it('when the session ended (logged out in another tab), without touching the cookie', async () => {
+    const mia = await signedInUser(ctx, { name: 'Mia', email: 'mia@firma.de' });
+    await ctx.deps.db
+      .insert(workspaceMembers)
+      .values({ workspaceId: ctx.workspaceId, userId: mia.user.id, role: 'reviewer' });
+    const stream = await open(`/api/decks/${deck.deckId}/live`, mia.cookie);
+    await nextOfType(stream, 'hello');
+    const warn = vi.spyOn(ctx.deps.log, 'warn');
+    await ctx.deps.db.delete(sessions).where(eq(sessions.userId, mia.user.id));
+
+    await ended(stream);
+    // Ended by the check itself, not kept open after a failed cookie write on the sent response.
+    expect(warn).not.toHaveBeenCalled();
+    expect(hub.peers(deck.deckId)).toEqual([]);
+  });
+
+  it('a check after a day neither renews the session nor breaks the stream', async () => {
+    const mia = await signedInUser(ctx, { name: 'Mia', email: 'mia@firma.de' });
+    await ctx.deps.db
+      .insert(workspaceMembers)
+      .values({ workspaceId: ctx.workspaceId, userId: mia.user.id, role: 'reviewer' });
+    const stream = await open(`/api/decks/${deck.deckId}/live`, mia.cookie);
+    await nextOfType(stream, 'hello');
+    const warn = vi.spyOn(ctx.deps.log, 'warn');
+    // Keep reading, so the pings (and the checks between them) keep flowing.
+    void nextOfType(stream, 'comments').catch(() => {});
+    ctx.clock.advance(25 * 60 * 60_000);
+    const before = await ctx.deps.db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.userId, mia.user.id));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    expect(warn).not.toHaveBeenCalled();
+    const after = await ctx.deps.db.select().from(sessions).where(eq(sessions.userId, mia.user.id));
+    // Renewing is left to the next normal request, which can still set the cookie.
+    expect(after[0]?.lastSeenAt).toEqual(before[0]?.lastSeenAt);
+    expect(hub.peers(deck.deckId)).toHaveLength(1);
   });
 
   it('when the deck is deleted', async () => {

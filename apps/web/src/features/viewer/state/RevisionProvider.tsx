@@ -123,6 +123,13 @@ export function RevisionProvider({ children }: { children: ReactNode }) {
     [slides, revisionCreatedAt, history],
   );
   const deletedSlides = useMemo(() => deleted.data ?? [], [deleted.data]);
+  // The panel lists the deleted slides: once the current revision has none (a sync brought them
+  // back), close it – else its empty side strip would stay, with nothing left to close it by.
+  const noneDeleted =
+    deleted.data !== undefined && !deleted.isPlaceholderData && deleted.data.length === 0;
+  useEffect(() => {
+    if (noneDeleted) dispatch({ type: 'deletedPanelSet', open: false });
+  }, [noneDeleted, dispatch]);
   const deletedThreads = useMemo(
     () =>
       threadsByDeletedSlide(

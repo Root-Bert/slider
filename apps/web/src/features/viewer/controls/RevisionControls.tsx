@@ -78,20 +78,24 @@ function UploadButton() {
   const busy = upload.isPending;
 
   return (
-    <>
+    // While busy the same button stays (only `aria-disabled`, the spinner over its icon): a
+    // disabled or hidden one would drop the keyboard focus to <body> for good.
+    <span className="relative inline-flex">
       <IconButton
         icon="upload"
         label={busy ? 'Neue Version wird verarbeitet …' : 'Neue Version hochladen (.pptx)'}
         size="sm"
-        disabled={busy}
+        aria-disabled={busy || undefined}
         aria-busy={busy || undefined}
-        onClick={() => inputRef.current?.click()}
-        className={cn(busy && 'hidden')}
+        onClick={() => {
+          if (!busy) inputRef.current?.click();
+        }}
+        className={cn(busy && 'pointer-events-none *:invisible')}
       />
       {busy && (
         <span
-          className="inline-flex size-8 items-center justify-center"
-          title="Neue Version wird verarbeitet …"
+          aria-hidden
+          className="pointer-events-none absolute inset-0 inline-flex items-center justify-center"
         >
           <Spinner size={18} className="text-fg-muted" />
         </span>
@@ -110,7 +114,7 @@ function UploadButton() {
           if (file) upload.mutate(file, toast);
         }}
       />
-    </>
+    </span>
   );
 }
 

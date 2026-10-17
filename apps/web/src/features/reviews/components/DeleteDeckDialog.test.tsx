@@ -52,7 +52,8 @@ describe('DeleteDeckDialog', () => {
     expect(
       screen.getByRole('dialog', { name: '„Q4 Strategie“ löschen?', hidden: true }),
     ).toBeTruthy();
-    expect(screen.getByText('Hochgeladene Datei')).toBeTruthy();
+    expect(screen.getByText('Gespeicherte Kopie der Präsentation')).toBeTruthy();
+    expect(screen.getByText('Das Original in OneDrive/SharePoint bleibt.')).toBeTruthy();
 
     await userEvent.click(confirm());
     expect(api.mutate).toHaveBeenCalledWith(['d1'], expect.anything());
@@ -71,7 +72,8 @@ describe('DeleteDeckDialog', () => {
     expect(screen.getByText('„Deck 4“')).toBeTruthy();
     expect(screen.queryByText('„Deck 5“')).toBeNull();
     expect(screen.getByText('und 2 weitere')).toBeTruthy();
-    expect(screen.getByText('Hochgeladene Dateien')).toBeTruthy();
+    expect(screen.getByText('Gespeicherte Kopien der Präsentationen')).toBeTruthy();
+    expect(screen.getByText('Die Originale in OneDrive/SharePoint bleiben.')).toBeTruthy();
 
     await userEvent.click(confirm());
     expect(api.mutate).toHaveBeenCalledWith(
@@ -80,6 +82,34 @@ describe('DeleteDeckDialog', () => {
     );
     lastOptions().onSuccess({ succeeded: ['d0'], failed: [{ id: 'd1' }] });
     expect(onDeleted).toHaveBeenCalledOnce();
+  });
+
+  it('an uploaded deck: its file goes for good, no OneDrive/SharePoint original is promised', () => {
+    setup([makeDeck({ source: 'upload' })]);
+    expect(screen.getByText('Hochgeladene Datei')).toBeTruthy();
+    expect(screen.queryByText(/Original/)).toBeNull();
+    expect(screen.queryByText(/OneDrive|SharePoint/)).toBeNull();
+  });
+
+  it('a deck imported by link keeps its original under the link', () => {
+    setup([makeDeck({ source: 'url' })]);
+    expect(screen.getByText('Das Original unter dem Link bleibt.')).toBeTruthy();
+    expect(screen.queryByText(/OneDrive|SharePoint/)).toBeNull();
+  });
+
+  it('a mixed selection names both: the uploaded files and where the linked originals stay', () => {
+    setup([
+      makeDeck({ id: 'd1', source: 'upload' }),
+      makeDeck({ id: 'd2', source: 'sharepoint' }),
+      makeDeck({ id: 'd3', source: 'url' }),
+    ]);
+    expect(screen.getByText('Hochgeladene Datei')).toBeTruthy();
+    expect(screen.getByText('Gespeicherte Kopien der Präsentationen')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Bei verknüpften Reviews bleibt das Original in OneDrive/SharePoint bzw. unter dem Link.',
+      ),
+    ).toBeTruthy();
   });
 
   it('shows the reason a deck could not be deleted as an alert', () => {

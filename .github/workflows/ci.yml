@@ -1,8 +1,8 @@
 name: CI
 
 # Every pull request and push: lint, typecheck, tests (PGlite and a real Postgres), build, e2e,
-# secret scan, and the container image built and smoke-tested. Only pushes to main and v* tags
-# publish the image – and only once all of that is green:
+# Caddyfiles, secret scan, and the container image built and smoke-tested. Only pushes to main
+# and v* tags publish the image – and only once all of that is green:
 #   push to main  → ghcr.io/<owner>/slider:edge (+ :sha-<short>)
 #   tag v1.2.3    → :1.2.3, :1.2, :1 and :latest
 # Self-hosters then only need `docker run … ghcr.io/<owner>/slider:1` (docs/self-hosting.md).
@@ -146,12 +146,21 @@ jobs:
           cache-to: type=gha,mode=max,scope=smoke-${{ matrix.arch }}
       - run: scripts/smoke-image.sh slider:smoke
 
+  # The Caddyfiles of deploy/ (built-in and shared Caddy, with the sites shipped for them),
+  # parsed and provisioned by the caddy:2 image Compose runs – with and without Cloudflare.
+  caddy:
+    name: Caddyfiles (caddy adapt)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: scripts/check-caddyfiles.sh
+
   # Publishes amd64 + arm64 – only for main and v* tags, and only when everything above passed
   # (image-smoke: both platforms).
   image:
     name: Publish image
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    needs: [verify, e2e, postgres, image-smoke, secrets]
+    needs: [verify, e2e, postgres, image-smoke, caddy, secrets]
     runs-on: ubuntu-latest
     permissions:
       contents: read

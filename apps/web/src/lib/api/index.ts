@@ -7,6 +7,7 @@ export * from './imports';
 export * from './keys';
 export * from './me';
 export * from './revisions';
+export * from './session';
 export * from './slides';
 export * from './status';
 export * from './workspaces';

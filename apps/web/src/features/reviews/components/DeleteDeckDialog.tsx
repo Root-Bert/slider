@@ -1,10 +1,47 @@
-import type { Deck } from '@slider/shared';
+import type { Deck, DeckSource } from '@slider/shared';
 import { pluralize } from '@/lib/format';
 import { useDeleteDecks, type BulkResult } from '@/lib/api';
 import { ConfirmDialog } from '@/ui';
 
 /** Titles listed in the dialog when several decks are deleted; the rest as "und N weitere". */
 const LISTED_TITLES = 5;
+
+const MICROSOFT_SOURCES: readonly DeckSource[] = ['onedrive', 'sharepoint'];
+
+/**
+ * What happens to the PowerPoint files, by where the decks came from: an upload's file is the
+ * only copy here and goes for good; a linked deck's stored copy goes, its original stays.
+ */
+function fileCopy(decks: readonly Deck[]): { removed: string[]; kept: string | null } {
+  const uploaded = decks.filter((deck) => deck.source === 'upload').length;
+  const linked = decks.filter((deck) => deck.source !== 'upload');
+  const removed: string[] = [];
+  if (uploaded > 0) removed.push(uploaded === 1 ? 'Hochgeladene Datei' : 'Hochgeladene Dateien');
+  if (linked.length > 0) {
+    removed.push(
+      linked.length === 1
+        ? 'Gespeicherte Kopie der Präsentation'
+        : 'Gespeicherte Kopien der Präsentationen',
+    );
+  }
+  if (linked.length === 0) return { removed, kept: null };
+
+  const microsoft = linked.some((deck) => MICROSOFT_SOURCES.includes(deck.source));
+  const byLink = linked.some((deck) => !MICROSOFT_SOURCES.includes(deck.source));
+  const where =
+    microsoft && byLink
+      ? 'in OneDrive/SharePoint bzw. unter dem Link'
+      : microsoft
+        ? 'in OneDrive/SharePoint'
+        : 'unter dem Link';
+  const kept =
+    uploaded > 0
+      ? `Bei verknüpften Reviews bleibt das Original ${where}.`
+      : linked.length === 1
+        ? `Das Original ${where} bleibt.`
+        : `Die Originale ${where} bleiben.`;
+  return { removed, kept };
+}
 
 export function DeleteDeckDialog({
   decks,
@@ -18,6 +55,7 @@ export function DeleteDeckDialog({
   const remove = useDeleteDecks();
   const single = decks.length === 1 ? decks[0] : undefined;
   const failed = remove.data?.failed ?? [];
+  const copy = fileCopy(decks);
 
   return (
     <ConfirmDialog
@@ -45,9 +83,11 @@ export function DeleteDeckDialog({
           <ul className="list-disc pl-5">
             <li>Kommentare und Zeichnungen</li>
             <li>Folienbilder</li>
-            <li>Hochgeladene {single ? 'Datei' : 'Dateien'}</li>
+            {copy.removed.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
           </ul>
-          <span>Original in OneDrive/SharePoint bleibt.</span>
+          {copy.kept && <span>{copy.kept}</span>}
         </div>
       }
       confirmLabel="Endgültig löschen"

@@ -371,6 +371,10 @@ describe('viewerReducer', () => {
       expect(state).toMatchObject({ deletedPanelOpen: false, threadPanelOpen: true });
     });
 
+    it('closing the deleted slides when they are closed already changes nothing', () => {
+      expect(viewerReducer(initial, { type: 'deletedPanelSet', open: false })).toBe(initial);
+    });
+
     it('shows the change markers by default and toggles them', () => {
       expect(initial.showChanges).toBe(true);
       const hidden = run({ type: 'showChangesSet', show: false });

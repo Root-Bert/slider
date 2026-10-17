@@ -144,18 +144,27 @@ describe('UploadRevisionControl', () => {
     expect(showToast).toHaveBeenLastCalledWith('Zu groß', 'danger');
   });
 
-  it('shows a spinner instead of the button while the version is processed', () => {
+  it('keeps the focused button while the version is processed, with a spinner over its icon', () => {
+    const { rerender, container } = render(<UploadRevisionControl />);
+    const button = screen.getByRole('button', { name: 'Neue Version hochladen (.pptx)' });
+    button.focus();
+
     mocks.upload.isPending = true;
-    render(<UploadRevisionControl />);
-    const button = screen.getByRole('button', {
-      name: 'Neue Version wird verarbeitet …',
-      hidden: true,
-    }) as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
+    rerender(<UploadRevisionControl />);
+    expect(screen.getByRole('button', { name: 'Neue Version wird verarbeitet …' })).toBe(button);
+    // Not `disabled` (that would drop the focus to <body>): announced busy and inert instead.
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+    expect(button.getAttribute('aria-disabled')).toBe('true');
     expect(button.getAttribute('aria-busy')).toBe('true');
-    expect(button.classList.contains('hidden')).toBe(true);
-    // The spinner stands in for the button, under the same tooltip.
-    expect(screen.getAllByTitle('Neue Version wird verarbeitet …')).toHaveLength(2);
-    expect(screen.getByRole('status')).toBeTruthy();
+    expect(document.activeElement).toBe(button);
+    expect(container.querySelector('[role="status"]')).toBeTruthy();
+    const click = vi.spyOn(fileInput(container), 'click');
+    fireEvent.click(button);
+    expect(click).not.toHaveBeenCalled();
+
+    mocks.upload.isPending = false;
+    rerender(<UploadRevisionControl />);
+    expect(document.activeElement).toBe(button);
+    expect(button.getAttribute('aria-disabled')).toBeNull();
   });
 });

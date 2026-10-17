@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
+import { createMiddleware } from 'hono/factory';
 import { z } from 'zod';
 import {
   importDriveItemInputSchema,
@@ -13,7 +14,7 @@ import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import { decks, type DeckRow } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { ApiError, badRequest, fileTooLarge, notAPowerPoint } from '../http/errors';
-import { importLimit } from '../http/import-limit';
+import { deckUploadSlot, importLimit } from '../http/import-limit';
 import { readJson } from '../http/validate';
 import { withPickerLogin } from '../sources/onedrive-picker';
 import type { RemoteFile, SourceAdapter, SourceContext } from '../sources/source-adapter';
@@ -80,6 +81,7 @@ const unsupportedLink = () =>
 export function decksRoutes(deps: AppDeps) {
   const viewer = viewerMiddleware(deps);
   const imports = importLimit(deps);
+  const uploads = deckUploadSlot(deps);
   const maxBytes = deps.config.maxUploadBytes;
 
   return (
@@ -95,10 +97,23 @@ export function decksRoutes(deps: AppDeps) {
         return c.json(await listWorkspaceDecks(deps.db, workspaceIds, access));
       })
 
+      /**
+       * `?workspaceId=` names the target before the body is read (the form field `workspaceId`
+       * still works for old clients); without either, the first workspace I may create decks in.
+       */
       .post(
         '/decks/upload',
         viewer,
+        // Before a single byte is buffered: may this account create a deck there at all?
+        createMiddleware<ViewerEnv>(async (c, next) => {
+          requireOwner(c.var.viewer);
+          const requested = c.req.query('workspaceId') || undefined;
+          const workspaceId = await resolveUploadWorkspace(deps, c.var.viewer.author.id, requested);
+          if (requested) await assertDeckSlot(deps.db, deps.config, workspaceId);
+          await next();
+        }),
         imports,
+        uploads,
         bodyLimit({
           maxSize: maxBytes + MULTIPART_OVERHEAD_BYTES,
           onError: (c) => c.json(fileTooLarge(maxBytes).toBody(), 413),
@@ -120,7 +135,7 @@ export function decksRoutes(deps: AppDeps) {
           const workspaceId = await resolveUploadWorkspace(
             deps,
             viewer.author.id,
-            typeof field === 'string' && field ? field : undefined,
+            c.req.query('workspaceId') || (typeof field === 'string' && field ? field : undefined),
           );
           await assertDeckSlot(deps.db, deps.config, workspaceId);
           const deck = await createDeckFromFile(

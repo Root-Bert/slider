@@ -128,7 +128,7 @@ export function WorkspaceSwitcher() {
               <>
                 <MenuDivider />
                 <MenuHeading>Einladungen</MenuHeading>
-                <PendingInvites invites={invites} onError={showToast} compact />
+                <PendingInvites invites={invites} onError={showToast} onJoined={close} compact />
               </>
             )}
           </>

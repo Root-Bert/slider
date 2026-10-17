@@ -8,7 +8,8 @@
 # checks what only shows up at runtime: the API answers /api/health, the built web app is served,
 # the first start prints the setup link, tini is PID 1, @napi-rs/canvas and LibreOffice load, the
 # sample deck goes through the default slide renderer (LibreOffice → PDF → WebP, on Bun, as user
-# `bun`; scripts/smoke-convert.ts), and `docker stop` shuts down cleanly (exit code 0).
+# `bun`; scripts/smoke-convert.ts), saving the setup page restarts the server in the container
+# (exit 75 → supervisor) with the saved login, and `docker stop` shuts down cleanly (exit code 0).
 #
 # SMOKE_PLATFORM=linux/arm64 runs an image of another platform (CI: under QEMU); SMOKE_WAIT
 # raises the 90 s start budget for that.
@@ -73,6 +74,35 @@ docker cp "${root}/scripts/smoke-convert.ts" "${name}:/tmp/smoke-convert.ts"
 converted=$(docker exec -w /app/apps/api "$name" bun /tmp/smoke-convert.ts /tmp/smoke-deck.pptx) ||
   fail "the sample deck did not convert to slide images (LibreOffice → PDF → WebP)"
 echo "ok   slide images: ${converted}"
+
+# Saving the setup page restarts the server to build the login clients: server.ts exits with 75,
+# the supervisor (CMD) starts it again – inside the same container, which keeps running.
+token=$(docker logs "$name" 2>&1 | sed -n 's/.*\/einrichtung#token=\([A-Za-z0-9_-]*\).*/\1/p' | head -n 1)
+[ -n "$token" ] || fail "no setup token in the setup link"
+saved=$(curl -fsS -X PUT "${base}/api/setup" -H "X-Setup-Token: ${token}" \
+  -H 'Content-Type: application/json' \
+  --data '{"values":{"GOOGLE_CLIENT_ID":"smoke.apps.googleusercontent.com","GOOGLE_CLIENT_SECRET":"smoke-secret","BOOTSTRAP_EMAIL":"admin@example.com"}}') ||
+  fail "saving the setup page (PUT /api/setup) failed"
+echo "$saved" | grep -q '"restart":"automatic"' ||
+  fail "the setup page does not restart automatically in the image: ${saved}"
+restarted=false
+for _ in $(seq 1 "$wait_seconds"); do
+  if [ "$(docker inspect -f '{{.State.Running}}' "$name")" != true ]; then
+    fail "the container exited instead of restarting the server"
+  fi
+  if docker logs "$name" 2>&1 | grep -q 'Settings from the setup page: ' &&
+    curl -fsS "${base}/api/setup" 2>/dev/null | grep -q '"loginConfigured":true'; then
+    restarted=true
+    break
+  fi
+  sleep 1
+done
+[ "$restarted" = true ] || fail "the server did not come back with the saved login within ${wait_seconds} s"
+docker logs "$name" 2>&1 | grep -q 'Restarting Slider to apply the new settings' ||
+  fail "the supervisor did not restart the server"
+[ "$(docker inspect -f '{{.RestartCount}}' "$name")" = 0 ] || fail "the container was restarted"
+curl -fsS "${base}/api/health" | grep -q '"ok":true' || fail "/api/health after the restart"
+echo "ok   setup saved, server restarted with the new login (supervisor)"
 
 docker stop -t 20 "$name" >/dev/null
 code=$(docker inspect -f '{{.State.ExitCode}}' "$name")

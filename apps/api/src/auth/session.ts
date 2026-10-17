@@ -44,8 +44,20 @@ export async function startSession(c: Context, deps: AppDeps, userId: string): P
   setSessionCookie(c, deps, token);
 }
 
+export interface LoadSessionOptions {
+  /**
+   * Only look: never renew, never set or drop the cookie. For checks on a response that is
+   * already being sent (the live stream), where a cookie write would throw.
+   */
+  readOnly?: boolean;
+}
+
 /** The signed-in user, or `null`; renews the session (and its cookie) at most once a day. */
-export async function loadSessionUser(c: Context, deps: AppDeps): Promise<UserRow | null> {
+export async function loadSessionUser(
+  c: Context,
+  deps: AppDeps,
+  { readOnly = false }: LoadSessionOptions = {},
+): Promise<UserRow | null> {
   const token = readCookie(c, deps.config, SESSION_COOKIE);
   if (!token) return null;
   const now = deps.clock.now();
@@ -56,9 +68,10 @@ export async function loadSessionUser(c: Context, deps: AppDeps): Promise<UserRo
     .where(and(eq(sessions.tokenHash, hashToken(token)), gt(sessions.expiresAt, now)));
   if (!row) {
     // Expired, logged out elsewhere or unknown: drop the stale cookie.
-    removeCookie(c, deps.config, SESSION_COOKIE);
+    if (!readOnly) removeCookie(c, deps.config, SESSION_COOKIE);
     return null;
   }
+  if (readOnly) return row.user;
   if (now.getTime() - row.session.lastSeenAt.getTime() >= RENEW_AFTER_MS) {
     await deps.db
       .update(sessions)

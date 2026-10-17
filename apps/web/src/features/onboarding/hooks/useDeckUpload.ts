@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Deck } from '@slider/shared';
 import { uploadWithProgress } from '@/lib/api-client';
-import { queryKeys } from '@/lib/api';
+import { queryKeys, reportSessionError } from '@/lib/api';
 import { validatePptxFile } from '../lib/upload-validation';
 
 export type UploadState =
@@ -38,7 +38,8 @@ export function useDeckUpload(workspaceId: string, onUploaded: (deck: Deck) => v
     formData.append('file', file);
     try {
       const deck = await uploadWithProgress<Deck>(
-        '/decks/upload',
+        // In the URL too: the server checks the target before it reads the file.
+        `/decks/upload?workspaceId=${encodeURIComponent(workspaceId)}`,
         formData,
         (progress) => {
           if (progress >= 1) sent = true;
@@ -59,6 +60,8 @@ export function useDeckUpload(workspaceId: string, onUploaded: (deck: Deck) => v
         }
         return;
       }
+      // The XHR skips React Query: an ended session goes to the login like any other call.
+      reportSessionError(queryClient, error);
       setState({
         status: 'error',
         message: error instanceof Error ? error.message : 'Der Upload ist fehlgeschlagen.',

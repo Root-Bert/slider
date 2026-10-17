@@ -5,6 +5,7 @@
 export {
   buildThreads,
   commentPreview,
+  isBareDrawing,
   isRemovedInPowerPoint,
   type Thread,
 } from './comments/lib/comment-selectors';

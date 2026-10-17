@@ -56,10 +56,16 @@ export const useRevisionDiffs = (deckId: string, revisionIds: readonly string[])
     combine: diffData,
   });
 
+/**
+ * Slides deleted in a later revision. While a new revision's list loads, the previous one of the
+ * same deck stays (`isPlaceholderData`), so the open panel isn't unmounted and mounted again.
+ */
 export const useDeletedSlides = (deckId: string, revisionId: string | null, enabled = true) =>
   useQuery({
     queryKey: queryKeys.deletedSlides(deckId, revisionId),
     queryFn: () => api.get<DeletedSlide[]>(`/decks/${deckId}/deleted-slides`),
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[1] === deckId ? previous : undefined,
     enabled: enabled && revisionId !== null,
     staleTime: SIGNED_URL_STALE_MS,
     refetchInterval: SIGNED_URL_STALE_MS,

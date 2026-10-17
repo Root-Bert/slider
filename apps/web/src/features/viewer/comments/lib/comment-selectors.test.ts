@@ -84,6 +84,32 @@ describe('filters and counts', () => {
       ['s2', 1],
     ]);
   });
+
+  it('leaves bare drawings out of the open counts, like the Offen chip does', () => {
+    const pen = {
+      tool: 'pen' as const,
+      color: 'red' as const,
+      points: [
+        { x: 0.1, y: 0.2 },
+        { x: 0.3, y: 0.6 },
+      ],
+    };
+    const drawing = comment({ slideId: 's1', body: '', strokes: [pen] });
+    const answered = comment({ slideId: 's1', body: '', strokes: [pen] });
+    const counts = openCountBySlide(
+      buildThreads([
+        drawing,
+        comment({ slideId: 's1', body: '', strokes: [pen] }),
+        answered,
+        comment({ slideId: 's1', parentId: answered.id }),
+        comment({ slideId: 's2', body: 'Text', strokes: [pen] }),
+      ]),
+    );
+    expect([...counts]).toEqual([
+      ['s1', 1],
+      ['s2', 1],
+    ]);
+  });
 });
 
 describe('threadsOnCurrentSlides', () => {

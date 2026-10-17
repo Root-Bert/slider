@@ -18,5 +18,7 @@ export function Component() {
   }, [workspace]);
 
   if (!workspace) return <Navigate to={routes.reviews()} replace />;
-  return <Outlet />;
+  // A fresh page per organisation: /w/A → /w/B matches the same route, and without the key its
+  // pages keep A's state (running bulk re-render, search, tab) – see WorkspaceLayout.test.tsx.
+  return <Outlet key={workspace.id} />;
 }

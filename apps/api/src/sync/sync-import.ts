@@ -23,7 +23,7 @@ import {
   ImportCrashLoop,
   importsStopping,
 } from '../import/attempts';
-import { deleteOrphanSlides, sha256Hex, toShape } from '../import/common';
+import { deleteOrphanSlides, FINGERPRINT_VERSION, sha256Hex, toShape } from '../import/common';
 import { ConversionAborted } from '../import/libreoffice';
 import { renderSlidePages, slideRenderer, storeSlideRender } from '../import/office-pages';
 import type { ImportDeps } from '../import/import-deck';
@@ -42,7 +42,9 @@ type SlideVersionRow = typeof slideVersions.$inferSelect;
  * update that changes either (e.g. slide-number fields left out of the text hash), every slide
  * would look "modified" on the next sync, and without exact hashes the renumber guard of slide
  * matching cannot stop comments from moving to a neighbour. `null` (the stored rows are used)
- * when the file is gone, cannot be read any more or does not match the stored slides.
+ * when they already come from this code (`FINGERPRINT_VERSION`) – the usual case, so a sync
+ * reads one file, not two – or when the file is gone, cannot be read any more or does not match
+ * the stored slides.
  */
 async function currentFingerprints(
   deps: ImportDeps,
@@ -52,9 +54,11 @@ async function currentFingerprints(
 ): Promise<SlideFingerprint[] | null> {
   if (rows.length === 0) return null;
   const [revision] = await deps.db
-    .select({ pptxKey: revisions.pptxKey })
+    .select({ pptxKey: revisions.pptxKey, fingerprintVersion: revisions.fingerprintVersion })
     .from(revisions)
     .where(eq(revisions.id, revisionId));
+  // Hashed by this code already: parsing and rendering the old file again would change nothing.
+  if (revision?.fingerprintVersion === FINGERPRINT_VERSION) return null;
   const bytes = revision?.pptxKey ? await deps.storage.get(revision.pptxKey) : null;
   if (!bytes) return null;
   try {
@@ -350,6 +354,7 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
           slideHeightEmu: presentation.size.cy,
           fileAuthor: presentation.author,
           officeFailure: rendered.officeFailure,
+          fingerprintVersion: FINGERPRINT_VERSION,
         })
         .where(eq(revisions.id, revisionId));
       await tx

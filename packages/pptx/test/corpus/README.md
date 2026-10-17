@@ -98,6 +98,8 @@ the keys. Confidences are rounded to two decimals.
 | `google-insert-late` / `google-delete-late`                            | Google Slides insert / delete late in the deck: shifted sldIds are not trusted _(synthetic)_                                                                      |
 | `google-insert-footer` / `google-delete-footer` / `google-move-footer` | Google Slides insert / delete / move with the same footer line on every slide: shared text does not make the shifted sldIds trustworthy _(synthetic)_             |
 | `insert-start-slide-numbers`                                           | insert at the start in a deck with slide numbers and an auto date: renumbered fields do not mark slides as modified                                               |
+| `google-insert-edits`                                                  | Google Slides insert at the start plus edits to the first three slides: edited slides on shifted sldIds still find themselves _(synthetic)_                       |
+| `ppt-replace-slide-same-title`                                         | slide deleted and a new one with the same title inserted in its place: different creationId, so deleted + new _(synthetic)_                                       |
 
 ## Synthetic cases
 
@@ -171,7 +173,8 @@ What the matcher does today that a reader might not expect. These are recorded, 
   the identical copy then has no candidate left, so "how sure is it that there is no
   counterpart" is 1 even though an identical slide exists.
 - **Google round trip without edits is `unchanged`.** All sldIds are reassigned, so the renumber
-  guard drops them (`matchedBy: "content"`), and since the render is identical nothing counts as
+  guard drops them (`matchedBy: "content"`; with ids counting up from 256 in slide order a single
+  shifted pair is enough, so even the slides before an insert are matched by content), and since the render is identical nothing counts as
   modified, although layout names and shape ids changed. Sections and comments are gone from
   the Google file.
 - **Legacy comments are always `open`.** Reply threads come back from

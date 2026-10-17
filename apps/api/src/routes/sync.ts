@@ -1,11 +1,12 @@
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
+import { createMiddleware } from 'hono/factory';
 import type { RerenderResult } from '@slider/shared';
 import { deckAccess, requireDeckAccess } from '../auth/access';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import type { AppDeps } from '../deps';
 import { badRequest, fileTooLarge, notAPowerPoint } from '../http/errors';
-import { importLimit } from '../http/import-limit';
+import { deckUploadSlot, importLimit } from '../http/import-limit';
 import { hasPdfRenderer } from '../import/office-pages';
 import { isSyncEnabled } from '../services/deck-sync';
 import {
@@ -22,6 +23,7 @@ const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
 export function syncRoutes(deps: AppDeps) {
   const viewer = viewerMiddleware(deps);
   const imports = importLimit(deps);
+  const uploads = deckUploadSlot(deps);
   const maxBytes = deps.config.maxUploadBytes;
 
   return (
@@ -91,13 +93,10 @@ export function syncRoutes(deps: AppDeps) {
       .post(
         '/decks/:deckId/revisions',
         viewer,
-        imports,
-        bodyLimit({
-          maxSize: maxBytes + MULTIPART_OVERHEAD_BYTES,
-          onError: (c) => c.json(fileTooLarge(maxBytes).toBody(), 413),
-        }),
-        async (c) => {
-          const deck = await requireDeckAccess(deps.db, c.var.viewer, c.req.param('deckId'), 'own');
+        // Before a single byte is buffered: only the owner, only for an uploaded, imported deck.
+        createMiddleware<ViewerEnv>(async (c, next) => {
+          const deckId = c.req.param('deckId') ?? '';
+          const deck = await requireDeckAccess(deps.db, c.var.viewer, deckId, 'own');
           if (isSyncEnabled(deck)) {
             throw badRequest(
               'Diese Präsentation wird automatisch aus ihrer Quelle aktualisiert – eine neue Version kommt von dort.',
@@ -106,6 +105,16 @@ export function syncRoutes(deps: AppDeps) {
           if (deck.importState.status !== 'ready') {
             throw badRequest('Die Präsentation wird gerade noch importiert.');
           }
+          await next();
+        }),
+        imports,
+        uploads,
+        bodyLimit({
+          maxSize: maxBytes + MULTIPART_OVERHEAD_BYTES,
+          onError: (c) => c.json(fileTooLarge(maxBytes).toBody(), 413),
+        }),
+        async (c) => {
+          const deckId = c.req.param('deckId');
           const body = await c.req.parseBody().catch(() => {
             throw badRequest('Der Upload konnte nicht gelesen werden.');
           });
@@ -117,7 +126,7 @@ export function syncRoutes(deps: AppDeps) {
           if (file.size > maxBytes) throw fileTooLarge(maxBytes);
           if (file.size === 0) throw badRequest('Die Datei ist leer.');
           const bytes = new Uint8Array(await file.arrayBuffer());
-          return c.json(await deps.sync.importUpload(deck.id, bytes));
+          return c.json(await deps.sync.importUpload(deckId, bytes));
         },
       )
 

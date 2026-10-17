@@ -187,4 +187,19 @@ describe('LeaveSection', () => {
     expect(leaveTrigger().disabled).toBe(true);
     expect(screen.getByText(/Du bist allein in dieser Organisation/)).toBeTruthy();
   });
+
+  it('with only viewers left, the last admin is told to give one another role – not "allein"', () => {
+    api.members = {
+      isSuccess: true,
+      data: [member('me', 'Anna', 'admin'), member('u3', 'Cleo', 'viewer')],
+    };
+    render(
+      <MemoryRouter>
+        <LeaveSection workspace={workspace('admin')} userId="me" onNotify={vi.fn()} />
+      </MemoryRouter>,
+    );
+    expect(leaveTrigger().disabled).toBe(true);
+    expect(screen.queryByText(/Du bist allein/)).toBeNull();
+    expect(screen.getByText(/nur Betrachter.*eine andere Rolle/)).toBeTruthy();
+  });
 });

@@ -9,7 +9,7 @@
       "status": "unchanged",
       "moved": false,
       "confidence": 1,
-      "matchedBy": "sldId",
+      "matchedBy": "content",
       "previousPosition": 0,
       "position": 0
     },
@@ -19,7 +19,7 @@
       "status": "unchanged",
       "moved": false,
       "confidence": 1,
-      "matchedBy": "sldId",
+      "matchedBy": "content",
       "previousPosition": 1,
       "position": 1
     },
@@ -29,7 +29,7 @@
       "status": "unchanged",
       "moved": false,
       "confidence": 1,
-      "matchedBy": "sldId",
+      "matchedBy": "content",
       "previousPosition": 2,
       "position": 2
     },
@@ -48,7 +48,7 @@
       "next": null,
       "status": "deleted",
       "moved": false,
-      "confidence": 0.78,
+      "confidence": 0.79,
       "matchedBy": null,
       "previousPosition": 3,
       "position": null

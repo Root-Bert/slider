@@ -23,6 +23,7 @@ import {
 } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { badRequest, forbidden, notFound } from '../http/errors';
+import { pptxTombstone } from '../import/pptx-comments';
 import { touchDeck } from './decks';
 import {
   deleteMediaBlobs,
@@ -362,19 +363,13 @@ export async function deleteComment(
   await deps.db.transaction(async (tx) => {
     // PowerPoint comments in the thread stay deleted: the next import of the file skips them.
     const fromPptx = await tx
-      .select({ externalId: comments.externalId })
+      .select()
       .from(comments)
       .where(and(deleted, eq(comments.source, 'pptx'), isNotNull(comments.externalId)));
     if (fromPptx.length > 0) {
       await tx
         .insert(deletedPptxComments)
-        .values(
-          fromPptx.map((row) => ({
-            deckId: comment.deckId,
-            externalId: row.externalId ?? '',
-            deletedAt: now,
-          })),
-        )
+        .values(fromPptx.map((row) => pptxTombstone(comment.deckId, row, now)))
         .onConflictDoNothing();
     }
     if (keepDrawing) {

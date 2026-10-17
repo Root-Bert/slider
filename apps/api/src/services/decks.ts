@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray, isNull, max, min } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, max, min } from 'drizzle-orm';
 import type { Author, Deck, DeckSource } from '@slider/shared';
 import { permissionsFor, type DeckViewerAccess } from '../auth/access';
 import { displayAuthor, externalAuthor, ownerAuthor } from '../authors';
@@ -16,6 +16,7 @@ import type { AppDeps } from '../deps';
 import { sha256Hex } from '../import/common';
 import { blobKeys, fileUrl } from '../storage/blob-storage';
 import { toDeckSync } from './deck-sync';
+import { isOpenComment } from './open-comments';
 import { assertDeckSlot } from './plans';
 import { rolesOf } from './workspaces/roles';
 
@@ -76,14 +77,7 @@ export async function toDeckDtos(
       db
         .select({ deckId: comments.deckId, count: count() })
         .from(comments)
-        .where(
-          and(
-            inArray(comments.deckId, deckIds),
-            isNull(comments.parentId),
-            eq(comments.status, 'open'),
-            isNull(comments.removedInSourceAt),
-          ),
-        )
+        .where(and(inArray(comments.deckId, deckIds), isOpenComment()))
         .groupBy(comments.deckId),
       db
         .select({

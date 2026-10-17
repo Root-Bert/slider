@@ -53,11 +53,11 @@ const tokenOf = async (res: Response) => {
   return { ...created, token: new URL(created.url).pathname.split('/').pop() ?? '' };
 };
 
-const upload = (name = 'Neu.pptx', workspaceId = ctx.workspaceId) => {
+const upload = (name = 'Neu.pptx', workspaceId = ctx.workspaceId, cookie?: string) => {
   const form = new FormData();
   form.append('file', new File([pptxBytes('v1')], name));
   form.append('workspaceId', workspaceId);
-  return ctx.request('/api/decks/upload', { method: 'POST', body: form });
+  return ctx.request('/api/decks/upload', { method: 'POST', body: form, cookie });
 };
 
 const importLink = () =>
@@ -296,7 +296,13 @@ describe('decks per organisation', () => {
 
   it('never exceeds the limit with requests at the same time', async () => {
     await createReadyDeck(ctx);
-    const results = await Promise.all([upload('A.pptx'), upload('B.pptx'), upload('C.pptx')]);
+    // Three people: one account may only send a couple of files at once.
+    const [anna, ben] = [await member('Anna'), await member('Ben')];
+    const results = await Promise.all([
+      upload('A.pptx'),
+      upload('B.pptx', ctx.workspaceId, anna.cookie),
+      upload('C.pptx', ctx.workspaceId, ben.cookie),
+    ]);
     expect(results.map((res) => res.status).sort()).toEqual([201, 201, 403]);
     expect(await deckCount()).toBe(3);
     await ctx.deps.queue.idle();
