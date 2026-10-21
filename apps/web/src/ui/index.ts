@@ -31,6 +31,7 @@ export { Dialog, type DialogProps } from './Dialog';
 export { Divider, type DividerProps } from './Divider';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
 export { ErrorText, type ErrorTextProps } from './ErrorText';
+export { Legend, type LegendItem, type LegendProps } from './Legend';
 export { GlassPanel, type GlassPanelTone } from './GlassPanel';
 export { Icon, type IconName } from './Icon';
 export {

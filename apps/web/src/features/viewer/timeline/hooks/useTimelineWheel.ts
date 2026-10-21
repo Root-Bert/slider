@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, type RefObject } from 'react';
 import { rafThrottle } from '@/lib/dom';
+import { atScrollEdge, wheelPixels } from '@/lib/wheel';
 import type { TrackGeometry } from '../lib/timeline-layout';
 import { pinchSplit, wheelSplit } from '../lib/split';
 import { useViewerDispatch, useViewerState } from '../../state/viewer-state';
@@ -73,10 +74,8 @@ export function useTimelineWheel({
       // Comments (and text fields) scroll natively.
       if (!target?.closest('[data-timeline-header]')) return;
       if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
-      const delta = event.deltaY * (event.deltaMode === 1 ? 16 : 1);
-      const max = scroller.scrollWidth - scroller.clientWidth;
-      if ((delta > 0 && scroller.scrollLeft >= max - 1) || (delta < 0 && scroller.scrollLeft <= 1))
-        return;
+      const delta = wheelPixels(event.deltaY, event.deltaMode);
+      if (atScrollEdge(scroller, delta)) return;
       event.preventDefault();
       scroller.scrollBy({ left: delta });
     };

@@ -1,10 +1,5 @@
 import { useState } from 'react';
-import {
-  STORAGE_CATEGORIES,
-  type StorageBreakdown,
-  type Workspace,
-  type WorkspaceUsageDetails,
-} from '@slider/shared';
+import type { Workspace, WorkspaceUsageDetails } from '@slider/shared';
 import { formatFileSize } from '@/lib/format';
 import { useOnPageRestore } from '@/lib/page-restore';
 import {
@@ -15,7 +10,7 @@ import {
   useRequestBillingTransfer,
   useStartCheckout,
 } from '@/lib/api';
-import { Button, cn, ErrorText, Notice, Section, Select, type ShowToast } from '@/ui';
+import { Button, cn, ErrorText, Legend, Notice, Section, Select, type ShowToast } from '@/ui';
 import {
   deckState,
   downgradeMessage,
@@ -23,8 +18,7 @@ import {
   nearLimit,
   pendingDowngrade,
   seatState,
-  STORAGE_COLORS,
-  STORAGE_LABELS,
+  storageParts,
   storageState,
   unlimitedUsage,
 } from '../lib/plan';
@@ -238,7 +232,7 @@ function StorageMeter({ details }: { details: WorkspaceUsageDetails }) {
   const { usage, storage } = details;
   const state = storageState(usage);
   const total = usage.maxStorageBytes ?? usage.storageBytes;
-  const parts = STORAGE_CATEGORIES.filter((category) => storage[category] > 0);
+  const parts = storageParts(storage).filter((part) => part.amount > 0);
   return (
     <div className="flex flex-col gap-3 rounded-panel bg-surface-1 p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -259,43 +253,20 @@ function StorageMeter({ details }: { details: WorkspaceUsageDetails }) {
         className="flex h-2 overflow-hidden rounded-full bg-hover"
       >
         {total > 0 &&
-          parts.map((category) => (
+          parts.map((part) => (
             <div
-              key={category}
-              className={STORAGE_COLORS[category]}
-              style={{ width: `${Math.min(100, (storage[category] / total) * 100)}%` }}
+              key={part.key}
+              className={part.color}
+              style={{ width: `${Math.min(100, (part.amount / total) * 100)}%` }}
             />
           ))}
       </div>
       {parts.length === 0 ? (
         <p className="text-xs text-fg-subtle">Noch nichts gespeichert.</p>
       ) : (
-        <StorageLegend storage={storage} categories={parts} />
+        <Legend label="Speicher nach Art" size="sm" items={parts} />
       )}
     </div>
-  );
-}
-
-function StorageLegend({
-  storage,
-  categories,
-}: {
-  storage: StorageBreakdown;
-  categories: readonly (keyof StorageBreakdown)[];
-}) {
-  return (
-    <ul aria-label="Speicher nach Art" className="grid gap-x-4 gap-y-1.5 sm:grid-cols-2">
-      {categories.map((category) => (
-        <li key={category} className="flex items-center gap-2 text-xs">
-          <span
-            aria-hidden
-            className={cn('size-2 shrink-0 rounded-full', STORAGE_COLORS[category])}
-          />
-          <span className="min-w-0 flex-1 truncate text-fg-muted">{STORAGE_LABELS[category]}</span>
-          <span className="text-fg-subtle tabular-nums">{formatFileSize(storage[category])}</span>
-        </li>
-      ))}
-    </ul>
   );
 }
 

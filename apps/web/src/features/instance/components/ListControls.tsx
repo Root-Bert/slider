@@ -1,9 +1,59 @@
 import type { ReactNode } from 'react';
 import { INSTANCE_PAGE_SIZE } from '@slider/shared';
-import { Button, cn, TextField } from '@/ui';
+import { Button, cn, ErrorText, LoadingState, TextField } from '@/ui';
+import type { useListSearch } from '../hooks/useListSearch';
 import type { Column } from '../lib/table';
 
-export function SearchField({
+/**
+ * A searchable, paged table of the directory: the search above, then the rows – or why there
+ * are none – and the pages below. `children` go after it (the confirm dialog).
+ */
+export function DirectoryList<Item extends { id: string }>({
+  label,
+  searchLabel,
+  empty,
+  columns,
+  search,
+  list,
+  items,
+  row,
+  children,
+}: {
+  label: string;
+  searchLabel: string;
+  /** Shown when the search finds nothing. */
+  empty: string;
+  columns: readonly Column[];
+  search: ReturnType<typeof useListSearch>;
+  list: { error: { message: string } | null; data?: { total: number } };
+  /** The rows of the page loaded. */
+  items: readonly Item[] | undefined;
+  row: (item: Item) => ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <>
+      <SearchField label={searchLabel} value={search.typed} onChange={search.setTyped} />
+      {list.error ? (
+        <ErrorText role="alert">{list.error.message}</ErrorText>
+      ) : !list.data || !items ? (
+        <LoadingState padding="sm" />
+      ) : items.length === 0 ? (
+        <p className="text-body text-fg-subtle">{empty}</p>
+      ) : (
+        <DataTable label={label} columns={columns}>
+          {items.map(row)}
+        </DataTable>
+      )}
+      {list.data && (
+        <Pager offset={search.offset} total={list.data.total} onChange={search.setOffset} />
+      )}
+      {children}
+    </>
+  );
+}
+
+function SearchField({
   label,
   value,
   onChange,
@@ -27,7 +77,7 @@ export function SearchField({
 }
 
 /** "51–100 von 230" with back and forth – only when there is more than one page. */
-export function Pager({
+function Pager({
   offset,
   total,
   onChange,
@@ -68,7 +118,7 @@ export function Pager({
 }
 
 /** A dashboard table: quiet header, hairline rows, scrolling sideways on phones. */
-export function DataTable({
+function DataTable({
   label,
   columns,
   children,

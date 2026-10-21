@@ -1,7 +1,5 @@
 import { useEffect, useEffectEvent, useState } from 'react';
-
-/** A line of a line-based wheel (some mice) in pixels. */
-const LINE_PX = 16;
+import { wheelPixels } from '@/lib/wheel';
 
 /**
  * Sideways scrolling over the element – two fingers on a trackpad, or Shift with a mouse wheel –
@@ -26,10 +24,7 @@ export function useSidewaysWheel<T extends HTMLElement>(
       event.preventDefault();
       // Handled here: an outer element listening too doesn't move again.
       event.stopPropagation();
-      pan(
-        sideways * (event.deltaMode === WheelEvent.DOM_DELTA_LINE ? LINE_PX : 1),
-        element.clientWidth,
-      );
+      pan(wheelPixels(sideways, event.deltaMode), element.clientWidth);
     };
     element.addEventListener('wheel', onWheel, { passive: false });
     return () => element.removeEventListener('wheel', onWheel);

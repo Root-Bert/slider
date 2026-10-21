@@ -14,6 +14,7 @@ import {
 import { accentColor } from '@/lib/accent';
 import { cn, Icon } from '@/ui';
 import { afterCommit, rafThrottle } from '@/lib/dom';
+import { atScrollEdge, wheelPixels } from '@/lib/wheel';
 import { smoothScroll } from '@/lib/motion';
 import { gapKey, openCountBySlide } from '../comments/lib/comment-selectors';
 import { slideLabel } from '../comments/lib/labels';
@@ -149,17 +150,16 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
     const onWheel = (event: WheelEvent) => {
       if (isModKey(event)) return;
       const max = list.scrollWidth - list.clientWidth;
-      const scale = event.deltaMode === 1 ? 16 : 1;
       if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
         const scroller = scrollerRef.current;
         if (max > 1 || !scroller) return;
         event.preventDefault();
-        scroller.scrollLeft += event.deltaX * scale;
+        scroller.scrollLeft += wheelPixels(event.deltaX, event.deltaMode);
         return;
       }
       if (max <= 1) return;
-      const delta = event.deltaY * scale;
-      if ((delta > 0 && list.scrollLeft >= max - 1) || (delta < 0 && list.scrollLeft <= 1)) return;
+      const delta = wheelPixels(event.deltaY, event.deltaMode);
+      if (atScrollEdge(list, delta)) return;
       event.preventDefault();
       list.scrollBy({ left: delta });
     };

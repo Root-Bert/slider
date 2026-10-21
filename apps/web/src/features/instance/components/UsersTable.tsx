@@ -1,20 +1,11 @@
-import { useState } from 'react';
 import type { InstanceUser } from '@slider/shared';
 import { useInstanceUsers, useSetUserBlocked } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/format';
-import {
-  Avatar,
-  Badge,
-  cn,
-  ConfirmDialog,
-  ErrorText,
-  LoadingState,
-  Menu,
-  type ShowToast,
-} from '@/ui';
+import { Avatar, Badge, cn, Menu, type ShowToast } from '@/ui';
+import { useConfirmedAction, type ConfirmedAction } from '../hooks/useConfirmedAction';
 import { useListSearch } from '../hooks/useListSearch';
 import { cell, ROW_CLASS, type Column } from '../lib/table';
-import { DataTable, Pager, SearchField } from './ListControls';
+import { DirectoryList } from './ListControls';
 
 /**
  * Every account on the instance (BER-167), the dashboard's "Personen" tab: name and address – to
@@ -24,72 +15,51 @@ import { DataTable, Pager, SearchField } from './ListControls';
 export function UsersTable({ userId, onNotify }: { userId: string; onNotify: ShowToast }) {
   const search = useListSearch();
   const list = useInstanceUsers(search.q, search.offset);
-  const [pending, setPending] = useState<InstanceUser | null>(null);
   const block = useSetUserBlocked();
-  const blocking = pending?.blockedAt === null;
-
-  const close = () => {
-    setPending(null);
-    block.reset();
+  const confirm = useConfirmedAction(onNotify, [block]);
+  const toggle = (user: InstanceUser): ConfirmedAction => {
+    const blocking = user.blockedAt === null;
+    const run = (onSuccess: () => void) =>
+      block.mutate({ userId: user.id, blocked: blocking }, { onSuccess });
+    return blocking
+      ? {
+          title: `${user.name} sperren?`,
+          description: `${user.email} wird sofort abgemeldet und kann sich nicht mehr anmelden. Reviews, Kommentare und Mitgliedschaften bleiben, Entsperren lässt das Konto wieder herein.`,
+          confirmLabel: 'Sperren',
+          tone: 'danger',
+          done: `${user.name} ist gesperrt`,
+          run,
+        }
+      : {
+          title: `${user.name} entsperren?`,
+          description: `${user.email} kann sich dann wieder anmelden.`,
+          confirmLabel: 'Entsperren',
+          tone: 'primary',
+          done: `${user.name} ist entsperrt`,
+          run,
+        };
   };
 
   return (
-    <>
-      <SearchField
-        label="Name oder E-Mail suchen"
-        value={search.typed}
-        onChange={search.setTyped}
-      />
-      {list.isError ? (
-        <ErrorText role="alert">{list.error.message}</ErrorText>
-      ) : !list.data ? (
-        <LoadingState padding="sm" />
-      ) : list.data.users.length === 0 ? (
-        <p className="text-body text-fg-subtle">Niemand gefunden.</p>
-      ) : (
-        <DataTable label="Personen" columns={Object.values(COLUMNS)}>
-          {list.data.users.map((user) => (
-            <UserRow
-              key={user.id}
-              user={user}
-              self={user.id === userId}
-              onToggle={() => setPending(user)}
-            />
-          ))}
-        </DataTable>
-      )}
-      {list.data && (
-        <Pager offset={search.offset} total={list.data.total} onChange={search.setOffset} />
-      )}
-      {pending && (
-        <ConfirmDialog
-          onClose={close}
-          title={blocking ? `${pending.name} sperren?` : `${pending.name} entsperren?`}
-          description={
-            blocking
-              ? `${pending.email} wird sofort abgemeldet und kann sich nicht mehr anmelden. Reviews, Kommentare und Mitgliedschaften bleiben, Entsperren lässt das Konto wieder herein.`
-              : `${pending.email} kann sich dann wieder anmelden.`
-          }
-          confirmLabel={blocking ? 'Sperren' : 'Entsperren'}
-          tone={blocking ? 'danger' : 'primary'}
-          pending={block.isPending}
-          error={block.error?.message}
-          onConfirm={() =>
-            block.mutate(
-              { userId: pending.id, blocked: blocking },
-              {
-                onSuccess: () => {
-                  onNotify(
-                    blocking ? `${pending.name} ist gesperrt` : `${pending.name} ist entsperrt`,
-                  );
-                  close();
-                },
-              },
-            )
-          }
+    <DirectoryList
+      label="Personen"
+      searchLabel="Name oder E-Mail suchen"
+      empty="Niemand gefunden."
+      columns={Object.values(COLUMNS)}
+      search={search}
+      list={list}
+      items={list.data?.users}
+      row={(user) => (
+        <UserRow
+          key={user.id}
+          user={user}
+          self={user.id === userId}
+          onToggle={() => confirm.ask(toggle(user))}
         />
       )}
-    </>
+    >
+      {confirm.dialog}
+    </DirectoryList>
   );
 }
 

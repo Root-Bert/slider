@@ -12,7 +12,6 @@ export {
   formatDeckUsage,
   LOCKED_MESSAGE,
   newReviewBlockedMessage,
-  STORAGE_COLORS,
-  STORAGE_LABELS,
+  storageParts,
 } from './lib/plan';
 export { canCreateDecks, ROLE_LABELS } from './lib/roles';

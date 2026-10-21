@@ -1,25 +1,14 @@
-import { useState } from 'react';
 import type { InstanceWorkspace } from '@slider/shared';
 import { useInstanceWorkspaces, useSetWorkspaceBlocked, useSetWorkspacePlan } from '@/lib/api';
 import { formatFileSize, formatRelativeTime } from '@/lib/format';
-import {
-  Badge,
-  cn,
-  ConfirmDialog,
-  ErrorText,
-  LoadingState,
-  Menu,
-  type MenuAction,
-  type ShowToast,
-} from '@/ui';
+import { Badge, cn, Menu, type MenuAction, type ShowToast } from '@/ui';
 import { PlanBadge, WorkspaceMark } from '@/features/workspaces';
+import { useConfirmedAction, type ConfirmedAction } from '../hooks/useConfirmedAction';
 import { useListSearch } from '../hooks/useListSearch';
 import { cell, ROW_CLASS, type Column } from '../lib/table';
-import { DataTable, Pager, SearchField } from './ListControls';
+import { DirectoryList } from './ListControls';
 
-type Pending =
-  | { kind: 'block' | 'unblock'; workspace: InstanceWorkspace }
-  | { kind: 'grant' | 'revoke'; workspace: InstanceWorkspace };
+type Kind = 'block' | 'unblock' | 'grant' | 'revoke';
 
 /**
  * Every organisation on the instance with its size and plan – never what is in it (BER-167), the
@@ -29,86 +18,40 @@ type Pending =
 export function WorkspacesTable({ plans, onNotify }: { plans: boolean; onNotify: ShowToast }) {
   const search = useListSearch();
   const list = useInstanceWorkspaces(search.q, search.offset);
-  const [pending, setPending] = useState<Pending | null>(null);
   const block = useSetWorkspaceBlocked();
   const plan = useSetWorkspacePlan();
-  const mutation = pending?.kind === 'grant' || pending?.kind === 'revoke' ? plan : block;
-
-  const close = () => {
-    setPending(null);
-    block.reset();
-    plan.reset();
-  };
-  const confirm = () => {
-    if (!pending) return;
-    const { workspace } = pending;
-    const done = (message: string) => () => {
-      onNotify(message);
-      close();
+  const confirm = useConfirmedAction(onNotify, [block, plan]);
+  const action = (kind: Kind, workspace: InstanceWorkspace): ConfirmedAction => {
+    const workspaceId = workspace.id;
+    return {
+      ...CONFIRM_COPY[kind](workspace.name),
+      run: (onSuccess) =>
+        kind === 'grant' || kind === 'revoke'
+          ? plan.mutate({ workspaceId, plan: kind === 'grant' ? 'paid' : 'free' }, { onSuccess })
+          : block.mutate({ workspaceId, blocked: kind === 'block' }, { onSuccess }),
     };
-    if (pending.kind === 'grant' || pending.kind === 'revoke') {
-      plan.mutate(
-        { workspaceId: workspace.id, plan: pending.kind === 'grant' ? 'paid' : 'free' },
-        {
-          onSuccess: done(
-            pending.kind === 'grant'
-              ? `„${workspace.name}“ ist jetzt im Paid-Plan`
-              : `„${workspace.name}“ ist jetzt im Free-Plan`,
-          ),
-        },
-      );
-    } else {
-      block.mutate(
-        { workspaceId: workspace.id, blocked: pending.kind === 'block' },
-        {
-          onSuccess: done(
-            pending.kind === 'block'
-              ? `„${workspace.name}“ ist gesperrt`
-              : `„${workspace.name}“ ist entsperrt`,
-          ),
-        },
-      );
-    }
   };
 
   return (
-    <>
-      <SearchField
-        label="Name oder Domain suchen"
-        value={search.typed}
-        onChange={search.setTyped}
-      />
-      {list.isError ? (
-        <ErrorText role="alert">{list.error.message}</ErrorText>
-      ) : !list.data ? (
-        <LoadingState padding="sm" />
-      ) : list.data.workspaces.length === 0 ? (
-        <p className="text-body text-fg-subtle">Keine Organisation gefunden.</p>
-      ) : (
-        <DataTable label="Organisationen" columns={columnsFor(plans)}>
-          {list.data.workspaces.map((workspace) => (
-            <WorkspaceRow
-              key={workspace.id}
-              workspace={workspace}
-              plans={plans}
-              onAction={(kind) => setPending({ kind, workspace })}
-            />
-          ))}
-        </DataTable>
-      )}
-      {list.data && (
-        <Pager offset={search.offset} total={list.data.total} onChange={search.setOffset} />
-      )}
-      {pending && (
-        <ConfirmDialog
-          onClose={close}
-          {...CONFIRM_COPY[pending.kind](pending.workspace.name)}
-          pending={mutation.isPending}
-          error={mutation.error?.message}
-          onConfirm={confirm}
+    <DirectoryList
+      label="Organisationen"
+      searchLabel="Name oder Domain suchen"
+      empty="Keine Organisation gefunden."
+      columns={columnsFor(plans)}
+      search={search}
+      list={list}
+      items={list.data?.workspaces}
+      row={(workspace) => (
+        <WorkspaceRow
+          key={workspace.id}
+          workspace={workspace}
+          plans={plans}
+          onAction={(kind) => confirm.ask(action(kind, workspace))}
         />
       )}
-    </>
+    >
+      {confirm.dialog}
+    </DirectoryList>
   );
 }
 
@@ -128,27 +71,21 @@ const columnsFor = (plans: boolean): Column[] =>
     .filter(([key]) => plans || key !== 'plan')
     .map(([, column]) => column);
 
-const CONFIRM_COPY: Record<
-  Pending['kind'],
-  (name: string) => {
-    title: string;
-    description: string;
-    confirmLabel: string;
-    tone: 'danger' | 'primary';
-  }
-> = {
+const CONFIRM_COPY: Record<Kind, (name: string) => Omit<ConfirmedAction, 'run'>> = {
   block: (name) => ({
     title: `„${name}“ sperren?`,
     description:
       'Niemand öffnet dann ihre Reviews, niemand tritt bei, ihr Firmen-Login ist aus. Mitglieder sehen, dass sie gesperrt ist, und können austreten. Gelöscht wird nichts, Entsperren stellt alles wieder her.',
     confirmLabel: 'Sperren',
     tone: 'danger',
+    done: `„${name}“ ist gesperrt`,
   }),
   unblock: (name) => ({
     title: `„${name}“ entsperren?`,
     description: 'Ihre Mitglieder können sie dann wieder ganz normal nutzen.',
     confirmLabel: 'Entsperren',
     tone: 'primary',
+    done: `„${name}“ ist entsperrt`,
   }),
   grant: (name) => ({
     title: `„${name}“ in den Paid-Plan?`,
@@ -156,6 +93,7 @@ const CONFIRM_COPY: Record<
       'Freigeschaltet ohne Stripe, etwa bei Zahlung per Rechnung. Ein Abo kann sie dann nicht abschließen, bis du die Freischaltung beendest.',
     confirmLabel: 'Paid freischalten',
     tone: 'primary',
+    done: `„${name}“ ist jetzt im Paid-Plan`,
   }),
   revoke: (name) => ({
     title: `Freischaltung von „${name}“ beenden?`,
@@ -163,6 +101,7 @@ const CONFIRM_COPY: Record<
       'Sie ist dann sofort im Free-Plan. Liegt sie über einem Limit, gehen nur noch Lesen, Löschen und Upgraden, bis alles wieder passt.',
     confirmLabel: 'Auf Free setzen',
     tone: 'danger',
+    done: `„${name}“ ist jetzt im Free-Plan`,
   }),
 };
 
@@ -173,7 +112,7 @@ function WorkspaceRow({
 }: {
   workspace: InstanceWorkspace;
   plans: boolean;
-  onAction: (kind: Pending['kind']) => void;
+  onAction: (kind: Kind) => void;
 }) {
   const blocked = workspace.blockedAt !== null;
   const actions: MenuAction[] = [];

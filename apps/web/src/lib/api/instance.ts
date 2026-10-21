@@ -83,35 +83,48 @@ export const useInstanceWorkspaces = (q: string, offset: number) =>
     placeholderData: keepPreviousData,
   });
 
-/** Every change moves a number on the overview and a row in a list: all of it reloads. */
-function useReloadInstance() {
+/**
+ * A change moves one row and a number on the overview – never what was created over time. The
+ * row the server answers with replaces its old self on every cached page; the overview reloads.
+ */
+function useApplyRow<Key extends 'users' | 'workspaces', Row extends { id: string }>(key: Key) {
   const queryClient = useQueryClient();
-  return () => queryClient.invalidateQueries({ queryKey: INSTANCE_KEY });
+  return (row: Row) => {
+    queryClient.setQueriesData<Record<Key, Row[]>>(
+      { queryKey: [...INSTANCE_KEY, key] },
+      (page) =>
+        page && {
+          ...page,
+          [key]: page[key].map((each) => (each.id === row.id ? row : each)),
+        },
+    );
+    return queryClient.invalidateQueries({ queryKey: instanceKeys.overview });
+  };
 }
 
 export function useSetUserBlocked() {
-  const reload = useReloadInstance();
+  const apply = useApplyRow<'users', InstanceUser>('users');
   return useMutation({
     mutationFn: ({ userId, blocked }: { userId: string; blocked: boolean }) =>
       api.put<InstanceUser>(`/instance/users/${userId}/blocked`, { blocked }),
-    onSuccess: reload,
+    onSuccess: apply,
   });
 }
 
 export function useSetWorkspaceBlocked() {
-  const reload = useReloadInstance();
+  const apply = useApplyRow<'workspaces', InstanceWorkspace>('workspaces');
   return useMutation({
     mutationFn: ({ workspaceId, blocked }: { workspaceId: string; blocked: boolean }) =>
       api.put<InstanceWorkspace>(`/instance/workspaces/${workspaceId}/blocked`, { blocked }),
-    onSuccess: reload,
+    onSuccess: apply,
   });
 }
 
 export function useSetWorkspacePlan() {
-  const reload = useReloadInstance();
+  const apply = useApplyRow<'workspaces', InstanceWorkspace>('workspaces');
   return useMutation({
     mutationFn: ({ workspaceId, plan }: { workspaceId: string; plan: PlanId }) =>
       api.put<InstanceWorkspace>(`/instance/workspaces/${workspaceId}/plan`, { plan }),
-    onSuccess: reload,
+    onSuccess: apply,
   });
 }

@@ -1,3 +1,4 @@
+import { wheelPixels } from '@/lib/wheel';
 import { slideHeightAt, splitForHeight, type TrackGeometry } from './timeline-layout';
 
 export {
@@ -22,7 +23,6 @@ export const SPLIT_KEY_STEP_LARGE_PX = 96;
 /** Wheel pixels per e-fold of slide height; a single wheel notch is capped so mice don't jump. */
 const WHEEL_SENSITIVITY = 0.005;
 const WHEEL_MAX_DELTA = 50;
-const LINE_HEIGHT_PX = 16;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
@@ -45,7 +45,7 @@ export function wheelSplit(
   deltaMode: number,
   geo: TrackGeometry,
 ): number {
-  const pixels = deltaMode === 1 ? deltaY * LINE_HEIGHT_PX : deltaY;
+  const pixels = wheelPixels(deltaY, deltaMode);
   const h = slideHeightAt(split, geo);
   return splitForHeight(
     h * Math.exp(-clamp(pixels, -WHEEL_MAX_DELTA, WHEEL_MAX_DELTA) * WHEEL_SENSITIVITY),

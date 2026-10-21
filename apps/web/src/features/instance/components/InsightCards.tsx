@@ -1,52 +1,42 @@
 import { STORAGE_CATEGORIES, type InstanceOverview } from '@slider/shared';
 import { formatFileSize } from '@/lib/format';
-import { cn, Section } from '@/ui';
-import { STORAGE_COLORS, STORAGE_LABELS, WorkspaceMark } from '@/features/workspaces';
+import { cn, Legend, Section, type LegendItem } from '@/ui';
+import { storageParts, WorkspaceMark } from '@/features/workspaces';
 import { formatCount } from '../lib/period';
 
-/** One part of a bar that shows a whole: share, colour (a token class), name, value. */
-interface Part {
-  key: string;
-  label: string;
-  value: number;
+/** One part of a bar that shows a whole: its amount, and how the legend names it. */
+type Part = Omit<LegendItem, 'value'> & {
+  amount: number;
   /** Shown in the legend; the plain count when absent. */
-  display?: string;
-  color: string;
-}
+  value?: string;
+};
 
 /**
  * Part-to-whole as one stacked bar – segments apart by a 2px gap, never outlined – with a legend
  * below that names every part with its value, so nothing hangs on colour or on hovering.
  */
 function PartsBar({ parts, label }: { parts: readonly Part[]; label: string }) {
-  const total = parts.reduce((sum, part) => sum + part.value, 0);
+  const total = parts.reduce((sum, part) => sum + part.amount, 0);
+  const named = parts.map((part) => ({ ...part, value: part.value ?? formatCount(part.amount) }));
   return (
     <div className="flex flex-col gap-4">
       <div role="img" aria-label={label} className="flex h-2.5 gap-0.5">
         {total === 0 ? (
           <div className="flex-1 rounded-full bg-surface-2" />
         ) : (
-          parts
-            .filter((part) => part.value > 0)
+          named
+            .filter((part) => part.amount > 0)
             .map((part) => (
               <div
                 key={part.key}
-                title={`${part.label}: ${part.display ?? formatCount(part.value)}`}
+                title={`${part.label}: ${part.value}`}
                 className={cn('min-w-1 rounded-full', part.color)}
-                style={{ flexGrow: part.value, flexBasis: 0 }}
+                style={{ flexGrow: part.amount, flexBasis: 0 }}
               />
             ))
         )}
       </div>
-      <ul className="flex flex-col gap-2">
-        {parts.map((part) => (
-          <li key={part.key} className="flex items-center gap-2 text-body">
-            <span aria-hidden className={cn('size-2 shrink-0 rounded-full', part.color)} />
-            <span className="min-w-0 flex-1 truncate text-fg-muted">{part.label}</span>
-            <span className="text-fg tabular-nums">{part.display ?? formatCount(part.value)}</span>
-          </li>
-        ))}
-      </ul>
+      <Legend items={named} />
     </div>
   );
 }
@@ -71,16 +61,7 @@ export function StorageCard({ overview }: { overview: InstanceOverview }) {
   return (
     <Section title="Speicher" density="compact">
       <Figure value={formatFileSize(total)} caption="alle Reviews und Aufnahmen" />
-      <PartsBar
-        label="Speicher nach Art der Datei"
-        parts={STORAGE_CATEGORIES.map((key) => ({
-          key,
-          label: STORAGE_LABELS[key],
-          value: storage[key],
-          display: formatFileSize(storage[key]),
-          color: STORAGE_COLORS[key],
-        }))}
-      />
+      <PartsBar label="Speicher nach Art der Datei" parts={storageParts(storage)} />
     </Section>
   );
 }
@@ -103,25 +84,25 @@ export function ActivityCard({ overview }: { overview: InstanceOverview }) {
           {
             key: 'week',
             label: 'In den letzten 7 Tagen',
-            value: activeWeek,
+            amount: activeWeek,
             color: 'bg-fg',
           },
           {
             key: 'month',
             label: 'Vor 8 bis 30 Tagen',
-            value: active - activeWeek,
+            amount: active - activeWeek,
             color: 'bg-fg/45',
           },
           {
             key: 'quarter',
             label: 'Vor 31 bis 90 Tagen',
-            value: activeQuarter - active,
+            amount: activeQuarter - active,
             color: 'bg-fg/20',
           },
           {
             key: 'older',
             label: 'Länger nicht',
-            value: total - activeQuarter,
+            amount: total - activeQuarter,
             color: 'bg-surface-4',
           },
         ]}
@@ -147,19 +128,19 @@ export function StatusCard({ overview }: { overview: InstanceOverview }) {
               {
                 key: 'stripe',
                 label: 'Paid über Stripe',
-                value: workspaces.paid - workspaces.granted,
+                amount: workspaces.paid - workspaces.granted,
                 color: 'bg-fg',
               },
               {
                 key: 'granted',
                 label: 'Paid freigeschaltet',
-                value: workspaces.granted,
+                amount: workspaces.granted,
                 color: 'bg-fg/45',
               },
               {
                 key: 'free',
                 label: 'Free',
-                value: workspaces.total - workspaces.paid,
+                amount: workspaces.total - workspaces.paid,
                 color: 'bg-surface-4',
               },
             ]}

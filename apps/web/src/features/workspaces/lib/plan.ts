@@ -1,4 +1,12 @@
-import type { StorageCategory, Workspace, WorkspaceBilling, WorkspaceUsage } from '@slider/shared';
+import {
+  STORAGE_CATEGORIES,
+  type StorageBreakdown,
+  type StorageCategory,
+  type Workspace,
+  type WorkspaceBilling,
+  type WorkspaceUsage,
+} from '@slider/shared';
+import { formatFileSize } from '@/lib/format';
 
 /**
  * Plan limits on the client (BER-130) – only to show usage and disable what would fail. The API
@@ -86,7 +94,7 @@ export function newReviewBlockedMessage(
 }
 
 /** "Nutzung": the bar's parts, in the order of `STORAGE_CATEGORIES`. */
-export const STORAGE_LABELS: Record<StorageCategory, string> = {
+const STORAGE_LABELS: Record<StorageCategory, string> = {
   originals: 'Originaldateien',
   slideImages: 'Folien-Renderings',
   images: 'Bilder',
@@ -96,7 +104,7 @@ export const STORAGE_LABELS: Record<StorageCategory, string> = {
 };
 
 /** Design-token colours of the bar's parts (theme variables, so Tailwind emits them). */
-export const STORAGE_COLORS: Record<StorageCategory, string> = {
+const STORAGE_COLORS: Record<StorageCategory, string> = {
   originals: 'bg-powerpoint',
   slideImages: 'bg-accent-blue',
   images: 'bg-accent-violet',
@@ -104,6 +112,19 @@ export const STORAGE_COLORS: Record<StorageCategory, string> = {
   audio: 'bg-accent-green',
   other: 'bg-fg-faint',
 };
+
+/**
+ * Storage by kind of file as the parts of a bar and its legend (`Legend` items): name, bytes,
+ * their size as text, colour. "Nutzung" and the instance dashboard draw the same parts.
+ */
+export const storageParts = (storage: StorageBreakdown) =>
+  STORAGE_CATEGORIES.map((key) => ({
+    key,
+    label: STORAGE_LABELS[key],
+    amount: storage[key],
+    value: formatFileSize(storage[key]),
+    color: STORAGE_COLORS[key],
+  }));
 
 /** "19. Oktober 2026". */
 export const formatPlanDate = (iso: string) =>

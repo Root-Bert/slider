@@ -298,6 +298,7 @@ App chrome lives in `shell/` (not `ui/`): `SettingsLayout` (`docTitle`, `title`,
 | `Icon`             | `name`, `size` (scale step `xs`…`2xl` or px, **24**), `label` (otherwise decorative); `ICON_SIZE`, `iconPx()` |
 | `Spinner`          | `size` (scale step or px, **20**), `label` (**"Lädt"**, `role="status"`)                                      |
 | `ProgressBar`      | `value` (0–1, `null` = indeterminate), `label`                                                                |
+| `Legend`           | `items` (`{ key, label, value, color }`), `label`, `size` sm · **md** – dot, name, value under a chart        |
 | `Kbd` `ReturnKey`  | Shortcut hint chip; the ↵ glyph                                                                               |
 | `Logo`             | `withText` (**true**), `onAnimationEnd`                                                                       |
 | `brand/*`          | `MicrosoftMark` `GoogleMark` `PasskeyMark` `PowerPointMark`                                                   |
