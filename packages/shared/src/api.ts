@@ -75,6 +75,8 @@ import type { DomainWorkspace, MeLimits, MeUser, PendingInvite, Workspace } from
  * | POST   | /auth/nextcloud/flow                   | StartNextcloudSignInInput  | NextcloudLoginStart (sets cookie) |
  * | POST   | /auth/nextcloud/flow/:id/poll          |                            | NextcloudSignInPoll   |
  * | POST   | /auth/nextcloud/confirm                | ConfirmNextcloudSignUpInput | LoginResult (sets cookie) |
+ * | POST   | /auth/email/start                      | StartEmailLoginInput       | 204 (mails a login link) |
+ * | POST   | /auth/email/confirm                    | ConfirmEmailLoginInput     | EmailLoginResult (sets cookie) |
  * | POST   | /auth/passkey/options                  |                            | WebAuthn request options |
  * | POST   | /auth/passkey/verify                   | VerifyPasskeyLoginInput    | LoginResult (sets cookie) |
  * | GET    | /me/microsoft                          |                            | MicrosoftConnection[] |
@@ -170,6 +172,12 @@ export const ERROR_CODES = [
   'domain_taken',
   /** The website's contact form is off: no `CONTACT_EMAIL` or no SMTP. */
   'contact_unavailable',
+  /** A mail (the login link, BER-168) could not be sent just now; trying again may work. */
+  'mail_failed',
+  /** The instance admin blocked the organisation (BER-167): only leaving it still works. */
+  'workspace_blocked',
+  /** The instance admin blocked the account (BER-167): it can't sign in. */
+  'account_blocked',
   'internal',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -211,6 +219,9 @@ export interface MeResponse {
   instanceClaimed: boolean;
 }
 
+/** Longest name a person can give themselves (`PATCH /me`). */
+export const USER_NAME_MAX = 80;
+
 /**
  * The viewer's own settings: their accent colour (pins, lines, drawings) and the name others see
  * (BER-145: people correct it themselves). Either or both.
@@ -218,7 +229,7 @@ export interface MeResponse {
 export const updateMeInputSchema = z
   .object({
     color: accentColorSchema.optional(),
-    name: z.string().trim().min(1, 'Der Name darf nicht leer sein.').max(80).optional(),
+    name: z.string().trim().min(1, 'Der Name darf nicht leer sein.').max(USER_NAME_MAX).optional(),
   })
   .refine((input) => input.color !== undefined || input.name !== undefined, {
     message: 'Nichts zu ändern.',

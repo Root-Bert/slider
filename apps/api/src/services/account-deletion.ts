@@ -13,6 +13,7 @@ import {
   decks,
   media,
   googleConnections,
+  loginLinks,
   nextcloudConnections,
   users,
   workspaceInvites,
@@ -211,6 +212,8 @@ export async function deleteAccount(
     await tx
       .delete(workspaceInvites)
       .where(sql`lower(${workspaceInvites.email}) = ${user.email.toLowerCase()}`);
+    // Mailed login links to the address (BER-168): one could create the account again.
+    await tx.delete(loginLinks).where(eq(loginLinks.email, user.email.toLowerCase()));
     // Removals stay, by the hash of the address only (`user_id` set null): signing up again
     // mustn't lift them. Rows from before the hash get it now.
     await tx

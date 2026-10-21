@@ -6,7 +6,8 @@ import { ColorPicker, WorkSection } from './components/PreferenceSections';
 
 /**
  * `/einstellungen` – "Einstellungen": your colour, how decks open and, for the instance admin,
- * the way to `/einrichtung` (logins, mail, sign-up, imprint and privacy policy). Kept apart from
+ * the way to `/instanz` (numbers, organisations, accounts) and from there to `/einrichtung`
+ * (logins, mail, sign-up, imprint and privacy policy). Kept apart from
  * "Konto & Anmeldung" (`/konto`), which is only about who you are and how you sign in.
  */
 export function Component() {
@@ -29,11 +30,11 @@ export function Component() {
 
       {user.isInstanceAdmin && (
         <Section
-          title="Instanz-Einstellungen"
-          description="Du bist Admin: Anmeldewege, E-Mail-Versand, Registrierung, Impressum und Datenschutz."
+          title="Instanz"
+          description="Du bist Admin: Zahlen, Organisationen und Personen, Anmeldewege, E-Mail-Versand, Impressum und Datenschutz."
           aside={
             <ButtonLink
-              to={routes.setup()}
+              to={routes.instance()}
               variant="secondary"
               size="sm"
               weight="normal"

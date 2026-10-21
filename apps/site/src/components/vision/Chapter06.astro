@@ -7,13 +7,13 @@ import Chapter from './Chapter.astro';
 import Highlight from '~/components/Highlight.astro';
 
 /** 06 | So we build them together: everyone on the same slide, live. */
-const others = [person('Lara'), person('Paul'), person('Gesa')];
+const others = [person('Paul'), person('Gero'), person('Marianne')];
 ---
 
 <Chapter n="06" label="So we build them together">
   <h2 class="vision-h" data-reveal>
     <span class="block">Made the way they are shown:</span>
-    <Highlight by="Gesa">together.</Highlight>
+    <Highlight by="Marianne">together.</Highlight>
   </h2>
   <div class="flex w-full flex-col gap-10 lg:flex-row lg:items-center lg:gap-16">
     <p class="vision-body max-w-[480px] shrink-0" data-reveal style="--i: 1">
@@ -33,9 +33,9 @@ const others = [person('Lara'), person('Paul'), person('Gesa')];
       <div class="absolute top-12 left-10">
         <Slide name="FieldMap" width={422.4} />
       </div>
-      <Cursor name="Lara" class="absolute top-[120px] left-[120px]" drift />
-      <Cursor name="Paul" class="absolute top-[90px] left-[330px]" drift />
-      <Cursor name="Gesa" class="absolute top-[230px] left-[250px]" drift />
+      <Cursor name="Paul" class="absolute top-[120px] left-[120px]" drift />
+      <Cursor name="Gero" class="absolute top-[90px] left-[330px]" drift />
+      <Cursor name="Marianne" class="absolute top-[230px] left-[250px]" drift />
     </div>
   </div>
 </Chapter>

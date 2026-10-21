@@ -1,4 +1,4 @@
-import { and, asc, count, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Workspace, WorkspaceRole } from '@slider/shared';
 import type { Executor } from '../../db/client';
 import { decks, users, workspaceMembers, workspaces, type WorkspaceRow } from '../../db/schema';
@@ -157,8 +157,13 @@ export async function resolveUploadWorkspace(
   const [first] = await deps.db
     .select({ id: workspaceMembers.workspaceId })
     .from(workspaceMembers)
+    .innerJoin(workspaces, eq(workspaces.id, workspaceMembers.workspaceId))
     .where(
-      and(eq(workspaceMembers.userId, userId), inArray(workspaceMembers.role, ['admin', 'member'])),
+      and(
+        eq(workspaceMembers.userId, userId),
+        inArray(workspaceMembers.role, ['admin', 'member']),
+        isNull(workspaces.blockedAt),
+      ),
     )
     .orderBy(asc(workspaceMembers.createdAt))
     .limit(1);
@@ -201,6 +206,7 @@ async function toWorkspaceDtos(
       locked: isOverLimit(usage),
       joinDomain: workspace.joinDomain,
       audiencePending: workspace.audiencePending,
+      blocked: workspace.blockedAt !== null,
     };
   });
 }

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { Deck } from '@slider/shared';
 import { googlePickUrl, useImportGoogleItem } from '@/lib/api';
+import { useOnPageRestore } from '@/lib/page-restore';
 
 /** What a page carries back from Google (connect or picker). */
 export const RETURN_PARAMS = [
@@ -23,13 +24,7 @@ export function useGooglePick(workspaceId: string, onImported: (deck: Deck) => v
   const [error, setError] = useState<string | null>(null);
 
   // Back from Google with the browser's back button: the page may come from its cache.
-  useEffect(() => {
-    const onPageShow = (event: PageTransitionEvent) => {
-      if (event.persisted) setLeaving(false);
-    };
-    window.addEventListener('pageshow', onPageShow);
-    return () => window.removeEventListener('pageshow', onPageShow);
-  }, []);
+  useOnPageRestore(() => setLeaving(false));
 
   /** Leaves for Google's picker – on `fileId` only, for a pasted link Slider may not read yet. */
   const open = (fileId?: string | null) => {

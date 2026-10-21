@@ -4,10 +4,8 @@ import { useNextcloudFlow } from '@/features/nextcloud';
 import { pollNextcloudSignIn, startNextcloudSignIn } from '@/lib/api';
 import { Button, cn, Icon, NextcloudMark, Spinner, TextField, TextLink } from '@/ui';
 import { BESIDE } from '../lib/beside';
+import { loadPage } from '../lib/load-page';
 import { NextcloudSafetyDialog } from './NextcloudSafetyDialog';
-
-/** Full page load: the session cookie is set, everything cached belongs to "signed out". */
-const go = (path: string) => window.location.assign(path);
 
 /**
  * "Weiter mit Nextcloud" for any Nextcloud: the button opens a field for the address, then
@@ -44,7 +42,7 @@ export function NextcloudSignIn({
     pollNextcloudSignIn,
     (result: Exclude<NextcloudSignInPoll, { status: 'pending' | 'expired' }>) => {
       if (result.status === 'confirm') onConfirm?.(result.email);
-      else go(result.redirectTo);
+      else loadPage(result.redirectTo);
     },
   );
   const waiting = state.status === 'waiting';

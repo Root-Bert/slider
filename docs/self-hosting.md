@@ -38,8 +38,16 @@ Eine feste Version statt des neuesten Stands: vor dem Bauen `git checkout <tag>`
    **Admin werden**. Anmelden allein macht niemanden zum Admin.
 
 Solange es keinen Admin gibt, kommt jedes neue Konto nur bis zur Abfrage des Tokens. Danach
-ändert der Admin alles unter Konto → **Einrichtung**. Werte in `deploy/.env` haben immer Vorrang
-und erscheinen dort schreibgeschützt.
+ändert der Admin alles unter Einstellungen → **Instanz** → Einrichtung. Werte in `deploy/.env`
+haben immer Vorrang und erscheinen dort schreibgeschützt.
+
+Die Seite **Instanz** (`/instanz`) zeigt dem Admin, wie groß die Instanz ist (Personen,
+Organisationen, Reviews, Speicher), dazu alle Organisationen mit Größe und Plan, nie ihre
+Inhalte, und alle Konten mit Name und E-Mail. Dort lassen sich Konten und Organisationen
+**sperren**: Ein gesperrtes Konto meldet sich nirgends mehr an, eine gesperrte Organisation
+öffnet niemand mehr, nur Austreten geht. Gelöscht wird dabei nichts. Wo die Pläne sich
+unterscheiden (`PLAN_FREE_*`), schaltet der Admin eine Organisation auch ohne Stripe in den
+Paid-Plan frei, etwa bei Zahlung per Rechnung.
 
 Wer sich registrieren darf, regelt `SIGNUP`: Standard ist `open` (jede:r mit einem der Logins).
 Für eine Firmen-Instanz besser `invite`, `domains` oder `company`.
@@ -70,13 +78,14 @@ veröffentlichen**; mit diesen Bereichen ist keine Überprüfung durch Google n�
 Admin unter Verwaltung → Sicherheit → OAuth-2.0-Clients einen Client mit
 `https://slider.firma.de/api/auth/nextcloud/callback` anlegen und mit `NEXTCLOUD_URL` eintragen.
 
-Passkeys brauchen keine Einrichtung. Organisationen können ihren eigenen Firmen-Login (SSO) in
-ihren Einstellungen verbinden.
+Passkeys brauchen keine Einrichtung. „Mit E-Mail fortfahren“ (Konto per Login-Link, ohne
+Passwort) ist an, sobald E-Mail-Versand eingerichtet ist. Organisationen können ihren eigenen
+Firmen-Login (SSO) in ihren Einstellungen verbinden.
 
 ## E-Mail (optional)
 
-Für Einladungen, Datenanfragen und Löschhinweise. Ohne SMTP zeigt Slider Einladungslinks zum
-Weitergeben an. Jeder SMTP-Zugang geht, z. B. Brevo:
+Für Einladungen, Login-Links, Datenanfragen und Löschhinweise. Ohne SMTP zeigt Slider
+Einladungslinks zum Weitergeben an. Jeder SMTP-Zugang geht, z. B. Brevo:
 `SMTP_URL=smtp://<login>:<smtp-key>@smtp-relay.brevo.com:587` und
 `MAIL_FROM=Slider <slider@firma.de>`. Sonderzeichen im Login URL-kodieren (`@` → `%40`).
 Absender-Domain beim Dienst verifizieren (SPF/DKIM). Viele Cloud-Hoster sperren ausgehend Port 25

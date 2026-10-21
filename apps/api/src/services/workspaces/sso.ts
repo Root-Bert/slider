@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { and, eq, isNotNull } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull } from 'drizzle-orm';
 import {
   domainJoinAllowed,
   emailDomain,
@@ -204,7 +204,11 @@ export async function findSsoForWorkspace(
   deps: SsoDeps,
   workspaceId: string,
 ): Promise<ActiveSso | null> {
-  const [workspace] = await deps.db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+  // A blocked organisation (BER-167) has no company login, like it has no domain (`findDomainWorkspace`).
+  const [workspace] = await deps.db
+    .select()
+    .from(workspaces)
+    .where(and(eq(workspaces.id, workspaceId), isNull(workspaces.blockedAt)));
   if (!workspace) return null;
   const sso = await ssoRow(deps, workspaceId);
   return isActive(deps, workspace, sso) ? { workspace, sso } : null;

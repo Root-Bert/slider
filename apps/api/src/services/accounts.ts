@@ -15,11 +15,11 @@ import type { AppDeps } from '../deps';
 import { isUniqueViolation } from '../http/errors';
 import { instanceClaimed, removeSetupToken, setupTokenMatches } from './instance-settings';
 import {
+  effectiveState,
   findDomainWorkspace,
   findInviteByToken,
   foundAtSignUp,
   hasPendingEmailInvite,
-  inviteState,
 } from './workspaces';
 import { vouchesForDomain } from './workspaces/domains';
 
@@ -50,7 +50,9 @@ export interface IdentityInput {
   inviteToken: string | null;
 }
 
-export type SignInResult = { ok: true; user: UserRow } | { ok: false; error: LoginError };
+/** `created`: this login is new to the account – just made, or an old account claimed with it. */
+export type SignInResult =
+  { ok: true; user: UserRow; created: boolean } | { ok: false; error: LoginError };
 
 export const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
@@ -60,7 +62,7 @@ export function inviteTokenFromPath(path: string | undefined): string | null {
   return match?.[1] ?? null;
 }
 
-async function findUserByEmail(db: Executor, email: string): Promise<UserRow | null> {
+export async function findUserByEmail(db: Executor, email: string): Promise<UserRow | null> {
   const [row] = await db
     .select()
     .from(users)
@@ -104,7 +106,7 @@ export async function maySignUp(
     const invite = await findInviteByToken(deps.db, inviteToken);
     if (
       invite &&
-      inviteState(invite, now) === 'valid' &&
+      (await effectiveState(deps.db, invite, now)) === 'valid' &&
       (!invite.email || (emailVerified && invite.email === email))
     ) {
       return { allowed: true, viaInvite: true };
@@ -163,7 +165,8 @@ export async function signInWithIdentity(
           ),
         );
     }
-    return { ok: true, user: known.user };
+    if (known.user.blockedAt) return { ok: false, error: 'account_blocked' };
+    return { ok: true, user: known.user, created: false };
   }
 
   if (!email) return { ok: false, error: 'no_email' };
@@ -175,7 +178,7 @@ export async function signInWithIdentity(
       email,
       createdAt: now,
     });
-    return { ok: true as const, user };
+    return { ok: true as const, user, created: true };
   };
 
   if (!input.emailVerified) return { ok: false, error: 'email_unverified' };
@@ -184,6 +187,7 @@ export async function signInWithIdentity(
 
   const existing = await findUserByEmail(db, email);
   if (existing) {
+    if (existing.blockedAt) return { ok: false, error: 'account_blocked' };
     // A passkey is a login too: a passkey-only account is never attached to by e-mail.
     if ((await loginCount(db, existing.id)) > 0) return { ok: false, error: 'account_exists' };
     // An account from before logins existed: it may be claimed like a new sign-up.
@@ -217,7 +221,7 @@ export async function signInWithIdentity(
     if (!retry || !isUniqueViolation(error)) throw error;
     return signInWithIdentity(deps, input, false);
   }
-  const result = { ok: true as const, user };
+  const result = { ok: true as const, user, created: true };
   // Invited people land in the inviting organisation (the onboarding offers their invitations);
   // everyone else gets one of their own, unless their company already has one (BER-148).
   if (!signup.viaInvite) await foundAtSignUp(deps, user);
@@ -241,9 +245,10 @@ export async function signInWithCompanySso(
   const result = await signInWithIdentity(deps, input);
   if (result.ok || result.error !== 'account_exists') return result;
   const existing = await findUserByEmail(deps.db, email);
+  // A blocked account never gets here: `signInWithIdentity` refuses it before `account_exists`.
   if (!existing) return result;
   const linked = await linkIdentity(deps, existing.id, input);
-  return linked.ok ? { ok: true, user: existing } : linked;
+  return linked.ok ? { ok: true, user: existing, created: false } : linked;
 }
 
 /** `null`: closed; else whether an invitation leads them in. */

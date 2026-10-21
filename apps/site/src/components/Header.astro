@@ -5,7 +5,11 @@ import Button from './Button.astro';
 import NavIcon from './NavIcon.astro';
 import { APP_URL, page } from '~/lib/links';
 
-/** Site / Header: logo = home, glass nav pill with the current page selected, login + CTA. */
+/**
+ * Site / Header: logo = home, glass nav pill with the current page selected, login + CTA. Stays
+ * at the top while the page scrolls: no bar of its own, the page runs on behind it and only the
+ * pills float over it, each dark enough to stay readable over any section.
+ */
 export type SitePage = 'home' | 'vision' | 'product' | 'pricing' | 'blog';
 
 interface Props {
@@ -13,6 +17,8 @@ interface Props {
 }
 
 const { current } = Astro.props;
+/** A pill floating over the page. The header itself lets clicks through around them. */
+const float = 'pointer-events-auto bg-glass-elevated ring-1 ring-hairline backdrop-blur-xl';
 const nav: { id: SitePage; label: string; href: string }[] = [
   { id: 'home', label: 'Home', href: page() },
   { id: 'product', label: 'Product', href: page('product') },
@@ -22,13 +28,13 @@ const nav: { id: SitePage; label: string; href: string }[] = [
 ];
 ---
 
-<header class="relative z-(--z-chrome) flex h-18 items-center justify-between px-4 md:px-8">
+<header class="pointer-events-none sticky top-0 z-(--z-chrome) flex h-18 items-center justify-between px-4 md:px-8">
   <div class="flex items-center lg:w-80">
-    <a href={page()} aria-label="Slider | Home" class="rounded-control-sm">
+    <a href={page()} aria-label="Slider | Home" class:list={['flex h-11 items-center rounded-panel px-3.5', float]}>
       <Logo />
     </a>
   </div>
-  <nav aria-label="Website" class="hidden gap-1 rounded-panel p-1 glass-control lg:flex">
+  <nav aria-label="Website" class:list={['hidden gap-1 rounded-panel p-1 lg:flex', float]}>
     {
       nav.map((item) => (
         <a
@@ -47,13 +53,14 @@ const nav: { id: SitePage; label: string; href: string }[] = [
   </nav>
   <div class="flex items-center justify-end gap-2 lg:w-80">
     <!-- Wrapped: the button's own inline-flex would win over a `hidden` on it. -->
-    <span class="hidden lg:contents"><Button href={`${APP_URL}/`} variant="ghost" size="md">Log in</Button></span>
-    <Button href={`${APP_URL}/`} size="md">Start for free</Button>
+    <span class="hidden lg:contents"><Button href={`${APP_URL}/`} variant="ghost" size="md" class={float}>Log in</Button></span>
+    <Button href={`${APP_URL}/`} size="md" class="pointer-events-auto">Start for free</Button>
 
-    <!-- Below lg: the same pages behind a menu button, as a glass panel (no JS needed). -->
-    <details class="site-menu relative lg:hidden" data-site-menu>
+    <!-- Below lg: the same pages behind a menu button, as a solid panel (no JS needed): it opens over
+         whatever the page shows under the sticky header. -->
+    <details class="site-menu pointer-events-auto relative lg:hidden" data-site-menu>
       <summary
-        class="flex size-9 cursor-pointer list-none items-center justify-center rounded-control text-fg-muted glass-control transition-colors hover:text-fg"
+        class:list={['flex size-9 cursor-pointer list-none items-center justify-center rounded-control text-fg-muted transition-colors hover:text-fg', float]}
         aria-label="Menu"
       >
         <Icon name="menu" size={20} className="site-menu-open" />
@@ -61,7 +68,7 @@ const nav: { id: SitePage; label: string; href: string }[] = [
       </summary>
       <nav
         aria-label="Website"
-        class="absolute top-12 right-0 flex w-[min(280px,calc(100vw-32px))] flex-col gap-1 rounded-panel p-2 glass-elevated shadow-float"
+        class="absolute top-12 right-0 flex w-[min(280px,calc(100vw-32px))] flex-col gap-1 rounded-panel bg-glass-solid p-2 shadow-float ring-1 ring-hairline-strong"
       >
         {
           nav.map((item) => (

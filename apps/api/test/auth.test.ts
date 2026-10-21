@@ -205,6 +205,8 @@ describe('GET /api/auth/providers', () => {
       nextcloudAnyServer: false,
       googleDrive: false,
       sso: false,
+      // No mail on this instance: no login links (BER-168).
+      emailLogin: false,
     });
   });
 

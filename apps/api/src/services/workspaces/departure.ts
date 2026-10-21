@@ -64,7 +64,10 @@ export async function departurePreview(
   targetId: string,
   successorId?: string,
 ): Promise<MemberDeparture> {
-  const role = await requireRole(db, workspaceId, actorId);
+  // Leaving works in a blocked workspace too (BER-167).
+  const role = await requireRole(db, workspaceId, actorId, 'viewer', undefined, {
+    allowBlocked: actorId === targetId,
+  });
   if (actorId !== targetId && role !== 'admin') {
     throw forbidden('Nur Admins sehen, was mit den Präsentationen anderer passiert.');
   }

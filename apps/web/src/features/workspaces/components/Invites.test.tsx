@@ -55,6 +55,7 @@ function makeWorkspace(usage: Partial<Workspace['usage']> = {}): Workspace {
     locked: false,
     joinDomain: null,
     audiencePending: false,
+    blocked: false,
   };
 }
 

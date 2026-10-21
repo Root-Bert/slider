@@ -11,6 +11,7 @@ import { NEXTCLOUD_FLOW_TTL_MS } from '../src/routes/auth';
 import { RecordingMailer, type Mailer } from '../src/mail/mailer';
 import type { FetchLike } from '../src/sources/safe-fetch';
 import {
+  cookiePair,
   createTestContext,
   publicLookup,
   sessionCookieFrom,
@@ -99,12 +100,6 @@ async function flowContext(
   });
   return mailer;
 }
-
-const cookiePair = (res: Response, name: string) =>
-  res.headers
-    .getSetCookie()
-    .map((header) => header.split(';')[0] ?? '')
-    .find((pair) => pair.startsWith(`${name}=`) || pair.startsWith(`__Host-${name}=`)) ?? '';
 
 /** Starts a flow and polls it once (the fake grants at once). */
 async function signIn({ returnTo = '/', cookie = '', intent = 'login' } = {}) {

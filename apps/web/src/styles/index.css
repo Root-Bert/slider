@@ -83,6 +83,13 @@
   /* Comments of a deleted account (BER-145): no person, no colour of theirs. */
   --color-accent-deleted: #8e8e93;
 
+  /* Brand accent shared with the website (pastel sage, never neon): the welcome page's orbit
+     trajectory, a transit line and the featured card's horizon. */
+  --color-sage: #8fcb9b;
+  /* Its siblings at the same lightness and softness: the welcome page's transit lines. */
+  --color-lagoon: #8fcbc3;
+  --color-sky: #8dadd7;
+
   /* Avatar rings (presence colours) */
   --color-ring-red: #ffd4b8;
   --color-ring-yellow: #fff7b8;
@@ -143,6 +150,11 @@
   /* Soft white halo around the one primary button of a standalone page (login), and on hover. */
   --shadow-glow: 0 0 20px rgb(255 255 255 / 0.14), 0 0 56px rgb(255 255 255 / 0.07);
   --shadow-glow-hover: 0 0 24px rgb(255 255 255 / 0.24), 0 0 72px rgb(255 255 255 / 0.12);
+  /* Featured card on hover (the website's plan cards): a brighter white rim, a shadow under it as
+     it grows a little, a soft white halo around it. */
+  --shadow-card-glow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.2), 0 16px 48px rgb(0 0 0 / 0.45),
+    0 0 24px rgb(255 255 255 / 0.1), 0 0 90px rgb(255 255 255 / 0.08);
 
   /* ── §7 Motion ─────────────────────────────────────────────────────────────── */
 
@@ -178,6 +190,8 @@
   /* A panel over a card's thumbnail unrolling upwards from its bottom edge, and back down. */
   --animate-unroll-up: unroll-up 320ms var(--ease-emphasized);
   --animate-roll-down: roll-down 240ms var(--ease-exit) forwards;
+  /* A star slowly brightening and fading (welcome page); delays vary per star. */
+  --animate-twinkle: twinkle 5s ease-in-out infinite;
 
   @keyframes fade-in {
     from {
@@ -253,6 +267,15 @@
       background-position: 400px 0;
     }
   }
+  @keyframes twinkle {
+    0%,
+    100% {
+      opacity: 0.2;
+    }
+    50% {
+      opacity: 0.9;
+    }
+  }
 }
 
 /* ── §3 Surfaces ───────────────────────────────────────────────────────────────
@@ -263,7 +286,6 @@
 @utility glass {
   background-color: var(--color-glass);
   backdrop-filter: blur(24px) saturate(140%);
-  -webkit-backdrop-filter: blur(24px) saturate(140%);
   box-shadow: inset 0 0 0 1px var(--color-hairline);
 }
 
@@ -272,14 +294,12 @@
 @utility glass-panel {
   background-color: var(--color-glass-panel);
   backdrop-filter: blur(24px) saturate(140%);
-  -webkit-backdrop-filter: blur(24px) saturate(140%);
 }
 
 /* `glass-panel` lifted off the stage: hairline edge and float shadow (thread, deleted slides). */
 @utility glass-floating {
   background-color: var(--color-glass-panel);
   backdrop-filter: blur(24px) saturate(140%);
-  -webkit-backdrop-filter: blur(24px) saturate(140%);
   box-shadow:
     inset 0 0 0 1px var(--color-hairline),
     var(--shadow-float);
@@ -290,7 +310,6 @@
 @utility glass-control {
   background-color: var(--color-glass-control);
   backdrop-filter: blur(4px) saturate(140%);
-  -webkit-backdrop-filter: blur(4px) saturate(140%);
   box-shadow: inset 0 0 0 1px var(--color-hairline);
 }
 
@@ -298,7 +317,6 @@
 @utility glass-elevated {
   background-color: var(--color-glass-elevated);
   backdrop-filter: blur(32px) saturate(140%);
-  -webkit-backdrop-filter: blur(32px) saturate(140%);
   box-shadow:
     inset 0 0 0 1px var(--color-hairline-strong),
     var(--shadow-float);
@@ -308,14 +326,12 @@
 @utility glass-dark {
   background-color: var(--color-scrim);
   backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
 }
 
 /* Badges over a slide (change badges, "Folie fehlt"): stronger scrim, same blur. */
 @utility glass-dark-strong {
   background-color: var(--color-scrim-strong);
   backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
 }
 
 /* 1px inner edges as box-shadow (no layout shift, follows the radius). The names also match
@@ -346,6 +362,54 @@
   background-color: var(--color-canvas);
   background-image: radial-gradient(var(--color-dot) 1px, transparent 1.2px);
   background-size: 22px 22px;
+}
+
+/* Featured card (the company to join on the welcome page): deep space under a soft light from
+   above, a faint sage horizon at the bottom – its stars and lines are drawn on top. */
+@utility hero-glow {
+  background-color: var(--color-canvas);
+  background-image:
+    radial-gradient(ellipse 80% 60% at 30% 0%, rgb(255 255 255 / 0.1), transparent 70%),
+    radial-gradient(
+      ellipse 90% 50% at 70% 115%,
+      color-mix(in srgb, var(--color-sage) 14%, transparent),
+      transparent 70%
+    );
+}
+
+/* Fades its content out towards the left and right edge (the featured card's transit map). */
+@utility fade-x {
+  mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+}
+
+/* The featured card's hover, after the website's plan cards: a soft light following the pointer
+   (`--mx`/`--my`, set on pointer move) and a 1px rim lit around it, masked to the border. */
+@utility pointer-light {
+  background: radial-gradient(
+    420px circle at var(--mx, 50%) var(--my, 0%),
+    rgb(255 255 255 / 0.07),
+    transparent 60%
+  );
+}
+@utility pointer-rim {
+  padding: 1px;
+  background: radial-gradient(
+    260px circle at var(--mx, 50%) var(--my, 0%),
+    rgb(255 255 255 / 0.6),
+    transparent 70%
+  );
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+}
+
+/* A line drawn in like the comment connectors (`comments-draw`); needs `pathLength={1}`. */
+@utility draw-in {
+  stroke-dasharray: 1;
+  animation: comments-draw 800ms var(--ease-symmetric) 100ms both;
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
 }
 
 /* Loading placeholder for slides that are still rendering. */

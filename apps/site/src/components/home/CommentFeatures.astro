@@ -24,7 +24,7 @@ import Scaled from './b/Scaled.astro';
 const img = (name: string) => asset(`home-b/comments/${name}`);
 const dot = (name: PersonName) => accentColor(person(name).color);
 const cell = 'relative rounded-[24px] bg-glass ring-hairline';
-/** The sketch view's tools (`SketchPanel`), the pen picked; Anna's colour first. */
+/** The sketch view's tools (`SketchPanel`), the pen picked; Rose's colour first. */
 const sketchTools: { icon: IconName; label: string }[] = [
   { icon: 'cursor', label: 'Pointer' },
   { icon: 'gesture', label: 'Freehand' },
@@ -32,7 +32,7 @@ const sketchTools: { icon: IconName; label: string }[] = [
   { icon: 'marker', label: 'Marker' },
   { icon: 'eraser', label: 'Eraser' },
 ];
-const sketchColors = sketchPalette(personAccent('Anna'));
+const sketchColors = sketchPalette(personAccent('Rose'));
 ---
 
 <section class="relative px-4 py-12 md:px-16 lg:py-16" data-section>
@@ -44,7 +44,7 @@ const sketchColors = sketchPalette(personAccent('Anna'));
         <SectionMark label="Comments" accent="var(--color-accent-yellow)" />
         <h2 class="text-[34px] leading-[1.12] font-bold tracking-[-0.03em] text-fg sm:text-[46px]">
           <span class="block" data-hb="words" style="--d: 150ms">Four ways to</span>
-          <span class="block" data-hb="words" style="--d: 300ms"><Highlight by="Paul">make your point</Highlight></span>
+          <span class="block" data-hb="words" style="--d: 300ms"><Highlight by="Mark">make your point</Highlight></span>
         </h2>
         <div class="flex-1"></div>
         <p class="max-w-[368px] text-base leading-[1.55] text-fg-muted" data-hb style="--d: 800ms; --y: 24px">
@@ -55,15 +55,15 @@ const sketchColors = sketchPalette(personAccent('Anna'));
       <!-- Text & @mentions -->
       <div class:list={[cell, 'flex flex-col gap-2 p-6 lg:h-[200px]']} data-hb style="--d: 1100ms">
         <h3 class="flex items-center gap-2.5 text-[17px] font-semibold text-fg">
-          <span class="size-2.5 rounded-full" style={`background: ${dot('Lara')}; box-shadow: 0 0 12px ${dot('Lara')}`}></span>
+          <span class="size-2.5 rounded-full" style={`background: ${dot('Benni')}; box-shadow: 0 0 12px ${dot('Benni')}`}></span>
           Text &amp; @mentions
         </h3>
         <p class="text-sm leading-normal text-fg-subtle">Mention people, they get notified.</p>
         <div class="min-h-2 flex-1"></div>
         <div class="max-w-[280px]" data-hb style="--d: 1690ms; --y: 18px">
-          <CommentCard name="Lara" meta="Slide 2 | just now" selected>
+          <CommentCard name="Benni" meta="Slide 2 | just now" selected>
             <p class="text-body leading-[18px] text-fg-muted">
-              <span class="font-medium text-mention">@Paul</span> can we cut this to one line?
+              <span class="font-medium text-mention">@Mark</span> can we cut this to one line?
             </p>
           </CommentCard>
         </div>
@@ -72,15 +72,15 @@ const sketchColors = sketchPalette(personAccent('Anna'));
       <!-- Voice -->
       <div class:list={[cell, 'flex flex-col gap-2 p-6 lg:h-[200px]']} data-hb style="--d: 1220ms">
         <h3 class="flex items-center gap-2.5 text-[17px] font-semibold text-fg">
-          <span class="size-2.5 rounded-full" style={`background: ${dot('Paul')}; box-shadow: 0 0 12px ${dot('Paul')}`}></span>
+          <span class="size-2.5 rounded-full" style={`background: ${dot('Mark')}; box-shadow: 0 0 12px ${dot('Mark')}`}></span>
           Voice
         </h3>
         <p class="text-sm leading-normal text-fg-subtle">Talk it through in seconds.</p>
         <div class="min-h-1.5 flex-1"></div>
         <div class="max-w-[280px]" data-hb style="--d: 2500ms; --y: 18px">
-          <CommentCard name="Paul" meta="Slide 2 | 3 min ago">
+          <CommentCard name="Mark" meta="Slide 2 | 3 min ago">
             <div class="flex items-center gap-3">
-              <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" style={`color: ${dot('Paul')}`}>
+              <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" style={`color: ${dot('Mark')}`}>
                 <path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l10.29-6.86a1 1 0 0 0 0-1.7L9.52 4.29A1 1 0 0 0 8 5.14Z" fill="currentColor" />
               </svg>
               <img src={img('graphic-eq.svg')} alt="" width="86" height="21" class="opacity-80" />
@@ -100,13 +100,13 @@ const sketchColors = sketchPalette(personAccent('Anna'));
           <div class="absolute top-[32.5px] left-[130.5px]" data-hb style="--d: 550ms; --y: 18px">
             <Slide name="Chart" width={595.2} />
           </div>
-          <Pin by="Lara" class="top-[111.5px] left-[415.5px]" data-hb="pop" style="--d: 1000ms" />
-          <Pin by="Paul" class="top-[273.5px] left-[405.5px]" data-hb="pop" style="--d: 1150ms" />
+          <Pin by="Benni" class="top-[111.5px] left-[415.5px]" data-hb="pop" style="--d: 1000ms" />
+          <Pin by="Mark" class="top-[273.5px] left-[405.5px]" data-hb="pop" style="--d: 1150ms" />
           <Pin by="Gesa" class="top-[65.5px] left-[683.5px]" data-hb="pop" style="--d: 1300ms" />
           <div class="absolute top-[92.5px] left-[606.2px] flex h-[214.8px] w-[82px] items-center justify-center" data-hb="pop" style="--d: 1500ms; --s: 0.8">
             <svg width="64" height="210" viewBox="0 0 64 210" class="rotate-5 overflow-visible" aria-hidden="true">
-              <ellipse cx="32" cy="105" rx="31" ry="104" fill="none" stroke-width="12" stroke-opacity="0.25" style={`stroke: ${dot('Anna')}`} />
-              <ellipse cx="32" cy="105" rx="31" ry="104" fill="none" stroke-width="3" style={`stroke: ${dot('Anna')}`} />
+              <ellipse cx="32" cy="105" rx="31" ry="104" fill="none" stroke-width="12" stroke-opacity="0.25" style={`stroke: ${dot('Rose')}`} />
+              <ellipse cx="32" cy="105" rx="31" ry="104" fill="none" stroke-width="3" style={`stroke: ${dot('Rose')}`} />
             </svg>
           </div>
         </Scaled>
@@ -139,7 +139,7 @@ const sketchColors = sketchPalette(personAccent('Anna'));
         <!-- Sketch -->
         <div class:list={[cell, 'flex flex-col gap-2 p-6 lg:h-[392px]']} data-hb style="--d: 1460ms">
           <h3 class="flex items-center gap-2.5 text-[17px] font-semibold text-fg">
-            <span class="size-2.5 rounded-full" style={`background: ${dot('Anna')}; box-shadow: 0 0 12px ${dot('Anna')}`}></span>
+            <span class="size-2.5 rounded-full" style={`background: ${dot('Rose')}; box-shadow: 0 0 12px ${dot('Rose')}`}></span>
             Sketch
           </h3>
           <p class="text-sm leading-normal text-fg-subtle">Draw on a copy of the slide.</p>
@@ -158,14 +158,14 @@ const sketchColors = sketchPalette(personAccent('Anna'));
                     stroke-linecap="round"
                     stroke-linejoin="round"
                     vector-effect="non-scaling-stroke"
-                    style={`stroke: ${dot('Anna')}; --i: 18`}
+                    style={`stroke: ${dot('Rose')}; --i: 18`}
                     pathLength="1"
                     data-draw
                   />
                 ))}
               </svg>
             </div>
-            <Cursor name="Anna" class="absolute top-[176px] left-[172px]" drift />
+            <Cursor name="Rose" class="absolute top-[176px] left-[172px]" drift />
             <div class="absolute inset-x-0 top-[282px] flex justify-center" data-hb style="--d: 2500ms; --y: 12px">
               <Toolbar label="Drawing tools">
                 {sketchTools.map((tool) => <IconButton size="sm" icon={tool.icon} label={tool.label} active={tool.icon === 'gesture'} />)}

@@ -29,7 +29,13 @@ vi.mock('@/lib/passkeys', () => ({
 
 const author = { id: 'u1', name: 'Anna Berg', type: 'owner', color: 'blue' } as const;
 
-function signIn(user: Partial<{ microsoftConnected: boolean; microsoftConnections: number }> = {}) {
+function signIn(
+  user: Partial<{
+    microsoftConnected: boolean;
+    microsoftConnections: number;
+    isInstanceAdmin: boolean;
+  }> = {},
+) {
   api.me = {
     viewer: { author },
     user: {
@@ -38,6 +44,7 @@ function signIn(user: Partial<{ microsoftConnected: boolean; microsoftConnection
       email: 'anna@firma.de',
       microsoftConnected: false,
       microsoftConnections: 0,
+      isInstanceAdmin: false,
       ...user,
     },
   };
@@ -108,6 +115,25 @@ describe('AccountMenu', () => {
     await userEvent.click(trigger);
     await userEvent.click(screen.getByRole('button', { name: 'Einstellungen' }));
     expect(screen.getByTestId('where').textContent).toBe('/einstellungen');
+  });
+
+  it('gives the instance admin a section of its own: setup and dashboard (BER-167)', async () => {
+    signIn({ isInstanceAdmin: true });
+    const trigger = setup();
+    await userEvent.click(trigger);
+    expect(screen.getByText('Instanz')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Instanz-Einstellungen' }));
+    expect(screen.getByTestId('where').textContent).toBe('/einrichtung');
+
+    await userEvent.click(trigger);
+    await userEvent.click(screen.getByRole('button', { name: 'Instanz-Dashboard' }));
+    expect(screen.getByTestId('where').textContent).toBe('/instanz');
+  });
+
+  it('shows no instance section to anyone else', async () => {
+    await userEvent.click(setup());
+    expect(screen.queryByText('Instanz')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Instanz-Dashboard' })).toBeNull();
   });
 
   it('offers to connect Microsoft as a full page link, or shows it connected', async () => {

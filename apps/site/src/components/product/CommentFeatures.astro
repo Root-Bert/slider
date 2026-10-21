@@ -10,7 +10,7 @@ import { person } from '~/lib/people';
 /**
  * Product | Comment Features Overview: one slide with every review tool on it, played like a
  * deck. Each chapter is a scene on the slide – its mark lights up, earlier marks stay dimmed,
- * Gesa's cursor moves to it. Autoplays while in view; the chapter rows and the arrow keys
+ * Rose's cursor moves to it. Autoplays while in view; the chapter rows and the arrow keys
  * jump around. Monochrome on purpose: the marks carry the one accent.
  */
 type Mark = 'pin' | 'frame' | 'freehand' | 'arrow' | 'highlight' | 'thread' | 'done' | 'filter';
@@ -178,7 +178,7 @@ const [cx, cy] = chapters[START]!.cursor;
               data-state={state('done')}
             >
               <span class="text-sage"><Icon name="checkCircle" size={18} /></span>
-              Done by Gesa
+              Done by Rose
             </div>
 
             <div
@@ -192,7 +192,7 @@ const [cx, cy] = chapters[START]!.cursor;
             </div>
 
             <div class="cf-cursor absolute top-0 left-0" style={`--cx: ${cx}px; --cy: ${cy}px`}>
-              <Cursor name="Gesa" drift />
+              <Cursor name="Rose" drift />
             </div>
           </div>
         </div>

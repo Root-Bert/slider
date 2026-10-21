@@ -17,6 +17,8 @@ export interface ButtonStyle {
   tone?: ButtonTone | undefined;
   /** `normal` for quiet text actions in comment rows; buttons are medium by default. */
   weight?: ButtonWeight | undefined;
+  /** Soft white halo, brighter on hover – the one main action of a start screen (login, links). */
+  glow?: boolean | undefined;
 }
 
 /** Background + text per variant; hover and open (`aria-expanded`) per docs §9. */
@@ -70,9 +72,13 @@ export function buttonClasses({
   size = 'md',
   tone = 'default',
   weight = 'medium',
+  glow = false,
 }: ButtonStyle = {}): string {
   return cn(
-    'inline-flex shrink-0 items-center justify-center whitespace-nowrap transition-colors',
+    'inline-flex shrink-0 items-center justify-center whitespace-nowrap',
+    glow
+      ? 'shadow-glow transition-[background-color,box-shadow] hover:shadow-glow-hover'
+      : 'transition-colors',
     weight === 'medium' && 'font-medium',
     'disabled:pointer-events-none disabled:opacity-40',
     toneClasses[variant]?.[tone] ?? variantClasses[variant],

@@ -27,6 +27,7 @@ const workspace = (patch: Partial<Workspace> = {}): Workspace => ({
   locked: false,
   joinDomain: null,
   audiencePending: false,
+  blocked: false,
   ...patch,
 });
 

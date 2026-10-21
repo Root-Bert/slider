@@ -31,7 +31,7 @@ import {
   lockWorkspaceRow,
 } from '../plans';
 import { liftRemoval, removedSince } from './domains';
-import { getRole, requireRole, stronger } from './roles';
+import { getRole, membership, requireRole, stronger } from './roles';
 import { getWorkspace } from './workspaces';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -276,7 +276,11 @@ export async function previewInvite(deps: AppDeps, token: string): Promise<JoinP
   };
 }
 
-async function effectiveState(
+/**
+ * The invite's state, `revoked` too once its creator is no admin of a usable organisation any
+ * more (demoted, gone, or the organisation blocked – BER-167).
+ */
+export async function effectiveState(
   db: Executor,
   invite: WorkspaceInviteRow,
   now: Date,
@@ -306,7 +310,9 @@ async function deckRef(db: Executor, deckId: string | null): Promise<DeckRef> {
  */
 async function creatorIsAdmin(db: Executor, invite: WorkspaceInviteRow): Promise<boolean> {
   if (!invite.createdBy) return false;
-  return (await getRole(db, invite.workspaceId, invite.createdBy)) === 'admin';
+  // A blocked organisation (BER-167) takes nobody in: its invites count as withdrawn.
+  const creator = await membership(db, invite.workspaceId, invite.createdBy);
+  return creator?.role === 'admin' && !creator.blocked;
 }
 
 const linkRevoked = () => new ApiError(410, 'link_revoked', 'Diese Einladung wurde zurückgezogen.');
@@ -433,7 +439,7 @@ export async function acceptInviteById(
 }
 
 /** SQL twin of `creatorIsAdmin`. */
-const createdByAdmin = sql`exists (select 1 from ${workspaceMembers} where ${workspaceMembers.workspaceId} = ${workspaceInvites.workspaceId} and ${workspaceMembers.userId} = ${workspaceInvites.createdBy} and ${workspaceMembers.role} = 'admin')`;
+const createdByAdmin = sql`exists (select 1 from ${workspaceMembers} join ${workspaces} on ${workspaces.id} = ${workspaceMembers.workspaceId} where ${workspaceMembers.workspaceId} = ${workspaceInvites.workspaceId} and ${workspaceMembers.userId} = ${workspaceInvites.createdBy} and ${workspaceMembers.role} = 'admin' and ${workspaces.blockedAt} is null)`;
 
 /** Valid e-mail invites for this address, in workspaces the user is not in yet. */
 export async function pendingInvitesFor(

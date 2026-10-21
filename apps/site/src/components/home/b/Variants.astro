@@ -205,6 +205,8 @@ const rowOf = (by: PersonName) => rows.findIndex((r) => r?.by === by);
     let run = 0;
 
     const done = () => root.dataset.state === 'done';
+    // Idle, drafting and once a pick has landed the canvas sits on the main track and nothing else.
+    const locked = () => root.dataset.state === 'idle' || root.dataset.state === 'generating' || root.hasAttribute('data-landed');
     const go = (row: number, smooth = true) =>
       scroller.scrollTo({ top: Math.max(0, Math.min(last, row)) * STEP, behavior: smooth && !reduce ? 'smooth' : 'instant' });
     const mark = () => {
@@ -242,7 +244,16 @@ const rowOf = (by: PersonName) => rows.findIndex((r) => r?.by === by);
       mark();
     };
 
-    scroller.addEventListener('scroll', mark, { passive: true });
+    // A smooth scroll or a trackpad fling still under way runs on in Chrome past Start over and would
+    // leave the canvas half-way (or at the top); a locked canvas goes straight back.
+    scroller.addEventListener(
+      'scroll',
+      () => {
+        if (locked() && Math.abs(scroller.scrollTop - CURRENT * STEP) > 1) scroller.scrollTop = CURRENT * STEP;
+        mark();
+      },
+      { passive: true },
+    );
     root.querySelector('[data-mv-generate]')!.addEventListener('click', () => {
       if (root.dataset.state !== 'idle') return;
       root.dataset.state = 'generating';
@@ -410,15 +421,18 @@ const rowOf = (by: PersonName) => rows.findIndex((r) => r?.by === by);
    * Picking one: the others and the branch fade, the canvas returns to the main track, then the
    * pick travels into the middle (data-landed) while the old slide blurs away under it.
    */
+  /* Hidden ones can't take focus either – focusing one would scroll the canvas to its slide. */
   .mv-use {
     opacity: 0;
-    pointer-events: none;
+    visibility: hidden;
     box-shadow: 0 0 20px rgb(255 255 255 / 0.3);
-    transition: opacity 300ms;
+    transition:
+      opacity 300ms,
+      visibility 300ms;
   }
   [data-mv][data-state='done'] .mv-sug[data-on] .mv-use {
     opacity: 1;
-    pointer-events: auto;
+    visibility: visible;
   }
   .mv-chip-in,
   [data-mv][data-landed] .mv-chip-ai {

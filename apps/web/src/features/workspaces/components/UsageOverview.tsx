@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useState } from 'react';
+import { useState } from 'react';
 import {
   STORAGE_CATEGORIES,
   type StorageBreakdown,
@@ -6,6 +6,7 @@ import {
   type WorkspaceUsageDetails,
 } from '@slider/shared';
 import { formatFileSize } from '@/lib/format';
+import { useOnPageRestore } from '@/lib/page-restore';
 import {
   useAcceptBillingTransfer,
   useCancelBillingTransfer,
@@ -138,18 +139,21 @@ function PlanSection({
     usage.maxDecks !== null && `${usage.maxDecks} Reviews`,
     usage.maxStorageBytes !== null && `${formatFileSize(usage.maxStorageBytes)} Speicher`,
   ].filter((part): part is string => Boolean(part));
-  const description = billing.endsAt
-    ? `Endet am ${formatPlanDate(billing.endsAt)}.`
-    : billing.trialEndsAt
-      ? `Testphase bis ${formatPlanDate(billing.trialEndsAt)}. Ohne Zahlungsmethode geht es danach mit Free weiter.`
-      : billing.renewsAt
-        ? `Verlängert sich am ${formatPlanDate(billing.renewsAt)}.`
-        : limits.length > 0
-          ? `Bis zu ${limits.join(', ')}.`
-          : undefined;
+  const description = billing.granted
+    ? 'Freigeschaltet von der Person, die Slider hier betreibt. Hier gibt es nichts zu bezahlen.'
+    : billing.endsAt
+      ? `Endet am ${formatPlanDate(billing.endsAt)}.`
+      : billing.trialEndsAt
+        ? `Testphase bis ${formatPlanDate(billing.trialEndsAt)}. Ohne Zahlungsmethode geht es danach mit Free weiter.`
+        : billing.renewsAt
+          ? `Verlängert sich am ${formatPlanDate(billing.renewsAt)}.`
+          : limits.length > 0
+            ? `Bis zu ${limits.join(', ')}.`
+            : undefined;
   return (
     <Section title="Plan" description={description} aside={<PlanBadge plan={details.plan} />}>
       {billing.enabled &&
+        !billing.granted &&
         (billing.isOwner ? (
           <BillingActions
             workspaceId={workspaceId}
@@ -188,20 +192,6 @@ const ACTION_LABELS = {
 
 /** Actions that open the customer portal; the rest go through checkout. */
 const PORTAL_ACTIONS: ReadonlySet<keyof typeof ACTION_LABELS> = new Set(['portal', 'trialPayment']);
-
-/**
- * Back from Stripe by the browser's back button, the page may come out of the back/forward cache
- * exactly as it was left – with the button still busy "until the browser has left". `reset` then.
- */
-function useOnPageRestore(reset: () => void) {
-  const onPageShow = useEffectEvent((event: PageTransitionEvent) => {
-    if (event.persisted) reset();
-  });
-  useEffect(() => {
-    window.addEventListener('pageshow', onPageShow);
-    return () => window.removeEventListener('pageshow', onPageShow);
-  }, []);
-}
 
 /** Checkout (upgrade, add a payment method) or the customer portal – both Stripe pages. */
 function BillingActions({

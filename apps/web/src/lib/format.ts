@@ -25,6 +25,12 @@ export function formatRelativeTime(iso: string, now: Date = new Date()): string 
   if (diff < 2 * DAY) return 'gestern';
   if (diff < 7 * DAY) return `vor ${Math.floor(diff / DAY)} Tagen`;
   if (diff < 14 * DAY) return 'vor 1 Woche';
+  return formatDay(date, now);
+}
+
+/** "3. Okt." – "3. Okt. 2025" outside the year of `now`. */
+export function formatDay(at: Date | number | string, now: Date = new Date()): string {
+  const date = new Date(at);
   return date.getFullYear() === now.getFullYear() ? shortDate.format(date) : longDate.format(date);
 }
 

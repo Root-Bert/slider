@@ -54,6 +54,7 @@ export function Button({
   size = 'md',
   tone,
   weight,
+  glow,
   icon,
   trailingIcon,
   iconSize,
@@ -71,7 +72,7 @@ export function Button({
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       aria-expanded={expanded}
-      className={cn(buttonClasses({ variant, size, tone, weight }), className)}
+      className={cn(buttonClasses({ variant, size, tone, weight, glow }), className)}
       {...props}
     >
       <ButtonContent

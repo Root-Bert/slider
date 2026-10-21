@@ -122,7 +122,8 @@ async function pendingSeatCounts(
   return new Map(rows.map((row) => [row.id, Number(row.count)]));
 }
 
-async function countBy(
+/** Rows of `table` per workspace – members or decks. */
+export async function countBy(
   db: Executor,
   table: typeof decks | typeof workspaceMembers,
   workspaceIds: string[],

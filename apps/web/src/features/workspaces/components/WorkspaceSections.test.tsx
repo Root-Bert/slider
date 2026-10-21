@@ -73,6 +73,7 @@ const workspace = (role: WorkspaceRole = 'admin', patch: Partial<Workspace> = {}
   locked: false,
   joinDomain: null,
   audiencePending: false,
+  blocked: false,
   ...patch,
 });
 
@@ -255,7 +256,9 @@ describe('LeaveSection', () => {
     expect(dialog.textContent).toContain('Zurück kommst du nur mit einer neuen Einladung.');
     // What becomes of their reviews (BER-165).
     expect(api.departure).toHaveBeenCalledWith('w1', 'me', undefined);
-    expect(dialog.textContent).toContain('Diese verknüpften Reviews werden mit allen Kommentaren gelöscht');
+    expect(dialog.textContent).toContain(
+      'Diese verknüpften Reviews werden mit allen Kommentaren gelöscht',
+    );
     expect(dialog.textContent).toContain('Q4 aus SharePoint');
     expect(dialog.textContent).toContain('Diese hochgeladenen Reviews gehen an Ben:');
     expect(dialog.textContent).toContain('Workshop');

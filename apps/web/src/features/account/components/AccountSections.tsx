@@ -1,5 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { passkeyNameSchema, type LoginIdentity, type Passkey } from '@slider/shared';
+import { passkeyNameSchema, USER_NAME_MAX, type LoginIdentity, type Passkey } from '@slider/shared';
 import { isPasskeyCancel, passkeyErrorMessage, passkeysSupported } from '@/lib/passkeys';
 import { NextcloudSignIn, providerLoginUrl } from '@/features/auth';
 import { formatDateTime, formatRelativeTime } from '@/lib/format';
@@ -43,6 +43,7 @@ const PROVIDER_LABELS: Record<LoginIdentity['provider'], string> = {
   oidc: 'Firmen-Login (SSO)',
   nextcloud: 'Nextcloud',
   sso: 'Firmen-Login (SSO)',
+  email: 'E-Mail-Link',
 };
 
 const providerIcon = (provider: LoginIdentity['provider']): ReactNode =>
@@ -52,6 +53,8 @@ const providerIcon = (provider: LoginIdentity['provider']): ReactNode =>
     <GoogleMark size={18} />
   ) : provider === 'nextcloud' ? (
     <NextcloudMark size={18} />
+  ) : provider === 'email' ? (
+    <Icon name="send" size={20} className="text-fg-muted" />
   ) : (
     <Icon name="key" size={20} className="text-fg-muted" />
   );
@@ -76,7 +79,7 @@ export function NameField({ name, onNotify }: { name: string; onNotify: ShowToas
       <TextField
         label="Name"
         value={draft}
-        maxLength={80}
+        maxLength={USER_NAME_MAX}
         autoComplete="name"
         error={!trimmed ? 'Der Name darf nicht leer sein.' : (updateMe.error?.message ?? null)}
         onChange={(event) => setDraft(event.target.value)}

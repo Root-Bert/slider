@@ -24,6 +24,7 @@ import { mediaRoutes } from './routes/media';
 import { dataRequestsRoutes } from './routes/data-requests';
 import { contactRoutes } from './routes/contact';
 import { cspReportRoutes } from './routes/csp-report';
+import { instanceAdminRoutes } from './routes/instance-admin';
 import { legalRoutes } from './routes/legal';
 import { meRoutes } from './routes/me';
 import { passkeysRoutes } from './routes/passkeys';
@@ -74,6 +75,7 @@ export function createApp(appDeps: AppDeps) {
     .route('/', dataRequestsRoutes(deps))
     .route('/', contactRoutes(deps))
     .route('/', legalRoutes(deps))
+    .route('/', instanceAdminRoutes(deps))
     .route('/', decksRoutes(deps))
     .route('/', filePickerRoutes(deps))
     .route('/', nextcloudRoutes(deps))

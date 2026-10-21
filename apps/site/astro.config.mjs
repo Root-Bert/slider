@@ -17,6 +17,9 @@ export default defineConfig({
   devToolbar: { enabled: false },
   vite: {
     plugins: [tailwindcss()],
+    // The same browsers as the app's Vite build: CSS gets the prefixes Safari 16 still needs (e.g.
+    // -webkit-backdrop-filter for the glass surfaces).
+    build: { cssTarget: ['chrome111', 'edge111', 'firefox128', 'safari16.4'] },
     // In production Caddy passes the contact form's POST to Slider (deploy/website/website.caddy).
     server: {
       proxy: {

@@ -1,9 +1,14 @@
-import type { Px } from './connector-routing';
+/** A point in pixels. */
+export interface Px {
+  x: number;
+  y: number;
+}
 
 const round = (value: number) => Math.round(value * 10) / 10;
 
 /**
- * SVG path through the polyline with rounded corners. A corner's radius shrinks on short
+ * SVG path through the polyline with rounded corners – the comment connectors' corners, and the
+ * dashboard lines drawn like them. A corner's radius shrinks on short
  * segments: inner segments are shared by two corners (half each), the first and last segment
  * belong to one corner only (a 4px stub gets r=4, as in Figma).
  */

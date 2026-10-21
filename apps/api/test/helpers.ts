@@ -504,6 +504,13 @@ export async function signedInUser(
  * The `slider_session=…` pair a response sets (`__Host-slider_session` on an https production
  * instance), or `null` (deletions don't count).
  */
+/** `name=value` of the cookie `name` a response sets (with or without `__Host-`), else `''`. */
+export const cookiePair = (res: Response, name: string) =>
+  res.headers
+    .getSetCookie()
+    .map((header) => header.split(';')[0] ?? '')
+    .find((pair) => pair.startsWith(`${name}=`) || pair.startsWith(`__Host-${name}=`)) ?? '';
+
 export function sessionCookieFrom(response: Response): string | null {
   for (const header of response.headers.getSetCookie()) {
     const pair = header.split(';')[0] ?? '';

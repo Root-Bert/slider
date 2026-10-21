@@ -30,13 +30,13 @@ const providers: { name: string; logo?: string; w?: number; h?: number; badge?: 
   { name: 'Any OpenAI-compatible API' },
 ];
 const replies: { name: PersonName; text: string }[] = [
-  { name: 'Paul', text: 'Or grey until the numbers are final?' },
+  { name: 'Gero', text: 'Or grey until the numbers are final?' },
   { name: 'Gesa', text: 'Numbers are signed off. Blue it is.' },
 ];
 const terminal: { text: string; tone: 'fg' | 'muted' | 'done' }[] = [
   { text: '> slider agent --model mistral-large', tone: 'fg' },
   { text: 'Listening for threads sent to AI…', tone: 'muted' },
-  { text: '← Anna | Slide 2 | Highlight the Q3 column.', tone: 'muted' },
+  { text: '← Flo | Slide 2 | Highlight the Q3 column.', tone: 'muted' },
   { text: '✓ Slide 2: Q3 column highlighted', tone: 'muted' },
   { text: '← Marcel +2 | Slide 2 | Q4 in brand blue', tone: 'muted' },
   { text: '✓ Slide 2: Q4 brand blue → Version 3', tone: 'done' },
@@ -112,16 +112,16 @@ const pinStyle = `background: ${ai}; box-shadow: 0 0 12px rgb(255 255 255 / 0.7)
         <div class="relative size-full">
           <div class="absolute top-0 left-0 flex w-[300px] flex-col gap-[26px]">
             <div class="flex flex-col gap-2" data-reveal style="--i: 4">
-              <CommentCard name="Lara" meta="Slide 1" width={280}>
+              <CommentCard name="Albert" meta="Slide 1" width={280}>
                 <p class="text-body leading-[18px] text-fg-muted">Keep the headline on one li<span class="ai-caret text-white [text-shadow:0_0_8px_rgb(255_255_255/0.8)]">|</span></p>
               </CommentCard>
               <div class="flex items-center justify-between">
-                <span class="text-caption text-fg-subtle">Lara is typing…</span>
+                <span class="text-caption text-fg-subtle">Albert is typing…</span>
                 <SendToAi />
               </div>
             </div>
             <div class="flex flex-col gap-2" data-reveal style="--i: 5">
-              <CommentCard name="Anna" meta="Slide 2" width={280} selected>
+              <CommentCard name="Flo" meta="Slide 2" width={280} selected>
                 <p class="text-body leading-[18px] text-fg-muted">Highlight the Q3 column.</p>
               </CommentCard>
               <div class="flex items-center justify-between">
@@ -157,7 +157,7 @@ const pinStyle = `background: ${ai}; box-shadow: 0 0 12px rgb(255 255 255 / 0.7)
           <Connector class="top-[314.16px] left-[300px]" width={140} height={151.84} color={accentColor(person('Marcel').color)} strokeWidth={1.5} dashed d="M0 151.09H70V0.75H140" />
           <Connector class="top-[264px] left-[870px]" width={45} height={59.7} color={ai} strokeWidth={1.5} index={6} d="M0 0.75H23V58.95H45" />
 
-          <Cursor name="Anna" class="absolute top-[245px] left-[254px]" drift />
+          <Cursor name="Flo" class="absolute top-[245px] left-[254px]" drift />
 
           <div class="absolute top-[150px] left-[440px] flex h-[228px] w-[430px] flex-col overflow-hidden rounded-panel glass-elevated" data-reveal style="--i: 5">
             <div class="flex items-center gap-2 border-b border-hairline px-4 py-3">
@@ -191,11 +191,11 @@ const pinStyle = `background: ${ai}; box-shadow: 0 0 12px rgb(255 255 255 / 0.7)
           <div class="absolute top-[423px] left-[915px] flex flex-col gap-1.5 text-xs">
             <p class="flex items-center gap-2">
               <span class="flex size-4 items-center justify-center rounded-full bg-white text-[9px] text-black shadow-[0_0_8px_rgb(255_255_255/0.6)]">1</span>
-              <span class="text-fg">Q3 highlighted</span><span class="text-fg-subtle">| Anna</span>
+              <span class="text-fg">Q3 highlighted</span><span class="text-fg-subtle">| Flo</span>
             </p>
             <p class="flex items-center gap-2">
               <span class="flex size-4 items-center justify-center rounded-full bg-white text-[9px] text-black shadow-[0_0_8px_rgb(255_255_255/0.6)]">2</span>
-              <span class="text-fg">Q4 in brand blue</span><span class="text-fg-subtle">| Marcel, Paul, Gesa</span>
+              <span class="text-fg">Q4 in brand blue</span><span class="text-fg-subtle">| Marcel, Gero, Gesa</span>
             </p>
           </div>
         </div>
@@ -205,7 +205,7 @@ const pinStyle = `background: ${ai}; box-shadow: 0 0 12px rgb(255 255 255 / 0.7)
 </section>
 
 <style>
-  /* The agent's log prints line by line; Lara's caret blinks. */
+  /* The agent's log prints line by line; Albert's caret blinks. */
   :global(.js) .ai-line {
     opacity: 0;
     transition: opacity 240ms linear;

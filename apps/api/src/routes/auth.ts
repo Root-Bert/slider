@@ -3,10 +3,13 @@ import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import {
+  confirmEmailLoginInputSchema,
   confirmNextcloudSignUpInputSchema,
   discoverSsoInputSchema,
+  startEmailLoginInputSchema,
   startNextcloudSignInInputSchema,
   type AuthProviders,
+  type EmailLoginResult,
   type LoginError,
   type LoginProvider,
   type LoginResult,
@@ -30,7 +33,8 @@ import {
   MicrosoftAuthError,
   type MicrosoftErrorKind,
 } from '../auth/microsoft';
-import { readSignedCookie, removeCookie, writeSignedCookie } from '../auth/cookies';
+import { browserKey, readSignedCookie, removeCookie, writeSignedCookie } from '../auth/cookies';
+import { DEFAULT_LOGIN_RETURN_TO, loginErrorPath, loginPath } from '../auth/login-paths';
 import {
   exchangeNextcloudCode,
   nextcloudAuthorizeUrl,
@@ -41,7 +45,7 @@ import { optionalViewerMiddleware, type OptionalViewerEnv } from '../auth/viewer
 import { workspaceSsoClient } from '../auth/workspace-sso';
 import type { AppDeps } from '../deps';
 import { ApiError, notFound } from '../http/errors';
-import { clientAddress, fixedWindow } from '../http/rate-limit';
+import { assertWithinLimit, clientAddress, fixedWindow } from '../http/rate-limit';
 import { readJson } from '../http/validate';
 import { hasLogin } from '../config';
 import {
@@ -53,6 +57,12 @@ import {
   signUpBlocked,
   type IdentityInput,
 } from '../services/accounts';
+import {
+  EMAIL_LOGIN_TTL_MS,
+  emailIdentity,
+  redeemEmailLogin,
+  sendEmailLogin,
+} from '../services/email-login';
 import {
   NEXTCLOUD_SIGNUP_TTL_MS,
   resolveNextcloudSignup,
@@ -106,12 +116,20 @@ export const SSO_LOGINS_PER_HOUR = 600;
  * without this a Nextcloud's owner could fill a stranger's mailbox from Slider.
  */
 const NEXTCLOUD_SIGNUP_MAILS_PER_ADDRESS = 3;
+/**
+ * This browser's key for login links by mail (BER-168): a link only works where it was asked
+ * for (`services/email-login`).
+ */
+export const EMAIL_LOGIN_COOKIE = 'slider_email_login';
+/** Login links per address and hour: anyone can type a stranger's address. */
+const EMAIL_LOGIN_MAILS_PER_ADDRESS = 5;
+/** Login links per client address and hour; a company behind one NAT signs in now and then. */
+const EMAIL_LOGIN_MAILS_PER_CLIENT = 30;
 const COOKIE_MAX_AGE = 10 * 60;
 /** Where "connect Microsoft for file access" returns to by default: the import page. */
 const DEFAULT_RETURN_TO = '/neu';
 /** The account page (`/konto`): shows `?linkError=` after a failed "Verbinden". */
 const ACCOUNT_PATH = '/konto';
-const DEFAULT_LOGIN_RETURN_TO = '/';
 
 const oauthStateSchema = z.object({
   state: z.string(),
@@ -351,6 +369,16 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
     windowMs: 60 * 60_000,
     clock: deps.clock,
   });
+  const emailLoginAddressLimit = fixedWindow({
+    limit: EMAIL_LOGIN_MAILS_PER_ADDRESS,
+    windowMs: 60 * 60_000,
+    clock: deps.clock,
+  });
+  const emailLoginClientLimit = fixedWindow({
+    limit: EMAIL_LOGIN_MAILS_PER_CLIENT,
+    windowMs: 60 * 60_000,
+    clock: deps.clock,
+  });
   const linkErrorPath = (returnTo: string, error: LoginError) => {
     const back = new URL(returnTo, config.webOrigin);
     back.searchParams.set('linkError', error);
@@ -402,6 +430,7 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
           nextcloudAnyServer: config.nextcloud.loginAnyServer,
           googleDrive: config.googleDrive !== null,
           sso: await anyWorkspaceSso(deps),
+          emailLogin: deps.mailer.configured,
         });
       })
 
@@ -527,7 +556,7 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
         const current = c.var.viewer;
         const returnTo = safeReturnTo(c.req.query('returnTo'));
         if (current?.kind !== 'owner') {
-          return toWeb(c, `/login?returnTo=${encodeURIComponent(returnTo)}`);
+          return toWeb(c, loginPath(returnTo));
         }
         // Renewing one of my connections: Google preselects that account.
         const connectionParam = c.req.query('connection');
@@ -555,7 +584,7 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
         const current = c.var.viewer;
         const returnTo = safeReturnTo(c.req.query('returnTo'), '/neu');
         if (current?.kind !== 'owner') {
-          return toWeb(c, `/login?returnTo=${encodeURIComponent(returnTo)}`);
+          return toWeb(c, loginPath(returnTo));
         }
         const fileParam = c.req.query('fileId');
         const fileId = fileParam && /^[A-Za-z0-9_-]{1,200}$/.test(fileParam) ? fileParam : null;
@@ -653,15 +682,11 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
       // ── Company login of an organisation (BER-162) ───────────────────────
       /** The address typed on the login page → its organisation's company login, if any. */
       .post('/auth/sso/discover', async (c) => {
-        const hit = ssoDiscoveryLimit.hit(clientAddress(c));
-        if (!hit.allowed) {
-          c.header('Retry-After', String(hit.retryAfterS));
-          throw new ApiError(
-            429,
-            'rate_limited',
-            'Zu viele Anmeldeversuche. Bitte versuch es später noch einmal.',
-          );
-        }
+        assertWithinLimit(
+          c,
+          ssoDiscoveryLimit.hit(clientAddress(c)),
+          'Zu viele Anmeldeversuche. Bitte versuch es später noch einmal.',
+        );
         const { email } = await readJson(c, discoverSsoInputSchema);
         const found = await findSsoForEmail(deps, email);
         if (!found) {
@@ -825,33 +850,27 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
           throw notFound('Die Anmeldung mit Nextcloud ist nicht eingerichtet.');
         }
         const input = await readJson(c, startNextcloudSignInInputSchema);
-        const hit = nextcloudFlowLimit.hit(clientAddress(c));
-        if (!hit.allowed) {
-          c.header('Retry-After', String(hit.retryAfterS));
-          throw new ApiError(
-            429,
-            'rate_limited',
-            'Zu viele Anmeldeversuche bei Nextcloud. Bitte versuch es später noch einmal.',
-          );
-        }
+        assertWithinLimit(
+          c,
+          nextcloudFlowLimit.hit(clientAddress(c)),
+          'Zu viele Anmeldeversuche bei Nextcloud. Bitte versuch es später noch einmal.',
+        );
         const current = c.var.viewer;
         const link = input.intent === 'connect' && current?.kind === 'owner';
-        const key =
-          (await readSignedCookie(c, config, NEXTCLOUD_FLOW_COOKIE)) ??
-          Buffer.from(crypto.getRandomValues(new Uint8Array(24))).toString('base64url');
-        await writeSignedCookie(c, config, NEXTCLOUD_FLOW_COOKIE, key, {
-          sameSite: 'Lax',
-          maxAge: NEXTCLOUD_FLOW_TTL_MS / 1000,
-        });
+        const key = await browserKey(
+          c,
+          config,
+          NEXTCLOUD_FLOW_COOKIE,
+          NEXTCLOUD_FLOW_TTL_MS / 1000,
+        );
         if (!link) {
           // Kept across sign-ins, so a link mailed earlier still works here.
-          const browser =
-            (await readSignedCookie(c, config, NEXTCLOUD_SIGNUP_COOKIE)) ??
-            Buffer.from(crypto.getRandomValues(new Uint8Array(24))).toString('base64url');
-          await writeSignedCookie(c, config, NEXTCLOUD_SIGNUP_COOKIE, browser, {
-            sameSite: 'Lax',
-            maxAge: (NEXTCLOUD_FLOW_TTL_MS + NEXTCLOUD_SIGNUP_TTL_MS) / 1000,
-          });
+          await browserKey(
+            c,
+            config,
+            NEXTCLOUD_SIGNUP_COOKIE,
+            (NEXTCLOUD_FLOW_TTL_MS + NEXTCLOUD_SIGNUP_TTL_MS) / 1000,
+          );
         }
         // Who asks, on Nextcloud's grant page: the account when linking, else a code that only
         // the window that asked shows – a forwarded request has nothing to compare it with.
@@ -972,6 +991,60 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
         await startSession(c, deps, signIn.user.id);
         return c.json<LoginResult>({ redirectTo: target });
       })
+
+      // ── E-Mail (login link, BER-168) ─────────────────────────────────────
+      // The same answer whether the address has an account: only its mailbox learns that.
+      .post('/auth/email/start', async (c) => {
+        if (!deps.mailer.configured) {
+          throw notFound('Die Anmeldung per E-Mail ist auf diesem Server nicht eingerichtet.');
+        }
+        const input = await readJson(c, startEmailLoginInputSchema);
+        assertWithinLimit(
+          c,
+          emailLoginClientLimit.hit(clientAddress(c)),
+          'Zu viele Anmeldelinks angefordert. Bitte versuch es später noch einmal.',
+        );
+        // Kept across requests, so a link mailed earlier still works here.
+        const browser = await browserKey(c, config, EMAIL_LOGIN_COOKIE, EMAIL_LOGIN_TTL_MS / 1000);
+        const returnTo = safeReturnTo(input.returnTo, DEFAULT_LOGIN_RETURN_TO);
+        // Over the address's limit nothing is sent and the answer stays the same: the links
+        // already mailed still work.
+        if (emailLoginAddressLimit.hit(normalizeEmail(input.email)).allowed) {
+          const sent = await sendEmailLogin(deps, {
+            email: input.email,
+            returnTo,
+            inviteToken: inviteTokenFromPath(returnTo),
+            browser,
+          });
+          if (!sent) {
+            throw new ApiError(
+              503,
+              'mail_failed',
+              'Die Mail konnte gerade nicht verschickt werden. Bitte versuch es gleich noch einmal.',
+            );
+          }
+        }
+        return c.body(null, 204);
+      })
+
+      .post('/auth/email/confirm', async (c) => {
+        const { token } = await readJson(c, confirmEmailLoginInputSchema);
+        const link = await redeemEmailLogin(
+          deps,
+          token,
+          await readSignedCookie(c, config, EMAIL_LOGIN_COOKIE),
+        );
+        const target = safeReturnTo(link.returnTo, DEFAULT_LOGIN_RETURN_TO);
+        const signIn = await signInWithIdentity(deps, emailIdentity(link.email, link.inviteToken));
+        if (!signIn.ok) {
+          return c.json<EmailLoginResult>({
+            redirectTo: loginErrorPath(signIn.error, target),
+            newAccount: false,
+          });
+        }
+        await startSession(c, deps, signIn.user.id);
+        return c.json<EmailLoginResult>({ redirectTo: target, newAccount: signIn.created });
+      })
   );
 }
 
@@ -996,13 +1069,6 @@ function nextcloudIdentity(
 }
 
 type OidcProviderId = 'google' | 'oidc';
-
-/** `/login?error=…` (with `returnTo` unless it is the default). */
-export function loginErrorPath(error: LoginError, returnTo?: string): string {
-  const target = new URLSearchParams({ error });
-  if (returnTo && returnTo !== DEFAULT_LOGIN_RETURN_TO) target.set('returnTo', returnTo);
-  return `/login?${target.toString()}`;
-}
 
 /**
  * The identity of an OIDC login. Google: subject = `sub`, the address must be verified

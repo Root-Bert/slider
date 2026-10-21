@@ -1,5 +1,6 @@
 import type {
   AuthProviders,
+  EmailLoginResult,
   LoginIdentity,
   LoginResult,
   MicrosoftConnection,
@@ -7,6 +8,7 @@ import type {
   NextcloudSignInPoll,
   Passkey,
   SsoLogin,
+  StartEmailLoginInput,
   StartNextcloudSignInInput,
 } from '@slider/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -36,6 +38,14 @@ export const discoverSso = (email: string) => api.post<SsoLogin>('/auth/sso/disc
 /** The link from the confirmation mail of a new account through Nextcloud. */
 export const confirmNextcloudSignUp = (token: string) =>
   api.post<LoginResult>('/auth/nextcloud/confirm', { token });
+
+/** "Mit E-Mail fortfahren" (BER-168): mails a login link – the same answer for every address. */
+export const startEmailLogin = (input: StartEmailLoginInput) =>
+  api.post<void>('/auth/email/start', input);
+
+/** The link from the login mail: signs in, or creates the account. */
+export const confirmEmailLogin = (token: string) =>
+  api.post<EmailLoginResult>('/auth/email/confirm', { token });
 
 // ── Account: connected logins and passkeys ──────────────────────────────────
 

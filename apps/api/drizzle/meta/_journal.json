@@ -351,6 +351,20 @@
       "when": 1792539960429,
       "tag": "0049_drop_deck_source_drive",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1792579084896,
+      "tag": "0050_login_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1792589777415,
+      "tag": "0051_instance_admin",
+      "breakpoints": true
     }
   ]
 }

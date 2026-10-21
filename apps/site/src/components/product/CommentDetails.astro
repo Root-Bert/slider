@@ -16,7 +16,7 @@ import { person } from '~/lib/people';
  * alternating sides. Lane colours follow the comment's author/source, as in the app.
  */
 const lara = person('Lara');
-const gesaFromPowerPoint = { id: 'gesa-pptx', name: 'Gesa', type: 'external', color: 'powerpoint' } as const;
+const ingridFromPowerPoint = { id: 'ingrid-pptx', name: 'Ingrid', type: 'external', color: 'powerpoint' } as const;
 const accentOf = (name: Parameters<typeof person>[0]) => `var(--color-accent-${person(name).color})`;
 /** The version row's chips, as the app shows the latest revision's changes. */
 const change = (kind: SlideBadge['kind'], label: string): SlideBadge => ({
@@ -41,7 +41,7 @@ const changes = [change('new', '2 new'), change('modified', '3 changed'), change
     connector={{ x: 247, y: 142.25, w: 67, h: 0.75, d: 'M 0 0 L 67 0 L 67 0.75 L 61 0.75' }}
   >
     <CommentCard author={lara} meta="2 min ago | Slide 2" replies="2 replies" class="absolute top-[99px] left-[308px] w-[372px]">
-      <span class="font-medium text-mention">@Paul</span> can you update the Q3 numbers before Friday?
+      <span class="font-medium text-mention">@Gero</span> can you update the Q3 numbers before Friday?
     </CommentCard>
   </Detail>
 
@@ -55,9 +55,9 @@ const changes = [change('new', '2 new'), change('modified', '3 changed'), change
     connector={{ x: 247, y: 142.25, w: 147, h: 25.55, d: 'M 0 0 L 110 0 L 110 25.55 L 147 25.55' }}
     reverse
   >
-    <CanvasCard name="Paul" class="absolute top-[123.8px] left-[394px] w-[260px]">
+    <CanvasCard name="Gero" class="absolute top-[123.8px] left-[394px] w-[260px]">
       <div class="flex items-center gap-3">
-        <PlayArrow accent={accentOf('Paul')} />
+        <PlayArrow accent={accentOf('Gero')} />
         <img src={asset('product-b/waveform.svg')} alt="" class="h-[20.6px] w-[86px]" />
         <span class="text-[11px] text-fg-subtle">0:24</span>
       </div>
@@ -73,14 +73,14 @@ const changes = [change('new', '2 new'), change('modified', '3 changed'), change
     slide="FloorPlan"
     connector={{ x: 247, y: 121.6, w: 151.4, h: 20.65, d: 'M 0 20.65 L 112 20.65 L 112 0 L 151.4 0' }}
   >
-    <CanvasCard name="Gesa" class="absolute top-[77.6px] left-[398.4px]">
+    <CanvasCard name="Ingrid" class="absolute top-[77.6px] left-[398.4px]">
       <div class="flex items-start gap-3">
         <div class="flex flex-col self-stretch">
-          <PlayArrow accent={accentOf('Gesa')} />
+          <PlayArrow accent={accentOf('Ingrid')} />
           <span class="flex-1"></span>
           <span class="text-[11px] text-fg-subtle">2:17</span>
         </div>
-        <VideoThumb src={asset('product-b/video-thumb.jpg')} name="Gesa" class="h-[108px] w-48" />
+        <VideoThumb src={asset('product-b/video-thumb.jpg')} name="Ingrid" class="h-[108px] w-48" />
       </div>
     </CanvasCard>
   </Detail>
@@ -95,7 +95,7 @@ const changes = [change('new', '2 new'), change('modified', '3 changed'), change
     connector={{ x: 247, y: 105, w: 147, h: 37.25, d: 'M 0 37.25 L 110 37.25 L 110 0 L 147 0' }}
     reverse
   >
-    <CanvasCard name="Anna" class="absolute top-[61px] left-[394px] w-[260px]">
+    <CanvasCard name="Flo" class="absolute top-[61px] left-[394px] w-[260px]">
       <div class="relative h-28 w-[200px] overflow-hidden rounded-chip bg-[#898989]">
         <img src={asset('product-b/sketch-image.jpg')} alt="" class="absolute inset-0 size-full object-cover" />
         <img src={asset('product-b/sketch-marks.svg')} alt="" class="absolute top-[-1.5px] left-[-1.5px] h-[80px] w-[172px] max-w-none" />
@@ -115,7 +115,7 @@ const changes = [change('new', '2 new'), change('modified', '3 changed'), change
     pin="powerpoint"
   >
     <CommentCard
-      author={gesaFromPowerPoint}
+      author={ingridFromPowerPoint}
       source="pptx"
       meta="from PowerPoint | Oct 3"
       replies="1 reply"

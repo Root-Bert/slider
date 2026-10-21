@@ -28,6 +28,8 @@
 @layer base {
   html {
     scroll-behavior: smooth;
+    /* In-page anchors land below the sticky header. */
+    scroll-padding-top: 5.5rem;
   }
 
   html,

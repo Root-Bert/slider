@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 import { deleteCookie, getCookie, getSignedCookie, setCookie, setSignedCookie } from 'hono/cookie';
 import type { CookieOptions } from 'hono/utils/cookie';
+import { randomBytes } from 'node:crypto';
 import type { Config } from '../config';
 
 /**
@@ -59,6 +60,22 @@ export async function readSignedCookie(
 ): Promise<string | undefined> {
   const value = await getSignedCookie(c, config.secret, name, hostPrefix(config));
   return value || undefined;
+}
+
+/**
+ * This browser's key, kept in a signed cookie: read, or made on first use, and written back with
+ * `maxAgeS` to go. Mailed links and pending logins are bound to it (only their hash is stored),
+ * so they work in the browser that asked for them only.
+ */
+export async function browserKey(
+  c: Context,
+  config: CookieConfig & Pick<Config, 'secret'>,
+  name: string,
+  maxAgeS: number,
+): Promise<string> {
+  const key = (await readSignedCookie(c, config, name)) ?? randomBytes(32).toString('base64url');
+  await writeSignedCookie(c, config, name, key, { sameSite: 'Lax', maxAge: maxAgeS });
+  return key;
 }
 
 export function removeCookie(c: Context, config: CookieConfig, name: string): void {

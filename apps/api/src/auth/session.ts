@@ -1,8 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { and, eq, gt } from 'drizzle-orm';
+import { and, eq, gt, isNull } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { sessions, users, type UserRow } from '../db/schema';
 import type { AppDeps } from '../deps';
+import { ApiError } from '../http/errors';
 import { markActive } from '../services/users';
 import { readCookie, removeCookie, writeCookie } from './cookies';
 
@@ -43,8 +44,23 @@ function setSessionCookie(
   });
 }
 
-/** Signs `userId` in on this browser. */
+export const accountBlocked = () =>
+  new ApiError(
+    403,
+    'account_blocked',
+    'Dieses Konto wurde von der Person gesperrt, die Slider hier betreibt.',
+  );
+
+/**
+ * Signs `userId` in on this browser. A blocked account (BER-167) never gets a session – the
+ * logins refuse it before with `account_blocked`, this is the last line.
+ */
 export async function startSession(c: Context, deps: AppDeps, userId: string): Promise<void> {
+  const [user] = await deps.db
+    .select({ blockedAt: users.blockedAt })
+    .from(users)
+    .where(eq(users.id, userId));
+  if (user?.blockedAt) throw accountBlocked();
   const token = newSecretToken();
   const now = deps.clock.now();
   const expiresAt = expiryFrom(deps, now, now);
@@ -91,6 +107,8 @@ export async function loadSessionUser(
         gt(sessions.expiresAt, now),
         // Sessions from before the cap may still expire later: they end on time all the same.
         gt(sessions.createdAt, new Date(now.getTime() - SESSION_MAX_AGE_MS)),
+        // Blocking deletes the sessions too; this also ends one that slipped in meanwhile.
+        isNull(users.blockedAt),
       ),
     );
   if (!row) {

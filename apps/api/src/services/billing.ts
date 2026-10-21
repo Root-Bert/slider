@@ -63,6 +63,7 @@ type BillingColumns = Pick<
   | 'cancelAtPeriodEnd'
   | 'downgradeAt'
   | 'downgradeReason'
+  | 'planGrantedAt'
 >;
 
 /** Names of the billing owners and asked admins of these workspaces, by user id. */
@@ -102,7 +103,7 @@ export function toBillingDto(
         ? row.currentPeriodEnd.toISOString()
         : null,
     // Never subscribed: the status is set by the first checkout and never cleared again.
-    trialAvailable: enabled && row.subscriptionStatus === null,
+    trialAvailable: enabled && row.subscriptionStatus === null && row.planGrantedAt === null,
     trialEndsAt: trialing && row.currentPeriodEnd ? row.currentPeriodEnd.toISOString() : null,
     endsAt:
       subscribed && row.cancelAtPeriodEnd && row.currentPeriodEnd
@@ -114,6 +115,7 @@ export function toBillingDto(
       transferTo && row.billingTransferAt
         ? { to: transferTo, requestedAt: row.billingTransferAt.toISOString() }
         : null,
+    granted: row.planGrantedAt !== null,
   };
 }
 
@@ -123,13 +125,19 @@ async function loadWorkspace(db: Executor, workspaceId: string): Promise<Workspa
   return row;
 }
 
+/**
+ * The way out of paying stays open in a blocked organisation (BER-167): its usage, the customer
+ * portal to cancel, and handing paying over – so whoever pays can stop and leave.
+ */
+const EVEN_IF_BLOCKED = { allowBlocked: true };
+
 /** `GET /workspaces/:id/usage` – members only. */
 export async function getUsageDetails(
   deps: BillingDeps,
   userId: string,
   workspaceId: string,
 ): Promise<WorkspaceUsageDetails> {
-  await requireRole(deps.db, workspaceId, userId);
+  await requireRole(deps.db, workspaceId, userId, 'viewer', undefined, EVEN_IF_BLOCKED);
   const row = await loadWorkspace(deps.db, workspaceId);
   const [usages, storage, names] = await Promise.all([
     workspaceUsages(deps.db, deps.config, [row], deps.clock.now()),
@@ -150,13 +158,17 @@ export async function getUsageDetails(
 
 // ── Checkout and portal ─────────────────────────────────────────────────────
 
-/** The billing owner (an admin); with nobody set yet, any admin – they become it by paying. */
+/**
+ * The billing owner (an admin); with nobody set yet, any admin – they become it by paying.
+ * `allowBlocked`: also in a blocked organisation (portal, handing over – not a new checkout).
+ */
 async function requireBillingOwner(
   deps: BillingDeps,
   userId: string,
   workspaceId: string,
+  options: { allowBlocked?: boolean } = {},
 ): Promise<WorkspaceRow> {
-  await requireRole(deps.db, workspaceId, userId, 'admin', ownerOnly().message);
+  await requireRole(deps.db, workspaceId, userId, 'admin', ownerOnly().message, options);
   const row = await loadWorkspace(deps.db, workspaceId);
   if (row.billingOwnerId !== null && row.billingOwnerId !== userId) throw ownerOnly();
   return row;
@@ -168,6 +180,9 @@ async function userOf(db: Executor, userId: string) {
   return user;
 }
 
+const GRANTED_MESSAGE =
+  'Die Organisation ist schon im Paid-Plan – freigeschaltet von der Person, die Slider hier betreibt. Hier gibt es nichts zu bezahlen.';
+
 /** `POST /workspaces/:id/billing/checkout`: Stripe Checkout for the paid plan. */
 export async function startCheckout(
   deps: BillingDeps,
@@ -176,6 +191,7 @@ export async function startCheckout(
 ): Promise<BillingRedirect> {
   const provider = requireProvider(deps);
   const row = await requireBillingOwner(deps, userId, workspaceId);
+  if (row.planGrantedAt) throw badRequest(GRANTED_MESSAGE);
   if (row.stripeSubscriptionId && !ENDED_STATUSES.has(row.subscriptionStatus ?? '')) {
     throw badRequest(
       row.cancelAtPeriodEnd
@@ -211,7 +227,7 @@ export async function openPortal(
   workspaceId: string,
 ): Promise<BillingRedirect> {
   const provider = requireProvider(deps);
-  const row = await requireBillingOwner(deps, userId, workspaceId);
+  const row = await requireBillingOwner(deps, userId, workspaceId, EVEN_IF_BLOCKED);
   if (!row.stripeCustomerId) throw badRequest('Für diese Organisation wurde noch nie bezahlt.');
   return {
     url: await provider.createPortal({
@@ -234,7 +250,7 @@ export async function requestTransfer(
   workspaceId: string,
   targetId: string,
 ): Promise<WorkspaceUsageDetails> {
-  await requireBillingOwner(deps, userId, workspaceId);
+  await requireBillingOwner(deps, userId, workspaceId, EVEN_IF_BLOCKED);
   if (targetId === userId) throw badRequest('Du bezahlst schon für diese Organisation.');
   if ((await getRole(deps.db, workspaceId, targetId)) !== 'admin') {
     throw badRequest(
@@ -297,7 +313,7 @@ export async function cancelTransfer(
   userId: string,
   workspaceId: string,
 ): Promise<WorkspaceUsageDetails> {
-  await requireRole(deps.db, workspaceId, userId);
+  await requireRole(deps.db, workspaceId, userId, 'viewer', undefined, EVEN_IF_BLOCKED);
   const row = await loadWorkspace(deps.db, workspaceId);
   if (row.billingOwnerId !== userId && row.billingTransferToId !== userId) throw ownerOnly();
   await deps.db
@@ -317,7 +333,7 @@ export async function acceptTransfer(
   userId: string,
   workspaceId: string,
 ): Promise<BillingTransferAcceptResult> {
-  await requireRole(deps.db, workspaceId, userId, 'admin');
+  await requireRole(deps.db, workspaceId, userId, 'admin', undefined, EVEN_IF_BLOCKED);
   const row = await loadWorkspace(deps.db, workspaceId);
   if (row.billingTransferToId !== userId) {
     throw badRequest('Diese Anfrage gibt es nicht mehr.');

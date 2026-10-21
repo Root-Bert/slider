@@ -131,19 +131,14 @@ export function WorkspaceSwitcher() {
               <>
                 <MenuDivider />
                 <MenuHeading>Deine Firma</MenuHeading>
-                <DomainWorkspaceRow
-                  workspace={company}
-                  onError={showToast}
-                  onJoined={close}
-                  compact
-                />
+                <DomainWorkspaceRow workspace={company} onError={showToast} onJoined={close} />
               </>
             )}
             {invites.length > 0 && (
               <>
                 <MenuDivider />
                 <MenuHeading>Einladungen</MenuHeading>
-                <PendingInvites invites={invites} onError={showToast} onJoined={close} compact />
+                <PendingInvites invites={invites} onError={showToast} onJoined={close} />
               </>
             )}
           </>

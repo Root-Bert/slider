@@ -29,8 +29,7 @@ const invite = {
   deck: null,
 };
 
-/** The section headings in DOM order – the order focus and screen readers follow. */
-function sectionOrder(pendingInvites: unknown[], domainWorkspace: unknown = null) {
+function renderOnboarding(pendingInvites: unknown[], domainWorkspace: unknown = null) {
   account.pendingInvites = pendingInvites;
   account.domainWorkspace = domainWorkspace;
   render(
@@ -40,28 +39,52 @@ function sectionOrder(pendingInvites: unknown[], domainWorkspace: unknown = null
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  return screen
-    .getAllByRole('heading')
-    .map((heading) => heading.textContent)
-    .filter((text) => text && /Organisation |Firma/.test(text));
 }
 
+/** Headings and buttons in DOM order – the order focus and screen readers follow. */
+const order = () =>
+  [...document.querySelectorAll('h1, h2, h3, button')]
+    .map((element) => element.textContent?.trim())
+    .filter((text) => text && /Organisation|Beitreten|Einladungslink/.test(text));
+
+const company = { id: 'C', name: 'Firma', logoUrl: null, domain: 'firma.de', memberCount: 4 };
+
 describe('WorkspaceOnboarding', () => {
-  it('without an invite, "erstellen" comes first in the DOM, not only visually', () => {
-    expect(sectionOrder([])).toEqual(['Organisation erstellen', 'Organisation beitreten']);
-  });
-
-  it('invited, "beitreten" comes first', () => {
-    expect(sectionOrder([invite])).toEqual(['Organisation beitreten', 'Organisation erstellen']);
-  });
-
-  it('the company of the domain is already there: joining it comes first (BER-148)', () => {
-    const company = { id: 'C', name: 'Firma', logoUrl: null, domain: 'firma.de', memberCount: 4 };
-    expect(sectionOrder([], company)).toEqual([
-      'Deiner Firma beitreten',
-      'Eigene Organisation erstellen',
-      'Organisation beitreten',
+  it('nothing to join: founding is the page, the invitation link second', () => {
+    renderOnboarding([]);
+    expect(order()).toEqual([
+      'Organisation erstellen',
+      'Organisation erstellen',
+      'Mit Einladungslink beitreten',
+      'Beitreten',
     ]);
-    expect(screen.getByText('@firma.de | 4 Mitglieder')).toBeTruthy();
+    expect(screen.getByLabelText('Name')).toBeTruthy();
+  });
+
+  it('invited: a quiet "erstellen" first, then the invitation as a card', () => {
+    renderOnboarding([invite]);
+    expect(order()).toEqual([
+      'Eigene Organisation erstellen',
+      'Beitreten',
+      'Mit Einladungslink beitreten',
+      'Beitreten',
+      // The founding dialog, closed.
+      'Neue Organisation',
+    ]);
+    const cards = screen.getByRole('list', { name: 'Organisationen zum Beitreten' });
+    expect(cards.textContent).toContain('Beta');
+    // Founding opens a dialog – no form on the page.
+    expect(screen.queryByLabelText('Name')).toBeNull();
+  });
+
+  it('the company of the domain is already there: its card before invitations (BER-148)', () => {
+    renderOnboarding([invite], company);
+    const cards = screen.getByRole('list', { name: 'Organisationen zum Beitreten' });
+    expect([...cards.children].map((card) => card.textContent)).toEqual([
+      expect.stringContaining('Firma'),
+      expect.stringContaining('Beta'),
+    ]);
+    expect(screen.getByText('@firma.de | 4 Mitglieder an Bord')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Einsteigen' })).toBeTruthy();
   });
 });

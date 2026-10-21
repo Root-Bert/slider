@@ -14,11 +14,11 @@ import { person } from '~/lib/people';
  * idea "across." and a floating backdrop of reviewed slides.
  */
 const lara = accentColor(person('Lara').color);
-const paul = accentColor(person('Paul').color);
-const paulColor = person('Paul').color;
+const flo = accentColor(person('Flo').color);
+const floColor = person('Flo').color;
 const pin = (color: string) =>
   `background: ${color}; box-shadow: 0 0 0 2px #fff, var(--shadow-pin);`;
-const mark = `border: 2px solid ${paul}; background: ${accentAlpha(paulColor, 14)}; box-shadow: 0 0 20px ${accentAlpha(paulColor, 35)}, 0 0 0 3px ${accentAlpha(paulColor, 30)};`;
+const mark = `border: 2px solid ${flo}; background: ${accentAlpha(floColor, 14)}; box-shadow: 0 0 20px ${accentAlpha(floColor, 35)}, 0 0 0 3px ${accentAlpha(floColor, 30)};`;
 ---
 
 <section class="hero relative isolate overflow-hidden px-4 pt-16 pb-10 md:px-16 md:pt-28" data-section>
@@ -46,15 +46,15 @@ const mark = `border: 2px solid ${paul}; background: ${accentAlpha(paulColor, 14
       class="top-[140.53px] left-[574.57px]"
       width={167.43}
       height={373.47}
-      color={paul}
+      color={flo}
       index={6}
       d="M1 1H158.427C163.761 1 166.427 3.66667 166.427 9V364.466C166.427 369.799 163.761 372.466 158.427 372.466H66.4272"
     />
     <div class="absolute top-[470px] left-[380px]" data-reveal style="--i: 9">
-      <CommentCard name="Paul" meta="2 min ago"><Audio name="Paul" /></CommentCard>
+      <CommentCard name="Flo" meta="2 min ago"><Audio name="Flo" /></CommentCard>
     </div>
     <Cursor name="Gesa" class="absolute top-[200px] left-[160px]" drift />
-    <Cursor name="Paul" class="absolute top-[190px] left-[560px]" drift style="--drift-x: -5px; --drift-y: 6px; --drift-t: 7s" />
+    <Cursor name="Flo" class="absolute top-[190px] left-[560px]" drift style="--drift-x: -5px; --drift-y: 6px; --drift-t: 7s" />
   </div>
 
   <h1 class="hero-title headline text-white">

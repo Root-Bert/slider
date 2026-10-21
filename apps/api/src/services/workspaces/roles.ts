@@ -1,8 +1,8 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import type { DeckPermissions, WorkspaceRole } from '@slider/shared';
 import type { Executor } from '../../db/client';
-import { workspaceMembers } from '../../db/schema';
-import { forbidden, notFound } from '../../http/errors';
+import { workspaceMembers, workspaces } from '../../db/schema';
+import { ApiError, forbidden, notFound } from '../../http/errors';
 
 /** Workspace roles and what they allow (BER-129). */
 
@@ -24,6 +24,14 @@ export const stronger = (a: WorkspaceRole, b: WorkspaceRole) => (RANK[a] >= RANK
 
 export const workspaceNotFound = () => notFound('Diese Organisation gibt es nicht (mehr).');
 
+/** The instance admin blocked the organisation (BER-167): members see why, nothing more. */
+export const workspaceBlocked = () =>
+  new ApiError(
+    403,
+    'workspace_blocked',
+    'Diese Organisation wurde von der Person gesperrt, die Slider hier betreibt. Austreten geht weiter.',
+  );
+
 /**
  * What a member may do with a deck: viewers only look, reviewers also comment, members also
  * manage the decks they created, admins manage every deck.
@@ -38,30 +46,29 @@ export function deckPermissions(
   return { canManage, canComment: atLeast(role, 'reviewer') };
 }
 
+/** The member's role, also in a blocked workspace; `null` for non-members. */
 export async function getRole(
   db: Executor,
   workspaceId: string,
   userId: string,
 ): Promise<WorkspaceRole | null> {
-  const [row] = await db
-    .select({ role: workspaceMembers.role })
-    .from(workspaceMembers)
-    .where(and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, userId)));
-  return row?.role ?? null;
+  return (await membership(db, workspaceId, userId))?.role ?? null;
 }
 
-/** All memberships of a user, by workspace id. */
+/** Memberships of a user in workspaces that are not blocked, by workspace id: what they can open. */
 export async function rolesOf(db: Executor, userId: string): Promise<Map<string, WorkspaceRole>> {
   const rows = await db
     .select({ workspaceId: workspaceMembers.workspaceId, role: workspaceMembers.role })
     .from(workspaceMembers)
-    .where(eq(workspaceMembers.userId, userId));
+    .innerJoin(workspaces, eq(workspaces.id, workspaceMembers.workspaceId))
+    .where(and(eq(workspaceMembers.userId, userId), isNull(workspaces.blockedAt)));
   return new Map(rows.map((row) => [row.workspaceId, row.role]));
 }
 
 /**
  * The caller's role in the workspace, or throws: non-members get 404 (no existence leak),
- * members below `min` get 403.
+ * members below `min` get 403, and so do members of a blocked workspace (BER-167) – except where
+ * `allowBlocked` says the way out still works: leaving it and handing over or cancelling paying.
  */
 export async function requireRole(
   db: Executor,
@@ -69,9 +76,25 @@ export async function requireRole(
   userId: string,
   min: WorkspaceRole = 'viewer',
   message = 'Dafür brauchst du mehr Rechte in dieser Organisation.',
+  { allowBlocked = false }: { allowBlocked?: boolean } = {},
 ): Promise<WorkspaceRole> {
-  const role = await getRole(db, workspaceId, userId);
-  if (!role) throw workspaceNotFound();
-  if (!atLeast(role, min)) throw forbidden(message);
-  return role;
+  const member = await membership(db, workspaceId, userId);
+  if (!member) throw workspaceNotFound();
+  if (member.blocked && !allowBlocked) throw workspaceBlocked();
+  if (!atLeast(member.role, min)) throw forbidden(message);
+  return member.role;
+}
+
+/** The role, and whether the workspace is blocked; `null` for non-members. */
+export async function membership(
+  db: Executor,
+  workspaceId: string,
+  userId: string,
+): Promise<{ role: WorkspaceRole; blocked: boolean } | null> {
+  const [row] = await db
+    .select({ role: workspaceMembers.role, blockedAt: workspaces.blockedAt })
+    .from(workspaceMembers)
+    .innerJoin(workspaces, eq(workspaces.id, workspaceMembers.workspaceId))
+    .where(and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, userId)));
+  return row ? { role: row.role, blocked: row.blockedAt !== null } : null;
 }

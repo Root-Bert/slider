@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { Clock } from '../clock';
+import { ApiError } from './errors';
 import { FORWARDED_CLIENT } from './hosting';
 
 export interface RateLimitOptions {
@@ -44,6 +45,17 @@ export function fixedWindow({ limit, windowMs, clock }: Omit<RateLimitOptions, '
       };
     },
   };
+}
+
+/** Over its limit (a {@link fixedWindow} `hit`): 429 with `Retry-After` and `message`. */
+export function assertWithinLimit(
+  c: Context,
+  hit: { allowed: boolean; retryAfterS: number },
+  message: string,
+): void {
+  if (hit.allowed) return;
+  c.header('Retry-After', String(hit.retryAfterS));
+  throw new ApiError(429, 'rate_limited', message);
 }
 
 /**

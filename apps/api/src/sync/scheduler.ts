@@ -2,7 +2,7 @@ import { and, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { Clock } from '../clock';
 import type { Config } from '../config';
 import type { Database } from '../db/client';
-import { decks, revisions } from '../db/schema';
+import { decks, revisions, workspaces } from '../db/schema';
 import type { Logger } from '../logger';
 import { SYNC_ACTIVE_WINDOW_MS, type SyncService } from './sync-service';
 
@@ -97,6 +97,8 @@ export class SyncScheduler {
           // A queued import answers every check with "queued" and never moves `nextCheckAt`:
           // without this, a backlog of them would take every slot of every tick.
           sql`not exists (select 1 from ${revisions} where ${revisions.deckId} = ${decks.id} and ${revisions.status} = 'pending')`,
+          // Nobody opens a blocked organisation's reviews (BER-167): nothing to keep current.
+          sql`not exists (select 1 from ${workspaces} where ${workspaces.id} = ${decks.workspaceId} and ${workspaces.blockedAt} is not null)`,
         ),
       )
       .orderBy(sql`${nextCheckAt} asc nulls first`, decks.id)

@@ -14,3 +14,4 @@ export * from './storage';
 export * from './nextcloud';
 export * from './google';
 export * from './deck-access';
+export * from './instance-admin';

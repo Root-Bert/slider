@@ -11,7 +11,7 @@ import {
   syncResultSchema,
   type SyncResult,
 } from '@slider/shared';
-import { decks, revisions, slideVersions } from '../src/db/schema';
+import { decks, revisions, slideVersions, workspaces } from '../src/db/schema';
 import { MAX_IMPORT_ATTEMPTS } from '../src/import/attempts';
 import { FINGERPRINT_VERSION } from '../src/import/common';
 import { findInterruptedImports, importDeck } from '../src/import/import-deck';
@@ -395,6 +395,15 @@ describe('scheduler', () => {
     const checked = await scheduler.tick();
     expect(checked.sort()).toEqual([deckId, recentlyViewed].sort());
     expect(source.getChangeToken).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves the reviews of a blocked organisation alone (BER-167)', async () => {
+    const { ctx, scheduler } = await withScheduler();
+    await ctx.deps.db
+      .update(workspaces)
+      .set({ blockedAt: ctx.clock.now() })
+      .where(eq(workspaces.id, ctx.workspaceId));
+    expect(await scheduler.tick()).toEqual([]);
   });
 
   it('decks with a queued import do not take the slots of other decks', async () => {

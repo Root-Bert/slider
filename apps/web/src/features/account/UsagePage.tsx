@@ -22,10 +22,12 @@ export function Component() {
   const { user, workspaces } = useAccount();
   const [toast, showToast] = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
-  const workspace = pickWorkspace(
-    workspaces,
-    searchParams.get('organisation') ?? readLastWorkspaceId(),
-  );
+  // Asked for by name, an organisation shows even when blocked (BER-167): whoever pays for it
+  // can still manage or cancel the payment. Otherwise the last used open one.
+  const requested = searchParams.get('organisation');
+  const workspace =
+    workspaces.find((candidate) => candidate.id === requested) ??
+    pickWorkspace(workspaces, readLastWorkspaceId());
   const [paidJustNow] = useState(() => searchParams.get('checkout') === 'success');
   const [polling, setPolling] = useState(paidJustNow);
   const [upgraded, setUpgraded] = useState(false);

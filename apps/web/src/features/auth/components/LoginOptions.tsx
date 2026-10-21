@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { AuthProviders, LoginProvider } from '@slider/shared';
 import {
   Button,
@@ -18,15 +18,14 @@ import {
   passkeysSupported,
   signInWithPasskey,
 } from '@/lib/passkeys';
+import { useOnPageRestore } from '@/lib/page-restore';
 import { BESIDE } from '../lib/beside';
+import { loadPage } from '../lib/load-page';
 import { providerLoginUrl } from '../lib/return-to';
-import { CompanySignIn } from './CompanySignIn';
+import { EmailSignIn } from './EmailSignIn';
 import { NextcloudSignIn } from './NextcloudSignIn';
 
 const PROVIDER_ORDER: LoginProvider['id'][] = ['microsoft', 'google', 'nextcloud', 'oidc'];
-
-/** Full page load: the session cookie is set, everything cached belongs to "signed out". */
-const go = (path: string) => window.location.assign(path);
 
 const rank = (id: LoginProvider['id']) => PROVIDER_ORDER.indexOf(id);
 
@@ -51,6 +50,7 @@ export function LoginOptions({ config, returnTo }: { config: AuthProviders; retu
     anyNextcloud && !nextcloudOAuth ? (after === -1 ? providers.length : after) : -1;
   // The glowing button only when there is one way in – next to each other, all look alike.
   const single = providers.length + (nextcloudAt === -1 ? 0 : 1) === 1;
+  const hasButtons = providers.length > 0 || anyNextcloud;
 
   if (confirmEmail) {
     return (
@@ -77,7 +77,13 @@ export function LoginOptions({ config, returnTo }: { config: AuthProviders; retu
     />
   );
 
-  if (providers.length === 0 && !anyNextcloud && !config.sso) {
+  // One address field for login links and company logins: always there with links, else it
+  // opens from "Mit Firmen-Login anmelden" right under the buttons.
+  const email = (config.sso || config.emailLogin) && (
+    <EmailSignIn returnTo={returnTo} sso={config.sso} links={config.emailLogin} />
+  );
+
+  if (!hasButtons && !email) {
     // Passkeys keep working without any provider: an admin who switched every login off on the
     // setup page signs in with one and turns a provider back on.
     return (
@@ -97,27 +103,26 @@ export function LoginOptions({ config, returnTo }: { config: AuthProviders; retu
 
   return (
     <div className="flex w-full flex-col gap-3">
-      {/* Side by side, wrapping when a third one gets too narrow. */}
-      <div className="flex flex-wrap gap-3">
-        {providers.map((provider, index) => [
-          index === nextcloudAt && nextcloudSignIn(false, false),
-          <ProviderButton
-            key={provider.id}
-            provider={provider}
-            returnTo={returnTo}
-            primary={single}
-          />,
-        ])}
-        {nextcloudAt === providers.length && nextcloudSignIn(false, single)}
-      </div>
-      {anyNextcloud && nextcloudOAuth && nextcloudSignIn(true, false)}
-      {config.sso && <CompanySignIn returnTo={returnTo} />}
-      {passkeys && (
-        <>
-          <Divider label="oder" className="my-1" />
-          <PasskeyButton returnTo={returnTo} />
-        </>
+      {hasButtons && (
+        // Side by side, wrapping when a third one gets too narrow.
+        <div className="flex flex-wrap gap-3">
+          {providers.map((provider, index) => [
+            index === nextcloudAt && nextcloudSignIn(false, false),
+            <ProviderButton
+              key={provider.id}
+              provider={provider}
+              returnTo={returnTo}
+              primary={single}
+            />,
+          ])}
+          {nextcloudAt === providers.length && nextcloudSignIn(false, single)}
+        </div>
       )}
+      {anyNextcloud && nextcloudOAuth && nextcloudSignIn(true, false)}
+      {!config.emailLogin && email}
+      {hasButtons && (config.emailLogin || passkeys) && <Divider label="oder" className="my-1" />}
+      {config.emailLogin && email}
+      {passkeys && <PasskeyButton returnTo={returnTo} />}
     </div>
   );
 }
@@ -132,29 +137,19 @@ function ProviderButton({
   primary: boolean;
 }) {
   const [leaving, setLeaving] = useState(false);
-  // Back from the identity provider (the browser's Back button, a common way to cancel), the
-  // page may come back from the back-forward cache with this state intact: clickable again.
-  useEffect(() => {
-    const onPageShow = (event: PageTransitionEvent) => {
-      if (event.persisted) setLeaving(false);
-    };
-    window.addEventListener('pageshow', onPageShow);
-    return () => window.removeEventListener('pageshow', onPageShow);
-  }, []);
+  // Back from the identity provider (the browser's Back button, a common way to cancel): clickable
+  // again.
+  useOnPageRestore(() => setLeaving(false));
   return (
     <Button
       size="lg"
       variant={primary ? 'primary' : 'secondary'}
+      glow={primary}
       loading={leaving}
       // The only way in glows softly, like the button in Slider's mails. Next to others it
       // names just the provider; the full label stays for screen readers.
       aria-label={primary ? undefined : provider.label}
-      className={cn(
-        'gap-2.5',
-        primary
-          ? 'w-full shadow-glow transition-[background-color,box-shadow] hover:shadow-glow-hover'
-          : BESIDE,
-      )}
+      className={cn('gap-2.5', primary ? 'w-full' : BESIDE)}
       onClick={() => {
         setLeaving(true);
         window.location.assign(providerLoginUrl(provider.loginUrl, returnTo));
@@ -189,7 +184,7 @@ function PasskeyButton({ returnTo }: { returnTo: string }) {
           setBusy(true);
           setError(null);
           try {
-            go((await signInWithPasskey(returnTo)).redirectTo);
+            loadPage((await signInWithPasskey(returnTo)).redirectTo);
           } catch (caught) {
             if (!isPasskeyCancel(caught)) setError(passkeyErrorMessage(caught));
             setBusy(false);

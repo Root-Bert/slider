@@ -118,6 +118,11 @@ white-on-colour spots listed in §12 (count bubbles, slide chrome, brand marks).
 | `field-well`           | Inset quote / reply well: `surface-1` + strong hairline ring          |
 | `focus-field`          | Field focus: inset `border-focus` ring on `:focus-within`             |
 | `dot-grid`             | Canvas with the 22px dot grid (`--color-dot`)                         |
+| `hero-glow`            | Featured card: deep space, light from above, sage horizon below       |
+| `fade-x`               | Content fading out towards the left and right edge (CSS mask)         |
+| `pointer-light`        | Featured card hover: soft light at the pointer (`--mx`/`--my`)        |
+| `pointer-rim`          | Featured card hover: 1px border lit around the pointer                |
+| `draw-in`              | SVG line drawn in like the comment connectors (`pathLength={1}`)      |
 | `skeleton`             | Shimmering loading placeholder                                        |
 | `scrollbar-none`       | Hidden scrollbar                                                      |
 
@@ -163,7 +168,7 @@ Slightly boxy, concentric: inner radius = outer radius − padding.
 ## 6. Elevation
 
 Shadows: `shadow-float` (overlays), `shadow-mark` (marks and labels on slides), `shadow-pin` (comment pin dots, centred so they sit on their arrow), `shadow-lift`
-(live cursors and labels), `shadow-glow` / `hover:shadow-glow-hover` (soft white halo around the
+(live cursors and labels), `hover:shadow-card-glow` (the featured card growing a little, white rim and halo), `shadow-glow` / `hover:shadow-glow-hover` (soft white halo around the
 primary button of the login page). Tailwind's `shadow-sm`/`shadow-lg` are not used.
 
 Stacking uses named layers (`z-(--z-…)`):
@@ -264,7 +269,7 @@ merging), so pick a size/variant prop instead of overriding classes with `classN
 
 | Component        | Props                                                                                                                                                                                                                                                                                                              |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Section`        | `title`, `id`, `icon`, `description`, `aside`, `tone` **default** · danger, `density` **default** · compact, `children` – settings card (`aria-labelledby`)                                                                                                                                                        |
+| `Section`        | `title`, `id`, `icon`, `description`, `aside`, `asideOnPhones` **right** · below, `tone` **default** · danger, `density` **default** · compact, `children` – settings card (`aria-labelledby`)                                                                                                                     |
 | `PageHeader`     | `title`, `subtitle`, `subtitleSize` sm · body, `back` (`{ to, label? }`), `leading`, `actions`, `truncate`, `align` start · center, `layout` stacked · inline, `titleRow`                                                                                                                                          |
 | `RowList`        | `variant` **divided** · hover · flush; `ul` props                                                                                                                                                                                                                                                                  |
 | `ListRow`        | `title`, `leading`, `badge`, `subtitle`, `subtitleTitle`, `trailing`, `actionSlot`; `variant` divided · hover · flush; `padding` sm · md · wide · header (each with its radius); `textGap` none · tight; `size` sm · body; `titleWeight` medium · normal; `titleTone` fg · muted · subtle; `dimmed`; `as` li · div |
@@ -280,7 +285,7 @@ merging), so pick a size/variant prop instead of overriding classes with `classN
 | `AvatarOverflow` | `count`, `size`, `title` – the "+n" chip                                                                                                                                                                                                                                                                           |
 
 App chrome lives in `shell/` (not `ui/`): `SettingsLayout` (`docTitle`, `title`, `subtitle`,
-`leading`, `back`, `truncate`, `header` app · logo, `toast`), `CenteredLayout` (`docTitle`,
+`leading`, `back`, `actions`, `width` default · wide, `truncate`, `header` app · logo, `toast`), `CenteredLayout` (`docTitle`,
 `logoLink`, `headerEnd`) with `CenteredCard` (`icon`, `eyebrow`, `title`, `message`,
 `headingLevel`, `density`, `titleId`) and `CenteredMessage`.
 

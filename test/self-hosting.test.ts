@@ -98,7 +98,7 @@ describe('the container image', () => {
 });
 
 describe('CI runs it all', () => {
-  it('for every change except the website and Markdown no code or test reads', () => {
+  it('for every change except the website, the logo files and Markdown no code or test reads', () => {
     const ci = read('.github/workflows/ci.yml');
     const ignored = (trigger: string) => {
       const block = new RegExp(`^ {2}${trigger}:\\n(?: {4}.*\\n)*`, 'm').exec(ci)?.[0] ?? '';
@@ -107,6 +107,7 @@ describe('CI runs it all', () => {
     const expected = [
       'apps/site/**',
       'apps/web/design-system.md',
+      'brand/**',
       'packages/pptx/test/corpus/README.md',
     ];
     expect(ignored('push')).toEqual(expected);

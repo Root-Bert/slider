@@ -63,4 +63,22 @@ describe('SettingsLayout', () => {
     expect(screen.getByTestId('mark')).toBeTruthy();
     expect(screen.queryByRole('status')).toBeNull();
   });
+
+  it('wide: the dashboard column, with actions in the title row', () => {
+    render(
+      <Providers>
+        <SettingsLayout
+          header="logo"
+          docTitle="Instanz | Slider"
+          title="Instanz"
+          width="wide"
+          actions={<button type="button">Einstellungen</button>}
+        >
+          {null}
+        </SettingsLayout>
+      </Providers>,
+    );
+    expect(screen.getByRole('main').firstElementChild?.className).toContain('max-w-[1280px]');
+    expect(screen.getByRole('button', { name: 'Einstellungen' })).toBeTruthy();
+  });
 });

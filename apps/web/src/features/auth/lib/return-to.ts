@@ -65,6 +65,11 @@ const LOGIN_ERROR_COPY: Record<LoginError, { title: string; message: string }> =
     message:
       'Zu viele Anmeldeversuche von hier – bitte versuch es in ein paar Minuten noch einmal.',
   },
+  account_blocked: {
+    title: 'Konto gesperrt',
+    message:
+      'Dieses Konto wurde von der Person gesperrt, die Slider hier betreibt. Wende dich an sie, wenn du glaubst, dass das ein Irrtum ist.',
+  },
   failed: {
     title: 'Anmeldung fehlgeschlagen',
     message: 'Bei der Anmeldung ist etwas schiefgelaufen. Bitte versuche es erneut.',

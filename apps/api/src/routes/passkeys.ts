@@ -19,11 +19,12 @@ import {
   simpleWebAuthn,
 } from '../auth/passkeys';
 import { readSignedCookie, removeCookie, writeSignedCookie } from '../auth/cookies';
+import { loginErrorPath } from '../auth/login-paths';
 import { startSession } from '../auth/session';
 import { optionalViewerMiddleware, unauthorized, type OptionalViewerEnv } from '../auth/viewer';
 import { authChallenges, passkeys, users } from '../db/schema';
 import type { AppDeps } from '../deps';
-import { badRequest, notFound } from '../http/errors';
+import { ApiError, badRequest, notFound } from '../http/errors';
 import { rateLimit } from '../http/rate-limit';
 import { readJson } from '../http/validate';
 import { deletePasskey, listIdentities, unlinkIdentity } from '../services/accounts';
@@ -304,10 +305,15 @@ export function passkeysRoutes(deps: AppDeps) {
           .update(passkeys)
           .set({ counter: newCounter, backedUp: credentialBackedUp, lastUsedAt: deps.clock.now() })
           .where(eq(passkeys.id, row.id));
-        await startSession(c, deps, row.userId);
-        return c.json<LoginResult>({
-          redirectTo: safeReturnTo(input.returnTo, '/'),
-        });
+        const returnTo = safeReturnTo(input.returnTo, '/');
+        try {
+          await startSession(c, deps, row.userId);
+        } catch (error) {
+          // Blocked by the instance admin (BER-167): the login page says so.
+          if (!(error instanceof ApiError) || error.code !== 'account_blocked') throw error;
+          return c.json<LoginResult>({ redirectTo: loginErrorPath('account_blocked', returnTo) });
+        }
+        return c.json<LoginResult>({ redirectTo: returnTo });
       })
   );
 }

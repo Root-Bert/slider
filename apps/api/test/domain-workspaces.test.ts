@@ -439,7 +439,7 @@ describe('personal Microsoft accounts vouch for no domain', () => {
         audiencePending: false,
       }),
     ]);
-    expect(await microsoft('ex@firma.de')).toEqual({ ok: true, user: ex });
+    expect(await microsoft('ex@firma.de')).toEqual({ ok: true, user: ex, created: false });
 
     const { cookie } = await signedInUser(ctx, { name: ex.name, email: ex.email });
     expect((await me(cookie)).domainWorkspace).toBeNull();

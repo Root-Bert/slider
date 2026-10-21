@@ -8,7 +8,7 @@ import {
   type Box,
   type ConnectorRequest,
 } from '../lib/connector-routing';
-import { roundedPath } from '../lib/rounded-path';
+import { roundedPath } from '@/lib/rounded-path';
 import { useStageRegistry } from '../../state/stage-registry';
 
 export interface ConnectorItem {

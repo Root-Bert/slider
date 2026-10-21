@@ -33,6 +33,7 @@ Für dein Konto speichern wir deinen Namen, deine E-Mail-Adresse und die Farbe, 
 - Microsoft-Konto (Microsoft Ireland Operations Ltd.)
 - Google-Konto (Google Ireland Ltd.)
 - Nextcloud-Konto: bei [Betreiber der Nextcloud] oder bei einer anderen Nextcloud, deren Adresse du angibst
+- Login-Link per E-Mail: wir schicken einen Link an deine Adresse, der 15 Minuten gilt (Versand über Brevo, siehe unten)
 - Passkey (auf deinem Gerät; wir speichern nur einen öffentlichen Schlüssel)
 
 Bei der Anmeldung über Microsoft, Google oder Nextcloud erhalten wir von dort deinen Namen, deine E-Mail-Adresse und eine Kennung deines Kontos. Für die Verarbeitung durch Microsoft und Google sind diese selbst verantwortlich; es gelten deren Datenschutzerklärungen.
@@ -40,6 +41,8 @@ Bei der Anmeldung über Microsoft, Google oder Nextcloud erhalten wir von dort d
 Meldest du dich mit einer Nextcloud über ihre Adresse an, erhalten wir von ihr zusätzlich ein App-Passwort. Damit ist sie zugleich als Speicherort verbunden: Slider liest darüber nur Präsentationen, die du einfügst, und ändert nichts. Das App-Passwort speichern wir verschlüsselt, du kannst es jederzeit in Slider trennen oder in deiner Nextcloud widerrufen. Entsteht dabei ein neues Konto, schicken wir zuerst einen Bestätigungslink an die E-Mail-Adresse aus der Nextcloud; ohne Bestätigung speichern wir nichts.
 
 Rechtsgrundlage ist die Erfüllung des Nutzungsvertrags (Art. 6 Abs. 1 lit. b DSGVO). Ohne Konto kannst du Slider nicht nutzen.
+
+**Verwaltung der Instanz:** Als Betreiber sehen wir in einer Übersicht zu jedem Konto Name, E-Mail-Adresse, wann es angelegt und zuletzt genutzt wurde und in wie vielen Organisationen es ist; zu jeder Organisation Name, Logo, Firmen-Domain, Plan, Zahl der Mitglieder und Präsentationen und den belegten Speicher. Inhalte zeigt diese Übersicht nicht: keine Präsentationen und ihre Titel, keine Kommentare oder Aufnahmen und nicht, wer in welcher Organisation ist. Wir nutzen sie für den Betrieb, für Pläne und um Missbrauch zu unterbinden. Missbraucht ein Konto oder eine Organisation den Dienst oder verstößt gegen geltendes Recht, können wir es sperren: Ein gesperrtes Konto kann sich nicht mehr anmelden, eine gesperrte Organisation kann niemand mehr öffnen, ihre Mitglieder können nur noch austreten. Gelöscht wird dabei nichts, und deine Rechte aus Abschnitt 11 kannst du weiter über /datenanfrage wahrnehmen. Rechtsgrundlage ist unser berechtigtes Interesse an einem sicheren und rechtmäßigen Betrieb (Art. 6 Abs. 1 lit. f DSGVO).
 
 ## 5. Verbindung mit OneDrive, SharePoint und Google Drive
 
@@ -92,7 +95,7 @@ Es gibt keine Cookies für Statistik, Werbung oder Dritte.
 
 ## 10. Empfänger
 
-Deine Daten sehen nur die Mitglieder der Organisationen, in denen du mitarbeitest, und – soweit für den Betrieb nötig – unsere Auftragsverarbeiter: Hetzner (Hosting), Cloudflare (Netzwerk und Schutz), Brevo (E-Mail-Versand) und – falls du für eine Organisation bezahlst – Stripe (Zahlungsabwicklung). Wir verkaufen keine Daten und geben sie nicht für Werbung weiter.
+Deine Daten sehen nur die Mitglieder der Organisationen, in denen du mitarbeitest, wir als Betreiber im Umfang der Übersicht aus Abschnitt 4 und – soweit für den Betrieb nötig – unsere Auftragsverarbeiter: Hetzner (Hosting), Cloudflare (Netzwerk und Schutz), Brevo (E-Mail-Versand) und – falls du für eine Organisation bezahlst – Stripe (Zahlungsabwicklung). Wir verkaufen keine Daten und geben sie nicht für Werbung weiter.
 
 ## 11. Deine Rechte
 

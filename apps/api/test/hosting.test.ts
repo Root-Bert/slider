@@ -87,7 +87,12 @@ describe('web app from the API', () => {
 
   it('serves index.html for client-side routes, uncached', async () => {
     // Signed links carry a dot (`<payload>.<signature>`) and are still routes, not files.
-    for (const url of ['/', '/d/some-deck?slide=1', '/neu', '/konto-bestaetigen/eyJhIjoxfQ.c2ln-X_9']) {
+    for (const url of [
+      '/',
+      '/d/some-deck?slide=1',
+      '/neu',
+      '/konto-bestaetigen/eyJhIjoxfQ.c2ln-X_9',
+    ]) {
       const res = await ctx.request(url);
       expect(res.status).toBe(200);
       expect(res.headers.get('content-type')).toContain('text/html');

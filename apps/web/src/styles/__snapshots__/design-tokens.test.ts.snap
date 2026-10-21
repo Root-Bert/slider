@@ -50,6 +50,9 @@ exports[`@theme > declares exactly these tokens 1`] = `
   "--color-accent-blue",
   "--color-accent-violet",
   "--color-accent-deleted",
+  "--color-sage",
+  "--color-lagoon",
+  "--color-sky",
   "--color-ring-red",
   "--color-ring-yellow",
   "--color-ring-green",
@@ -76,6 +79,7 @@ exports[`@theme > declares exactly these tokens 1`] = `
   "--shadow-lift",
   "--shadow-glow",
   "--shadow-glow-hover",
+  "--shadow-card-glow",
   "--ease-emphasized",
   "--ease-settle",
   "--ease-overshoot",
@@ -94,5 +98,6 @@ exports[`@theme > declares exactly these tokens 1`] = `
   "--animate-collapse-rows",
   "--animate-unroll-up",
   "--animate-roll-down",
+  "--animate-twinkle",
 ]
 `;

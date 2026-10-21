@@ -36,7 +36,8 @@ export async function listMembers(
   userId: string,
   workspaceId: string,
 ): Promise<WorkspaceMember[]> {
-  await requireRole(db, workspaceId, userId);
+  // Also in a blocked workspace (BER-167): leaving it may need a successor from this list.
+  await requireRole(db, workspaceId, userId, 'viewer', undefined, { allowBlocked: true });
   const rows = await db
     .select({ user: users, member: workspaceMembers, creatorId: workspaces.createdBy })
     .from(workspaceMembers)
@@ -151,7 +152,10 @@ export async function removeMember(
 ): Promise<{ cancelSubscriptionId: string | null; deletedDeckIds: string[] }> {
   return db.transaction(async (tx) => {
     await lockWorkspaceRow(tx, workspaceId);
-    const actorRole = await requireRole(tx, workspaceId, actorId);
+    // Leaving works in a blocked workspace too (BER-167); removing others does not.
+    const actorRole = await requireRole(tx, workspaceId, actorId, 'viewer', undefined, {
+      allowBlocked: actorId === targetId,
+    });
     const target = actorId === targetId ? actorRole : await getRole(tx, workspaceId, targetId);
     if (!target) throw notFound('Diese Person ist nicht Mitglied der Organisation.');
     if (actorId !== targetId) {

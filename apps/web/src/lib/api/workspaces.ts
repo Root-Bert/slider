@@ -169,7 +169,11 @@ export function useRemoveMember(workspaceId: string) {
  * What happens to someone's reviews if they went now (BER-165): linked ones are deleted,
  * uploads pass to the workspace owner. For the warning before; `null` while nobody is asked.
  */
-export const useMemberDeparture = (workspaceId: string, userId: string | null, successor?: string) =>
+export const useMemberDeparture = (
+  workspaceId: string,
+  userId: string | null,
+  successor?: string,
+) =>
   useQuery({
     queryKey: workspaceKeys.departure(workspaceId, userId ?? '', successor ?? null),
     queryFn: () =>

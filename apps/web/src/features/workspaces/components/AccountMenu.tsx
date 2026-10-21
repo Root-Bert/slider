@@ -11,6 +11,7 @@ import {
   IconButton,
   ListRow,
   MenuDivider,
+  MenuHeading,
   MenuItem,
   MicrosoftMark,
   PasskeyMark,
@@ -22,8 +23,9 @@ const MICROSOFT_CONNECT_URL = '/api/auth/microsoft/login';
 
 /**
  * Header avatar with the account menu: who is signed in, "Konto & Anmeldung", "Nutzung" (plan
- * and storage of the organisations), "Einstellungen" (its own page, kept apart from the account), Microsoft connections, sign out – and once, until
- * dismissed, a nudge to add a passkey.
+ * and storage of the organisations), "Einstellungen" (its own page, kept apart from the
+ * account), for the instance admin "Instanz" (dashboard and setup, BER-167), Microsoft
+ * connections, sign out – and once, until dismissed, a nudge to add a passkey.
  */
 export function AccountMenu() {
   const { data: me } = useMe();
@@ -127,6 +129,30 @@ export function AccountMenu() {
           >
             Einstellungen
           </MenuItem>
+          {user.isInstanceAdmin && (
+            <>
+              <MenuDivider />
+              <MenuHeading>Instanz</MenuHeading>
+              <MenuItem
+                icon="settings"
+                onClick={() => {
+                  close();
+                  void navigate(routes.setup());
+                }}
+              >
+                Instanz-Einstellungen
+              </MenuItem>
+              <MenuItem
+                icon="manageAccounts"
+                onClick={() => {
+                  close();
+                  void navigate(routes.instance());
+                }}
+              >
+                Instanz-Dashboard
+              </MenuItem>
+            </>
+          )}
           {microsoftAvailable && (
             <>
               <MenuDivider />

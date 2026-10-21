@@ -19,6 +19,7 @@ export function ButtonLink({
   size = 'md',
   tone,
   weight,
+  glow,
   icon,
   trailingIcon,
   iconSize,
@@ -27,7 +28,10 @@ export function ButtonLink({
   ...props
 }: ButtonLinkProps) {
   return (
-    <Link className={cn(buttonClasses({ variant, size, tone, weight }), className)} {...props}>
+    <Link
+      className={cn(buttonClasses({ variant, size, tone, weight, glow }), className)}
+      {...props}
+    >
       <ButtonContent size={size} icon={icon} trailingIcon={trailingIcon} iconSize={iconSize}>
         {children}
       </ButtonContent>

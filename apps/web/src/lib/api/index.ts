@@ -8,6 +8,7 @@ export * from './decks';
 export * from './folders';
 export * from './google';
 export * from './imports';
+export * from './instance';
 export * from './keys';
 export * from './legal';
 export * from './me';

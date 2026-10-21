@@ -115,6 +115,11 @@ export const users = pgTable('users', {
   inactivityNotices: integer('inactivity_notices').notNull().default(0),
   /** When the last of those went out. */
   inactivityNoticeAt: timestamptz('inactivity_notice_at'),
+  /**
+   * Blocked by the instance admin (BER-167): signs in nowhere, its sessions are gone. Its data
+   * and memberships stay; unblocking lets it in again.
+   */
+  blockedAt: timestamptz('blocked_at'),
 });
 
 /**
@@ -241,8 +246,9 @@ export const sessions = pgTable(
 
 /**
  * How an account signs in: `microsoft` (`<tid>:<oid>`), `google` (Google `sub`), `oidc` (`sub` of
- * the configured issuer), `nextcloud` (`<server>:<user id>` of the organisation's Nextcloud) or `email` (the lower-case address, magic link or code). One account may
- * have several. Passkeys are not identities – they live in `passkeys` and never create accounts.
+ * the configured issuer), `nextcloud` (`<server>:<user id>` of the organisation's Nextcloud) or
+ * `email` (the lower-case address, login link by mail – BER-168). One account may have several.
+ * Passkeys are not identities – they live in `passkeys` and never create accounts.
  */
 export const userIdentities = pgTable(
   'user_identities',
@@ -263,7 +269,7 @@ export const userIdentities = pgTable(
 );
 
 /** `sso`: an organisation's own company login (BER-162), subject `<workspace id>:<sub>`. */
-export type IdentityProvider = 'microsoft' | 'google' | 'oidc' | 'nextcloud' | 'sso';
+export type IdentityProvider = 'microsoft' | 'google' | 'oidc' | 'nextcloud' | 'sso' | 'email';
 
 /**
  * WebAuthn passkeys (discoverable credentials). They sign into an existing account only; the
@@ -301,6 +307,25 @@ export const authChallenges = pgTable('auth_challenges', {
   challenge: text('challenge').notNull(),
   createdAt: createdAt(),
   expiresAt: timestamptz('expires_at').notNull(),
+});
+
+/**
+ * Mailed login links (BER-168, `services/email-login`): 15 minutes, single use, only in the
+ * browser that asked. Only hashes of the link's token and of that browser's key are kept.
+ */
+export const loginLinks = pgTable('login_links', {
+  /** SHA-256 of the token in the link (hex). */
+  tokenHash: text('token_hash').primaryKey(),
+  /** Lower-case address the link was sent to. */
+  email: text('email').notNull(),
+  /** SHA-256 of the signed cookie's key of the browser that asked (hex). */
+  browserHash: text('browser_hash').notNull(),
+  /** From a `/join/<token>` return path: lets invited people sign up. */
+  inviteToken: text('invite_token'),
+  returnTo: text('return_to').notNull(),
+  createdAt: createdAt(),
+  expiresAt: timestamptz('expires_at').notNull(),
+  usedAt: timestamptz('used_at'),
 });
 
 /** A team space: decks belong to a workspace, people to workspaces with a role (BER-129). */
@@ -350,6 +375,16 @@ export const workspaces = pgTable('workspaces', {
   downgradeReason: text('downgrade_reason').$type<DowngradeReason>(),
   /** Reminder mails sent for the current `downgrade_at` (first, 7 days in, 1 day before). */
   downgradeNotices: integer('downgrade_notices').notNull().default(0),
+  /**
+   * Paid without Stripe, granted by the instance admin (BER-167), e.g. paid by invoice. Only
+   * without a running subscription; checkout is closed meanwhile.
+   */
+  planGrantedAt: timestamptz('plan_granted_at'),
+  /**
+   * Blocked by the instance admin (BER-167): nobody opens it, nobody joins; its members can
+   * still leave. Nothing is deleted for it.
+   */
+  blockedAt: timestamptz('blocked_at'),
 });
 
 /** Stripe events already handled – webhooks arrive at least once, some twice (BER-152). */

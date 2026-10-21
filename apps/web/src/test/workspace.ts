@@ -13,5 +13,6 @@ export const billingFixture = (patch: Partial<WorkspaceBilling> = {}): Workspace
   downgradeAt: null,
   downgradeReason: null,
   transfer: null,
+  granted: false,
   ...patch,
 });

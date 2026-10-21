@@ -55,6 +55,11 @@ export const authProvidersSchema = z.object({
    * Firmen-Login" – the address typed finds it (`POST /auth/sso/discover`).
    */
   sso: z.boolean(),
+  /**
+   * "Mit E-Mail fortfahren" (BER-168): a link by mail signs in or creates the account, no
+   * password. Only where the server sends mail (`POST /auth/email/start`).
+   */
+  emailLogin: z.boolean(),
 });
 export type AuthProviders = z.infer<typeof authProvidersSchema>;
 
@@ -82,6 +87,8 @@ export const LOGIN_ERRORS = [
   'sso_domain',
   /** Too many sign-in attempts from this client address; it may try again in a few minutes. */
   'rate_limited',
+  /** The instance admin blocked the account (BER-167). */
+  'account_blocked',
 ] as const;
 export type LoginError = (typeof LOGIN_ERRORS)[number];
 
@@ -91,6 +98,21 @@ export type LoginError = (typeof LOGIN_ERRORS)[number];
  */
 export const loginResultSchema = z.object({ redirectTo: z.string() });
 export type LoginResult = z.infer<typeof loginResultSchema>;
+
+/** `POST /auth/email/start`: mails a login link to the address (BER-168). Always `204`. */
+export const startEmailLoginInputSchema = z.object({
+  email: z.email('Bitte gib eine gültige E-Mail-Adresse ein.').max(254),
+  returnTo: z.string().max(2048).optional(),
+});
+export type StartEmailLoginInput = z.infer<typeof startEmailLoginInputSchema>;
+
+/** `POST /auth/email/confirm`: the token from the mailed link. */
+export const confirmEmailLoginInputSchema = z.object({ token: z.string().min(1).max(200) });
+export type ConfirmEmailLoginInput = z.infer<typeof confirmEmailLoginInputSchema>;
+
+/** Signed in (session cookie set) – `newAccount`: the link just created it. */
+export const emailLoginResultSchema = loginResultSchema.extend({ newAccount: z.boolean() });
+export type EmailLoginResult = z.infer<typeof emailLoginResultSchema>;
 
 // ── Passkeys ────────────────────────────────────────────────────────────────
 
@@ -129,8 +151,8 @@ export type VerifyPasskeyLoginInput = z.infer<typeof verifyPasskeyLoginInputSche
 export const loginIdentitySchema = z.object({
   /** `<provider>:<subject>`. */
   id: z.string(),
-  /** `sso`: an organisation's own company login (BER-162). */
-  provider: z.enum(['microsoft', 'google', 'oidc', 'nextcloud', 'sso']),
+  /** `sso`: an organisation's own company login (BER-162); `email`: login link by mail (BER-168). */
+  provider: z.enum(['microsoft', 'google', 'oidc', 'nextcloud', 'sso', 'email']),
   /** The address the provider reported at the last login. */
   email: z.string().nullable(),
   createdAt: z.iso.datetime(),
@@ -252,6 +274,10 @@ export const workspaceBillingSchema = z.object({
   downgradeReason: downgradeReasonSchema.nullable(),
   /** The billing owner asked this admin to take over paying; effective once they pay. */
   transfer: z.object({ to: personSchema, requestedAt: z.iso.datetime() }).nullable(),
+  /**
+   * Paid granted by the instance admin, without Stripe (BER-167): nothing to pay or manage here.
+   */
+  granted: z.boolean(),
 });
 export type WorkspaceBilling = z.infer<typeof workspaceBillingSchema>;
 
@@ -323,6 +349,11 @@ export const workspaceSchema = z.object({
    * its admins are asked once.
    */
   audiencePending: z.boolean(),
+  /**
+   * Blocked by the instance admin (BER-167): listed so its members know, but it opens nowhere –
+   * only leaving works.
+   */
+  blocked: z.boolean(),
 });
 export type Workspace = z.infer<typeof workspaceSchema>;
 

@@ -11,6 +11,11 @@ export interface SectionProps {
   description?: ReactNode;
   /** Right of the heading, e.g. a count or an action. */
   aside?: ReactNode;
+  /**
+   * `below` on phones: a wide aside (a segmented control) goes under the heading there instead of
+   * squeezing it; from `sm` on it stays to the right.
+   */
+  asideOnPhones?: 'right' | 'below';
   /** `danger`: red heading and a subtle red edge (leave / delete). */
   tone?: 'default' | 'danger';
   /** `compact`: tighter card (gap 16, padding 24) – the onboarding cards. */
@@ -28,6 +33,7 @@ export function Section({
   icon,
   description,
   aside,
+  asideOnPhones = 'right',
   tone = 'default',
   density = 'default',
   className,
@@ -46,7 +52,12 @@ export function Section({
         className,
       )}
     >
-      <header className="flex items-start justify-between gap-4">
+      <header
+        className={cn(
+          'flex items-start justify-between gap-4',
+          asideOnPhones === 'below' && 'max-sm:flex-col max-sm:gap-3',
+        )}
+      >
         <div className="flex min-w-0 flex-col gap-1">
           <h2
             id={headingId}

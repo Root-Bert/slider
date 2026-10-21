@@ -1,6 +1,7 @@
 import { and, lt, notExists, or, eq } from 'drizzle-orm';
 import {
   authChallenges,
+  loginLinks,
   sessions,
   workspaceInvites,
   workspaceMembers,
@@ -21,7 +22,7 @@ import { purgeIfEmpty } from './workspaces/workspaces';
  * old invitations and expired sessions without.
  */
 
-/** Rows nobody needs any more: old invitations, expired sessions and passkey challenges. */
+/** Rows nobody needs any more: old invitations, expired sessions, passkey challenges, login links. */
 export async function purgeStaleRows(deps: AppDeps): Promise<void> {
   const now = deps.clock.now();
   const inviteCutoff = new Date(now.getTime() - INVITE_KEEP_DAYS * DAY_MS);
@@ -43,6 +44,7 @@ export async function purgeStaleRows(deps: AppDeps): Promise<void> {
       ),
     );
   await deps.db.delete(authChallenges).where(lt(authChallenges.expiresAt, now));
+  await deps.db.delete(loginLinks).where(lt(loginLinks.expiresAt, now));
 }
 
 /**

@@ -162,7 +162,11 @@ export async function findDomainWorkspace(
   domain: string,
 ): Promise<WorkspaceRow | null> {
   if (domainJoinOff({ config }) || !isCompanyMailDomain(domain)) return null;
-  const [row] = await db.select().from(workspaces).where(eq(workspaces.joinDomain, domain));
+  // A blocked one (BER-167) takes nobody in: nobody finds it, signs up or logs in through it.
+  const [row] = await db
+    .select()
+    .from(workspaces)
+    .where(and(eq(workspaces.joinDomain, domain), isNull(workspaces.blockedAt)));
   return row ?? null;
 }
 
@@ -212,10 +216,11 @@ export async function joinByDomain(
     if (!(await lockWorkspaceRow(tx, workspaceId))) throw workspaceNotFound();
     if (await getRole(tx, workspaceId, user.id)) return;
     const [row] = await tx
-      .select({ joinDomain: workspaces.joinDomain })
+      .select({ joinDomain: workspaces.joinDomain, blockedAt: workspaces.blockedAt })
       .from(workspaces)
       .where(eq(workspaces.id, workspaceId));
-    if (!row?.joinDomain || row.joinDomain !== domain) {
+    // A blocked organisation (BER-167) takes nobody in.
+    if (!row?.joinDomain || row.joinDomain !== domain || row.blockedAt) {
       throw joinNeedsInvite();
     }
     const pending = await tx
@@ -324,6 +329,16 @@ export function nameFromDomain(domain: string): string {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
+/** Some organisation – a blocked one too – is opened to the domain. */
+async function domainInUse(db: Executor, domain: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: workspaces.id })
+    .from(workspaces)
+    .where(eq(workspaces.joinDomain, domain))
+    .limit(1);
+  return row !== undefined;
+}
+
 /**
  * A new account (not invited) gets an organisation of its own right away – unless the company
  * of its domain already has one, which the onboarding offers to join. A mail provider's address
@@ -338,9 +353,9 @@ export async function foundAtSignUp(deps: AppDeps, user: UserRow): Promise<void>
     isCompanyMailDomain(domain) && !domainJoinOff(deps) && (await domainVerified(deps.db, user));
   const existing = company ? await findDomainWorkspace(deps, domain) : null;
   if (existing && !(await wasRemoved(deps.db, existing.id, user))) return;
-  // Removed from the company's (an earlier account with this address): no offer to join it, so
-  // a private one of their own – the domain is taken.
-  const companyOwn = company && !existing;
+  // Removed from the company's (an earlier account with this address), or the company's is
+  // blocked (BER-167): no offer to join it, so a private one of their own – the domain is taken.
+  const companyOwn = company && !existing && !(await domainInUse(deps.db, domain));
   await deps.db.transaction(async (tx) => {
     const workspace = await createWorkspace(
       tx,

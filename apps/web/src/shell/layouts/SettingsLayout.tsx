@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { To } from 'react-router';
-import { PageHeader, Toast, type ToastMessage } from '@/ui';
+import { cn, PageHeader, Toast, type ToastMessage } from '@/ui';
 import { LegalLinks } from '@/features/legal';
 import { AppHeader } from '../AppHeader';
 import { LogoHeader } from './LogoHeader';
@@ -15,6 +15,10 @@ export interface SettingsLayoutProps {
   leading?: ReactNode;
   /** "← Zurück zu den Reviews" above the title. */
   back?: { to: To; label?: string };
+  /** Right end of the title row, e.g. a link to related settings. */
+  actions?: ReactNode;
+  /** `wide`: a 1280px column with the reviews page's gutters (dashboards); else 720px. */
+  width?: 'default' | 'wide';
   /** Cuts a long title off with an ellipsis (default on: names can be long). */
   truncate?: boolean;
   /** `app`: the member area's `AppHeader`. `logo`: only the logo (setup, before any login). */
@@ -26,8 +30,9 @@ export interface SettingsLayoutProps {
 }
 
 /**
- * Shell of the settings-style pages (account, preferences, workspace settings, setup): dot grid,
- * header, a centred 720px column with the page header and the sections.
+ * Shell of the settings-style pages (account, preferences, workspace settings, setup, the instance
+ * dashboard): dot grid, header, a centred column (720px, or 1280px `wide`) with the page header
+ * and the sections.
  */
 export function SettingsLayout({
   docTitle,
@@ -35,6 +40,8 @@ export function SettingsLayout({
   subtitle,
   leading,
   back,
+  actions,
+  width = 'default',
   truncate = true,
   header = 'app',
   toast,
@@ -46,18 +53,24 @@ export function SettingsLayout({
       <title>{docTitle}</title>
       {logoOnly ? <LogoHeader /> : <AppHeader />}
       <main
-        className={
-          logoOnly
-            ? 'flex flex-1 justify-center px-4 pt-2 pb-16'
-            : 'flex justify-center px-4 pt-2 pb-16'
-        }
+        className={cn(
+          'flex justify-center px-4 pt-2 pb-16',
+          logoOnly && 'flex-1',
+          width === 'wide' && 'md:px-14',
+        )}
       >
-        <div className="flex w-full max-w-[720px] flex-col gap-6">
+        <div
+          className={cn(
+            'flex w-full flex-col gap-6',
+            width === 'wide' ? 'max-w-[1280px]' : 'max-w-[720px]',
+          )}
+        >
           <PageHeader
             title={title}
             subtitle={subtitle}
             leading={leading}
             back={back}
+            actions={actions}
             truncate={truncate}
           />
           {children}

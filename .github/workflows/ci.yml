@@ -5,9 +5,9 @@ name: CI
 # smoke-tested. No image is published: self-hosters build it from their checkout
 # (docs/self-hosting.md).
 #
-# Changes only to the website (apps/site, which deploy-website.yml checks and builds itself) or
-# to Markdown no code reads start no run. README.md and docs/self-hosting.md are not on the list:
-# test/self-hosting.test.ts checks them.
+# Changes only to the website (apps/site, which deploy-website.yml checks and builds itself), to
+# the logo files (brand) or to Markdown no code reads start no run. README.md and
+# docs/self-hosting.md are not on the list: test/self-hosting.test.ts checks them.
 
 on:
   push:
@@ -15,11 +15,13 @@ on:
     paths-ignore:
       - apps/site/**
       - apps/web/design-system.md
+      - brand/**
       - packages/pptx/test/corpus/README.md
   pull_request:
     paths-ignore:
       - apps/site/**
       - apps/web/design-system.md
+      - brand/**
       - packages/pptx/test/corpus/README.md
   workflow_dispatch:
 

@@ -3,7 +3,12 @@ import type { DeckPermissions, Viewer, WorkspaceRole } from '@slider/shared';
 import type { Executor } from '../db/client';
 import { deckAccessGrants, decks, type DeckRow } from '../db/schema';
 import { forbidden, notFound } from '../http/errors';
-import { deckPermissions, getRole, rolesOf } from '../services/workspaces/roles';
+import {
+  deckPermissions,
+  membership,
+  rolesOf,
+  workspaceBlocked,
+} from '../services/workspaces/roles';
 
 /** `view` ⊂ `comment` ⊂ `own` (= manage: rename, delete, share, new versions). */
 export type DeckRight = 'view' | 'comment' | 'own';
@@ -74,10 +79,10 @@ export interface DeckAccessDeps {
  * Loads a deck the viewer may act on, with their permissions, or throws.
  * Accounts that are not members of the deck's workspace get 404 (no existence leak), and so do
  * members a restricted deck keeps out ({@link passesRestriction}); members without the right
- * get 403. There are no guests (only members see decks). The workspace alone decides – also
- * for a deck linked from OneDrive, SharePoint, Nextcloud or Google Drive: Slider reads such a
- * file with the account of whoever linked it, never with the viewer's (BER-165). Narrowing it
- * is "Zugriff einschränken".
+ * get 403, and so does everyone in a blocked workspace (BER-167). There are no guests (only
+ * members see decks). The workspace alone decides – also for a deck linked from OneDrive,
+ * SharePoint, Nextcloud or Google Drive: Slider reads such a file with the account of whoever
+ * linked it, never with the viewer's (BER-165). Narrowing it is "Zugriff einschränken".
  */
 export async function deckAccess(
   { db }: DeckAccessDeps,
@@ -87,8 +92,10 @@ export async function deckAccess(
 ): Promise<{ deck: DeckRow; permissions: DeckPermissions }> {
   const [deck] = await db.select().from(decks).where(eq(decks.id, deckId));
   if (!deck) throw deckNotFound();
-  const role = await getRole(db, deck.workspaceId, viewer.author.id);
-  if (!role) throw deckNotFound();
+  const member = await membership(db, deck.workspaceId, viewer.author.id);
+  if (!member) throw deckNotFound();
+  if (member.blocked) throw workspaceBlocked();
+  const { role } = member;
   if (!(await passesRestriction(db, deck, viewer.author.id, role))) throw deckNotFound();
   const permissions = deckPermissions(role, deck.ownerId, viewer.author.id);
   if (right === 'own' && !permissions.canManage) {

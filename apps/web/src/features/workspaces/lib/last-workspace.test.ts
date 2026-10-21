@@ -33,4 +33,10 @@ describe('pickWorkspace', () => {
     expect(pickWorkspace([ws('a')], null)?.id).toBe('a');
     expect(pickWorkspace([], 'a')).toBeNull();
   });
+
+  it('skips blocked workspaces unless nothing else is left (BER-167)', () => {
+    const blocked = { id: 'b', blocked: true } as Workspace;
+    expect(pickWorkspace([blocked, ws('a')], 'b')?.id).toBe('a');
+    expect(pickWorkspace([blocked], null)?.id).toBe('b');
+  });
 });

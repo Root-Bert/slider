@@ -26,6 +26,8 @@ export const routes = {
     workspaceId ? `/nutzung?organisation=${encodeURIComponent(workspaceId)}` : '/nutzung',
   /** Logins, mail and sign-up of a self-hosted instance (instance admin). */
   setup: () => '/einrichtung',
+  /** The instance admin's dashboard: numbers, organisations, accounts (BER-167). */
+  instance: () => '/instanz',
   /** Privacy policy and imprint of the instance (BER-141). */
   privacy: () => '/datenschutz',
   imprint: () => '/impressum',

@@ -11,19 +11,19 @@ import { person } from '~/lib/people';
 
 /**
  * Product | Multiplayer: one live room instead of three cards. The viewer window (thumbnail rail +
- * slide) plays a 12 s loop: Paul points around the Gantt while Anna and Neven work on it, clicks
+ * slide) plays a 12 s loop: Thomas points around the Gantt while Anna and Neven work on it, clicks
  * the next thumbnail and your view follows him to the chart, where Carolin is already reading and
- * Marianne, just joined, comes along – Paul's avatar (and yours, and hers) hop along the rail.
+ * Marianne, just joined, comes along – Thomas's avatar (and yours, and hers) hop along the rail.
  * Beside it an invite is typed and sent; Marianne joins and lands in the room's avatar stack along
  * a trajectory.
  */
-const paul = accentColor(person('Paul').color);
-const here = [person('Paul'), person('Anna'), person('Carolin'), person('Neven')];
+const thomas = accentColor(person('Thomas').color);
+const here = [person('Thomas'), person('Anna'), person('Carolin'), person('Neven')];
 const rail = ['Title', 'Gantt', 'Chart', 'Matrix'] as const;
 // Rail geometry (stage px): thumbs 120 × 67.5, 12 px apart, from y = 60.
 const THUMB_STEP = 79.5;
 const thumbTop = (i: number) => 60 + i * THUMB_STEP;
-// Who rests where on the rail; Paul and you travel separately (see .mp-hop).
+// Who rests where on the rail; Thomas and you travel separately (see .mp-hop).
 const resting = [
   { at: 1, name: 'Anna', left: 106 },
   { at: 1, name: 'Neven', left: 92 },
@@ -76,7 +76,7 @@ const notes = [
           <div
             class="stage absolute top-0 left-0 h-[480px] w-[880px] origin-top-left overflow-visible rounded-[20px] bg-surface-1 ring-hairline"
             style="box-shadow: 0 30px 80px rgb(0 0 0 / 0.5), 0 0 60px rgb(0 224 255 / 0.06)"
-            aria-label="Paul presents the migration plan; Anna, Neven, Carolin and Marianne work along and you follow Paul."
+            aria-label="Thomas presents the migration plan; Anna, Neven, Carolin and Marianne work along and you follow Thomas."
             role="img"
           >
             <!-- Top bar: deck, who is here, follow state. -->
@@ -111,11 +111,11 @@ const notes = [
                 </span>
               ))
             }
-            <!-- The current slide's ring plus Paul and you: they move together when Paul switches. -->
+            <!-- The current slide's ring plus Thomas and you: they move together when Thomas switches. -->
             <div class="mp-hop absolute left-3" style={`top: ${thumbTop(1)}px; --step: ${THUMB_STEP}px`}>
-              <span class="absolute top-0 left-0 h-[67.5px] w-[120px] rounded-thumb ring-2" style={`--tw-ring-color: ${paul}`}></span>
+              <span class="absolute top-0 left-0 h-[67.5px] w-[120px] rounded-thumb ring-2" style={`--tw-ring-color: ${thomas}`}></span>
               <span class="absolute top-[44px] left-[78px] flex items-center">
-                <Avatar author={person('Paul')} size={18} nativeTitle={false} />
+                <Avatar author={person('Thomas')} size={18} nativeTitle={false} />
                 <Avatar author={person('Gesa')} size={18} nativeTitle={false} className="-ml-1 rounded-full ring-2 ring-canvas" />
                 <span class="mp-joiner-rail inline-flex">
                   <Avatar author={person('Marianne')} size={18} nativeTitle={false} className="-ml-1 rounded-full ring-2 ring-canvas" />
@@ -123,17 +123,17 @@ const notes = [
               </span>
             </div>
 
-            <!-- Your view: whatever Paul looks at. -->
+            <!-- Your view: whatever Thomas looks at. -->
             <div class="absolute top-[60px] left-[148px] h-[405px] w-[720px]">
               <Slide name="Gantt" width={720} class="mp-a absolute top-0 left-0" />
               <Slide name="Chart" width={720} class="mp-b absolute top-0 left-0" />
 
-              <span class="absolute -inset-1 rounded-[8px] border-2" style={`border-color: ${paul}`} aria-hidden="true"></span>
+              <span class="absolute -inset-1 rounded-[8px] border-2" style={`border-color: ${thomas}`} aria-hidden="true"></span>
               <span
                 class="absolute -top-1 -left-1 -translate-y-full rounded-t-[6px] px-2 py-0.5 text-[11px] leading-4 font-semibold text-black"
-                style={`background: ${paul}`}
+                style={`background: ${thomas}`}
               >
-                Following Paul
+                Following Thomas
               </span>
 
               <!-- The others work on their slide: you only see them while you are there too. -->
@@ -143,15 +143,15 @@ const notes = [
                 ))
               }
 
-              <!-- Paul, with the motion trail of the website. -->
+              <!-- Thomas, with the motion trail of the website. -->
               {
                 trail.map(({ lag, o }) => (
-                  <span class="mp-paul absolute top-0 left-0" style={`--lag: ${lag}ms; opacity: ${o}`} aria-hidden="true">
-                    <Cursor name="Paul" />
+                  <span class="mp-thomas absolute top-0 left-0" style={`--lag: ${lag}ms; opacity: ${o}`} aria-hidden="true">
+                    <Cursor name="Thomas" />
                   </span>
                 ))
               }
-              <span class="mp-paul absolute top-0 left-0"><Cursor name="Paul" /></span>
+              <span class="mp-thomas absolute top-0 left-0"><Cursor name="Thomas" /></span>
             </div>
           </div>
         </div>
@@ -236,7 +236,7 @@ const notes = [
     scale: var(--stage-scale, 1);
   }
 
-  /* Final state without motion: Gantt, Paul resting on it, Marianne already in. */
+  /* Final state without motion: Gantt, Thomas resting on it, Marianne already in. */
   .mp-b,
   .mp-on-b {
     opacity: 0;
@@ -253,7 +253,7 @@ const notes = [
   .mp-marianne {
     translate: 470px 250px;
   }
-  .mp-paul {
+  .mp-thomas {
     translate: 420px 140px;
   }
   .mp-count::before {
@@ -267,9 +267,9 @@ const notes = [
     --loop: 12s;
   }
 
-  /* Follow: Paul points around, clicks the chart's thumbnail, your view switches with him. */
-  .js .is-in .mp-paul {
-    animation: mp-paul var(--loop) var(--ease-symmetric, ease-in-out) infinite;
+  /* Follow: Thomas points around, clicks the chart's thumbnail, your view switches with him. */
+  .js .is-in .mp-thomas {
+    animation: mp-thomas var(--loop) var(--ease-symmetric, ease-in-out) infinite;
     animation-delay: var(--lag, 0ms);
   }
   .js .is-in .mp-a {
@@ -305,7 +305,7 @@ const notes = [
     animation: mp-hop var(--loop) var(--ease-emphasized, ease-out) infinite;
   }
 
-  @keyframes mp-paul {
+  @keyframes mp-thomas {
     0% { translate: 420px 140px; }
     12% { translate: 520px 205px; }
     24% { translate: 300px 262px; }
@@ -430,7 +430,7 @@ const notes = [
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .js .is-in :is(.mp-paul, .mp-a, .mp-b, .mp-worker, .mp-hop, .mp-type, .mp-caret, .mp-send, .mp-toast, .mp-joiner, .mp-joiner-rail, .mp-sat),
+    .js .is-in :is(.mp-thomas, .mp-a, .mp-b, .mp-worker, .mp-hop, .mp-type, .mp-caret, .mp-send, .mp-toast, .mp-joiner, .mp-joiner-rail, .mp-sat),
     .js .is-in .mp-count::before {
       animation: none;
     }

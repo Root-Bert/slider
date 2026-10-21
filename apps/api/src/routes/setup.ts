@@ -22,13 +22,14 @@ import {
   stripEmpty,
   withStoredSettings,
 } from '../config';
-import { passkeys, users } from '../db/schema';
+import { passkeys } from '../db/schema';
 import type { AppDeps, InstanceControl } from '../deps';
 import { ApiError, badRequest, forbidden, notFound } from '../http/errors';
 import { clientAddress, rateLimit } from '../http/rate-limit';
 import { readJson } from '../http/validate';
 import type { Clock } from '../clock';
 import { claimInstance } from '../services/accounts';
+import { isInstanceAdmin } from '../services/instance-admin';
 import {
   instanceClaimed,
   keepSmtpPassword,
@@ -93,13 +94,7 @@ export function setupRoutes(deps: AppDeps) {
    */
   const authorized = async (c: Context<OptionalViewerEnv>, claimed: boolean) => {
     if (!claimed) return claimant(c) === null && tokenGiven(c);
-    const current = c.var.viewer;
-    if (current?.kind !== 'owner') return false;
-    const [user] = await deps.db
-      .select({ admin: users.isInstanceAdmin })
-      .from(users)
-      .where(eq(users.id, current.author.id));
-    return user?.admin === true;
+    return isInstanceAdmin(deps.db, c.var.viewer);
   };
 
   /** Whether the settings as stored now (before this save) offer a login. */

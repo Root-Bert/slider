@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   formatBytes,
   formatDateTime,
+  formatDay,
   formatDuration,
   formatFileSize,
   formatRelativeTime,
@@ -87,5 +88,13 @@ describe('formatDuration', () => {
     expect(formatDuration(83_400)).toBe('1:23');
     expect(formatDuration(300_000)).toBe('5:00');
     expect(formatDuration(-1)).toBe('0:00');
+  });
+});
+
+describe('formatDay', () => {
+  it('names the day, with the year only outside the current one', () => {
+    const now = new Date(2026, 9, 21);
+    expect(formatDay(new Date(2026, 9, 3), now)).toBe('3. Okt.');
+    expect(formatDay(new Date(2025, 9, 3).toISOString(), now)).toBe('3. Okt. 2025');
   });
 });

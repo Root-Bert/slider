@@ -53,6 +53,7 @@ const workspace: Workspace = {
   locked: false,
   joinDomain: null,
   audiencePending: true,
+  blocked: false,
 };
 
 const choice = (name: RegExp) => screen.getByRole('button', { name, hidden: true });
