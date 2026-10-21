@@ -1,0 +1,120 @@
+---
+import { Icon } from '@/ui/Icon';
+import SectionMark from '~/components/SectionMark.astro';
+import Slide, { type SlideName } from '~/components/slides/Slide.astro';
+import Pin from './Pin.astro';
+
+/**
+ * One comment type of "Comment Features Detail for each": copy with a section mark, headline,
+ * text and check bullets on one side; on the other a 720 × 340 canvas with a slide, its pin, a
+ * connector lane and the example comment (slot, placed absolutely on the canvas).
+ */
+interface Props {
+  mark: string;
+  accent: string;
+  title: string;
+  copy: string;
+  bullets: string[];
+  slide: SlideName;
+  /** Connector lane on the canvas, in canvas px (Figma vector bounds + path). */
+  connector: { x: number; y: number; w: number; h: number; d: string };
+  pin?: 'app' | 'powerpoint';
+  /** Visual left, text right. */
+  reverse?: boolean;
+}
+
+const { mark, accent, title, copy, bullets, slide, connector, pin = 'app', reverse = false } = Astro.props;
+---
+
+<div
+  class:list={[
+    'flex flex-col gap-10 py-8 xl:flex-row xl:items-center xl:gap-18',
+    reverse && 'xl:flex-row-reverse',
+  ]}
+  data-section
+>
+  <div class="flex min-w-0 flex-1 flex-col items-start gap-4.5">
+    <SectionMark label={mark} accent={accent} />
+    <h3 class="text-4xl leading-[1.04] font-black tracking-[-0.03em] text-fg md:text-5xl" data-reveal>
+      {title}
+    </h3>
+    <p class="max-w-[480px] text-lg leading-7 text-fg-muted" data-reveal style="--i: 1">{copy}</p>
+    <ul class="flex flex-col gap-2.5" data-reveal style="--i: 2">
+      {
+        bullets.map((bullet) => (
+          <li class="flex items-center gap-2.5 text-[15px] text-fg">
+            <Icon name="check" size={18} className="text-sage" />
+            {bullet}
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+
+  <div class="pb-canvas-fit shrink-0" data-reveal style="--i: 1">
+    <div class="pb-canvas relative h-[340px] w-[720px] overflow-hidden rounded-[24px] bg-surface-1 ring-hairline">
+      <svg
+        class="absolute overflow-visible"
+        style={`left: ${connector.x}px; top: ${connector.y}px; width: ${connector.w}px; height: ${Math.max(connector.h, 1)}px`}
+        viewBox={`0 0 ${connector.w} ${Math.max(connector.h, 1)}`}
+        aria-hidden="true"
+      >
+        <path
+          d={connector.d}
+          fill="none"
+          stroke={accent}
+          stroke-width="2"
+          stroke-linejoin="round"
+          pathLength="1"
+          data-draw
+          style="--i: 2"
+        ></path>
+      </svg>
+      <div class="absolute top-[91.25px] left-10"><Slide name={slide} width={280} /></div>
+      <Pin
+        accent={accent}
+        powerpoint={pin === 'powerpoint'}
+        class={pin === 'powerpoint' ? 'top-[135.25px] left-[240px]' : 'top-[135.25px] left-[240px]'}
+      />
+      <slot />
+    </div>
+  </div>
+</div>
+
+<style>
+  /* The canvas keeps its 720 px drawing and is zoomed down on narrow screens. */
+  @media (max-width: 879px) {
+    .pb-canvas-fit {
+      zoom: 0.85;
+    }
+  }
+  @media (max-width: 767px) {
+    .pb-canvas-fit {
+      zoom: 0.62;
+    }
+  }
+  @media (max-width: 479px) {
+    .pb-canvas-fit {
+      zoom: 0.47;
+    }
+  }
+
+  :global(.js) .pb-canvas :global([data-pop]) {
+    opacity: 0;
+    scale: 0.2;
+    transition:
+      opacity 120ms ease,
+      scale 450ms var(--ease-overshoot);
+    transition-delay: 700ms;
+  }
+  :global(.js .is-in) .pb-canvas :global([data-pop]) {
+    opacity: 1;
+    scale: 1;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.js) .pb-canvas :global([data-pop]) {
+      scale: 1;
+      transition: opacity 300ms linear;
+    }
+  }
+</style>

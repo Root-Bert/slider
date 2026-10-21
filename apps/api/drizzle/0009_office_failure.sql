@@ -1,0 +1,1 @@
+ALTER TABLE "revisions" ADD COLUMN "office_failure" text;

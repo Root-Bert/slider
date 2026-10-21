@@ -1,0 +1,99 @@
+---
+import Highlight from '~/components/Highlight.astro';
+import SectionMark from '~/components/SectionMark.astro';
+import Starfield from '~/components/Starfield.astro';
+import Tag from '~/components/Tag.astro';
+import Terminal from './a/Terminal.astro';
+import { REPO_URL, asset } from '~/lib/links';
+
+/**
+ * Product | Open Source: the self-hosting command beside the repository's top level, under a
+ * corner orbit.
+ */
+const files = [
+  { path: 'apps/api', note: 'API, auth, sync and rendering', folder: true },
+  { path: 'apps/web', note: 'Viewer and review interface', folder: true },
+  { path: 'packages/shared', note: 'Shared types and theme', folder: true },
+  { path: 'deploy', note: 'Docker and compose files', folder: true },
+  { path: 'docs', note: 'Self-hosting guide', folder: true },
+  { path: 'Dockerfile', note: 'One image for everything', folder: false },
+  { path: 'README.md', note: 'Start here', folder: false },
+];
+const file = (name: string) => asset(`product-a/${name}`);
+const yellow = 'var(--color-accent-yellow)';
+---
+
+<section class="relative isolate overflow-hidden" data-section>
+  <Starfield src="product-a/os-starfield.svg" />
+  <!-- Source orbit: arcs of r220 / r300 / r380 around a centre beyond the top-right corner. -->
+  <div class="pointer-events-none absolute inset-0 -z-10 mx-auto hidden max-w-[1440px] lg:block" aria-hidden="true">
+    <div class="absolute top-[-300px] left-[1300px] size-[440px]">
+      <img src={file('os-orbit-r220.svg')} alt="" class="absolute top-1/2 left-0 h-1/2 w-1/2" />
+    </div>
+    <div class="absolute top-[-380px] left-[1220px] size-[600px]">
+      <img src={file('os-orbit-r300.png')} alt="" class="absolute top-1/2 left-0 h-1/2 w-1/2" />
+    </div>
+    <div class="absolute top-[-460px] left-[1140px] size-[760px]">
+      <img src={file('os-orbit-r380.svg')} alt="" class="absolute top-1/2 left-0 h-1/2 w-1/2" />
+    </div>
+    <div class="absolute top-[-380px] left-[1220px] size-[600px]">
+      <div class="absolute inset-[71.18%_68.31%_3.51%_4.76%]">
+        <img src={file('os-trajectory.svg')} alt="" class="block size-full max-w-none" />
+      </div>
+    </div>
+    <div class="absolute top-[43.23px] left-[1244.05px] size-[9px]">
+      <div class="absolute inset-[-111.11%]">
+        <img src={file('os-satellite.svg')} alt="" class="block size-full max-w-none" />
+      </div>
+    </div>
+  </div>
+
+  <div class="mx-auto flex max-w-[1440px] flex-col gap-12 px-4 pt-24 pb-4 md:px-16 lg:flex-row lg:gap-16 lg:pt-32">
+    <div class="flex w-full flex-col gap-6 lg:w-[460px] lg:shrink-0">
+      <SectionMark label="Open source" accent={yellow} />
+      <h2 class="text-[clamp(36px,4.6vw,52px)] leading-[1.12] font-bold tracking-[-0.03em] text-fg" data-reveal>
+        Nothing to hide:<br /><Highlight by="Lara">open source.</Highlight>
+      </h2>
+      <p class="max-w-[440px] text-[17px] leading-[1.55] text-fg-muted" data-reveal style="--i: 2">
+        Fully open source. Run it on your own server and adapt it.
+      </p>
+      <Terminal
+        title="self-hosting"
+        glow="255 208 0"
+        i={3}
+        lines={[
+          '$ git clone https://github.com/Root-Bert/slider',
+          '$ cd slider/deploy && cp .env.example .env',
+          '$ docker compose up -d --build',
+          'Slider is running on your domain',
+          'Open the setup link from the log to finish',
+        ]}
+      />
+    </div>
+
+    <a
+      href={REPO_URL}
+      class="flex w-full min-w-0 flex-col overflow-hidden rounded-[20px] lg:w-auto lg:flex-1 lg:self-start bg-glass ring-hairline backdrop-blur-md transition-colors hover:bg-glass-hover"
+      data-reveal
+      style="--i: 4"
+    >
+      <div class="flex items-center gap-3 border-b border-hairline px-6 py-5">
+        <p class="text-lg font-semibold text-fg">root-bert / slider</p>
+        <Tag label="Public" accent={yellow} />
+      </div>
+      {
+        files.map((entry) => (
+          <div class="flex items-center gap-4 border-b border-hairline px-6 py-[13px] last:border-b-0">
+            {entry.folder ? (
+              <span class="h-[11px] w-3.5 shrink-0 rounded-[2px] bg-accent-yellow/80" />
+            ) : (
+              <span class="size-3.5 shrink-0 rounded-[3px] border-[1.5px] border-fg-subtle" />
+            )}
+            <p class="w-[140px] shrink-0 font-mono text-sm text-fg sm:w-[220px]">{entry.path}</p>
+            <p class="min-w-0 flex-1 truncate text-sm text-fg-subtle">{entry.note}</p>
+          </div>
+        ))
+      }
+    </a>
+  </div>
+</section>

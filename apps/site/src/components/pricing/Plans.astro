@@ -1,0 +1,302 @@
+---
+import Button from '~/components/Button.astro';
+import Tag from '~/components/Tag.astro';
+import { APP_URL, CONTACT_URL, asset } from '~/lib/links';
+
+/**
+ * Three plans per workspace, never per seat: Free, Team (€79/month) and Enterprise, under a
+ * wide orbit; the fine print says nothing gets deleted over a limit.
+ */
+const plans = [
+  {
+    name: 'Free',
+    price: '€0',
+    unit: 'forever',
+    pitch: 'For small teams trying Slider out.',
+    cta: { label: 'Start for free', href: `${APP_URL}/`, variant: 'secondary' as const },
+    note: 'No payment method needed.',
+    lead: 'Everything to get started:',
+    features: ['Up to 5 people', '3 decks', '2 GB storage', 'All review tools', 'Live collaboration'],
+    look: 'bg-glass ring-hairline backdrop-blur-md',
+    check: 'check.svg',
+  },
+  {
+    name: 'Team',
+    price: '€79',
+    unit: 'per month',
+    pitch: undefined,
+    tag: 'Most teams',
+    cta: { label: 'Coming soon', href: `${APP_URL}/`, variant: 'primary' as const },
+    note: 'Start with Free today, upgrading comes soon.',
+    lead: 'Everything in Free, plus:',
+    features: ['Up to 100 people', 'Unlimited decks', '100 GB storage', 'Invoices for your accounting'],
+    look: 'bg-glass-elevated ring-hairline-strong pricing-glow',
+    check: 'check-bright.svg',
+  },
+  {
+    name: 'Enterprise',
+    price: 'Custom',
+    unit: 'per contract',
+    pitch: 'For organisations with more than 100 people or their own requirements.',
+    cta: { label: 'Contact us', href: CONTACT_URL, variant: 'secondary' as const },
+    note: 'We set it up together with you.',
+    lead: 'Everything in Team, plus:',
+    features: [
+      'More than 100 people',
+      'Storage sized to your team',
+      'Help with self-hosting',
+      'Contract and invoice billing',
+    ],
+    look: 'bg-glass-elevated ring-hairline-strong shadow-[0_0_120px_rgb(255_255_255/0.05),0_0_40px_rgb(255_255_255/0.1)]',
+    check: 'check-bright.svg',
+  },
+];
+const src = (name: string) => asset(`pricing/${name}`);
+---
+
+<section class="relative isolate flex flex-col items-center gap-8 overflow-hidden px-4 pt-14 pb-6 md:px-16" data-section>
+  <!-- Plan orbit: the upper halves of three wide rings, the sage trajectory and its satellite. -->
+  <div class="pointer-events-none absolute top-0 left-1/2 -z-10 hidden h-[700px] w-[1440px] -translate-x-1/2 lg:block" aria-hidden="true">
+    <img src={src('orbit-r500.svg')} alt="" class="absolute top-[280px] left-[220px] h-[500px] w-[1000px] max-w-none" />
+    <img src={src('orbit-r580.png')} alt="" class="absolute top-[200px] left-[140px] h-[580px] w-[1160px] max-w-none" />
+    <img src={src('orbit-r660.svg')} alt="" class="absolute top-[120px] left-[60px] h-[660px] w-[1320px] max-w-none" />
+    <div class="absolute top-[200px] left-[140px] size-[1160px]">
+      <div class="absolute inset-[15.77%_86.35%_59.34%_0.89%]">
+        <img src={src('trajectory.svg')} alt="" class="block size-full max-w-none" />
+      </div>
+    </div>
+    <div class="absolute top-[378.46px] left-[292.7px] size-[9px]">
+      <div class="absolute inset-[-111.11%]">
+        <img src={src('satellite.svg')} alt="" class="block size-full max-w-none" />
+      </div>
+    </div>
+  </div>
+  <img src={src('plans-starfield.svg')} alt="" aria-hidden="true" class="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[700px] w-full object-cover" />
+
+  <!-- One grid row per card part, shared through subgrid, so prices, buttons, dividers and lists line up. -->
+  <div class="grid w-full max-w-[1248px] gap-6 lg:grid-cols-3">
+    {
+      plans.map((plan, i) => (
+        <div class="flex flex-col lg:row-span-6 lg:grid lg:grid-rows-subgrid" data-reveal style={`--i: ${i === 0 ? 0 : 1.5}`}>
+          <div
+            class:list={[
+              'plan group relative flex flex-col gap-6 overflow-hidden rounded-[24px] p-8 lg:row-span-6 lg:grid lg:grid-rows-subgrid',
+              plan.look,
+              plan.tag && 'plan-featured',
+            ]}
+            data-plan
+          >
+            <div class="plan-light pointer-events-none absolute inset-0 rounded-[inherit]" aria-hidden="true" />
+            <div class="plan-edge pointer-events-none absolute inset-0 rounded-[inherit]" aria-hidden="true" />
+            <div class="flex items-center justify-between">
+              <h2 class="text-xl font-semibold tracking-[-0.01em] text-fg">{plan.name}</h2>
+              {plan.tag && <Tag label={plan.tag} accent="var(--color-sage)" />}
+            </div>
+            <p class="flex flex-wrap items-baseline gap-2.5">
+              <span class="plan-price text-[64px] leading-none font-black tracking-[-0.03em] text-fg">{plan.price}</span>
+              <span class="text-sm text-fg-subtle">{plan.unit}</span>
+            </p>
+            <p class="text-[15px] text-fg-muted">
+              {plan.pitch ?? (
+                <>
+                  One flat price, not per seat. With 100 people that's just{' '}
+                  <strong class="font-semibold text-white">€0.79 per person</strong>.
+                </>
+              )}
+            </p>
+            <div class="flex flex-col items-center gap-2.5">
+              <Button href={plan.cta.href} variant={plan.cta.variant} class="plan-cta relative w-full overflow-hidden">
+                <span class="relative">{plan.cta.label}</span>
+                <span class="plan-arrow relative" aria-hidden="true">→</span>
+              </Button>
+              <p class="text-center text-sm text-fg-subtle">{plan.note}</p>
+            </div>
+            <div class="h-px w-full bg-hairline-strong" />
+            <ul class="flex flex-col gap-3">
+              <li class="text-sm text-fg-subtle">{plan.lead}</li>
+              {plan.features.map((feature, f) => (
+                <li class="plan-feature flex items-center gap-2.5 text-[15px] text-fg" style={`--f: ${f}`}>
+                  <img src={src(plan.check)} alt="" width="18" height="18" class="plan-check size-[18px]" />
+                  {feature}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      ))
+    }
+  </div>
+
+  <div class="flex w-full max-w-[902px] items-center gap-3 rounded-panel bg-surface-1 px-5 py-4 ring-hairline" data-reveal style="--i: 6">
+    <span class="size-2 shrink-0 rounded-full bg-success" aria-hidden="true"></span>
+    <p class="flex-1 text-sm text-fg-muted">
+      Over a limit? Nothing gets deleted. You can still read, export and clean up, you just cannot create new things until you upgrade.
+    </p>
+  </div>
+</section>
+
+<script>
+  // The spotlight follows the pointer: each card gets its pointer position as --mx/--my.
+  for (const card of document.querySelectorAll<HTMLElement>('[data-plan]')) {
+    card.addEventListener('pointermove', (event) => {
+      const box = card.getBoundingClientRect();
+      card.style.setProperty('--mx', `${event.clientX - box.left}px`);
+      card.style.setProperty('--my', `${event.clientY - box.top}px`);
+    });
+  }
+</script>
+
+<style>
+  .pricing-glow {
+    box-shadow:
+      inset 0 0 0 1px var(--color-hairline-strong),
+      0 0 160px rgb(255 255 255 / 0.1),
+      0 0 64px rgb(255 255 255 / 0.22),
+      0 0 20px rgb(255 255 255 / 0.14);
+  }
+
+  /* Hover: the card lifts, a soft light follows the pointer and the rim catches it. */
+  .plan {
+    --mx: 50%;
+    --my: 0%;
+    transition:
+      translate 500ms var(--ease-emphasized),
+      box-shadow 500ms var(--ease-emphasized);
+  }
+  .plan:hover {
+    translate: 0 -6px;
+    box-shadow:
+      inset 0 0 0 1px rgb(255 255 255 / 0.18),
+      0 24px 64px rgb(0 0 0 / 0.5),
+      0 0 80px rgb(255 255 255 / 0.08);
+  }
+  .plan-featured:hover {
+    box-shadow:
+      inset 0 0 0 1px var(--color-hairline-strong),
+      0 24px 64px rgb(0 0 0 / 0.5),
+      0 0 200px color-mix(in srgb, var(--color-sage) 22%, transparent),
+      0 0 72px rgb(255 255 255 / 0.28),
+      0 0 24px rgb(255 255 255 / 0.18);
+  }
+
+  .plan-light {
+    background: radial-gradient(420px circle at var(--mx) var(--my), rgb(255 255 255 / 0.07), transparent 60%);
+    opacity: 0;
+    transition: opacity 400ms ease-out;
+  }
+  .plan-featured .plan-light {
+    background: radial-gradient(
+      460px circle at var(--mx) var(--my),
+      color-mix(in srgb, var(--color-sage) 14%, transparent),
+      transparent 60%
+    );
+  }
+
+  /* A 1 px rim lit around the pointer, masked to the border. */
+  .plan-edge {
+    padding: 1px;
+    background: radial-gradient(260px circle at var(--mx) var(--my), rgb(255 255 255 / 0.55), transparent 70%);
+    mask:
+      linear-gradient(#000 0 0) content-box exclude,
+      linear-gradient(#000 0 0);
+    opacity: 0;
+    transition: opacity 400ms ease-out;
+  }
+  .plan-featured .plan-edge {
+    background: radial-gradient(300px circle at var(--mx) var(--my), var(--color-sage), transparent 70%);
+  }
+  .plan:hover .plan-light,
+  .plan:hover .plan-edge {
+    opacity: 1;
+  }
+
+  /* The featured plan wears a sage line along its top edge. */
+  .plan-featured::before {
+    content: '';
+    position: absolute;
+    inset: 0 15% auto;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--color-sage), transparent);
+    opacity: 0.8;
+    transition:
+      inset 600ms var(--ease-emphasized),
+      opacity 600ms;
+  }
+  .plan-featured:hover::before {
+    inset: 0 4% auto;
+    opacity: 1;
+  }
+
+  .plan-price {
+    transition: text-shadow 500ms ease-out;
+  }
+  .plan:hover .plan-price {
+    text-shadow: 0 0 32px rgb(255 255 255 / 0.35);
+  }
+
+  /* CTA: the arrow steps forward and a sheen runs across the button. */
+  .plan-cta {
+    gap: 0;
+  }
+  .plan-arrow {
+    display: inline-block;
+    max-width: 0;
+    margin-left: 0;
+    opacity: 0;
+    translate: -6px 0;
+    transition:
+      max-width 400ms var(--ease-emphasized),
+      margin-left 400ms var(--ease-emphasized),
+      opacity 300ms,
+      translate 400ms var(--ease-emphasized);
+  }
+  .plan:hover .plan-arrow {
+    max-width: 1.25em;
+    margin-left: 0.5rem;
+    opacity: 1;
+    translate: 0 0;
+  }
+  .plan-cta::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(105deg, transparent 35%, rgb(255 255 255 / 0.45) 50%, transparent 65%);
+    translate: -110% 0;
+    pointer-events: none;
+  }
+  .plan:hover .plan-cta::after {
+    translate: 110% 0;
+    transition: translate 900ms var(--ease-emphasized);
+  }
+  .plan:not(.plan-featured) .plan-cta::after {
+    background: linear-gradient(105deg, transparent 35%, rgb(255 255 255 / 0.12) 50%, transparent 65%);
+  }
+
+  /* The checks light up one after another. */
+  .plan-check {
+    transition:
+      scale 300ms var(--ease-emphasized),
+      filter 300ms;
+    transition-delay: calc(var(--f) * 50ms);
+  }
+  .plan:hover .plan-check {
+    scale: 1.12;
+    filter: brightness(1.6) drop-shadow(0 0 4px rgb(255 255 255 / 0.5));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .plan,
+    .plan-check,
+    .plan-arrow,
+    .plan-featured::before {
+      transition: none;
+    }
+    .plan:hover {
+      translate: none;
+    }
+    .plan:hover .plan-cta::after {
+      transition: none;
+      translate: -110% 0;
+    }
+  }
+</style>

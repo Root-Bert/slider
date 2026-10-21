@@ -1,0 +1,28 @@
+---
+import Button from '~/components/Button.astro';
+import Highlight from '~/components/Highlight.astro';
+import SectionMark from '~/components/SectionMark.astro';
+import Starfield from '~/components/Starfield.astro';
+import Base from '~/layouts/Base.astro';
+import { page } from '~/lib/links';
+
+/** Not found: the slide someone was looking for is not in the deck. Served by Caddy for any unknown path. */
+---
+
+<Base title="Page not found" description="This page does not exist (anymore).">
+  <section class="relative isolate flex min-h-[70vh] flex-col justify-center gap-6 px-4 py-24 md:px-16" data-section>
+    <Starfield src="blog/hero-starfield.svg" />
+    <SectionMark label="404" />
+    <h1 class="text-[44px] leading-[1.08] font-bold tracking-[-0.03em] text-fg md:text-[72px]">
+      <span class="block" data-reveal>This slide is</span>
+      <span class="block" data-reveal style="--i: 1"><Highlight by="Paul">not in the deck.</Highlight></span>
+    </h1>
+    <p class="max-w-[520px] text-lg leading-[1.5] text-fg-muted" data-reveal style="--i: 2">
+      The page you were looking for does not exist, or it moved. Start over from the beginning.
+    </p>
+    <div class="flex flex-wrap gap-3" data-reveal style="--i: 3">
+      <Button href={page()}>Back to the start</Button>
+      <Button href={page('product')} variant="secondary">See the product</Button>
+    </div>
+  </section>
+</Base>

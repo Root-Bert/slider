@@ -1,0 +1,27 @@
+---
+import SectionMark from '~/components/SectionMark.astro';
+
+/**
+ * One chapter of the founder's brief: mono number in the gutter, a glowing pin on the thread,
+ * then the section mark and the chapter's content.
+ */
+interface Props {
+  n: string;
+  label: string;
+  /** Chapter 08 ends the thread with its own elbow instead of a pin. */
+  pin?: boolean;
+}
+
+const { n, label, pin = true } = Astro.props;
+---
+
+<section class="relative px-4 sm:px-8 lg:grid lg:grid-cols-[236px_minmax(0,1012px)] lg:gap-16 lg:px-16" data-section>
+  <div class="hidden justify-end pt-1.5 pr-20 lg:flex">
+    <span class="text-[13px] font-semibold tabular-nums text-sage">{n}</span>
+  </div>
+  {pin && <span class="vision-pin absolute top-1.5 left-[237px] hidden lg:block" data-pop />}
+  <div class="flex min-w-0 flex-col items-start gap-7">
+    <SectionMark label={label} />
+    <slot />
+  </div>
+</section>

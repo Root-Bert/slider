@@ -1,0 +1,23 @@
+---
+import type { HTMLAttributes } from 'astro/types';
+
+/** Status tag (Site / Tag): small chip with an accent dot. Extra attributes pass through. */
+interface Props extends Omit<HTMLAttributes<'span'>, 'class'> {
+  label: string;
+  accent?: string | false;
+  class?: string;
+}
+
+const { label, accent = 'var(--color-accent-violet)', class: className, ...rest } = Astro.props;
+---
+
+<span
+  {...rest}
+  class:list={[
+    'inline-flex items-center gap-2 rounded-chip bg-surface-2 py-1.5 pr-3 pl-2.5 text-xs font-medium text-fg-muted ring-hairline-strong',
+    className,
+  ]}
+>
+  {accent && <span class="size-1.5 rounded-full" style={`background: ${accent}`} />}
+  {label}
+</span>

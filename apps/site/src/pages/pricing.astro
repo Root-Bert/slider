@@ -1,0 +1,16 @@
+---
+import Hero from '~/components/pricing/Hero.astro';
+import Plans from '~/components/pricing/Plans.astro';
+import SelfHosting from '~/components/pricing/SelfHosting.astro';
+import Base from '~/layouts/Base.astro';
+---
+
+<Base
+  current="pricing"
+  title="Pricing"
+  description="Slider is priced per workspace, never per seat: free for small teams, €79 a month for up to 100 people, free and unlimited when you host it yourself."
+>
+  <Hero />
+  <Plans />
+  <SelfHosting />
+</Base>

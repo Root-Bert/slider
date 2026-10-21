@@ -1,0 +1,43 @@
+---
+import type { Author } from '@slider/shared';
+import { Avatar } from '@/ui/Avatar';
+import { person, type PersonName } from '~/lib/people';
+
+/**
+ * Site / Note: a highlighted Slider comment carrying copy – glass card with the connector's
+ * accent as border and glow. Written by a persona (`name`) or anyone else (`author`, e.g. "You").
+ */
+interface Props {
+  name?: PersonName;
+  author?: Author;
+  time?: string;
+  accent?: string;
+  class?: string;
+  style?: string;
+}
+
+const {
+  name = 'Gesa',
+  author: authorOverride,
+  time = 'now',
+  accent = 'var(--color-accent-violet)',
+  class: className,
+  style,
+} = Astro.props;
+const author = authorOverride ?? person(name);
+---
+
+<div
+  class:list={[
+    'flex w-[340px] max-w-full flex-col gap-2.5 rounded-panel bg-glass px-4 pt-3.5 pb-4 backdrop-blur-md',
+    className,
+  ]}
+  style={`box-shadow: inset 0 0 0 1px ${accent}, 0 0 24px color-mix(in srgb, ${accent} 45%, transparent); ${style ?? ''}`}
+>
+  <div class="flex items-center gap-2">
+    <Avatar author={author} size={24} nativeTitle={false} />
+    <span class="text-[13px] font-medium text-fg">{author.name}</span>
+    <span class="text-xs text-fg-subtle">{time}</span>
+  </div>
+  <p class="text-[15px] leading-[22px] text-fg"><slot /></p>
+</div>

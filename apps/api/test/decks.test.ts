@@ -1,0 +1,535 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { eq } from 'drizzle-orm';
+import { commentSchema, deckSchema, slideSchema, viewerSchema, type Deck } from '@slider/shared';
+import { z } from 'zod';
+import { decks, revisions } from '../src/db/schema';
+import { IMPORTS_PER_HOUR } from '../src/http/import-limit';
+import { fileUrl } from '../src/storage/file-urls';
+import { NO_CONNECTION_ACCESS_MESSAGE } from '../src/sources/connections';
+import {
+  connectMicrosoft,
+  createReadyDeck,
+  createTestContext,
+  MICROSOFT_TEST_CONFIG,
+  pinComment,
+  stubPptx,
+  type TestContext,
+} from './helpers';
+import { FakeSource, pptxBytes } from './sync-helpers';
+
+let ctx: TestContext;
+beforeEach(async () => {
+  ctx = await createTestContext();
+});
+afterEach(() => ctx.cleanup());
+
+const uploadForm = (name: string, bytes: Uint8Array<ArrayBuffer>) => {
+  const form = new FormData();
+  form.append('file', new File([bytes], name));
+  return form;
+};
+
+describe('GET /api/me', () => {
+  it('returns the dev owner without a guest cookie', async () => {
+    const res = await ctx.request('/api/me');
+    expect(res.status).toBe(200);
+    const body = z.object({ viewer: viewerSchema }).parse(await res.json());
+    expect(body.viewer).toMatchObject({
+      kind: 'owner',
+      author: { name: 'Robert Hofmann', type: 'owner' },
+    });
+  });
+});
+
+describe('decks', () => {
+  it('lists the owner’s decks, most recently updated first, with aggregates', async () => {
+    const older = await createReadyDeck(ctx, { title: 'Alt', slideCount: 2 });
+    const newer = await createReadyDeck(ctx, { title: 'Neu', slideCount: 4 });
+    await ctx.request(`/api/decks/${newer.deckId}/comments`, {
+      method: 'POST',
+      json: pinComment(newer.slideIds[0] ?? ''),
+    });
+
+    const res = await ctx.request('/api/decks');
+    expect(res.status).toBe(200);
+    const list = deckSchema.array().parse(await res.json());
+    expect(list.map((deck) => deck.title)).toEqual(['Neu', 'Alt']);
+    expect(list[0]).toMatchObject({
+      id: newer.deckId,
+      slideCount: 4,
+      openCommentCount: 1,
+      revisionNumber: 1,
+      thumbnailUrl: fileUrl(newer.imageKeys[0] ?? ''),
+      thumbnailRenderer: null,
+      participants: [{ name: 'Robert Hofmann' }],
+    });
+    // Nobody commented on the older deck: the owner stands in, so every deck has an avatar.
+    expect(list[1]).toMatchObject({
+      id: older.deckId,
+      openCommentCount: 0,
+      participants: [{ name: 'Robert Hofmann', type: 'owner' }],
+    });
+  });
+
+  it('gives names from the file no avatar – only Slider accounts get one', async () => {
+    await ctx.cleanup();
+    ctx = await createTestContext({ openPptx: stubPptx({ author: 'Kim Kollege' }) });
+    const res = await ctx.request('/api/decks/upload', {
+      method: 'POST',
+      body: uploadForm('Von Kim.pptx', new Uint8Array([1, 2, 3])),
+    });
+    const { id } = deckSchema.parse(await res.json());
+    await ctx.deps.queue.idle();
+    const deck = deckSchema.parse(await (await ctx.request(`/api/decks/${id}`)).json());
+    // "Last saved by" is a name without an address: the owner stands in.
+    expect(deck.participants).toEqual([
+      expect.objectContaining({ name: 'Robert Hofmann', type: 'owner' }),
+    ]);
+  });
+
+  it('shows the commenting accounts, not the names the linked file lists', async () => {
+    const { deckId, slideIds } = await createReadyDeck(ctx);
+    await ctx.deps.db.update(revisions).set({ fileAuthor: 'Kim Kollege' });
+    await ctx.deps.db
+      .update(decks)
+      .set({ sourceContributors: ['Kim Kollege', 'Robert Hofmann', 'Olga Owner'] })
+      .where(eq(decks.id, deckId));
+    await ctx.request(`/api/decks/${deckId}/comments`, {
+      method: 'POST',
+      json: pinComment(slideIds[0] ?? ''),
+    });
+    const deck = deckSchema.parse(await (await ctx.request(`/api/decks/${deckId}`)).json());
+    expect(deck.participants.map(({ name, type }) => ({ name, type }))).toEqual([
+      { name: 'Robert Hofmann', type: 'owner' },
+    ]);
+  });
+
+  it('gets, renames and archives a deck', async () => {
+    const { deckId } = await createReadyDeck(ctx);
+    expect((await ctx.request(`/api/decks/${deckId}`)).status).toBe(200);
+
+    const renamed = await ctx.request(`/api/decks/${deckId}`, {
+      method: 'PATCH',
+      json: { title: '  Neuer Titel ' },
+    });
+    expect(renamed.status).toBe(200);
+    expect(((await renamed.json()) as Deck).title).toBe('Neuer Titel');
+
+    const archived = await ctx.request(`/api/decks/${deckId}`, {
+      method: 'PATCH',
+      json: { archived: true },
+    });
+    expect(deckSchema.parse(await archived.json()).archivedAt).not.toBeNull();
+    const restored = await ctx.request(`/api/decks/${deckId}`, {
+      method: 'PATCH',
+      json: { archived: false },
+    });
+    expect(deckSchema.parse(await restored.json()).archivedAt).toBeNull();
+  });
+
+  it('rejects an empty title', async () => {
+    const { deckId } = await createReadyDeck(ctx);
+    const res = await ctx.request(`/api/decks/${deckId}`, {
+      method: 'PATCH',
+      json: { title: '   ' },
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: { code: 'bad_request' } });
+  });
+
+  it('returns 404 for unknown decks', async () => {
+    const res = await ctx.request('/api/decks/nope');
+    expect(res.status).toBe(404);
+    expect(await res.json()).toMatchObject({ error: { code: 'not_found' } });
+  });
+
+  it('deletes a deck together with its files', async () => {
+    const { deckId, imageKeys } = await createReadyDeck(ctx);
+    const key = imageKeys[0] ?? '';
+    expect((await ctx.request(fileUrl(key))).status).toBe(200);
+
+    expect((await ctx.request(`/api/decks/${deckId}`, { method: 'DELETE' })).status).toBe(204);
+    expect((await ctx.request(`/api/decks/${deckId}`)).status).toBe(404);
+    expect(await ctx.deps.storage.get(key)).toBeNull();
+    expect((await ctx.request(fileUrl(key))).status).toBe(404);
+  });
+
+  it('lists slides of the current revision in order', async () => {
+    const { deckId, slideIds } = await createReadyDeck(ctx, { slideCount: 3 });
+    await ctx.request(`/api/decks/${deckId}/comments`, {
+      method: 'POST',
+      json: pinComment(slideIds[1] ?? ''),
+    });
+
+    const list = slideSchema
+      .array()
+      .parse(await (await ctx.request(`/api/decks/${deckId}/slides`)).json());
+    expect(list.map((slide) => slide.id)).toEqual(slideIds);
+    expect(list.map((slide) => slide.openCommentCount)).toEqual([0, 1, 0]);
+    expect(list[0]?.imageUrl).toMatch(/^\/files\/decks\//);
+  });
+
+  it('does not count a drawing without a comment as open feedback until someone replies', async () => {
+    const { deckId, slideIds } = await createReadyDeck(ctx, { slideCount: 2 });
+    const drawing = commentSchema.parse(
+      await (
+        await ctx.request(`/api/decks/${deckId}/comments`, {
+          method: 'POST',
+          json: {
+            slideId: slideIds[0] ?? '',
+            body: '',
+            anchor: { type: 'rect', rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, shapeRef: null },
+            strokes: [
+              {
+                tool: 'pen',
+                color: 'yellow',
+                points: [
+                  { x: 0.1, y: 0.1 },
+                  { x: 0.2, y: 0.2 },
+                ],
+              },
+            ],
+          },
+        })
+      ).json(),
+    );
+    const counts = async () => ({
+      deck: deckSchema.parse(await (await ctx.request(`/api/decks/${deckId}`)).json())
+        .openCommentCount,
+      slides: slideSchema
+        .array()
+        .parse(await (await ctx.request(`/api/decks/${deckId}/slides`)).json())
+        .map((slide) => slide.openCommentCount),
+    });
+    expect(await counts()).toEqual({ deck: 0, slides: [0, 0] });
+
+    // A reply turns it into a thread – the viewer then shows a card for it, too.
+    const reply = await ctx.request(`/api/decks/${deckId}/comments`, {
+      method: 'POST',
+      json: {
+        slideId: slideIds[0] ?? '',
+        parentId: drawing.id,
+        body: 'Was ist hier gemeint?',
+        anchor: { type: 'slide' },
+      },
+    });
+    expect(reply.status).toBe(201);
+    expect(await counts()).toEqual({ deck: 1, slides: [1, 0] });
+  });
+});
+
+describe('POST /api/decks/upload', () => {
+  it('creates a queued deck and imports it in the background', async () => {
+    const res = await ctx.request('/api/decks/upload', {
+      method: 'POST',
+      body: uploadForm('Quartalszahlen Q3.pptx', new Uint8Array([1, 2, 3])),
+    });
+    expect(res.status).toBe(201);
+    const deck = deckSchema.parse(await res.json());
+    expect(deck).toMatchObject({
+      title: 'Quartalszahlen Q3',
+      source: 'upload',
+      import: { status: 'queued' },
+    });
+
+    await ctx.deps.queue.idle();
+    const after = deckSchema.parse(await (await ctx.request(`/api/decks/${deck.id}`)).json());
+    expect(after).toMatchObject({ import: { status: 'ready' }, slideCount: 2 });
+  });
+
+  it('rejects files that are not .pptx', async () => {
+    const res = await ctx.request('/api/decks/upload', {
+      method: 'POST',
+      body: uploadForm('notes.pdf', new Uint8Array([1])),
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: { code: 'not_a_powerpoint' } });
+  });
+
+  it('rejects files above the upload limit', async () => {
+    const small = await createTestContext({ config: { maxUploadBytes: 100 } });
+    try {
+      const res = await small.request('/api/decks/upload', {
+        method: 'POST',
+        body: uploadForm('gross.pptx', new Uint8Array(200)),
+      });
+      expect(res.status).toBe(413);
+      expect(await res.json()).toMatchObject({ error: { code: 'file_too_large' } });
+    } finally {
+      await small.cleanup();
+    }
+  });
+
+  it('requires the file field', async () => {
+    const res = await ctx.request('/api/decks/upload', { method: 'POST', body: new FormData() });
+    expect(res.status).toBe(400);
+  });
+
+  it('opens the existing deck when the same file is uploaded again', async () => {
+    const send = (name: string, bytes: Uint8Array<ArrayBuffer>) =>
+      ctx.request('/api/decks/upload', { method: 'POST', body: uploadForm(name, bytes) });
+    const first = await send('Pitch.pptx', new Uint8Array([1, 2, 3]));
+    expect(first.status).toBe(201);
+    // Same bytes under another name: the same presentation.
+    const again = await send('Pitch Kopie.pptx', new Uint8Array([1, 2, 3]));
+    expect(again.status).toBe(200);
+    expect(deckSchema.parse(await again.json()).id).toBe(deckSchema.parse(await first.json()).id);
+    expect((await send('Pitch.pptx', new Uint8Array([1, 2, 4]))).status).toBe(201);
+    await ctx.deps.queue.idle();
+    expect(await ctx.deps.db.select().from(decks)).toHaveLength(2);
+  });
+});
+
+describe('the same linked file reached another way', () => {
+  let source: FakeSource;
+  const resolveTo = (ref: string) =>
+    source.resolve.mockImplementationOnce(async () => ({
+      ref,
+      fileName: 'Pitch.pptx',
+      sizeBytes: 16,
+      changeToken: 'c1',
+    }));
+  const importLink = () =>
+    ctx.request('/api/decks/link', {
+      method: 'POST',
+      json: { url: 'https://1drv.ms/p/c/abc123/EXAMPLE' },
+    });
+
+  beforeEach(async () => {
+    await ctx.cleanup();
+    source = new FakeSource();
+    ctx = await createTestContext({ sources: { onedrive: source } });
+  });
+
+  it('opens the deck picked before when the file comes as a link (same content)', async () => {
+    resolveTo('drives/d1/items/i1');
+    const picked = await importLink();
+    expect(picked.status).toBe(201);
+    resolveTo('https://1drv.ms/p/c/abc123/EXAMPLE');
+    const linked = await importLink();
+    expect(linked.status).toBe(200);
+    expect(deckSchema.parse(await linked.json()).id).toBe(deckSchema.parse(await picked.json()).id);
+    await ctx.deps.queue.idle();
+  });
+
+  it('never opens an uploaded copy for a linked file, which would not sync', async () => {
+    const upload = await ctx.request('/api/decks/upload', {
+      method: 'POST',
+      body: uploadForm('Pitch.pptx', pptxBytes('v1')),
+    });
+    expect(upload.status).toBe(201);
+    resolveTo('drives/d1/items/i1');
+    const linked = await importLink();
+    expect(linked.status).toBe(201);
+    expect(deckSchema.parse(await linked.json()).source).toBe('onedrive');
+    await ctx.deps.queue.idle();
+  });
+});
+
+describe('POST /api/decks/link', () => {
+  it('rejects links that are neither OneDrive, SharePoint nor a .pptx file', async () => {
+    const res = await ctx.request('/api/decks/link', {
+      method: 'POST',
+      json: { url: 'https://example.com/page.html' },
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: { code: 'unsupported_link' } });
+  });
+
+  it('refuses links with a user name or password in them – they would be stored as the source', async () => {
+    for (const url of [
+      'https://robert:geheim@example.com/deck.pptx',
+      'https://robert@cloud.example.de/s/Ab3dEf9GhJkLmNo',
+    ]) {
+      const res = await ctx.request('/api/decks/link', { method: 'POST', json: { url } });
+      expect(res.status).toBe(400);
+      const { error } = (await res.json()) as { error: { code: string; message: string } };
+      expect(error.code).toBe('unsupported_link');
+      expect(error.message).toMatch(/Benutzername oder Passwort/);
+    }
+    expect(await ctx.deps.db.select().from(decks)).toEqual([]);
+  });
+
+  it('caps imports per account and hour, failed ones and every import route included', async () => {
+    await ctx.cleanup();
+    ctx = await createTestContext({ config: { limited: true } });
+    const { deckId } = await createReadyDeck(ctx);
+    for (let i = 0; i < IMPORTS_PER_HOUR.limited; i++) {
+      const res = await ctx.request('/api/decks/link', {
+        method: 'POST',
+        json: { url: 'https://example.com/page.html' },
+      });
+      expect(res.status).toBe(400);
+    }
+    const refused = await ctx.request('/api/decks/link', {
+      method: 'POST',
+      json: { url: 'https://example.com/page.html' },
+    });
+    expect(refused.status).toBe(429);
+    expect(Number(refused.headers.get('retry-after'))).toBeGreaterThan(0);
+    expect(await refused.json()).toMatchObject({ error: { code: 'rate_limited' } });
+    // The same budget covers uploads, new versions and re-rendering.
+    const upload = await ctx.request('/api/decks/upload', {
+      method: 'POST',
+      body: uploadForm('Neu.pptx', new Uint8Array([0x50, 0x4b, 3, 4])),
+    });
+    expect(upload.status).toBe(429);
+    expect((await ctx.request(`/api/decks/${deckId}/rerender`, { method: 'POST' })).status).toBe(
+      429,
+    );
+    ctx.clock.advance(60 * 60_000);
+    expect(
+      (
+        await ctx.request('/api/decks/link', {
+          method: 'POST',
+          json: { url: 'https://example.com/page.html' },
+        })
+      ).status,
+    ).toBe(400);
+  });
+
+  it('says how to set up the Microsoft login when it is not configured', async () => {
+    const res = await ctx.request('/api/decks/link', {
+      method: 'POST',
+      json: { url: 'https://1drv.ms/p/c/abc123/EXAMPLE' },
+    });
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('microsoft_not_configured');
+    expect(body.error.message).toContain('MS_CLIENT_ID');
+  });
+
+  it('imports a direct .pptx URL without any login', async () => {
+    await ctx.cleanup();
+    const bytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3]);
+    ctx = await createTestContext({
+      fetch: async () =>
+        new Response(bytes, {
+          headers: {
+            'content-type':
+              'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            etag: '"v1"',
+          },
+        }),
+    });
+    const res = await ctx.request('/api/decks/link', {
+      method: 'POST',
+      json: { url: 'https://example.com/files/Q4%20Strategie.pptx' },
+    });
+    expect(res.status).toBe(201);
+    const deck = deckSchema.parse(await res.json());
+    expect(deck).toMatchObject({
+      source: 'url',
+      title: 'Q4 Strategie',
+      fileName: 'Q4 Strategie.pptx',
+    });
+
+    const [row] = await ctx.deps.db.select().from(decks).where(eq(decks.id, deck.id));
+    expect(row).toMatchObject({
+      sourceUrl: 'https://example.com/files/Q4%20Strategie.pptx',
+      sourceRef: 'https://example.com/files/Q4%20Strategie.pptx',
+    });
+    const [revision] = await ctx.deps.db
+      .select()
+      .from(revisions)
+      .where(eq(revisions.deckId, deck.id));
+    expect(revision?.sourceChangeToken).toBe('"v1"');
+  });
+
+  it('asks for a Microsoft login (with a login URL) when configured but not signed in', async () => {
+    await ctx.cleanup();
+    ctx = await createTestContext({
+      config: { microsoft: MICROSOFT_TEST_CONFIG },
+      // The anonymous attempt lands on the Microsoft login page.
+      fetch: async () =>
+        new Response('<html>Sign in</html>', { headers: { 'content-type': 'text/html' } }),
+    });
+    const link = 'https://contoso.sharepoint.com/:p:/s/team/EabcDEF';
+    const res = await ctx.request('/api/decks/link', { method: 'POST', json: { url: link } });
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { code: string; loginUrl: string } };
+    expect(body.error.code).toBe('microsoft_login_required');
+    expect(body.error.loginUrl).toBe(
+      `/api/auth/microsoft/login?returnTo=${encodeURIComponent(`/neu?link=${encodeURIComponent(link)}`)}`,
+    );
+    expect(
+      body.error.loginUrl.startsWith('/api/auth/microsoft/login?returnTo=%2Fneu%3Flink%3D'),
+    ).toBe(true);
+  });
+});
+
+describe('link import with several Microsoft accounts', () => {
+  const link = 'https://contoso.sharepoint.com/:p:/s/team/EabcDEF';
+  const pptx = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3]);
+
+  /** Graph answers per access token: `at-<refresh token>`; `allowed` may read the file. */
+  async function withAccounts(allowed: string | null, notFound: string[] = []) {
+    const tried: string[] = [];
+    await ctx.cleanup();
+    ctx = await createTestContext({
+      config: { microsoft: MICROSOFT_TEST_CONFIG },
+      fetch: async (input, init) => {
+        const url = String(input);
+        if (url.endsWith('/oauth2/v2.0/token')) {
+          const refresh = new URLSearchParams(String(init?.body)).get('refresh_token');
+          return Response.json({ access_token: `at-${refresh}`, expires_in: 3600 });
+        }
+        if (url.startsWith('https://graph.microsoft.com/v1.0/shares/')) {
+          const token = new Headers(init?.headers).get('authorization')?.replace('Bearer at-', '');
+          tried.push(token ?? '');
+          if (token !== allowed) {
+            return new Response('{}', { status: notFound.includes(token ?? '') ? 404 : 403 });
+          }
+          return Response.json({
+            id: 'i1',
+            name: 'Q4.pptx',
+            size: pptx.byteLength,
+            cTag: 'ctag-1',
+            file: {},
+            parentReference: { driveId: 'b!lib', driveType: 'documentLibrary' },
+            '@microsoft.graph.downloadUrl': 'https://download.example.com/q4',
+          });
+        }
+        if (url.startsWith('https://download.example.com/')) return new Response(pptx);
+        // The anonymous attempt lands on the Microsoft login page.
+        return new Response('<html>Sign in</html>', { headers: { 'content-type': 'text/html' } });
+      },
+    });
+    const ids: Record<string, string> = {};
+    // Most recently used first: rt-a, rt-b, rt-c.
+    for (const [name, day] of [
+      ['rt-c', '2026-10-01'],
+      ['rt-a', '2026-10-03'],
+      ['rt-b', '2026-10-02'],
+    ] as const) {
+      ids[name] = await connectMicrosoft(ctx.deps.db, ctx.ownerId, {
+        subject: `ms-${name}`,
+        refreshToken: name,
+        lastUsedAt: new Date(day),
+      });
+    }
+    return { tried, ids };
+  }
+
+  it('tries my accounts, most recently used first, and remembers the one with access', async () => {
+    const { tried, ids } = await withAccounts('rt-c', ['rt-b']);
+    const res = await ctx.request('/api/decks/link', { method: 'POST', json: { url: link } });
+    expect(res.status).toBe(201);
+    expect(tried).toEqual(['rt-a', 'rt-b', 'rt-c']);
+    const deck = deckSchema.parse(await res.json());
+    const [row] = await ctx.deps.db.select().from(decks).where(eq(decks.id, deck.id));
+    expect(row?.microsoftConnectionId).toBe(ids['rt-c']);
+    // … and tries that one first next time.
+    expect((await ctx.deps.microsoft.connectionIds(ctx.ownerId))[0]).toBe(ids['rt-c']);
+  });
+
+  it('says that none of my accounts may open the file', async () => {
+    const { tried } = await withAccounts(null);
+    const res = await ctx.request('/api/decks/link', { method: 'POST', json: { url: link } });
+    expect(res.status).toBe(403);
+    expect(tried).toHaveLength(3);
+    expect(await res.json()).toMatchObject({
+      error: { code: 'source_forbidden', message: NO_CONNECTION_ACCESS_MESSAGE },
+    });
+  });
+});

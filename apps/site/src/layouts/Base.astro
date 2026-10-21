@@ -1,0 +1,72 @@
+---
+import '~/styles/site.css';
+import Footer from '~/components/Footer.astro';
+import Header, { type SitePage } from '~/components/Header.astro';
+import { asset } from '~/lib/links';
+
+interface Props {
+  /** Page title before " | Slider". */
+  title?: string;
+  description?: string;
+  current?: SitePage;
+  /** The footer CTA closes every page except where a page has its own ending. */
+  footer?: boolean;
+}
+
+const {
+  title,
+  description = 'Slider puts feedback where it belongs: right on the slide. Link your presentation, invite your team and see every opinion in context, live.',
+  current,
+  footer = true,
+} = Astro.props;
+const fullTitle = title ? `${title} | Slider` : 'Slider | Get your ideas across';
+const canonical = new URL(Astro.url.pathname, Astro.site);
+/** The share preview (1200 × 630): the homepage hero, rendered from the site itself. */
+const ogImage = new URL(asset('og.png'), Astro.site);
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#000000" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" href={asset('favicon.svg')} type="image/svg+xml" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:site_name" content="Slider" />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Slider: Get your ideas across. A slide with reviewers' cursors and a voice comment." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <!--
+      Before the first paint: entrances start hidden right away (no flash, then jump), and show
+      anyway should the motion script never run.
+    -->
+    <script is:inline>
+      document.documentElement.classList.add('js');
+      setTimeout(() => {
+        if (window.__sliderMotion) return;
+        document.querySelectorAll('[data-section]').forEach((s) => s.classList.add('is-in'));
+      }, 3000);
+    </script>
+    <script>
+      import '~/scripts/motion';
+    </script>
+  </head>
+  <body class="dot-grid">
+    <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-(--z-toast) focus:rounded-control focus:bg-primary focus:px-3 focus:py-2 focus:text-on-primary">Skip to content</a>
+    <Header current={current} />
+    <main id="main">
+      <slot />
+    </main>
+    {footer && <Footer />}
+  </body>
+</html>

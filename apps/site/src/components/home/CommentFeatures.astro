@@ -1,0 +1,183 @@
+---
+import Highlight from '~/components/Highlight.astro';
+import Cursor from '~/components/Cursor.astro';
+import SectionMark from '~/components/SectionMark.astro';
+import VideoThumb from '~/components/VideoThumb.astro';
+import Slide from '~/components/slides/Slide.astro';
+import { sketchPalette } from '@/features/viewer/media/lib/sketch';
+import { accentColor } from '@/lib/accent';
+import { ColorSwatches } from '@/ui/ColorSwatches';
+import { IconButton } from '@/ui/IconButton';
+import type { IconName } from '@/ui/Icon';
+import { Toolbar, ToolbarDivider } from '@/ui/Toolbar';
+import { asset } from '~/lib/links';
+import { person, personAccent, type PersonName } from '~/lib/people';
+import CommentCard from './b/CommentCard.astro';
+import Motion from './b/Motion.astro';
+import Pin from './b/Pin.astro';
+import Scaled from './b/Scaled.astro';
+
+/**
+ * Homepage | Comments: a bento of the four comment kinds – text with @mentions, voice, video and
+ * sketch – around the slide they are pinned to.
+ */
+const img = (name: string) => asset(`home-b/comments/${name}`);
+const dot = (name: PersonName) => accentColor(person(name).color);
+const cell = 'relative rounded-[24px] bg-glass ring-hairline';
+/** The sketch view's tools (`SketchPanel`), the pen picked; Anna's colour first. */
+const sketchTools: { icon: IconName; label: string }[] = [
+  { icon: 'cursor', label: 'Pointer' },
+  { icon: 'gesture', label: 'Freehand' },
+  { icon: 'arrow', label: 'Arrow' },
+  { icon: 'marker', label: 'Marker' },
+  { icon: 'eraser', label: 'Eraser' },
+];
+const sketchColors = sketchPalette(personAccent('Anna'));
+---
+
+<section class="relative px-4 py-12 md:px-16 lg:py-16" data-section>
+  <Motion />
+  <div class="mx-auto grid max-w-[1312px] gap-4 lg:grid-cols-[440px_1fr]">
+    <div class="flex flex-col gap-4">
+      <!-- Title -->
+      <div class:list={[cell, 'flex flex-col gap-5 p-6 md:p-9 lg:flex-1']} data-hb style="--d: 100ms">
+        <SectionMark label="Comments" accent="var(--color-accent-yellow)" />
+        <h2 class="text-[34px] leading-[1.12] font-bold tracking-[-0.03em] text-fg sm:text-[46px]">
+          <span class="block" data-hb="words" style="--d: 150ms">Four ways to</span>
+          <span class="block" data-hb="words" style="--d: 300ms"><Highlight by="Paul">make your point</Highlight></span>
+        </h2>
+        <div class="flex-1"></div>
+        <p class="max-w-[368px] text-base leading-[1.55] text-fg-muted" data-hb style="--d: 800ms; --y: 24px">
+          Text, voice, video or sketch, pinned to the exact spot on the slide.
+        </p>
+      </div>
+
+      <!-- Text & @mentions -->
+      <div class:list={[cell, 'flex flex-col gap-2 p-6 lg:h-[200px]']} data-hb style="--d: 1100ms">
+        <h3 class="flex items-center gap-2.5 text-[17px] font-semibold text-fg">
+          <span class="size-2.5 rounded-full" style={`background: ${dot('Lara')}; box-shadow: 0 0 12px ${dot('Lara')}`}></span>
+          Text &amp; @mentions
+        </h3>
+        <p class="text-sm leading-normal text-fg-subtle">Mention people, they get notified.</p>
+        <div class="min-h-2 flex-1"></div>
+        <div class="max-w-[280px]" data-hb style="--d: 1690ms; --y: 18px">
+          <CommentCard name="Lara" meta="Slide 2 | just now" selected>
+            <p class="text-body leading-[18px] text-fg-muted">
+              <span class="font-medium text-mention">@Paul</span> can we cut this to one line?
+            </p>
+          </CommentCard>
+        </div>
+      </div>
+
+      <!-- Voice -->
+      <div class:list={[cell, 'flex flex-col gap-2 p-6 lg:h-[200px]']} data-hb style="--d: 1220ms">
+        <h3 class="flex items-center gap-2.5 text-[17px] font-semibold text-fg">
+          <span class="size-2.5 rounded-full" style={`background: ${dot('Paul')}; box-shadow: 0 0 12px ${dot('Paul')}`}></span>
+          Voice
+        </h3>
+        <p class="text-sm leading-normal text-fg-subtle">Talk it through in seconds.</p>
+        <div class="min-h-1.5 flex-1"></div>
+        <div class="max-w-[280px]" data-hb style="--d: 2500ms; --y: 18px">
+          <CommentCard name="Paul" meta="Slide 2 | 3 min ago">
+            <div class="flex items-center gap-3">
+              <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" style={`color: ${dot('Paul')}`}>
+                <path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l10.29-6.86a1 1 0 0 0 0-1.7L9.52 4.29A1 1 0 0 0 8 5.14Z" fill="currentColor" />
+              </svg>
+              <img src={img('graphic-eq.svg')} alt="" width="86" height="21" class="opacity-80" />
+              <span class="text-caption text-fg-subtle">0:24</span>
+            </div>
+          </CommentCard>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex flex-col gap-4">
+      <!-- The slide everything is pinned to -->
+      <div class:list={[cell, 'overflow-hidden']} data-hb style="--d: 250ms">
+        <Scaled width={856} height={400}>
+          <img src={img('glow-radial.svg')} alt="" class="absolute top-[-30px] left-[18px] h-[460px] w-[820px]" />
+          <div class="absolute top-[-20px] left-[70px] h-[440px] w-[715px]" data-hb style={`--d: 450ms; --o: 0.4; --y: 18px; background: ${'radial-gradient(closest-side, rgb(255 255 255 / 0.3), transparent)'}`}></div>
+          <div class="absolute top-[32.5px] left-[130.5px]" data-hb style="--d: 550ms; --y: 18px">
+            <Slide name="Chart" width={595.2} />
+          </div>
+          <Pin by="Lara" class="top-[111.5px] left-[415.5px]" data-hb="pop" style="--d: 1000ms" />
+          <Pin by="Paul" class="top-[273.5px] left-[405.5px]" data-hb="pop" style="--d: 1150ms" />
+          <Pin by="Gesa" class="top-[65.5px] left-[683.5px]" data-hb="pop" style="--d: 1300ms" />
+          <div class="absolute top-[92.5px] left-[606.2px] flex h-[214.8px] w-[82px] items-center justify-center" data-hb="pop" style="--d: 1500ms; --s: 0.8">
+            <svg width="64" height="210" viewBox="0 0 64 210" class="rotate-5 overflow-visible" aria-hidden="true">
+              <ellipse cx="32" cy="105" rx="31" ry="104" fill="none" stroke-width="12" stroke-opacity="0.25" style={`stroke: ${dot('Anna')}`} />
+              <ellipse cx="32" cy="105" rx="31" ry="104" fill="none" stroke-width="3" style={`stroke: ${dot('Anna')}`} />
+            </svg>
+          </div>
+        </Scaled>
+      </div>
+
+      <div class="grid gap-4 md:grid-cols-[2fr_3fr]">
+        <!-- Video -->
+        <div class:list={[cell, 'flex flex-col gap-2 p-6 lg:h-[392px]']} data-hb style="--d: 1340ms">
+          <h3 class="flex items-center gap-2.5 text-[17px] font-semibold text-fg">
+            <span class="size-2.5 rounded-full" style={`background: ${dot('Gesa')}; box-shadow: 0 0 12px ${dot('Gesa')}`}></span>
+            Video
+          </h3>
+          <p class="text-sm leading-normal text-fg-subtle">Show it with your face and voice.</p>
+          <div class="min-h-4 flex-1"></div>
+          <div class="max-w-[260px]" data-hb style="--d: 1600ms; --y: 18px">
+            <CommentCard name="Gesa" meta="Slide 2 | 1 h ago">
+              <div class="flex gap-3">
+                <div class="flex flex-col justify-between">
+                  <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" style={`color: ${dot('Gesa')}`}>
+                    <path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l10.29-6.86a1 1 0 0 0 0-1.7L9.52 4.29A1 1 0 0 0 8 5.14Z" fill="currentColor" />
+                  </svg>
+                  <span class="text-caption text-fg-subtle">2:17</span>
+                </div>
+                <VideoThumb src={img('video-thumb.jpg')} name="Gesa" class="h-[108px] min-w-0 flex-1" />
+              </div>
+            </CommentCard>
+          </div>
+        </div>
+
+        <!-- Sketch -->
+        <div class:list={[cell, 'flex flex-col gap-2 p-6 lg:h-[392px]']} data-hb style="--d: 1460ms">
+          <h3 class="flex items-center gap-2.5 text-[17px] font-semibold text-fg">
+            <span class="size-2.5 rounded-full" style={`background: ${dot('Anna')}; box-shadow: 0 0 12px ${dot('Anna')}`}></span>
+            Sketch
+          </h3>
+          <p class="text-sm leading-normal text-fg-subtle">Draw on a copy of the slide.</p>
+          <div class="min-h-2 flex-1"></div>
+          <!-- The app's big sketch view: the sheet in the slide's format, the tools floating below. -->
+          <Scaled width={520} height={322} class="mx-auto">
+            <div class="absolute top-0 left-[20px] h-[270px] w-[480px] overflow-hidden rounded-panel bg-[#898989] shadow-float" data-hb style="--d: 2320ms; --y: 18px">
+              <img src={img('sketch-image.jpg')} alt="" class="absolute inset-0 size-full object-cover" />
+              <svg class="absolute top-0 left-0 overflow-visible" width="406" height="185" viewBox="0 0 172.145 79.9986" fill="none" aria-hidden="true">
+                <!-- The glow is a wide faint stroke drawn along: a CSS filter on a drawn path ends up as a streak elsewhere in Safari. -->
+                {[{ width: 12, opacity: 0.3 }, { width: 4, opacity: 1 }].map(({ width, opacity }) => (
+                  <path
+                    d="M125.5 2.49821C157.5 -3.50178 175.5 18.4982 169.5 42.4982C163.5 66.4982 133.5 74.4982 111.5 66.4982C89.5004 58.4982 83.5004 34.4982 95.5004 18.4982C103.5 8.49822 115.5 4.49821 129.5 4.49821M1.50039 78.4982C21.5004 72.4982 41.5004 80.4982 63.5004 74.4982"
+                    stroke-width={width}
+                    stroke-opacity={opacity}
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    vector-effect="non-scaling-stroke"
+                    style={`stroke: ${dot('Anna')}; --i: 18`}
+                    pathLength="1"
+                    data-draw
+                  />
+                ))}
+              </svg>
+            </div>
+            <Cursor name="Anna" class="absolute top-[176px] left-[172px]" drift />
+            <div class="absolute inset-x-0 top-[282px] flex justify-center" data-hb style="--d: 2500ms; --y: 12px">
+              <Toolbar label="Drawing tools">
+                {sketchTools.map((tool) => <IconButton size="sm" icon={tool.icon} label={tool.label} active={tool.icon === 'gesture'} />)}
+                <ToolbarDivider spacing="md" />
+                <ColorSwatches variant="dot" label="Colours" colors={sketchColors} value="violet" onChange={() => {}} className="gap-1" />
+                <ToolbarDivider spacing="md" />
+                <IconButton size="sm" icon="undo" label="Undo" />
+              </Toolbar>
+            </div>
+          </Scaled>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

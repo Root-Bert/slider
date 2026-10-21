@@ -1,0 +1,114 @@
+---
+import Highlight from '~/components/Highlight.astro';
+import SectionMark from '~/components/SectionMark.astro';
+import Motion from './b/Motion.astro';
+import Stars from './b/Stars.astro';
+
+/** Homepage | Privacy: your data stays yours – four figures, the EU stars popping in a ring. */
+const stats = [
+  { figure: 'EU', title: 'Hosted in Europe', body: 'Servers in the EU, GDPR-compliant, with a data processing agreement for your company.', d: 700 },
+  { figure: '0', title: 'Trackers and ads', body: 'Nothing is sold and nobody is profiled. Not now, not later.', d: 840 },
+  { figure: '1', title: 'Command to self-host', command: 'docker compose up -d', body: 'On your own server. 2 vCPU and 4 GB RAM are enough.', d: 980 },
+  { figure: '100%', title: 'Open source', body: 'The whole product, not a stripped-down edition. Read every line.', d: 1120 },
+];
+// Twelve stars on a circle, popping in one after another (Figma timeline 2.0–2.7 s).
+const euStars = Array.from({ length: 12 }, (_, i) => {
+  const angle = (i / 12) * Math.PI * 2;
+  return { x: 42 + Math.cos(angle) * 33.6, y: 42 + Math.sin(angle) * 33.6, d: 2000 + i * 60 };
+});
+const stars = [
+  [1170.8, 108.1, 2.2], [1015.1, 55.6, 2.2], [1264.4, 83.9, 1.5], [34.3, 515.5, 1.5], [849.1, 0.4, 1.5],
+  [6.8, 578.5, 2.2], [1439, 595.4, 1.5], [41.5, 357, 1.5], [1271.4, 15.3, 1.5], [1042, 0.1, 1.5],
+  [24.9, 124.4, 1.5], [242.9, 119.1, 1.5], [1409.1, 66.8, 1.5], [108.8, 4.2, 3], [291.3, 67.8, 3],
+  [1166, 109.9, 3], [383.3, 584.6, 1.5], [283.9, 106.5, 2.2], [230.2, 15.3, 1.5], [133.3, 68.8, 1.5],
+  [854.4, 105.1, 1.5], [276.3, 66.8, 1.5], [47.4, 65.1, 1.5], [1382.3, 574.5, 2.2], [1228.3, 92.3, 1.5],
+  [418.6, 47, 1.5], [1053.7, 81.4, 1.5], [312.9, 101.1, 3],
+] as const;
+---
+
+<section class="relative isolate overflow-hidden px-4 py-12 md:px-16 lg:py-16" data-section>
+  <Motion />
+  <Stars stars={stars} height={600} sparkles={[[695.5, 75.5, 9]]} />
+
+  <div class="relative mx-auto max-w-[1312px] rounded-[24px] bg-glass px-6 pt-8 ring-hairline md:px-12 md:pt-12">
+    <div class="flex flex-col gap-6 lg:flex-row lg:items-end lg:gap-16">
+      <div class="flex flex-1 flex-col gap-5">
+        <SectionMark label="Privacy" />
+        <h2 class="text-[40px] leading-[1.12] font-bold tracking-[-0.03em] text-fg sm:text-[56px]" data-hb="words" style="--d: 0ms">
+          Your data <Highlight by="Carolin">stays yours.</Highlight>
+        </h2>
+      </div>
+      <p class="max-w-[380px] text-[17px] leading-[1.55] text-fg-muted" data-hb style="--d: 600ms; --y: 24px">
+        No ads, no tracking. Hosted in the EU or on your own server.
+      </p>
+    </div>
+
+    <div class="mt-10 grid grid-cols-2 border-t border-hairline-strong lg:grid-cols-[303fr_336fr_336fr_336fr]" data-hb style="--d: 500ms; --y: 0px">
+      {
+        stats.map((stat, i) => (
+          <div
+            class:list={[
+              'flex flex-col gap-2 py-6 sm:gap-3 md:py-10',
+              i % 2 === 0 ? 'pr-4 sm:pr-8' : 'border-l border-hairline pl-4 sm:pl-8',
+              i >= 2 && 'border-t border-hairline lg:border-t-0',
+              i === 2 && 'lg:border-l lg:pl-8',
+            ]}
+            data-hb
+            style={`--d: ${stat.d}ms`}
+          >
+            <div class="flex items-center gap-4">
+              <p class="privacy-figure text-[48px] leading-none sm:text-[80px] font-black tracking-[-0.04em] text-fg sm:text-[96px]">{stat.figure}</p>
+              {
+                i === 0 && (
+                  <div class="relative hidden size-[84px] shrink-0 sm:block" aria-hidden="true">
+                    {euStars.map((star) => (
+                      <span
+                        class="absolute size-[5.6px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent-yellow shadow-[0_0_6px_var(--color-accent-yellow)]"
+                        style={`left: ${star.x}px; top: ${star.y}px; --d: ${star.d}ms; --s: 0.2`}
+                        data-hb="pop"
+                      />
+                    ))}
+                  </div>
+                )
+              }
+            </div>
+            <p class="text-[15px] font-semibold text-fg sm:text-[17px]">{stat.title}</p>
+            {
+              stat.command && (
+                <code class="flex w-max max-w-full items-center gap-2 overflow-hidden rounded-chip bg-black/60 px-3 py-2 font-mono text-xs whitespace-nowrap text-fg ring-hairline">
+                  <span class="text-sage">$</span>
+                  {stat.command}
+                  <span class="privacy-caret h-3.5 w-[7px] bg-fg-muted" aria-hidden="true" />
+                </code>
+              )
+            }
+            <p class="max-w-[272px] text-[13px] leading-[1.55] text-fg-subtle sm:text-sm">{stat.body}</p>
+          </div>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  /* The terminal's caret blinks next to the command. */
+  .privacy-caret {
+    animation: privacy-caret 1s steps(1) infinite;
+  }
+  @keyframes privacy-caret {
+    50% {
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .privacy-caret {
+      animation: none;
+    }
+  }
+
+  .privacy-figure {
+    text-shadow:
+      0 0 28px rgb(255 255 255 / 0.22),
+      0 0 80px rgb(255 255 255 / 0.08);
+  }
+</style>

@@ -1,0 +1,160 @@
+import type { Guide, Point, Rect } from '@slider/shared';
+
+/**
+ * Public result types of the PPTX parser (BER-93, BER-112, BER-113).
+ * All geometry is normalised to the slide size (0–1).
+ */
+
+export interface ParsedPresentation {
+  /** Slide size in EMU (`p:sldSz`). */
+  size: { cx: number; cy: number };
+  /** Slides in presentation order, including hidden ones. */
+  slides: ParsedSlide[];
+  /** `p14:sectionLst`; each section lists the `sldId`s it contains. */
+  sections: { name: string; slideIds: number[] }[];
+  /** PowerPoint comments (modern and legacy) across all slides. */
+  comments: ParsedComment[];
+  /**
+   * Who last saved the file, else who created it (`docProps/core.xml`); `null` if neither is set.
+   * Usually the colleague who sent it – they need no Slider account to be shown.
+   */
+  author: string | null;
+}
+
+export interface ParsedSlide {
+  /** `p:sldId/@id` – PowerPoint's stable slide id. */
+  sldId: number;
+  /** 0-based position in `p:sldIdLst`. */
+  index: number;
+  /** Zip path, e.g. `ppt/slides/slide3.xml`. */
+  path: string;
+  /** `show="0"` on `p:sld`. */
+  hidden: boolean;
+  /** Text of the title / ctrTitle placeholder, if any. */
+  title: string | null;
+  layoutName: string | null;
+  /** Normalised full text (lower-case, collapsed whitespace) hashed with FNV-1a, hex. */
+  textHash: string;
+  /**
+   * SHA-256 (hex) of what the SVG preview cannot see: geometry, fills, crops, media bytes and
+   * the parts behind charts, SmartArt and OLE objects. Producer-neutral (no ids, positions or
+   * relationship ids), so an unchanged slide keeps it across saves.
+   */
+  contentHash: string;
+  /** `p14:creationId`, PowerPoint's random id per created slide; `null` if not written. */
+  creationId: number | null;
+  shapes: ParsedShape[];
+  /** Shape groups (`p:grpSp`, flattened in `shapes`) with the union box of their children. */
+  groups: { id: string; bbox: Rect }[];
+  /** Solid background colour as `#rrggbb`, if one is set on slide, layout or master. */
+  background: string | null;
+  /** Drawing guides shown on the slide: the presentation's, its master's and its layout's. */
+  guides: Guide[];
+}
+
+export type ParsedShapeKind = 'text' | 'picture' | 'table' | 'connector' | 'other';
+
+export interface ParsedShape {
+  /** `p:cNvPr/@id`, as string. */
+  id: string;
+  name: string;
+  kind: ParsedShapeKind;
+  /** Bounding box, normalised, after applying group transforms and placeholder inheritance. */
+  bbox: Rect;
+  /** Plain text, paragraphs joined with `\n`. */
+  text: string;
+  /** Rich text for rendering; empty for non-text shapes. */
+  paragraphs: ParsedParagraph[];
+  /** Zip path of the embedded image for pictures (e.g. `ppt/media/image1.png`). */
+  imagePath: string | null;
+  /** Solid fill as `#rrggbb`, if any. */
+  fill: string | null;
+  /** Placeholder type (`title`, `body`, `ctrTitle`, …), if this is a placeholder. */
+  placeholder: string | null;
+  /** Tables only: cell texts row by row (`text` holds the same, tab/newline separated). */
+  tableRows?: string[][];
+}
+
+export interface ParsedParagraph {
+  align: 'left' | 'center' | 'right' | 'justify';
+  runs: ParsedRun[];
+}
+
+export interface ParsedRun {
+  text: string;
+  /** Font size in points, if specified on the run or inherited from the placeholder. */
+  sizePt: number | null;
+  bold: boolean;
+  italic: boolean;
+  /** `#rrggbb`, if specified. */
+  color: string | null;
+  /**
+   * Set for fields whose cached text PowerPoint rewrites on every save (`a:fld` of type
+   * `slidenum` or `datetime*`). Their text is shown, but kept out of `ParsedShape.text`,
+   * `textHash` and the render hash, so it does not mark slides as changed.
+   */
+  volatileField?: string;
+}
+
+export type ParsedCommentAnchor =
+  | { type: 'slide' }
+  | { type: 'point'; point: Point }
+  | { type: 'shape'; shapeId: string }
+  /** A shape group (`ac:grpSpMk`): groups are not in `shapes`, so their box is given. */
+  | { type: 'rect'; rect: Rect; shapeId: string };
+
+export interface ParsedComment {
+  /** Stable id for idempotent import: modern → comment GUID, legacy → `authorId:idx`. */
+  externalId: string;
+  format: 'modern' | 'legacy';
+  /** `sldId` of the slide the comment belongs to. */
+  sldId: number;
+  author: CommentAuthor;
+  createdAt: string | null;
+  text: string;
+  status: 'open' | 'done';
+  anchor: ParsedCommentAnchor;
+  /** Answers in thread order (legacy replies come from `p15:threadingInfo`). */
+  replies: ParsedReply[];
+}
+
+/**
+ * Who wrote a comment. Modern comments (`ppt/authors.xml`) also name the account: `providerId`
+ * `AD` with `userId` `S::<upn>::<object id>` (work account), `Windows Live` with the account's
+ * CID (personal). Legacy comments carry the name only.
+ */
+export interface CommentAuthor {
+  name: string;
+  initials: string | null;
+  userId?: string;
+  providerId?: string;
+  /**
+   * The Google account's address, set only by Slider for comments read through Drive's comment
+   * API (BER-157) – never read from a file, so a file's `authors.xml` cannot claim one.
+   */
+  googleAccount?: string;
+}
+
+export interface ParsedReply {
+  externalId: string;
+  author: CommentAuthor;
+  createdAt: string | null;
+  text: string;
+}
+
+/**
+ * The most slides a deck may have, hidden ones included. Checked on the slide list, before any
+ * slide is parsed: a bigger deck is refused as a whole (`too_many_slides`).
+ */
+export const MAX_SLIDES = 1024;
+
+/** Thrown for encrypted (password protected), corrupt, non-PPTX or oversized input. */
+export class PptxError extends Error {
+  constructor(
+    readonly code: 'encrypted' | 'corrupt' | 'not_pptx' | 'too_many_slides',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'PptxError';
+  }
+}

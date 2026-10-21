@@ -1,0 +1,46 @@
+---
+import type { Author } from '@slider/shared';
+import { Avatar } from '@/ui/Avatar';
+import { asset } from '~/lib/links';
+
+/**
+ * Comment Card (UI kit 92:485): glass card with a 32px avatar, name + meta line, the comment,
+ * and a footer with replies and "Done". `badge` renders in the header's right slot (e.g. the
+ * PowerPoint badge); without it the card shows the ⋯ menu.
+ */
+interface Props {
+  author: Author;
+  meta: string;
+  replies: string;
+  source?: 'app' | 'pptx';
+  class?: string;
+  style?: string;
+}
+
+const { author, meta, replies, source = 'app', class: className, style } = Astro.props;
+---
+
+<div class:list={['flex flex-col gap-2.5 rounded-panel bg-glass p-4', className]} style={style}>
+  <div class="flex w-full items-center gap-2.5">
+    <Avatar author={author} size={32} source={source} nativeTitle={false} />
+    <div class="flex min-w-0 flex-1 flex-col whitespace-nowrap">
+      <span class="text-[13px] leading-[18px] font-medium text-fg">{author.name}</span>
+      <span class="text-xs leading-4 text-fg-subtle">{meta}</span>
+    </div>
+    {
+      Astro.slots.has('badge') ? (
+        <slot name="badge" />
+      ) : (
+        <img src={asset('product-b/more-horiz.svg')} alt="" class="size-6" />
+      )
+    }
+  </div>
+  <p class="w-full text-[13px] leading-[18px] text-fg-muted"><slot /></p>
+  <div class="flex w-full items-center gap-1.5 text-xs leading-4 text-fg-subtle">
+    <img src={asset('product-b/chat-bubble.svg')} alt="" class="size-4" />
+    <span>{replies}</span>
+    <span class="flex-1"></span>
+    <img src={asset('product-b/resolve.svg')} alt="" class="size-5" />
+    <span>Done</span>
+  </div>
+</div>

@@ -1,0 +1,149 @@
+---
+import { ChangeBadge } from '@/features/viewer/revisions/ChangeBadge';
+import type { SlideBadge } from '@/features/viewer/revisions/lib/revision-changes';
+import { Badge } from '@/ui/Badge';
+import { Icon } from '@/ui/Icon';
+import CanvasCard from './b/CanvasCard.astro';
+import CommentCard from './b/CommentCard.astro';
+import Detail from './b/Detail.astro';
+import PlayArrow from './b/PlayArrow.astro';
+import VideoThumb from '~/components/VideoThumb.astro';
+import { asset } from '~/lib/links';
+import { person } from '~/lib/people';
+
+/**
+ * Product | "Comment Features Detail for each": one row per comment type, text and canvas
+ * alternating sides. Lane colours follow the comment's author/source, as in the app.
+ */
+const lara = person('Lara');
+const gesaFromPowerPoint = { id: 'gesa-pptx', name: 'Gesa', type: 'external', color: 'powerpoint' } as const;
+const accentOf = (name: Parameters<typeof person>[0]) => `var(--color-accent-${person(name).color})`;
+/** The version row's chips, as the app shows the latest revision's changes. */
+const change = (kind: SlideBadge['kind'], label: string): SlideBadge => ({
+  kind,
+  label,
+  short: label,
+  moved: false,
+  uncertain: false,
+  description: label,
+});
+const changes = [change('new', '2 new'), change('modified', '3 changed'), change('moved', '1 moved')];
+---
+
+<section class="relative px-4 pt-8 pb-16 md:px-16" aria-label="Comment types">
+  <Detail
+    mark="Write"
+    accent="var(--color-sage)"
+    title="Text & @mentions"
+    copy="Write what you think and mention who should act. They get notified and land on the right slide."
+    bullets={['@mentions with notifications', 'Threads with replies', 'Tick it off when it is done']}
+    slide="Gantt"
+    connector={{ x: 247, y: 142.25, w: 67, h: 0.75, d: 'M 0 0 L 67 0 L 67 0.75 L 61 0.75' }}
+  >
+    <CommentCard author={lara} meta="2 min ago | Slide 2" replies="2 replies" class="absolute top-[99px] left-[308px] w-[372px]">
+      <span class="font-medium text-mention">@Paul</span> can you update the Q3 numbers before Friday?
+    </CommentCard>
+  </Detail>
+
+  <Detail
+    mark="Speak"
+    accent="var(--color-accent-cyan)"
+    title="Voice"
+    copy="Say it instead of typing it. Your recording plays right next to the slide."
+    bullets={['One click to record', 'Waveform preview', 'Automatic transcripts']}
+    slide="Lecture"
+    connector={{ x: 247, y: 142.25, w: 147, h: 25.55, d: 'M 0 0 L 110 0 L 110 25.55 L 147 25.55' }}
+    reverse
+  >
+    <CanvasCard name="Paul" class="absolute top-[123.8px] left-[394px] w-[260px]">
+      <div class="flex items-center gap-3">
+        <PlayArrow accent={accentOf('Paul')} />
+        <img src={asset('product-b/waveform.svg')} alt="" class="h-[20.6px] w-[86px]" />
+        <span class="text-[11px] text-fg-subtle">0:24</span>
+      </div>
+    </CanvasCard>
+  </Detail>
+
+  <Detail
+    mark="Record"
+    accent="var(--color-accent-violet)"
+    title="Video"
+    copy="Record yourself explaining the change, for the moments when tone matters."
+    bullets={['Camera recording', 'Inline playback', 'Stored in your workspace']}
+    slide="FloorPlan"
+    connector={{ x: 247, y: 121.6, w: 151.4, h: 20.65, d: 'M 0 20.65 L 112 20.65 L 112 0 L 151.4 0' }}
+  >
+    <CanvasCard name="Gesa" class="absolute top-[77.6px] left-[398.4px]">
+      <div class="flex items-start gap-3">
+        <div class="flex flex-col self-stretch">
+          <PlayArrow accent={accentOf('Gesa')} />
+          <span class="flex-1"></span>
+          <span class="text-[11px] text-fg-subtle">2:17</span>
+        </div>
+        <VideoThumb src={asset('product-b/video-thumb.jpg')} name="Gesa" class="h-[108px] w-48" />
+      </div>
+    </CanvasCard>
+  </Detail>
+
+  <Detail
+    mark="Draw"
+    accent="var(--color-accent-yellow)"
+    title="Sketch"
+    copy="Draw on a copy of the slide to show exactly what you mean."
+    bullets={['Freehand, arrows and boxes', 'Your marks never touch the original', 'Shown next to the comment']}
+    slide="School"
+    connector={{ x: 247, y: 105, w: 147, h: 37.25, d: 'M 0 37.25 L 110 37.25 L 110 0 L 147 0' }}
+    reverse
+  >
+    <CanvasCard name="Anna" class="absolute top-[61px] left-[394px] w-[260px]">
+      <div class="relative h-28 w-[200px] overflow-hidden rounded-chip bg-[#898989]">
+        <img src={asset('product-b/sketch-image.jpg')} alt="" class="absolute inset-0 size-full object-cover" />
+        <img src={asset('product-b/sketch-marks.svg')} alt="" class="absolute top-[-1.5px] left-[-1.5px] h-[80px] w-[172px] max-w-none" />
+      </div>
+      <p class="text-[13px] leading-[18px] text-fg-muted">Like this?</p>
+    </CanvasCard>
+  </Detail>
+
+  <Detail
+    mark="Import"
+    accent="var(--color-powerpoint)"
+    title="PowerPoint comments"
+    copy="Comments already written in PowerPoint come along on import, marked with a P."
+    bullets={['Imported automatically', 'Shown next to Slider comments', 'Original file stays unchanged']}
+    slide="Matrix"
+    connector={{ x: 250, y: 145.25, w: 64, h: 6.75, d: 'M 0 0 L 64 0 L 64 6.75 L 58 6.75' }}
+    pin="powerpoint"
+  >
+    <CommentCard
+      author={gesaFromPowerPoint}
+      source="pptx"
+      meta="from PowerPoint | Oct 3"
+      replies="1 reply"
+      class="absolute top-[108px] left-[308px] w-[372px]"
+    >
+      <Badge slot="badge" tone="powerpoint">PowerPoint</Badge>
+      Please double-check the churn figure.
+    </CommentCard>
+  </Detail>
+
+  <Detail
+    mark="Sync"
+    accent="var(--color-sage)"
+    title="Versions"
+    copy="Linked decks update on their own. Slider shows what changed since your last look."
+    bullets={['Checks for a new version every minute', 'New, changed, moved and deleted slides', 'Comments stay on their slide']}
+    slide="Finance"
+    connector={{ x: 320, y: 169.5, w: 288, h: 0, d: 'M 0 0.5 L 288 0.5' }}
+    reverse
+  >
+    <div class="absolute top-[112px] left-[608px]">
+      <div class="pb-badges flex flex-col items-start gap-2">
+        {
+          changes.map((badge) => <ChangeBadge badge={badge} />)
+        }
+        <!-- Deleted slides are listed apart in the app, with the same red "deleted" badge. -->
+        <Badge tone="danger"><Icon name="delete" size={12} />1 deleted</Badge>
+      </div>
+    </div>
+  </Detail>
+</section>

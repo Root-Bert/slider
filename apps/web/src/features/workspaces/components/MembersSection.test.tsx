@@ -1,0 +1,156 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import type { Workspace, WorkspaceMember } from '@slider/shared';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { api } from '@/lib/api-client';
+import { billingFixture } from '@/test/workspace';
+import { MembersSection } from './MembersSection';
+
+// The real mutation hooks: what is tested here is how TanStack Query calls back per `mutate`.
+
+beforeAll(() => {
+  const proto = HTMLDialogElement.prototype;
+  if (!proto.showModal) {
+    proto.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    };
+  }
+  if (!proto.close) {
+    proto.close = function (this: HTMLDialogElement) {
+      this.removeAttribute('open');
+    };
+  }
+});
+
+const workspace = {
+  id: 'w1',
+  name: 'Agentur Nord',
+  role: 'admin',
+  usage: {
+    members: 3,
+    seatsUsed: 3,
+    maxMembers: null,
+    decks: 0,
+    maxDecks: null,
+    storageBytes: 0,
+    maxStorageBytes: null,
+  },
+  billing: billingFixture(),
+  locked: false,
+} as Workspace;
+
+const member = (userId: string, name: string, role: WorkspaceMember['role']): WorkspaceMember => ({
+  userId,
+  name,
+  email: `${userId}@firma.de`,
+  color: 'blue',
+  role,
+  isCreator: false,
+  joinedAt: '2026-01-01T00:00:00.000Z',
+});
+
+afterEach(() => vi.restoreAllMocks());
+
+function setup(
+  members = [
+    member('rob', 'Robert', 'admin'),
+    member('anna', 'Anna', 'member'),
+    member('ben', 'Ben', 'member'),
+  ],
+) {
+  vi.spyOn(api, 'get').mockImplementation(async (path: string) =>
+    path.endsWith('/members')
+      ? members
+      : path.endsWith('/departure')
+        ? {
+            heir: { userId: 'rob', name: 'Robert' },
+            deleted: [{ id: 'd1', title: 'Q4 aus SharePoint' }],
+            transferred: [{ id: 'd2', title: 'Workshop' }],
+          }
+        : [],
+  );
+  const onNotify = vi.fn();
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <MembersSection workspace={workspace} userId="rob" onNotify={onNotify} />
+    </QueryClientProvider>,
+  );
+  return { onNotify, client };
+}
+
+describe('MembersSection', () => {
+  it('a failed role change still says so when another one was made meanwhile', async () => {
+    let failFirst: (error: Error) => void = () => {};
+    vi.spyOn(api, 'patch')
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            failFirst = reject;
+          }),
+      )
+      .mockImplementationOnce(() => new Promise(() => {}));
+    const { onNotify, client } = setup();
+    await userEvent.selectOptions(await screen.findByLabelText('Rolle von Anna'), 'reviewer');
+    await userEvent.selectOptions(screen.getByLabelText('Rolle von Ben'), 'viewer');
+    // Each row waits for its own change.
+    expect((screen.getByLabelText('Rolle von Anna') as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByLabelText('Rolle von Ben') as HTMLSelectElement).disabled).toBe(true);
+
+    await act(async () => failFirst(new Error('Keine Verbindung zum Server.')));
+    expect(onNotify).toHaveBeenCalledWith('Keine Verbindung zum Server.', 'danger');
+    client.clear();
+  });
+
+  it('a failed removal shows in the dialog, not in a toast behind its backdrop', async () => {
+    vi.spyOn(api, 'delete').mockRejectedValue(new Error('Keine Verbindung zum Server.'));
+    const { onNotify, client } = setup();
+    const get = vi.mocked(api.get);
+    await userEvent.click(await screen.findByRole('button', { name: 'Anna entfernen' }));
+    const dialog = screen.getByRole('dialog', { name: 'Anna entfernen?', hidden: true });
+    // What becomes of Anna's reviews (BER-165), asked from the server.
+    expect(await within(dialog).findByText('Q4 aus SharePoint')).toBeTruthy();
+    expect(dialog.textContent).toContain('mit den Konten der Person:');
+    expect(dialog.textContent).toContain('Diese hochgeladenen Reviews gehen an dich:');
+    expect(get).toHaveBeenCalledWith('/workspaces/w1/members/anna/departure');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Entfernen', hidden: true }));
+    expect(await within(dialog).findByText('Keine Verbindung zum Server.')).toBeTruthy();
+    expect(onNotify).not.toHaveBeenCalled();
+
+    // Opened again later: no stale error from the last attempt.
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen', hidden: true }));
+    await userEvent.click(screen.getByRole('button', { name: 'Ben entfernen' }));
+    const again = screen.getByRole('dialog', { name: 'Ben entfernen?', hidden: true });
+    expect(within(again).queryByText('Keine Verbindung zum Server.')).toBeNull();
+    client.clear();
+  });
+
+  it('asks before an admin demotes themselves; a cancel changes nothing', async () => {
+    const patch = vi.spyOn(api, 'patch').mockResolvedValue({});
+    const { onNotify, client } = setup([
+      member('rob', 'Robert', 'admin'),
+      member('anna', 'Anna', 'admin'),
+    ]);
+    const own = (await screen.findByLabelText('Rolle von Robert')) as HTMLSelectElement;
+    await userEvent.selectOptions(own, 'member');
+    expect(patch).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('dialog', { name: 'Selbst Mitglied werden?', hidden: true });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen', hidden: true }));
+    expect(patch).not.toHaveBeenCalled();
+    expect(own.value).toBe('admin');
+
+    await userEvent.selectOptions(own, 'member');
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Mitglied werden', hidden: true }),
+    );
+    expect(patch).toHaveBeenCalledOnce();
+    expect(patch.mock.calls[0]![1]).toEqual({ role: 'member' });
+    await vi.waitFor(() => expect(onNotify).toHaveBeenCalledWith('Du bist jetzt Mitglied'));
+
+    // Another admin's role changes right away, as before.
+    await userEvent.selectOptions(screen.getByLabelText('Rolle von Anna'), 'member');
+    expect(patch).toHaveBeenCalledTimes(2);
+    client.clear();
+  });
+});

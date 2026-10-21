@@ -1,0 +1,79 @@
+name: Publish
+
+# Publishing a release here (the private development repository) also publishes its code to the
+# public repository Root-Bert/slider: one commit per release on top of the previous one, by
+# "Slider", tagged like here – none of this repository's history goes along. The public
+# repository's release.yml then creates the GitHub release from the tag. Runs only here, never in
+# the public repository or a fork.
+#
+# Repository secret: PUBLIC_REPO_KEY (private SSH key; its public half is a deploy key with write
+# access on Root-Bert/slider, the only one allowed to push there).
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish (again), e.g. v1.2.0
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to the public repository
+    if: github.repository == 'Root-Bert/slider-dev'
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+          persist-credentials: false
+
+      - name: Set up SSH
+        env:
+          PUBLIC_REPO_KEY: ${{ secrets.PUBLIC_REPO_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$PUBLIC_REPO_KEY" > ~/.ssh/public-repo
+          chmod 600 ~/.ssh/public-repo
+          # github.com's published host key (api.github.com/meta).
+          echo 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > ~/.ssh/known_hosts
+          git remote add public git@github.com:Root-Bert/slider.git
+          git config core.sshCommand 'ssh -i ~/.ssh/public-repo -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes'
+
+      - name: Commit the release on top of the public main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git ls-remote --exit-code --tags public "refs/tags/$TAG" >/dev/null; then
+            echo "$TAG is already public"
+            exit 0
+          fi
+          parent=
+          if git fetch --depth=1 public main 2>/dev/null; then parent=$(git rev-parse FETCH_HEAD); fi
+
+          # The release's files, without this repository's local tool settings.
+          git rm -r -q --cached --ignore-unmatch .claude
+          tree=$(git write-tree)
+
+          name=$(gh release view "$TAG" --json name --jq .name)
+          gh release view "$TAG" --json body --jq .body > notes.md
+          printf '%s\n\n' "${name:-Slider ${TAG#v}}" | cat - notes.md > message.md
+
+          export GIT_AUTHOR_NAME=Slider GIT_AUTHOR_EMAIL=slider@bertro.dev
+          export GIT_COMMITTER_NAME=Slider GIT_COMMITTER_EMAIL=slider@bertro.dev
+          commit=$(git commit-tree "$tree" ${parent:+-p "$parent"} -F message.md)
+          # The checkout's tag points at this repository's commit; the public one gets its own.
+          git tag -d "$TAG" >/dev/null 2>&1 || true
+          git tag -a "$TAG" "$commit" -F message.md
+          git push public "$commit:refs/heads/main" "refs/tags/$TAG"
+          echo "published $TAG as $commit"

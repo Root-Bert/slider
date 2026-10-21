@@ -1,0 +1,286 @@
+---
+import { Badge } from '@/ui/Badge';
+import { accentColor } from '@/lib/accent';
+import { buttonClasses } from '@/ui/button-classes';
+import Cursor from '~/components/Cursor.astro';
+import Note from '~/components/Note.astro';
+import SectionMark from '~/components/SectionMark.astro';
+import Slide, { type SlideName } from '~/components/slides/Slide.astro';
+import { asset } from '~/lib/links';
+import { person, type PersonName } from '~/lib/people';
+
+/*
+ * Homepage | Your decks: step one of the story. "Connect PowerPoint, OneDrive, … and every new
+ * version shows up on its own." (Figma "Cloud Integrations" 316:6285) – the sources as chips, the
+ * link field syncing a new version – and below it a slow belt of very different decks (Figma
+ * "Every Deck" 316:6367) with reviewers on them: whatever you present, it works.
+ */
+const cyan = 'var(--color-accent-cyan)';
+const chip = (name: string, logo: string, w: number, h: number) => ({ name, logo, w, h });
+const firstRow = [
+  chip('PowerPoint', 'powerpoint', 34, 32.9),
+  chip('OneDrive', 'onedrive', 34, 20.91),
+  chip('SharePoint', 'sharepoint', 30.6, 34),
+  chip('Nextcloud', 'nextcloud', 34, 34),
+];
+const drive = chip('Google Drive', 'google-drive', 34, 30.38);
+const tail = 'and every new version shows up on its own.'.split(' ');
+
+/** The belt: dark and light themes mixed, some with a reviewer's cursor or comment on them. */
+const decks: { name: SlideName; cursor?: [PersonName, number, number]; note?: [PersonName, string] }[] = [
+  { name: 'Finance', cursor: ['Gesa', 150, 70] },
+  { name: 'Gantt' },
+  { name: 'Lecture', note: ['Ingrid', 'Show the LM shift as its own step?'] },
+  { name: 'School', cursor: ['Lara', 220, 60] },
+  { name: 'Matrix' },
+  { name: 'FloorPlan', note: ['Marlon', 'Can meeting room 2 get a second door?'] },
+  { name: 'FieldMap', cursor: ['Benni', 120, 110] },
+];
+const DECK_W = 352;
+---
+
+<section class="relative isolate overflow-hidden py-12 lg:py-16" data-section>
+  <img src={asset('home/cloud/starfield.svg')} alt="" aria-hidden="true" class="pointer-events-none absolute inset-0 -z-10 size-full object-cover" />
+  <svg class="pointer-events-none absolute top-0 right-0 -z-10 hidden h-[530px] w-[1440px] xl:block" viewBox="0 0 1440 530" fill="none" aria-hidden="true" style="right: max(0px, calc((100% - 1440px) / 2))">
+    <circle cx="1420" cy="640" r="299.5" stroke="white" stroke-opacity="0.16"></circle>
+    <circle cx="1420" cy="640" r="389.5" stroke="white" stroke-opacity="0.08" stroke-dasharray="2 6"></circle>
+    <circle cx="1420" cy="640" r="479.5" stroke="white" stroke-opacity="0.08"></circle>
+    <path d="M1017.68 384.679C1082.62 282.349 1184.11 208.61 1301.5 178.47" stroke="white" stroke-opacity="0.3" stroke-width="7" stroke-dasharray="1 12"></path>
+    <!-- Glow as a wide faint stroke drawn along, not a CSS filter: Safari paints filters on drawn paths elsewhere on the page. -->
+    <path d="M1142 529.931C1162.88 477.176 1198.35 431.454 1244.25 398.104" stroke="#8FCB9B" stroke-opacity="0.25" stroke-width="8" stroke-linecap="round" pathLength="1" data-draw></path>
+    <path d="M1142 529.931C1162.88 477.176 1198.35 431.454 1244.25 398.104" stroke="#8FCB9B" stroke-width="2" pathLength="1" data-draw></path>
+    <circle cx="1243.66" cy="397.295" r="12" fill="#8FCB9B" fill-opacity="0.2"></circle>
+    <circle cx="1243.66" cy="397.295" r="5" fill="#8FCB9B"></circle>
+    <path class="cloud-beam" d="M1243.66 397.295L1013 489" stroke="#8FCB9B" stroke-width="1.25" stroke-dasharray="3 6"></path>
+  </svg>
+
+  <div class="px-4 md:px-16">
+    <SectionMark label="Your decks" accent={cyan} />
+
+    <h2 class="cloud-sentence mt-8 flex flex-wrap items-center gap-x-4 gap-y-3 font-bold text-fg">
+      <span data-reveal>Connect</span>
+      {
+        firstRow.map((c, i) => (
+          <span class="cloud-chip" data-reveal style={`--i: ${1 + i}`}>
+            <span class="cloud-icon">
+              <img src={asset(`home/cloud/${c.logo}.svg`)} alt="" style={`width: ${c.w / 44}em; height: ${c.h / 44}em`} />
+            </span>
+            {c.name}
+          </span>
+        ))
+      }
+      <span data-reveal style="--i: 5">or</span>
+      <span class="cloud-chip" data-reveal style="--i: 6">
+        <span class="cloud-icon">
+          <img src={asset(`home/cloud/${drive.logo}.svg`)} alt="" style={`width: ${drive.w / 44}em; height: ${drive.h / 44}em`} />
+        </span>
+        {drive.name}
+      </span>
+      {tail.map((word, i) => <span class="text-fg-subtle" data-reveal style={`--i: ${7 + i * 0.4}`}>{word}</span>)}
+    </h2>
+
+    <div class="mt-9 flex flex-col items-start gap-3 lg:flex-row lg:items-center lg:gap-0" data-reveal style="--i: 9">
+      <div class="flex max-w-full items-center gap-3 rounded-panel py-1.5 pr-1.5 pl-4 glass-elevated" style="box-shadow: inset 0 0 0 1px var(--color-hairline-strong), 0 0 90px rgb(0 224 255 / 0.07), 0 0 32px rgb(0 224 255 / 0.22)">
+        <span class="min-w-0 truncate text-[15px] text-fg-muted">https://contoso.sharepoint.com/sites/board/Q3-Strategy.pptx</span>
+        <span class={buttonClasses({ size: 'md' })}>Open</span>
+      </div>
+      <svg class="hidden h-0.5 w-14 overflow-visible lg:block" viewBox="0 0 56 2" fill="none" aria-hidden="true">
+        <path d="M0 1H56" stroke={cyan} stroke-width="2" stroke-linecap="round" pathLength="1" data-draw style="--i: 6"></path>
+      </svg>
+      <div class="flex flex-wrap items-center gap-2.5 rounded-control py-2 pr-2 pl-3.5 glass-control">
+        <span class="text-body font-medium text-fg">Version 3 synced | 2 min ago</span>
+        <Badge tone="success">1 new</Badge>
+        <Badge tone="warning">2 changed</Badge>
+      </div>
+    </div>
+
+    <p class="mt-14 text-lg leading-[1.5] text-fg-muted lg:mt-16" data-reveal style="--i: 10">
+      <span class="text-fg">Made for every deck you'll ever show.</span> Numbers, lectures, floor plans, roadmaps.
+    </p>
+  </div>
+
+  <!-- The belt: two identical runs, the second one only there to close the loop. -->
+  <div class="cloud-belt relative mt-6 select-none" data-reveal style="--i: 11">
+    <div
+      class="pointer-events-none absolute inset-x-[5%] top-1/2 -z-10 h-[340px] -translate-y-1/2"
+      style="background: radial-gradient(closest-side, rgb(143 204 156 / 0.22), transparent)"
+      aria-hidden="true"
+    ></div>
+    <div class="cloud-track flex w-max gap-8 py-6">
+      {
+        [0, 1].map((run) => (
+          <div class="flex gap-8" aria-hidden={run === 1 ? 'true' : undefined}>
+            {decks.map((deck) => (
+              <div class="relative shrink-0">
+                <Slide name={deck.name} width={DECK_W} class="shadow-float" />
+                {deck.cursor && (
+                  <Cursor
+                    name={deck.cursor[0]}
+                    class="absolute"
+                    style={`left: ${deck.cursor[1]}px; top: ${deck.cursor[2]}px`}
+                    drift
+                  />
+                )}
+                {deck.note && (
+                  <Note
+                    name={deck.note[0]}
+                    accent={accentColor(person(deck.note[0]).color)}
+                    class="absolute right-[-18px] bottom-[-14px]"
+                    style="width: 248px"
+                  >
+                    {deck.note[1]}
+                  </Note>
+                )}
+              </div>
+            ))}
+          </div>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .cloud-sentence {
+    font-size: clamp(34px, 4.45vw, 64px);
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+  }
+
+  .cloud-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.318em;
+    padding: 0.182em 0.545em 0.182em 0.182em;
+    border-radius: 999px;
+    background: var(--color-glass);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+    font-size: 0.6875em;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+
+  .cloud-icon {
+    display: flex;
+    width: 1.227em;
+    height: 1.227em;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .cloud-beam {
+    animation: cloud-beam 1.2s linear infinite;
+  }
+
+  @keyframes cloud-beam {
+    to {
+      stroke-dashoffset: -9;
+    }
+  }
+
+  /*
+   * The belt fades out at both edges and drifts left (script below); sideways scrolling or a drag
+   * moves it too, up and down still scrolls the page.
+   */
+  .cloud-belt {
+    mask-image: linear-gradient(to right, transparent, black 12%, black 88%, transparent);
+    touch-action: pan-y;
+    cursor: grab;
+  }
+
+  .cloud-belt:active {
+    cursor: grabbing;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cloud-beam {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  /*
+   * The deck belt: drifts left at a steady pace, hover or not. A sideways wheel (trackpad, shift +
+   * wheel) or a drag pushes it along; it loops seamlessly because the track holds the run twice.
+   * With reduced motion it only moves when you move it.
+   */
+  const SPEED = 34; // px per second
+  const GAP = 32; // gap-8 between the two runs
+
+  for (const belt of document.querySelectorAll<HTMLElement>('.cloud-belt')) {
+    const track = belt.querySelector<HTMLElement>('.cloud-track')!;
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let run = 0;
+    let offset = 0;
+    let last = 0;
+    let visible = false;
+    let frame = 0;
+
+    const measure = () => {
+      run = (track.firstElementChild as HTMLElement).offsetWidth + GAP;
+    };
+    const place = () => {
+      offset = ((offset % run) + run) % run;
+      track.style.translate = `${-offset}px 0`;
+    };
+    const tick = (now: number) => {
+      if (last) offset += (SPEED * (now - last)) / 1000;
+      last = now;
+      place();
+      frame = requestAnimationFrame(tick);
+    };
+    const start = () => {
+      if (reduce || frame || !visible) return;
+      last = 0;
+      frame = requestAnimationFrame(tick);
+    };
+    const stop = () => {
+      cancelAnimationFrame(frame);
+      frame = 0;
+    };
+
+    measure();
+    new ResizeObserver(() => {
+      measure();
+      place();
+    }).observe(track);
+    new IntersectionObserver(([entry]) => {
+      visible = entry?.isIntersecting ?? false;
+      if (visible) start();
+      else stop();
+    }).observe(belt);
+
+    belt.addEventListener(
+      'wheel',
+      (event) => {
+        // Shift turns a plain wheel sideways; otherwise only a mostly sideways scroll counts.
+        if (!event.shiftKey && Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
+        event.preventDefault();
+        offset += event.shiftKey ? event.deltaY || event.deltaX : event.deltaX;
+        place();
+      },
+      { passive: false },
+    );
+
+    belt.addEventListener('dragstart', (event) => event.preventDefault());
+    let dragX: number | null = null;
+    belt.addEventListener('pointerdown', (event) => {
+      dragX = event.clientX;
+      belt.setPointerCapture(event.pointerId);
+    });
+    belt.addEventListener('pointermove', (event) => {
+      if (dragX === null) return;
+      offset -= event.clientX - dragX;
+      dragX = event.clientX;
+      place();
+    });
+    const release = () => {
+      dragX = null;
+    };
+    belt.addEventListener('pointerup', release);
+    belt.addEventListener('pointercancel', release);
+  }
+</script>

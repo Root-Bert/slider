@@ -1,0 +1,169 @@
+---
+import DeckChrome from './DeckChrome.astro';
+
+/**
+ * The three AI suggestions for the revenue slide (GrowthSlide) at its native 960 × 540, one per
+ * opinion of the motion section's thread: `number` (Lara: one big figure), `line` (Benni: the
+ * trend as a line), `steps` (Carolin: the story in three steps, Q4 last). Same deck frame and
+ * numbers as the original.
+ */
+interface Props {
+  kind: 'number' | 'line' | 'steps';
+}
+
+const { kind } = Astro.props;
+// ARR in EUR M per quarter, Q4 = plan.
+const values = [12, 17, 21.5, 29];
+const quarters = ['Q1', 'Q2', 'Q3', 'Q4'];
+const growth = ['+42 %', '+26 %', '+35 %'];
+
+// Line chart: 8 px per million above a baseline at 450.
+const BASE = 450;
+const pts = values.map((v, i) => [180 + i * 220, BASE - v * 8] as const);
+const actual = pts
+  .slice(0, 3)
+  .map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`)
+  .join(' ');
+
+const stats = [
+  ['€29.0 M', 'ARR in Q4 (plan)'],
+  ['+35 %', 'Growth Q3 → Q4'],
+  ['118 %', 'Net revenue retention'],
+] as const;
+const steps = [
+  { n: '01', title: 'Steady base', body: 'ARR grew in every quarter, from €12.0 M to €21.5 M.', on: [0, 1, 2] },
+  { n: '02', title: 'Stronger mix', body: 'Enterprise plans lift the average deal size going into Q4.', on: [2, 3] },
+  { n: '03', title: '€29.0 M in Q4', body: '2.4× the first quarter – on plan.', on: [3] },
+];
+---
+
+{
+  kind === 'number' && (
+    <DeckChrome eyebrow="REVENUE | Q4 VS. Q1">
+      <p class="absolute top-[92px] left-[40px] text-[200px] leading-none font-bold tracking-[-0.055em] tabular-nums">
+        2.4<span class="text-accent-blue">×</span>
+      </p>
+      <p class="absolute top-[322px] left-12 text-[26px] leading-8 font-semibold tracking-[-0.015em]">Recurring revenue, Q4 vs. Q1.</p>
+      <p class="absolute top-[364px] left-12 w-[480px] text-[15px] leading-[22px] text-[#475569]">
+        From €12.0 M in the first quarter to €29.0 M planned for the fourth – growth in every quarter on the way.
+      </p>
+      <div class="absolute top-[112px] left-[608px] h-[344px] w-px bg-[#e2e8f0]" />
+      {stats.map(([value, label], i) => (
+        <div class="absolute left-[648px] w-[264px]" style={`top: ${116 + i * 116}px`}>
+          {i > 0 && <span class="absolute -top-5 left-0 h-px w-full bg-[#e2e8f0]" />}
+          <p class:list={['text-[40px] leading-[44px] font-bold tracking-[-0.03em] tabular-nums', i === 0 && 'text-accent-blue']}>{value}</p>
+          <p class="mt-1.5 text-[13px] text-[#64748b]">{label}</p>
+        </div>
+      ))}
+    </DeckChrome>
+  )
+}
+
+{
+  kind === 'line' && (
+    <DeckChrome eyebrow="REVENUE">
+      <p class="absolute top-[100px] left-12 text-[34px] leading-10 font-bold tracking-[-0.02em] whitespace-nowrap">Growth accelerates into Q4.</p>
+      <p class="absolute top-[146px] left-12 text-[13px] text-[#64748b]">ARR by quarter, EUR M – growth over the previous quarter on each step.</p>
+      <p class="absolute top-[150px] right-12 flex items-center gap-3 text-[10px] text-[#64748b]">
+        <span class="flex items-center gap-1.5">
+          <span class="h-0.5 w-4 bg-[#1e293b]" />
+          Actual
+        </span>
+        <span class="flex items-center gap-1.5">
+          <span class="h-0.5 w-4 border-t-2 border-dashed border-accent-blue" />
+          Plan
+        </span>
+      </p>
+      <svg class="absolute inset-0 overflow-visible" width="960" height="540" viewBox="0 0 960 540" fill="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="gv-area" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#1e293b" stop-opacity="0.12" />
+            <stop offset="1" stop-color="#1e293b" stop-opacity="0" />
+          </linearGradient>
+        </defs>
+        {[0, 10, 20, 30].map((t) => (
+          <>
+            <path d={`M120 ${BASE - t * 8}H912`} stroke={t ? '#e2e8f0' : '#cbd5e1'} stroke-width={t ? 1 : 2} />
+            <text x="104" y={BASE - t * 8 + 3.5} text-anchor="end" font-size="10" fill="#94a3b8">
+              {t}
+            </text>
+          </>
+        ))}
+        <path d={`${actual} L${pts[2]![0]} ${BASE} L${pts[0]![0]} ${BASE} Z`} fill="url(#gv-area)" />
+        <path d={actual} stroke="#1e293b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+        <path d={`M${pts[2]![0]} ${pts[2]![1]} L${pts[3]![0]} ${pts[3]![1]}`} stroke="var(--color-accent-blue)" stroke-width="3" stroke-dasharray="7 6" stroke-linecap="round" />
+        {pts.map(([x, y], i) => (
+          <>
+            {i === 3 ? (
+              <>
+                <circle cx={x} cy={y} r="16" fill="var(--color-accent-blue)" opacity="0.15" />
+                <circle cx={x} cy={y} r="7" fill="var(--color-accent-blue)" />
+              </>
+            ) : (
+              <circle cx={x} cy={y} r="5.5" fill="#fafaf8" stroke="#1e293b" stroke-width="3" />
+            )}
+            <text x={x} y={y - 18} text-anchor="middle" font-size="13" font-weight="600" fill={i === 3 ? 'var(--color-accent-blue)' : '#0f172a'}>
+              {values[i]!.toFixed(1)}
+            </text>
+            <text x={x} y={BASE + 22} text-anchor="middle" font-size="12" font-weight="500" fill="#64748b">
+              {quarters[i]}
+            </text>
+          </>
+        ))}
+      </svg>
+      {growth.map((g, i) => {
+        const [x1, y1] = pts[i]!;
+        const [x2, y2] = pts[i + 1]!;
+        return (
+          <span
+            class:list={[
+              'absolute -translate-x-1/2 rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums',
+              i === 2 ? 'bg-accent-blue text-white' : 'bg-[#e2e8f0] text-[#0f172a]',
+            ]}
+            style={`left: ${(x1 + x2) / 2}px; top: ${(y1 + y2) / 2 + 14}px`}
+          >
+            {g}
+          </span>
+        );
+      })}
+    </DeckChrome>
+  )
+}
+
+{
+  kind === 'steps' && (
+    <DeckChrome eyebrow="REVENUE">
+      <p class="absolute top-[100px] left-12 text-[34px] leading-10 font-bold tracking-[-0.02em] whitespace-nowrap">Three steps to 2.4× in one year.</p>
+      <div class="absolute top-[68px] right-12 flex items-center gap-2 rounded-full bg-[rgb(0_0_0/0.85)] px-3 py-[5px]">
+        <span class="size-[7px] rounded-full bg-accent-blue shadow-[0_0_8px_var(--color-accent-blue)]" />
+        <span class="text-xs font-medium text-white tabular-nums">Step 3 / 3</span>
+      </div>
+      {steps.map((step, i) => {
+        const last = i === steps.length - 1;
+        return (
+          <div
+            class:list={['absolute top-[172px] flex h-[296px] w-[272px] flex-col rounded-[8px] p-6', last ? 'bg-accent-blue text-white shadow-[0_12px_40px_rgb(0_72_255/0.35)]' : 'bg-[#f1f5f9]']}
+            style={`left: ${48 + i * 296}px`}
+          >
+            <span class:list={['text-xs font-semibold tracking-[0.1em]', last ? 'text-white/70' : 'text-accent-blue']}>STEP {step.n}</span>
+            <span class="mt-3 text-[24px] leading-[30px] font-bold tracking-[-0.02em]">{step.title}</span>
+            <span class:list={['mt-2 text-sm leading-5', last ? 'text-white/85' : 'text-[#475569]']}>{step.body}</span>
+            <div class="mt-auto flex h-[72px] items-end gap-2">
+              {values.map((v, q) => (
+                <div class="flex flex-1 flex-col items-center gap-1.5">
+                  <span
+                    class="w-full rounded-t-[2px]"
+                    style={`height: ${(v / 29) * 52}px; background: ${
+                      last ? (step.on.includes(q) ? '#fff' : 'rgb(255 255 255 / 0.25)') : step.on.includes(q) ? '#1e293b' : '#cbd5e1'
+                    }`}
+                  />
+                  <span class:list={['text-[10px] font-medium', last ? 'text-white/70' : 'text-[#64748b]']}>{quarters[q]}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </DeckChrome>
+  )
+}

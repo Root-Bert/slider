@@ -1,0 +1,41 @@
+---
+import { Avatar, AvatarStack } from '@/ui/Avatar';
+import Cursor from '~/components/Cursor.astro';
+import Slide from '~/components/slides/Slide.astro';
+import { person } from '~/lib/people';
+import Chapter from './Chapter.astro';
+import Highlight from '~/components/Highlight.astro';
+
+/** 06 | So we build them together: everyone on the same slide, live. */
+const others = [person('Lara'), person('Paul'), person('Gesa')];
+---
+
+<Chapter n="06" label="So we build them together">
+  <h2 class="vision-h" data-reveal>
+    <span class="block">Made the way they are shown:</span>
+    <Highlight by="Gesa">together.</Highlight>
+  </h2>
+  <div class="flex w-full flex-col gap-10 lg:flex-row lg:items-center lg:gap-16">
+    <p class="vision-body max-w-[480px] shrink-0" data-reveal style="--i: 1">
+      A presentation exists to inform people and bring them on board. Creating it should work
+      exactly the same way. That is why Slider is multiplayer: everyone on the same slide, live, at
+      the same time.
+    </p>
+    <!-- Together: a live session on one slide. -->
+    <div class="vision-zoom relative h-[300px] w-[500px] shrink-0" data-reveal style="--i: 2">
+      <div class="absolute top-1 left-10 flex items-center gap-1.5">
+        <AvatarStack authors={others} size={32} />
+        <Avatar author={{ name: 'You', color: 'violet', type: 'owner' }} size={32} nativeTitle={false} />
+      </div>
+      <div class="absolute top-12 left-10 opacity-35 blur-[48px]" aria-hidden="true">
+        <Slide name="FieldMap" width={422.4} />
+      </div>
+      <div class="absolute top-12 left-10">
+        <Slide name="FieldMap" width={422.4} />
+      </div>
+      <Cursor name="Lara" class="absolute top-[120px] left-[120px]" drift />
+      <Cursor name="Paul" class="absolute top-[90px] left-[330px]" drift />
+      <Cursor name="Gesa" class="absolute top-[230px] left-[250px]" drift />
+    </div>
+  </div>
+</Chapter>

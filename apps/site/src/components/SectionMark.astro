@@ -1,0 +1,22 @@
+---
+/**
+ * Section intro (Site / Section Mark): the Slider logo stack – two offset slides – in the
+ * section's accent, plus the section name. Never numbered, never mono.
+ */
+interface Props {
+  label: string;
+  /** Any CSS colour; the website's sage by default. */
+  accent?: string;
+  class?: string;
+}
+
+const { label, accent = 'var(--color-sage)', class: className } = Astro.props;
+---
+
+<div class:list={['flex items-center gap-2.5', className]} style={`--mark: ${accent}`}>
+  <svg width="22" height="18" viewBox="0 0 22 18" aria-hidden="true">
+    <rect x="1" y="5" width="15" height="11" rx="2.5" fill="var(--mark)"></rect>
+    <rect x="5" y="1" width="15" height="11" rx="2.5" fill="var(--mark)"></rect>
+  </svg>
+  <span class="text-[15px] font-medium tracking-[-0.01em] text-fg-muted">{label}</span>
+</div>

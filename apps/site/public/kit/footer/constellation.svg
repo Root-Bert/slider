@@ -1,0 +1,17 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="320" height="200" viewBox="0 0 320 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Constellation | Slider">
+<path id="Constellation lines" d="M10 150L70 95L150 120M150 120L200 40L290 70M150 120L250 170" stroke="white" stroke-opacity="0.16"/>
+<circle id="Star" cx="10" cy="150" r="1.5" fill="white" fill-opacity="0.9"/>
+<circle id="Star_2" cx="70" cy="95" r="2" fill="white" fill-opacity="0.9"/>
+<circle id="Star_3" cx="150" cy="120" r="1.5" fill="white" fill-opacity="0.9"/>
+<circle cx="200" cy="40" r="12.8" fill="url(#sparkle-glow)"/>
+<g id="Star | sparkle">
+<path d="M200 34C200.96 39.04 200.96 39.04 206 40C200.96 40.96 200.96 40.96 200 46C199.04 40.96 199.04 40.96 194 40C199.04 39.04 199.04 39.04 200 34Z" fill="#8FCB9B"/>
+</g>
+<circle id="Star_4" cx="290" cy="70" r="1.5" fill="white" fill-opacity="0.9"/>
+<circle id="Star_5" cx="250" cy="170" r="2" fill="white" fill-opacity="0.9"/>
+</g>
+<defs>
+<radialGradient id="sparkle-glow"><stop offset="0" stop-color="white" stop-opacity="0.45"/><stop offset="0.35" stop-color="white" stop-opacity="0.14"/><stop offset="1" stop-color="white" stop-opacity="0"/></radialGradient>
+</defs>
+</svg>

@@ -1,0 +1,41 @@
+---
+import { asset } from '~/lib/links';
+
+/**
+ * Site / Orbit: a corner orbit – dim hairline arcs, one sage trajectory, a satellite dot at its
+ * end. Absolute in a section corner, never over a headline; no labels.
+ */
+interface Props {
+  class?: string;
+  style?: string;
+}
+
+const { class: className, style } = Astro.props;
+const src = (name: string) => asset(`kit/orbit/${name}`);
+---
+
+<div
+  class:list={['pointer-events-none absolute h-[360px] w-[400px] overflow-hidden select-none', className]}
+  style={style}
+  aria-hidden="true"
+>
+  <div class="absolute top-[-200px] left-[220px] size-[360px]">
+    <img src={src('r180.svg')} alt="" class="absolute top-1/2 left-0 h-1/2 w-1/2" />
+  </div>
+  <div class="absolute top-[-280px] left-[140px] size-[520px]">
+    <img src={src('r260.png')} alt="" class="absolute top-1/2 left-0 h-1/2 w-1/2" />
+  </div>
+  <div class="absolute top-[-360px] left-[60px] size-[680px]">
+    <img src={src('r340.svg')} alt="" class="absolute top-1/2 left-0 h-1/2 w-1/2" />
+  </div>
+  <div class="absolute top-[-280px] left-[140px] size-[520px]">
+    <div class="absolute inset-[76.64%_59.32%_0.89%_7.78%]">
+      <img src={src('trajectory.svg')} alt="" class="block size-full max-w-none" />
+    </div>
+  </div>
+  <div class="absolute top-[114.81px] left-[175.97px] size-[9px]">
+    <div class="absolute inset-[-111.11%]">
+      <img src={src('satellite.svg')} alt="" class="block size-full max-w-none" />
+    </div>
+  </div>
+</div>

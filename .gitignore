@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.astro/
+.data/
+*.log
+.env
+.DS_Store
+.claude/worktrees/
+.claude/settings.local.json
+coverage/
+*.tsbuildinfo
+e2e/.data/
+e2e/.results/
+e2e/.report/
+e2e/.shots/
+# Company fonts of a server install (deploy/docker-compose.yml mounts them).
+deploy/fonts/

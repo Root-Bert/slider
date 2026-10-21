@@ -1,0 +1,20 @@
+---
+import AiFeature from '~/components/product/AiFeature.astro';
+import CommentDetails from '~/components/product/CommentDetails.astro';
+import CommentFeatures from '~/components/product/CommentFeatures.astro';
+import Hero from '~/components/product/Hero.astro';
+import Multiplayer from '~/components/product/Multiplayer.astro';
+import OpenSource from '~/components/product/OpenSource.astro';
+import Roadmap from '~/components/product/Roadmap.astro';
+import Base from '~/layouts/Base.astro';
+---
+
+<Base current="product" title="Product">
+  <Hero />
+  <CommentFeatures />
+  <CommentDetails />
+  <Multiplayer />
+  <AiFeature />
+  <OpenSource />
+  <Roadmap />
+</Base>

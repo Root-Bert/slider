@@ -1,0 +1,159 @@
+---
+import Base from '~/layouts/Base.astro';
+import { Icon } from '@/ui/Icon';
+import { buttonClasses } from '@/ui/button-classes';
+import { CONTACT_URL, page } from '~/lib/links';
+
+/**
+ * The contact form (the second way to reach us next to the mail address, § 5 DDG), drawn as the
+ * app's comment composer: the email sits where the name goes and, once typed, gets its own
+ * generated avatar and accent – like every reviewer in Slider – the message is the comment. Posts JSON to `/slider/api/contact`, which Caddy passes to Slider
+ * (deploy/website/website.caddy); Slider mails it with the sender as Reply-To. The `website`
+ * field is a honeypot people never see.
+ */
+---
+
+<Base title="Contact" description="Write to the people behind Slider.">
+  <section class="px-4 pt-16 pb-24 md:px-16">
+    <div class="mx-auto flex max-w-[560px] flex-col gap-8">
+      <div class="flex flex-col gap-3">
+        <h1 class="text-[40px] leading-[1.1] font-black tracking-[-0.02em] text-fg">Contact</h1>
+        <p class="text-[15px] leading-[1.65] text-fg-muted">
+          Questions, feedback, a bug? Leave us a comment, we answer by email. Or mail us directly at{' '}
+          <a href={CONTACT_URL} class="text-fg underline decoration-fg-faint underline-offset-3 hover:decoration-fg">slider@bertro.dev</a>.
+        </p>
+      </div>
+
+      <form
+        class="contact-box glass-elevated flex flex-col gap-3 rounded-panel p-3 transition-shadow duration-300"
+        data-contact
+        novalidate
+      >
+        <header class="flex items-center gap-2.5">
+          <!-- Placeholder until the email is typed, then its generated avatar (see the script). -->
+          <span
+            class="relative flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-placeholder transition-shadow duration-300"
+            style="box-shadow: inset 0 0 0 2px var(--contact-ring)"
+            aria-hidden="true"
+          >
+            <Icon name="person" size={20} className="text-fg-subtle" data-contact-person />
+            <img alt="" class="hidden size-full rounded-full object-cover p-px" data-contact-avatar />
+          </span>
+          <div class="flex min-w-0 flex-1 flex-col gap-1">
+            <input
+              name="email"
+              type="email"
+              maxlength="320"
+              required
+              autocomplete="email"
+              aria-label="Your email"
+              placeholder="Your email"
+              class="field-well focus-field h-9 w-full rounded-control-sm px-3 text-sm font-medium text-fg outline-none placeholder:font-normal placeholder:text-fg-subtle"
+            />
+            <span class="truncate px-1 text-caption text-fg-subtle">New comment | we reply by email</span>
+          </div>
+        </header>
+
+        <div class="field-well focus-field rounded-control-sm px-3 py-2">
+          <textarea
+            name="message"
+            required
+            maxlength="5000"
+            rows="5"
+            aria-label="Message"
+            placeholder="What's on your mind?"
+            class="block w-full resize-y bg-transparent text-body leading-5 text-fg outline-none placeholder:text-fg-subtle"
+          ></textarea>
+        </div>
+        <!-- Honeypot: hidden from people and screen readers, bots fill it in. -->
+        <div class="absolute -left-[9999px]" aria-hidden="true">
+          <label for="contact-website">Website</label>
+          <input id="contact-website" name="website" type="text" tabindex="-1" autocomplete="off" />
+        </div>
+
+        <footer class="flex items-center gap-3">
+          <p class="flex-1 text-caption text-fg-subtle" role="status" data-contact-status></p>
+          <button type="submit" class:list={[buttonClasses({ size: 'sm' }), 'shadow-glow hover:shadow-glow-hover disabled:opacity-60']}>
+            <Icon name="send" size={16} />
+            Send
+          </button>
+        </footer>
+      </form>
+
+      <p class="text-xs leading-[1.5] text-fg-faint">
+        We use your address and message only to answer you, see the <a href={page('datenschutz')} class="underline underline-offset-3 hover:text-fg-subtle">privacy policy</a>.
+      </p>
+    </div>
+  </section>
+</Base>
+
+<style>
+  /* The app composer's glow, in the writer's accent: blue until the email gives them their own. */
+  .contact-box {
+    --contact-accent: var(--color-accent-blue);
+    --contact-ring: var(--color-hairline-strong);
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--contact-accent) 90%, transparent),
+      0 0 32px color-mix(in srgb, var(--contact-accent) 35%, transparent),
+      var(--shadow-float);
+  }
+</style>
+
+<script>
+  import { generatedAvatar } from '@/lib/generated-avatar';
+
+  const form = document.querySelector<HTMLFormElement>('[data-contact]');
+  const status = document.querySelector<HTMLElement>('[data-contact-status]');
+  const button = form?.querySelector<HTMLButtonElement>('button[type="submit"]');
+
+  // Like a reviewer in Slider: a generated avatar and one accent, both seeded by the address.
+  const ACCENTS = ['yellow', 'green', 'cyan', 'blue', 'violet'];
+  const email = form?.querySelector<HTMLInputElement>('input[name="email"]');
+  const avatar = form?.querySelector<HTMLImageElement>('[data-contact-avatar]');
+  const personIcon = form?.querySelector<SVGElement>('[data-contact-person]');
+  email?.addEventListener('input', () => {
+    if (!form || !avatar || !personIcon) return;
+    const address = email.value.trim().toLowerCase();
+    const known = email.validity.valid && address.includes('@');
+    avatar.classList.toggle('hidden', !known);
+    personIcon.classList.toggle('hidden', known);
+    if (!known) {
+      form.style.removeProperty('--contact-accent');
+      form.style.removeProperty('--contact-ring');
+      return;
+    }
+    const hash = [...address].reduce((sum, char) => (sum * 31 + char.charCodeAt(0)) >>> 0, 7);
+    const accent = ACCENTS[hash % ACCENTS.length];
+    avatar.src = generatedAvatar(address);
+    form.style.setProperty('--contact-accent', `var(--color-accent-${accent})`);
+    form.style.setProperty('--contact-ring', `var(--color-ring-${accent})`);
+  });
+
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!form.reportValidity() || !status || !button) return;
+    const data = Object.fromEntries(new FormData(form)) as Record<string, string>;
+    button.disabled = true;
+    status.textContent = 'Sending…';
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL.replace(/\/$/, '')}/api/contact`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (res.ok) {
+        form.reset();
+        email?.dispatchEvent(new Event('input'));
+        status.textContent = 'Thanks! We’ll get back to you by email.';
+      } else if (res.status === 429) {
+        status.textContent = 'Too many messages for now. Please try again later or mail us.';
+      } else {
+        status.textContent = 'That didn’t work. Please mail us at slider@bertro.dev.';
+      }
+    } catch {
+      status.textContent = 'That didn’t work. Please mail us at slider@bertro.dev.';
+    } finally {
+      button.disabled = false;
+    }
+  });
+</script>

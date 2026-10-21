@@ -1,0 +1,318 @@
+import { and, eq, inArray } from 'drizzle-orm';
+import type { ImportState } from '@slider/shared';
+import { MAX_SLIDES, PptxError, svgForRenderHash } from '@slider/pptx';
+import type { Clock } from '../clock';
+import type { Database, Executor } from '../db/client';
+import { decks, revisions, slides, slideVersions } from '../db/schema';
+import type { Logger } from '../logger';
+import { remeasureDeck } from '../services/workspace-storage';
+import { blobKeys, type BlobStorage } from '../storage/blob-storage';
+import { importSyncRevision } from '../sync/sync-import';
+import { beginImportAttempt, endImportAttempt, ImportCrashLoop, importsStopping } from './attempts';
+import { deleteOrphanSlides, FINGERPRINT_VERSION, sha256Hex, toShape } from './common';
+import { ConversionAborted, type PptxToPdf } from './libreoffice';
+import { renderSlidePages, slideRenderer, storeSlideRender, type OfficePdf } from './office-pages';
+import type { OpenPptx } from './pptx';
+import { upsertPptxComments, type ImportedSlide } from './pptx-comments';
+import type { ImportJob } from './queue';
+import type { RenderProgress } from './render-progress';
+import { rerenderJob } from './rerender';
+import {
+  isGoogleSlidesDeck,
+  slideIdsFor,
+  upsertGoogleComments,
+  type SlidesExtrasReader,
+} from './slides-extras';
+
+export interface ImportDeps {
+  db: Database;
+  storage: BlobStorage;
+  openPptx: OpenPptx;
+  clock: Clock;
+  log: Logger;
+  /** Office's rendering of cloud decks (BER-94); without it every slide uses the SVG preview. */
+  officePdf?: OfficePdf;
+  /** LibreOffice's rendering of any deck (BER-94); `null`/absent when it is not installed. */
+  libreOfficePdf?: PptxToPdf | null;
+  /** Google Slides' slide ids and comments (BER-157); absent → neither is read. */
+  slidesExtras?: SlidesExtrasReader;
+  /** Progress of background re-renders, shown by `GET /decks/:id/status`. */
+  renderProgress?: RenderProgress;
+  /** `SYNC_POLL_INTERVAL_MS`: the base of the backoff after a failed sync import. */
+  syncPollMs?: number;
+}
+
+const PPTX_ERROR_MESSAGES: Record<PptxError['code'], string> = {
+  encrypted: 'Die Datei ist passwortgeschützt. Bitte ohne Passwort speichern und erneut hochladen.',
+  not_pptx: 'Die Datei ist keine PowerPoint (.pptx).',
+  corrupt: 'Die Datei ist beschädigt und konnte nicht gelesen werden.',
+  too_many_slides: `Diese Präsentation hat mehr als ${MAX_SLIDES} Folien – so große Decks können wir nicht übernehmen.`,
+};
+const GENERIC_FAILURE = 'Import fehlgeschlagen. Bitte erneut versuchen.';
+const CRASH_LOOP_FAILURE =
+  'Import abgebrochen – die Datei ist zu groß oder beschädigt. Bitte verkleinert oder neu gespeichert erneut hochladen.';
+
+/** Thrown when the deck was deleted while its import was running. */
+class DeckGoneError extends Error {}
+
+/**
+ * Runs an import job of any kind, then measures the deck: the organisation's storage adds up
+ * measured decks (BER-151), and the measurement ends the reservation of an import that is over
+ * (`revisions.reserved_bytes`) – one still under way after a shutdown keeps it.
+ */
+export async function importDeck(deps: ImportDeps, job: ImportJob): Promise<void> {
+  try {
+    await runJob(deps, job);
+  } finally {
+    await remeasureDeck(deps, job.deckId);
+  }
+}
+
+/**
+ * Turns an uploaded PPTX into slides, renders and comments (BER-94, BER-97).
+ * Never throws: every outcome ends in `ready` or `failed` on the deck – except a shutdown in the
+ * middle, which leaves it `running` for {@link findInterruptedImports}.
+ */
+async function runJob(deps: ImportDeps, job: ImportJob): Promise<void> {
+  if (job.kind === 'sync') {
+    await importSyncRevision(deps, job);
+    return;
+  }
+  if (job.kind === 'rerender') {
+    await rerenderJob(deps, job);
+    return;
+  }
+  let stopped = false;
+  try {
+    await runImport(deps, job);
+  } catch (error) {
+    if (error instanceof DeckGoneError) {
+      await deps.storage.deletePrefix(blobKeys.deckPrefix(job.deckId));
+      return;
+    }
+    if (error instanceof ConversionAborted || importsStopping()) {
+      // Shutdown: the deck stays `running`, and the next start imports it again.
+      stopped = true;
+      deps.log.info(`Import of deck ${job.deckId} stopped by shutdown; resumes on the next start`);
+      return;
+    }
+    if (!(error instanceof PptxError)) deps.log.error(`Import of deck ${job.deckId} failed`, error);
+    const message =
+      error instanceof PptxError
+        ? PPTX_ERROR_MESSAGES[error.code]
+        : error instanceof ImportCrashLoop
+          ? CRASH_LOOP_FAILURE
+          : GENERIC_FAILURE;
+    await setImportState(
+      deps,
+      job.deckId,
+      { status: 'failed', error: message },
+      { touch: true },
+    ).catch(() => {});
+  } finally {
+    await endImportAttempt(deps.db, job.revisionId, { stopped }).catch(() => {});
+  }
+}
+
+async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): Promise<void> {
+  const { db, storage } = deps;
+  const running = (step: ImportState & { status: 'running' }) => setImportState(deps, deckId, step);
+
+  await running({ status: 'running', step: 'received', progress: null });
+  const [revision] = await db
+    .select()
+    .from(revisions)
+    .where(and(eq(revisions.id, revisionId), eq(revisions.deckId, deckId)));
+  if (!revision) throw new DeckGoneError();
+  const [deck] = await db.select().from(decks).where(eq(decks.id, deckId));
+  if (!deck) throw new DeckGoneError();
+  await beginImportAttempt(db, revisionId);
+  const bytes = revision.pptxKey ? await storage.get(revision.pptxKey) : null;
+  if (!bytes) throw new Error(`Original file of revision ${revisionId} is missing`);
+
+  await running({ status: 'running', step: 'parsing', progress: null });
+  const document = await deps.openPptx(bytes);
+  const { presentation } = document;
+  const aspectRatio = presentation.size.cx / presentation.size.cy;
+  const extras = (await deps.slidesExtras?.(deck, revision)) ?? null;
+  const slideIds = slideIdsFor(extras, presentation.slides);
+
+  const planned = presentation.slides.map((parsed, index) => ({
+    parsed,
+    sourceSlideId: slideIds?.[index] ?? null,
+    slideId: crypto.randomUUID(),
+    versionId: crypto.randomUUID(),
+    // Placeholder until the slide is rendered below.
+    imageKey: blobKeys.slideRender(deckId, revisionId, 'svg'),
+    shapes: parsed.shapes.map(toShape),
+  }));
+
+  await db.transaction(async (tx) => {
+    await clearRevisionSlides(tx, deckId, revisionId);
+    await tx
+      .update(revisions)
+      .set({
+        slideWidthEmu: presentation.size.cx,
+        slideHeightEmu: presentation.size.cy,
+        fileAuthor: presentation.author,
+        // Set again once every slide is hashed below; a run cut off midway leaves none.
+        fingerprintVersion: null,
+      })
+      .where(eq(revisions.id, revisionId));
+    if (planned.length === 0) return;
+    await tx.insert(slides).values(planned.map(({ slideId }) => ({ id: slideId, deckId })));
+    await tx.insert(slideVersions).values(
+      planned.map(({ parsed, sourceSlideId, slideId, versionId, imageKey, shapes }, position) => ({
+        id: versionId,
+        slideId,
+        revisionId,
+        position,
+        pptxSldId: parsed.sldId,
+        hidden: parsed.hidden,
+        title: parsed.title,
+        layoutName: parsed.layoutName,
+        textHash: parsed.textHash,
+        contentHash: parsed.contentHash,
+        creationId: parsed.creationId,
+        sourceSlideId,
+        imageKey,
+        thumbnailKey: imageKey,
+        aspectRatio,
+        shapes,
+        guides: parsed.guides,
+      })),
+    );
+  });
+  await storage.deletePrefix(blobKeys.slideRenderPrefix(deckId, revisionId)).catch(() => {});
+
+  const total = planned.length;
+  await running({ status: 'running', step: 'rendering', progress: { done: 0, total } });
+  const rendered = await renderSlidePages(
+    deps,
+    deck,
+    revision,
+    bytes,
+    planned.map(({ parsed }) => parsed),
+  );
+  await db
+    .update(revisions)
+    .set({ officeFailure: rendered.officeFailure })
+    .where(eq(revisions.id, revisionId));
+  for (const [done, slide] of planned.entries()) {
+    await running({ status: 'running', step: 'rendering', progress: { done, total } });
+    // The SVG is rendered either way: its hash is what slide matching compares (BER-108).
+    const svg = await document.renderSlideSvg(slide.parsed);
+    const page = rendered.pages[done] ?? null;
+    const keys = await storeSlideRender(storage, deckId, revisionId, svg, page);
+    await db
+      .update(slideVersions)
+      .set({
+        ...keys,
+        renderHash: sha256Hex(svgForRenderHash(svg)),
+        renderer: slideRenderer(rendered, page),
+      })
+      .where(eq(slideVersions.id, slide.versionId));
+  }
+  // Every hash is in: the next sync may compare against them without rebuilding.
+  await db
+    .update(revisions)
+    .set({ fingerprintVersion: FINGERPRINT_VERSION })
+    .where(eq(revisions.id, revisionId));
+
+  await running({ status: 'running', step: 'comments', progress: null });
+  // PowerPoint comments follow the sldId. With duplicate sldIds the first slide keeps them – the
+  // same rule as a sync (sync-import.ts), so the next sync never moves them to another slide.
+  const slidesBySldId = new Map<number, ImportedSlide>();
+  for (const { parsed, slideId, shapes } of planned) {
+    if (!slidesBySldId.has(parsed.sldId)) slidesBySldId.set(parsed.sldId, { slideId, shapes });
+  }
+  await db.transaction(async (tx) => {
+    const now = deps.clock.now();
+    // A Google Slides export's comments are Google's (BER-157), merged with Drive's.
+    if (isGoogleSlidesDeck(deck)) {
+      await upsertGoogleComments(
+        tx,
+        deckId,
+        extras,
+        presentation,
+        slideIds,
+        slidesBySldId,
+        now,
+        deps.log,
+      );
+    } else {
+      await upsertPptxComments(tx, deckId, presentation.comments, slidesBySldId, now);
+    }
+  });
+
+  await setImportState(deps, deckId, { status: 'ready' }, { touch: true });
+}
+
+/**
+ * Makes a retried import start from scratch instead of duplicating slides. Slides with comments
+ * are kept (deleting them would cascade to the comments).
+ */
+async function clearRevisionSlides(
+  db: Executor,
+  deckId: string,
+  revisionId: string,
+): Promise<void> {
+  await db.delete(slideVersions).where(eq(slideVersions.revisionId, revisionId));
+  await deleteOrphanSlides(db, deckId);
+}
+
+async function setImportState(
+  deps: ImportDeps,
+  deckId: string,
+  state: ImportState,
+  options: { touch?: boolean } = {},
+): Promise<void> {
+  const updated = await deps.db
+    .update(decks)
+    .set({ importState: state, ...(options.touch ? { updatedAt: deps.clock.now() } : {}) })
+    .where(eq(decks.id, deckId))
+    .returning({ id: decks.id });
+  if (updated.length === 0) throw new DeckGoneError();
+}
+
+/**
+ * Finds imports interrupted by a restart and queues them again, so no deck hangs in
+ * "Import läuft" forever. Revisions without an original file (demo data) are skipped. An import
+ * whose runs keep dying with the process gives up on its next run (./attempts).
+ */
+export async function findInterruptedImports(db: Database): Promise<ImportJob[]> {
+  const rows = await db
+    .select({
+      deckId: decks.id,
+      revisionId: revisions.id,
+      importState: decks.importState,
+      pptxKey: revisions.pptxKey,
+    })
+    .from(decks)
+    .innerJoin(revisions, eq(revisions.id, decks.currentRevisionId));
+  const jobs = rows.filter(
+    (row) =>
+      row.pptxKey !== null &&
+      (row.importState.status === 'queued' || row.importState.status === 'running'),
+  );
+  if (jobs.length > 0) {
+    await db
+      .update(decks)
+      .set({ importState: { status: 'queued' } })
+      .where(
+        inArray(
+          decks.id,
+          jobs.map((job) => job.deckId),
+        ),
+      );
+  }
+  // Sync imports (BER-107) run beside a usable deck; they only need to be queued again.
+  const pending = await db
+    .select({ deckId: revisions.deckId, revisionId: revisions.id })
+    .from(revisions)
+    .where(eq(revisions.status, 'pending'));
+  return [
+    ...jobs.map(({ deckId, revisionId }) => ({ deckId, revisionId, kind: 'initial' as const })),
+    ...pending.map(({ deckId, revisionId }) => ({ deckId, revisionId, kind: 'sync' as const })),
+  ];
+}

@@ -1,0 +1,28 @@
+---
+import { asset } from '~/lib/links';
+
+/** A node of the Vision diagrams: glass pill with a sage dot, or the sage "arrived" pill. */
+interface Props {
+  on?: boolean;
+  class?: string;
+  style?: string;
+  [attr: `data-${string}`]: unknown;
+}
+
+const { on = false, class: className, style, ...rest } = Astro.props;
+---
+
+<span
+  class:list={[
+    'inline-flex shrink-0 items-center gap-2.5 rounded-full py-3.5 pr-5.5 pl-4.5 text-xl font-semibold whitespace-nowrap',
+    on
+      ? 'vision-on bg-sage text-on-primary'
+      : 'bg-glass text-fg shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]',
+    className,
+  ]}
+  style={style}
+  {...rest}
+>
+  <img src={asset(on ? 'vision/dot-dark.svg' : 'vision/dot.svg')} alt="" width="10" height="10" class="size-2.5" />
+  <slot />
+</span>

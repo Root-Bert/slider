@@ -1,0 +1,171 @@
+{
+  "case": "ppt-delete-last-insert",
+  "tags": ["producer", "synthetic", "structure"],
+  "synthetic": true,
+  "matches": [
+    {
+      "prev": "kickoff",
+      "next": "kickoff",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 0,
+      "position": 0
+    },
+    {
+      "prev": "agenda",
+      "next": "agenda",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 1,
+      "position": 1
+    },
+    {
+      "prev": "ziele",
+      "next": "ziele",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 2,
+      "position": 2
+    },
+    {
+      "prev": "zeitplan",
+      "next": "zeitplan",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 3,
+      "position": 3
+    },
+    {
+      "prev": null,
+      "next": "neu",
+      "status": "new",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": null,
+      "previousPosition": null,
+      "position": 4
+    },
+    {
+      "prev": "budget",
+      "next": null,
+      "status": "deleted",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": null,
+      "previousPosition": 4,
+      "position": null
+    }
+  ],
+  "prev": {
+    "author": "Jonas Weber",
+    "slides": [
+      {
+        "label": "kickoff",
+        "sldId": 256,
+        "part": "ppt/slides/slide2.xml",
+        "hidden": false,
+        "title": "Projekt Atlas",
+        "layoutName": "Title Slide",
+        "section": null
+      },
+      {
+        "label": "agenda",
+        "sldId": 257,
+        "part": "ppt/slides/slide1.xml",
+        "hidden": false,
+        "title": "Agenda",
+        "layoutName": "Title and Content",
+        "section": null
+      },
+      {
+        "label": "ziele",
+        "sldId": 258,
+        "part": "ppt/slides/slide3.xml",
+        "hidden": false,
+        "title": "Ziele 2027",
+        "layoutName": "Title and Content",
+        "section": null
+      },
+      {
+        "label": "zeitplan",
+        "sldId": 259,
+        "part": "ppt/slides/slide5.xml",
+        "hidden": false,
+        "title": "Zeitplan",
+        "layoutName": "Title and Content",
+        "section": null
+      },
+      {
+        "label": "budget",
+        "sldId": 260,
+        "part": "ppt/slides/slide4.xml",
+        "hidden": false,
+        "title": "Budget",
+        "layoutName": "Title and Content",
+        "section": null
+      }
+    ],
+    "sections": [],
+    "comments": []
+  },
+  "next": {
+    "author": "Jonas Weber",
+    "slides": [
+      {
+        "label": "kickoff",
+        "sldId": 256,
+        "part": "ppt/slides/slide2.xml",
+        "hidden": false,
+        "title": "Projekt Atlas",
+        "layoutName": "Title Slide",
+        "section": null
+      },
+      {
+        "label": "agenda",
+        "sldId": 257,
+        "part": "ppt/slides/slide1.xml",
+        "hidden": false,
+        "title": "Agenda",
+        "layoutName": "Title and Content",
+        "section": null
+      },
+      {
+        "label": "ziele",
+        "sldId": 258,
+        "part": "ppt/slides/slide3.xml",
+        "hidden": false,
+        "title": "Ziele 2027",
+        "layoutName": "Title and Content",
+        "section": null
+      },
+      {
+        "label": "zeitplan",
+        "sldId": 259,
+        "part": "ppt/slides/slide5.xml",
+        "hidden": false,
+        "title": "Zeitplan",
+        "layoutName": "Title and Content",
+        "section": null
+      },
+      {
+        "label": "neu",
+        "sldId": 260,
+        "part": "ppt/slides/slide6.xml",
+        "hidden": false,
+        "title": "Executive Summary",
+        "layoutName": "Title and Content",
+        "section": null
+      }
+    ],
+    "sections": [],
+    "comments": []
+  }
+}

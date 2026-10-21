@@ -1,0 +1,443 @@
+---
+import { Avatar, AvatarStack } from '@/ui/Avatar';
+import { buttonClasses } from '@/ui/button-classes';
+import { accentColor } from '@/lib/accent';
+import Cursor from '~/components/Cursor.astro';
+import Highlight from '~/components/Highlight.astro';
+import SectionMark from '~/components/SectionMark.astro';
+import Starfield from '~/components/Starfield.astro';
+import Slide from '~/components/slides/Slide.astro';
+import { person } from '~/lib/people';
+
+/**
+ * Product | Multiplayer: one live room instead of three cards. The viewer window (thumbnail rail +
+ * slide) plays a 12 s loop: Paul points around the Gantt while Anna and Neven work on it, clicks
+ * the next thumbnail and your view follows him to the chart, where Carolin is already reading and
+ * Marianne, just joined, comes along – Paul's avatar (and yours, and hers) hop along the rail.
+ * Beside it an invite is typed and sent; Marianne joins and lands in the room's avatar stack along
+ * a trajectory.
+ */
+const paul = accentColor(person('Paul').color);
+const here = [person('Paul'), person('Anna'), person('Carolin'), person('Neven')];
+const rail = ['Title', 'Gantt', 'Chart', 'Matrix'] as const;
+// Rail geometry (stage px): thumbs 120 × 67.5, 12 px apart, from y = 60.
+const THUMB_STEP = 79.5;
+const thumbTop = (i: number) => 60 + i * THUMB_STEP;
+// Who rests where on the rail; Paul and you travel separately (see .mp-hop).
+const resting = [
+  { at: 1, name: 'Anna', left: 106 },
+  { at: 1, name: 'Neven', left: 92 },
+  { at: 2, name: 'Carolin', left: 106 },
+] as const;
+// Everyone else at work on the slide you see; each is only visible while you are on their slide.
+const workers = [
+  { name: 'Anna', on: 'a' },
+  { name: 'Neven', on: 'a' },
+  { name: 'Carolin', on: 'b' },
+  { name: 'Marianne', on: 'b' },
+] as const;
+// Faded copies only, no filter: blur – Safari streaks looping blurred layers across the page.
+const trail = [
+  { lag: 70, o: 0.4 },
+  { lag: 140, o: 0.2 },
+  { lag: 210, o: 0.08 },
+];
+const notes = [
+  { title: 'Live presence', body: 'See who is here and which slide they are on.' },
+  { title: 'Follow mode', body: 'Click an avatar and your view follows theirs.' },
+];
+---
+
+<section class="relative isolate overflow-hidden" data-section>
+  <Starfield src="product-a/multiplayer-starfield.svg" />
+  <div
+    class="pointer-events-none absolute top-[220px] left-[calc(50%-560px)] -z-10 h-[620px] w-[1000px]"
+    style="background: radial-gradient(closest-side, rgb(0 224 255 / 0.07), rgb(0 224 255 / 0))"
+    aria-hidden="true"
+  ></div>
+
+  <div class="mx-auto flex max-w-[1440px] flex-col gap-12 px-4 pt-24 pb-4 md:px-16 lg:pt-32">
+    <div class="flex flex-col gap-6 lg:flex-row lg:items-end lg:gap-16">
+      <div class="flex flex-1 flex-col gap-5">
+        <SectionMark label="Live" />
+        <h2 class="text-[clamp(36px,4.6vw,56px)] leading-[1.12] font-bold tracking-[-0.03em] text-fg" data-reveal>
+          Everyone in <Highlight by="Benni">the same room.</Highlight>
+        </h2>
+      </div>
+      <p class="max-w-[400px] text-[17px] leading-[1.55] text-fg-muted" data-reveal style="--i: 2">
+        Live cursors and follow mode: a remote review like one shared screen.
+      </p>
+    </div>
+
+    <div class="mp-room grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <!-- The room: the viewer window everyone shares. -->
+      <div class="flex min-w-0 flex-col gap-8">
+        <div class="stage-wrap relative w-full" data-reveal style="--i: 3">
+          <div
+            class="stage absolute top-0 left-0 h-[480px] w-[880px] origin-top-left overflow-visible rounded-[20px] bg-surface-1 ring-hairline"
+            style="box-shadow: 0 30px 80px rgb(0 0 0 / 0.5), 0 0 60px rgb(0 224 255 / 0.06)"
+            aria-label="Paul presents the migration plan; Anna, Neven, Carolin and Marianne work along and you follow Paul."
+            role="img"
+          >
+            <!-- Top bar: deck, who is here, follow state. -->
+            <div class="absolute inset-x-0 top-0 flex h-12 items-center gap-3 border-b border-hairline px-4">
+              <span class="flex gap-1" aria-hidden="true">
+                <span class="size-2.5 rounded-full bg-fg-faint"></span>
+                <span class="size-2.5 rounded-full bg-fg-faint"></span>
+                <span class="size-2.5 rounded-full bg-fg-faint"></span>
+              </span>
+              <span class="ml-2 text-[13px] font-medium text-fg">Migration plan</span>
+              <span class="text-[13px] text-fg-subtle">| Steering committee</span>
+              <span class="ml-auto flex items-center gap-1.5">
+                <AvatarStack authors={here} size={24} max={4} />
+                <span class="mp-joiner inline-flex" data-joiner>
+                  <Avatar author={person('Marianne')} size={24} nativeTitle={false} className="rounded-full ring-2 ring-canvas" />
+                </span>
+                <span class="ml-1 size-1.5 rounded-full bg-success shadow-[0_0_8px_var(--color-success)]"></span>
+                <span class="text-xs text-fg-muted"><span class="mp-count"></span> here</span>
+              </span>
+            </div>
+
+            <!-- Thumbnail rail with who is on which slide. -->
+            {
+              rail.map((name, i) => (
+                <Slide name={name} width={120} class="absolute left-3 opacity-80 ring-hairline" style={`top: ${thumbTop(i)}px`} />
+              ))
+            }
+            {
+              resting.map(({ at, name, left }) => (
+                <span class="absolute" style={`top: ${thumbTop(at) + 4}px; left: ${left}px`}>
+                  <Avatar author={person(name)} size={18} nativeTitle={false} className="rounded-full ring-2 ring-canvas" />
+                </span>
+              ))
+            }
+            <!-- The current slide's ring plus Paul and you: they move together when Paul switches. -->
+            <div class="mp-hop absolute left-3" style={`top: ${thumbTop(1)}px; --step: ${THUMB_STEP}px`}>
+              <span class="absolute top-0 left-0 h-[67.5px] w-[120px] rounded-thumb ring-2" style={`--tw-ring-color: ${paul}`}></span>
+              <span class="absolute top-[44px] left-[78px] flex items-center">
+                <Avatar author={person('Paul')} size={18} nativeTitle={false} />
+                <Avatar author={person('Gesa')} size={18} nativeTitle={false} className="-ml-1 rounded-full ring-2 ring-canvas" />
+                <span class="mp-joiner-rail inline-flex">
+                  <Avatar author={person('Marianne')} size={18} nativeTitle={false} className="-ml-1 rounded-full ring-2 ring-canvas" />
+                </span>
+              </span>
+            </div>
+
+            <!-- Your view: whatever Paul looks at. -->
+            <div class="absolute top-[60px] left-[148px] h-[405px] w-[720px]">
+              <Slide name="Gantt" width={720} class="mp-a absolute top-0 left-0" />
+              <Slide name="Chart" width={720} class="mp-b absolute top-0 left-0" />
+
+              <span class="absolute -inset-1 rounded-[8px] border-2" style={`border-color: ${paul}`} aria-hidden="true"></span>
+              <span
+                class="absolute -top-1 -left-1 -translate-y-full rounded-t-[6px] px-2 py-0.5 text-[11px] leading-4 font-semibold text-black"
+                style={`background: ${paul}`}
+              >
+                Following Paul
+              </span>
+
+              <!-- The others work on their slide: you only see them while you are there too. -->
+              {
+                workers.map(({ name, on }) => (
+                  <Cursor name={name} class={`mp-worker mp-on-${on} mp-${name.toLowerCase()} absolute top-0 left-0`} />
+                ))
+              }
+
+              <!-- Paul, with the motion trail of the website. -->
+              {
+                trail.map(({ lag, o }) => (
+                  <span class="mp-paul absolute top-0 left-0" style={`--lag: ${lag}ms; opacity: ${o}`} aria-hidden="true">
+                    <Cursor name="Paul" />
+                  </span>
+                ))
+              }
+              <span class="mp-paul absolute top-0 left-0"><Cursor name="Paul" /></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid gap-8 sm:grid-cols-2">
+          {
+            notes.map((note, i) => (
+              <div class="flex gap-4" data-reveal style={`--i: ${5 + i}`}>
+                <span class="mt-2 h-[calc(100%-8px)] w-px shrink-0 bg-linear-to-b from-sage to-transparent" />
+                <div class="flex flex-col gap-1.5">
+                  <p class="text-xl font-semibold tracking-[-0.01em] text-fg">{note.title}</p>
+                  <p class="text-[15px] leading-[22px] text-fg-muted">{note.body}</p>
+                </div>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+
+      <!-- Bringing someone in. -->
+      <div class="relative flex flex-col gap-8 lg:pt-6">
+        <!-- Marianne's way into the room (desktop: from her toast to the avatar stack). -->
+        <svg
+          class="pointer-events-none absolute top-0 left-[-170px] z-10 hidden h-[420px] w-[260px] overflow-visible lg:block"
+          viewBox="0 0 260 420"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path d="M 196 404 C 110 400, 150 120, 18 30" stroke="var(--color-sage)" stroke-opacity="0.5" stroke-width="1.5" stroke-dasharray="2 6" stroke-linecap="round"></path>
+        </svg>
+        <div class="pointer-events-none absolute top-0 left-[-170px] z-10 hidden h-[420px] w-[260px] lg:block" aria-hidden="true">
+          <span
+            class="mp-sat absolute top-0 left-0 size-2 rounded-full bg-sage shadow-[0_0_10px_var(--color-sage-glow)]"
+            style="offset-path: path('M 196 404 C 110 400, 150 120, 18 30'); offset-rotate: 0deg"
+          ></span>
+        </div>
+
+        <div class="flex flex-col gap-4 rounded-panel p-5 glass-elevated ring-hairline backdrop-blur-md" data-reveal style="--i: 4">
+          <p class="text-sm font-medium text-fg">Invite to workspace</p>
+          <div class="flex items-center gap-2 rounded-control bg-surface-1 px-3 py-2.5 ring-hairline">
+            <span class="mp-type overflow-hidden text-body whitespace-nowrap text-fg">marianne@studio-nord.de</span>
+            <span class="mp-caret h-4 w-px bg-fg"></span>
+          </div>
+          <div class="flex rounded-control bg-surface-1 p-1 text-[13px] ring-hairline">
+            <span class="flex-1 rounded-control-sm bg-selected py-1.5 text-center font-medium text-fg">Reviewer</span>
+            <span class="flex-1 py-1.5 text-center text-fg-subtle">Member</span>
+          </div>
+          <span class:list={[buttonClasses({ variant: 'primary', size: 'md' }), 'mp-send glow w-full']}>Send invite</span>
+          <div class="flex items-center gap-3 text-xs text-fg-subtle">
+            <span class="h-px flex-1 bg-hairline"></span>or share a link<span class="h-px flex-1 bg-hairline"></span>
+          </div>
+          <div class="flex items-center gap-2 rounded-control bg-surface-1 py-1 pr-1 pl-3 ring-hairline">
+            <span class="min-w-0 flex-1 truncate text-[13px] text-fg-muted">slider.bertro.dev/join/k7f2</span>
+            <span class={buttonClasses({ variant: 'secondary', size: 'md' })}>Copy</span>
+          </div>
+        </div>
+
+        <div class="mp-toast flex items-center gap-3 self-start rounded-full py-1.5 pr-4 pl-1.5 glass-elevated ring-hairline whitespace-nowrap lg:ml-6 lg:self-start"
+          style="box-shadow: 0 0 0 1px rgb(143 203 155 / 0.35), 0 0 32px rgb(143 203 155 / 0.18)">
+          <Avatar author={person('Marianne')} size={28} nativeTitle={false} />
+          <span class="text-[13px] text-fg-muted"><span class="font-medium text-fg">Marianne</span> joined as reviewer</span>
+          <span class="size-1.5 rounded-full bg-success shadow-[0_0_8px_var(--color-success)]"></span>
+        </div>
+
+        <div class="flex gap-4" data-reveal style="--i: 7">
+          <span class="mt-2 h-[calc(100%-8px)] w-px shrink-0 bg-linear-to-b from-sage to-transparent" />
+          <div class="flex flex-col gap-1.5">
+            <p class="text-xl font-semibold tracking-[-0.01em] text-fg">Invites</p>
+            <p class="text-[15px] leading-[22px] text-fg-muted">Invite by mail or link, as reviewer or member.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style is:global>
+  .mp-room .stage-wrap {
+    height: calc(480px * var(--stage-scale, 1));
+  }
+  .mp-room .stage {
+    scale: var(--stage-scale, 1);
+  }
+
+  /* Final state without motion: Gantt, Paul resting on it, Marianne already in. */
+  .mp-b,
+  .mp-on-b {
+    opacity: 0;
+  }
+  .mp-anna {
+    translate: 210px 140px;
+  }
+  .mp-neven {
+    translate: 470px 352px;
+  }
+  .mp-carolin {
+    translate: 90px 212px;
+  }
+  .mp-marianne {
+    translate: 470px 250px;
+  }
+  .mp-paul {
+    translate: 420px 140px;
+  }
+  .mp-count::before {
+    content: '5';
+  }
+  .mp-sat {
+    opacity: 0;
+  }
+
+  .js .is-in .mp-room {
+    --loop: 12s;
+  }
+
+  /* Follow: Paul points around, clicks the chart's thumbnail, your view switches with him. */
+  .js .is-in .mp-paul {
+    animation: mp-paul var(--loop) var(--ease-symmetric, ease-in-out) infinite;
+    animation-delay: var(--lag, 0ms);
+  }
+  .js .is-in .mp-a {
+    animation: mp-a var(--loop) linear infinite;
+  }
+  .js .is-in .mp-b {
+    animation: mp-b var(--loop) linear infinite;
+  }
+  .js .is-in .mp-worker {
+    animation:
+      var(--seen) var(--loop) linear infinite,
+      var(--path) var(--loop) var(--ease-symmetric, ease-in-out) infinite;
+  }
+  .mp-on-a {
+    --seen: mp-a;
+  }
+  .mp-on-b {
+    --seen: mp-b;
+  }
+  .mp-anna {
+    --path: mp-anna;
+  }
+  .mp-neven {
+    --path: mp-neven;
+  }
+  .mp-carolin {
+    --path: mp-carolin;
+  }
+  .mp-marianne {
+    --path: mp-marianne;
+  }
+  .js .is-in .mp-hop {
+    animation: mp-hop var(--loop) var(--ease-emphasized, ease-out) infinite;
+  }
+
+  @keyframes mp-paul {
+    0% { translate: 420px 140px; }
+    12% { translate: 520px 205px; }
+    24% { translate: 300px 262px; }
+    33% { translate: 360px 178px; }
+    41%, 45% { translate: -84px 190px; }
+    54% { translate: 210px 150px; }
+    64% { translate: 560px 108px; }
+    76% { translate: 430px 236px; }
+    84% { translate: 380px 196px; }
+    92%, 96% { translate: -84px 110px; }
+    100% { translate: 420px 140px; }
+  }
+  /* On the Gantt: Anna checks the blueprints and the build, Neven walks the milestones and tests. */
+  @keyframes mp-anna {
+    0% { translate: 210px 140px; }
+    8%, 12% { translate: 362px 152px; }
+    20%, 24% { translate: 318px 134px; }
+    32%, 36% { translate: 452px 186px; }
+    43%, 100% { translate: 210px 140px; }
+  }
+  @keyframes mp-neven {
+    0% { translate: 470px 352px; }
+    9%, 13% { translate: 565px 352px; }
+    21%, 25% { translate: 545px 300px; }
+    33%, 37% { translate: 610px 334px; }
+    43%, 100% { translate: 470px 352px; }
+  }
+  /* On the chart: Carolin reads the figures left to right, Marianne arrives and checks the bars. */
+  @keyframes mp-carolin {
+    0%, 47% { translate: 90px 212px; }
+    56%, 60% { translate: 186px 212px; }
+    68%, 72% { translate: 286px 212px; }
+    81%, 85% { translate: 150px 322px; }
+    95%, 100% { translate: 90px 212px; }
+  }
+  @keyframes mp-marianne {
+    0%, 47% { translate: 470px 250px; }
+    55%, 59% { translate: 428px 232px; }
+    67%, 71% { translate: 496px 196px; }
+    78%, 82% { translate: 566px 160px; }
+    95%, 100% { translate: 470px 250px; }
+  }
+  @keyframes mp-a {
+    0%, 43% { opacity: 1; }
+    47%, 95% { opacity: 0; }
+    99%, 100% { opacity: 1; }
+  }
+  @keyframes mp-b {
+    0%, 43% { opacity: 0; }
+    47%, 95% { opacity: 1; }
+    99%, 100% { opacity: 0; }
+  }
+  @keyframes mp-hop {
+    0%, 43% { translate: 0 0; }
+    47%, 95% { translate: 0 var(--step); }
+    99%, 100% { translate: 0 0; }
+  }
+
+  /* Invite: the address types itself, the button is pressed, Marianne joins. */
+  .js .is-in .mp-type {
+    animation: mp-type var(--loop) steps(23) infinite;
+  }
+  .js .is-in .mp-caret {
+    animation: mp-caret 0.9s steps(1) infinite;
+  }
+  .js .is-in .mp-send {
+    animation: mp-send var(--loop) ease-out infinite;
+  }
+  .js .is-in .mp-toast {
+    animation: mp-toast var(--loop) var(--ease-overshoot, ease-out) infinite;
+  }
+  .js .is-in .mp-joiner {
+    animation: mp-joiner var(--loop) var(--ease-overshoot, ease-out) infinite;
+  }
+  .js .is-in .mp-joiner-rail {
+    animation: mp-joiner-rail var(--loop) var(--ease-overshoot, ease-out) infinite;
+  }
+  .js .is-in .mp-sat {
+    animation: mp-sat var(--loop) var(--ease-symmetric, ease-in-out) infinite;
+  }
+  .js .is-in .mp-count::before {
+    animation: mp-count var(--loop) steps(1) infinite;
+  }
+
+  @keyframes mp-type {
+    0%, 3% { max-width: 0; }
+    16%, 100% { max-width: 23ch; }
+  }
+  @keyframes mp-caret {
+    50% { opacity: 0; }
+  }
+  @keyframes mp-send {
+    0%, 18% { scale: 1; }
+    19.5% { scale: 0.96; }
+    21%, 100% { scale: 1; }
+  }
+  @keyframes mp-toast {
+    0%, 21% { opacity: 0; translate: 0 10px; scale: 0.9; }
+    24%, 92% { opacity: 1; translate: 0 0; scale: 1; }
+    96%, 100% { opacity: 0; translate: 0 0; scale: 1; }
+  }
+  @keyframes mp-sat {
+    0%, 24% { offset-distance: 0%; opacity: 0; }
+    25% { opacity: 1; }
+    31% { offset-distance: 100%; opacity: 1; }
+    33%, 100% { offset-distance: 100%; opacity: 0; }
+  }
+  @keyframes mp-joiner {
+    0%, 30% { scale: 0; margin-left: -30px; }
+    33%, 94% { scale: 1; margin-left: 0; }
+    98%, 100% { scale: 0; margin-left: -30px; }
+  }
+  @keyframes mp-joiner-rail {
+    0%, 30% { scale: 0; margin-left: -18px; }
+    33%, 94% { scale: 1; margin-left: 0; }
+    98%, 100% { scale: 0; margin-left: -18px; }
+  }
+  @keyframes mp-count {
+    0% { content: '4'; }
+    31% { content: '5'; }
+    96% { content: '4'; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .js .is-in :is(.mp-paul, .mp-a, .mp-b, .mp-worker, .mp-hop, .mp-type, .mp-caret, .mp-send, .mp-toast, .mp-joiner, .mp-joiner-rail, .mp-sat),
+    .js .is-in .mp-count::before {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  import { fitStages } from './a/fit-stage';
+  fitStages();
+</script>

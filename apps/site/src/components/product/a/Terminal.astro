@@ -1,0 +1,38 @@
+---
+/**
+ * Site / Terminal: a CLI window in glass-elevated with a glow in the section accent. Lines are
+ * separate so they reveal one after another.
+ */
+interface Props {
+  title: string;
+  lines: string[];
+  /** Glow colour (rgb triple, e.g. "255 208 0"). */
+  glow: string;
+  class?: string;
+  /** Stagger index of the first line. */
+  i?: number;
+}
+
+const { title, lines, glow, class: className, i = 0 } = Astro.props;
+---
+
+<div
+  class:list={['flex flex-col overflow-hidden rounded-panel glass-elevated', className]}
+  style={`box-shadow: inset 0 0 0 1px var(--color-hairline-strong), 0 0 90px rgb(${glow} / 0.06), 0 0 32px rgb(${glow} / 0.18)`}
+>
+  <div class="flex items-center gap-2 border-b border-hairline px-4 py-3">
+    <span class="size-2.5 rounded-full bg-surface-4"></span>
+    <span class="size-2.5 rounded-full bg-surface-4"></span>
+    <span class="size-2.5 rounded-full bg-surface-4"></span>
+    <span class="text-xs text-fg-subtle">{title}</span>
+  </div>
+  <div class="flex flex-col gap-1.5 overflow-x-auto px-5 pt-4 pb-5 font-mono text-[13px] leading-5 whitespace-pre scrollbar-none">
+    {
+      lines.map((line, n) => (
+        <p class:list={[n === 0 ? 'text-fg' : 'text-fg-muted']} data-reveal style={`--i: ${i + n}`}>
+          {line}
+        </p>
+      ))
+    }
+  </div>
+</div>

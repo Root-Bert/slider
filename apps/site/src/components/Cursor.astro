@@ -1,0 +1,41 @@
+---
+import { LiveCursor } from '@/features/viewer/live/LiveCursor';
+import { person, type PersonName } from '~/lib/people';
+
+/**
+ * A reviewer's live cursor – the app's own LiveCursor (avatar teardrop + first-name tag), shown
+ * still. Position it with `class`/`style`; its tip is the top-left corner. `drift` lets it join
+ * once its section has played in (`--cursor-in` delays that) and then float gently.
+ */
+interface Props {
+  name: PersonName;
+  class?: string;
+  style?: string;
+  drift?: boolean;
+}
+
+const { name, class: className, style, drift = false } = Astro.props;
+---
+
+<span class:list={['site-cursor', className]} style={style} data-drift={drift || undefined}>
+  <LiveCursor author={person(name)} ref={null} />
+</span>
+
+<style is:global>
+  /* The app hides cursors until the live layer places them; on the website they just show. */
+  .site-cursor {
+    display: inline-block;
+    pointer-events: none;
+    /* Cursors sit inside headlines too: keep the app's own type, not the headline's. */
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 1.5;
+    letter-spacing: normal;
+    text-align: left;
+    white-space: nowrap;
+  }
+  .site-cursor > div {
+    position: relative;
+    opacity: 1;
+  }
+</style>

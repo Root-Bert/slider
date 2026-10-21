@@ -1,0 +1,36 @@
+---
+import Chapter from './Chapter.astro';
+import Draw from './Draw.astro';
+import Note from '~/components/Note.astro';
+import strike from './svg/mark-strike.svg?raw';
+
+/** 04 | The necessary evil: nobody loves making slides. */
+
+/** The reader writing late at night. */
+const you = { id: 'you', name: 'You', type: 'owner', color: 'violet' } as const;
+---
+
+<Chapter n="04" label="The necessary evil">
+  <h2 class="vision-h" data-reveal>
+    Nobody loves <span class="relative inline-block px-[0.19em] pb-[0.04em] text-white">
+      making slides.
+      <Draw svg={strike} class="top-[0.4915em] left-[-0.05em] h-[0.323em] w-[calc(100%+0.05em)]" />
+    </span>
+  </h2>
+  <div class="flex w-full flex-col gap-10 lg:flex-row lg:items-center lg:gap-16">
+    <p class="vision-body max-w-[480px] shrink-0" data-reveal style="--i: 1">
+      You spend weeks working something out. Then comes the part everyone dreads: squeezing it all
+      into a presentation. It feels like extra work on top of the real work. And honestly, a bit of
+      that is true.
+    </p>
+    <!-- Late night: the reader's own comments. -->
+    <div class="relative flex flex-col gap-4 lg:block lg:h-[240px] lg:w-[520px] lg:shrink-0">
+      <div class="lg:absolute lg:top-[22px] lg:left-[18px]" data-reveal style="--i: 2">
+        <Note author={you} time="11:48 pm" class="rotate-2">Research is done. Now I still have to put all of this into slides…</Note>
+      </div>
+      <div class="self-end lg:absolute lg:top-[130px] lg:left-[171px]" data-reveal style="--i: 3">
+        <Note author={you} time="11:52 pm" class="-rotate-[1.5deg] opacity-55">Does anyone even read these?</Note>
+      </div>
+    </div>
+  </div>
+</Chapter>

@@ -1,0 +1,28 @@
+name: Release
+
+# In the public repository Root-Bert/slider: every release tag pushed there by the development
+# repository's publish.yml becomes a GitHub release, with the tag's message as notes. Deploying
+# stays with the development repository.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create the GitHub release
+    if: github.repository == 'Root-Bert/slider'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          gh release create "$GITHUB_REF_NAME" --verify-tag --notes-from-tag \
+            --title "$(git tag -l --format='%(contents:subject)' "$GITHUB_REF_NAME")"

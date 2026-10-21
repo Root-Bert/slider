@@ -1,0 +1,539 @@
+---
+import { Avatar } from '@/ui/Avatar';
+import { buttonClasses } from '@/ui/button-classes';
+import { Icon } from '@/ui/Icon';
+import { Spinner } from '@/ui/Spinner';
+import { accentColor } from '@/lib/accent';
+import Slide from '~/components/slides/Slide.astro';
+import '~/components/slides/fonts.css';
+import { person, type PersonName } from '~/lib/people';
+import CommentCard from './CommentCard.astro';
+import GrowthSlide from './GrowthSlide.astro';
+import GrowthVariant from './GrowthVariant.astro';
+import Scaled from './Scaled.astro';
+
+/**
+ * Homepage | the motion section's playground: a thread with three opinions on the
+ * live Growth slide, and a button that has the AI draft one slide per opinion. The suggestions
+ * branch off the deck vertically – one above, two below the discussed slide – and the canvas
+ * scrolls through them with snap; the opinion whose slide is in view lights up. Without JS the
+ * suggestions simply show.
+ */
+const W = 560; // slide width in the canvas
+const H = (W * 9) / 16;
+const GAP = 80;
+const CANVAS = { w: 912, h: 620 };
+const PAD = (CANVAS.h - H) / 2;
+const X = (CANVAS.w - W) / 2;
+// Rows top to bottom; the discussed slide is row 1 (the scroller starts there).
+const rows: ({ kind: 'number' | 'line' | 'steps'; by: PersonName } | null)[] = [
+  { kind: 'number', by: 'Lara' },
+  null,
+  { kind: 'line', by: 'Benni' },
+  { kind: 'steps', by: 'Carolin' },
+];
+const top = (row: number) => PAD + row * (H + GAP);
+const opinions: { by: PersonName; meta: string; text: string }[] = [
+  { by: 'Lara', meta: 'Slide 3 | 4 min', text: 'Too much chart. One big number, Q4 vs. Q1 – that is the message.' },
+  { by: 'Benni', meta: 'Slide 3 | 3 min', text: 'Bars hide the trend. A line shows the growth at a glance.' },
+  { by: 'Carolin', meta: 'Slide 3 | 1 min', text: 'Keep the chart, but tell it in three steps. Q4 comes last.' },
+];
+const rowOf = (by: PersonName) => rows.findIndex((r) => r?.by === by);
+---
+
+<div class="mv relative grid gap-8 lg:grid-cols-[360px_minmax(0,912px)] lg:items-start lg:gap-10" data-mv data-state="idle">
+  <!-- Glows are radial gradients, not filter: blur – Safari streaks large blurs across the page. -->
+  <div class="mv-aura pointer-events-none absolute top-0 left-[-120px] h-[760px] w-[660px] opacity-0" style="background: radial-gradient(closest-side, white, transparent)" aria-hidden="true"></div>
+
+  <!-- The thread: three opinions, no decision – and the AI button. -->
+  <div class="relative mx-auto flex w-full max-w-[420px] flex-col gap-3 lg:mt-[84px] lg:max-w-none">
+    <div class="flex items-center gap-2 px-1 pb-1">
+      <span class="text-sm font-medium text-fg">Slide 3 | Growth</span>
+      <span class="flex-1"></span>
+      <span class="mv-status text-caption text-fg-subtle tabular-nums" aria-live="polite">
+        <span class="mv-st-idle">3 opinions, no decision</span>
+        <span class="mv-st-gen">Drafting 3 slides…</span>
+        <span class="mv-st-done">3 suggestions | pick one</span>
+        <span class="mv-st-picked"><span data-mv-name>Lara</span>'s take is now slide 3</span>
+      </span>
+    </div>
+    {
+      opinions.map((o) => (
+        <button
+          type="button"
+          class="mv-op block w-full rounded-panel text-left"
+          data-row={rowOf(o.by)}
+          style={`--accent: ${accentColor(person(o.by).color)}`}
+          aria-label={`Show ${o.by}'s suggestion`}
+        >
+          <CommentCard name={o.by} meta={o.meta}>
+            <p class="text-[13px] leading-[18px] text-fg-muted">{o.text}</p>
+          </CommentCard>
+        </button>
+      ))
+    }
+    <div class="relative mt-3 flex items-center gap-3">
+      <button type="button" class:list={[buttonClasses({ size: 'lg' }), 'mv-ai relative']} data-mv-generate>
+        <span class="mv-st-idle items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 2.5 14.1 9.9 21.5 12l-7.4 2.1L12 21.5l-2.1-7.4L2.5 12l7.4-2.1Z" />
+          </svg>
+          Generate 3 suggestions
+        </span>
+        <span class="mv-st-gen items-center gap-2"><Spinner size={16} label="Generating" />Generating…</span>
+        <span class="mv-st-done items-center gap-2"><Icon name="check" size={18} />3 suggestions ready</span>
+        <span class="mv-st-picked items-center gap-2"><Icon name="check" size={18} />Slide 3 updated</span>
+      </button>
+      <button type="button" class:list={[buttonClasses({ variant: 'secondary', size: 'lg' }), 'mv-again w-11 px-0']} data-mv-reset aria-label="Start over">
+        <Icon name="refresh" size={18} />
+      </button>
+
+      <!-- Hand-written nudge: "try me", an arrow pointing at the button. -->
+      <span class="mv-try pointer-events-none absolute top-[-34px] left-[226px] flex items-start" aria-hidden="true">
+        <svg class="mt-4" width="62" height="46" viewBox="0 0 62 46" fill="none">
+          <path d="M58 10C42 2 20 8 8 34" pathLength="1" stroke="currentColor" stroke-width="2" stroke-linecap="round" data-draw style="--i: 9" />
+          <path d="M5 22 8 35 19 29" pathLength="1" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-draw style="--i: 13" />
+        </svg>
+        <span class="-rotate-6 font-[Kalam] text-[22px] leading-none whitespace-nowrap" data-hb style="--d: 1500ms; --y: 8px">try me</span>
+      </span>
+    </div>
+  </div>
+
+  <!-- The canvas: the deck runs left to right, the suggestions branch off above and below. -->
+  <div class="relative">
+    <div class="pointer-events-none absolute -inset-x-[180px] top-[-140px] h-[920px] opacity-15" style="background: radial-gradient(closest-side, var(--color-sage), transparent)" aria-hidden="true"></div>
+    <Scaled width={CANVAS.w} height={CANVAS.h} class="mx-auto overflow-visible">
+      <div class="mv-scroll size-full overflow-x-hidden overflow-y-auto" data-mv-scroll tabindex="0" aria-label="Slide 3 and its suggestions">
+        <div class="relative" style={`height: ${top(rows.length - 1) + H + PAD}px`}>
+          <!-- Neighbours in the deck: slides 2 and 4. -->
+          <div class="mv-row absolute opacity-40" data-r="1" style={`left: ${X - GAP / 1.6 - W}px; top: ${top(1)}px`} aria-hidden="true">
+            <Slide name="Agenda" width={W} />
+          </div>
+          <div class="mv-row absolute opacity-40" data-r="1" style={`left: ${X + W + GAP / 1.6}px; top: ${top(1)}px`} aria-hidden="true">
+            <Slide name="Table" width={W} />
+          </div>
+
+          {
+            rows.map((row, i) =>
+              row ? (
+                <div class="mv-row mv-sug absolute" data-r={i} data-by={row.by} style={`left: ${X}px; top: ${top(i)}px; width: ${W}px; height: ${H}px; --k: ${rows.slice(0, i).filter(Boolean).length}`}>
+                  <div class="mv-skel absolute inset-0 overflow-hidden rounded-thumb" aria-hidden="true">
+                    <span class="absolute top-6 left-7 h-2.5 w-24 rounded-full bg-white/10" />
+                    <span class="absolute top-[64px] left-7 h-7 w-56 rounded-full bg-white/10" />
+                    <span class="absolute top-[104px] left-7 h-7 w-40 rounded-full bg-white/10" />
+                    <span class="absolute right-7 bottom-7 h-32 w-48 rounded-[6px] bg-white/[0.06]" />
+                    <span class="absolute bottom-6 left-7 flex items-center gap-2 text-xs font-medium text-white [text-shadow:0_0_10px_rgb(255_255_255/0.6)]">
+                      <Avatar author={person(row.by)} size={18} nativeTitle={false} />
+                      Drafting {row.by}'s take…
+                    </span>
+                  </div>
+                  <div class="mv-var absolute inset-0 overflow-hidden rounded-thumb">
+                    <div class="origin-top-left" style={`scale: ${W / 960}`}>
+                      <GrowthVariant kind={row.kind} />
+                    </div>
+                  </div>
+                  <span class="mv-chip absolute -top-9 left-0 flex items-center gap-1.5 rounded-full bg-glass-elevated py-1 pr-2.5 pl-1 text-[11px] font-medium text-fg ring-1 ring-hairline-strong">
+                    <Avatar author={person(row.by)} size={18} nativeTitle={false} />
+                    {row.by}'s take
+                    <span class="mv-chip-ai ml-0.5 text-white [text-shadow:0_0_10px_rgb(255_255_255/0.6)]">✦ AI</span>
+                    <span class="mv-chip-in ml-0.5 text-sage">✓ Slide 3</span>
+                  </span>
+                  <button type="button" class:list={[buttonClasses({ size: 'sm' }), 'mv-use absolute -top-10 right-0']} data-mv-pick={i}>
+                    <Icon name="check" size={16} />
+                    Use this slide
+                  </button>
+                </div>
+              ) : (
+                <div class="mv-row mv-current absolute rounded-thumb" data-r={i} style={`left: ${X}px; top: ${top(i)}px; width: ${W}px; height: ${H}px`}>
+                  <div class="absolute inset-0 overflow-hidden rounded-thumb">
+                    <div class="origin-top-left" style={`scale: ${W / 960}`}>
+                      <GrowthSlide live />
+                    </div>
+                  </div>
+                  <span class="absolute -top-9 left-0 rounded-full bg-glass-elevated px-2.5 py-1 text-[11px] font-medium text-fg ring-1 ring-hairline-strong">Slide 3 | current</span>
+                </div>
+              ),
+            )
+          }
+
+          <!-- The branch: links between the stacked slides. -->
+          {
+            rows.slice(1).map((_, i) => (
+              <span class="mv-link absolute w-0.5 rounded-full" style={`left: ${X + W / 2 - 1}px; top: ${top(i) + H + 14}px; height: ${GAP - 28}px; --k: ${i}`} aria-hidden="true" />
+            ))
+          }
+        </div>
+      </div>
+    </Scaled>
+
+    <!-- Up / down and where we are. -->
+    <div class="mv-nav absolute top-1/2 right-0 flex -translate-y-1/2 flex-col items-center gap-2 rounded-full bg-glass-elevated p-1.5 ring-1 ring-hairline-strong backdrop-blur-md">
+      <button type="button" class="flex size-8 items-center justify-center rounded-full text-fg-muted hover:text-fg" data-mv-step="-1" aria-label="Suggestion above">
+        <Icon name="expandLess" size={20} />
+      </button>
+      {rows.map((_, i) => <button type="button" class="mv-dot size-2 rounded-full bg-white/25" data-mv-go={i} aria-label={`Row ${i + 1}`} />)}
+      <button type="button" class="flex size-8 items-center justify-center rounded-full text-fg-muted hover:text-fg" data-mv-step="1" aria-label="Suggestion below">
+        <Icon name="expandMore" size={20} />
+      </button>
+    </div>
+    <span class="mv-hint absolute left-1/2 -translate-x-1/2 rounded-full bg-glass-elevated px-3 py-1.5 text-xs font-medium whitespace-nowrap text-fg-muted ring-1 ring-hairline-strong backdrop-blur-md" style={`top: ${((PAD + H + 28) / CANVAS.h) * 100}%`}>
+      ↕ Scroll through the suggestions
+    </span>
+  </div>
+</div>
+
+<script>
+  /*
+   * Idle → generating (skeletons) → done (slides drop in, the canvas scrolls up to the first) →
+   * picked (back to the main track; once there, the pick lands in the middle).
+   */
+  const STEP = 315 + 80; // slide height + gap, see the frontmatter
+  const CURRENT = 1;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-mv]')) {
+    const scroller = root.querySelector<HTMLElement>('[data-mv-scroll]')!;
+    const rows = root.querySelectorAll<HTMLElement>('.mv-row');
+    const ops = root.querySelectorAll<HTMLButtonElement>('.mv-op');
+    const dots = root.querySelectorAll<HTMLButtonElement>('.mv-dot');
+    const last = dots.length - 1;
+    const name = root.querySelector<HTMLElement>('[data-mv-name]')!;
+    let active = -1;
+    let picked = -1;
+    let timers: number[] = [];
+    // Counts picks, so a landing still on its way is dropped after Start over.
+    let run = 0;
+
+    const done = () => root.dataset.state === 'done';
+    const go = (row: number, smooth = true) =>
+      scroller.scrollTo({ top: Math.max(0, Math.min(last, row)) * STEP, behavior: smooth && !reduce ? 'smooth' : 'instant' });
+    const mark = () => {
+      const row = Math.round(scroller.scrollTop / STEP);
+      if (row === active) return;
+      active = row;
+      rows.forEach((el) => el.toggleAttribute('data-on', Number(el.dataset.r) === row));
+      const lit = root.dataset.state === 'picked' ? picked : done() ? row : -1;
+      ops.forEach((el) => el.setAttribute('aria-current', String(Number(el.dataset.row) === lit)));
+      dots.forEach((el, i) => el.toggleAttribute('data-on', i === row));
+    };
+    // Calls `then` once the canvas has scrolled to `top` (Safari scrolls slower than Chrome).
+    const arrive = (top: number, then: () => void) => {
+      const id = run;
+      const start = performance.now();
+      const check = () => {
+        if (id !== run) return;
+        if (Math.abs(scroller.scrollTop - top) < 2 || performance.now() - start > 1500) {
+          scroller.scrollTop = top;
+          then();
+        } else requestAnimationFrame(check);
+      };
+      requestAnimationFrame(check);
+    };
+    const reset = () => {
+      run++;
+      timers.forEach(clearTimeout);
+      timers = [];
+      root.dataset.state = 'idle';
+      root.removeAttribute('data-landed');
+      rows.forEach((el) => el.removeAttribute('data-picked'));
+      picked = -1;
+      go(CURRENT, false);
+      active = -1;
+      mark();
+    };
+
+    scroller.addEventListener('scroll', mark, { passive: true });
+    root.querySelector('[data-mv-generate]')!.addEventListener('click', () => {
+      if (root.dataset.state !== 'idle') return;
+      root.dataset.state = 'generating';
+      timers.push(
+        window.setTimeout(() => {
+          root.dataset.state = 'done';
+          active = -1;
+          mark();
+        }, 1700),
+        window.setTimeout(() => go(0), 2700),
+      );
+    });
+    root.querySelector('[data-mv-reset]')!.addEventListener('click', reset);
+    root.querySelectorAll<HTMLElement>('[data-mv-pick]').forEach((el) =>
+      el.addEventListener('click', () => {
+        if (!done()) return;
+        picked = Number(el.dataset.mvPick);
+        const slide = el.closest<HTMLElement>('.mv-sug')!;
+        slide.toggleAttribute('data-picked', true);
+        slide.style.setProperty('--dy', `${(CURRENT - picked) * STEP}px`);
+        name.textContent = slide.dataset.by ?? '';
+        root.dataset.state = 'picked';
+        active = -1;
+        mark();
+        go(CURRENT);
+        // Land only once the canvas is back on the main track, or the pick moves out of view.
+        arrive(CURRENT * STEP, () => root.toggleAttribute('data-landed', true));
+      }),
+    );
+    ops.forEach((el) => el.addEventListener('click', () => done() && go(Number(el.dataset.row))));
+    dots.forEach((el, i) => el.addEventListener('click', () => go(i)));
+    root.querySelectorAll<HTMLElement>('[data-mv-step]').forEach((el) =>
+      el.addEventListener('click', () => go(active + Number(el.dataset.mvStep))),
+    );
+    reset();
+  }
+</script>
+
+<style is:global>
+  .mv-scroll {
+    scroll-snap-type: y mandatory;
+    scrollbar-width: none;
+    mask-image:
+      linear-gradient(90deg, transparent, #000 13%, #000 87%, transparent),
+      linear-gradient(transparent, #000 16%, #000 84%, transparent);
+    mask-composite: intersect;
+  }
+  .mv-scroll::-webkit-scrollbar {
+    display: none;
+  }
+  .mv-scroll:focus-visible {
+    outline: none;
+  }
+  .mv-row[data-r] {
+    scroll-snap-align: center;
+  }
+  .mv-row {
+    transition:
+      opacity 400ms var(--ease-emphasized),
+      box-shadow 400ms var(--ease-emphasized),
+      scale 700ms var(--ease-emphasized),
+      translate 900ms var(--ease-emphasized);
+  }
+
+  /* The suggestions: skeleton while drafting, then the slide drops in. No filter: blur anywhere here – Safari
+   * streaks blurred, animated layers across the page. */
+  .mv-skel {
+    background: rgb(255 255 255 / 0.04);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.3);
+    opacity: 0;
+    transition: opacity 300ms linear;
+  }
+  .mv-skel::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(100deg, transparent 30%, rgb(255 255 255 / 0.14) 50%, transparent 70%);
+    translate: -100% 0;
+  }
+  .mv-var {
+    transition:
+      opacity 500ms var(--ease-emphasized),
+      scale 700ms var(--ease-emphasized),
+      translate 700ms var(--ease-emphasized);
+    transition-delay: calc(var(--k) * 180ms);
+  }
+  .mv-chip {
+    transition: opacity 500ms var(--ease-emphasized);
+    transition-delay: calc(200ms + var(--k) * 180ms);
+  }
+  .mv-link {
+    background: linear-gradient(white, rgb(255 255 255 / 0.3));
+    box-shadow: 0 0 10px rgb(255 255 255 / 0.8);
+    transform-origin: top;
+    transition:
+      scale 500ms var(--ease-emphasized),
+      opacity 300ms linear;
+    transition-delay: calc(300ms + var(--k) * 180ms);
+  }
+
+  .js [data-mv]:is([data-state='idle'], [data-state='generating']) .mv-var {
+    opacity: 0;
+    scale: 0.96;
+    translate: 0 24px;
+    transition: none;
+  }
+  .js [data-mv]:is([data-state='idle'], [data-state='generating']) .mv-chip {
+    opacity: 0;
+    transition: none;
+  }
+  .js [data-mv]:is([data-state='idle'], [data-state='generating']) .mv-link {
+    scale: 1 0;
+    transition: none;
+  }
+  /* Picked: the canvas still scrolls back to the main track, it locks once the pick has landed. */
+  .js [data-mv]:is([data-state='idle'], [data-state='generating'], [data-landed]) .mv-scroll {
+    overflow-y: hidden;
+  }
+  .js [data-mv]:not([data-state='done']) :is(.mv-nav, .mv-hint) {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .js [data-mv]:not([data-state='done']) .mv-op {
+    cursor: default;
+  }
+  .js [data-mv][data-state='generating'] .mv-skel {
+    opacity: 1;
+  }
+  .js [data-mv][data-state='generating'] .mv-skel::after {
+    animation: mv-shimmer 1.1s linear infinite;
+  }
+  .js [data-mv][data-state='generating'] .mv-aura {
+    opacity: 0.18;
+  }
+  [data-mv][data-state='done'] .mv-skel {
+    opacity: 0;
+  }
+  .mv-nav,
+  .mv-hint,
+  .mv-aura {
+    transition: opacity 500ms var(--ease-emphasized) 400ms;
+  }
+
+  /* Focus: the slide in view is sharp and glows, the rest steps back. */
+  .js [data-mv][data-state='done'] .mv-row:not([data-on]) {
+    opacity: 0.35;
+  }
+  .js [data-mv][data-state='done'] .mv-sug[data-on] .mv-var {
+    box-shadow:
+      inset 0 0 0 1px rgb(255 255 255 / 0.15),
+      0 0 0 1.5px white,
+      0 0 60px rgb(255 255 255 / 0.3);
+  }
+  .mv-current[data-on] {
+    box-shadow:
+      0 0 24px rgb(255 255 255 / 0.1),
+      0 0 120px var(--color-sage-glow);
+  }
+  .mv-dot[data-on] {
+    background: white;
+    box-shadow: 0 0 8px rgb(255 255 255 / 0.8);
+  }
+
+  /*
+   * Picking one: the others and the branch fade, the canvas returns to the main track, then the
+   * pick travels into the middle (data-landed) while the old slide blurs away under it.
+   */
+  .mv-use {
+    opacity: 0;
+    pointer-events: none;
+    box-shadow: 0 0 20px rgb(255 255 255 / 0.3);
+    transition: opacity 300ms;
+  }
+  [data-mv][data-state='done'] .mv-sug[data-on] .mv-use {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .mv-chip-in,
+  [data-mv][data-landed] .mv-chip-ai {
+    display: none;
+  }
+  [data-mv][data-landed] .mv-chip-in {
+    display: inline;
+  }
+  [data-mv][data-state='picked'] .mv-sug:not([data-picked]) {
+    opacity: 0;
+    scale: 0.96;
+  }
+  [data-mv][data-state='picked'] .mv-link {
+    opacity: 0;
+  }
+  [data-mv][data-landed] .mv-sug[data-picked] {
+    z-index: 2;
+    translate: 0 var(--dy);
+  }
+  [data-mv][data-landed] .mv-sug[data-picked] .mv-var {
+    box-shadow:
+      0 0 24px rgb(255 255 255 / 0.1),
+      0 0 120px var(--color-sage-glow);
+  }
+  [data-mv][data-landed] .mv-current {
+    opacity: 0;
+    scale: 0.94;
+  }
+
+  /* Status lines and the AI button's three faces (the app's primary button, then soft). */
+  .mv-st-gen,
+  .mv-st-done,
+  .mv-st-picked,
+  [data-mv]:not([data-state='idle']) .mv-st-idle,
+  html:not(.js) .mv-st-idle {
+    display: none;
+  }
+  .mv-st-idle,
+  [data-mv][data-state='generating'] .mv-st-gen,
+  .js [data-mv][data-state='done'] .mv-st-done,
+  .js [data-mv][data-state='picked'] .mv-st-picked,
+  html:not(.js) .mv-st-done {
+    display: inline-flex;
+  }
+  html:not(.js) :is(.mv-again, .mv-use) {
+    display: none;
+  }
+  .mv-ai {
+    box-shadow: 0 0 24px rgb(255 255 255 / 0.25);
+    transition:
+      background-color 200ms,
+      color 200ms,
+      box-shadow 300ms,
+      scale 200ms var(--ease-overshoot);
+  }
+  [data-mv][data-state='idle'] .mv-ai:hover {
+    box-shadow: 0 0 32px rgb(255 255 255 / 0.4);
+  }
+  [data-mv][data-state='idle'] .mv-ai:active {
+    scale: 0.97;
+  }
+  [data-mv][data-state='generating'] .mv-ai {
+    pointer-events: none;
+  }
+  [data-mv]:is([data-state='done'], [data-state='picked']) .mv-ai,
+  html:not(.js) .mv-ai {
+    background: var(--color-surface-2);
+    color: var(--color-fg);
+    box-shadow: none;
+    pointer-events: none;
+  }
+  [data-mv][data-state='idle'] .mv-again {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .mv-again {
+    transition: opacity 300ms;
+  }
+  .mv-try {
+    color: var(--color-fg-muted);
+    transition: opacity 300ms;
+  }
+  [data-mv]:not([data-state='idle']) .mv-try,
+  html:not(.js) .mv-try {
+    opacity: 0;
+  }
+
+  /* The opinion whose suggestion is in view. */
+  .mv-op > div {
+    transition: box-shadow 400ms var(--ease-emphasized);
+  }
+  .mv-op[aria-current='true'] > div {
+    box-shadow:
+      inset 0 0 0 1px var(--accent),
+      0 0 20px color-mix(in srgb, var(--accent) 50%, transparent);
+  }
+  [data-mv][data-state='done'] .mv-op:not([aria-current='true']):hover > div {
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.18);
+  }
+
+  @keyframes mv-shimmer {
+    to {
+      translate: 100% 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mv-var,
+    .mv-link,
+    .mv-row {
+      transition-duration: 1ms;
+      transition-delay: 0ms;
+    }
+    .mv-skel::after {
+      animation: none !important;
+    }
+  }
+</style>

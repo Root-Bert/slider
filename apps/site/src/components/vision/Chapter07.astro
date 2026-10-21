@@ -1,0 +1,102 @@
+---
+import Slide from '~/components/slides/Slide.astro';
+import { asset } from '~/lib/links';
+import Chapter from './Chapter.astro';
+import Highlight from '~/components/Highlight.astro';
+
+/** 07 | And with AI: elsewhere a chat bolted on, in Slider every thread is its own agent. */
+const agents = [
+  { who: 'Agent', task: 'shortens the headline', accent: 'var(--color-sage)', top: 8.11 },
+  { who: 'Lara + Agent', task: 'energy bar in green', accent: 'var(--color-accent-blue)', top: 58.37 },
+  { who: 'Agent', task: 'asks Paul for the Q3 source', accent: 'var(--color-accent-violet)', top: 108.62 },
+];
+/** Connector lanes from each pin on the slide to its agent chip (Figma vectors). */
+const lanes = [
+  { src: 'ai-connector-3.svg', left: 74.9, top: 23.91, w: 216.92, h: 26.83, box: 'inset-[-3.02%_-0.37%]' },
+  { src: 'ai-connector-2.svg', left: 144.94, top: 74.17, w: 146.89, h: 18.6, box: 'inset-[-4.36%_-0.55%]' },
+  { src: 'ai-connector-1.svg', left: 210.31, top: 63.88, w: 81.52, h: 60.55, box: 'inset-[-1.34%_-0.99%]' },
+];
+const pins = [
+  { src: 'ai-pin-1.svg', left: 65.17, top: 45.88 },
+  { src: 'ai-pin-2.svg', left: 135.21, top: 87.9 },
+  { src: 'ai-pin-3.svg', left: 200.58, top: 59.01 },
+];
+---
+
+<Chapter n="07" label="And with AI">
+  <h2 class="vision-h" data-reveal>
+    Every comment is <Highlight>its own agent.</Highlight>
+  </h2>
+  <p class="vision-body max-w-[680px]" data-reveal style="--i: 1">
+    Other editors bolt a chat to the side and call it AI. In Slider, AI lives where the feedback
+    is: every thread can become an agent that joins the team like another colleague. AI does the
+    work, people bring their opinion. The slower future, in miniature.
+  </p>
+  <div class="flex w-full flex-col gap-4 lg:flex-row lg:items-start">
+    <!-- Elsewhere: a chat panel next to the slide. -->
+    <div class="flex shrink-0 flex-col gap-4.5 overflow-hidden rounded-[20px] bg-glass p-6 ring-hairline" data-reveal style="--i: 2">
+      <div class="flex items-center gap-2.5">
+        <span class="text-caption font-medium tracking-wide uppercase text-fg-faint">ELSEWHERE</span>
+        <span class="text-sm text-fg-subtle">A chat bolted to the side</span>
+      </div>
+      <div class="vision-zoom flex w-max overflow-hidden rounded-control-sm opacity-55">
+        <Slide name="Chart" width={259.2} />
+        <div class="flex h-[145.8px] w-[120px] flex-col gap-2 bg-surface-2 p-3">
+          <span class="h-3.5 w-20 rounded-[7px] bg-fg-faint"></span>
+          <span class="h-3.5 w-16 rounded-[7px] bg-fg-faint"></span>
+          <span class="h-3.5 w-22 rounded-[7px] bg-fg-faint"></span>
+          <span class="flex-1"></span>
+          <span class="h-5.5 w-24 rounded-badge bg-glass-control"></span>
+        </div>
+      </div>
+    </div>
+    <!-- Slider: each pin on the slide is a thread with its own agent. -->
+    <div
+      class="flex min-w-0 flex-1 flex-col gap-4.5 overflow-hidden rounded-[20px] bg-glass p-6 shadow-[inset_0_0_0_1px_var(--color-hairline-strong),0_0_90px_rgb(143_203_155/0.04),0_0_32px_rgb(143_203_155/0.12)]"
+      data-reveal
+      style="--i: 3"
+    >
+      <div class="flex items-center gap-2.5">
+        <span class="text-caption font-medium tracking-wide uppercase text-sage">SLIDER</span>
+        <span class="text-sm text-fg-muted">Every thread is its own agent</span>
+      </div>
+      <div class="vision-zoom relative h-[154px] w-[519px] shrink-0">
+        <div class="absolute top-[11.35px] left-0">
+          <Slide name="Finance" width={233.46} class="rounded-none" />
+        </div>
+        {
+          lanes.map((lane, i) => (
+            <span class="absolute" data-reveal style={`left: ${lane.left}px; top: ${lane.top}px; width: ${lane.w}px; height: ${lane.h}px; --i: ${i + 4}`}>
+              <img src={asset(`vision/${lane.src}`)} alt="" class:list={['absolute block max-w-none', lane.box]} />
+            </span>
+          ))
+        }
+        {
+          pins.map((pin) => (
+            <span class="absolute size-[9.73px]" style={`left: ${pin.left}px; top: ${pin.top}px`}>
+              <img src={asset(`vision/${pin.src}`)} alt="" class="absolute inset-[-750%] block max-w-none" />
+            </span>
+          ))
+        }
+        {
+          agents.map((agent, i) => (
+            <span
+              class="absolute left-[291.83px] flex items-center gap-2 rounded-control-sm bg-glass-elevated py-1.5 pr-3 pl-1.5 ring-hairline"
+              style={`top: ${agent.top}px; --i: ${i + 5}`}
+              data-reveal
+            >
+              <!-- Like the app's Badge: accent text on a 10 % tint of it. -->
+              <span
+                class="rounded-[5px] px-[5.7px] py-[2.4px] text-[8.9px] font-semibold"
+                style={`color: ${agent.accent}; background: color-mix(in srgb, ${agent.accent} 10%, transparent)`}
+              >
+                AI
+              </span>
+              <span class="text-[10.5px] whitespace-pre text-fg">{`${agent.who} | ${agent.task}`}</span>
+            </span>
+          ))
+        }
+      </div>
+    </div>
+  </div>
+</Chapter>

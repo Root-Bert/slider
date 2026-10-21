@@ -1,0 +1,1 @@
+ALTER TABLE "decks" DROP COLUMN "source_drive";

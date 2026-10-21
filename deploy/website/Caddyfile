@@ -1,0 +1,27 @@
+# Inside the website container: plain HTTP on :80, only reachable for the Caddy in front of it
+# (TLS, compression and the domain live in website.caddy).
+{
+	admin off
+	auto_https off
+}
+
+:80 {
+	root * /srv
+	# Astro puts a content hash into every file name under _astro/: cache them for good.
+	@hashed path /slider/_astro/*
+	header @hashed Cache-Control "public, max-age=31536000, immutable"
+	# Everything else (pages, files from public/) keeps its name across deploys: cache it briefly,
+	# or Cloudflare and browsers hold an old version for hours.
+	@plain not path /slider/_astro/*
+	header @plain Cache-Control "public, max-age=300"
+	# The site links its pages without a trailing slash (/slider/product): serve the page's
+	# index.html right away instead of redirecting to /slider/product/ first.
+	try_files {path} {path}/index.html
+	file_server
+	# Unknown paths get the site's own 404 page (apps/site/src/pages/404.astro), still as a 404.
+	handle_errors 404 {
+		root * /srv
+		rewrite * /slider/404.html
+		file_server
+	}
+}

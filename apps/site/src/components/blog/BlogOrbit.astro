@@ -1,0 +1,37 @@
+---
+import { asset } from '~/lib/links';
+
+/**
+ * Corner orbit of the blog pages (Figma "Blog Orbit" / "Article Orbit"): quarter arcs with the
+ * sage trajectory and its satellite – top right on the blog, top left on an article. Positions
+ * are the Figma ones inside a 1440px frame pinned to that corner.
+ */
+interface Props {
+  corner: 'right' | 'left';
+}
+
+const { corner } = Astro.props;
+const src = (name: string) => asset(`blog/${name}`);
+---
+
+<div class="pointer-events-none absolute inset-0 -z-10 hidden overflow-hidden lg:block" aria-hidden="true">
+  {
+    corner === 'right' ? (
+      <div class="absolute top-0 right-0 h-full w-[1440px]">
+        <img src={src('orbit-r180.svg')} alt="" class="absolute top-[-20px] left-[1280px] size-[180px] max-w-none" />
+        <img src={src('orbit-r260.png')} alt="" class="absolute top-[-20px] left-[1200px] size-[260px] max-w-none" />
+        <img src={src('orbit-r340.svg')} alt="" class="absolute top-[-20px] left-[1120px] size-[340px] max-w-none" />
+        <img src={src('orbit-trajectory.svg')} alt="" class="absolute top-[118.5px] left-[1240.5px] h-[117px] w-[171px] max-w-none" />
+        <img src={src('satellite.svg')} alt="" class="absolute top-[104.81px] left-[1225.97px] size-[29px] max-w-none" />
+      </div>
+    ) : (
+      <div class="absolute top-0 left-0 h-full w-[1440px]">
+        <img src={src('article-orbit-r160.svg')} alt="" class="absolute top-[-20px] left-[-60px] size-[160px] max-w-none" />
+        <img src={src('article-orbit-r240.png')} alt="" class="absolute top-[-20px] left-[-60px] size-[240px] max-w-none" />
+        <img src={src('article-orbit-r320.svg')} alt="" class="absolute top-[-20px] left-[-60px] size-[320px] max-w-none" />
+        <img src={src('article-trajectory.svg')} alt="" class="absolute top-[67.8px] left-[54.9px] h-[122.5px] w-[108.3px] max-w-none" />
+        <img src={src('satellite.svg')} alt="" class="absolute top-[175.81px] left-[41.12px] size-[29px] max-w-none" />
+      </div>
+    )
+  }
+</div>

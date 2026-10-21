@@ -1,0 +1,1 @@
+ALTER TABLE "decks" ADD COLUMN "source_contributors" jsonb;

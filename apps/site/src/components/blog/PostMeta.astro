@@ -1,0 +1,16 @@
+---
+import Category from './Category.astro';
+import { formatDate, type Post } from './posts';
+
+/** Category chip + "Oct 14, 2026 | 8 min read". */
+interface Props {
+  post: Post;
+}
+
+const { post } = Astro.props;
+---
+
+<div class="flex flex-wrap items-center gap-2.5">
+  <Category tag={post.data.tag} accent={post.data.accent} />
+  <span class="text-xs tabular-nums whitespace-pre text-fg-subtle">{formatDate(post.data.date)} | {post.data.readingTime}</span>
+</div>

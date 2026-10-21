@@ -1,0 +1,225 @@
+{
+  "case": "move-section",
+  "tags": ["structure"],
+  "synthetic": false,
+  "matches": [
+    {
+      "prev": "titel",
+      "next": "titel",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 0,
+      "position": 0
+    },
+    {
+      "prev": "agenda",
+      "next": "agenda",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 1,
+      "position": 1
+    },
+    {
+      "prev": "fazit",
+      "next": "fazit",
+      "status": "moved",
+      "moved": true,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 5,
+      "position": 2
+    },
+    {
+      "prev": "fragen",
+      "next": "fragen",
+      "status": "moved",
+      "moved": true,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 6,
+      "position": 3
+    },
+    {
+      "prev": "markt",
+      "next": "markt",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 2,
+      "position": 4
+    },
+    {
+      "prev": "wettbewerb",
+      "next": "wettbewerb",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 3,
+      "position": 5
+    },
+    {
+      "prev": "kunden",
+      "next": "kunden",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 4,
+      "position": 6
+    }
+  ],
+  "prev": {
+    "author": "Slider",
+    "slides": [
+      {
+        "label": "titel",
+        "sldId": 256,
+        "part": "ppt/slides/slide1.xml",
+        "hidden": false,
+        "title": "Marktanalyse 2026",
+        "layoutName": "Title Slide",
+        "section": "Einleitung"
+      },
+      {
+        "label": "agenda",
+        "sldId": 257,
+        "part": "ppt/slides/slide2.xml",
+        "hidden": false,
+        "title": "Agenda",
+        "layoutName": "Title and Content",
+        "section": "Einleitung"
+      },
+      {
+        "label": "markt",
+        "sldId": 258,
+        "part": "ppt/slides/slide3.xml",
+        "hidden": false,
+        "title": "Marktgröße",
+        "layoutName": "Title and Content",
+        "section": "Analyse"
+      },
+      {
+        "label": "wettbewerb",
+        "sldId": 259,
+        "part": "ppt/slides/slide4.xml",
+        "hidden": false,
+        "title": "Wettbewerb",
+        "layoutName": "Title and Content",
+        "section": "Analyse"
+      },
+      {
+        "label": "kunden",
+        "sldId": 260,
+        "part": "ppt/slides/slide5.xml",
+        "hidden": false,
+        "title": "Kundensegmente",
+        "layoutName": "Title and Content",
+        "section": "Analyse"
+      },
+      {
+        "label": "fazit",
+        "sldId": 261,
+        "part": "ppt/slides/slide6.xml",
+        "hidden": false,
+        "title": "Fazit",
+        "layoutName": "Title and Content",
+        "section": "Abschluss"
+      },
+      {
+        "label": "fragen",
+        "sldId": 262,
+        "part": "ppt/slides/slide7.xml",
+        "hidden": false,
+        "title": "Fragen?",
+        "layoutName": "Title and Content",
+        "section": "Abschluss"
+      }
+    ],
+    "sections": [
+      { "name": "Einleitung", "slides": ["titel", "agenda"] },
+      { "name": "Analyse", "slides": ["markt", "wettbewerb", "kunden"] },
+      { "name": "Abschluss", "slides": ["fazit", "fragen"] }
+    ],
+    "comments": []
+  },
+  "next": {
+    "author": "Slider",
+    "slides": [
+      {
+        "label": "titel",
+        "sldId": 256,
+        "part": "ppt/slides/slide1.xml",
+        "hidden": false,
+        "title": "Marktanalyse 2026",
+        "layoutName": "Title Slide",
+        "section": "Einleitung"
+      },
+      {
+        "label": "agenda",
+        "sldId": 257,
+        "part": "ppt/slides/slide2.xml",
+        "hidden": false,
+        "title": "Agenda",
+        "layoutName": "Title and Content",
+        "section": "Einleitung"
+      },
+      {
+        "label": "fazit",
+        "sldId": 261,
+        "part": "ppt/slides/slide3.xml",
+        "hidden": false,
+        "title": "Fazit",
+        "layoutName": "Title and Content",
+        "section": "Abschluss"
+      },
+      {
+        "label": "fragen",
+        "sldId": 262,
+        "part": "ppt/slides/slide4.xml",
+        "hidden": false,
+        "title": "Fragen?",
+        "layoutName": "Title and Content",
+        "section": "Abschluss"
+      },
+      {
+        "label": "markt",
+        "sldId": 258,
+        "part": "ppt/slides/slide5.xml",
+        "hidden": false,
+        "title": "Marktgröße",
+        "layoutName": "Title and Content",
+        "section": "Analyse"
+      },
+      {
+        "label": "wettbewerb",
+        "sldId": 259,
+        "part": "ppt/slides/slide6.xml",
+        "hidden": false,
+        "title": "Wettbewerb",
+        "layoutName": "Title and Content",
+        "section": "Analyse"
+      },
+      {
+        "label": "kunden",
+        "sldId": 260,
+        "part": "ppt/slides/slide7.xml",
+        "hidden": false,
+        "title": "Kundensegmente",
+        "layoutName": "Title and Content",
+        "section": "Analyse"
+      }
+    ],
+    "sections": [
+      { "name": "Einleitung", "slides": ["titel", "agenda"] },
+      { "name": "Abschluss", "slides": ["fazit", "fragen"] },
+      { "name": "Analyse", "slides": ["markt", "wettbewerb", "kunden"] }
+    ],
+    "comments": []
+  }
+}

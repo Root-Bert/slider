@@ -1,0 +1,1342 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+
+/*
+ * Design tokens – mirror the Figma UI kit "UI-Kit | Slider" (node 87:394).
+ * Dark-only by design: slides are the only bright surface on screen.
+ *
+ * The sections follow apps/web/design-system.md (§2 colour … §7 motion). Values that TypeScript needs
+ * too (canvas drawing, mails) are mirrored in `lib/palette.ts` and `@slider/shared` `theme.ts`;
+ * `styles/design-tokens.test.ts` and `packages/shared/test/theme.test.ts` keep them in sync.
+ */
+@theme {
+  --font-sans: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  /* ── §2 Colour ─────────────────────────────────────────────────────────────── */
+
+  /* Surfaces */
+  --color-canvas: #000000;
+  --color-glass: rgb(77 77 77 / 0.3);
+  /* Hover on clickable glass cards: same frost, a touch lighter. */
+  --color-glass-hover: rgb(110 110 110 / 0.38);
+  --color-glass-solid: #141414;
+  --color-placeholder: #1a1a1a;
+  /* Opaque raised chip (avatar `+N`). */
+  --color-surface-raised: #2a2a2a;
+  /* Backgrounds of the `glass-panel`, `glass-control` and `glass-elevated` utilities. */
+  --color-glass-panel: rgb(30 30 30 / 0.5);
+  --color-glass-control: rgb(40 40 40 / 0.25);
+  --color-glass-elevated: rgb(20 20 20 / 0.86);
+
+  /* White overlay ladder – every fill and state tint is one of these steps, nothing in between. */
+  --color-surface-1: rgb(255 255 255 / 0.05);
+  --color-surface-2: rgb(255 255 255 / 0.08);
+  --color-hover: rgb(255 255 255 / 0.1);
+  --color-surface-3: rgb(255 255 255 / 0.12);
+  --color-selected: rgb(255 255 255 / 0.15);
+  --color-surface-4: rgb(255 255 255 / 0.2);
+  --color-handle: rgb(255 255 255 / 0.25);
+  --color-border-focus: rgb(255 255 255 / 0.35);
+
+  /* Lines */
+  --color-hairline: rgb(255 255 255 / 0.08);
+  --color-hairline-strong: rgb(255 255 255 / 0.16);
+  /* Dots of the `dot-grid` canvas. */
+  --color-dot: rgb(255 255 255 / 0.14);
+
+  /* Black ladder – scrims and overlays */
+  --color-well-dark: rgb(0 0 0 / 0.25);
+  --color-scrim: rgb(0 0 0 / 0.6);
+  --color-scrim-strong: rgb(0 0 0 / 0.75);
+  --color-scrim-max: rgb(0 0 0 / 0.9);
+
+  /* Foreground (white at fixed opacities, as in the design) */
+  --color-fg: rgb(255 255 255 / 0.9);
+  --color-fg-muted: rgb(255 255 255 / 0.7);
+  --color-fg-subtle: rgb(255 255 255 / 0.5);
+  --color-fg-faint: rgb(255 255 255 / 0.3);
+  --color-on-primary: #000000;
+  --color-primary: rgb(255 255 255 / 0.9);
+  --color-primary-hover: #ffffff;
+
+  /* Status */
+  --color-success: #2ecc71;
+  --color-warning: #f5a623;
+  --color-info: #4d9fff;
+  --color-danger: #ff3b30;
+  --color-mention: #5c8aff;
+
+  /* Brand */
+  --color-powerpoint: #d35230;
+  --color-libreoffice: #18a303;
+  --color-onedrive: #0078d4;
+  --color-sharepoint: #038387;
+
+  /* Reviewer accents – pins, connector lines, drawings (BER-99) */
+  /* Spread for maximal distinctness (OKLab), incl. against PowerPoint orange. */
+  --color-accent-red: #ff1f5a;
+  --color-accent-yellow: #ffd000;
+  --color-accent-green: #00c853;
+  --color-accent-cyan: #00e0ff;
+  --color-accent-blue: #0048ff;
+  --color-accent-violet: #a259ff;
+  /* Comments of a deleted account (BER-145): no person, no colour of theirs. */
+  --color-accent-deleted: #8e8e93;
+
+  /* Avatar rings (presence colours) */
+  --color-ring-red: #ffd4b8;
+  --color-ring-yellow: #fff7b8;
+  --color-ring-green: #b8f0cf;
+  --color-ring-cyan: #b8f6ff;
+  --color-ring-blue: #c8f1ff;
+  --color-ring-violet: #dad0fc;
+  --color-ring-powerpoint: #f6c9b8;
+  --color-ring-deleted: #d1d1d6;
+
+  /* ── §4 Typography ─────────────────────────────────────────────────────────── */
+
+  /*
+   * Custom sizes on top of Tailwind's scale. Deliberately no `--text-*--line-height` sub-token:
+   * without one Tailwind (4.3) emits `.text-body { font-size: var(--text-body) }` and no
+   * line-height at all – the same as `text-[13px]`, so the line height stays inherited unless a
+   * `leading-*` class sets it. (Checked in the built css.)
+   */
+  --text-display: 28px;
+  --text-body: 13px;
+  --text-caption: 11px;
+  --text-tiny: 10px;
+  --text-micro: 9px;
+
+  /* ── §5 Radius ─────────────────────────────────────────────────────────────── */
+
+  /*
+   * One small scale, slightly boxy throughout (no capsules for controls). Nested corners stay
+   * concentric: inner radius = outer radius − padding, e.g. a 32px button in a pill with 4px
+   * padding gets 16 − 4 = 12px. Only avatars, pin dots, colour swatches, the ⊕ gap icon and
+   * spinners are round.
+   */
+  /* Outer pills and panels: controls-row pills, docks, cards, dialogs, menus, toasts. */
+  --radius-panel: 16px;
+  /* Buttons, segments and fields inside a pill with 4px padding (16 − 4); standalone fields. */
+  --radius-control: 12px;
+  /* Controls inside 6px padding (16 − 6); small standalone buttons. */
+  --radius-control-sm: 10px;
+  /* Small chips and tags; buttons inside a 12px field with 4px padding (12 − 4). */
+  --radius-chip: 8px;
+  /* Badges, kbd hints, switch tracks, 24px buttons inside fields. */
+  --radius-badge: 6px;
+  /* Slide thumbnails and tiny marks: switch knobs, mini badges. */
+  --radius-thumb: 4px;
+  /* Frames and marquees on slides, skeleton bars. */
+  --radius-mark: 3px;
+
+  /* ── §6 Elevation ──────────────────────────────────────────────────────────── */
+
+  /* Overlays: dialogs, popovers, floating panels. */
+  --shadow-float: 0 8px 32px rgb(0 0 0 / 0.5);
+  /* Pins and marks on slides. */
+  --shadow-mark: 0 2px 8px rgb(0 0 0 / 0.5);
+  /* Comment pin dots: centred, so the dot sits visibly on its arrow's line, not above it. */
+  --shadow-pin: 0 0 6px rgb(0 0 0 / 0.45);
+  /* Live cursors and their name labels. */
+  --shadow-lift: 0 4px 12px rgb(0 0 0 / 0.4);
+  /* Soft white halo around the one primary button of a standalone page (login), and on hover. */
+  --shadow-glow: 0 0 20px rgb(255 255 255 / 0.14), 0 0 56px rgb(255 255 255 / 0.07);
+  --shadow-glow-hover: 0 0 24px rgb(255 255 255 / 0.24), 0 0 72px rgb(255 255 255 / 0.12);
+
+  /* ── §7 Motion ─────────────────────────────────────────────────────────────── */
+
+  /* Panels, comment cards coming in, the import stage fading up. */
+  --ease-emphasized: cubic-bezier(0.2, 0.9, 0.25, 1);
+  /* Slide-in and rise-in: like `emphasized`, a hair softer at the end. */
+  --ease-settle: cubic-bezier(0.2, 0.9, 0.3, 1);
+  /* Pop-in: overshoots a little. */
+  --ease-overshoot: cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  /* Sheets and drawers. */
+  --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+  /* Drawn lines (connectors). */
+  --ease-symmetric: cubic-bezier(0.65, 0, 0.35, 1);
+  /* Leaving the page. */
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  /* Logo hop. */
+  --ease-hop: cubic-bezier(0.3, 0.7, 0.4, 1);
+  /* Import stage: slides dealt onto the track. */
+  --ease-deal: cubic-bezier(0.16, 0.92, 0.24, 1.05);
+
+  --animate-fade-in: fade-in 160ms ease-out;
+  --animate-pop-in: pop-in 180ms var(--ease-overshoot);
+  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-slide-in-x: slide-in-x 220ms var(--ease-settle);
+  /* Content coming back after something gave it room (e.g. the OneDrive picker closing). */
+  --animate-rise-in: rise-in 320ms var(--ease-settle) backwards;
+  /* Friendly little jump, e.g. the logo when clicked while already home. */
+  --animate-hop: hop 420ms var(--ease-hop);
+  /* A one-row grid sliding open to its content's height, e.g. the panel under a list row. */
+  --animate-expand-rows: expand-rows 320ms var(--ease-emphasized);
+  /* …and sliding shut again; stays shut until it is removed. */
+  --animate-collapse-rows: collapse-rows 240ms var(--ease-exit) forwards;
+  /* A panel over a card's thumbnail unrolling upwards from its bottom edge, and back down. */
+  --animate-unroll-up: unroll-up 320ms var(--ease-emphasized);
+  --animate-roll-down: roll-down 240ms var(--ease-exit) forwards;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px) scale(0.98);
+    }
+  }
+  @keyframes rise-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+  /* No opacity: below 1 it would cut the panel's glass off from what lies behind it, and the
+     backdrop blur would change the moment the animation ends. */
+  @keyframes expand-rows {
+    from {
+      grid-template-rows: 0fr;
+      margin-top: 0;
+    }
+  }
+  @keyframes collapse-rows {
+    to {
+      grid-template-rows: 0fr;
+      margin-top: 0;
+    }
+  }
+  /* clip-path, not opacity – the panel's backdrop blur keeps seeing what lies behind it. */
+  /* Both ends spelled out: `none` and `inset()` don't interpolate. */
+  @keyframes unroll-up {
+    from {
+      clip-path: inset(100% 0 0 0);
+    }
+    to {
+      clip-path: inset(0);
+    }
+  }
+  @keyframes roll-down {
+    from {
+      clip-path: inset(0);
+    }
+    to {
+      clip-path: inset(100% 0 0 0);
+    }
+  }
+  @keyframes slide-in-x {
+    from {
+      opacity: 0;
+      transform: translateX(-8px);
+    }
+  }
+  @keyframes hop {
+    30% {
+      transform: translateY(-5px) rotate(-4deg);
+    }
+    55% {
+      transform: translateY(0) rotate(0);
+    }
+    72% {
+      transform: translateY(-1.5px);
+    }
+  }
+  @keyframes shimmer {
+    from {
+      background-position: -400px 0;
+    }
+    to {
+      background-position: 400px 0;
+    }
+  }
+}
+
+/* ── §3 Surfaces ───────────────────────────────────────────────────────────────
+   Each glass and ring utility sets `box-shadow`: never stack two on one element, use the
+   combined utility instead. */
+
+/* Frosted glass surface (Figma "GLASS" effect: #4D4D4D @ 30 %, background blur). */
+@utility glass {
+  background-color: var(--color-glass);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  box-shadow: inset 0 0 0 1px var(--color-hairline);
+}
+
+/* Side panels floating over slides: darker and denser than `glass`, so text stays readable over
+   white slides while the track still shows through. */
+@utility glass-panel {
+  background-color: var(--color-glass-panel);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+}
+
+/* `glass-panel` lifted off the stage: hairline edge and float shadow (thread, deleted slides). */
+@utility glass-floating {
+  background-color: var(--color-glass-panel);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  box-shadow:
+    inset 0 0 0 1px var(--color-hairline),
+    var(--shadow-float);
+}
+
+/* Buttons and control pills: the side panel's tint, but a light blur, so connector lines and the
+   dot grid stay faintly visible behind them. */
+@utility glass-control {
+  background-color: var(--color-glass-control);
+  backdrop-filter: blur(4px) saturate(140%);
+  -webkit-backdrop-filter: blur(4px) saturate(140%);
+  box-shadow: inset 0 0 0 1px var(--color-hairline);
+}
+
+/* Opaque variant for overlays that sit above busy content (dialogs, popovers, panels). */
+@utility glass-elevated {
+  background-color: var(--color-glass-elevated);
+  backdrop-filter: blur(32px) saturate(140%);
+  -webkit-backdrop-filter: blur(32px) saturate(140%);
+  box-shadow:
+    inset 0 0 0 1px var(--color-hairline-strong),
+    var(--shadow-float);
+}
+
+/* Chips over a slide or thumbnail (slide numbers, counters): scrim with a light blur. */
+@utility glass-dark {
+  background-color: var(--color-scrim);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* Badges over a slide (change badges, "Folie fehlt"): stronger scrim, same blur. */
+@utility glass-dark-strong {
+  background-color: var(--color-scrim-strong);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* 1px inner edges as box-shadow (no layout shift, follows the radius). The names also match
+   Tailwind's ring-colour utility for these tokens, so the class additionally sets an unused
+   `--tw-ring-color`; don't combine them with `ring`/`ring-1` – use these alone. */
+@utility ring-hairline {
+  box-shadow: inset 0 0 0 1px var(--color-hairline);
+}
+@utility ring-hairline-strong {
+  box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+}
+
+/* Inset quote / reply well (quoted message, composer, reply dialogs). */
+@utility field-well {
+  background-color: var(--color-surface-1);
+  box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+}
+
+/* Field focus: brighter inner edge while the field (or anything in it) has focus. */
+@utility focus-field {
+  &:focus-within {
+    box-shadow: inset 0 0 0 1px var(--color-border-focus);
+  }
+}
+
+/* Dot grid used behind the review canvas and on the start screens. */
+@utility dot-grid {
+  background-color: var(--color-canvas);
+  background-image: radial-gradient(var(--color-dot) 1px, transparent 1.2px);
+  background-size: 22px 22px;
+}
+
+/* Loading placeholder for slides that are still rendering. */
+@utility skeleton {
+  background: linear-gradient(90deg, #161616 0%, #222 50%, #161616 100%);
+  background-size: 800px 100%;
+  animation: var(--animate-shimmer);
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+
+    /*
+     * §6 Stacking layers, used as `z-(--z-popover)`. Plain custom properties (Tailwind has no
+     * z-index theme namespace), so they are always emitted.
+     */
+    --z-raised: 10;
+    --z-overlay: 20;
+    --z-sticky: 25;
+    --z-chrome: 30;
+    --z-panel: 40;
+    --z-popover: 50;
+    --z-toast: 55;
+    --z-stage: 60;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-canvas font-sans text-fg antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-mention);
+    outline-offset: 2px;
+  }
+
+  /* Tailwind v4 leaves buttons on the arrow cursor – every clickable control shows the hand. */
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  [role='menuitem']:not([aria-disabled='true']),
+  [role='menuitemradio']:not([aria-disabled='true']),
+  [role='option']:not([aria-disabled='true']),
+  [role='tab'],
+  select:not(:disabled),
+  summary,
+  label:has(> input[type='checkbox'], > input[type='radio'], > input[type='file']) {
+    cursor: pointer;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* ── Import stage (deck page while a deck imports, BER-97) ─────────────────────
+   Once the slides are counted, one placeholder per slide is dealt onto the track; they fill in
+   one after another, and at the end the real slides appear over them, one after another. Loops
+   only run with motion allowed (the stage checks `prefers-reduced-motion`); one-shot animations
+   are cut short by the rule above. */
+/* Into the import stage (the only view transition): the page steps back and blurs away while
+   the stage – its ghost slide already dealt in – fades up. */
+::view-transition-old(root) {
+  animation: page-out 380ms var(--ease-exit) both;
+}
+::view-transition-new(root) {
+  animation: page-in 520ms var(--ease-emphasized) 100ms both;
+}
+@keyframes page-out {
+  to {
+    opacity: 0;
+    transform: scale(0.98);
+    filter: blur(6px);
+  }
+}
+@keyframes page-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.01ms;
+  }
+}
+@keyframes import-deal {
+  /* Tossed onto the table from above the screen: it comes in big and tilted, out of the plane in
+     front of the track, and lands on its spot – wherever on the track that is. */
+  from {
+    opacity: 0;
+    transform: perspective(1800px) translate3d(0, -18%, 420px) rotateX(16deg) rotate(6deg);
+  }
+  35% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes import-leave {
+  to {
+    opacity: 0;
+    transform: translate3d(48px, -56px, 0) rotate(7deg) scale(0.85);
+  }
+}
+@keyframes import-pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.6);
+  }
+}
+@keyframes import-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+@keyframes import-wave {
+  0%,
+  44%,
+  100% {
+    transform: none;
+  }
+  6% {
+    transform: translateY(1px) scale(1.04, 0.94);
+  }
+  16% {
+    transform: translateY(-9px) scale(0.97, 1.05);
+  }
+  28% {
+    transform: translateY(1px) scale(1.05, 0.93);
+  }
+  36% {
+    transform: translateY(-2px);
+  }
+}
+@keyframes import-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+/* ── Import stage choreographies ─────────────────────────────────────────────────
+   The stage gets `data-import-anim` with one of these at random (`stage/choreography.ts`).
+   Parts: `[data-deal]` a slot arriving on its spot (`--deal-delay`, `--i` = its index) – from
+   above or out of the depth, never across the track; `[data-working]` the card of the slot at
+   work, making the choreography's gesture; `[data-sketch]` its sketch, built up piece by piece
+   (`[data-part]`, `--k` = drawing order). Each of them plays once: when the slot's turn comes the
+   card makes its gesture and the sketch builds up, then it all stays as it ended – printing only
+   changes the card's fill. Every deal is at rest by 55 % of `DEAL_MS` (1700 ms, `LAND_MS`). Once
+   the import is done everything is at rest, the real slides appear and the stage leaves. */
+[data-import-anim] [data-deal] {
+  animation-duration: 1700ms;
+  animation-delay: var(--deal-delay);
+  animation-fill-mode: both;
+}
+[data-import-anim] [data-working] {
+  animation: 2400ms linear both;
+}
+[data-import-anim] [data-sketch] [data-part] {
+  animation-duration: 640ms;
+  animation-timing-function: var(--ease-overshoot);
+  animation-delay: calc(150ms + var(--k) * 80ms);
+  animation-fill-mode: backwards;
+}
+
+/* Deal: tossed onto the table like playing cards, from above the screen. At its turn the card
+   gets a little tap and the content is written in, piece by piece from the left. */
+[data-import-anim='deal'] [data-deal] {
+  animation-name: import-deal;
+  animation-timing-function: var(--ease-deal);
+}
+[data-import-anim='deal'] [data-working] {
+  animation-name: import-card-tap;
+}
+[data-import-anim='deal'] [data-sketch] [data-part] {
+  transform-origin: 0 50%;
+  animation-name: import-print-write;
+}
+@keyframes import-card-tap {
+  0%,
+  16%,
+  100% {
+    transform: none;
+  }
+  5% {
+    transform: scale(0.985);
+  }
+  10% {
+    transform: scale(1.004);
+  }
+}
+@keyframes import-print-write {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* Drop: the slides fall onto the track, squash as they land and bounce. At its turn the card
+   thuds and the content tumbles in from above and bounces. */
+[data-import-anim='drop'] [data-deal] {
+  transform-origin: 50% 100%;
+  animation-name: import-drop;
+  animation-timing-function: linear;
+}
+@keyframes import-drop {
+  0% {
+    opacity: 0;
+    transform: translateY(-115%) rotate(-4deg);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.5);
+  }
+  8% {
+    opacity: 1;
+  }
+  22% {
+    transform: translateY(0) scale(1.05, 0.9);
+    animation-timing-function: var(--ease-settle);
+  }
+  32% {
+    transform: translateY(-7%) scale(0.98, 1.03) rotate(0.6deg);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.5);
+  }
+  40% {
+    transform: translateY(0) scale(1.015, 0.975);
+    animation-timing-function: var(--ease-settle);
+  }
+  48% {
+    transform: translateY(-1.2%);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.5);
+  }
+  54%,
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+[data-import-anim='drop'] [data-working] {
+  transform-origin: 50% 100%;
+  animation-name: import-card-thud;
+}
+@keyframes import-card-thud {
+  0%,
+  9%,
+  22%,
+  100% {
+    transform: none;
+  }
+  12% {
+    transform: scale(1.006, 0.99);
+  }
+  16% {
+    transform: scale(0.998, 1.003);
+  }
+}
+[data-import-anim='drop'] [data-sketch] [data-part] {
+  transform-origin: 50% 100%;
+  animation-name: import-print-drop;
+  animation-timing-function: linear;
+}
+@keyframes import-print-drop {
+  0% {
+    transform: translateY(-260%);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.5);
+  }
+  50% {
+    transform: translateY(0) scale(1.08, 0.75);
+    animation-timing-function: var(--ease-settle);
+  }
+  75% {
+    transform: translateY(-30%) scale(0.97, 1.06);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.5);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* Flip: the slides turn over like cards. At its turn the card leans back a little and the
+   content flips in like a departures board. */
+[data-import-anim='flip'] [data-deal] {
+  animation-name: import-flip;
+  animation-timing-function: linear;
+}
+@keyframes import-flip {
+  0% {
+    opacity: 0;
+    transform: perspective(1800px) translateX(6%) rotateY(-110deg) scale(0.92);
+    animation-timing-function: var(--ease-settle);
+  }
+  12% {
+    opacity: 1;
+  }
+  34% {
+    transform: perspective(1800px) rotateY(9deg);
+    animation-timing-function: var(--ease-symmetric);
+  }
+  45% {
+    transform: perspective(1800px) rotateY(-3deg);
+    animation-timing-function: var(--ease-symmetric);
+  }
+  54%,
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+[data-import-anim='flip'] [data-working] {
+  animation-name: import-card-lean;
+}
+@keyframes import-card-lean {
+  0%,
+  24%,
+  100% {
+    transform: none;
+    animation-timing-function: var(--ease-symmetric);
+  }
+  8% {
+    transform: perspective(1800px) rotateX(5deg);
+    animation-timing-function: var(--ease-symmetric);
+  }
+  16% {
+    transform: perspective(1800px) rotateX(-1.5deg);
+    animation-timing-function: var(--ease-symmetric);
+  }
+}
+[data-import-anim='flip'] [data-sketch] [data-part] {
+  animation-name: import-print-flap;
+  animation-timing-function: linear;
+}
+@keyframes import-print-flap {
+  0% {
+    transform: perspective(300px) rotateX(-90deg);
+    animation-timing-function: var(--ease-overshoot);
+  }
+  100% {
+    transform: perspective(300px) rotateX(0);
+  }
+}
+
+/* Rise: the slides surface from deep below the track, slightly turned, and come to rest on it.
+   At its turn the card sways and the content rises in a wave. */
+[data-import-anim='rise'] [data-deal] {
+  transform-origin: 50% 100%;
+  animation-name: import-rise-up;
+  animation-timing-function: linear;
+}
+@keyframes import-rise-up {
+  0% {
+    opacity: 0;
+    transform: perspective(1800px) translate3d(0, 10%, -900px) rotateX(-12deg) rotate(-3deg);
+    animation-timing-function: var(--ease-settle);
+  }
+  18% {
+    opacity: 1;
+  }
+  40% {
+    transform: perspective(1800px) translate3d(0, -1.5%, 40px) rotate(0.6deg);
+    animation-timing-function: var(--ease-symmetric);
+  }
+  55%,
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+[data-import-anim='rise'] [data-working] {
+  transform-origin: 50% 100%;
+  animation-name: import-card-sway;
+}
+@keyframes import-card-sway {
+  0%,
+  30%,
+  100% {
+    transform: none;
+    animation-timing-function: var(--ease-symmetric);
+  }
+  10% {
+    transform: rotate(-0.7deg);
+    animation-timing-function: var(--ease-symmetric);
+  }
+  20% {
+    transform: rotate(0.35deg);
+    animation-timing-function: var(--ease-symmetric);
+  }
+}
+[data-import-anim='rise'] [data-sketch] [data-part] {
+  animation-name: import-print-rise;
+}
+@keyframes import-print-rise {
+  from {
+    opacity: 0;
+    transform: translateY(140%);
+  }
+}
+
+/* Pop: the slides pop up like bubbles and wobble like jelly. At its turn the card wobbles and
+   the content pops in piece by piece. */
+[data-import-anim='pop'] [data-deal] {
+  animation-name: import-pop-in;
+  animation-timing-function: linear;
+}
+@keyframes import-pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+    animation-timing-function: var(--ease-settle);
+  }
+  10% {
+    opacity: 1;
+  }
+  20% {
+    transform: scale(1.06, 0.93);
+    animation-timing-function: var(--ease-symmetric);
+  }
+  29% {
+    transform: scale(0.96, 1.04);
+    animation-timing-function: var(--ease-symmetric);
+  }
+  38% {
+    transform: scale(1.02, 0.985);
+    animation-timing-function: var(--ease-symmetric);
+  }
+  46% {
+    transform: scale(0.995, 1.005);
+    animation-timing-function: var(--ease-symmetric);
+  }
+  54%,
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+[data-import-anim='pop'] [data-working] {
+  animation-name: import-card-jelly;
+}
+@keyframes import-card-jelly {
+  0%,
+  28%,
+  100% {
+    transform: none;
+    animation-timing-function: var(--ease-symmetric);
+  }
+  7% {
+    transform: scale(1.012, 0.985);
+    animation-timing-function: var(--ease-symmetric);
+  }
+  14% {
+    transform: scale(0.992, 1.01);
+    animation-timing-function: var(--ease-symmetric);
+  }
+  21% {
+    transform: scale(1.003, 0.997);
+    animation-timing-function: var(--ease-symmetric);
+  }
+}
+[data-import-anim='pop'] [data-sketch] [data-part] {
+  animation-name: import-print-pop;
+  animation-timing-function: linear;
+}
+@keyframes import-print-pop {
+  0% {
+    transform: scale(0);
+    animation-timing-function: var(--ease-settle);
+  }
+  45% {
+    transform: scale(1.18);
+    animation-timing-function: var(--ease-symmetric);
+  }
+  75% {
+    transform: scale(0.94);
+    animation-timing-function: var(--ease-symmetric);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* Swing: the slides swing down on a hinge along their top edge, like flaps falling shut. At its
+   turn the card swings and the content dangles from its left end into place. */
+[data-import-anim='swing'] [data-deal] {
+  transform-origin: 50% 0;
+  animation-name: import-swing;
+  animation-timing-function: linear;
+}
+@keyframes import-swing {
+  0% {
+    opacity: 0;
+    transform: perspective(1800px) rotateX(-100deg);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.6);
+  }
+  6% {
+    opacity: 1;
+  }
+  22% {
+    transform: perspective(1800px) rotateX(22deg);
+    animation-timing-function: var(--ease-symmetric);
+  }
+  32% {
+    transform: perspective(1800px) rotateX(-10deg);
+    animation-timing-function: var(--ease-symmetric);
+  }
+  41% {
+    transform: perspective(1800px) rotateX(4deg);
+    animation-timing-function: var(--ease-symmetric);
+  }
+  48% {
+    transform: perspective(1800px) rotateX(-1deg);
+    animation-timing-function: var(--ease-symmetric);
+  }
+  54%,
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+[data-import-anim='swing'] [data-working] {
+  transform-origin: 50% 0;
+  animation-name: import-card-swing;
+}
+@keyframes import-card-swing {
+  0%,
+  32%,
+  100% {
+    transform: none;
+    animation-timing-function: var(--ease-symmetric);
+  }
+  8% {
+    transform: rotate(0.8deg);
+    animation-timing-function: var(--ease-symmetric);
+  }
+  16% {
+    transform: rotate(-0.5deg);
+    animation-timing-function: var(--ease-symmetric);
+  }
+  24% {
+    transform: rotate(0.2deg);
+    animation-timing-function: var(--ease-symmetric);
+  }
+}
+[data-import-anim='swing'] [data-sketch] [data-part] {
+  transform-origin: 0 0;
+  animation-name: import-print-dangle;
+  animation-timing-function: linear;
+}
+@keyframes import-print-dangle {
+  0% {
+    transform: rotate(-35deg);
+    animation-timing-function: var(--ease-symmetric);
+  }
+  40% {
+    transform: rotate(9deg);
+    animation-timing-function: var(--ease-symmetric);
+  }
+  65% {
+    transform: rotate(-4deg);
+    animation-timing-function: var(--ease-symmetric);
+  }
+  85% {
+    transform: rotate(1.5deg);
+    animation-timing-function: var(--ease-symmetric);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* Comments of a freshly imported deck come in once the viewer is up (`data-comments-intro` on
+   the deck page): the lines are drawn from the slides to the cards, then the cards appear. */
+[data-comments-intro='hidden']
+  :is([data-connectors], [data-comment-card], [data-connector-blob], [data-gap-bubble]) {
+  opacity: 0;
+}
+[data-comments-intro='enter'] [data-connectors] path {
+  stroke-dasharray: 1;
+  animation: comments-draw 800ms var(--ease-symmetric) 100ms both;
+}
+[data-comments-intro='enter'] :is([data-comment-card], [data-connector-blob], [data-gap-bubble]) {
+  animation: comments-in 480ms var(--ease-emphasized) 850ms both;
+}
+@keyframes comments-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes comments-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes import-card-out {
+  to {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+}
+
+/* ── Logo animations (clicking the logo while already home) ───────────────────
+   `Logo` gets `data-logo-anim` with one of these at random. The root always animates for the
+   whole run – a no-op `logo-hold` unless the variant moves the root itself – so its
+   `animationend` marks the end. Parts: icon (the svg), back/front (its two slides), text (one
+   inline-block per letter, `--i` = its index). */
+[data-logo-anim] {
+  animation: logo-hold var(--logo-anim-duration, 800ms) linear;
+}
+[data-logo-anim] [data-logo-part='icon'] {
+  overflow: visible;
+}
+[data-logo-anim] :is([data-logo-part='back'], [data-logo-part='front']) {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@keyframes logo-hold {
+  to {
+    opacity: 1;
+  }
+}
+
+/* Hop: the original friendly little jump – the icon only; the word stays put but feels the
+   landing, a ripple running through the letters. */
+[data-logo-anim='hop'] {
+  --logo-anim-duration: 700ms;
+}
+[data-logo-anim='hop'] [data-logo-part='icon'] {
+  animation: var(--animate-hop);
+}
+[data-logo-anim='hop'] [data-logo-part='text'] > [aria-hidden] {
+  transform-origin: 50% 100%;
+  animation: logo-ripple 300ms var(--ease-hop) calc(200ms + var(--i) * 35ms) backwards;
+}
+@keyframes logo-ripple {
+  30% {
+    transform: translateY(1px) scaleY(0.82);
+  }
+  60% {
+    transform: translateY(-2px);
+  }
+}
+
+/* Shuffle: the front slide is pulled out and tucked behind, the back one comes forward. */
+[data-logo-anim='shuffle'] {
+  --logo-anim-duration: 1000ms;
+}
+/* …and the letters riffle like a deck: every other one up, the rest down. */
+[data-logo-anim='shuffle'] [data-logo-part='text'] > [aria-hidden] {
+  --riffle: -3px;
+  animation: logo-riffle 550ms var(--ease-symmetric) calc(250ms + var(--i) * 30ms) backwards;
+}
+[data-logo-anim='shuffle'] [data-logo-part='text'] > [aria-hidden]:nth-child(odd) {
+  --riffle: 3px;
+}
+@keyframes logo-riffle {
+  45% {
+    transform: translateY(var(--riffle)) rotate(calc(var(--riffle) * 2deg / 1px));
+  }
+}
+[data-logo-anim='shuffle'] [data-logo-part='front'] {
+  animation: logo-shuffle-front 900ms var(--ease-symmetric);
+}
+[data-logo-anim='shuffle'] [data-logo-part='back'] {
+  animation: logo-shuffle-back 900ms var(--ease-symmetric);
+}
+@keyframes logo-shuffle-front {
+  30% {
+    transform: translate(10px, -2px) rotate(12deg);
+  }
+  60% {
+    transform: translate(-4px, 4px);
+    fill-opacity: 0.45;
+  }
+}
+@keyframes logo-shuffle-back {
+  30% {
+    transform: none;
+  }
+  60% {
+    transform: translate(4px, -4px);
+    fill-opacity: 1;
+  }
+}
+
+/* Flip: the slides turn over like a card. */
+[data-logo-anim='flip'] {
+  --logo-anim-duration: 900ms;
+}
+/* …and the letters turn over after it, one by one. */
+[data-logo-anim='flip'] [data-logo-part='text'] > [aria-hidden] {
+  animation: logo-flip-letter 500ms var(--ease-overshoot) calc(150ms + var(--i) * 45ms) backwards;
+}
+@keyframes logo-flip-letter {
+  from {
+    transform: perspective(60px) rotateY(0);
+  }
+  to {
+    transform: perspective(60px) rotateY(360deg);
+  }
+}
+[data-logo-anim='flip'] [data-logo-part='icon'] {
+  animation: logo-flip 750ms var(--ease-overshoot);
+}
+@keyframes logo-flip {
+  from {
+    transform: perspective(120px) rotateY(0);
+  }
+  to {
+    transform: perspective(120px) rotateY(360deg);
+  }
+}
+
+/* Next slide: the front slide whooshes off to the right, a fresh one slides in from the left. */
+[data-logo-anim='next-slide'] {
+  --logo-anim-duration: 800ms;
+}
+/* …and its draught bends the letters over like grass, then they spring back. */
+[data-logo-anim='next-slide'] [data-logo-part='text'] > [aria-hidden] {
+  transform-origin: 50% 100%;
+  animation: logo-blown 500ms ease-out calc(120ms + var(--i) * 35ms) backwards;
+}
+@keyframes logo-blown {
+  30% {
+    transform: translateX(2px) skewX(-18deg);
+  }
+  60% {
+    transform: skewX(7deg);
+  }
+  80% {
+    transform: skewX(-2deg);
+  }
+}
+[data-logo-anim='next-slide'] [data-logo-part='front'] {
+  animation: logo-next-front 750ms;
+}
+[data-logo-anim='next-slide'] [data-logo-part='back'] {
+  animation: logo-next-back 750ms var(--ease-hop);
+}
+@keyframes logo-next-front {
+  0% {
+    animation-timing-function: var(--ease-exit);
+  }
+  35% {
+    transform: translateX(14px) skewX(-12deg);
+    opacity: 0;
+  }
+  36% {
+    transform: translateX(-8px);
+    opacity: 0;
+    animation-timing-function: var(--ease-settle);
+  }
+}
+@keyframes logo-next-back {
+  35% {
+    transform: translate(1.5px, -1.5px);
+  }
+  60% {
+    transform: none;
+  }
+}
+
+/* Wave: the icon bobs, then the letters follow one after another. */
+[data-logo-anim='wave'] {
+  --logo-anim-duration: 850ms;
+}
+[data-logo-anim='wave'] [data-logo-part='icon'] {
+  animation: logo-wave 480ms var(--ease-hop);
+}
+[data-logo-anim='wave'] [data-logo-part='text'] > [aria-hidden] {
+  animation: logo-wave 480ms var(--ease-hop) calc((var(--i) + 1) * 55ms) backwards;
+}
+@keyframes logo-wave {
+  35% {
+    transform: translateY(-5px);
+  }
+  65% {
+    transform: none;
+  }
+  82% {
+    transform: translateY(-1px);
+  }
+}
+
+/* Jelly: squash and stretch, standing on the baseline. */
+[data-logo-anim='jelly'] {
+  transform-origin: 50% 100%;
+  animation: logo-jelly 800ms ease-out;
+}
+@keyframes logo-jelly {
+  15% {
+    transform: scale(1.12, 0.82);
+  }
+  30% {
+    transform: scale(0.9, 1.12);
+  }
+  45% {
+    transform: scale(1.05, 0.95);
+  }
+  60% {
+    transform: scale(0.98, 1.03);
+  }
+  75% {
+    transform: scale(1.01, 0.99);
+  }
+}
+
+/* Fan: the slides spread like a hand of cards and close again. */
+[data-logo-anim='fan'] {
+  --logo-anim-duration: 900ms;
+}
+/* …and so do the letters, around a point below the word. */
+[data-logo-anim='fan'] [data-logo-part='text'] > [aria-hidden] {
+  transform-origin: 50% 260%;
+  animation: logo-fan-letter 900ms var(--ease-overshoot);
+}
+@keyframes logo-fan-letter {
+  35%,
+  55% {
+    transform: rotate(calc((var(--i) - 2.5) * 7deg));
+  }
+}
+[data-logo-anim='fan'] :is([data-logo-part='back'], [data-logo-part='front']) {
+  transform-origin: 0% 100%;
+}
+[data-logo-anim='fan'] [data-logo-part='back'] {
+  animation: logo-fan-back 900ms var(--ease-overshoot);
+}
+[data-logo-anim='fan'] [data-logo-part='front'] {
+  animation: logo-fan-front 900ms var(--ease-overshoot);
+}
+@keyframes logo-fan-back {
+  35%,
+  55% {
+    transform: translateX(-2px) rotate(-16deg);
+  }
+}
+@keyframes logo-fan-front {
+  35%,
+  55% {
+    transform: translate(2px, 1px) rotate(14deg);
+  }
+}
+
+/* Swing: the whole logo dangles from a nail like a shop sign. */
+[data-logo-anim='swing'] {
+  transform-origin: 50% -8px;
+  animation: logo-swing 1100ms ease-in-out;
+}
+/* …while each letter dangles from its top and lags behind a little. */
+[data-logo-anim='swing'] [data-logo-part='text'] > [aria-hidden] {
+  transform-origin: 50% 0;
+  animation: logo-dangle 900ms ease-in-out calc(80ms + var(--i) * 30ms) backwards;
+}
+@keyframes logo-dangle {
+  20% {
+    transform: rotate(-10deg);
+  }
+  45% {
+    transform: rotate(8deg);
+  }
+  70% {
+    transform: rotate(-3deg);
+  }
+}
+@keyframes logo-swing {
+  15% {
+    transform: rotate(8deg);
+  }
+  35% {
+    transform: rotate(-6deg);
+  }
+  55% {
+    transform: rotate(3.5deg);
+  }
+  75% {
+    transform: rotate(-1.5deg);
+  }
+  90% {
+    transform: rotate(0.5deg);
+  }
+}
+
+/* Orbit: the front slide circles once around the back one, passing behind it on the far side. */
+[data-logo-anim='orbit'] {
+  --logo-anim-duration: 1150ms;
+}
+/* …and the letters get dizzy watching it: each wobbles round in a little circle of its own. */
+[data-logo-anim='orbit'] [data-logo-part='text'] > [aria-hidden] {
+  animation: logo-dizzy 700ms linear calc(200ms + var(--i) * 40ms) backwards;
+}
+@keyframes logo-dizzy {
+  25% {
+    transform: translate(1.5px, 1.5px) rotate(6deg);
+  }
+  50% {
+    transform: translate(0, 3px) rotate(0);
+  }
+  75% {
+    transform: translate(-1.5px, 1.5px) rotate(-6deg);
+  }
+}
+[data-logo-anim='orbit'] [data-logo-part='front'] {
+  animation: logo-orbit-front 1000ms var(--ease-symmetric);
+}
+[data-logo-anim='orbit'] [data-logo-part='back'] {
+  animation: logo-orbit-back 1000ms var(--ease-symmetric);
+}
+/* Points on a circle around the back slide's centre, relative to where the front slide rests. */
+@keyframes logo-orbit-front {
+  12.5% {
+    transform: translate(1.7px, 4px);
+  }
+  25% {
+    transform: translate(0, 8px) scale(0.92);
+    fill-opacity: 0.6;
+  }
+  37.5% {
+    transform: translate(-4px, 9.7px) scale(0.85);
+    fill-opacity: 0.45;
+  }
+  50% {
+    transform: translate(-8px, 8px) scale(0.85);
+    fill-opacity: 0.45;
+  }
+  62.5% {
+    transform: translate(-9.7px, 4px) scale(0.92);
+    fill-opacity: 0.6;
+  }
+  75% {
+    transform: translate(-8px, 0);
+  }
+  87.5% {
+    transform: translate(-4px, -1.7px);
+  }
+}
+@keyframes logo-orbit-back {
+  25%,
+  62.5% {
+    fill-opacity: 1;
+  }
+}
+
+/* Split-flap: the icon tumbles, then each letter flips over like a departures board. */
+[data-logo-anim='split-flap'] {
+  --logo-anim-duration: 750ms;
+}
+[data-logo-anim='split-flap'] [data-logo-part='icon'] {
+  animation: logo-tumble 450ms var(--ease-settle);
+}
+[data-logo-anim='split-flap'] [data-logo-part='text'] > [aria-hidden] {
+  animation: logo-flap 340ms linear calc((var(--i) + 1) * 55ms) backwards;
+}
+@keyframes logo-tumble {
+  from {
+    transform: perspective(120px) rotateX(0);
+  }
+  to {
+    transform: perspective(120px) rotateX(-360deg);
+  }
+}
+@keyframes logo-flap {
+  0% {
+    animation-timing-function: ease-in;
+  }
+  50% {
+    transform: perspective(60px) rotateX(90deg);
+  }
+  50.01% {
+    transform: perspective(60px) rotateX(-90deg);
+    animation-timing-function: var(--ease-overshoot);
+  }
+  100% {
+    transform: perspective(60px) rotateX(0);
+  }
+}

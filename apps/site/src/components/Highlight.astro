@@ -1,0 +1,88 @@
+---
+import Cursor from './Cursor.astro';
+import type { PersonName } from '~/lib/people';
+
+/**
+ * The one key phrase of a headline, selected like a shape in the editor: 2px accent frame,
+ * four corner handles and – with `by` – the reviewer's cursor resting on the bottom-right handle.
+ */
+interface Props {
+  by?: PersonName;
+  accent?: string;
+  class?: string;
+}
+
+const { by, accent = 'var(--color-sage)', class: className } = Astro.props;
+const handles = ['top-0 left-0', 'top-0 right-0', 'bottom-0 left-0', 'bottom-0 right-0'];
+---
+
+<span
+  class:list={['relative inline-block px-[0.18em] pb-[0.04em] whitespace-nowrap text-white', className]}
+  style={`--hl: ${accent}`}
+  data-highlight
+>
+  <span class="hl-frame pointer-events-none absolute inset-x-0 top-[0.07em] bottom-0" aria-hidden="true">
+    <span class="absolute inset-0 border-2 border-(--hl)" data-hl-frame></span>
+    {
+      handles.map((at) => (
+        <span
+          class:list={[
+            'absolute size-[9px] border-2 border-(--hl) bg-canvas',
+            at,
+            at.includes('left') ? '-translate-x-1/2' : 'translate-x-1/2',
+            at.includes('top') ? '-translate-y-1/2' : 'translate-y-1/2',
+          ]}
+        />
+      ))
+    }
+  </span>
+  <slot />
+  <!-- Tip on the bottom-right handle (Figma: 8px in, 10px up from the corner), clear of the text. -->
+  {
+    by && (
+      <Cursor
+        name={by}
+        class="hl-cursor absolute top-[calc(100%-10px)] left-[calc(100%-8px)] z-(--z-raised)"
+        drift
+      />
+    )
+  }
+</span>
+
+<style is:global>
+  /*
+   * The phrase gets selected once its words are there: the frame comes in after the headline's
+   * entrance (and before the reviewer's cursor), never ahead of the text.
+   */
+  .js .hl-frame {
+    opacity: 0;
+    scale: 0.97;
+    transition:
+      opacity 250ms ease-out,
+      scale 400ms var(--ease-emphasized);
+    transition-delay: var(--hl-in, 850ms);
+  }
+  .js .is-in .hl-frame {
+    opacity: 1;
+    scale: 1;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .js .hl-frame {
+      scale: none;
+      transition: opacity 300ms linear;
+    }
+  }
+
+  /*
+   * Phones: a key phrase often ends at the screen edge. The name tag slides under the avatar (the
+   * app's idle cursor) and the avatar moves in, so nothing sticks out of the page.
+   */
+  @media (max-width: 639px) {
+    .hl-cursor {
+      left: calc(100% - 24px);
+    }
+    .hl-cursor > div > div:first-child {
+      opacity: 0;
+    }
+  }
+</style>

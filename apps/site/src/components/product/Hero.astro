@@ -1,0 +1,76 @@
+---
+import Button from '~/components/Button.astro';
+import Note from '~/components/Note.astro';
+import Pin from './a/Pin.astro';
+import { APP_URL, page } from '~/lib/links';
+
+/**
+ * Product hero (Figma "Product | Hero"): two Black headline lines, each annotated with a
+ * reviewer's opinion – pin on the word, connector to the note. Plays on load.
+ */
+const lines = ['Taste is subjective.', 'Opinions matter most.'];
+---
+
+<section class="product-hero relative mx-auto max-w-[1440px] px-4 pt-32 pb-20 md:px-16 lg:h-[816px] lg:pt-[200px] lg:pb-0" data-section>
+  <h1 class="relative text-[clamp(44px,8.33vw,120px)] leading-[0.98] font-black tracking-[-0.03em] text-white">
+  {
+    lines.map((line, row) => (
+      <span class:list={['block', row === 1 && 'lg:text-right']}>
+        {line.split(' ').map((word, i, words) => (
+          <>
+            <span class="inline-block" data-reveal style={`--i: ${row * 3 + i}`}>
+              {word}
+            </span>
+            {i < words.length - 1 && ' '}
+          </>
+        ))}
+      </span>
+    ))
+  }
+  </h1>
+
+  <!-- Annotations: exact Figma positions on wide screens, stacked below the headline otherwise. -->
+  <div class="pointer-events-none absolute inset-0 hidden min-[1400px]:block" aria-hidden="true">
+    <Pin color="var(--color-sage)" class="absolute top-[246px] left-[1174px]" i={11} />
+    <svg class="absolute top-[191px] left-[1180px] overflow-visible" width="2" height="55" viewBox="0 0 2 55" fill="none">
+      <path d="M1 0V55" pathLength="1" stroke="var(--color-sage)" stroke-width="2" stroke-linejoin="round" data-draw style="--i: 10" />
+    </svg>
+    <Pin color="var(--color-accent-cyan)" class="absolute top-[364px] left-[75px]" i={12} />
+    <svg class="absolute top-[370px] left-[39px] overflow-visible" width="36" height="201" viewBox="0 0 36 200.9" fill="none">
+      <path
+        d="M36 1H9C4.58172 1 1 4.58172 1 9V191.9C1 196.318 4.58172 199.9 9 199.9H25"
+        pathLength="1"
+        stroke="var(--color-accent-cyan)"
+        stroke-width="2"
+        stroke-linejoin="round"
+        data-draw
+        style="--i: 12"
+      />
+    </svg>
+  </div>
+
+  <div class="mt-12 flex flex-col gap-6 min-[1400px]:mt-0">
+    <div class="flex flex-col gap-4 sm:flex-row min-[1400px]:contents">
+      <div class="min-[1400px]:absolute min-[1400px]:top-[103px] min-[1400px]:left-[1036px]" data-reveal style="--i: 11">
+        <Note name="Lara" time="on Slide 1" accent="var(--color-sage)" class="max-w-full">
+          I would go with the orange. It feels bolder.
+        </Note>
+      </div>
+      <div class="min-[1400px]:absolute min-[1400px]:top-[526px] min-[1400px]:left-16" data-reveal style="--i: 13">
+        <Note name="Paul" time="on Slide 1" accent="var(--color-accent-cyan)" class="max-w-full">
+          Blue feels calmer for a board meeting.
+        </Note>
+      </div>
+    </div>
+
+    <div class="flex max-w-[520px] flex-col gap-6 min-[1400px]:absolute min-[1400px]:top-[526px] min-[1400px]:left-[856px] min-[1400px]:gap-[22px]">
+      <p class="text-lg leading-8 text-fg-muted md:text-[22px]" data-reveal style="--i: 14">
+        Every opinion next to its slide. Decide with everything in view.
+      </p>
+      <div class="flex flex-wrap gap-3" data-reveal style="--i: 15">
+        <Button href={`${APP_URL}/`}>Start for free</Button>
+        <Button href={page('pricing')} variant="secondary">See pricing</Button>
+      </div>
+    </div>
+  </div>
+</section>

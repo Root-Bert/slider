@@ -1,0 +1,37 @@
+---
+import Chapter from './Chapter.astro';
+import Pill from './Pill.astro';
+import Highlight from '~/components/Highlight.astro';
+
+/** 02 | What stays ours: opinion and taste – every voice wants a say. */
+const voices = [
+  { name: 'Gesa', text: 'Start with the why.', x: 0, y: 20 },
+  { name: 'Marlon', text: 'Slide 4 can go.', x: 380, y: 10 },
+  { name: 'Lara', text: 'Love the ending!', x: 760, y: 50 },
+  { name: 'Anna', text: 'I see it differently.', x: 110, y: 106 },
+  { name: 'Paul', text: 'Where is this from?', x: 520, y: 94 },
+];
+---
+
+<Chapter n="02" label="What stays ours">
+  <h2 class="vision-h" data-reveal>
+    <span class="block">We are natural intelligences,</span>
+    <Highlight by="Lara">and we all want a say.</Highlight>
+  </h2>
+  <p class="vision-body max-w-[620px]" data-reveal style="--i: 1">
+    AI can write, calculate and design. What it cannot have for us is our opinion and our own
+    taste. Every one of us sees the world a little differently, and wants to be heard. Change
+    happens when enough of those voices come together. Bringing every voice in is what Slider is
+    built for.
+  </p>
+  <div class="flex w-full flex-wrap gap-3 lg:relative lg:block lg:h-[240px]">
+    {
+      voices.map((voice, i) => (
+        <Pill class="text-base sm:text-xl lg:absolute lg:top-(--y) lg:left-(--x)" style={`--x: ${voice.x}px; --y: ${voice.y}px; --i: ${i + 2}`} data-reveal>
+          <span class="text-sage">{voice.name}</span><span class="whitespace-pre">{' | '}</span>{voice.text}
+        </Pill>
+      ))
+    }
+    <Pill on class="text-base sm:text-xl lg:absolute lg:top-(--y) lg:left-(--x)" style="--x: 300px; --y: 186px; --i: 7" data-reveal><span class="whitespace-pre">{'You | Here is my take.'}</span></Pill>
+  </div>
+</Chapter>

@@ -1,0 +1,46 @@
+---
+/** A German legal text (Impressum, Datenschutz) in the app's quiet reading style. */
+interface Props {
+  lang?: string;
+}
+
+const { lang = 'de' } = Astro.props;
+---
+
+<section class="px-4 pt-16 pb-8 md:px-16" lang={lang}>
+  <article class="legal mx-auto max-w-[680px] text-[15px] leading-[1.65] text-fg-muted">
+    <slot />
+  </article>
+</section>
+
+<style>
+  .legal :global(h1) {
+    margin-bottom: 1.5rem;
+    /* "Datenschutzerklärung" is wider than a phone. */
+    hyphens: auto;
+    overflow-wrap: break-word;
+    font-size: 40px;
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    color: var(--color-fg);
+  }
+  .legal :global(h2) {
+    margin: 2.25rem 0 0.5rem;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--color-fg);
+  }
+  .legal :global(p) {
+    margin: 0.75rem 0;
+  }
+  .legal :global(a) {
+    color: var(--color-fg);
+    text-decoration: underline;
+    text-decoration-color: var(--color-fg-faint);
+    text-underline-offset: 3px;
+  }
+  .legal :global(a:hover) {
+    text-decoration-color: var(--color-fg);
+  }
+</style>

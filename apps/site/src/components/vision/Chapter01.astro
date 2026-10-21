@@ -1,0 +1,50 @@
+---
+import { asset } from '~/lib/links';
+import Chapter from './Chapter.astro';
+import Draw from './Draw.astro';
+import Pill from './Pill.astro';
+import arrow from './svg/mark-arrow.svg?raw';
+import arrowHead from './svg/mark-arrow-head.svg?raw';
+
+/** 01 | A slower future: what work turns into once machines do most of it. */
+const shift = [
+  ['Working to earn a living', 'Working out of passion'],
+  ['Useful means paying taxes', 'Useful means caring for others'],
+  ['Using resources up', 'Keeping materials in a loop'],
+  ['Always more, always faster', 'Time for leisure, together'],
+];
+---
+
+<Chapter n="01" label="A slower future">
+  <h2 class="vision-h" data-reveal>
+    <span class="block">What machines can’t take from us:</span>
+    <span class="relative inline-block px-[0.19em] pb-[0.04em] text-white">
+      each other.
+      <!-- Hand-drawn arrow pointing back at the phrase. -->
+      <Draw svg={arrow} class="top-[0.579em] left-[calc(100%-0.024em)] h-[0.858em] w-[1.949em]" />
+      <Draw svg={arrowHead} class="top-[0.492em] left-[calc(100%-0.068em)] h-[0.523em] w-[0.495em]" />
+    </span>
+  </h2>
+  <p class="vision-body max-w-[620px]" data-reveal style="--i: 1">
+    AI already does much of what happens at a screen, and robots will take on most of the rest.
+    Then a job no longer has to be how we earn money to spend. We do what we do out of passion and
+    conviction, and the only real task left is living together well.
+  </p>
+
+  <div class="flex w-full flex-col gap-3.5 pt-5">
+    <div class="hidden text-caption font-medium tracking-wide uppercase sm:flex" data-reveal style="--i: 2">
+      <span class="w-[444px] text-fg-faint">PROGRESS SOCIETY</span>
+      <span class="text-sage">SLOWER FUTURE</span>
+    </div>
+    {
+      shift.map(([before, after], i) => (
+        <div class="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-6" data-reveal style={`--i: ${i + 3}`}>
+          <span class="text-lg font-medium text-fg-muted line-through opacity-55 sm:w-[340px] sm:text-xl">{before}</span>
+          <img src={asset('vision/link-56.svg')} alt="" width="58" height="2" class="hidden h-0.5 w-14 sm:block" />
+          <Pill on={i === shift.length - 1}>{after}</Pill>
+        </div>
+      ))
+    }
+    <p class="text-xs tabular-nums text-fg-faint" data-reveal style="--i: 7">highly automated, and still slow</p>
+  </div>
+</Chapter>

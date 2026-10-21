@@ -1,0 +1,137 @@
+---
+import { accentAlpha, accentColor } from '@/lib/accent';
+import Audio from './a/Audio.astro';
+import CommentCard from './a/CommentCard.astro';
+import Connector from './a/Connector.astro';
+import Button from '~/components/Button.astro';
+import Cursor from '~/components/Cursor.astro';
+import Slide from '~/components/slides/Slide.astro';
+import { APP_URL, SELF_HOSTING_URL, asset } from '~/lib/links';
+import { person } from '~/lib/people';
+
+/*
+ * Homepage hero (Figma "Hero" 316:6051): the three-line headline with the arrow carrying the
+ * idea "across." and a floating backdrop of reviewed slides.
+ */
+const lara = accentColor(person('Lara').color);
+const paul = accentColor(person('Paul').color);
+const paulColor = person('Paul').color;
+const pin = (color: string) =>
+  `background: ${color}; box-shadow: 0 0 0 2px #fff, var(--shadow-pin);`;
+const mark = `border: 2px solid ${paul}; background: ${accentAlpha(paulColor, 14)}; box-shadow: 0 0 20px ${accentAlpha(paulColor, 35)}, 0 0 0 3px ${accentAlpha(paulColor, 30)};`;
+---
+
+<section class="hero relative isolate overflow-hidden px-4 pt-16 pb-10 md:px-16 md:pt-28" data-section>
+  <!-- Backdrop: orbit, glow and slides being reviewed (desktop only, decorative). -->
+  <div class="hero-backdrop pointer-events-none absolute -z-10 hidden xl:block" aria-hidden="true">
+    <div class="absolute top-[-53.65px] left-[-120px] flex h-[449.4px] w-[1033.4px] items-center justify-center">
+      <div class="h-[280px] w-[1000px] -rotate-10">
+        <img src={asset('home/hero/hero-orbit.svg')} alt="" class="hero-orbit block h-[105.04%] w-[100.18%] max-w-none" />
+      </div>
+    </div>
+    <img src={asset('home/hero/glow-radial.svg')} alt="" class="absolute top-[-60px] left-[-20px] h-[560px] w-[860px] max-w-none" />
+    <div class="absolute top-[-21.09px] left-[470px] flex h-[172.1px] w-[273px] items-center justify-center" data-reveal style="--i: 3">
+      <Slide name="Finance" width={259.2} class="-rotate-6 opacity-40" />
+    </div>
+    <div class="absolute top-[46px] left-[49.71px] flex h-[180.45px] w-[276.97px] items-center justify-center" data-reveal style="--i: 4">
+      <Slide name="Lecture" width={259.2} class="rotate-8 opacity-30" />
+    </div>
+    <div class="absolute top-[26px] left-[200px]" data-reveal style="--i: 5">
+      <div class="absolute -inset-16" style="background: radial-gradient(closest-side, rgb(255 255 255 / 0.12), rgb(0 72 255 / 0.06) 55%, transparent)"></div>
+      <Slide name="Chart" width={403.2} />
+      <span class="hero-pop absolute top-[46.49px] left-[335.46px] h-[136.08px] w-[39.11px] rounded-mark" style={mark}></span>
+      <span class="hero-pop absolute top-[61.24px] left-[80.64px] size-3.5 rounded-full" style={pin(lara)}></span>
+    </div>
+    <Connector
+      class="top-[140.53px] left-[574.57px]"
+      width={167.43}
+      height={373.47}
+      color={paul}
+      index={6}
+      d="M1 1H158.427C163.761 1 166.427 3.66667 166.427 9V364.466C166.427 369.799 163.761 372.466 158.427 372.466H66.4272"
+    />
+    <div class="absolute top-[470px] left-[380px]" data-reveal style="--i: 9">
+      <CommentCard name="Paul" meta="2 min ago"><Audio name="Paul" /></CommentCard>
+    </div>
+    <Cursor name="Gesa" class="absolute top-[200px] left-[160px]" drift />
+    <Cursor name="Paul" class="absolute top-[190px] left-[560px]" drift style="--drift-x: -5px; --drift-y: 6px; --drift-t: 7s" />
+  </div>
+
+  <h1 class="hero-title headline text-white">
+    <span class="block" data-reveal>Get</span>
+    <span class="block" data-reveal style="--i: 1">your ideas</span>
+    <span class="flex items-center gap-[0.47em]">
+      <span class="hero-arrow relative h-[0.18em] min-w-0 flex-1" aria-hidden="true">
+        <!-- Line and dot apart: the line stretches with the space, the dot stays a circle. -->
+        <span
+          class="absolute top-1/2 right-[0.09em] left-0 h-[0.034em] -translate-y-1/2 rounded-full"
+          style="background: linear-gradient(to right, transparent, rgb(255 255 255 / 0.5) 10%, white)"
+        ></span>
+        <span class="absolute top-0 right-0 aspect-square h-full rounded-full bg-white"></span>
+      </span>
+      <span class="shrink-0" data-reveal style="--i: 3">across.</span>
+    </span>
+  </h1>
+
+  <div class="flex flex-col items-start gap-7 pt-10 pb-6 md:pt-14 md:pb-16">
+    <p class="max-w-150 text-lg leading-[1.45] text-fg-muted md:text-[22px] md:leading-8" data-reveal style="--i: 4">
+      Feedback right on the slide. Link your deck, invite your team, comment live.
+    </p>
+    <div class="flex flex-wrap gap-3" data-reveal style="--i: 5">
+      <Button href={`${APP_URL}/`}>Start for free</Button>
+      <Button href={SELF_HOSTING_URL} variant="secondary">Host it yourself</Button>
+    </div>
+    <p class="text-body text-fg-subtle" data-reveal style="--i: 6">
+      Free to start | Open source | Hosted in the EU
+    </p>
+  </div>
+</section>
+
+<style>
+  .hero-title {
+    font-size: clamp(56px, 8.34vw, 120px);
+    line-height: 0.934;
+    letter-spacing: -0.03em;
+  }
+
+  /* The backdrop sits right of the headline: Figma x = 660 in a 1440 frame. */
+  .hero-backdrop {
+    top: 70px;
+    left: calc(50% - 60px);
+    width: 760px;
+    height: 620px;
+  }
+
+  /* The arrow draws from left to right, then "across." lands at its tip. */
+  :global(.js) .hero-arrow {
+    clip-path: inset(0 100% 0 0);
+    transition: clip-path 900ms var(--ease-symmetric) 380ms;
+  }
+  :global(.js) .is-in .hero-arrow {
+    clip-path: inset(0 0 0 0);
+  }
+
+  /* Pins and marks pop in once the slides are there. */
+  :global(.js) .hero-pop {
+    scale: 0.4;
+    opacity: 0;
+    transition:
+      scale 420ms var(--ease-overshoot) 1.9s,
+      opacity 200ms linear 1.9s;
+  }
+  :global(.js) .is-in .hero-pop {
+    scale: 1;
+    opacity: 1;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :global(.js) .hero-arrow {
+      clip-path: none;
+      transition: none;
+    }
+    :global(.js) .hero-pop {
+      scale: 1;
+      transition: opacity 300ms linear;
+    }
+  }
+</style>

@@ -1,0 +1,18 @@
+---
+import { asset } from '~/lib/links';
+
+/** Site / Starfield: faint stars behind a section; stretches to its box. */
+interface Props {
+  class?: string;
+  src?: string;
+}
+
+const { class: className = 'inset-0', src = 'kit/starfield.svg' } = Astro.props;
+---
+
+<img
+  src={asset(src)}
+  alt=""
+  aria-hidden="true"
+  class:list={['pointer-events-none absolute -z-10 h-full w-full object-cover select-none', className]}
+/>

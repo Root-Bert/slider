@@ -1,0 +1,38 @@
+---
+/**
+ * The app's comment pin: a 14px dot in the reviewer's accent with a 2px white ring. Pops in once
+ * its section is in view (stagger index `i`, same 90 ms steps as data-reveal).
+ */
+interface Props {
+  color: string;
+  i?: number;
+  class?: string;
+}
+
+const { color, i = 0, class: className } = Astro.props;
+---
+
+<span
+  class:list={['pin block size-3.5 rounded-full border-2 border-white shadow-pin', className]}
+  style={`background: ${color}; --i: ${i}`}
+></span>
+
+<style>
+  :global(.js) .pin {
+    opacity: 0;
+    scale: 0.2;
+    transition:
+      opacity 120ms ease-in-out,
+      scale 450ms var(--ease-overshoot);
+    transition-delay: calc(200ms + var(--i) * 90ms);
+  }
+  :global(.js .is-in) .pin {
+    opacity: 1;
+    scale: 1;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.js) .pin {
+      scale: 1;
+    }
+  }
+</style>

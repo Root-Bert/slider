@@ -1,0 +1,24 @@
+---
+import AiIntegrations from '~/components/home/AiIntegrations.astro';
+import CloudIntegrations from '~/components/home/CloudIntegrations.astro';
+import CommentFeatures from '~/components/home/CommentFeatures.astro';
+import Hero from '~/components/home/Hero.astro';
+import MotionSlides from '~/components/home/MotionSlides.astro';
+import Multiplayer from '~/components/home/Multiplayer.astro';
+import Privacy from '~/components/home/Privacy.astro';
+import Base from '~/layouts/Base.astro';
+---
+
+<!--
+  The homepage tells the product in order: link your deck, comment right on the slide, review it
+  together live; then what AI adds, where presentations go next, and why your data is safe.
+-->
+<Base current="home">
+  <Hero />
+  <CloudIntegrations />
+  <CommentFeatures />
+  <Multiplayer />
+  <AiIntegrations />
+  <MotionSlides />
+  <Privacy />
+</Base>

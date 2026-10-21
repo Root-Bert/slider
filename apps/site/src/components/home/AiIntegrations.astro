@@ -1,0 +1,232 @@
+---
+import { accentColor } from '@/lib/accent';
+import { Avatar } from '@/ui/Avatar';
+import CommentCard from './a/CommentCard.astro';
+import Connector from './a/Connector.astro';
+import Fit from './a/Fit.astro';
+import SendToAi from './a/SendToAi.astro';
+import Cursor from '~/components/Cursor.astro';
+import Highlight from '~/components/Highlight.astro';
+import SectionMark from '~/components/SectionMark.astro';
+import Tag from '~/components/Tag.astro';
+import Slide from '~/components/slides/Slide.astro';
+import { asset } from '~/lib/links';
+import { person, type PersonName } from '~/lib/people';
+
+/*
+ * "You call it, any AI does the legwork" (Figma "AI Integrations" 316:6096): an agent window – the
+ * model list, threads sent to AI, the agent's terminal and the slide before and after.
+ */
+const ai = '#fff';
+const providers: { name: string; logo?: string; w?: number; h?: number; badge?: { label: string; tone: 'eu' | 'self' } }[] = [
+  { name: 'Claude', logo: 'claude', w: 17.93, h: 18 },
+  { name: 'ChatGPT', logo: 'openai', w: 18, h: 18 },
+  { name: 'Mistral', logo: 'mistral', w: 18, h: 16.38, badge: { label: 'EU', tone: 'eu' } },
+  { name: 'Gemini', logo: 'gemini', w: 17.88, h: 18 },
+  { name: 'Llama', logo: 'llama', w: 18, h: 12.02 },
+  { name: 'Ollama', logo: 'ollama', w: 13.62, h: 18, badge: { label: 'Self-hosted', tone: 'self' } },
+  { name: 'Aleph Alpha', logo: 'aleph-alpha', w: 17.09, h: 18, badge: { label: 'EU', tone: 'eu' } },
+  { name: 'DeepSeek', logo: 'deepseek', w: 18, h: 18 },
+  { name: 'Any OpenAI-compatible API' },
+];
+const replies: { name: PersonName; text: string }[] = [
+  { name: 'Paul', text: 'Or grey until the numbers are final?' },
+  { name: 'Gesa', text: 'Numbers are signed off. Blue it is.' },
+];
+const terminal: { text: string; tone: 'fg' | 'muted' | 'done' }[] = [
+  { text: '> slider agent --model mistral-large', tone: 'fg' },
+  { text: 'Listening for threads sent to AI…', tone: 'muted' },
+  { text: '← Anna | Slide 2 | Highlight the Q3 column.', tone: 'muted' },
+  { text: '✓ Slide 2: Q3 column highlighted', tone: 'muted' },
+  { text: '← Marcel +2 | Slide 2 | Q4 in brand blue', tone: 'muted' },
+  { text: '✓ Slide 2: Q4 brand blue → Version 3', tone: 'done' },
+];
+const pinStyle = `background: ${ai}; box-shadow: 0 0 12px rgb(255 255 255 / 0.7);`;
+---
+
+<section class="relative px-4 py-12 md:px-16 lg:py-16" data-section>
+  <div class="relative mx-auto max-w-[1312px] overflow-hidden rounded-[24px] bg-glass ring-hairline">
+    <div
+      class="pointer-events-none absolute top-[-200px] left-[42.7%] h-[520px] w-[900px] rounded-full"
+      style="background: radial-gradient(closest-side, rgb(255 255 255 / 0.07), transparent)"
+      aria-hidden="true"
+    ></div>
+
+    <!-- Title bar -->
+    <div class="relative flex items-center gap-2 border-b border-hairline px-5 py-3.5">
+      {[0, 1, 2].map(() => <span class="size-2.5 rounded-full bg-fg-faint" />)}
+      <span class="flex-1"></span>
+      <span class="hidden font-mono text-xs whitespace-pre text-fg-subtle sm:block">slider agent  |  bring your own model</span>
+      <span class="flex-1"></span>
+      <Tag label="New in Slider 2.0" accent={ai} />
+    </div>
+
+    <!-- Head: headline left; copy and the models it works with right. -->
+    <div class="relative flex flex-col gap-8 px-5 pt-8 md:px-12 md:pt-10 lg:flex-row lg:items-start lg:gap-16">
+      <div class="flex flex-1 flex-col gap-5">
+        <SectionMark label="AI" accent={ai} />
+        <h2 class="text-[40px] leading-[1.12] font-bold tracking-[-0.03em] text-fg md:text-[56px]">
+          <span class="block" data-reveal>You call it,</span>
+          <span class="block" data-reveal style="--i: 1"><Highlight by="Gesa">any AI</Highlight> does the legwork</span>
+        </h2>
+      </div>
+      <div class="flex flex-col gap-4 lg:w-[460px]" data-reveal style="--i: 2">
+        <p class="text-[17px] leading-[1.55] text-fg-muted">
+          The idea stays yours. Comment, hit Send to AI, and an agent does the tedious edits while everyone watches.{' '}
+          <span class="text-fg">Bring your own key, cloud or self-hosted, no lock-in.</span>
+        </p>
+        <div class="flex flex-wrap items-center gap-1.5" aria-label="Works with">
+          {
+            providers.map((p, i) => (
+              <span
+                class:list={['flex items-center gap-1.5 rounded-full py-1 glass-control', p.logo ? 'pr-2.5 pl-1' : 'px-2.5']}
+                data-reveal
+                style={`--i: ${3 + i * 0.4}`}
+              >
+                {p.logo && (
+                  <span class="flex size-6 items-center justify-center">
+                    <img src={asset(`home/ai/${p.logo}.svg`)} alt="" style={`width: ${p.w! * 0.8}px; height: ${p.h! * 0.8}px`} />
+                  </span>
+                )}
+                <span class="text-[13px] font-medium text-fg">{p.name}</span>
+                {p.badge && (
+                  <span
+                    class:list={[
+                      'rounded-full px-1.5 py-px text-[10px] font-medium',
+                      p.badge.tone === 'eu' ? 'bg-success/10 text-success' : 'bg-accent-cyan/10 text-accent-cyan',
+                    ]}
+                  >
+                    {p.badge.label}
+                  </span>
+                )}
+              </span>
+            ))
+          }
+        </div>
+      </div>
+    </div>
+
+    <!-- Flow: threads → agent → slide -->
+    <div class="relative px-4 pt-8 pb-10 md:px-10">
+      <Fit width={1230} height={488}>
+        <div class="relative size-full">
+          <div class="absolute top-0 left-0 flex w-[300px] flex-col gap-[26px]">
+            <div class="flex flex-col gap-2" data-reveal style="--i: 4">
+              <CommentCard name="Lara" meta="Slide 1" width={280}>
+                <p class="text-body leading-[18px] text-fg-muted">Keep the headline on one li<span class="ai-caret text-white [text-shadow:0_0_8px_rgb(255_255_255/0.8)]">|</span></p>
+              </CommentCard>
+              <div class="flex items-center justify-between">
+                <span class="text-caption text-fg-subtle">Lara is typing…</span>
+                <SendToAi />
+              </div>
+            </div>
+            <div class="flex flex-col gap-2" data-reveal style="--i: 5">
+              <CommentCard name="Anna" meta="Slide 2" width={280} selected>
+                <p class="text-body leading-[18px] text-fg-muted">Highlight the Q3 column.</p>
+              </CommentCard>
+              <div class="flex items-center justify-between">
+                <span class="text-caption text-fg-subtle">Sent just now</span>
+                <SendToAi state="pressed" />
+              </div>
+            </div>
+            <div class="flex flex-col gap-2" data-reveal style="--i: 6">
+              <CommentCard name="Marcel" meta="Slide 2" width={280}>
+                <p class="text-body leading-[18px] text-fg-muted">Q4 in brand blue?</p>
+              </CommentCard>
+              <div class="flex flex-col gap-2.5 border-l border-hairline-strong py-1 pl-3.5">
+                {
+                  replies.map((r) => (
+                    <div class="flex items-start gap-2">
+                      <Avatar author={person(r.name)} size={18} nativeTitle={false} />
+                      <div class="flex flex-col gap-0.5">
+                        <span class="text-caption font-medium text-fg">{r.name}</span>
+                        <span class="text-xs text-fg-muted">{r.text}</span>
+                      </div>
+                    </div>
+                  ))
+                }
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-caption whitespace-pre text-success/90">✓  All agreed</span>
+                <SendToAi state="sent" />
+              </div>
+            </div>
+          </div>
+
+          <Connector class="top-[181px] left-[300px]" width={140} height={81.35} color={ai} strokeWidth={1.5} glow index={4} d="M0 0.75H70V80.6H140" />
+          <Connector class="top-[314.16px] left-[300px]" width={140} height={151.84} color={accentColor(person('Marcel').color)} strokeWidth={1.5} dashed d="M0 151.09H70V0.75H140" />
+          <Connector class="top-[264px] left-[870px]" width={45} height={59.7} color={ai} strokeWidth={1.5} index={6} d="M0 0.75H23V58.95H45" />
+
+          <Cursor name="Anna" class="absolute top-[245px] left-[254px]" drift />
+
+          <div class="absolute top-[150px] left-[440px] flex h-[228px] w-[430px] flex-col overflow-hidden rounded-panel glass-elevated" data-reveal style="--i: 5">
+            <div class="flex items-center gap-2 border-b border-hairline px-4 py-3">
+              {[0, 1, 2].map(() => <span class="size-2.5 rounded-full bg-fg-faint" />)}
+              <span class="text-xs text-fg-subtle">agent | mistral-large | ~/decks/q3-strategy</span>
+            </div>
+            <div class="flex flex-col gap-1.5 px-5 pt-4 pb-5 font-mono text-body leading-5">
+              {
+                terminal.map((line, i) => (
+                  <p
+                    class:list={['ai-line', line.tone === 'fg' ? 'text-fg' : line.tone === 'done' ? 'text-white [text-shadow:0_0_10px_rgb(255_255_255/0.6)]' : 'text-fg-muted']}
+                    style={`--l: ${i}`}
+                  >
+                    {line.text}
+                  </p>
+                ))
+              }
+            </div>
+          </div>
+
+          <Tag label="Before | Version 2" accent={false} class="absolute top-0 left-[915px]" />
+          <div class="absolute top-[38px] left-[915px] opacity-55"><Slide name="Chart" width={211.2} /></div>
+          <p class="absolute top-[169px] left-[919px] text-xs whitespace-pre text-white [text-shadow:0_0_10px_rgb(255_255_255/0.6)]">↓   ✦ AI applied 2 changes</p>
+          <Tag label="After | Version 3, seconds later" accent={ai} class="absolute top-[197px] left-[915px]" />
+          <div class="pointer-events-none absolute top-[186px] left-[860px] h-[283px] w-[417px]" style="background: radial-gradient(closest-side, rgb(255 255 255 / 0.2), transparent)" aria-hidden="true"></div>
+          <div class="absolute top-[236px] left-[915px]" data-reveal style="--i: 8">
+            <Slide name="Chart" width={307.2} />
+            <span class="absolute top-[41.4px] left-[232.9px] flex size-[18px] items-center justify-center rounded-full text-[9px] font-medium text-black" style={pinStyle}>1</span>
+            <span class="absolute top-[17.4px] left-[262.4px] flex size-[18px] items-center justify-center rounded-full text-[9px] font-medium text-black" style={pinStyle}>2</span>
+          </div>
+          <div class="absolute top-[423px] left-[915px] flex flex-col gap-1.5 text-xs">
+            <p class="flex items-center gap-2">
+              <span class="flex size-4 items-center justify-center rounded-full bg-white text-[9px] text-black shadow-[0_0_8px_rgb(255_255_255/0.6)]">1</span>
+              <span class="text-fg">Q3 highlighted</span><span class="text-fg-subtle">| Anna</span>
+            </p>
+            <p class="flex items-center gap-2">
+              <span class="flex size-4 items-center justify-center rounded-full bg-white text-[9px] text-black shadow-[0_0_8px_rgb(255_255_255/0.6)]">2</span>
+              <span class="text-fg">Q4 in brand blue</span><span class="text-fg-subtle">| Marcel, Paul, Gesa</span>
+            </p>
+          </div>
+        </div>
+      </Fit>
+    </div>
+  </div>
+</section>
+
+<style>
+  /* The agent's log prints line by line; Lara's caret blinks. */
+  :global(.js) .ai-line {
+    opacity: 0;
+    transition: opacity 240ms linear;
+    transition-delay: calc(900ms + var(--l) * 380ms);
+  }
+  :global(.js) .is-in .ai-line {
+    opacity: 1;
+  }
+
+  @keyframes ai-caret {
+    50% {
+      opacity: 0;
+    }
+  }
+  .ai-caret {
+    animation: ai-caret 1s steps(1) infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ai-caret {
+      animation: none;
+    }
+  }
+</style>

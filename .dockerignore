@@ -1,0 +1,21 @@
+# Keep the build context small and free of secrets and local data.
+.git
+.github
+.claude
+**/node_modules
+**/dist
+**/.data
+**/coverage
+**/*.tsbuildinfo
+**/*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+deploy/.env
+deploy/**/.env
+deploy/**/data
+docs
+packages/*/samples
+packages/*/test
+apps/*/test

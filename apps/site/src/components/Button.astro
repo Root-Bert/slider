@@ -1,0 +1,26 @@
+---
+import { buttonClasses, type ButtonVariant } from '@/ui/button-classes';
+
+/** A link that looks like the app's Button (white primary with halo, glass secondary). */
+interface Props {
+  href: string;
+  variant?: Extract<ButtonVariant, 'primary' | 'secondary' | 'ghost'>;
+  size?: 'md' | 'lg';
+  class?: string;
+}
+
+const { href, variant = 'primary', size = 'lg', class: className } = Astro.props;
+const external = /^https?:|^mailto:/.test(href);
+---
+
+<a
+  href={href}
+  class:list={[
+    buttonClasses({ variant, size }),
+    variant === 'primary' && 'shadow-glow hover:shadow-glow-hover',
+    className,
+  ]}
+  rel={external ? 'noopener' : undefined}
+>
+  <slot />
+</a>

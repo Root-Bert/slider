@@ -1,0 +1,17 @@
+{
+	servers {
+		# Behind Cloudflare (orange cloud) every request arrives from a Cloudflare edge address.
+		# Trusting exactly those (TRUSTED_PROXIES) lets {client_ip} be the visitor (CF-Connecting-IP),
+		# so rate limits work per person. Without Cloudflare TRUSTED_PROXIES stays empty: nobody is
+		# trusted and {client_ip} is the connection's own address. Never trust private ranges here:
+		# Caddy is the edge, and Docker hands IPv6 visitors over from its bridge gateway (172.x, a
+		# private address) – they could then pick any IP via these headers and dodge the rate
+		# limits. See docs/self-hosting.md, "Proxy und Cloudflare".
+		trusted_proxies static {$TRUSTED_PROXIES}
+		client_ip_headers CF-Connecting-IP X-Forwarded-For
+	}
+}
+
+# One file per app, e.g. sites/slider.caddy (templates in examples/). Automatic HTTPS for every
+# domain in them: DNS must point at this server and ports 80 + 443 must be open.
+import /etc/caddy/sites/*.caddy

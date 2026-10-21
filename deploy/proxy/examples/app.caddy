@@ -1,0 +1,16 @@
+# Any other app. Its compose file joins the network "web":
+#
+#   services:
+#     myapp:
+#       image: …
+#       networks: [default, web]   # default: its own database stays private
+#   networks:
+#     web:
+#       external: true
+#
+# Caddy reaches the service by its name, so it must be unique on "web" (not "app" or "web").
+# Copy to sites/, set domain and service:port.
+app.example.com {
+	encode zstd gzip
+	reverse_proxy myapp:3000
+}

@@ -1,0 +1,199 @@
+import type { Rect, Shape } from '@slider/shared';
+import { createContext, useContext, useSyncExternalStore } from 'react';
+import { smoothScroll } from '@/lib/motion';
+import {
+  revealScrollLeft,
+  type RevealAlign,
+  type TrackLayout,
+} from '../timeline/lib/timeline-layout';
+
+/** The published track layout plus what's needed to address slides in it. */
+export interface PublishedLayout {
+  layout: TrackLayout;
+  slideIndex: ReadonlyMap<string, number>;
+  /** Phones snap slide by slide: `nearest` reveals align the slide to the start instead. */
+  snap: boolean;
+}
+
+/** A box being dragged: where it is shown until its new place is stored. */
+export interface MarkPreview {
+  /** `null` for the unsent comment's box. */
+  threadId: string | null;
+  rect: Rect;
+  /** Text on the slide being moved: the rest of the comment's drawing stays where it is. */
+  textOnly?: boolean;
+}
+
+/** The PowerPoint box under the pointer in box mode – what a click (or C) comments on. */
+export interface HoveredBox {
+  slideId: string;
+  shape: Shape;
+}
+
+export interface RevealOptions {
+  behavior?: ScrollBehavior;
+  align?: RevealAlign;
+}
+
+/**
+ * Imperative access to the timeline DOM: scrolling slides into view and locating slide / gap
+ * elements for overlays (connector lines, composer). Elements carry `data-slide-box` /
+ * `data-gap-key`, so no per-slide ref bookkeeping is needed. Reveals are computed from the pure
+ * layout, so they also work for slides the windowed track hasn't rendered.
+ */
+export interface StageRegistry {
+  setScroller: (element: HTMLElement | null) => void;
+  getScroller: () => HTMLElement | null;
+  setLayout: (published: PublishedLayout | null) => void;
+  getLayout: () => PublishedLayout | null;
+  /** The slide box (image area) – the reference for all normalised coordinates. */
+  getSlideElement: (slideId: string) => HTMLElement | null;
+  getGapElement: (gapKey: string) => HTMLElement | null;
+  revealSlide: (slideId: string, options?: RevealOptions) => void;
+  /**
+   * Scrolls the track sideways on the app's behalf (reveals, size anchoring). Until that scroll
+   * settles, `isProgrammaticScroll` is true, so scrolling doesn't pick another active slide.
+   */
+  scrollTrackTo: (left: number, behavior?: ScrollBehavior) => void;
+  /** A programmatic scroll is still in flight (see `scrollTrackTo`). */
+  isProgrammaticScroll: () => boolean;
+  /** Called per scroll event: a programmatic scroll that keeps moving stays in flight. */
+  noteScroll: () => void;
+  /**
+   * `scrollend`: over once the track arrived where it was sent – a scroll it interrupted ends
+   * too, and that must not end the new one.
+   */
+  settleProgrammaticScroll: () => void;
+  /** The user takes over (wheel, touch, scrollbar, minimap bracket). */
+  endProgrammaticScroll: () => void;
+  /**
+   * The box of a comment while it is dragged (`null` when none is): its badge and connector line
+   * follow it live, not only once the new place is stored. Outside React state, so a drag doesn't
+   * re-render the whole viewer per pointer move.
+   */
+  setMarkPreview: (preview: MarkPreview | null) => void;
+  getMarkPreview: () => MarkPreview | null;
+  subscribeMarkPreview: (listener: () => void) => () => void;
+  /**
+   * The slide reports the box outlined under the pointer (`null`: none any more), so C can
+   * comment on it like a click. A slide only clears its own box. Outside React state: hovering
+   * doesn't re-render the viewer.
+   */
+  setHoveredBox: (slideId: string, shape: Shape | null) => void;
+  getHoveredBox: () => HoveredBox | null;
+}
+
+/** Room kept between a revealed slide and a side panel floating over the track. */
+const SIDE_PANEL_GAP = 12;
+
+/** Before its first scroll event a smooth scroll counts as in flight this long … */
+const PROGRAMMATIC_START_MS = { smooth: 500, instant: 250 } as const;
+/** … then until this long after its last scroll event (fallback where `scrollend` is missing) … */
+const PROGRAMMATIC_IDLE_MS = 200;
+/** … and never longer than this in all. */
+const PROGRAMMATIC_MAX_MS = 3000;
+
+export function createStageRegistry(): StageRegistry {
+  let scroller: HTMLElement | null = null;
+  let published: PublishedLayout | null = null;
+  const find = (selector: string) => scroller?.querySelector<HTMLElement>(selector) ?? null;
+  // A programmatic scroll is in flight until `until` (0 = none); `deadline` caps it.
+  let until = 0;
+  let deadline = 0;
+  let target = 0;
+  let markPreview: MarkPreview | null = null;
+  let hoveredBox: HoveredBox | null = null;
+  const markListeners = new Set<() => void>();
+
+  const scrollTrackTo = (left: number, asked: ScrollBehavior = 'instant') => {
+    if (!scroller || Math.abs(left - scroller.scrollLeft) < 0.5) return;
+    // Reduced motion: a jump instead of a long animated pan.
+    const behavior = asked === 'smooth' ? smoothScroll() : asked;
+    const now = performance.now();
+    until = now + PROGRAMMATIC_START_MS[behavior === 'smooth' ? 'smooth' : 'instant'];
+    deadline = now + PROGRAMMATIC_MAX_MS;
+    target = left;
+    // Assigning scrollLeft aborts a running smooth scroll (`scrollTo` would offset it).
+    if (behavior === 'smooth') scroller.scrollTo({ left, behavior });
+    else scroller.scrollLeft = left;
+  };
+
+  // Side panels float over the track's right end: a reveal only counts the width left of them.
+  // `offsetLeft` ignores the panel's slide-in transform, so a panel still animating in counts.
+  const revealWidth = (element: HTMLElement) => {
+    const panel = element.ownerDocument?.querySelector<HTMLElement>('[data-side-panel]');
+    if (!panel) return element.clientWidth;
+    const left = element.getBoundingClientRect().left;
+    const edge = panel.offsetLeft - SIDE_PANEL_GAP;
+    // A phone's bottom sheet spans the whole width: it doesn't narrow the track.
+    return edge > left ? Math.min(element.clientWidth, edge - left) : element.clientWidth;
+  };
+
+  return {
+    setScroller: (element) => {
+      scroller = element;
+    },
+    getScroller: () => scroller,
+    setLayout: (next) => {
+      published = next;
+    },
+    getLayout: () => published,
+    getSlideElement: (slideId) => find(`[data-slide-box="${CSS.escape(slideId)}"]`),
+    getGapElement: (gapKey) => find(`[data-gap-key="${CSS.escape(gapKey)}"]`),
+    revealSlide: (slideId, { behavior = 'smooth', align = 'nearest' } = {}) => {
+      const index = published?.slideIndex.get(slideId);
+      if (!scroller || !published || index === undefined) return;
+      const effective = published.snap && align === 'nearest' ? 'start' : align;
+      const left = revealScrollLeft(
+        published.layout,
+        index,
+        scroller.scrollLeft,
+        revealWidth(scroller),
+        effective,
+      );
+      scrollTrackTo(left, behavior);
+    },
+    scrollTrackTo,
+    isProgrammaticScroll: () => until !== 0 && performance.now() < until,
+    noteScroll: () => {
+      if (until === 0) return;
+      const now = performance.now();
+      until = now < until ? Math.min(now + PROGRAMMATIC_IDLE_MS, deadline) : 0;
+    },
+    settleProgrammaticScroll: () => {
+      if (until !== 0 && scroller && Math.abs(scroller.scrollLeft - target) <= 1) until = 0;
+    },
+    endProgrammaticScroll: () => {
+      until = 0;
+    },
+    setMarkPreview: (preview) => {
+      if (preview === markPreview) return;
+      markPreview = preview;
+      for (const listener of markListeners) listener();
+    },
+    getMarkPreview: () => markPreview,
+    subscribeMarkPreview: (listener) => {
+      markListeners.add(listener);
+      return () => markListeners.delete(listener);
+    },
+    setHoveredBox: (slideId, shape) => {
+      if (shape) hoveredBox = { slideId, shape };
+      else if (hoveredBox?.slideId === slideId) hoveredBox = null;
+    },
+    getHoveredBox: () => hoveredBox,
+  };
+}
+
+export const StageRegistryContext = createContext<StageRegistry | null>(null);
+
+export function useStageRegistry(): StageRegistry {
+  const registry = useContext(StageRegistryContext);
+  if (!registry) throw new Error('useStageRegistry must be used inside <ViewerStoreProvider>');
+  return registry;
+}
+
+/** The comment box being dragged right now, if any (see `StageRegistry.setMarkPreview`). */
+export function useMarkPreview(): MarkPreview | null {
+  const registry = useStageRegistry();
+  return useSyncExternalStore(registry.subscribeMarkPreview, registry.getMarkPreview);
+}

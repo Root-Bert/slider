@@ -1,0 +1,55 @@
+---
+/**
+ * An orthogonal connector lane from a slide to its comment (rounded corners), drawn once the
+ * section is in view. `d` is in the box's own pixel space.
+ */
+interface Props {
+  d: string;
+  color: string;
+  width: number;
+  height: number;
+  class?: string;
+  style?: string;
+  index?: number;
+  dashed?: boolean;
+  glow?: boolean;
+  strokeWidth?: number;
+}
+
+const {
+  d,
+  color,
+  width,
+  height,
+  class: className,
+  style,
+  index = 0,
+  dashed = false,
+  glow = false,
+  strokeWidth = 2,
+} = Astro.props;
+---
+
+<svg
+  class:list={['pointer-events-none absolute overflow-visible', className]}
+  style={`width: ${width}px; height: ${height}px; --i: ${index}; ${style ?? ''}`}
+  viewBox={`0 0 ${width} ${height}`}
+  fill="none"
+  aria-hidden="true"
+>
+  {
+    // The glow is a wide faint stroke drawn along: a CSS filter here streaks across the page in Safari.
+    glow && (
+      <path d={d} stroke={color} stroke-opacity="0.3" stroke-width={strokeWidth + 6} stroke-linejoin="round" stroke-linecap="round" pathLength={1} data-draw />
+    )
+  }
+  <path
+    d={d}
+    stroke={color}
+    stroke-width={strokeWidth}
+    stroke-linejoin="round"
+    stroke-linecap="round"
+    pathLength={dashed ? undefined : 1}
+    stroke-dasharray={dashed ? '5 4' : undefined}
+    data-draw={dashed ? undefined : true}></path>
+</svg>

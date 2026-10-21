@@ -1,0 +1,42 @@
+---
+/**
+ * Entrance timings of the homepage sections, taken from the Figma 8 s timeline: `data-hb` items
+ * rise (or pop) once their `[data-section]` is in view, each at its own `--d` delay (ms) and
+ * `--y` distance. Rendered once per section; Astro emits the style a single time.
+ */
+---
+
+<style is:global>
+  .js [data-hb] {
+    opacity: 0;
+    translate: 0 var(--y, 32px);
+    transition:
+      opacity 600ms var(--ease-emphasized),
+      translate 700ms var(--ease-emphasized),
+      scale 500ms var(--ease-overshoot);
+    transition-delay: var(--d, 0ms);
+  }
+  .js [data-hb='pop'] {
+    translate: none;
+    scale: var(--s, 0.6);
+  }
+  .js [data-hb='words'] {
+    --y: 28px;
+  }
+  .js .is-in [data-hb] {
+    opacity: var(--o, 1);
+    translate: 0 0;
+    scale: 1;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .js [data-hb],
+    .js [data-hb='pop'],
+    .js [data-hb='words'] {
+      translate: none;
+      scale: none;
+      filter: none;
+      transition: opacity 300ms linear;
+    }
+  }
+</style>

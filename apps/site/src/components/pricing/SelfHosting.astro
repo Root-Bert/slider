@@ -1,0 +1,32 @@
+---
+import Button from '~/components/Button.astro';
+import { CONTACT_URL, SELF_HOSTING_URL } from '~/lib/links';
+
+/**
+ * Strip under the plans: self-hosting is free and unlimited, one command. Below it, where to ask
+ * for a commercial license.
+ */
+---
+
+<section class="flex flex-col items-center px-4 pt-2 pb-6 md:px-16" data-section>
+  <div
+    class="flex w-full max-w-[880px] flex-col gap-4 rounded-panel bg-glass p-5 ring-hairline md:flex-row md:items-center md:gap-6 md:pr-5 md:pl-6"
+    data-reveal
+    style="--i: 4"
+  >
+    <div class="flex flex-1 flex-col gap-1">
+      <p class="text-base font-semibold text-fg">Prefer your own server?</p>
+      <p class="text-sm leading-[1.5] text-fg-subtle">
+        Self-host Slider for free, without limits. One docker compose up, only SLIDER_URL is required.
+      </p>
+    </div>
+    <code class="w-max rounded-chip bg-surface-1 px-3 py-2 font-mono text-xs whitespace-nowrap text-fg-muted ring-hairline">
+      $ docker compose up -d --build
+    </code>
+    <Button href={SELF_HOSTING_URL} variant="ghost" class="self-start md:self-auto">Self-hosting guide</Button>
+  </div>
+  <p class="mt-4 text-center text-sm leading-[1.5] text-fg-subtle" data-reveal style="--i: 5">
+    Open source under the AGPL-3.0. Need a commercial license?{' '}
+    <a href={CONTACT_URL} class="text-fg-muted underline underline-offset-2 hover:text-fg">slider@bertro.dev</a>
+  </p>
+</section>

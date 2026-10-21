@@ -1,0 +1,28 @@
+---
+/**
+ * An SVG from Figma (hand-drawn mark or connector), inlined so its strokes can draw themselves in
+ * when the section enters the viewport (`data-draw` + `pathLength`, see site.css).
+ */
+interface Props {
+  svg: string;
+  class?: string;
+  style?: string;
+  /** Overrides the stagger: transition delay and duration in ms. */
+  delay?: number;
+  duration?: number;
+}
+
+const { svg, class: className, style, delay, duration } = Astro.props;
+const timing = [
+  delay !== undefined && `transition-delay: ${delay}ms`,
+  duration !== undefined && `transition-duration: ${duration}ms`,
+]
+  .filter(Boolean)
+  .join('; ');
+const markup = svg
+  .replace(/<svg([^>]*)style="[^"]*"/, '<svg$1')
+  .replace('<svg', '<svg aria-hidden="true" class="block size-full overflow-visible"')
+  .replaceAll('<path ', `<path pathLength="1" data-draw style="${timing}" `);
+---
+
+<span class:list={['pointer-events-none absolute block', className]} style={style} set:html={markup} />

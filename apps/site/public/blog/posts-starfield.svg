@@ -1,0 +1,58 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="1440" height="992" viewBox="0 0 1440 992" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Starfield">
+<circle id="Star" cx="1068.28" cy="706.656" r="0.75" fill="white" fill-opacity="0.9"/>
+<circle id="Star_2" cx="375.894" cy="246.571" r="0.75" fill="white" fill-opacity="0.9"/>
+<circle id="Star_3" cx="703.221" cy="623.947" r="0.75" fill="white" fill-opacity="0.9"/>
+<circle id="Star_4" cx="1084.83" cy="43.867" r="1.25" fill="white" fill-opacity="0.9"/>
+<circle id="Star_5" cx="1206.12" cy="324.88" r="0.75" fill="white" fill-opacity="0.9"/>
+<circle id="Star_6" cx="1235.68" cy="932.322" r="1" fill="white" fill-opacity="0.9"/>
+<circle id="Star_7" cx="751.056" cy="305.694" r="1.25" fill="white" fill-opacity="0.9"/>
+<circle id="Star_8" cx="649.031" cy="11.0458" r="0.75" fill="white" fill-opacity="0.9"/>
+<circle id="Star_9" cx="674.838" cy="878.758" r="1.25" fill="white" fill-opacity="0.9"/>
+<circle id="Star_10" cx="200.317" cy="603.79" r="0.75" fill="white" fill-opacity="0.9"/>
+<circle id="Star_11" cx="1031.22" cy="94.3155" r="0.75" fill="white" fill-opacity="0.9"/>
+<circle id="Star_12" cx="775.683" cy="406.383" r="1" fill="white" fill-opacity="0.9"/>
+<circle id="Star_13" cx="1333.71" cy="51.646" r="0.75" fill="white" fill-opacity="0.9"/>
+<circle id="Star_14" cx="525.322" cy="356.555" r="0.75" fill="white" fill-opacity="0.9"/>
+<circle id="Star_15" cx="500.887" cy="807.579" r="0.75" fill="white" fill-opacity="0.9"/>
+<circle id="Star_16" cx="488.497" cy="439.713" r="0.75" fill="white" fill-opacity="0.9"/>
+<circle id="Star_17" cx="1341.17" cy="968.149" r="1.25" fill="white" fill-opacity="0.9"/>
+<circle id="Star_18" cx="483.036" cy="911.024" r="1" fill="white" fill-opacity="0.9"/>
+<circle id="Star_19" cx="289.586" cy="963.008" r="0.75" fill="white" fill-opacity="0.9"/>
+<circle id="Star_20" cx="1256.88" cy="518.604" r="1" fill="white" fill-opacity="0.9"/>
+<circle id="Star_21" cx="1065.92" cy="384.658" r="1" fill="white" fill-opacity="0.9"/>
+<circle id="Star_22" cx="1339.78" cy="312.862" r="0.75" fill="white" fill-opacity="0.9"/>
+<circle id="Star_23" cx="752.404" cy="621.917" r="1" fill="white" fill-opacity="0.9"/>
+<circle id="Star_24" cx="732.93" cy="61.0229" r="0.75" fill="white" fill-opacity="0.9"/>
+<circle id="Star_25" cx="410.443" cy="593.864" r="1.25" fill="white" fill-opacity="0.9"/>
+<circle id="Star_26" cx="977.723" cy="569.862" r="1.25" fill="white" fill-opacity="0.9"/>
+<circle id="Star_27" cx="69.1465" cy="181.324" r="1" fill="white" fill-opacity="0.9"/>
+<circle id="Star_28" cx="411.62" cy="791.146" r="1" fill="white" fill-opacity="0.9"/>
+<circle id="Star_29" cx="1078.96" cy="676.661" r="0.75" fill="white" fill-opacity="0.9"/>
+<circle id="Star_30" cx="1102.49" cy="815.404" r="0.75" fill="white" fill-opacity="0.9"/>
+<circle id="Star_31" cx="1349.85" cy="171.273" r="1.25" fill="white" fill-opacity="0.9"/>
+<circle id="Star_32" cx="831.176" cy="893.54" r="0.75" fill="white" fill-opacity="0.9"/>
+<circle id="Star_33" cx="859.202" cy="662.258" r="1" fill="white" fill-opacity="0.9"/>
+<circle id="Star_34" cx="834.106" cy="686.499" r="1" fill="white" fill-opacity="0.9"/>
+<circle id="Star_35" cx="985.645" cy="623.906" r="0.75" fill="white" fill-opacity="0.9"/>
+<circle id="Star_36" cx="1313.21" cy="705.76" r="1" fill="white" fill-opacity="0.9"/>
+<circle id="Star_37" cx="876.429" cy="362.501" r="1" fill="white" fill-opacity="0.9"/>
+<circle id="Star_38" cx="846.697" cy="629.969" r="0.75" fill="white" fill-opacity="0.9"/>
+<circle id="Star_39" cx="268.637" cy="691.797" r="1" fill="white" fill-opacity="0.9"/>
+<circle id="Star_40" cx="25.7217" cy="562.754" r="1.25" fill="white" fill-opacity="0.9"/>
+<g id="Star | sparkle" filter="url(#filter0_d_0_229)">
+<path d="M883.911 609.494C884.711 613.694 884.711 613.694 888.911 614.494C884.711 615.294 884.711 615.294 883.911 619.494C883.111 615.294 883.111 615.294 878.911 614.494C883.111 613.694 883.111 613.694 883.911 609.494Z" fill="white" fill-opacity="0.9"/>
+</g>
+</g>
+<defs>
+<filter id="filter0_d_0_229" x="868.911" y="599.494" width="30" height="30" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset/>
+<feGaussianBlur stdDeviation="5"/>
+<feColorMatrix type="matrix" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.8 0"/>
+<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_0_229"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_0_229" result="shape"/>
+</filter>
+</defs>
+</svg>

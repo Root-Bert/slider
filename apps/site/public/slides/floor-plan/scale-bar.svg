@@ -1,0 +1,8 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="110" height="10" viewBox="0 0 110 10" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Scale bar">
+<path id="Vector" d="M25 2H0V8H25V2Z" fill="#1C2B39"/>
+<path id="Vector_2" d="M50 2H25V8H50V2Z" fill="white" stroke="#1C2B39"/>
+<path id="Vector_3" d="M75 2H50V8H75V2Z" fill="#1C2B39"/>
+<path id="Vector_4" d="M100 2H75V8H100V2Z" fill="white" stroke="#1C2B39"/>
+</g>
+</svg>

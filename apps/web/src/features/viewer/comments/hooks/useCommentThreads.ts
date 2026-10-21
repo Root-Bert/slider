@@ -1,0 +1,109 @@
+import { useMemo } from 'react';
+import {
+  deckStatusCounts,
+  filterThreads,
+  gapKey,
+  isBareDrawing,
+  type StatusCounts,
+  type Thread,
+  type ThreadFilter,
+} from '../lib/comment-selectors';
+import { useViewerData } from '../../state/viewer-data';
+import { useViewerState } from '../../state/viewer-state';
+
+export interface VisibleThreads {
+  filter: ThreadFilter;
+  /**
+   * Threads per slide column that pass the filter: comments on the slide itself plus gap
+   * comments in front of the first slide (there is no divider before it). Arrays are stable
+   * until data or filter change.
+   */
+  bySlide: ReadonlyMap<string, Thread[]>;
+  /** Like `bySlide`, plus drawings without a comment – everything marked on the slides. */
+  marksBySlide: ReadonlyMap<string, Thread[]>;
+  /** Gap threads that pass the filter, keyed by `gapKey` – they live under their ⊕ divider. */
+  byGap: ReadonlyMap<string, Thread[]>;
+  /** Counts for the whole deck (current slides only). */
+  counts: StatusCounts;
+}
+
+const EMPTY: Thread[] = [];
+
+/**
+ * Applies the comment filter bar (status) and the avatar filter (your avatar:
+ * threads that @mention you; someone else's: threads they wrote in) to the deck's threads.
+ * A thread being replied to stays listed, whatever its status now (`useKeepThreadListed`).
+ */
+export function useCommentThreads(): VisibleThreads {
+  const { threads, threadsBySlide, gapThreads, slides, slideIndex, mentionedThreadIds, viewer } =
+    useViewerData();
+  const { statusFilter, personFilter, composingThreads } = useViewerState();
+  const keep = useMemo(() => new Set(composingThreads.keys()), [composingThreads]);
+
+  const threadIds = useMemo(() => {
+    if (personFilter === null) return null;
+    if (personFilter === viewer.author.id) return mentionedThreadIds;
+    return new Set(
+      threads
+        .filter((thread) => thread.participants.some((author) => author.id === personFilter))
+        .map((thread) => thread.id),
+    );
+  }, [personFilter, viewer.author.id, mentionedThreadIds, threads]);
+
+  const filter = useMemo<ThreadFilter>(
+    () => ({ status: statusFilter, threadIds, keep }),
+    [statusFilter, threadIds, keep],
+  );
+
+  // Gap threads sit under their divider – except those in front of the first slide (where they
+  // sit now, `placeGap`), which has no divider before it.
+  const firstSlideId = slides[0]?.id;
+  const inFront = useMemo(
+    () => new Set(firstSlideId ? (gapThreads.get(gapKey(null, firstSlideId)) ?? []) : []),
+    [gapThreads, firstSlideId],
+  );
+  const marksBySlide = useMemo(
+    () =>
+      new Map(
+        [...threadsBySlide].map(([slideId, list]) => [
+          slideId,
+          filterThreads(
+            list.filter((thread) => thread.root.anchor.type !== 'gap' || inFront.has(thread)),
+            filter,
+          ),
+        ]),
+      ),
+    [threadsBySlide, inFront, filter],
+  );
+
+  const bySlide = useMemo(
+    () =>
+      new Map(
+        [...marksBySlide].map(([slideId, list]) => [
+          slideId,
+          list.some(isBareDrawing) ? list.filter((thread) => !isBareDrawing(thread)) : list,
+        ]),
+      ),
+    [marksBySlide],
+  );
+
+  const byGap = useMemo(() => {
+    const result = new Map<string, Thread[]>();
+    for (const [key, list] of gapThreads) {
+      if (key.startsWith('start→')) continue;
+      const visible = filterThreads(list, filter);
+      if (visible.length > 0) result.set(key, visible);
+    }
+    return result;
+  }, [gapThreads, filter]);
+
+  const counts = useMemo(
+    () => deckStatusCounts(threads, slides, slideIndex, threadIds),
+    [threads, slides, slideIndex, threadIds],
+  );
+
+  return { filter, bySlide, marksBySlide, byGap, counts };
+}
+
+export const threadsOf = (bySlide: ReadonlyMap<string, Thread[]>, key: string | null): Thread[] =>
+  (key ? bySlide.get(key) : undefined) ?? EMPTY;

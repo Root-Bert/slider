@@ -1,0 +1,149 @@
+/*
+ * The website shares the app's tokens, glass utilities and base layer one to one (same canvas,
+ * Inter, radii, easings), so marketing pages and product look like one thing.
+ */
+@import '../../../web/src/styles/index.css';
+
+/* The app components the site renders (avatars, cursors, logo) live outside this package. */
+@source '../../../web/src/ui';
+@source '../../../web/src/lib';
+@source '../../../web/src/features/viewer/live/LiveCursor.tsx';
+@source '../../../web/src/features/viewer/revisions/ChangeBadge.tsx';
+
+/*
+ * Website-only tokens (Figma "Agent Website", Site Kit). The website's positive accent is a
+ * pastel sage. The site's own accents are never red; app states (e.g. "deleted") keep the app's colours.
+ */
+@theme {
+  --color-sage: #8fcb9b;
+  --color-sage-glow: rgb(143 203 155 / 0.55);
+
+  /* Headline scale: Inter Black, tight tracking. */
+  --text-hero: 112px;
+  --text-headline: 72px;
+  --text-section: 56px;
+  --text-lead: 18px;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  html,
+  body {
+    height: auto;
+  }
+
+  body {
+    overflow-x: clip;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+}
+
+/* Black display headline (Figma: Inter Black, −2 % tracking). */
+@utility headline {
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  color: var(--color-fg);
+  text-wrap: balance;
+}
+
+/* Primary button of a page: white 90 % with the soft white halo. */
+@utility glow {
+  box-shadow: var(--shadow-glow);
+}
+
+/*
+ * Entrance choreography (Figma spec "motion & patterns"): sections play once when they enter the
+ * viewport. `[data-reveal]` children rise in reading order with a 90 ms stagger; motion.ts adds
+ * `.is-in`. Without JS or with reduced motion everything simply shows.
+ */
+/* Only opacity and transform: they run on the GPU. Animating blur on big type stutters. */
+.js [data-reveal] {
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity 700ms ease-out,
+    transform 900ms var(--ease-emphasized);
+  transition-delay: calc(200ms + var(--i, 0) * 90ms);
+}
+
+.js .is-in [data-reveal],
+.js [data-reveal].is-in {
+  opacity: 1;
+  transform: none;
+}
+
+/* Connector lines draw once their section is in view. */
+.js [data-draw] {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 900ms var(--ease-symmetric);
+  transition-delay: calc(400ms + var(--i, 0) * 120ms);
+}
+
+.js .is-in [data-draw] {
+  stroke-dashoffset: 0;
+}
+
+/*
+ * Cursors join once their section has played in (after the slides they point at), then drift in
+ * a slow loop. `scale`/`translate` leave `transform` free for a `[data-reveal]` around them.
+ */
+.js [data-drift] {
+  opacity: 0;
+  scale: 0.9;
+  transition:
+    opacity 400ms ease-out,
+    scale 500ms var(--ease-emphasized);
+  transition-delay: var(--cursor-in, 1100ms);
+}
+
+.js .is-in [data-drift] {
+  opacity: 1;
+  scale: 1;
+}
+
+/* Cursors drift in a slow loop once shown. */
+@keyframes cursor-drift {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: var(--drift-x, 6px) var(--drift-y, -4px);
+  }
+}
+
+.js .is-in [data-drift] {
+  animation: cursor-drift var(--drift-t, 6s) ease-in-out infinite;
+  animation-delay: var(--drift-d, 0s);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .js [data-reveal] {
+    transform: none;
+    transition: opacity 300ms linear;
+  }
+
+  .js [data-draw] {
+    stroke-dashoffset: 0;
+    transition: none;
+  }
+
+  .js [data-drift] {
+    scale: none;
+    transition: opacity 300ms linear;
+  }
+
+  .js .is-in [data-drift] {
+    animation: none;
+  }
+}

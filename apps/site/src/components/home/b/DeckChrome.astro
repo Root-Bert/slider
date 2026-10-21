@@ -1,0 +1,30 @@
+---
+/**
+ * The deck frame of the motion section's slides (960 × 540): a fictional company's quarterly
+ * review – brand line on top, an eyebrow, the source line and page number at the bottom. The
+ * slide's content goes in the slot, positioned absolutely like the rest.
+ */
+interface Props {
+  eyebrow: string;
+  source?: string;
+  class?: string;
+}
+
+const { eyebrow, source = 'Source: Finance. ARR in EUR M, Q4 = plan.', class: className } = Astro.props;
+---
+
+<div class:list={['relative h-[540px] w-[960px] overflow-hidden bg-[#fafaf8] font-sans text-[#0f172a]', className]}>
+  <div class="absolute top-0 left-0 h-1.5 w-full bg-[#0f172a]"></div>
+  <span class="absolute top-[30px] left-12 size-3.5 bg-[#0f172a]"></span>
+  <span class="absolute top-[36px] left-[54px] size-2 bg-accent-blue"></span>
+  <p class="absolute top-[29px] left-[70px] text-xs font-bold tracking-[0.06em]">MERIDIAN</p>
+  <p class="absolute top-[30px] right-12 text-[11px] text-[#64748b]">Q4 Business Review | 2026</p>
+  <div class="absolute top-[56px] left-12 h-px w-[864px] bg-[#e2e8f0]"></div>
+  <p class="absolute top-[76px] left-12 text-[11px] font-semibold tracking-[0.1em] text-accent-blue">{eyebrow}</p>
+
+  <slot />
+
+  <div class="absolute top-[496px] left-12 h-px w-[864px] bg-[#e2e8f0]"></div>
+  <p class="absolute top-[508px] left-12 text-[10px] text-[#64748b]">{source}</p>
+  <p class="absolute top-[508px] right-12 text-[10px] font-semibold tabular-nums">3</p>
+</div>

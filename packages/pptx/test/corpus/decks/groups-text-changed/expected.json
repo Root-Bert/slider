@@ -1,0 +1,133 @@
+{
+  "case": "groups-text-changed",
+  "tags": ["content"],
+  "synthetic": false,
+  "matches": [
+    {
+      "prev": "titel",
+      "next": "titel",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 0,
+      "position": 0
+    },
+    {
+      "prev": "prozess",
+      "next": "prozess",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 1,
+      "position": 1
+    },
+    {
+      "prev": "organigramm",
+      "next": "organigramm",
+      "status": "modified",
+      "moved": false,
+      "confidence": 0.95,
+      "matchedBy": "sldId",
+      "previousPosition": 2,
+      "position": 2
+    },
+    {
+      "prev": "fazit",
+      "next": "fazit",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 3,
+      "position": 3
+    }
+  ],
+  "prev": {
+    "author": "Slider",
+    "slides": [
+      {
+        "label": "titel",
+        "sldId": 256,
+        "part": "ppt/slides/slide1.xml",
+        "hidden": false,
+        "title": "Prozesse",
+        "layoutName": "Title Slide",
+        "section": null
+      },
+      {
+        "label": "prozess",
+        "sldId": 257,
+        "part": "ppt/slides/slide2.xml",
+        "hidden": false,
+        "title": "Freigabeprozess",
+        "layoutName": "Title and Content",
+        "section": null
+      },
+      {
+        "label": "organigramm",
+        "sldId": 258,
+        "part": "ppt/slides/slide3.xml",
+        "hidden": false,
+        "title": "Organigramm",
+        "layoutName": "Title and Content",
+        "section": null
+      },
+      {
+        "label": "fazit",
+        "sldId": 259,
+        "part": "ppt/slides/slide4.xml",
+        "hidden": false,
+        "title": "Fazit",
+        "layoutName": "Title and Content",
+        "section": null
+      }
+    ],
+    "sections": [],
+    "comments": []
+  },
+  "next": {
+    "author": "Slider",
+    "slides": [
+      {
+        "label": "titel",
+        "sldId": 256,
+        "part": "ppt/slides/slide1.xml",
+        "hidden": false,
+        "title": "Prozesse",
+        "layoutName": "Title Slide",
+        "section": null
+      },
+      {
+        "label": "prozess",
+        "sldId": 257,
+        "part": "ppt/slides/slide2.xml",
+        "hidden": false,
+        "title": "Freigabeprozess",
+        "layoutName": "Title and Content",
+        "section": null
+      },
+      {
+        "label": "organigramm",
+        "sldId": 258,
+        "part": "ppt/slides/slide3.xml",
+        "hidden": false,
+        "title": "Organigramm",
+        "layoutName": "Title and Content",
+        "section": null
+      },
+      {
+        "label": "fazit",
+        "sldId": 259,
+        "part": "ppt/slides/slide4.xml",
+        "hidden": false,
+        "title": "Fazit",
+        "layoutName": "Title and Content",
+        "section": null
+      }
+    ],
+    "sections": [],
+    "comments": []
+  }
+}

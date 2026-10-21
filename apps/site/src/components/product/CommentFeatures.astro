@@ -1,0 +1,412 @@
+---
+import { Icon, type IconName } from '@/ui/Icon';
+import Cursor from '~/components/Cursor.astro';
+import Highlight from '~/components/Highlight.astro';
+import SectionMark from '~/components/SectionMark.astro';
+import Slide from '~/components/slides/Slide.astro';
+import CommentCard from './b/CommentCard.astro';
+import { person } from '~/lib/people';
+
+/**
+ * Product | Comment Features Overview: one slide with every review tool on it, played like a
+ * deck. Each chapter is a scene on the slide – its mark lights up, earlier marks stay dimmed,
+ * Gesa's cursor moves to it. Autoplays while in view; the chapter rows and the arrow keys
+ * jump around. Monochrome on purpose: the marks carry the one accent.
+ */
+type Mark = 'pin' | 'frame' | 'freehand' | 'arrow' | 'highlight' | 'thread' | 'done' | 'filter';
+type Scene = Partial<Record<Mark, 'on' | 'dim'>>;
+
+const chapters: { label: string; icon: IconName; text: string; cursor: [number, number]; scene: Scene }[] = [
+  {
+    label: 'Pins',
+    icon: 'addComment',
+    text: 'Click anywhere on the slide and start a comment right on that spot.',
+    cursor: [636, 356],
+    scene: { pin: 'on' },
+  },
+  {
+    label: 'Frames',
+    icon: 'cursorBox',
+    text: 'Draw a box around a bar, a table or a whole column.',
+    cursor: [826, 444],
+    scene: { pin: 'dim', frame: 'on' },
+  },
+  {
+    label: 'Freehand',
+    icon: 'edit',
+    text: 'Circle it, underline it, sketch what you mean.',
+    cursor: [172, 364],
+    scene: { pin: 'dim', frame: 'dim', freehand: 'on' },
+  },
+  {
+    label: 'Arrows',
+    icon: 'arrow',
+    text: 'Point from one thing to another: this number belongs over there.',
+    cursor: [744, 470],
+    scene: { pin: 'dim', frame: 'dim', freehand: 'dim', arrow: 'on' },
+  },
+  {
+    label: 'Marker',
+    icon: 'marker',
+    text: 'Mark the words that matter. The text underneath stays readable.',
+    cursor: [306, 238],
+    scene: { pin: 'dim', frame: 'dim', freehand: 'dim', arrow: 'dim', highlight: 'on' },
+  },
+  {
+    label: 'Threads',
+    icon: 'chatBubble',
+    text: 'Every mark gets its own thread. Replies stay with the spot they are about.',
+    cursor: [748, 300],
+    scene: { pin: 'on', frame: 'dim', freehand: 'dim', arrow: 'dim', highlight: 'dim', thread: 'on' },
+  },
+  {
+    label: 'Done',
+    icon: 'check',
+    text: 'Settled? Mark the thread done and the slide clears up.',
+    cursor: [760, 354],
+    scene: { frame: 'dim', freehand: 'dim', arrow: 'dim', highlight: 'dim', done: 'on' },
+  },
+  {
+    label: 'Filters',
+    icon: 'filterList',
+    text: 'Show everything, only what is still open, or what is done.',
+    cursor: [766, 104],
+    scene: { frame: 'on', freehand: 'on', arrow: 'on', highlight: 'on', filter: 'on' },
+  },
+];
+const START = 4;
+const pad = (n: number) => String(n + 1).padStart(2, '0');
+// Server-rendered state is the start chapter, so the shot reads the same without JS.
+const state = (mark: Mark) => chapters[START]!.scene[mark] ?? 'off';
+const [cx, cy] = chapters[START]!.cursor;
+---
+
+<section
+  class="relative mx-auto flex max-w-[1440px] flex-col gap-14 px-4 pt-24 pb-14 md:px-16 lg:pt-30"
+  data-section
+  data-cf
+  data-cf-scenes={JSON.stringify(chapters.map((c) => ({ scene: c.scene, cursor: c.cursor })))}
+  data-cf-start={START}
+>
+  <div class="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
+    <div class="flex flex-col gap-6">
+      <SectionMark label="Review tools" />
+      <h2 class="text-[clamp(36px,4.6vw,52px)] leading-[1.12] font-bold tracking-[-0.03em] text-fg" data-reveal>
+        Point at exactly<br /><Highlight by="Neven">what you mean.</Highlight>
+      </h2>
+    </div>
+    <p class="max-w-[440px] text-[17px] leading-[1.55] text-fg-muted" data-reveal style="--i: 2">
+      Pins, arrows and marker right on the slide. Your file stays untouched.
+    </p>
+  </div>
+
+  <div class="flex flex-col gap-10 xl:flex-row">
+    <!-- Player: the deck stacked behind the current slide, the chapter's scene on top. -->
+    <div class="flex min-w-0 flex-1 flex-col gap-5">
+      <div class="stage-wrap w-full overflow-hidden">
+        <div class="stage relative h-[540px] w-[912px] origin-top-left" data-reveal style="--i: 3">
+          <div class="absolute top-0 left-[81px] opacity-10"><Slide name="Agenda" width={748.8} /></div>
+          <div class="absolute top-[26px] left-[53px] opacity-25"><Slide name="Table" width={806.4} /></div>
+          <div class="absolute top-[54px] left-6 overflow-hidden rounded-control-sm shadow-[0_24px_48px_rgb(0_0_0/0.6)]">
+            <Slide name="Chart" width={864} />
+          </div>
+
+          <div class="pointer-events-none absolute inset-0 text-sage" aria-hidden="true">
+            <span
+              class="cf-mark absolute top-[340px] left-[610px] size-4 rounded-full bg-sage shadow-pin ring-2 ring-white"
+              data-mark="pin"
+              data-state={state('pin')}></span>
+
+            <div
+              class="cf-mark absolute top-[144px] left-[747.6px] h-[300.6px] w-[81px] rounded-badge border-2 border-current bg-sage/10"
+              data-mark="frame"
+              data-state={state('frame')}
+            >
+            </div>
+
+            <svg
+              class="cf-mark absolute top-[272px] left-[71px] h-[93px] w-[103px] rotate-4 overflow-visible"
+              viewBox="0 0 103 93"
+              fill="none"
+              data-mark="freehand"
+              data-state={state('freehand')}
+            >
+              <path
+                d="M90.9346 15.3421C72.9397 -3.0408 21.5257 -5.66693 6.10157 23.2205C-8.03726 52.1079 11.243 91.4999 52.3741 91.4999C90.9346 91.4999 108.929 59.9863 98.6466 31.0989C93.5053 15.3421 78.0811 7.46372 60.0862 6.15065"
+                stroke="currentColor"
+                stroke-width="3"
+                stroke-linecap="round"
+                stroke-linejoin="round"></path>
+            </svg>
+
+            <svg
+              class="cf-mark absolute top-[354.6px] left-[412.8px] h-[122.756px] w-[334.2px] overflow-visible"
+              viewBox="0 0 334.2 122.756"
+              fill="none"
+              data-mark="arrow"
+              data-state={state('arrow')}
+            >
+              <path
+                d="M1.5 1.5C40 57.5 87 94 142 111C197 128 261 125.5 332.7 102.3M321 96L332.7 102.3L326.4 114"
+                stroke="currentColor"
+                stroke-width="3"
+                stroke-linecap="round"
+                stroke-linejoin="round"></path>
+            </svg>
+
+            <svg
+              class="cf-mark absolute top-[211px] left-[74px] h-10 w-[232px] rotate-[1.2deg]"
+              viewBox="0 0 232 40"
+              data-mark="highlight"
+              data-state={state('highlight')}
+            >
+              <path
+                d="M2.2 4.8L13.6 2.7L28.3 0L43.1 1.6L57.8 1.1L72.6 0.8L87.3 1.5L102.1 2.5L116.8 1.4L131.6 0.8L146.4 1.3L161.1 0.2L175.9 2.2L190.6 2.6L205.4 0.4L220.1 0.3L230.4 3.1C233.2 11.6 232.1 28.2 229.2 36.9L213.3 35.7L198.6 37.6L183.8 38.9L169.1 37.4L154.3 37.6L139.5 37.3L124.8 37.6L110 39.7L95.3 39.5L80.5 40L65.8 38.9L51 37.3L36.3 36L21.5 37.2L6.7 38.6L3.3 38C-1.2 28.2 -0.6 11.6 2.2 1.8V4.8Z"
+                fill="currentColor"
+                fill-opacity="0.4"></path>
+            </svg>
+
+            <div class="cf-mark absolute top-[184px] left-[640px] w-[248px] rounded-panel bg-glass-solid shadow-float" data-mark="thread" data-state={state('thread')}>
+              <CommentCard author={person('Neven')} meta="Slide 7 | 2 min ago" replies="2 replies">
+                Q4 jumps by a third. Can we show where the product mix comes in?
+              </CommentCard>
+            </div>
+
+            <div
+              class="cf-mark absolute top-[334px] left-[602px] flex items-center gap-2 rounded-full bg-glass-solid ring-hairline-strong shadow-float py-1.5 pr-3.5 pl-2 text-[13px] font-medium whitespace-nowrap text-fg-muted"
+              data-mark="done"
+              data-state={state('done')}
+            >
+              <span class="text-sage"><Icon name="checkCircle" size={18} /></span>
+              Done by Gesa
+            </div>
+
+            <div
+              class="cf-mark absolute top-[68px] right-[40px] flex items-center gap-1 rounded-full bg-glass-solid ring-hairline-strong shadow-float p-1 text-[13px] font-medium whitespace-nowrap text-fg-subtle"
+              data-mark="filter"
+              data-state={state('filter')}
+            >
+              <span class="flex items-center gap-1.5 rounded-full px-3 py-1.5"><Icon name="chatBubble" size={16} />All 5</span>
+              <span class="flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-fg"><Icon name="radioButtonUnchecked" size={16} />Open 4</span>
+              <span class="flex items-center gap-1.5 rounded-full px-3 py-1.5"><Icon name="checkCircleOutline" size={16} />Done 1</span>
+            </div>
+
+            <div class="cf-cursor absolute top-0 left-0" style={`--cx: ${cx}px; --cy: ${cy}px`}>
+              <Cursor name="Gesa" drift />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chapters: one row per tool, the current one opens with its explanation. -->
+    <div class="flex w-full shrink-0 flex-col gap-1 pt-1 xl:w-[360px]">
+      <div class="flex justify-between px-4 pb-2.5 text-[13px] font-medium">
+        <p class="text-fg-subtle">Eight tools, one slide</p>
+        <p class="text-fg-faint" aria-hidden="true">← →</p>
+      </div>
+      {
+        chapters.map((chapter, n) => (
+          <button
+            type="button"
+            class="cf-row flex cursor-pointer flex-col rounded-[16px] px-4 py-2.5 text-left"
+            aria-current={n === START ? 'true' : 'false'}
+            data-cf-go={n}
+            data-state={n < START ? 'past' : n === START ? 'on' : 'next'}
+            data-reveal
+            style={`--i: ${5 + n}`}
+          >
+            <span class="flex w-full items-center gap-3.5">
+              <span class="cf-tile flex size-8 shrink-0 items-center justify-center rounded-[9px]">
+                <Icon name={chapter.icon} size={18} />
+              </span>
+              <span class="cf-name flex-1 text-[15px] font-semibold">{chapter.label}</span>
+              <span class="cf-num text-[13px] font-medium tabular-nums">{pad(n)}</span>
+            </span>
+            <span class="cf-more grid">
+              <span class="flex min-h-0 flex-col gap-3.5 overflow-hidden pl-[46px]">
+                <span class="pt-2 text-[15px] leading-[22px] text-fg-muted">{chapter.text}</span>
+                <span class="relative mb-1 h-0.5 overflow-hidden rounded-[2px] bg-hairline-strong">
+                  <span class="cf-fill absolute inset-y-0 left-0 bg-fg" />
+                </span>
+              </span>
+            </span>
+          </button>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<script>
+  import { fitStages } from './a/fit-stage';
+  fitStages();
+
+  /*
+   * The chapter timer is the active row's fill animation: when it ends the next chapter
+   * starts. Leaving the viewport or reduced motion simply hold the animation.
+   */
+  type Scene = { scene: Record<string, 'on' | 'dim'>; cursor: [number, number] };
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-cf]')) {
+    const scenes: Scene[] = JSON.parse(root.dataset.cfScenes!);
+    const marks = root.querySelectorAll<HTMLElement | SVGElement>('[data-mark]');
+    const rows = root.querySelectorAll<HTMLElement>('.cf-row');
+    const cursor = root.querySelector<HTMLElement>('.cf-cursor')!;
+    let current = Number(root.dataset.cfStart);
+
+    const go = (n: number) => {
+      current = (n + scenes.length) % scenes.length;
+      const { scene, cursor: [x, y] } = scenes[current]!;
+      marks.forEach((el) => (el.dataset.state = scene[el.dataset.mark!] ?? 'off'));
+      rows.forEach((el, i) => {
+        el.dataset.state = i < current ? 'past' : i === current ? 'on' : 'next';
+        el.setAttribute('aria-current', String(i === current));
+        // Restart the fill: a fresh element state replays the animation.
+        el.querySelector<HTMLElement>('.cf-fill')?.getAnimations().forEach((a) => (a.currentTime = 0));
+      });
+      cursor.style.setProperty('--cx', `${x}px`);
+      cursor.style.setProperty('--cy', `${y}px`);
+    };
+
+    root.querySelectorAll<HTMLElement>('[data-cf-go]').forEach((el) =>
+      el.addEventListener('click', () => go(Number(el.dataset.cfGo))),
+    );
+    rows.forEach((el) =>
+      el.querySelector('.cf-fill')!.addEventListener('animationend', () => {
+        if (el.dataset.state === 'on') go(current + 1);
+      }),
+    );
+    root.addEventListener('keydown', (event) => {
+      const step = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[event.key];
+      if (!step || !(event.target as HTMLElement).closest('.cf-row')) return;
+      event.preventDefault();
+      go(current + step);
+      rows[current]!.focus();
+    });
+    new IntersectionObserver(([entry]) => root.toggleAttribute('data-visible', entry!.isIntersecting), {
+      threshold: 0.35,
+    }).observe(root);
+
+    root.toggleAttribute('data-paused', reduce);
+    go(current);
+  }
+</script>
+
+<style>
+  /* The stage keeps its 912 × 540 drawing and scales down with the column. */
+  .stage-wrap {
+    aspect-ratio: 912 / 540;
+  }
+  .stage {
+    scale: var(--stage-scale, 1);
+  }
+
+  /* Scene marks: the chapter's own mark full, earlier ones dimmed, the rest hidden. */
+  .cf-mark {
+    transition:
+      opacity 450ms var(--ease-emphasized),
+      scale 450ms var(--ease-emphasized);
+  }
+  .cf-mark[data-state='dim'] {
+    opacity: 0.3;
+  }
+  .cf-mark[data-state='off'] {
+    opacity: 0;
+    scale: 0.96;
+  }
+  .cf-mark[data-mark='highlight'][data-state='dim'] {
+    opacity: 0.45;
+  }
+  :global(.js) [data-cf]:not(.is-in) .cf-mark {
+    opacity: 0;
+  }
+
+  .cf-cursor {
+    transform: translate(var(--cx), var(--cy));
+    transition: transform 700ms var(--ease-emphasized);
+  }
+
+  /* Progress: the current row's bar fills over the chapter's time. */
+  .cf-fill {
+    width: 0;
+  }
+  [data-state='past'] .cf-fill {
+    width: 100%;
+  }
+  [data-state='on'] .cf-fill {
+    width: 100%;
+    transform-origin: left;
+    animation: cf-fill 5200ms linear both;
+    animation-play-state: paused;
+  }
+  [data-cf][data-visible]:not([data-paused]) [data-state='on'] .cf-fill {
+    animation-play-state: running;
+  }
+  :global(html:not(.js)) [data-state='on'] .cf-fill {
+    animation: none;
+    width: 55%;
+  }
+  @keyframes cf-fill {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(1);
+    }
+  }
+
+  /* Chapters: neutral rows, the current one a glass card that opens its text. */
+  .cf-row {
+    transition: background-color 300ms var(--ease-emphasized);
+  }
+  .cf-row:hover {
+    background: rgb(255 255 255 / 0.03);
+  }
+  .cf-row[data-state='on'] {
+    background: var(--color-glass);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .cf-tile {
+    color: var(--color-fg-subtle);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+    transition:
+      background-color 300ms,
+      color 300ms;
+  }
+  .cf-row[data-state='on'] .cf-tile {
+    background: var(--color-fg);
+    color: var(--color-canvas);
+    box-shadow: none;
+  }
+  .cf-name {
+    color: var(--color-fg-subtle);
+    transition: color 300ms;
+  }
+  .cf-row[data-state='past'] .cf-name,
+  .cf-row:hover .cf-name {
+    color: var(--color-fg-muted);
+  }
+  .cf-row[data-state='on'] .cf-name {
+    color: var(--color-fg);
+  }
+  .cf-num {
+    color: var(--color-fg-faint);
+  }
+  .cf-more {
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 400ms var(--ease-emphasized);
+  }
+  .cf-row[data-state='on'] .cf-more {
+    grid-template-rows: 1fr;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cf-mark,
+    .cf-cursor,
+    .cf-more {
+      transition: none;
+    }
+  }
+</style>

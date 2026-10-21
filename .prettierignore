@@ -1,0 +1,10 @@
+node_modules
+dist
+.data
+coverage
+bun.lock
+apps/api/drizzle
+packages/pptx/samples
+e2e/.results
+e2e/.report
+e2e/.shots

@@ -1,0 +1,154 @@
+import { REL, type Archive } from './archive';
+import { readAuthors, type AuthorDirectory } from './comments/authors';
+import { readLegacyComments } from './comments/legacy';
+import { readModernComments } from './comments/modern';
+import { readExtGuides, readViewPropsGuides, type EmuGuide } from './guides';
+import { LayoutResolver } from './layouts';
+import { parseSlide, type SlideRef } from './slides';
+import {
+  MAX_SLIDES,
+  PptxError,
+  type ParsedComment,
+  type ParsedPresentation,
+  type ParsedSlide,
+} from './types';
+import { attr, child, children, findByLocalName, intAttr, localName, type XmlElement } from './xml';
+
+const PRESENTATION_PATH = 'ppt/presentation.xml';
+
+/** Parses the whole package: slide list, sections, every slide and all comments. */
+export async function parsePresentation(archive: Archive): Promise<ParsedPresentation> {
+  const presentation = await archive.readXml(PRESENTATION_PATH);
+  if (!presentation) {
+    throw new PptxError('not_pptx', 'The file is not a PowerPoint (.pptx) package.');
+  }
+
+  const size = readSlideSize(presentation);
+  const slideRefs = await readSlideRefs(archive, presentation);
+  const layouts = new LayoutResolver(archive);
+  const guides = await readPresentationGuides(archive, presentation);
+  const slides: ParsedSlide[] = [];
+  for (const ref of slideRefs) {
+    slides.push(await parseSlide(archive, ref, size, await layouts.forSlide(ref.path), guides));
+  }
+
+  return {
+    size,
+    slides,
+    sections: readSections(presentation),
+    comments: await readComments(archive, slideRefs, size, slides),
+    author: await readFileAuthor(archive),
+  };
+}
+
+async function readFileAuthor(archive: Archive): Promise<string | null> {
+  const core = await archive.readXml('docProps/core.xml').catch(() => null);
+  const name = (tag: string) => child(core, tag)?.text.trim() || null;
+  return name('cp:lastModifiedBy') ?? name('dc:creator');
+}
+
+function readSlideSize(presentation: XmlElement): { cx: number; cy: number } {
+  const slideSize = child(presentation, 'p:sldSz');
+  const cx = intAttr(slideSize, 'cx');
+  const cy = intAttr(slideSize, 'cy');
+  if (!cx || !cy || cx <= 0 || cy <= 0) {
+    throw new PptxError('corrupt', 'The presentation has no valid slide size.');
+  }
+  return { cx, cy };
+}
+
+async function readSlideRefs(archive: Archive, presentation: XmlElement): Promise<SlideRef[]> {
+  const slideIds = children(child(presentation, 'p:sldIdLst'), 'p:sldId');
+  // Hidden slides are in the list too, and count.
+  if (slideIds.length > MAX_SLIDES) {
+    throw new PptxError(
+      'too_many_slides',
+      `The presentation has ${slideIds.length} slides; at most ${MAX_SLIDES} are supported.`,
+    );
+  }
+  const refs: SlideRef[] = [];
+  const paths = new Set<string>();
+  for (const slideId of slideIds) {
+    const sldId = intAttr(slideId, 'id');
+    const relationship = await archive.relationshipById(
+      PRESENTATION_PATH,
+      attr(slideId, 'r:id') ?? '',
+    );
+    if (sldId === undefined || !relationship || !archive.has(relationship.target)) {
+      throw new PptxError('corrupt', 'The slide list references a missing slide.');
+    }
+    // Every slide is a part of its own. Listing one part many times would parse and render it
+    // that often while the inflate budget counts it once (a tiny upload, hours of work).
+    if (paths.has(relationship.target)) {
+      throw new PptxError('corrupt', 'The slide list references a slide twice.');
+    }
+    paths.add(relationship.target);
+    refs.push({ sldId, index: refs.length, path: relationship.target });
+  }
+  return refs;
+}
+
+/** The presentation's own guides; files from before PowerPoint 2013 only have them in viewProps. */
+async function readPresentationGuides(
+  archive: Archive,
+  presentation: XmlElement,
+): Promise<EmuGuide[]> {
+  const guides = readExtGuides(presentation);
+  if (guides.length > 0) return guides;
+  const [rel] = await archive.relationshipsOfType(PRESENTATION_PATH, REL.viewProps);
+  return readViewPropsGuides(await archive.readXml(rel?.target ?? 'ppt/viewProps.xml'));
+}
+
+/** `p14:sectionLst` lives in an `p:extLst/p:ext` of the presentation. */
+function readSections(presentation: XmlElement): ParsedPresentation['sections'] {
+  const sectionList = findByLocalName(child(presentation, 'p:extLst'), 'sectionLst');
+  return (sectionList?.children ?? [])
+    .filter((section) => localName(section.name) === 'section')
+    .map((section) => ({
+      name: attr(section, 'name') ?? '',
+      slideIds: (findByLocalName(section, 'sldIdLst')?.children ?? [])
+        .map((slideId) => intAttr(slideId, 'id'))
+        .filter((id): id is number => id !== undefined),
+    }));
+}
+
+async function readComments(
+  archive: Archive,
+  slideRefs: SlideRef[],
+  size: { cx: number; cy: number },
+  slides: readonly ParsedSlide[],
+): Promise<ParsedComment[]> {
+  const modernAuthors = await readAuthorPart(archive, REL.authors, 'ppt/authors.xml', 'author');
+  const legacyAuthors = await readAuthorPart(
+    archive,
+    REL.commentAuthors,
+    'ppt/commentAuthors.xml',
+    'cmAuthor',
+  );
+
+  const comments: ParsedComment[] = [];
+  for (const ref of slideRefs) {
+    const groups = new Map(
+      slides.find((parsed) => parsed.path === ref.path)?.groups.map((g) => [g.id, g.bbox]),
+    );
+    const slide = { sldId: ref.sldId, size, groups };
+    for (const rel of await archive.relationshipsOfType(ref.path, REL.modernComments)) {
+      comments.push(...readModernComments(await archive.readXml(rel.target), slide, modernAuthors));
+    }
+    for (const rel of await archive.relationshipsOfType(ref.path, REL.legacyComments)) {
+      comments.push(...readLegacyComments(await archive.readXml(rel.target), slide, legacyAuthors));
+    }
+  }
+  return comments;
+}
+
+/** Author parts are found via the presentation's relationships, falling back to the usual path. */
+async function readAuthorPart(
+  archive: Archive,
+  relType: string,
+  fallbackPath: string,
+  elementName: string,
+): Promise<AuthorDirectory> {
+  const [rel] = await archive.relationshipsOfType(PRESENTATION_PATH, relType);
+  return readAuthors(await archive.readXml(rel?.target ?? fallbackPath), elementName);
+}

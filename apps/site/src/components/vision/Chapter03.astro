@@ -1,0 +1,45 @@
+---
+import { asset } from '~/lib/links';
+import Chapter from './Chapter.astro';
+import Pill from './Pill.astro';
+import Highlight from '~/components/Highlight.astro';
+
+/** 03 | Why it matters: the faster a vision is understood, the faster the world changes. */
+const steps = ['An idea', 'Understood', 'On board'];
+/** Links grow longer and brighter: the idea speeds up. */
+const links = [
+  { src: 'link-48.svg', w: 48, box: 'inset-[-1px_-2.08%]' },
+  { src: 'link-104.svg', w: 104, box: 'inset-[-1.5px_-1.44%]' },
+  { src: 'link-200.svg', w: 200, box: 'inset-[-12px_-6%]' },
+];
+---
+
+<Chapter n="03" label="Why it matters">
+  <h2 class="vision-h" data-reveal>
+    <span class="block">Presentations are</span>
+    <Highlight>society accelerators.</Highlight>
+  </h2>
+  <p class="vision-body max-w-[620px]" data-reveal style="--i: 1">
+    Plans, concepts and visions travel on slides: in consulting, in companies, in classrooms, in
+    every pitch. The faster a vision is understood, the faster people come on board. And the faster
+    people come on board, the faster the world can change.
+  </p>
+  <div class="flex w-full flex-wrap items-center gap-3 pt-6 pb-2 lg:flex-nowrap">
+    {
+      steps.map((step, i) => (
+        <>
+          <span data-reveal style={`--i: ${i * 2 + 2}`}>
+            <Pill>{step}</Pill>
+          </span>
+          <span class="relative hidden h-0 shrink-0 lg:block" data-reveal style={`width: ${links[i]!.w}px; --i: ${i * 2 + 3}`}>
+            <img src={asset(`vision/${links[i]!.src}`)} alt="" class:list={['absolute block max-w-none', links[i]!.box]} />
+          </span>
+        </>
+      ))
+    }
+    <span data-reveal style="--i: 8">
+      <Pill on>Change</Pill>
+    </span>
+    <span class="text-caption tracking-wide uppercase text-fg-faint" data-reveal style="--i: 9">faster</span>
+  </div>
+</Chapter>

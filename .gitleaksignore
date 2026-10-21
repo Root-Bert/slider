@@ -1,0 +1,2 @@
+# Former fixed e2e test secret (no real credential); the config now generates one per run.
+902d46312f3319e1018534630fd73d7f64fd24dc:e2e/playwright.config.ts:generic-api-key:64

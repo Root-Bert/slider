@@ -1,0 +1,120 @@
+---
+import Note from '~/components/Note.astro';
+import Starfield from '~/components/Starfield.astro';
+
+/**
+ * "What it's not about." – the word "not" gets a sage underline and a pin; its connector runs to
+ * the founder's note: priced per workspace, never per seat.
+ */
+const words = ['What', 'it’s'];
+---
+
+<section class="relative isolate overflow-hidden px-4 pt-28 pb-16 md:px-16 lg:pt-[200px] lg:pb-[120px]" data-section>
+  <Starfield src="pricing/hero-starfield.svg" />
+  <div class="relative mx-auto max-w-[1312px]">
+    <h1 class="headline text-[64px] leading-[0.97] tracking-[-0.03em] text-white md:text-[120px]">
+      {words.map((word, i) => <span class="inline-block" data-reveal style={`--i: ${i * 1.7}`}>{word}&nbsp;</span>)}<br />
+      <span class="relative inline-block" data-reveal style="--i: 3.4">
+        not
+        <span class="pricing-underline absolute -bottom-1 left-0 h-1.5 w-full rounded-mark bg-sage md:bottom-[-6px]" aria-hidden="true"></span>
+        <span
+          class="pricing-pin absolute bottom-[-10px] left-[calc(50%-7px)] hidden size-3.5 rounded-full bg-sage shadow-[0_2px_6px_rgb(0_0_0/0.45)] ring-2 ring-white xl:block"
+          aria-hidden="true"
+          data-pricing-pin></span>
+      </span>{' '}
+      <span class="inline-block" data-reveal style="--i: 5.1">about.</span>
+    </h1>
+
+    <!-- Connector from the pin on "not" to the note (desktop only); the script lays it out from the
+         real positions, the path here is the Figma fallback. -->
+    <svg
+      class="pointer-events-none absolute top-0 left-0 hidden size-full overflow-visible xl:block"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        data-pricing-connector
+        d="M98.5 229V259C98.5 263.418 102.082 267 106.5 267H789C793.418 267 797 263.418 797 259V105C797 100.582 800.582 97 805 97H837"
+        stroke="var(--color-sage)"
+        stroke-width="2"
+        stroke-linejoin="round"
+        pathLength="1"
+        data-draw
+        style="--i: 4"></path>
+    </svg>
+    <div class="mt-10 xl:absolute xl:top-[60px] xl:left-[836px] xl:mt-0" data-reveal data-pricing-note style="--i: 20">
+      <Note name="Robert" time="Founder" accent="var(--color-sage)">
+        It is about the feedback. That is why Slider is priced per workspace, never per seat. Bring the
+        whole team.
+      </Note>
+    </div>
+  </div>
+</section>
+
+<script>
+  /*
+   * Lays the connector out from where the pin and the note really are (the headline's width
+   * depends on the font): down from the pin, along under the headline, up to the note's
+   * avatar row.
+   */
+  const path = document.querySelector<SVGPathElement>('[data-pricing-connector]');
+  const pin = document.querySelector<HTMLElement>('[data-pricing-pin]');
+  const note = document.querySelector<HTMLElement>('[data-pricing-note]');
+  /** Corner radius, drop below the pin and the note's anchor height (Figma). */
+  const R = 8;
+  const DROP = 32;
+  const NOTE_Y = 38;
+
+  const layout = () => {
+    if (!path || !pin || !note || !pin.offsetParent) return;
+    // Offsets ignore the reveal transforms still running on load: the resting places count.
+    const word = pin.offsetParent as HTMLElement;
+    const x0 = word.offsetLeft + pin.offsetLeft + pin.offsetWidth / 2;
+    const y0 = word.offsetTop + pin.offsetTop + pin.offsetHeight;
+    const x1 = note.offsetLeft;
+    const y1 = note.offsetTop + NOTE_Y;
+    const yBottom = y0 + DROP;
+    const xTurn = x1 - 32;
+    path.setAttribute(
+      'd',
+      `M${x0} ${y0}V${yBottom - R}Q${x0} ${yBottom} ${x0 + R} ${yBottom}H${xTurn - R}Q${xTurn} ${yBottom} ${xTurn} ${yBottom - R}V${y1 + R}Q${xTurn} ${y1} ${xTurn + R} ${y1}H${x1}`,
+    );
+  };
+
+  layout();
+  document.fonts?.ready.then(layout);
+  addEventListener('resize', layout);
+</script>
+
+<style>
+  /* Underline grows from the left, then the pin pops (Figma timeline). */
+  :global(.js) .pricing-underline {
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 500ms var(--ease-emphasized) 900ms;
+  }
+  :global(.js) .pricing-pin {
+    scale: 0.2;
+    opacity: 0;
+    transition:
+      scale 450ms var(--ease-overshoot) 1350ms,
+      opacity 120ms ease-in-out 1350ms;
+  }
+  :global(.js .is-in) .pricing-underline {
+    transform: none;
+  }
+  :global(.js .is-in) .pricing-pin {
+    scale: 1;
+    opacity: 1;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.js) .pricing-underline {
+      transform: none;
+      transition: none;
+    }
+    :global(.js) .pricing-pin {
+      scale: 1;
+      transition: opacity 300ms linear;
+    }
+  }
+</style>

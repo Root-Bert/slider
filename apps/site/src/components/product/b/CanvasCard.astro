@@ -1,0 +1,31 @@
+---
+import { Icon } from '@/ui/Icon';
+import { Avatar } from '@/ui/Avatar';
+import { person, type PersonName } from '~/lib/people';
+
+/**
+ * Canvas Comment (UI kit 104:360): the compact card on the dotted canvas next to a slide –
+ * 24px avatar, name, slide, a "done" check – with the comment's media below.
+ */
+interface Props {
+  name: PersonName;
+  slide?: string;
+  class?: string;
+  style?: string;
+}
+
+const { name, slide = 'Slide 2', class: className, style } = Astro.props;
+---
+
+<div class:list={['flex flex-col gap-2 overflow-hidden rounded-panel bg-glass px-3.5 py-3', className]} style={style}>
+  <div class="flex w-full items-center gap-2">
+    <Avatar author={person(name)} size={24} nativeTitle={false} />
+    <span class="text-xs font-medium text-fg">{name}</span>
+    <span class="text-[11px] text-fg-subtle">{slide}</span>
+    <span class="flex-1"></span>
+    <span class="flex size-7 items-center justify-center rounded-chip text-fg-subtle">
+      <Icon name="check" size={18} />
+    </span>
+  </div>
+  <slot />
+</div>

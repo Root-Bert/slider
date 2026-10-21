@@ -1,0 +1,129 @@
+import type { Comment } from '@slider/shared';
+import { useCallback, useState, type MouseEvent } from 'react';
+import { isPendingComment } from '@/lib/api/comment-cache';
+import { useDeleteComment, useUpdateComment } from '@/lib/api';
+import { Button, ConfirmDialog, ContextMenu, type MenuAction } from '@/ui';
+import { useViewerData } from '../../state/viewer-data';
+import { useViewerToast } from '../../state/viewer-toast';
+
+interface CommentMenuOptions {
+  comment: Comment;
+  deckId: string;
+  /** Roots carry the thread's status, so only they can be resolved. */
+  isRoot: boolean;
+  /** Opens the comment's editor (in place, or in the thread panel). */
+  onEdit: () => void;
+  onDeleted?: () => void;
+}
+
+/**
+ * Actions of one comment – Erledigen / Wieder öffnen (roots), Bearbeiten and Löschen – for the
+ * ⋯ menu and a right click at the pointer, with the delete confirmation. Mirrors the API: own
+ * Slider comments can be edited, own comments and, for deck managers, any can be deleted.
+ * Shift + right click keeps the browser's own menu.
+ */
+export function useCommentMenu({ comment, deckId, isRoot, onEdit, onDeleted }: CommentMenuOptions) {
+  const { viewer, canComment, canManage } = useViewerData();
+  const showToast = useViewerToast();
+  const update = useUpdateComment(deckId);
+  const remove = useDeleteComment(deckId);
+  const [contextAt, setContextAt] = useState<{ x: number; y: number } | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const closeContext = useCallback(() => setContextAt(null), []);
+
+  const own = comment.author.id === viewer.author.id;
+  const done = comment.status === 'done';
+  const actions: MenuAction[] = [];
+  // Not saved yet: no actions until the server confirms it.
+  if (!isPendingComment(comment)) {
+    if (isRoot && canComment)
+      actions.push({
+        label: done ? 'Wieder öffnen' : 'Erledigt',
+        icon: done ? 'undo' : 'check',
+        // The toggle is optimistic: if it fails it flips back, so say why.
+        onSelect: () =>
+          void update
+            .mutateAsync({ commentId: comment.id, status: done ? 'open' : 'done' })
+            .catch((error: Error) => showToast(error.message, 'danger')),
+      });
+    if (own && canComment && comment.source === 'app')
+      actions.push({ label: 'Bearbeiten', icon: 'edit', onSelect: onEdit });
+    if ((own && canComment) || canManage)
+      actions.push({
+        label: 'Löschen',
+        icon: 'delete',
+        tone: 'danger',
+        onSelect: () => {
+          // Opened again, the dialog starts without the last attempt's error. Reset on open, not
+          // on close: a delete still running when it closed keeps its `onDeleted`.
+          if (!remove.isPending) remove.reset();
+          setConfirmingDelete(true);
+        },
+      });
+  }
+
+  // A root with a drawing or text on the slide can lose just the comment: the marks stay.
+  const canKeepDrawing = isRoot && comment.strokes.length > 0;
+  const confirmDelete = (keepDrawing: boolean) =>
+    remove.mutate(
+      { commentId: comment.id, keepDrawing },
+      {
+        onSuccess: () => {
+          setConfirmingDelete(false);
+          onDeleted?.();
+        },
+      },
+    );
+
+  const onContextMenu = (event: MouseEvent) => {
+    if (event.shiftKey || actions.length === 0) return;
+    event.preventDefault();
+    // A reply inside an expanded card: the innermost comment's menu wins.
+    event.stopPropagation();
+    setContextAt({ x: event.clientX, y: event.clientY });
+  };
+
+  const menus = (
+    <>
+      {contextAt && (
+        <ContextMenu
+          label={`Aktionen für den Kommentar von ${comment.author.name}`}
+          actions={actions}
+          at={contextAt}
+          onClose={closeContext}
+        />
+      )}
+      <ConfirmDialog
+        open={confirmingDelete}
+        onClose={() => setConfirmingDelete(false)}
+        title="Kommentar löschen?"
+        description={
+          canKeepDrawing
+            ? 'Der ganze Thread mit allen Antworten wird gelöscht. „Nur Kommentar löschen“ lässt Zeichnung und Text auf der Folie stehen.'
+            : isRoot
+              ? 'Der ganze Thread mit allen Antworten wird gelöscht.'
+              : 'Das lässt sich nicht rückgängig machen.'
+        }
+        confirmLabel="Löschen"
+        onConfirm={() => confirmDelete(false)}
+        pending={remove.isPending && !remove.variables?.keepDrawing}
+        confirmDisabled={remove.isPending}
+        error={remove.isError && remove.error.message}
+        extraActions={
+          canKeepDrawing && (
+            <Button
+              variant="secondary"
+              loading={remove.isPending && remove.variables?.keepDrawing}
+              disabled={remove.isPending}
+              onClick={() => confirmDelete(true)}
+            >
+              Nur Kommentar löschen
+            </Button>
+          )
+        }
+      />
+    </>
+  );
+
+  return { actions, onContextMenu, menus };
+}

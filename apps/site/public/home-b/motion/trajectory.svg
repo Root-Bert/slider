@@ -1,0 +1,16 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="179.573" height="335.135" viewBox="0 0 179.573 335.135" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Trajectory" filter="url(#filter0_d_0_11)">
+<path d="M8.72644 326.948C38.7171 210.142 94.1252 101.398 170.995 8.47806" stroke-width="1.5" stroke="#8FCB9B"/>
+</g>
+<defs>
+<filter id="filter0_d_0_11" x="0" y="0" width="179.573" height="335.135" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset/>
+<feGaussianBlur stdDeviation="4"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.561 0 0 0 0 0.796 0 0 0 0 0.608 0 0 0 0.6 0"/>
+<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_0_11"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_0_11" result="shape"/>
+</filter>
+</defs>
+</svg>

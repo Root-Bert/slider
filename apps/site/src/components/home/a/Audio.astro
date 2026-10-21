@@ -1,0 +1,22 @@
+---
+import { accentColor } from '@/lib/accent';
+import { Icon } from '@/ui/Icon';
+import { asset } from '~/lib/links';
+import { person, type PersonName } from '~/lib/people';
+
+/** A voice comment's player row: play in the author's accent, waveform, length. */
+interface Props {
+  name: PersonName;
+  length?: string;
+}
+
+const { name, length = '0:24' } = Astro.props;
+---
+
+<div class="flex items-center gap-3">
+  <span class="flex" style={`color: ${accentColor(person(name).color)}`}>
+    <Icon name="playArrow" size={24} />
+  </span>
+  <img src={asset('home/hero/graphic-eq.svg')} alt="" class="h-[20.6px] w-[86.2px]" />
+  <span class="text-caption text-fg-subtle">{length}</span>
+</div>

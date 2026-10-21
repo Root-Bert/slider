@@ -1,0 +1,116 @@
+---
+import { Icon, type IconName } from '@/ui/Icon';
+import { Logo } from '@/ui/Logo';
+import Button from './Button.astro';
+import { APP_URL, page } from '~/lib/links';
+
+/** Site / Header: logo = home, glass nav pill with the current page selected, login + CTA. */
+export type SitePage = 'home' | 'vision' | 'product' | 'pricing' | 'blog';
+
+interface Props {
+  current?: SitePage;
+}
+
+const { current } = Astro.props;
+const nav: { id: SitePage; label: string; href: string; icon: IconName }[] = [
+  { id: 'home', label: 'Home', href: page(), icon: 'home' },
+  { id: 'product', label: 'Product', href: page('product'), icon: 'slideshow' },
+  { id: 'vision', label: 'Vision', href: page('vision'), icon: 'visibility' },
+  { id: 'pricing', label: 'Pricing', href: page('pricing'), icon: 'localOffer' },
+  { id: 'blog', label: 'Blog', href: page('blog'), icon: 'article' },
+];
+---
+
+<header class="relative z-(--z-chrome) flex h-18 items-center justify-between px-4 md:px-8">
+  <div class="flex items-center lg:w-80">
+    <a href={page()} aria-label="Slider | Home" class="rounded-control-sm">
+      <Logo />
+    </a>
+  </div>
+  <nav aria-label="Website" class="hidden gap-1 rounded-panel p-1 glass-control lg:flex">
+    {
+      nav.map((item) => (
+        <a
+          href={item.href}
+          aria-current={item.id === current ? 'page' : undefined}
+          class:list={[
+            'flex items-center gap-2 rounded-control px-4 py-2 text-sm font-medium transition-colors',
+            item.id === current ? 'bg-selected text-fg' : 'text-fg-muted hover:bg-hover hover:text-fg',
+          ]}
+        >
+          <Icon name={item.icon} size={18} />
+          {item.label}
+        </a>
+      ))
+    }
+  </nav>
+  <div class="flex items-center justify-end gap-2 lg:w-80">
+    <!-- Wrapped: the button's own inline-flex would win over a `hidden` on it. -->
+    <span class="hidden lg:contents"><Button href={`${APP_URL}/`} variant="ghost" size="md">Log in</Button></span>
+    <Button href={`${APP_URL}/`} size="md">Start for free</Button>
+
+    <!-- Below lg: the same pages behind a menu button, as a glass panel (no JS needed). -->
+    <details class="site-menu relative lg:hidden" data-site-menu>
+      <summary
+        class="flex size-9 cursor-pointer list-none items-center justify-center rounded-control text-fg-muted glass-control transition-colors hover:text-fg"
+        aria-label="Menu"
+      >
+        <Icon name="menu" size={20} className="site-menu-open" />
+        <Icon name="close" size={20} className="site-menu-close" />
+      </summary>
+      <nav
+        aria-label="Website"
+        class="absolute top-12 right-0 flex w-[min(280px,calc(100vw-32px))] flex-col gap-1 rounded-panel p-2 glass-elevated shadow-float"
+      >
+        {
+          nav.map((item) => (
+            <a
+              href={item.href}
+              aria-current={item.id === current ? 'page' : undefined}
+              class:list={[
+                'flex items-center gap-3 rounded-control px-3 py-2.5 text-[15px] font-medium transition-colors',
+                item.id === current ? 'bg-selected text-fg' : 'text-fg-muted hover:bg-hover hover:text-fg',
+              ]}
+            >
+              <Icon name={item.icon} size={20} />
+              {item.label}
+            </a>
+          ))
+        }
+        <span class="mx-3 my-1 h-px bg-hairline" aria-hidden="true"></span>
+        <a href={`${APP_URL}/`} class="flex items-center gap-3 rounded-control px-3 py-2.5 text-[15px] font-medium text-fg-muted transition-colors hover:bg-hover hover:text-fg">
+          <Icon name="arrowForward" size={20} />
+          Log in
+        </a>
+      </nav>
+    </details>
+  </div>
+</header>
+
+<style>
+  .site-menu summary::-webkit-details-marker {
+    display: none;
+  }
+  .site-menu:not([open]) :global(.site-menu-close),
+  .site-menu[open] :global(.site-menu-open) {
+    display: none;
+  }
+  .site-menu[open] summary {
+    color: var(--color-fg);
+  }
+</style>
+
+<script>
+  // The menu closes on a tap outside it and on Escape.
+  for (const menu of document.querySelectorAll<HTMLDetailsElement>('[data-site-menu]')) {
+    document.addEventListener('click', (event) => {
+      if (menu.open && !menu.contains(event.target as Node)) menu.open = false;
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && menu.open) {
+        menu.open = false;
+        menu.querySelector('summary')?.focus();
+      }
+    });
+  }
+</script>

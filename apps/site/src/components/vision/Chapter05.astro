@@ -1,0 +1,46 @@
+---
+import Cursor from '~/components/Cursor.astro';
+import Chapter from './Chapter.astro';
+import Draw from './Draw.astro';
+import Highlight from '~/components/Highlight.astro';
+import wave from './svg/mark-wave.svg?raw';
+
+/** 05 | Why we still need them: a good deck moves people. */
+const uses = [
+  ['01', 'Teach', 'Pass on what you know, so others can build on it.'],
+  ['02', 'Back the speaker', 'Slides behind you that literally have your back.'],
+  ['03', 'Pitch', 'Win people over for an idea in a few minutes.'],
+];
+---
+
+<Chapter n="05" label="Why we still need them">
+  <h2 class="vision-h" data-reveal>
+    But a good deck <span class="relative inline-block px-[0.19em] pb-[0.04em] whitespace-nowrap text-white">
+      moves people.
+      <Draw svg={wave} class="top-[1.03em] left-[0.119em] h-[0.222em] w-[calc(100%-0.206em)]" />
+      <Cursor name="Rose" class="absolute top-[0.71em] left-[calc(100%+6px)]" drift />
+    </span>
+  </h2>
+  <p class="vision-body max-w-[620px]" data-reveal style="--i: 1">
+    We need presentations. To pass on what we know, to give a speaker something to stand on, quite
+    literally, or to pitch an idea. Every time, the job is the same: get an idea across to other
+    people.
+  </p>
+  <div class="grid w-full gap-4 sm:grid-cols-3">
+    {
+      uses.map(([n, title, text], i) => (
+        <div class="flex flex-col gap-2.5 rounded-[20px] bg-glass p-7 ring-hairline" data-reveal style={`--i: ${i + 2}`}>
+          <span class="text-xs tabular-nums text-fg-faint">{n}</span>
+          <span class="text-[22px] font-semibold tracking-[-0.01em] text-fg">{title}</span>
+          <span class="text-[15px] leading-normal text-fg-subtle">{text}</span>
+        </div>
+      ))
+    }
+  </div>
+  <div class="flex flex-col items-start gap-3 pt-4" data-reveal style="--i: 5">
+    <p class="text-[clamp(26px,4.6vw,40px)] leading-[1.12] font-semibold tracking-[-0.03em] text-fg">
+      Done well, an idea <Highlight>lands far better.</Highlight>
+    </p>
+    <span class="text-caption font-medium tracking-wide uppercase text-fg-faint">THAT IS THE ESSENCE</span>
+  </div>
+</Chapter>

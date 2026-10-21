@@ -1,0 +1,57 @@
+---
+import { Icon, type IconName } from '@/ui/Icon';
+
+/** The viewer's control row (UI kit "Controls / Bar"): tools, filter, version, counter, session. */
+interface Props {
+  class?: string;
+  style?: string;
+}
+
+const { class: className, style } = Astro.props;
+const tools: { icon: IconName; soon?: boolean }[] = [
+  { icon: 'draw' },
+  { icon: 'mic', soon: true },
+  { icon: 'formatShapes' },
+  { icon: 'cameraVideo', soon: true },
+];
+const pill = 'flex items-center rounded-panel glass p-1';
+const segment = 'flex h-8 items-center gap-1.5 rounded-control px-3';
+---
+
+<div class:list={['flex items-center justify-between', className]} style={style}>
+  <div class="flex items-center gap-3">
+    <div class:list={[pill, 'gap-1']}>
+      {
+        tools.map((tool) => (
+          <span class:list={['flex size-8 items-center justify-center rounded-control text-fg', tool.soon && 'opacity-40']}>
+            <Icon name={tool.icon} size={20} />
+          </span>
+        ))
+      }
+    </div>
+    <div class:list={[pill, 'gap-3 pl-3']}>
+      <span class="text-xs text-fg-muted">12 Kommentare</span>
+      <div class="flex gap-1">
+        <span class:list={[segment, 'glass']}><span class="text-body text-fg-muted">Alle</span><span class="text-xs font-medium text-fg-subtle">12</span></span>
+        <span class:list={[segment, 'bg-primary font-medium']}><span class="text-body text-on-primary">Offen</span><span class="text-xs text-black/50">11</span></span>
+        <span class:list={[segment, 'glass']}><span class="text-body text-fg-muted">Erledigt</span><span class="text-xs font-medium text-fg-subtle">1</span></span>
+      </div>
+      <span class="h-5 w-px bg-selected"></span>
+      <span class:list={[segment, 'glass']}><span class="text-body text-fg-muted">aus PowerPoint</span></span>
+    </div>
+  </div>
+  <div class="flex items-center gap-2.5">
+    <div class={pill}>
+      <span class="flex size-8 items-center justify-center rounded-control text-fg"><Icon name="upload" size={20} /></span>
+    </div>
+    <div class:list={[pill, 'gap-2 pr-4']}>
+      <span class="flex size-8 items-center justify-center text-base text-fg-muted">1</span>
+      <span class="text-base text-fg-subtle">/</span>
+      <span class="text-base text-fg-muted">12</span>
+    </div>
+    <div class:list={[pill, 'gap-1']}>
+      <span class="flex size-8 items-center justify-center rounded-control text-fg"><Icon name="close" size={20} /></span>
+      <span class="flex size-8 items-center justify-center rounded-control text-fg"><Icon name="iosShare" size={20} /></span>
+    </div>
+  </div>
+</div>

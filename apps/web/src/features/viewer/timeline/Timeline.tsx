@@ -1,0 +1,339 @@
+import {
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from 'react';
+import { cn, useIsNarrow } from '@/ui';
+import { rafThrottle } from '@/lib/dom';
+import { ConnectorLines } from '../connectors/ConnectorLines';
+import { useCanvasPan } from './hooks/useCanvasPan';
+import { useFoldProgress } from './hooks/useFoldProgress';
+import { useScrollActiveSlide } from './hooks/useScrollActiveSlide';
+import { useTimelineMetrics } from './hooks/useTimelineMetrics';
+import { useTimelineWheel } from './hooks/useTimelineWheel';
+import {
+  anchoredScrollLeft,
+  revealScrollLeft,
+  computeTrackGeometry,
+  layoutTrack,
+  slideHeightAt,
+  splitForWidth,
+  TRACK_PAD_TOP,
+  trailingWidth,
+  visibleRange,
+  type TrackLayout,
+} from './lib/timeline-layout';
+import { useRevisionData } from '../state/revision-data';
+import { useStageRegistry } from '../state/stage-registry';
+import { useViewerData } from '../state/viewer-data';
+import { useViewerDispatch, useViewerState } from '../state/viewer-state';
+import { CommentColumns } from './CommentColumns';
+import { MINIMAP_ROW_H } from './lib/minimap';
+import { Minimap } from './Minimap';
+import { SplitHandle } from './SplitHandle';
+import { TimelineContext, type SizeAnchor } from './timeline-context';
+import { Track } from './Track';
+
+/** Clicks on these (or inside them) in the comment area keep the thread panel open. */
+const KEEPS_PANEL =
+  'button, a, input, textarea, select, label, [contenteditable], [role="button"], [data-comment-card], [data-connector-blob], [data-gap-bubble]';
+
+/** How fast the minimap folds. */
+const MINIMAP_FOLD_MS = 200;
+
+/** Slides grow to at least this width when a drawing tool is picked. */
+const DRAW_MIN_W = 640;
+
+type Range = { first: number; last: number };
+const sameRange = (a: Range, b: Range) => a.first === b.first && a.last === b.last;
+
+/**
+ * The deck as a timeline: a track with every slide side by side on top, the minimap (thumbnails
+ * of the whole deck), the controls row and the split handle below it, and below that every
+ * slide's comments in a column exactly under its slide. One scroller moves track and columns
+ * together horizontally; vertically only the comments scroll, under a sticky header. The split
+ * handle sets the slide height – the track is always exactly as tall as the slides, and the
+ * minimap, controls row and comment area move with it.
+ */
+export function Timeline({ controls }: { controls: ReactNode }) {
+  const { slides, slideIndex } = useViewerData();
+  const { split, activeSlideId, tool, threadPanelOpen, deletedPanelOpen, showMinimap } =
+    useViewerState();
+  const { deletedSlides } = useRevisionData();
+  const hasDeleted = deletedSlides.length > 0;
+  const dispatch = useViewerDispatch();
+  const registry = useStageRegistry();
+  const narrow = useIsNarrow();
+  const wrapperRef = useRef<HTMLElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const controlsRef = useRef<HTMLDivElement>(null);
+  const foldRef = useRef<HTMLDivElement>(null);
+  const anchorRef = useRef<SizeAnchor | null>(null);
+  const [connectorLayer, setConnectorLayer] = useState<HTMLDivElement | null>(null);
+  const [initialSlideId] = useState(activeSlideId);
+  // A split drag resizes from here: the viewer store only gets the split on release, so the
+  // rest of the viewer (controls, panels, avatars) doesn't re-render with every frame of it.
+  const [draggedSplit, setDraggedSplit] = useState<number | null>(null);
+  const shownSplit = draggedSplit ?? split;
+
+  const metrics = useTimelineMetrics(wrapperRef, scrollerRef, controlsRef, foldRef);
+  // The minimap folds in JS: band height and slide height change in the same frame (measuring
+  // the band would lag a frame behind it and make the slides judder). The slides take exactly
+  // the height the band gives up, so the comment area doesn't move.
+  const fold = useFoldProgress(showMinimap, MINIMAP_FOLD_MS);
+  const foldH = Math.round(fold * MINIMAP_ROW_H);
+  const aspectRatios = useMemo(() => slides.map((slide) => slide.aspectRatio), [slides]);
+  const geometry = useMemo(
+    () =>
+      metrics &&
+      computeTrackGeometry({
+        aspectRatios,
+        viewportW: metrics.viewportW,
+        viewportH: metrics.viewportH,
+        controlsH: metrics.controlsH + MINIMAP_ROW_H,
+        freedH: MINIMAP_ROW_H - foldH,
+        narrow,
+      }),
+    [aspectRatios, metrics, foldH, narrow],
+  );
+  // Whole pixels: the track, the header and the comment area stay on crisp edges.
+  const slideH = geometry && Math.round(slideHeightAt(narrow ? null : shownSplit, geometry));
+  const layout = useMemo(
+    () =>
+      slideH ? layoutTrack(aspectRatios, slideH, hasDeleted ? trailingWidth(slideH) : 0) : null,
+    [aspectRatios, slideH, hasDeleted],
+  );
+
+  useTimelineWheel({ scrollerRef, geometry, anchorRef, enabled: !narrow });
+  useCanvasPan({ scrollerRef, ignore: KEEPS_PANEL, enabled: !narrow });
+
+  useLayoutEffect(() => {
+    registry.setScroller(scrollerRef.current);
+    return () => registry.setScroller(null);
+  }, [registry]);
+  useLayoutEffect(() => {
+    registry.setLayout(layout ? { layout, slideIndex, snap: narrow } : null);
+  }, [registry, layout, slideIndex, narrow]);
+
+  // Windowing: only slides (and columns) within a viewport left and right are rendered.
+  const [range, setRange] = useState<Range>({ first: 0, last: -1 });
+  const scrollLeftRef = useRef(0);
+  const prevLayout = useRef<TrackLayout | null>(null);
+  const clientW = metrics?.clientW ?? 0;
+
+  const updateRange = useEffectEvent(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller || !layout) return;
+    scrollLeftRef.current = scroller.scrollLeft;
+    const next = visibleRange(layout, scroller.scrollLeft, scroller.clientWidth);
+    setRange((current) => (sameRange(current, next) ? current : next));
+  });
+
+  /**
+   * Where resizing without a pointer (split handle, keys, window) keeps things: the active
+   * slide's centre if it is in view – and then the whole slide stays in view – else the middle.
+   */
+  const defaultAnchor = useEffectEvent(
+    (prev: TrackLayout, scrollLeft: number, width: number): SizeAnchor => {
+      const index = activeSlideId ? slideIndex.get(activeSlideId) : undefined;
+      const box = index === undefined ? undefined : prev.slides[index];
+      if (index !== undefined && box) {
+        const centre = box.x + box.w / 2;
+        if (centre >= scrollLeft && centre <= scrollLeft + width)
+          return { contentX: centre, viewportX: centre - scrollLeft, keep: index };
+      }
+      return { contentX: scrollLeft + width / 2, viewportX: width / 2 };
+    },
+  );
+
+  // Anchoring before paint: the anchor keeps its slide fraction under the same viewport x.
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller || !layout) return;
+    const prev = prevLayout.current;
+    prevLayout.current = layout;
+    const width = scroller.clientWidth;
+    if (!prev) {
+      // Deep link (`?slide=`): centred on the first paint, without animation.
+      if (initialSlideId)
+        registry.revealSlide(initialSlideId, { behavior: 'instant', align: 'center' });
+    } else if (prev.h !== layout.h) {
+      const anchor: SizeAnchor =
+        anchorRef.current ?? defaultAnchor(prev, scrollLeftRef.current, width);
+      anchorRef.current = null;
+      const left = anchoredScrollLeft(prev, layout, anchor.contentX, anchor.viewportX, width);
+      registry.scrollTrackTo(
+        anchor.keep === undefined
+          ? left
+          : revealScrollLeft(layout, anchor.keep, left, width, 'nearest'),
+      );
+    }
+    updateRange();
+  }, [layout, clientW, registry, initialSlideId]);
+
+  // Scrolling: update the window.
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    const update = rafThrottle(updateRange);
+    scroller.addEventListener('scroll', update.schedule, { passive: true });
+    return () => {
+      scroller.removeEventListener('scroll', update.schedule);
+      update.cancel();
+    };
+  }, []);
+  // … and the slide most in view becomes active.
+  useScrollActiveSlide(scrollerRef);
+
+  // A new revision reorders the track: the active slide (kept by its id) stays in view.
+  const slideOrder = useMemo(() => slides.map((slide) => slide.id).join(), [slides]);
+  const shownOrder = useRef(slideOrder);
+  const revealActive = useEffectEvent(() => {
+    if (activeSlideId)
+      registry.revealSlide(activeSlideId, { behavior: 'instant', align: 'nearest' });
+  });
+  useLayoutEffect(() => {
+    if (shownOrder.current === slideOrder || !layout) return;
+    shownOrder.current = slideOrder;
+    revealActive();
+  }, [slideOrder, layout]);
+
+  // Picking a drawing tool grows small slides to a comfortable drawing size, around the slide
+  // most in view. No scrolling otherwise: every slide takes the tool.
+  const growForDrawing = useEffectEvent(() => {
+    if (narrow || !geometry || !layout || !activeSlideId) return;
+    const index = slideIndex.get(activeSlideId);
+    const box = index === undefined ? undefined : layout.slides[index];
+    const slide = index === undefined ? undefined : slides[index];
+    if (!box || !slide) return;
+    if (box.w >= DRAW_MIN_W) return;
+    const target = splitForWidth(DRAW_MIN_W, slide.aspectRatio, geometry);
+    if (slideHeightAt(target, geometry) <= layout.h + 0.5) return;
+    const scroller = scrollerRef.current;
+    if (scroller) {
+      const contentX = box.x + box.w / 2;
+      const viewportX = Math.min(Math.max(contentX - scroller.scrollLeft, 0), scroller.clientWidth);
+      anchorRef.current = { contentX, viewportX, keep: index };
+    }
+    dispatch({ type: 'splitChanged', split: target });
+  });
+  useEffect(() => {
+    if (tool) growForDrawing();
+  }, [tool]);
+
+  const context = useMemo(
+    () => geometry && layout && { geometry, layout, anchorRef, scrollerRef },
+    [geometry, layout],
+  );
+
+  // A click on the comment area's background (not on a card or control) closes the thread panel.
+  const onCommentAreaClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (!threadPanelOpen || !(event.target instanceof Element)) return;
+    if (event.target.closest('[data-timeline-header]') || event.target.closest(KEEPS_PANEL)) return;
+    // Selecting text ends in a click too.
+    if (!(window.getSelection()?.isCollapsed ?? true)) return;
+    dispatch({ type: 'threadPanelClosed' });
+  };
+
+  return (
+    <main ref={wrapperRef} className="relative min-h-0 flex-1 overflow-hidden">
+      <div
+        ref={scrollerRef}
+        data-timeline
+        onClick={onCommentAreaClick}
+        className={cn(
+          'absolute inset-0 overflow-auto overscroll-contain [container-type:inline-size] [scrollbar-color:var(--color-surface-4)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin]',
+          narrow && 'snap-x snap-mandatory [scroll-padding-inline:16px]',
+        )}
+      >
+        {/* The dot grid lives on the content, so it scrolls (and pans) with the cards. */}
+        <div
+          className="dot-grid relative min-h-full min-w-full"
+          style={{ width: layout?.contentW }}
+        >
+          {/* Connector lines: in the content, so they scroll sideways with slides and cards in
+              the same frame; sticky, so vertically they stay with the header's marks. */}
+          <div
+            ref={setConnectorLayer}
+            data-connector-layer
+            className="pointer-events-none sticky top-0 z-(--z-sticky) h-0"
+          />
+          {/* Sticky header in two parts: the opaque track under the connector lines, and the
+              see-through band over them – lines, cards and the dot grid show behind its glass
+              controls and thumbnails. The comment area starts where the split handle puts it. */}
+          <div
+            data-timeline-header
+            className="sticky top-0 z-(--z-overlay) bg-canvas"
+            style={{ paddingTop: TRACK_PAD_TOP }}
+          >
+            {layout && context ? (
+              <TimelineContext value={context}>
+                <Track layout={layout} range={range} snap={narrow} />
+              </TimelineContext>
+            ) : (
+              <div style={{ height: slideH ?? 0 }} />
+            )}
+          </div>
+          {/* Minimap, controls row and split handle: one band of fixed height right under the
+              track, part of where the comment area starts. Connector lines pass behind all of it.
+              Slides and comments run on behind a side panel; this band makes room for it (its
+              own container, so the controls row's container queries see the narrowed width). */}
+          <div
+            ref={controlsRef}
+            data-timeline-header
+            data-connector-occluder
+            className={cn(
+              'sticky left-0 z-(--z-chrome) w-[100cqw] pt-2 pb-2 transition-[padding] duration-300 @container',
+              (threadPanelOpen || deletedPanelOpen) && 'md:pr-[412px]',
+            )}
+            style={{ top: TRACK_PAD_TOP + (slideH ?? 0) }}
+          >
+            {/* Thumbnails line up with the big track's slides (TRACK_PAD_X minus MINIMAP_PAD).
+                Hidden (button left of the slide counter), it folds smoothly (`useFoldProgress`):
+                the band shrinks frame by frame and the slides grow by the same amount, so the
+                comments stay put. Stays mounted. */}
+            <div
+              ref={foldRef}
+              inert={!showMinimap}
+              // `invisible` once folded: hidden, it is out of the a11y tree.
+              className={cn('overflow-hidden px-3', fold === 0 && 'invisible')}
+              style={{ height: foldH, opacity: fold }}
+            >
+              <Minimap layout={layout} scrollerRef={scrollerRef} narrow={narrow} />
+            </div>
+            {/* Same gap below the thumbnails as above them (track to minimap), and the same
+                edges: TRACK_PAD_X, like the slides and thumbnails. The split handle sits centred
+                in the controls row, behind it: the row lets the pointer through except on its
+                controls, so where they would overlap on a narrow band the controls win. */}
+            <div className="relative px-4 pt-2">
+              {geometry && slideH && !narrow && (
+                <div className="absolute inset-x-0 top-2 bottom-0 flex items-center justify-center">
+                  <SplitHandle
+                    geometry={geometry}
+                    slideH={slideH}
+                    split={shownSplit}
+                    onDrag={setDraggedSplit}
+                  />
+                </div>
+              )}
+              <div className="pointer-events-none relative [&>*>*]:pointer-events-auto">
+                {controls}
+              </div>
+            </div>
+          </div>
+          {layout && context && (
+            <TimelineContext value={context}>
+              <CommentColumns layout={layout} range={range} narrow={narrow} />
+            </TimelineContext>
+          )}
+        </div>
+      </div>
+      <ConnectorLines wrapperRef={wrapperRef} layer={connectorLayer} />
+    </main>
+  );
+}

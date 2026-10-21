@@ -1,0 +1,26 @@
+---
+/**
+ * A fixed-size design composition (e.g. a 856 × 460 product shot) that scales down with its
+ * column but never up: the inner box keeps its design px, the outer box keeps the aspect ratio.
+ */
+interface Props {
+  width: number;
+  height: number;
+  class?: string;
+  innerClass?: string;
+}
+
+const { width, height, class: className, innerClass } = Astro.props;
+---
+
+<div
+  class:list={['relative w-full', className]}
+  style={`aspect-ratio: ${width} / ${height}; max-width: ${width}px; container-type: inline-size;`}
+>
+  <div
+    class:list={['absolute top-0 left-0 origin-top-left', innerClass]}
+    style={`width: ${width}px; height: ${height}px; scale: tan(atan2(100cqw, ${width}px));`}
+  >
+    <slot />
+  </div>
+</div>

@@ -1,0 +1,1 @@
+ALTER TABLE "slide_versions" ADD COLUMN "renderer" text;

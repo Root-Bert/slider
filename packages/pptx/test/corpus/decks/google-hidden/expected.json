@@ -1,0 +1,162 @@
+{
+  "case": "google-hidden",
+  "tags": ["producer", "synthetic", "visibility"],
+  "synthetic": true,
+  "matches": [
+    {
+      "prev": "titel",
+      "next": "titel",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 0,
+      "position": 0
+    },
+    {
+      "prev": "umsatz",
+      "next": "umsatz",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 1,
+      "position": 1
+    },
+    {
+      "prev": "reserve",
+      "next": "reserve",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 2,
+      "position": 2,
+      "hiddenChanged": "shown"
+    },
+    {
+      "prev": "ausblick",
+      "next": "ausblick",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 3,
+      "position": 3
+    },
+    {
+      "prev": "anhang",
+      "next": "anhang",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "sldId",
+      "previousPosition": 4,
+      "position": 4
+    }
+  ],
+  "prev": {
+    "author": null,
+    "slides": [
+      {
+        "label": "titel",
+        "sldId": 256,
+        "part": "ppt/slides/slide1.xml",
+        "hidden": false,
+        "title": "Quartalsbericht Q3",
+        "layoutName": "TITLE",
+        "section": null
+      },
+      {
+        "label": "umsatz",
+        "sldId": 257,
+        "part": "ppt/slides/slide2.xml",
+        "hidden": false,
+        "title": "Umsatz",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      },
+      {
+        "label": "reserve",
+        "sldId": 258,
+        "part": "ppt/slides/slide3.xml",
+        "hidden": true,
+        "title": "Reserve: Detailzahlen",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      },
+      {
+        "label": "ausblick",
+        "sldId": 259,
+        "part": "ppt/slides/slide4.xml",
+        "hidden": false,
+        "title": "Ausblick Q4",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      },
+      {
+        "label": "anhang",
+        "sldId": 260,
+        "part": "ppt/slides/slide5.xml",
+        "hidden": true,
+        "title": "Anhang: Methodik",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      }
+    ],
+    "sections": [],
+    "comments": []
+  },
+  "next": {
+    "author": null,
+    "slides": [
+      {
+        "label": "titel",
+        "sldId": 256,
+        "part": "ppt/slides/slide1.xml",
+        "hidden": false,
+        "title": "Quartalsbericht Q3",
+        "layoutName": "TITLE",
+        "section": null
+      },
+      {
+        "label": "umsatz",
+        "sldId": 257,
+        "part": "ppt/slides/slide2.xml",
+        "hidden": false,
+        "title": "Umsatz",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      },
+      {
+        "label": "reserve",
+        "sldId": 258,
+        "part": "ppt/slides/slide3.xml",
+        "hidden": false,
+        "title": "Reserve: Detailzahlen",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      },
+      {
+        "label": "ausblick",
+        "sldId": 259,
+        "part": "ppt/slides/slide4.xml",
+        "hidden": false,
+        "title": "Ausblick Q4",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      },
+      {
+        "label": "anhang",
+        "sldId": 260,
+        "part": "ppt/slides/slide5.xml",
+        "hidden": true,
+        "title": "Anhang: Methodik",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      }
+    ],
+    "sections": [],
+    "comments": []
+  }
+}

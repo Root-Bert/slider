@@ -1,0 +1,11 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Hatch" clip-path="url(#clip0_0_4)">
+<path id="Vector" d="M0.5 0.5H13.5V13.5H0.5V0.5Z" stroke="#1C2B39"/>
+<path id="Vector_2" d="M0 14L14 0M-4 10L10 -4M4 18L18 4" stroke="#1C2B39"/>
+</g>
+<defs>
+<clipPath id="clip0_0_4">
+<rect width="14" height="14" fill="white"/>
+</clipPath>
+</defs>
+</svg>

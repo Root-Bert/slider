@@ -1,0 +1,43 @@
+---
+import Agenda from './Agenda.astro';
+import Chart from './Chart.astro';
+import FieldMap from './FieldMap.astro';
+import Finance from './Finance.astro';
+import FloorPlan from './FloorPlan.astro';
+import Gantt from './Gantt.astro';
+import Lecture from './Lecture.astro';
+import Matrix from './Matrix.astro';
+import School from './School.astro';
+import Table from './Table.astro';
+import Title from './Title.astro';
+
+/**
+ * One of the example slides (Figma Site Kit "Slide / *"), drawn at its native 960 × 540 and
+ * scaled to `width`. Slides are real content mocks, not screenshots.
+ */
+const SLIDES = { Agenda, Chart, FieldMap, Finance, FloorPlan, Gantt, Lecture, Matrix, School, Table, Title };
+export type SlideName = keyof typeof SLIDES;
+
+interface Props {
+  name: SlideName;
+  /** Rendered width in px (height follows 16:9). */
+  width: number;
+  class?: string;
+  style?: string;
+}
+
+const { name, width, class: className, style } = Astro.props;
+// Placed absolutely by the caller? Then don't force `relative` over it.
+const positioned = /(^|\s)(absolute|fixed|sticky)(\s|$)/.test(className ?? '');
+const Content = SLIDES[name];
+const scale = width / 960;
+---
+
+<div
+  class:list={[!positioned && 'relative', 'shrink-0 overflow-hidden rounded-thumb', className]}
+  style={`width: ${width}px; height: ${(width * 9) / 16}px; ${style ?? ''}`}
+>
+  <div class="absolute top-0 left-0 h-[540px] w-[960px] origin-top-left" style={`scale: ${scale}`}>
+    <Content />
+  </div>
+</div>

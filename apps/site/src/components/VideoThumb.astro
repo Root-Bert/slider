@@ -1,0 +1,28 @@
+---
+import { accentColor } from '@/lib/accent';
+import { Avatar } from '@/ui/Avatar';
+import { person, type PersonName } from '~/lib/people';
+
+/**
+ * Site / Video thumb: a video comment's first frame – the screen being talked about – with the
+ * speaker in a round camera bubble in the corner, so it reads as "face and voice", not a still.
+ */
+interface Props {
+  src: string;
+  name: PersonName;
+  class?: string;
+}
+
+const { src, name, class: className } = Astro.props;
+const accent = accentColor(person(name).color);
+---
+
+<div class:list={['relative overflow-hidden rounded-chip', className]}>
+  <img src={src} alt="" class="size-full object-cover" />
+  <span
+    class="absolute right-2 bottom-2 flex rounded-full"
+    style={`box-shadow: 0 0 0 2px ${accent}, 0 0 14px color-mix(in srgb, ${accent} 60%, transparent)`}
+  >
+    <Avatar author={person(name)} size={32} nativeTitle={false} />
+  </span>
+</div>

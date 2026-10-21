@@ -1,0 +1,149 @@
+---
+import Highlight from '~/components/Highlight.astro';
+import SectionMark from '~/components/SectionMark.astro';
+import Starfield from '~/components/Starfield.astro';
+import { CHANGELOG_URL } from '~/lib/links';
+import RoadmapPhase from './b/RoadmapPhase.astro';
+import VariantsSketch from './b/VariantsSketch.astro';
+
+/**
+ * Product | Roadmap: what is live (Slider 2.0), then the next steps for presentations – motion
+ * slides now, slide variants next, more ideas later – beside a sketch of slide variants, under
+ * a big orbit map.
+ */
+const sage = 'var(--color-sage)';
+const cyan = 'var(--color-accent-cyan)';
+
+const live = [
+  'Comments, drawings and highlights on every slide',
+  'Voice, video, transcripts and @mentions',
+  'Live cursors, follow mode and invites',
+  'PowerPoint, OneDrive and Google Slides',
+  'AI agents with any model, EU hosting, open source',
+];
+
+const phases = [
+  {
+    status: 'NOW',
+    accent: cyan,
+    title: 'Motion slides',
+    copy: 'Our own open slide format with steps, smooth transitions and stable element ids. A bridge between video and presentation, easy for AI to write.',
+    items: ['Elements arrive step by step', 'Comment on exactly one step', 'No lock-in to one office suite'],
+    current: true,
+  },
+  {
+    status: 'NEXT',
+    accent: '#fff',
+    title: 'Slide variants',
+    copy: 'Ask for several versions instead of one. They stack above and below the slide, only that slide scrolls, the rest of the deck stays put.',
+    items: [
+      'Compare ideas side by side',
+      'Comment on a variant, ask again',
+      'Pick one, it becomes the new version',
+      "Works in your deck's own look, too",
+    ],
+  },
+  {
+    status: 'LATER',
+    accent: 'var(--color-accent-blue)',
+    title: 'More ideas',
+    copy: 'What we are exploring after that.',
+    items: [
+      'Start from text: an outline becomes first slides',
+      'Present straight from Slider',
+      'Keynote and PDF import',
+      'Review on the go with the mobile app',
+    ],
+  },
+];
+
+/* Orbit map: arcs of concentric circles around a centre below the section (Figma arc data). */
+const cx = 720;
+const cy = 1010;
+const arc = (r: number, from: number, to: number) => {
+  const p = (a: number) => `${(cx + r * Math.cos(a)).toFixed(2)} ${(cy + r * Math.sin(a)).toFixed(2)}`;
+  return `M ${p(from)} A ${r} ${r} 0 ${to - from > Math.PI ? 1 : 0} 1 ${p(to)}`;
+};
+const orbitFrom = 3.2987;
+const orbitTo = 6.1261;
+const sparkle = (x: number, y: number, s: number) =>
+  `M ${x + s / 2} ${y} L ${x + s * 0.6} ${y + s * 0.4} L ${x + s} ${y + s / 2} L ${x + s * 0.6} ${y + s * 0.6} L ${x + s / 2} ${y + s} L ${x + s * 0.4} ${y + s * 0.6} L ${x} ${y + s / 2} L ${x + s * 0.4} ${y + s * 0.4} Z`;
+---
+
+<section class="relative isolate overflow-hidden px-4 pt-32 pb-8 md:px-16" data-section>
+  <Starfield />
+  <svg
+    class="pointer-events-none absolute top-0 left-1/2 -z-10 h-[1577px] w-[1440px] -translate-x-1/2"
+    viewBox="0 0 1440 1577"
+    fill="none"
+    aria-hidden="true"
+  >
+    <path d={arc(560, orbitFrom, orbitTo)} stroke="rgb(255 255 255 / 0.08)"></path>
+    <path d={arc(690, orbitFrom, orbitTo)} stroke="rgb(255 255 255 / 0.16)" stroke-dasharray="2 7"></path>
+    <path d={arc(820, orbitFrom, orbitTo)} stroke="rgb(255 255 255 / 0.08)"></path>
+    <path d={arc(690, 3.5186, 4.1469)} stroke="rgb(255 255 255 / 0.3)" stroke-width="7" stroke-dasharray="1 12"></path>
+    <!-- Glow as a wide faint stroke drawn along: Safari paints a CSS filter on a drawn path elsewhere on the page. -->
+    <path d={arc(820, 3.3929, 3.8327)} stroke={sage} stroke-opacity="0.25" stroke-width="7" stroke-linecap="round" pathLength="1" data-draw></path>
+    <path d={arc(820, 3.3929, 3.8327)} stroke={sage} stroke-width="1.5" pathLength="1" data-draw></path>
+    <circle cx="88.18" cy="487.31" r="10" fill={sage} fill-opacity="0.22"></circle>
+    <circle cx="88.18" cy="487.31" r="4.5" fill={sage}></circle>
+    <circle cx="1207.9" cy="522.1" r="3.5" fill="rgb(255 255 255 / 0.9)"></circle>
+    <path d={sparkle(1295, 115, 10)} fill="rgb(255 255 255 / 0.9)"></path>
+    <path d={sparkle(156, 976, 8)} fill={sage}></path>
+    <path d={sparkle(1325.5, 1245.5, 9)} fill="rgb(255 255 255 / 0.9)"></path>
+  </svg>
+
+  <div class="flex flex-col gap-6 lg:flex-row lg:items-end lg:gap-16">
+    <div class="flex min-w-0 flex-1 flex-col gap-5">
+      <SectionMark label="Roadmap" accent={cyan} />
+      <h2 class="text-[40px] leading-[1.12] font-bold tracking-[-0.03em] text-fg md:text-[56px]" data-reveal>
+        Where Slider <Highlight by="Albert">is heading.</Highlight>
+      </h2>
+    </div>
+    <p class="text-[17px] leading-[1.55] text-fg-muted lg:w-[420px]" data-reveal style="--i: 1">
+      Slider is live. Next, slides learn to move, and every slide can grow into a stack of ideas.
+    </p>
+  </div>
+
+  <div
+    class="mt-12 flex flex-col gap-4 rounded-[20px] bg-glass px-7 py-5 ring-hairline md:flex-row md:items-center md:gap-6"
+    data-reveal
+    style="--i: 2"
+  >
+    <div class="flex items-center gap-6">
+      <span
+        class="rounded-full px-2.5 py-1 text-caption font-medium tracking-wide uppercase"
+        style={`background: color-mix(in srgb, ${sage} 16%, transparent); color: ${sage}`}
+      >
+        LIVE
+      </span>
+      <p class="text-xl font-bold tracking-[-0.02em] whitespace-nowrap text-fg">Slider 2.0</p>
+    </div>
+    <ul class="flex flex-1 flex-wrap gap-x-7 gap-y-2.5">
+      {
+        live.map((item) => (
+          <li class="flex items-start gap-2.5 text-[15px] leading-[1.45] text-fg-muted">
+            <span class="text-[13px] leading-[21px] font-bold text-sage" aria-hidden="true">
+              ✓
+            </span>
+            {item}
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+
+  <div class="mt-12 flex flex-col gap-6 xl:flex-row">
+    <div class="flex flex-col gap-4 xl:w-[420px] xl:shrink-0">
+      {phases.map((phase, i) => <RoadmapPhase {...phase} style={`--i: ${i + 3}`} />)}
+    </div>
+    <VariantsSketch />
+  </div>
+
+  <a
+    href={CHANGELOG_URL}
+    class="mt-12 inline-block text-xs tabular-nums text-fg-faint transition-colors hover:text-fg-muted"
+  >
+    Last updated October 2026 | Full changelog on GitHub
+  </a>
+</section>

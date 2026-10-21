@@ -1,0 +1,45 @@
+---
+/** A roadmap phase card: status chip, title, text and its open (○) or current (●) items. */
+interface Props {
+  status: string;
+  accent: string;
+  title: string;
+  copy: string;
+  items: string[];
+  current?: boolean;
+  style?: string;
+}
+
+const { status, accent, title, copy, items, current = false, style } = Astro.props;
+---
+
+<div
+  class="flex flex-col items-start gap-4.5 rounded-[20px] bg-glass p-7"
+  style={`box-shadow: inset 0 0 0 1px ${current ? accent : 'var(--color-hairline)'}${current ? `, 0 0 90px color-mix(in srgb, ${accent} 7%, transparent), 0 0 32px color-mix(in srgb, ${accent} 22%, transparent)` : ''}; ${style ?? ''}`}
+  data-reveal
+>
+  <span
+    class="rounded-full px-2.5 py-1 text-caption font-medium tracking-wide uppercase"
+    style={`background: color-mix(in srgb, ${accent} 16%, transparent); color: ${accent}`}
+  >
+    {status}
+  </span>
+  <h3 class="text-[26px] font-bold tracking-[-0.02em] text-fg">{title}</h3>
+  <p class="text-[15px] leading-[1.55] text-fg-muted">{copy}</p>
+  <ul class="flex w-full flex-col gap-3">
+    {
+      items.map((item) => (
+        <li class="flex items-start gap-2.5 text-[15px] leading-[1.45] text-fg">
+          <span
+            class="text-[13px] leading-[21px] font-bold"
+            style={`color: ${current ? accent : 'var(--color-fg-faint)'}`}
+            aria-hidden="true"
+          >
+            {current ? '●' : '○'}
+          </span>
+          {item}
+        </li>
+      ))
+    }
+  </ul>
+</div>

@@ -1,0 +1,27 @@
+# The product website on the Slider server: https://{$WEBSITE_DOMAIN}/slider/ → the website
+# container. Mounted into the Caddy of deploy/docker-compose.yml by docker-compose.website.yml.
+{$WEBSITE_DOMAIN} {
+	encode zstd gzip
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+	# The contact form (/slider/kontakt) posts here: only this one API route, passed to Slider, so
+	# the browser stays on this origin and Slider needs no CORS exception for the website.
+	handle /slider/api/contact {
+		rewrite * /api/contact
+		reverse_proxy slider:8787
+	}
+	handle /slider/* {
+		reverse_proxy website:80
+	}
+	# Crawlers only look at the domain root; the file itself ships with the site.
+	handle /robots.txt {
+		rewrite * /slider/robots.txt
+		reverse_proxy website:80
+	}
+	# Nothing else lives on the domain (yet): everything else, /slider included, lands on the site.
+	handle {
+		redir * /slider/ 302
+	}
+}

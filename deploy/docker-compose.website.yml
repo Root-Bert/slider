@@ -1,0 +1,33 @@
+# The product website (apps/site) next to Slider, served by Slider's own Caddy at
+# https://${WEBSITE_DOMAIN}/slider/ – only for the server that hosts it, a self-hosted Slider
+# needs none of this. Enable it in deploy/.env:
+#
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.website.yml
+#   WEBSITE_DOMAIN=bertro.dev
+#
+# The site ships on its own, apart from Slider's releases: every push to main that touches it runs
+# .github/workflows/deploy-website.yml, which builds slider-website:local from its own checkout in
+# WEBSITE_DIR (/opt/slider-site) and swaps only this container. deploy/deploy.sh (Slider's
+# releases) builds the site only while that image is still missing.
+
+services:
+  website:
+    build:
+      context: ..
+      dockerfile: deploy/website/Dockerfile
+    image: slider-website:local
+    restart: unless-stopped
+    # Not published: only reachable through Caddy.
+    expose:
+      - '80'
+
+  caddy:
+    environment:
+      WEBSITE_DOMAIN: ${WEBSITE_DOMAIN:?WEBSITE_DOMAIN is required for the website}
+    # The site's Caddy rules come with the site's own checkout (WEBSITE_DIR), so a website deploy
+    # can change them without a Slider release. A directory, not the file: rsync replaces files,
+    # which a single-file bind mount would not see.
+    volumes:
+      - ${WEBSITE_DIR:-/opt/slider-site}/deploy/website:/etc/caddy/website:ro
+    depends_on:
+      - website

@@ -1,0 +1,99 @@
+---
+import { Avatar } from '@/ui/Avatar';
+import Cursor from '~/components/Cursor.astro';
+import Tag from '~/components/Tag.astro';
+import Slide, { type SlideName } from '~/components/slides/Slide.astro';
+import { person } from '~/lib/people';
+
+/**
+ * Roadmap sketch of slide variants: the current slide in the middle of the deck row, its
+ * variants stacked above and below; only that slide scrolls, the rest of the deck stays put.
+ */
+const cyan = 'var(--color-accent-cyan)';
+const ai = '#fff';
+const shadow = 'box-shadow: 0 18px 40px rgb(0 0 0 / 0.6);';
+const slides: { name: SlideName; x: number; y: number; w: number; opacity: number }[] = [
+  { name: 'Title', x: -216, y: 440.13, w: 380, opacity: 0.28 },
+  { name: 'Agenda', x: 704, y: 440.13, w: 380, opacity: 0.28 },
+  { name: 'Table', x: 284, y: 151.13, w: 300, opacity: 0.32 },
+  { name: 'Title', x: 284, y: 774.13, w: 300, opacity: 0.32 },
+  { name: 'Table', x: 244, y: 267.88, w: 380, opacity: 0.7 },
+  { name: 'Agenda', x: 244, y: 612.38, w: 380, opacity: 0.7 },
+];
+const labels = [
+  { text: 'VARIANT A', x: 97, y: 163.13, accent: ai, dim: true },
+  { text: 'VARIANT B', x: 97, y: 279.88, accent: ai },
+  { text: 'CURRENT', x: 112, y: 429.63, accent: cyan },
+  { text: 'VARIANT C', x: 97, y: 790.13, accent: ai },
+  { text: 'VARIANT D', x: 97, y: 906.88, accent: ai, dim: true },
+];
+---
+
+<div class="pr-sketch-fit shrink-0" data-reveal style="--i: 2">
+  <div class="relative h-[1074px] w-[868px] overflow-hidden rounded-[20px] bg-glass ring-hairline" aria-hidden="true">
+    <!-- A radial gradient, not filter: blur – Safari streaks large blurs across the page. -->
+    <div class="absolute top-[67px] left-[-46px] size-[960px]" style="background: radial-gradient(closest-side, rgb(0 224 255 / 0.16), transparent)"></div>
+    <div class="absolute top-[547px] left-0 h-px w-[868px]" style="background: rgb(0 224 255 / 0.35)"></div>
+    <div
+      class="absolute top-20 left-[434px] h-[914px] w-px"
+      style="background: linear-gradient(to bottom, rgb(0 224 255 / 0), rgb(0 224 255 / 0.5), rgb(0 224 255 / 0))"
+    ></div>
+
+    {
+      slides.map((s) => (
+        <div class="absolute" style={`left: ${s.x}px; top: ${s.y}px; opacity: ${s.opacity * 0.85}`}>
+          <Slide name={s.name} width={s.w} style={shadow} />
+        </div>
+      ))
+    }
+    <div class="absolute top-[417.63px] left-[204px]">
+      <Slide
+        name="Chart"
+        width={460}
+        style={`outline: 2px solid ${cyan}; box-shadow: 0 0 40px rgb(0 224 255 / 0.4), 0 0 140px rgb(0 224 255 / 0.14);`}
+      />
+    </div>
+
+    <Tag label="Give me 4 variants of this slide" accent={ai} class="absolute top-7 left-7" />
+    <p class="absolute top-9 right-7 text-xs tabular-nums text-fg-faint">↑  ↓  only this slide scrolls through its variants</p>
+    <p class="absolute right-7 bottom-7 text-xs tabular-nums text-fg-faint">←  →  the rest of the deck stays where it is</p>
+
+    {
+      labels.map((l) => (
+        <span
+          class="absolute rounded-full px-2.5 py-1 text-caption font-medium tracking-wide uppercase"
+          style={`left: ${l.x}px; top: ${l.y}px; opacity: ${l.dim ? 0.5 : 1}; background: color-mix(in srgb, ${l.accent} 16%, transparent); color: ${l.accent}`}
+        >
+          {l.text}
+        </span>
+      ))
+    }
+
+    <Cursor name="Lara" class="absolute top-[307.88px] left-[584px]" drift />
+    <div class="absolute top-[766.13px] left-[644px] flex w-[237px] gap-2">
+      <Avatar author={person('Marlon')} size={18} nativeTitle={false} />
+      <div class="flex flex-col gap-0.5">
+        <span class="text-[11px] leading-[13px] font-medium text-fg">Marlon</span>
+        <span class="text-xs leading-[15px] text-fg-muted">Take C, but keep the chart.</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  @media (max-width: 1279px) {
+    .pr-sketch-fit {
+      align-self: center;
+    }
+  }
+  @media (max-width: 959px) {
+    .pr-sketch-fit {
+      zoom: 0.68;
+    }
+  }
+  @media (max-width: 639px) {
+    .pr-sketch-fit {
+      zoom: 0.395;
+    }
+  }
+</style>

@@ -1,0 +1,180 @@
+{
+  "case": "google-insert-edits",
+  "tags": ["producer", "synthetic", "structure", "content"],
+  "synthetic": true,
+  "matches": [
+    {
+      "prev": null,
+      "next": "neu",
+      "status": "new",
+      "moved": false,
+      "confidence": 0.61,
+      "matchedBy": null,
+      "previousPosition": null,
+      "position": 0
+    },
+    {
+      "prev": "kickoff",
+      "next": "kickoff",
+      "status": "modified",
+      "moved": false,
+      "confidence": 0.88,
+      "matchedBy": "content",
+      "previousPosition": 0,
+      "position": 1
+    },
+    {
+      "prev": "agenda",
+      "next": "agenda",
+      "status": "modified",
+      "moved": false,
+      "confidence": 0.91,
+      "matchedBy": "content",
+      "previousPosition": 1,
+      "position": 2
+    },
+    {
+      "prev": "ziele",
+      "next": "ziele",
+      "status": "modified",
+      "moved": false,
+      "confidence": 0.86,
+      "matchedBy": "content",
+      "previousPosition": 2,
+      "position": 3
+    },
+    {
+      "prev": "zeitplan",
+      "next": "zeitplan",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "content",
+      "previousPosition": 3,
+      "position": 4
+    },
+    {
+      "prev": "budget",
+      "next": "budget",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "content",
+      "previousPosition": 4,
+      "position": 5
+    }
+  ],
+  "prev": {
+    "author": null,
+    "slides": [
+      {
+        "label": "kickoff",
+        "sldId": 256,
+        "part": "ppt/slides/slide1.xml",
+        "hidden": false,
+        "title": "Projekt Atlas",
+        "layoutName": "TITLE",
+        "section": null
+      },
+      {
+        "label": "agenda",
+        "sldId": 257,
+        "part": "ppt/slides/slide2.xml",
+        "hidden": false,
+        "title": "Agenda",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      },
+      {
+        "label": "ziele",
+        "sldId": 258,
+        "part": "ppt/slides/slide3.xml",
+        "hidden": false,
+        "title": "Ziele 2027",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      },
+      {
+        "label": "zeitplan",
+        "sldId": 259,
+        "part": "ppt/slides/slide4.xml",
+        "hidden": false,
+        "title": "Zeitplan",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      },
+      {
+        "label": "budget",
+        "sldId": 260,
+        "part": "ppt/slides/slide5.xml",
+        "hidden": false,
+        "title": "Budget",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      }
+    ],
+    "sections": [],
+    "comments": []
+  },
+  "next": {
+    "author": null,
+    "slides": [
+      {
+        "label": "neu",
+        "sldId": 256,
+        "part": "ppt/slides/slide1.xml",
+        "hidden": false,
+        "title": "Executive Summary",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      },
+      {
+        "label": "kickoff",
+        "sldId": 257,
+        "part": "ppt/slides/slide2.xml",
+        "hidden": false,
+        "title": "Projekt Atlas",
+        "layoutName": "TITLE",
+        "section": null
+      },
+      {
+        "label": "agenda",
+        "sldId": 258,
+        "part": "ppt/slides/slide3.xml",
+        "hidden": false,
+        "title": "Agenda",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      },
+      {
+        "label": "ziele",
+        "sldId": 259,
+        "part": "ppt/slides/slide4.xml",
+        "hidden": false,
+        "title": "Ziele 2027",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      },
+      {
+        "label": "zeitplan",
+        "sldId": 260,
+        "part": "ppt/slides/slide5.xml",
+        "hidden": false,
+        "title": "Zeitplan",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      },
+      {
+        "label": "budget",
+        "sldId": 261,
+        "part": "ppt/slides/slide6.xml",
+        "hidden": false,
+        "title": "Budget",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      }
+    ],
+    "sections": [],
+    "comments": []
+  }
+}

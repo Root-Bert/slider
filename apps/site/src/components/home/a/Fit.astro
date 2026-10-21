@@ -1,0 +1,41 @@
+---
+/**
+ * A fixed-size design stage (drawn at its Figma size) that scales down to the available width,
+ * so wide product compositions keep their layout on small screens. Never scales up.
+ */
+interface Props {
+  width: number;
+  height: number;
+  class?: string;
+}
+
+const { width, height, class: className } = Astro.props;
+---
+
+<div
+  class:list={['home-fit relative w-full', className]}
+  style={`max-width: ${width}px; aspect-ratio: ${width} / ${height}`}
+  data-fit={width}
+>
+  <div
+    class="absolute top-0 left-0 origin-top-left"
+    style={`width: ${width}px; height: ${height}px; scale: var(--fit, 1)`}
+  >
+    <slot />
+  </div>
+</div>
+
+<script>
+  const stages = document.querySelectorAll<HTMLElement>('[data-fit]');
+  const fit = (el: HTMLElement) => {
+    const design = Number(el.dataset.fit);
+    el.style.setProperty('--fit', String(Math.min(1, el.clientWidth / design)));
+  };
+  const observer = new ResizeObserver((entries) => {
+    for (const entry of entries) fit(entry.target as HTMLElement);
+  });
+  stages.forEach((stage) => {
+    fit(stage);
+    observer.observe(stage);
+  });
+</script>

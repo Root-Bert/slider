@@ -1,0 +1,356 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1791317869273,
+      "tag": "0000_init",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791364128074,
+      "tag": "0001_link_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791413023339,
+      "tag": "0002_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791468007174,
+      "tag": "0003_media",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791468371689,
+      "tag": "0004_workspaces",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791472550676,
+      "tag": "0005_plans",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791474850670,
+      "tag": "0006_passkeys",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791478093343,
+      "tag": "0007_slide_renderer",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791488795654,
+      "tag": "0008_instance_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791494073067,
+      "tag": "0009_office_failure",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791498469414,
+      "tag": "0010_slide_guides",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791505225656,
+      "tag": "0011_deleted_pptx_comments",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791540370823,
+      "tag": "0012_avatar_seed",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791541085514,
+      "tag": "0013_drop_avatar_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791541244925,
+      "tag": "0014_file_author",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1791543183917,
+      "tag": "0015_ms_subject",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1792003297115,
+      "tag": "0016_drop_avatar_seed",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792003923157,
+      "tag": "0017_drop_guests",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792004559088,
+      "tag": "0018_guest_authors_to_accounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792006991225,
+      "tag": "0019_owner_to_admin",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792098674216,
+      "tag": "0020_drop_email_login",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792100330427,
+      "tag": "0021_workspace_logo",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1792100844444,
+      "tag": "0022_media_image",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1792105543503,
+      "tag": "0023_deck_folders",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792151304971,
+      "tag": "0024_merge_close_colors",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792154543175,
+      "tag": "0025_drop_transcripts",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1792187677376,
+      "tag": "0026_slide_content_hash",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1792188025895,
+      "tag": "0027_slide_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1792223990357,
+      "tag": "0028_import_attempts_url_ref",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1792229231419,
+      "tag": "0029_sync_fingerprints_and_tombstones",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1792259837368,
+      "tag": "0030_deck_source_drive",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792259901150,
+      "tag": "0031_older_version_files",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792265505821,
+      "tag": "0032_microsoft_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792276575290,
+      "tag": "0033_unused_accounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792277891090,
+      "tag": "0034_unused_decks",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1792280806143,
+      "tag": "0035_blob_deletions",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792281916925,
+      "tag": "0036_workspace_domains",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792344025053,
+      "tag": "0037_nextcloud_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792349008923,
+      "tag": "0038_workspace_removals",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1792350973148,
+      "tag": "0039_deck_linked_by",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1792354800770,
+      "tag": "0040_workspace_removals_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1792403414352,
+      "tag": "0041_billing",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1792427857502,
+      "tag": "0042_google_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1792438329127,
+      "tag": "0043_source_contributors",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1792506575038,
+      "tag": "0044_slide_source_ids",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1792510231567,
+      "tag": "0045_workspace_sso",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1792522306685,
+      "tag": "0046_deck_revision_folder_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1792525277260,
+      "tag": "0047_deck_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1792527809809,
+      "tag": "0048_revision_reserved_bytes",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1792539960429,
+      "tag": "0049_drop_deck_source_drive",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+---
+/**
+ * The exact starfield of a Figma section: dots at their design positions (px in a 1440-wide
+ * frame), stretched with the section. Sparkles are the four-point stars from the Site Kit.
+ */
+interface Props {
+  /** [x, y, size] in design px. */
+  stars: readonly (readonly [number, number, number])[];
+  /** Design frame height in px (width is always 1440). */
+  height: number;
+  sparkles?: readonly (readonly [number, number, number])[];
+  class?: string;
+}
+
+const { stars, height, sparkles = [], class: className } = Astro.props;
+const pct = (v: number, of: number) => `${((v / of) * 100).toFixed(3)}%`;
+---
+
+<div class:list={['pointer-events-none absolute inset-0 -z-10 select-none', className]} aria-hidden="true">
+  {
+    stars.map(([x, y, size]) => (
+      <span
+        class="absolute rounded-full bg-white"
+        style={`left: ${pct(x, 1440)}; top: ${pct(y, height)}; width: ${size}px; height: ${size}px; opacity: ${size >= 3 ? 0.9 : size >= 2 ? 0.7 : 0.45}`}
+      />
+    ))
+  }
+  {
+    sparkles.map(([x, y, size]) => (
+      <svg
+        class="absolute text-white"
+        style={`left: ${pct(x, 1440)}; top: ${pct(y, height)}; width: ${size}px; height: ${size}px`}
+        viewBox="0 0 10 10"
+      >
+        <path d="M5 0 L5.9 4.1 L10 5 L5.9 5.9 L5 10 L4.1 5.9 L0 5 L4.1 4.1 Z" fill="currentColor" />
+      </svg>
+    ))
+  }
+</div>

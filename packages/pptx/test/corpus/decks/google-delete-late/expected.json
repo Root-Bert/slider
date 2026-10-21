@@ -1,0 +1,152 @@
+{
+  "case": "google-delete-late",
+  "tags": ["producer", "synthetic", "structure"],
+  "synthetic": true,
+  "matches": [
+    {
+      "prev": "kickoff",
+      "next": "kickoff",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "content",
+      "previousPosition": 0,
+      "position": 0
+    },
+    {
+      "prev": "agenda",
+      "next": "agenda",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "content",
+      "previousPosition": 1,
+      "position": 1
+    },
+    {
+      "prev": "ziele",
+      "next": "ziele",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "content",
+      "previousPosition": 2,
+      "position": 2
+    },
+    {
+      "prev": "budget",
+      "next": "budget",
+      "status": "unchanged",
+      "moved": false,
+      "confidence": 1,
+      "matchedBy": "content",
+      "previousPosition": 4,
+      "position": 3
+    },
+    {
+      "prev": "zeitplan",
+      "next": null,
+      "status": "deleted",
+      "moved": false,
+      "confidence": 0.79,
+      "matchedBy": null,
+      "previousPosition": 3,
+      "position": null
+    }
+  ],
+  "prev": {
+    "author": null,
+    "slides": [
+      {
+        "label": "kickoff",
+        "sldId": 256,
+        "part": "ppt/slides/slide1.xml",
+        "hidden": false,
+        "title": "Projekt Atlas",
+        "layoutName": "TITLE",
+        "section": null
+      },
+      {
+        "label": "agenda",
+        "sldId": 257,
+        "part": "ppt/slides/slide2.xml",
+        "hidden": false,
+        "title": "Agenda",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      },
+      {
+        "label": "ziele",
+        "sldId": 258,
+        "part": "ppt/slides/slide3.xml",
+        "hidden": false,
+        "title": "Ziele 2027",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      },
+      {
+        "label": "zeitplan",
+        "sldId": 259,
+        "part": "ppt/slides/slide4.xml",
+        "hidden": false,
+        "title": "Zeitplan",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      },
+      {
+        "label": "budget",
+        "sldId": 260,
+        "part": "ppt/slides/slide5.xml",
+        "hidden": false,
+        "title": "Budget",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      }
+    ],
+    "sections": [],
+    "comments": []
+  },
+  "next": {
+    "author": null,
+    "slides": [
+      {
+        "label": "kickoff",
+        "sldId": 256,
+        "part": "ppt/slides/slide1.xml",
+        "hidden": false,
+        "title": "Projekt Atlas",
+        "layoutName": "TITLE",
+        "section": null
+      },
+      {
+        "label": "agenda",
+        "sldId": 257,
+        "part": "ppt/slides/slide2.xml",
+        "hidden": false,
+        "title": "Agenda",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      },
+      {
+        "label": "ziele",
+        "sldId": 258,
+        "part": "ppt/slides/slide3.xml",
+        "hidden": false,
+        "title": "Ziele 2027",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      },
+      {
+        "label": "budget",
+        "sldId": 259,
+        "part": "ppt/slides/slide4.xml",
+        "hidden": false,
+        "title": "Budget",
+        "layoutName": "TITLE_AND_BODY",
+        "section": null
+      }
+    ],
+    "sections": [],
+    "comments": []
+  }
+}

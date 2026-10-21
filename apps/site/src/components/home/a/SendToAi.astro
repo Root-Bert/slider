@@ -1,0 +1,21 @@
+---
+/**
+ * Site / Send to AI: a thread's action on the AI story. Idle = still typing, Pressed = just
+ * sent, Sent = change applied.
+ */
+interface Props {
+  state?: 'idle' | 'pressed' | 'sent';
+}
+
+const { state = 'idle' } = Astro.props;
+const look = {
+  idle: 'bg-white/6 text-white/40 ring-1 ring-inset ring-white/12',
+  pressed:
+    'bg-white text-black ring-1 ring-inset ring-white/30 shadow-[0_0_11px_rgb(255_255_255/0.6)]',
+  sent: 'bg-white/10 text-white ring-1 ring-inset ring-white/40 shadow-[0_0_12px_rgb(255_255_255/0.2)]',
+}[state];
+---
+
+<span class:list={['inline-flex items-center rounded-full px-3 py-1.5 text-xs font-medium whitespace-pre', look]}>
+  {state === 'sent' ? '✓  Applied by AI' : '✦  Send to AI'}
+</span>

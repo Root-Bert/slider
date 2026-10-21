@@ -1,0 +1,122 @@
+---
+import DeckChrome from './DeckChrome.astro';
+
+/**
+ * The discussed slide of the motion section at its native 960 × 540: the revenue slide of a
+ * quarterly review – action title, three key figures, ARR by quarter with Q4 (plan) in blue.
+ * `grown` (0–1) is how far the bars have grown, `title` the title's opacity. `live` adds the
+ * looping step animation (see MotionSlides.astro): title rises, bars and their values grow, Q4
+ * glows.
+ */
+interface Props {
+  grown?: number;
+  title?: number;
+  live?: boolean;
+}
+
+const { grown = 1, title = 1, live = false } = Astro.props;
+// ARR in EUR M; 10 px per million on a 300 px plot.
+const bars = [
+  { q: 'Q1', v: 12 },
+  { q: 'Q2', v: 17 },
+  { q: 'Q3', v: 21.5 },
+  { q: 'Q4', v: 29, plan: true },
+].map((bar, i) => ({ ...bar, x: 572 + i * 86, h: bar.v * 10 }));
+const BASE = 440;
+const kpis = [
+  ['€29.0 M', 'ARR Q4 (plan)', '▲ 35 % QoQ'],
+  ['118 %', 'Net revenue retention', '▲ 4 pts'],
+  ['2.4×', 'Q4 vs. Q1', 'on plan'],
+] as const;
+---
+
+<DeckChrome eyebrow="REVENUE" class={live ? 'ms-live' : undefined}>
+  <!-- The title's trail is blurred with a text shadow, not filter: blur – Safari streaks a looping blurred layer across the page. -->
+  {
+    live && (
+      <p class="ms-trail absolute top-[122px] left-12 text-[34px] leading-10 font-bold tracking-[-0.02em] whitespace-nowrap text-transparent opacity-14" style="text-shadow: 0 0 4px rgb(15 23 42)" aria-hidden="true">
+        Recurring revenue grew
+        <br />
+        in every quarter.
+      </p>
+    )
+  }
+  <p class="ms-title absolute top-[100px] left-12 text-[34px] leading-10 font-bold tracking-[-0.02em] whitespace-nowrap" style={`opacity: ${title}`}>
+    Recurring revenue grew<br />in every quarter.
+  </p>
+  <p class="absolute top-[196px] left-12 w-[400px] text-[15px] leading-[22px] text-[#475569]">
+    Q4 is planned at €29.0 M – 2.4× the first quarter, carried by a stronger product mix.
+  </p>
+  {
+    kpis.map(([value, label, delta], i) => (
+      <div class="absolute top-[300px] flex h-[120px] w-[128px] flex-col rounded-[6px] bg-[#f1f5f9] p-3.5" style={`left: ${48 + i * 138}px`}>
+        <span class="text-[11px] leading-4 text-[#64748b]">{label}</span>
+        <span class="mt-auto text-[24px] leading-8 font-bold tracking-[-0.02em] whitespace-nowrap tabular-nums">{value}</span>
+        <span class="text-[11px] font-medium text-[#15803d]">{delta}</span>
+      </div>
+    ))
+  }
+
+  <!-- ARR by quarter -->
+  <p class="absolute top-[100px] left-[552px] text-[11px] font-semibold">ARR by quarter, EUR M</p>
+  <p class="absolute top-[100px] right-12 flex items-center gap-3 text-[10px] text-[#64748b]">
+    <span class="flex items-center gap-1"><span class="size-2 bg-[#1e293b]"></span>Actual</span>
+    <span class="flex items-center gap-1"><span class="size-2 bg-accent-blue"></span>Plan</span>
+  </p>
+  {
+    [0, 10, 20, 30].map((t) => (
+      <>
+        <span class="absolute left-[552px] h-px w-[360px] bg-[#e2e8f0]" style={`top: ${BASE - t * 10}px`} />
+        <span class="absolute left-[524px] w-5 text-right text-[10px] text-[#94a3b8] tabular-nums" style={`top: ${BASE - t * 10 - 7}px`}>
+          {t}
+        </span>
+      </>
+    ))
+  }
+  {
+    live &&
+      bars.slice(0, 3).map((bar) => (
+        <div
+          class="ms-trail absolute h-[46px] w-14 rounded-t-[3px] bg-linear-to-b from-[rgb(30_41_59/0)] to-[rgb(30_41_59/0.2)] opacity-45"
+          style={`left: ${bar.x}px; top: ${BASE - bar.h - 46}px`}
+          aria-hidden="true"
+        />
+      ))
+  }
+  {
+    bars.map((bar, i) => (
+      <>
+        <div
+          class:list={['ms-bar absolute w-14 origin-bottom rounded-t-[3px]', bar.plan ? 'ms-q4 bg-accent-blue' : 'bg-[#1e293b]']}
+          style={`left: ${bar.x}px; top: ${BASE - bar.h}px; height: ${bar.h}px; scale: 1 ${grown}; --i: ${i}`}
+        />
+        <span
+          class:list={['ms-val absolute w-14 text-center text-xs font-semibold tabular-nums', bar.plan && 'text-accent-blue']}
+          style={`left: ${bar.x}px; top: ${BASE - bar.h - 20}px; opacity: ${grown}; --i: ${i}`}
+        >
+          {bar.v.toFixed(1)}
+        </span>
+        <span class="absolute w-14 text-center text-xs font-medium text-[#64748b]" style={`left: ${bar.x}px; top: ${BASE + 8}px`}>
+          {bar.q}
+        </span>
+      </>
+    ))
+  }
+  <div class="absolute left-[552px] h-0.5 w-[360px] bg-[#cbd5e1]" style={`top: ${BASE}px`}></div>
+  {
+    live && (
+      <div
+        class="absolute rounded-[5px] border-[1.5px] border-dashed border-accent-blue"
+        style={`left: ${bars[3]!.x - 8}px; top: ${BASE - bars[3]!.h - 28}px; width: ${56 + 16}px; height: ${bars[3]!.h + 28}px`}
+      />
+    )
+  }
+  {
+    live && (
+      <div class="absolute top-[68px] right-12 flex items-center gap-2 rounded-full bg-[rgb(0_0_0/0.85)] px-3 py-[5px]">
+        <span class="size-[7px] rounded-full bg-accent-blue shadow-[0_0_8px_var(--color-accent-blue)]" />
+        <span class="ms-step text-xs font-medium text-fg tabular-nums">Step 3 / 3</span>
+      </div>
+    )
+  }
+</DeckChrome>

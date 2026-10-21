@@ -1,0 +1,90 @@
+name: Deploy website
+
+# The product website (apps/site) ships on its own, apart from Slider's releases: every push to main
+# that touches it is checked (astro check, build) and deployed right away. The job copies the
+# checkout to /opt/slider-site on the server and runs deploy/deploy-website.sh there, which swaps
+# only the website container; Slider keeps running on its release. Same secrets as deploy.yml.
+# Runs only in the development repository (Root-Bert/slider-dev), never in the public one or a fork.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/site/**
+      # The site renders the app's components and styles.
+      - apps/web/src/**
+      - packages/shared/**
+      - deploy/website/**
+      - deploy/deploy-website.sh
+      - package.json
+      - bun.lock
+      - .github/workflows/deploy-website.yml
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or commit to deploy
+        required: true
+        default: main
+
+permissions:
+  contents: read
+
+# Its own queue (a newer push replaces one still waiting, none is cancelled halfway); on the server
+# a lock keeps it from running at the same time as a Slider deploy.
+concurrency:
+  group: deploy-website
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check the site
+    if: github.repository == 'Root-Bert/slider-dev'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+        working-directory: apps/site
+      - run: bun run build
+        working-directory: apps/site
+
+  deploy:
+    name: Deploy to the server
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - name: Set up SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf 'Host server\n  HostName %s\n  User root\n  IdentityFile ~/.ssh/deploy\n  IdentitiesOnly yes\n  StrictHostKeyChecking yes\n  ServerAliveInterval 30\n' \
+            "$DEPLOY_HOST" > ~/.ssh/config
+
+      # Its own directory: Slider's checkout in /opt/slider stays on its release.
+      - name: Copy the site
+        run: |
+          rsync -az --delete --exclude=/.git/ --exclude=node_modules/ ./ server:/opt/slider-site/
+
+      - name: Build and swap
+        run: ssh server /opt/slider-site/deploy/deploy-website.sh

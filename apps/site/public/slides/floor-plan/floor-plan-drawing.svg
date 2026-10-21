@@ -1,0 +1,48 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="520" height="350" viewBox="0 0 520 350" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Floor plan drawing">
+<path id="Vector" d="M510 10H10V330H510V10Z" fill="white"/>
+<path id="Vector_2" d="M390 150H10V330H390V150Z" fill="#DCEBFA"/>
+<path id="Vector_3" d="M230 10H10V110H230V10Z" fill="#FDE7D3"/>
+<path id="Vector_4" d="M430 10H330V110H430V10Z" fill="#FDE7D3"/>
+<g id="Group">
+<path id="Vector_5" d="M120 10V110" stroke-width="3" stroke="#1C2B39"/>
+<path id="Vector_6" d="M230 10V110" stroke-width="3" stroke="#1C2B39"/>
+<path id="Vector_7" d="M330 10V110" stroke-width="3" stroke="#1C2B39"/>
+<path id="Vector_8" d="M430 10V110" stroke-width="3" stroke="#1C2B39"/>
+<path id="Vector_9" d="M10 110H95M135 110H205M245 110H330H345M385 110H460M490 110H510" stroke-width="3" stroke="#1C2B39"/>
+<path id="Vector_10" d="M10 150H180M220 150H390H510" stroke-width="3" stroke="#1C2B39"/>
+<path id="Vector_11" d="M390 150V190M390 230V330" stroke-width="3" stroke="#1C2B39"/>
+<path id="Vector_12" d="M390 220H510" stroke-width="3" stroke="#1C2B39"/>
+</g>
+<path id="Vector_13" d="M10 10H510V330H10V10Z" stroke-width="7" stroke="#1C2B39"/>
+<g id="Group_2">
+<path id="Vector_14" d="M40 330H100" stroke-width="5" stroke="white"/>
+<path id="Vector_15" d="M150 330H210" stroke-width="5" stroke="white"/>
+<path id="Vector_16" d="M260 330H320" stroke-width="5" stroke="white"/>
+<path id="Vector_17" d="M510 240V300" stroke-width="5" stroke="white"/>
+<path id="Vector_18" d="M40 10H90" stroke-width="5" stroke="white"/>
+<path id="Vector_19" d="M450 10H490" stroke-width="5" stroke="white"/>
+</g>
+<g id="Group_3">
+<path id="Vector_20" d="M40 327H100M40 333H100" stroke="#1C2B39"/>
+<path id="Vector_21" d="M150 327H210M150 333H210" stroke="#1C2B39"/>
+<path id="Vector_22" d="M260 327H320M260 333H320" stroke="#1C2B39"/>
+<path id="Vector_23" d="M507 240V300M513 240V300" stroke="#1C2B39"/>
+<path id="Vector_24" d="M40 7H90M40 13H90" stroke="#1C2B39"/>
+<path id="Vector_25" d="M450 7H490M450 13H490" stroke="#1C2B39"/>
+</g>
+<g id="Group_4">
+<path id="Vector_26" d="M95 110C95 99.3913 99.2143 89.2172 106.716 81.7157C114.217 74.2143 124.391 70 135 70" stroke="#1C2B39"/>
+<path id="Vector_27" d="M95 110H135" stroke="#1C2B39"/>
+<path id="Vector_28" d="M205 110C205 99.3913 200.786 89.2172 193.284 81.7157C185.783 74.2143 175.609 70 165 70" stroke="#1C2B39"/>
+<path id="Vector_29" d="M345 110C345 99.3913 349.214 89.2172 356.716 81.7157C364.217 74.2143 374.391 70 385 70" stroke="#1C2B39"/>
+<path id="Vector_30" d="M180 150C180 160.609 184.214 170.783 191.716 178.284C199.217 185.786 209.391 190 220 190" stroke="#1C2B39"/>
+<path id="Vector_31" d="M390 190C400.609 190 410.783 194.214 418.284 201.716C425.786 209.217 430 219.391 430 230" stroke="#1C2B39"/>
+<path id="Vector_32" d="M460 110C460 102.044 463.161 94.4129 468.787 88.7868C474.413 83.1607 482.044 80 490 80" stroke="#1C2B39"/>
+</g>
+<g id="Group_5">
+<path id="Vector_33" d="M245 20H315M245 32H315M245 44H315M245 56H315M245 68H315M245 80H315M245 92H315" stroke-width="1.2" stroke="#1C2B39"/>
+</g>
+<path id="Vector_34" d="M338.275 14.6528C339.093 14.2354 340.019 14 341 14H344M335.653 17.2755C335.235 18.093 335 19.019 335 20V23M335 27V33M335 37V43M335 47V53M335 57V63M335 67V73M335 77V83M335 87V93M335 97V100C335 100.981 335.235 101.907 335.653 102.725M338.275 105.347C339.093 105.765 340.019 106 341 106H344M348 106H354M358 106H364M368 106H374M378 106H384M388 106H394M398 106H404M408 106H414M418 106H421C421.981 106 422.907 105.765 423.725 105.347M426.347 102.725C426.765 101.907 427 100.981 427 100V97M427 93V87M427 83V77M427 73V67M427 63V57M427 53V47M427 43V37M427 33V27M427 23V20C427 19.019 426.765 18.093 426.347 17.2755M423.725 14.6528C422.907 14.2354 421.981 14 421 14H418M414 14H408M404 14H398M394 14H388M384 14H378M374 14H368M364 14H358M354 14H348" stroke-width="2" stroke="#DC2626"/>
+</g>
+</svg>

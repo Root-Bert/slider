@@ -1,0 +1,253 @@
+---
+import { Avatar } from '@/ui/Avatar';
+import { render } from 'astro:content';
+import BlogOrbit from '~/components/blog/BlogOrbit.astro';
+import Category from '~/components/blog/Category.astro';
+import Cover from '~/components/blog/Cover.astro';
+import { ACCENT_CSS, FOUNDER, formatDate, publishedPosts } from '~/components/blog/posts';
+import Button from '~/components/Button.astro';
+import Starfield from '~/components/Starfield.astro';
+import Base from '~/layouts/Base.astro';
+import { APP_URL, page } from '~/lib/links';
+
+export async function getStaticPaths() {
+  const posts = await publishedPosts();
+  return posts.map((post) => ({ params: { slug: post.id }, props: { post, posts } }));
+}
+
+const { post, posts } = Astro.props;
+const { data } = post;
+const { Content, headings } = await render(post);
+const accent = ACCENT_CSS[data.accent];
+const related = data.related
+  .map((slug) => posts.find((other) => other.id === slug))
+  .filter((other) => other !== undefined);
+const toc = [
+  ...(data.shortAnswer ? [{ slug: 'short-answer', text: 'Short answer' }] : []),
+  ...headings.filter((heading) => heading.depth === 2),
+  ...(data.faq.length > 0 ? [{ slug: 'faq', text: 'FAQ' }] : []),
+];
+const meta = [formatDate(data.date), data.readingTime, data.updated && `Updated ${formatDate(data.updated)}`]
+  .filter(Boolean)
+  .join(' | ');
+const tagPlural = { Comparison: 'Comparisons', 'Customer story': 'Customer stories', Update: 'Updates', Guide: 'Guides' }[data.tag];
+---
+
+<Base current="blog" title={data.title} description={data.description}>
+  <section class="relative isolate flex flex-col items-center px-4 pt-16 pb-12 md:px-16 md:pt-24" data-section>
+    <BlogOrbit corner="left" />
+    <Starfield src="blog/article-starfield.svg" />
+    <div class="flex w-full max-w-[880px] flex-col items-start gap-5">
+      <p class="text-xs tabular-nums whitespace-pre text-fg-subtle">
+        <a href={page('blog')} class="hover:text-fg">Blog</a>  /  {tagPlural}
+      </p>
+      <Category tag={data.tag} accent={data.accent} />
+      <h1 class="text-[36px] leading-[1.1] font-bold tracking-[-0.03em] text-fg md:text-[56px]">
+        {data.title.split(' ').map((word, i) => <span class="inline-block" data-reveal style={`--i: ${i * 0.5}`}>{word}&nbsp;</span>)}
+      </h1>
+      <div class="flex flex-wrap items-center gap-3" data-reveal style="--i: 8">
+        <Avatar author={FOUNDER} size={24} nativeTitle={false} />
+        <span class="text-sm font-medium whitespace-pre text-fg">{data.author} | {data.role}</span>
+        <span class="text-xs tabular-nums whitespace-pre-wrap text-fg-subtle">{meta}</span>
+      </div>
+      <div class="w-full overflow-hidden rounded-[20px]" data-reveal style="--i: 10">
+        <Cover post={post} size="wide" class="h-[240px]! md:h-[360px]!" />
+      </div>
+    </div>
+  </section>
+
+  <section class="flex justify-center gap-14 px-4 pt-6 pb-12 md:px-16" data-section>
+    <nav aria-label="On this page" class="sticky top-6 hidden w-[200px] shrink-0 flex-col gap-3 self-start pt-2 xl:flex" data-toc>
+      <p class="text-caption font-medium tracking-wide uppercase text-fg-faint">ON THIS PAGE</p>
+      {
+        toc.map((item) => (
+          <a
+            href={`#${item.slug}`}
+            data-toc-link={item.slug}
+            class="toc-link border-l-2 border-transparent py-0.5 pl-2.5 text-sm text-fg-subtle transition-colors hover:text-fg"
+            style={`--toc: ${accent}`}
+          >
+            {item.text}
+          </a>
+        ))
+      }
+    </nav>
+
+    <article class="flex w-full max-w-[680px] min-w-0 flex-col gap-7">
+      {
+        data.shortAnswer && (
+          <div
+            id="short-answer"
+            class="flex scroll-mt-6 flex-col gap-3 rounded-panel border-l-3 bg-glass px-7 py-6"
+            style={`border-color: ${accent}`}
+            data-reveal
+          >
+            <p class="text-caption font-medium tracking-wide uppercase" style={`color: ${accent}`}>SHORT ANSWER</p>
+            <p class="text-[17px] leading-[1.65] text-fg">{data.shortAnswer.text}</p>
+            <ul class="flex flex-col gap-3">
+              {data.shortAnswer.facts.map((fact) => (
+                <li class="flex gap-2.5 text-[15px] text-fg-muted">
+                  <span class="text-sm font-bold text-success" aria-hidden="true">✓</span>
+                  {fact}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )
+      }
+
+      <div class="article-body" data-reveal style="--i: 2">
+        <Content />
+      </div>
+
+      {
+        data.faq.length > 0 && (
+          <div class="flex flex-col gap-7">
+            <h2 id="faq" class="scroll-mt-6 text-[30px] leading-[1.2] font-bold tracking-[-0.02em] text-fg">Frequently asked questions</h2>
+            <div class="overflow-hidden rounded-panel ring-hairline">
+              {data.faq.map((item, i) => (
+                <details class="faq group border-hairline px-6 py-5 [&:not(:first-child)]:border-t" open={i === 0}>
+                  <summary class="flex cursor-pointer list-none items-center gap-3 text-base font-semibold text-fg [&::-webkit-details-marker]:hidden">
+                    <span class="flex-1">{item.q}</span>
+                    <span class="text-lg font-normal text-fg-subtle group-open:hidden" aria-hidden="true">+</span>
+                    <span class="hidden text-lg font-normal text-fg-subtle group-open:inline" aria-hidden="true">–</span>
+                  </summary>
+                  <p class="mt-2.5 text-[15px] leading-[1.65] text-fg-muted">{item.a}</p>
+                </details>
+              ))}
+            </div>
+          </div>
+        )
+      }
+
+      <div class="flex items-center gap-4 rounded-panel bg-glass py-5 pr-6 pl-5 ring-hairline">
+        <Avatar author={FOUNDER} size={24} nativeTitle={false} />
+        <div class="flex flex-col gap-1">
+          <p class="text-[15px] font-semibold text-fg">Written by {data.author}</p>
+          <p class="text-sm text-fg-subtle">Founder of Slider. Builds tools that help teams get their ideas across.</p>
+        </div>
+      </div>
+    </article>
+
+    <aside
+      class="sticky top-6 hidden w-[240px] shrink-0 flex-col gap-3.5 self-start rounded-panel bg-glass p-6 shadow-[0_0_40px_rgb(255_255_255/0.06)] ring-hairline-strong lg:flex"
+      data-reveal
+      style="--i: 3"
+    >
+      <p class="text-[17px] leading-[1.3] font-semibold text-fg">Review your next deck in Slider</p>
+      <p class="text-sm leading-[1.5] text-fg-subtle">Free for small teams. No credit card.</p>
+      <Button href={`${APP_URL}/`} size="md" class="w-full">Start for free</Button>
+    </aside>
+  </section>
+
+  {
+    related.length > 0 && (
+      <section class="relative isolate flex flex-col gap-5 px-4 pt-12 pb-4 md:px-16" data-section>
+        <Starfield src="blog/related-starfield.svg" />
+        <h2 class="text-2xl font-bold tracking-[-0.01em] text-fg">Keep reading</h2>
+        <div class="grid gap-4 md:grid-cols-3">
+          {related.map((other, i) => (
+            <a
+              href={page(`blog/${other.id}`)}
+              class="flex flex-col items-start gap-3 rounded-panel bg-glass p-6 ring-hairline transition-colors hover:bg-glass-hover"
+              data-reveal
+              style={`--i: ${i}`}
+            >
+              <Category tag={other.data.tag} accent={other.data.accent} />
+              <p class="text-lg leading-[1.3] font-semibold text-fg">{other.data.title}</p>
+            </a>
+          ))}
+        </div>
+      </section>
+    )
+  }
+</Base>
+
+<style>
+  .toc-link[aria-current='true'] {
+    border-color: var(--toc);
+    color: var(--color-fg);
+  }
+
+  /* Markdown body: paragraphs, h2s and the comparison table in the article look. */
+  .article-body {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+  .article-body :global(p) {
+    font-size: 17px;
+    line-height: 1.7;
+    color: var(--color-fg-muted);
+  }
+  .article-body :global(h2) {
+    scroll-margin-top: 24px;
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    color: var(--color-fg);
+  }
+  .article-body :global(table) {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    overflow: hidden;
+    border-radius: 16px;
+    box-shadow: inset 0 0 0 1px var(--color-hairline);
+    font-size: 15px;
+  }
+  .article-body :global(th) {
+    background: var(--color-surface-2);
+    padding: 14px 20px;
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-fg-subtle);
+  }
+  .article-body :global(td) {
+    padding: 14px 20px;
+    color: var(--color-fg);
+  }
+  .article-body :global(td:first-child) {
+    font-weight: 500;
+  }
+  .article-body :global(td:nth-child(2)) {
+    color: var(--color-fg-subtle);
+  }
+  .article-body :global(tbody tr:nth-child(odd)) {
+    background: var(--color-glass);
+  }
+  .article-body :global(.ok) {
+    color: var(--color-success);
+  }
+  @media (max-width: 640px) {
+    .article-body :global(th),
+    .article-body :global(td) {
+      padding: 12px;
+    }
+  }
+</style>
+
+<script>
+  // Table of contents: mark the section being read.
+  const links = [...document.querySelectorAll<HTMLAnchorElement>('[data-toc-link]')];
+  const targets = links
+    .map((link) => document.getElementById(link.dataset.tocLink ?? ''))
+    .filter((el): el is HTMLElement => el !== null);
+  if (links.length > 0 && 'IntersectionObserver' in window) {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          for (const link of links) {
+            link.setAttribute('aria-current', String(link.dataset.tocLink === entry.target.id));
+          }
+        }
+      },
+      { rootMargin: '0px 0px -70% 0px' },
+    );
+    targets.forEach((target) => observer.observe(target));
+  }
+</script>

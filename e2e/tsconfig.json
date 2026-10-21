@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    // Node for the specs, DOM for `page.evaluate` callbacks.
+    "lib": ["ES2023", "DOM"],
+    "types": ["node"]
+  },
+  "include": ["**/*.ts"],
+  "exclude": [".results", ".report", ".shots", ".data"]
+}

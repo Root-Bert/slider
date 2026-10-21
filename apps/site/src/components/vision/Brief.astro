@@ -1,0 +1,119 @@
+---
+import { asset } from '~/lib/links';
+import Chapter01 from './Chapter01.astro';
+import Chapter02 from './Chapter02.astro';
+import Chapter03 from './Chapter03.astro';
+import Chapter04 from './Chapter04.astro';
+import Chapter05 from './Chapter05.astro';
+import Chapter06 from './Chapter06.astro';
+import Chapter07 from './Chapter07.astro';
+import Chapter08 from './Chapter08.astro';
+
+/**
+ * The founder's brief: eight chapters strung on one sage thread that starts at "Build" in the
+ * hero and ends in the last chapter's chain. Starfield and a manifest orbit sit behind it.
+ * Vertical overflow is clipped so the thread (drawn by chapter 08) starts at the top edge.
+ */
+const cx = 420;
+const cy = 420;
+/** Left half of a circle around the orbit centre (Figma arcs π/2 → 3π/2). */
+const half = (r: number) => `M ${cx} ${cy - r} A ${r} ${r} 0 0 0 ${cx} ${cy + r}`;
+const point = (r: number, a: number) => `${cx + r * Math.cos(a)} ${cy + r * Math.sin(a)}`;
+---
+
+<div class="relative isolate mx-auto max-w-[1440px] [overflow-y:clip]" data-brief>
+  <img
+    src={asset('vision/brief-starfield.svg')}
+    alt=""
+    aria-hidden="true"
+    class="pointer-events-none absolute top-0 left-0 -z-10 h-full w-full object-cover object-top"
+  />
+  <!-- Manifest orbit, bottom right behind the last chapter. -->
+  <svg
+    class="pointer-events-none absolute bottom-[-63px] left-[1100px] -z-10 hidden lg:block"
+    width="840"
+    height="840"
+    viewBox="0 0 840 840"
+    fill="none"
+    aria-hidden="true"
+  >
+    <path d={half(180)} stroke="white" stroke-opacity="0.08" />
+    <path d={half(260)} stroke="white" stroke-opacity="0.08" stroke-dasharray="2 7" />
+    <path d={half(340)} stroke="white" stroke-opacity="0.08" />
+    <path d={half(420)} stroke="white" stroke-opacity="0.08" stroke-dasharray="2 7" />
+    <path d={`M ${point(340, 2.70177)} A 340 340 0 0 1 ${point(340, 3.39292)}`} stroke="var(--color-sage)" stroke-width="1.5" />
+    <circle cx={point(340, 3.39292).split(' ')[0]} cy={point(340, 3.39292).split(' ')[1]} r="4.5" fill="var(--color-sage)" style="filter: drop-shadow(0 0 5px rgb(143 203 155 / 0.6))" />
+  </svg>
+
+  <div class="flex flex-col gap-24 pt-10 pb-16 lg:gap-28">
+    <Chapter01 />
+    <Chapter02 />
+    <Chapter03 />
+    <Chapter04 />
+    <Chapter05 />
+    <Chapter06 />
+    <Chapter07 />
+    <Chapter08 />
+  </div>
+</div>
+
+<script>
+  /*
+   * The thread draws on: it waits until the hero's connector has reached the bottom of the hero
+   * (that's where it continues), then grows down with the scroll position – never ahead of the
+   * reader. Without JS or with reduced motion it simply stands.
+   */
+  const brief = document.querySelector<HTMLElement>('[data-brief]');
+  const thread = document.querySelector<HTMLElement>('[data-thread]');
+  const hero = document.querySelector<HTMLElement>('.vision-hero');
+  /** The hero connector's delay + duration (Hero.astro): it ends where the thread starts. */
+  const CONNECTOR_DONE_MS = 2450;
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  if (brief && thread && hero && !reduced) {
+    const pins = brief.querySelectorAll<HTMLElement>('.vision-pin');
+    brief.classList.add('has-thread');
+    let ready = false;
+    let frame = 0;
+
+    /** Visible length from the top of the brief: down to 80 % of the viewport. */
+    const update = () => {
+      frame = 0;
+      const box = brief.getBoundingClientRect();
+      const line = thread.getBoundingClientRect();
+      const reach = ready ? Math.max(0, innerHeight * 0.8 - box.top) : 0;
+      const hidden = Math.max(0, line.height - (box.top - line.top) - reach);
+      thread.style.clipPath = `inset(0 0 ${hidden}px 0)`;
+      // Each chapter's pin pops once the thread gets there.
+      for (const pin of pins) {
+        if (pin.getBoundingClientRect().top - box.top <= reach) pin.classList.add('is-reached');
+      }
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+
+    update();
+    addEventListener('scroll', schedule, { passive: true });
+    addEventListener('resize', schedule);
+
+    const start = () => {
+      setTimeout(() => {
+        ready = true;
+        // Catch up with the reader once, smoothly; after that it follows the scroll directly.
+        thread.style.transition = 'clip-path 900ms var(--ease-symmetric)';
+        update();
+        setTimeout(() => (thread.style.transition = ''), 900);
+      }, CONNECTOR_DONE_MS);
+    };
+    if (hero.classList.contains('is-in')) start();
+    else {
+      const watch = new MutationObserver(() => {
+        if (!hero.classList.contains('is-in')) return;
+        watch.disconnect();
+        start();
+      });
+      watch.observe(hero, { attributes: true, attributeFilter: ['class'] });
+    }
+  }
+</script>

@@ -1,0 +1,123 @@
+---
+import { Avatar } from '@/ui/Avatar';
+import { Badge } from '@/ui/Badge';
+import { Icon } from '@/ui/Icon';
+import Highlight from '~/components/Highlight.astro';
+import SectionMark from '~/components/SectionMark.astro';
+import Tag from '~/components/Tag.astro';
+import Slide from '~/components/slides/Slide.astro';
+import Step from './a/Step.astro';
+import Terminal from './a/Terminal.astro';
+import { person } from '~/lib/people';
+
+/**
+ * Product | AI Feature (Slider 2.0): a resolved thread marked ready, an agent session editing the
+ * deck, the new version back in Slider – three steps joined by connectors.
+ */
+const steps = [
+  { title: 'Mark it ready', body: 'Resolve the discussion, then mark the thread Ready for AI.' },
+  {
+    title: 'Your session edits',
+    body: 'An agent connects through MCP and edits your synced presentation. Claude, ChatGPT, Mistral or Ollama.',
+  },
+  {
+    title: 'Review the result',
+    body: 'The new version lands in Slider. Changed slides are marked, nothing is hidden.',
+  },
+];
+const ai = '#fff';
+---
+
+<section class="relative mx-auto flex max-w-[1440px] flex-col items-center gap-10 px-4 pt-24 pb-4 md:px-16 lg:pt-32" data-section>
+  <div class="flex flex-col items-center gap-5 text-center">
+    <SectionMark label="Slider 2.0" accent={ai} />
+    <h2 class="text-[clamp(36px,4.6vw,56px)] leading-[1.12] font-bold tracking-[-0.03em] text-fg" data-reveal>
+      Agreed feedback,<br /><Highlight by="Carolin">applied by AI.</Highlight>
+    </h2>
+    <p class="max-w-[620px] text-[17px] leading-[1.55] text-fg-muted" data-reveal style="--i: 2">
+      Agree on changes with your team, then let the AI of your choice make them.
+    </p>
+  </div>
+
+  <div class="relative grid w-full max-w-[1312px] gap-12 lg:grid-cols-3 lg:gap-8 min-[1440px]:grid-cols-[400px_400px_400px] min-[1440px]:gap-14">
+    <!-- Connectors between the three visuals (exact only at the full 1312px width). -->
+    <svg class="pointer-events-none absolute top-[127px] left-[340px] hidden overflow-visible min-[1440px]:block" width="572" height="2" viewBox="0 0 572 2" fill="none" aria-hidden="true">
+      <!-- The glow is a wide faint stroke drawn along: a CSS filter here streaks across the page in Safari. -->
+      <path d="M0 1H116" pathLength="1" stroke={ai} stroke-opacity="0.3" stroke-width="7" data-draw style="--i: 4" />
+      <path d="M516 1H572" pathLength="1" stroke={ai} stroke-opacity="0.3" stroke-width="7" data-draw style="--i: 7" />
+      <path d="M0 1H116" pathLength="1" stroke={ai} stroke-width="2" data-draw style="--i: 4" />
+      <path d="M516 1H572" pathLength="1" stroke={ai} stroke-width="2" data-draw style="--i: 7" />
+    </svg>
+
+    <!-- Step 1: the agreed thread, marked ready. -->
+    <div class="flex flex-col gap-10">
+      <div class="relative h-[130px] lg:h-[290px]">
+        <div class="absolute top-0 left-0 flex w-[280px] flex-col gap-2 rounded-panel bg-glass px-3.5 py-3 lg:top-20 min-[1440px]:left-[60px]" data-reveal style="--i: 3">
+          <div class="flex items-center gap-2">
+            <Avatar author={person('Lara')} size={24} nativeTitle={false} />
+            <span class="text-xs font-medium text-fg">Lara</span>
+            <span class="text-caption text-fg-subtle">Slide 1 | 3 replies</span>
+            <span class="flex-1"></span>
+            <span class="flex size-7 items-center justify-center rounded-chip text-fg-muted"><Icon name="check" size={18} /></span>
+          </div>
+          <p class="text-[13px] leading-[18px] text-fg-muted">Agreed: headline on one line.</p>
+        </div>
+        <div class="absolute top-[90px] left-0 lg:top-[170px] min-[1440px]:left-[60px]" data-reveal style="--i: 4">
+          <Tag label="Ready for AI" accent="var(--color-sage)" />
+        </div>
+      </div>
+      <Step n={1} {...steps[0]!} />
+    </div>
+
+    <!-- Step 2: the agent session. -->
+    <div class="flex flex-col gap-10">
+      <div class="relative lg:h-[290px]">
+        <Terminal
+          title="agent | mcp: slider"
+          glow="255 255 255"
+          class="lg:absolute lg:inset-x-0 lg:top-10"
+          i={5}
+          lines={[
+            '> slider agent --model claude',
+            '1 thread ready: Slide 1',
+            'Editing Q3-Strategy.pptx…',
+            '✓ Headline shortened',
+            '↑ Syncing version 4',
+          ]}
+        />
+      </div>
+      <Step n={2} {...steps[1]!} />
+    </div>
+
+    <!-- Step 3: version 4, back in Slider. -->
+    <div class="flex flex-col gap-10">
+      <div class="relative lg:h-[290px]" data-reveal style="--i: 9">
+        <div class="stage-wrap relative w-full max-w-[400px] lg:top-[60px]">
+          <div class="stage absolute top-0 left-0 h-[225px] w-[400px] origin-top-left">
+            <div class="absolute -inset-12" style="background: radial-gradient(closest-side, rgb(255 255 255 / 0.12), transparent)"></div>
+            <div class="absolute inset-0"><Slide name="Title" width={400} /></div>
+            <Badge tone="warning" className="absolute top-3 left-3 z-10">Changed</Badge>
+            <Tag label="Version 4" accent={ai} class="absolute top-3 right-3 z-10" />
+          </div>
+        </div>
+      </div>
+      <Step n={3} {...steps[2]!} />
+    </div>
+  </div>
+
+  <Tag label="Any OpenAI-compatible API. No lock-in." accent={false} />
+</section>
+
+<script>
+  import { fitStages } from './a/fit-stage';
+  fitStages();
+</script>
+
+<style>
+  .stage-wrap {
+    aspect-ratio: 400 / 225;
+  }
+  .stage {
+    scale: var(--stage-scale, 1);
+  }
+</style>

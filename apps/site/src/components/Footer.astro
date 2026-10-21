@@ -1,0 +1,172 @@
+---
+import { Logo } from '@/ui/Logo';
+import Button from './Button.astro';
+import {
+  APP_URL,
+  BERTRO_URL,
+  CHANGELOG_URL,
+  REPO_URL,
+  SELF_HOSTING_URL,
+  asset,
+  page,
+} from '~/lib/links';
+
+/**
+ * Site / Footer: closing CTA, link columns, and the oversized faint wordmark with its motion
+ * trail (fading ghost copies) beside the logo mark, under an orbit system.
+ */
+const columns = [
+  {
+    title: 'Product',
+    links: [
+      ['Product', page('product')],
+      ['Vision', page('vision')],
+      ['Pricing', page('pricing')],
+      ['Blog', page('blog')],
+      ['Log in', `${APP_URL}/`],
+    ],
+  },
+  {
+    title: 'Run it',
+    links: [
+      ['Self-hosting guide', SELF_HOSTING_URL],
+      ['Source code', REPO_URL],
+      ['Changelog', CHANGELOG_URL],
+    ],
+  },
+  {
+    title: 'Company',
+    links: [
+      ['bertro.dev', BERTRO_URL],
+      ['Contact', page('kontakt')],
+      ['Impressum', page('impressum')],
+      ['Datenschutz', page('datenschutz')],
+    ],
+  },
+] as const;
+
+// `?v=` bumps a file whose content changed past caches (Cloudflare keeps public/ files a while).
+const kit = (name: string) => asset(`kit/footer/${name}`);
+/**
+ * Ghost copies trailing the wordmark and the logo mark: offset and opacity. No filter: blur – on
+ * these page-wide layers Safari drew a coloured streak across the footer once the page's last
+ * entrance had played.
+ */
+const trail = [
+  { dx: 0, opacity: 1 },
+  { dx: -56, opacity: 0.2 },
+  { dx: -112, opacity: 0.1 },
+  { dx: -170, opacity: 0.05 },
+];
+---
+
+<footer class="relative isolate overflow-hidden px-4 pt-16 md:px-16 md:pt-20" data-section>
+  <img src={kit('starfield.svg?v=2')} alt="" aria-hidden="true" class="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[934px] w-full object-cover" />
+  <img src={kit('constellation.svg?v=2')} alt="" aria-hidden="true" class="pointer-events-none absolute top-[390px] left-[320px] -z-10 hidden h-[200px] w-[320px] lg:block" />
+
+  <!-- Orbit system around a slide mark (top right) and the launch trajectory leaving it. -->
+  <div class="pointer-events-none absolute top-0 left-[956px] -z-10 hidden size-[440px] xl:block" aria-hidden="true">
+    <div class="absolute top-[220px] left-0 h-px w-[440px] bg-hairline"></div>
+    <div class="absolute top-0 left-[220px] h-[440px] w-px bg-hairline"></div>
+    <img src={kit('tick-ring.png')} alt="" class="absolute top-5 left-5 size-[400px]" />
+    <img src={kit('orbit-03.svg')} alt="" class="absolute top-[34px] left-[34px] size-[372px]" />
+    <img src={kit('orbit-02.png')} alt="" class="absolute top-[82px] left-[82px] size-[276px]" />
+    <img src={kit('orbit-01.svg')} alt="" class="absolute top-[130px] left-[130px] size-[180px]" />
+    <img src={kit('core-halo.svg')} alt="" class="absolute top-[174px] left-[174px] size-[92px]" />
+    <div class="absolute top-[82px] left-[82px] size-[276px]">
+      <div class="absolute inset-[-3.62%_14.51%_-0.11%_-3.62%]">
+        <img src={kit('trajectory.svg')} alt="" class="block size-full max-w-none" />
+      </div>
+    </div>
+    <div class="absolute top-[203px] left-[197px] h-[34px] w-[46px]">
+      <div class="absolute top-0 left-0 h-[23px] w-[34px] rounded-thumb bg-fg-faint"></div>
+      <div class="absolute top-[11px] left-3 h-[23px] w-[34px] rounded-thumb bg-sage shadow-[0_0_28px_var(--color-sage-glow)]"></div>
+    </div>
+    <div class="absolute top-[109.17px] left-[303.46px] size-[9px]">
+      <div class="absolute inset-[-155.56%]"><img src={kit('sat-comment.svg')} alt="" class="block size-full max-w-none" /></div>
+    </div>
+    <img src={kit('sat-review.svg')} alt="" class="absolute top-[269.4px] left-[143.69px] size-[7px]" />
+    <img src={kit('sat-deck.svg')} alt="" class="absolute top-[367.48px] left-[326.33px] size-[6px]" />
+  </div>
+  <img src={kit('launch-trajectory.svg')} alt="" aria-hidden="true" class="pointer-events-none absolute top-[370px] left-[1285px] -z-10 hidden h-[574px] w-[175px] xl:block" />
+
+  <div class="flex flex-col gap-8">
+    <h2 class="headline text-5xl leading-[1.06] md:text-headline" data-reveal>
+      Ready when your<br />next deck is.
+    </h2>
+    <div class="flex flex-wrap gap-3" data-reveal style="--i: 1">
+      <Button href={`${APP_URL}/`}>Start for free</Button>
+      <Button href={SELF_HOSTING_URL} variant="secondary">Host it yourself</Button>
+    </div>
+  </div>
+
+  <div class="relative z-10 mt-14 flex flex-col gap-10 border-t border-hairline pt-8 pb-14 md:flex-row md:pb-0 md:gap-0">
+    <div class="flex flex-1 flex-col gap-3">
+      <Logo />
+      <p class="text-sm text-fg-subtle">Get your ideas across.</p>
+      <p class="text-xs text-fg-faint">© 2026 bertro</p>
+    </div>
+    <div class="grid grid-cols-2 gap-8 sm:grid-cols-3 md:flex md:gap-0">
+      {
+        columns.map((column) => (
+          <div class="flex flex-col gap-3 md:w-50">
+            <p class="text-xs font-medium text-fg-subtle">{column.title}</p>
+            {column.links.map(([label, href]) => (
+              <a href={href} class="w-max text-sm text-fg-muted transition-colors hover:text-fg">
+                {label}
+              </a>
+            ))}
+          </div>
+        ))
+      }
+    </div>
+  </div>
+
+  <!--
+    Oversized faint wordmark with its trail, the logo mark beside it: pulled up under the link
+    columns, cut off by the footer's bottom edge so it still closes the page.
+  -->
+  <div class="pointer-events-none relative h-[clamp(120px,14vw,200px)] md:-mt-[clamp(0px,3.5vw,50px)] select-none" aria-hidden="true">
+    {
+      trail.toReversed().map((ghost) => (
+        <p
+          class="footer-wordmark absolute top-0 left-0"
+          style={`translate: ${ghost.dx}px 0; opacity: ${ghost.opacity}`}
+        >
+          Slider
+        </p>
+      ))
+    }
+    {
+      trail.toReversed().map((ghost) => (
+        <div
+          class="footer-mark absolute top-[6px] hidden lg:block"
+          style={`left: calc(72.2% + ${ghost.dx}px); opacity: ${ghost.opacity}`}
+        >
+          <div class="absolute top-[56px] left-0 h-[154px] w-[210px] rounded-[35px] bg-linear-to-b from-white/16 to-white/3" />
+          <div class="absolute top-0 left-[56px] h-[154px] w-[210px] rounded-[35px] bg-linear-to-b from-white/34 to-white/6" />
+        </div>
+      ))
+    }
+  </div>
+</footer>
+
+<style>
+  .footer-wordmark {
+    font-size: clamp(120px, 23.6vw, 340px);
+    font-weight: 900;
+    line-height: 0.735;
+    letter-spacing: -0.04em;
+    white-space: nowrap;
+    /* The tight line box is shorter than the glyphs; pad it so the clipped gradient reaches the tops. */
+    padding-top: 0.25em;
+    margin-top: -0.25em;
+    background: linear-gradient(to bottom, rgb(255 255 255 / 0.34), rgb(255 255 255 / 0.06));
+    background-clip: text;
+    color: transparent;
+  }
+  .footer-mark {
+    width: 266px;
+    height: 210px;
+  }
+</style>

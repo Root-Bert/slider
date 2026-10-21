@@ -1,0 +1,97 @@
+---
+import Button from '~/components/Button.astro';
+import SectionMark from '~/components/SectionMark.astro';
+import Tag from '~/components/Tag.astro';
+import { BERTRO_URL, asset } from '~/lib/links';
+import Highlight from '~/components/Highlight.astro';
+
+/** Slider is one of many ideas: pointer to bertro.dev and the solutions to come. */
+const kit = (name: string) => asset(`vision/${name}`);
+/** The slide on the card trails blurred sage ghosts to its left (motion trail). */
+const trail = [
+  { left: 646, top: 67.4, blur: 3, opacity: 0.05 },
+  { left: 704, top: 61.6, blur: 1.5, opacity: 0.09 },
+  { left: 762, top: 55.8, blur: 0.75, opacity: 0.16 },
+];
+---
+
+<section class="relative isolate overflow-hidden" data-section>
+  <img src={kit('many-starfield.svg')} alt="" aria-hidden="true" class="pointer-events-none absolute inset-0 -z-10 size-full object-cover" />
+  <div class="relative mx-auto flex max-w-[1440px] flex-col gap-10 px-4 py-24 sm:px-8 lg:px-16">
+    <!-- Many orbits: corner arcs, sage trajectory, satellite. -->
+    <div class="pointer-events-none absolute inset-0 -z-10 hidden overflow-hidden lg:block" aria-hidden="true">
+      <div class="absolute top-[-140px] left-[1300px] size-[280px]">
+        <img src={kit('many-r140.svg')} alt="" class="absolute top-1/2 left-0 h-1/2 w-1/2" />
+      </div>
+      <div class="absolute top-[-210px] left-[1230px] size-[420px]">
+        <img src={kit('many-r210.png')} alt="" class="absolute top-1/2 left-0 h-1/2 w-1/2" />
+      </div>
+      <div class="absolute top-[-280px] left-[1160px] size-[560px]">
+        <img src={kit('many-r280.svg')} alt="" class="absolute top-1/2 left-0 h-1/2 w-1/2" />
+      </div>
+      <div class="absolute top-[-210px] left-[1230px] size-[420px]">
+        <div class="absolute inset-[79.18%_62.35%_1.57%_9.55%]">
+          <img src={kit('many-trajectory.svg')} alt="" class="block size-full max-w-none" />
+        </div>
+      </div>
+      <div class="absolute top-[118.93px] left-[1265.61px] size-[9px]">
+        <div class="absolute inset-[-111.11%]">
+          <img src={kit('many-satellite.svg')} alt="" class="block size-full max-w-none" />
+        </div>
+      </div>
+    </div>
+
+    <div class="flex flex-col items-start gap-5">
+      <SectionMark label="bertro" />
+      <h2 class="vision-h" data-reveal>
+        Slider is <Highlight>one of many</Highlight> ideas.
+      </h2>
+    </div>
+
+    <div class="relative flex w-full flex-col gap-8 overflow-hidden rounded-[24px] p-8 ring-hairline-strong backdrop-blur-md lg:flex-row lg:items-center lg:justify-between lg:p-14" data-reveal style="--i: 1">
+      <!-- Backdrop: green glow and a slide flying in with its trail. -->
+      <div class="pointer-events-none absolute inset-0 -z-10 overflow-hidden bg-[#050505]" aria-hidden="true">
+        <div class="absolute top-[-30px] left-[640px] h-[300px] w-[560px] max-lg:left-[20%]">
+          <img src={kit('card-glow.svg')} alt="" class="absolute inset-[-46.67%_-25%] block max-w-none" />
+        </div>
+        <div class="hidden lg:block">
+          {
+            trail.map((ghost) => (
+              <div
+                class="absolute h-[134px] w-[230px] rounded-control border border-sage bg-sage"
+                style={`left: ${ghost.left}px; top: ${ghost.top}px; filter: blur(${ghost.blur}px); opacity: ${ghost.opacity}`}
+              />
+            ))
+          }
+          <div class="absolute top-[50px] left-[820px] h-[134px] w-[230px] rounded-[14px] bg-[#f4f3ee] shadow-[0_0_48px_rgb(0_199_84/0.25)]"></div>
+          <div class="absolute top-[76px] left-[840px] h-[11px] w-[110px] rounded-mark bg-placeholder"></div>
+          <div class="absolute top-[92px] left-[840px] h-[11px] w-[70px] rounded-mark bg-placeholder"></div>
+          <img src={kit('card-ellipse.svg')} alt="" class="absolute top-[110px] left-[976px] size-[54px]" />
+        </div>
+      </div>
+      <div class="flex flex-col gap-3">
+        <p class="text-[clamp(48px,9vw,72px)] font-black tracking-[-0.03em] text-fg">bertro.dev</p>
+        <p class="text-lg text-fg-muted">More solutions, same idea: software that gives people time back.</p>
+      </div>
+      <Button href={BERTRO_URL} class="self-start lg:self-auto">Visit bertro.dev ↗</Button>
+    </div>
+
+    <div class="grid w-full gap-6 md:grid-cols-3">
+      <div class="flex flex-col items-start gap-2 rounded-panel bg-surface-2 p-6 ring-hairline-strong" data-reveal style="--i: 2">
+        <Tag label="You are here" accent="var(--color-sage)" />
+        <p class="text-[22px] font-semibold tracking-[-0.01em] text-fg">Slider</p>
+        <p class="text-sm text-fg-muted">Presentations, made together.</p>
+      </div>
+      <div class="flex flex-col items-start gap-2 rounded-panel border border-dashed border-hairline p-6" data-reveal style="--i: 3">
+        <Tag label="Soon" accent={false} />
+        <p class="text-[22px] font-semibold tracking-[-0.01em] text-fg-subtle">Next solution</p>
+        <p class="text-sm text-fg-faint">In the works.</p>
+      </div>
+      <div class="flex flex-col items-start gap-2 rounded-panel border border-dashed border-hairline p-6" data-reveal style="--i: 4">
+        <Tag label="Later" accent={false} />
+        <p class="text-[22px] font-semibold tracking-[-0.01em] text-fg-subtle">And another</p>
+        <p class="text-sm text-fg-faint">Ideas we are exploring.</p>
+      </div>
+    </div>
+  </div>
+</section>

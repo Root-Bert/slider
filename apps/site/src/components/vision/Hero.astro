@@ -1,0 +1,116 @@
+---
+import Tag from '~/components/Tag.astro';
+import { asset } from '~/lib/links';
+import Draw from './Draw.astro';
+import connectorIn from './svg/hero-connector-in.svg?raw';
+import connectorOut from './svg/hero-connector-out.svg?raw';
+
+/**
+ * Vision hero: the mission in two lines, the first one trailing blurred sage ghosts (motion
+ * trail). A cyan connector runs from the "Our mission" tag to "progress", a sage one leaves
+ * "Build" and becomes the thread the brief below follows.
+ */
+const line1 = 'Accelerate social progress.'.split(' ');
+const line2 = 'Build a slower future.'.split(' ');
+/**
+ * Inter Variable's full stop keeps a wide left side bearing at Black weight; pull it in so it
+ * sits on the word as in the design.
+ */
+const stopped = (word: string) => word.endsWith('.');
+/** Ghost copies of line 1: offset to the left, more blur, fainter. */
+const trail = [
+  { dx: -34, blur: 1, opacity: 0.3 },
+  { dx: -70, blur: 2.5, opacity: 0.17 },
+  { dx: -108, blur: 4.5, opacity: 0.09 },
+  { dx: -150, blur: 7, opacity: 0.05 },
+];
+---
+
+<section class="vision-hero relative" data-section>
+  <div class="relative mx-auto max-w-[1440px] px-4 pt-28 pb-16 sm:px-8 lg:h-[654px] lg:px-16 lg:pt-[200px] lg:pb-0">
+    <img
+      src={asset('vision/hero-starfield.svg')}
+      alt=""
+      aria-hidden="true"
+      class="pointer-events-none absolute inset-0 -z-10 size-full object-cover"
+    />
+
+    <h1 class="vision-hero-h relative text-white">
+      <span class="relative block" style="--step: 90ms; --base: 0ms">
+        {
+          trail.map((ghost, g) => (
+            <span
+              aria-hidden="true"
+              class="absolute top-0 left-0 hidden w-full text-sage lg:block"
+              data-ghost
+              style={`--dx: ${ghost.dx}px; --o: ${ghost.opacity}; --g: ${g}; filter: blur(${ghost.blur}px)`}
+            >
+              {line1.map((word) => (
+                <>
+                  {stopped(word) ? word.slice(0, -1) : word}
+                  {stopped(word) && <span class="-ml-[0.07em]">.</span>}{' '}
+                </>
+              ))}
+            </span>
+          ))
+        }
+        <span class="relative">
+          {
+            line1.map((word, i) => (
+              <>
+                <span data-word style={`--w: ${i}`}>{stopped(word) ? word.slice(0, -1) : word}{stopped(word) && <span class="-ml-[0.07em]">.</span>}</span>{' '}
+              </>
+            ))
+          }
+        </span>
+      </span>
+      <span class="block lg:text-right" style="--step: 90ms; --base: 420ms">
+        {
+          line2.map((word, i) => (
+            <>
+              <span data-word style={`--w: ${i}`}>{stopped(word) ? word.slice(0, -1) : word}{stopped(word) && <span class="-ml-[0.07em]">.</span>}</span>{' '}
+            </>
+          ))
+        }
+      </span>
+    </h1>
+
+    <p
+      class="mt-8 max-w-[520px] text-lg leading-8 text-fg-muted sm:text-[22px] lg:absolute lg:top-[450px] lg:right-16 lg:mt-0 lg:w-[520px] lg:text-right"
+      data-rise
+      style="transition-delay: 1700ms"
+    >
+      It sounds like a contradiction. It is the plan: the faster good ideas travel, the sooner we
+      arrive at a world with more time for each other. This is the thread Slider follows.
+    </p>
+
+    <!-- Annotations (desktop): tag → connector → pin on "progress"; pin on "Build" → thread. -->
+    <div class="pointer-events-none absolute inset-0 hidden lg:block" aria-hidden="true">
+      <span class="absolute top-[95.5px] left-[902px]" data-rise style="--rise: 8px; transition-delay: 900ms">
+        <Tag label="Our mission" accent="var(--color-accent-cyan)" />
+      </span>
+      <Draw svg={connectorIn} class="top-[109px] left-[1020px] h-[137.56px] w-[365px]" delay={1000} duration={900} />
+      <span
+        class="absolute top-[239.56px] left-[1377px] size-3.5 rounded-full border-2 border-white bg-accent-cyan shadow-pin"
+        data-pop
+        style="--pop-delay: 1850ms"
+      ></span>
+      <span
+        class="absolute top-[336.56px] left-[356px] size-3.5 rounded-full border-2 border-white bg-sage shadow-pin"
+        data-pop
+        style="--pop-delay: 1300ms"
+      ></span>
+      <!-- Its vertical stroke sits on x = 244, the axis of the brief's thread and pins. -->
+      <Draw svg={connectorOut} class="top-[334.56px] left-[235px] h-[327.44px] w-[137px]" delay={1450} duration={1000} />
+    </div>
+  </div>
+</section>
+
+<style>
+  .vision-hero-h {
+    font-size: clamp(44px, 6.9vw, 99px);
+    line-height: 0.98;
+    font-weight: 900;
+    letter-spacing: -0.03em;
+  }
+</style>

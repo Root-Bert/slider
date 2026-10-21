@@ -1,0 +1,135 @@
+/* Vision page: headline scale, pins and the hero's choreography (Figma "Vision", 8 s timeline). */
+
+.vision-h {
+  font-size: clamp(30px, 6.4vw, 52px);
+  line-height: 1.12;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--color-fg);
+}
+
+.vision-body {
+  font-size: clamp(17px, 2vw, 19px);
+  line-height: 1.6;
+  color: var(--color-fg-muted);
+}
+
+/* Glowing sage pin on the thread (14 px, white ring). */
+.vision-pin {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: var(--color-sage);
+  box-shadow:
+    0 0 0 2px rgb(255 255 255 / 0.9),
+    0 0 16px rgb(143 203 155 / 0.7),
+    0 0 45px rgb(143 203 155 / 0.23);
+}
+
+/* With the drawn thread (Brief.astro) a pin waits for it instead of for its section. */
+.js .has-thread .vision-pin[data-pop] {
+  opacity: 0;
+  scale: 0.2;
+  transition-delay: 0ms;
+}
+
+.js .has-thread .vision-pin[data-pop].is-reached {
+  opacity: 1;
+  scale: 1;
+}
+
+/* The arrived node: sage with a soft glow. */
+.vision-on {
+  box-shadow:
+    0 0 45px rgb(143 203 155 / 0.17),
+    0 0 16px rgb(143 203 155 / 0.5);
+}
+
+/* Pins pop in (scale 0.2 → 1, overshoot). */
+.js [data-pop] {
+  opacity: 0;
+  scale: 0.2;
+  transition:
+    opacity 120ms ease-in-out,
+    scale 450ms var(--ease-overshoot);
+  transition-delay: var(--pop-delay, 300ms);
+}
+
+.js .is-in [data-pop] {
+  opacity: 1;
+  scale: 1;
+}
+
+/*
+ * Hero: words rise one after another, line 2 follows line 1. Only opacity and translate move
+ * (GPU, no repaint) – blurring 99px Black type every frame is what made it stutter.
+ */
+.js .vision-hero [data-word] {
+  display: inline-block;
+  opacity: 0;
+  translate: 0 0.32em;
+  transition:
+    opacity 700ms ease-out,
+    translate 1000ms var(--ease-emphasized);
+  transition-delay: calc(150ms + var(--base, 0ms) + var(--w) * var(--step));
+  will-change: opacity, translate;
+}
+
+.js .vision-hero.is-in [data-word] {
+  opacity: 1;
+  translate: 0 0;
+}
+
+/* Then the motion trail streams out behind line 1: each ghost slides to its offset, as a whole. */
+.js .vision-hero [data-ghost] {
+  opacity: 0;
+  translate: 0 0;
+  transition:
+    opacity 900ms ease-out,
+    translate 1400ms var(--ease-emphasized);
+  transition-delay: calc(650ms + var(--g) * 70ms);
+  will-change: opacity, translate;
+}
+
+.js .vision-hero.is-in [data-ghost],
+.vision-hero [data-ghost] {
+  opacity: var(--o);
+  translate: var(--dx) 0;
+}
+
+.js .vision-hero [data-rise] {
+  opacity: 0;
+  translate: 0 var(--rise, 16px);
+  transition:
+    opacity 700ms var(--ease-emphasized),
+    translate 700ms var(--ease-emphasized);
+}
+
+.js .vision-hero.is-in [data-rise] {
+  opacity: 1;
+  translate: 0 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .js [data-pop],
+  .js .vision-hero [data-word],
+  .js .vision-hero [data-rise] {
+    scale: 1;
+    translate: 0 0;
+    filter: none;
+    transition: opacity 300ms linear;
+  }
+
+  /* The trail just fades in where it belongs. */
+  .js .vision-hero [data-ghost] {
+    translate: var(--dx) 0;
+    transition: opacity 300ms linear;
+  }
+}
+
+/* Product mocks keep their desktop geometry and shrink as a whole on phones. */
+@media (width < 40rem) {
+  .vision-zoom {
+    zoom: 0.55;
+  }
+}

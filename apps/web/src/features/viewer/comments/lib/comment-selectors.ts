@@ -1,0 +1,524 @@
+import {
+  isPathStroke,
+  isTextStroke,
+  resolveRectAnchor,
+  resolveShapeRef,
+  type Anchor,
+  type Author,
+  type Comment,
+  type Point,
+  type Rect,
+  type Shape,
+  type Slide,
+} from '@slider/shared';
+import { formatDuration } from '@/lib/format';
+import type { StatusFilter } from '@/lib/preferences/work-preferences';
+import { STROKE_STYLE, strokeOutline, strokesBounds, textBox } from '../../stage/lib/stroke-path';
+
+/** A root comment together with its replies – the unit shown as a card and in the thread panel. */
+export interface Thread {
+  id: string;
+  root: Comment;
+  /** Oldest first. */
+  replies: Comment[];
+  /** Distinct reply authors (without the root author), in order of first reply. */
+  repliers: Author[];
+  /** Distinct authors of the whole thread, root author first. */
+  participants: Author[];
+  lastActivityAt: string;
+}
+
+export type { StatusFilter };
+
+export interface ThreadFilter {
+  status: StatusFilter;
+  /** Avatar filter (BER-105): only these thread ids; `null`/absent = no such filter. */
+  threadIds?: ReadonlySet<string> | null;
+  /** Listed whatever their status: threads being replied to (see `composingThreads`). */
+  keep?: ReadonlySet<string> | null;
+}
+
+export interface StatusCounts {
+  all: number;
+  open: number;
+  done: number;
+}
+
+const byCreatedAt = (a: Comment, b: Comment) => a.createdAt.localeCompare(b.createdAt);
+
+function uniqueAuthors(comments: readonly Comment[]): Author[] {
+  const seen = new Map<string, Author>();
+  for (const comment of comments)
+    if (!seen.has(comment.author.id)) seen.set(comment.author.id, comment.author);
+  return [...seen.values()];
+}
+
+/** Turns the flat comment list from the API into threads (root + replies), oldest root first. */
+export function buildThreads(comments: readonly Comment[]): Thread[] {
+  const repliesByParent = new Map<string, Comment[]>();
+  const roots: Comment[] = [];
+  for (const comment of comments) {
+    if (comment.parentId === null) {
+      roots.push(comment);
+      continue;
+    }
+    const siblings = repliesByParent.get(comment.parentId) ?? [];
+    siblings.push(comment);
+    repliesByParent.set(comment.parentId, siblings);
+  }
+
+  return roots.sort(byCreatedAt).map((root) => {
+    const replies = (repliesByParent.get(root.id) ?? []).sort(byCreatedAt);
+    const participants = uniqueAuthors([root, ...replies]);
+    const last = replies.at(-1) ?? root;
+    return {
+      id: root.id,
+      root,
+      replies,
+      repliers: uniqueAuthors(replies).filter((author) => author.id !== root.author.id),
+      participants,
+      lastActivityAt: last.updatedAt > last.createdAt ? last.updatedAt : last.createdAt,
+    };
+  });
+}
+
+export function matchesFilter(thread: Thread, filter: ThreadFilter): boolean {
+  if (filter.threadIds && !filter.threadIds.has(thread.id)) return false;
+  return (
+    filter.status === 'all' || thread.root.status === filter.status || !!filter.keep?.has(thread.id)
+  );
+}
+
+export const filterThreads = (threads: readonly Thread[], filter: ThreadFilter): Thread[] =>
+  threads.filter((thread) => matchesFilter(thread, filter));
+
+/**
+ * Open threads per slide id, as the slide list's `openCommentCount` counts them: open roots on
+ * the slide, not those deleted in PowerPoint (gap comments sit between slides) and not bare
+ * drawings – they are no comments, like in the columns and the Offen chip.
+ */
+export function openCountBySlide(threads: readonly Thread[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const thread of threads) {
+    const { root } = thread;
+    if (!root.slideId || root.status !== 'open' || isRemovedInSource(root)) continue;
+    if (isBareDrawing(thread)) continue;
+    counts.set(root.slideId, (counts.get(root.slideId) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/** Counts for the Alle / Offen / Erledigt chips; respects the avatar filter but not the status. */
+export function countByStatus(
+  threads: readonly Thread[],
+  threadIds: ReadonlySet<string> | null = null,
+): StatusCounts {
+  const counts: StatusCounts = { all: 0, open: 0, done: 0 };
+  for (const thread of threads) {
+    if (threadIds && !threadIds.has(thread.id)) continue;
+    counts.all += 1;
+    counts[thread.root.status] += 1;
+  }
+  return counts;
+}
+
+/**
+ * Alle / Offen / Erledigt for the whole deck. Threads on deleted slides are only reachable through
+ * "Gelöschte Folien": not counted here. Drawings without a comment are no comments either.
+ */
+export function deckStatusCounts(
+  threads: readonly Thread[],
+  slides: SlideOrder,
+  slideIndex: ReadonlyMap<string, number>,
+  threadIds: ReadonlySet<string> | null = null,
+): StatusCounts {
+  return countByStatus(
+    threadsOnCurrentSlides(threads, slides, slideIndex).filter((thread) => !isBareDrawing(thread)),
+    threadIds,
+  );
+}
+
+/** The two neighbours of a gap; `null` sides mean "before the first" / "after the last" slide. */
+export interface GapSides {
+  afterSlideId: string | null;
+  beforeSlideId: string | null;
+}
+
+type SlideOrder = readonly { id: string }[];
+
+const indexSlides = (slides: SlideOrder) =>
+  new Map(slides.map((slide, index) => [slide.id, index]));
+
+/**
+ * Where a gap comment (or gap draft) sits in the current slide order. A gap stores the neighbours
+ * it was written between and is never re-anchored – a slide inserted there, or a neighbour moved,
+ * deleted or hidden, leaves it between two slides that aren't neighbours any more. It then goes
+ * to the gap after its slide before, else in front of its slide after (a `null` side: the start
+ * or end of the deck). `null` when neither neighbour is shown.
+ */
+export function placeGap(
+  gap: GapSides,
+  slides: SlideOrder,
+  slideIndex: ReadonlyMap<string, number> = indexSlides(slides),
+): GapSides | null {
+  const first = slides[0];
+  const last = slides.at(-1);
+  if (!first || !last) return null;
+  const { afterSlideId, beforeSlideId } = gap;
+  if (afterSlideId === null) return { afterSlideId: null, beforeSlideId: first.id };
+  const after = slideIndex.get(afterSlideId);
+  if (after !== undefined) return { afterSlideId, beforeSlideId: slides[after + 1]?.id ?? null };
+  if (beforeSlideId === null) return { afterSlideId: last.id, beforeSlideId: null };
+  const before = slideIndex.get(beforeSlideId);
+  if (before !== undefined) return { afterSlideId: slides[before - 1]?.id ?? null, beforeSlideId };
+  return null;
+}
+
+/**
+ * The slide a thread is listed under: its own slide; for gap comments the slide *before* the gap
+ * where it sits now (`placeGap`), or the first slide when that gap is in front of it. `null` for a
+ * gap comment with neither neighbour shown.
+ */
+export function homeSlideId(
+  comment: Pick<Comment, 'anchor' | 'slideId'>,
+  slides: SlideOrder,
+  slideIndex: ReadonlyMap<string, number> = indexSlides(slides),
+): string | null {
+  if (comment.anchor.type !== 'gap') return comment.slideId;
+  const place = placeGap(comment.anchor, slides, slideIndex);
+  return place && (place.afterSlideId ?? place.beforeSlideId);
+}
+
+/**
+ * Threads that are listed on the current slides – i.e. without those on slides a later
+ * revision deleted (they live in "Gelöschte Folien") and gap comments with neither neighbour
+ * left. Threads without a slide stay.
+ */
+export function threadsOnCurrentSlides(
+  threads: readonly Thread[],
+  slides: SlideOrder,
+  slideIndex: ReadonlyMap<string, number> = indexSlides(slides),
+): Thread[] {
+  return threads.filter(({ root }) =>
+    root.anchor.type === 'gap'
+      ? placeGap(root.anchor, slides, slideIndex) !== null
+      : root.slideId === null || slideIndex.has(root.slideId),
+  );
+}
+
+/** Threads per slide id, in thread order. Every slide gets an entry (possibly empty). */
+export function groupThreadsBySlide(
+  threads: readonly Thread[],
+  slides: readonly Slide[],
+): Map<string, Thread[]> {
+  const groups = new Map<string, Thread[]>(slides.map((slide) => [slide.id, []]));
+  const slideIndex = indexSlides(slides);
+  for (const thread of threads) {
+    const slideId = homeSlideId(thread.root, slides, slideIndex);
+    if (slideId) groups.get(slideId)?.push(thread);
+  }
+  return groups;
+}
+
+/** Key for a gap between two slides; `null` sides mean "before the first" / "after the last" slide. */
+export const gapKey = (afterSlideId: string | null, beforeSlideId: string | null) =>
+  `${afterSlideId ?? 'start'}→${beforeSlideId ?? 'end'}`;
+
+/**
+ * Gap threads (BER-103) per gap of the current slide order, keyed by `gapKey` of where they sit
+ * now (`placeGap`) – for the dividers on the stage, the filmstrip, the columns and the lines.
+ */
+export function gapThreadsByGap(
+  threads: readonly Thread[],
+  slides: SlideOrder,
+): Map<string, Thread[]> {
+  const groups = new Map<string, Thread[]>();
+  const slideIndex = indexSlides(slides);
+  for (const thread of threads) {
+    const { anchor } = thread.root;
+    if (anchor.type !== 'gap') continue;
+    const place = placeGap(anchor, slides, slideIndex);
+    if (!place) continue;
+    const key = gapKey(place.afterSlideId, place.beforeSlideId);
+    groups.set(key, [...(groups.get(key) ?? []), thread]);
+  }
+  return groups;
+}
+
+/**
+ * Threads per slide a later revision deleted ("Gelöschte Folien"; every deleted slide gets an
+ * entry). A gap comment stays on the track while one neighbour is shown (`placeGap`); with
+ * both gone it is listed under the deleted one before the gap, else the one after it.
+ */
+export function threadsByDeletedSlide(
+  threads: readonly Thread[],
+  deletedSlideIds: readonly string[],
+  slides: SlideOrder,
+): Map<string, Thread[]> {
+  const groups = new Map<string, Thread[]>(deletedSlideIds.map((id) => [id, []]));
+  const slideIndex = indexSlides(slides);
+  for (const thread of threads) {
+    const { anchor, slideId } = thread.root;
+    const home =
+      anchor.type !== 'gap'
+        ? slideId
+        : placeGap(anchor, slides, slideIndex)
+          ? null
+          : [anchor.afterSlideId, anchor.beforeSlideId].find((id) => id && groups.has(id));
+    if (home) groups.get(home)?.push(thread);
+  }
+  return groups;
+}
+
+/**
+ * Where a comment sits on its slide, in normalised coordinates. Point and box anchors follow
+ * their shape while it exists (BER-111); stroke-only comments use the bounds of their strokes.
+ * `null` for slide-level and gap comments.
+ */
+export function anchorRect(
+  comment: Pick<Comment, 'anchor' | 'strokes'>,
+  shapes: readonly Shape[],
+): Rect | null {
+  const { anchor } = comment;
+  switch (anchor.type) {
+    case 'point': {
+      const point = (anchor.shapeRef && resolveShapeRef(shapes, anchor.shapeRef)) ?? anchor.point;
+      return { x: point.x, y: point.y, w: 0, h: 0 };
+    }
+    case 'rect':
+      return anchor.shapeRef
+        ? resolveRectAnchor(shapes, anchor.rect, anchor.shapeRef)
+        : anchor.rect;
+    case 'slide':
+      return comment.strokes.length > 0 ? strokesBounds(comment.strokes) : null;
+    case 'gap':
+      return null;
+  }
+}
+
+export const isOnSlideAnchor = (anchor: Anchor) =>
+  anchor.type === 'point' || anchor.type === 'rect';
+
+/** Left-to-right order of the anchors, so cards line up under their marks and lines cross less. */
+export function sortThreadsByAnchor(
+  threads: readonly Thread[],
+  shapes: readonly Shape[],
+): Thread[] {
+  const keyOf = (thread: Thread) => {
+    const rect = anchorRect(thread.root, shapes);
+    return rect ? rect.x + rect.w / 2 : Number.POSITIVE_INFINITY;
+  };
+  return threads
+    .map((thread) => ({ thread, key: keyOf(thread) }))
+    .sort((a, b) => a.key - b.key)
+    .map(({ thread }) => thread);
+}
+
+/** Where a connector line leaves its mark – normalised slide coordinates (B1). */
+export interface ConnectorAnchor {
+  /** Horizontal extent of the mark; the line exits towards the nearer slide edge. */
+  left: number;
+  right: number;
+  /** Start point per exit side. */
+  start: { left: Point; right: Point };
+  /** Start point when the line leaves downwards: the middle of the mark's bottom. */
+  bottom: Point;
+  /** Extra screen pixels outwards from the start: the pin's radius, half a stroke width. */
+  inset: { left: number; right: number; bottom: number };
+}
+
+/** Radius of a pin (PowerPoint ones too: their "P" badge sits beside the dot), in px. */
+const PIN_RADIUS = 7;
+
+/**
+ * Start of the connector line for a comment: the edge of its pin, the middle of its frame's
+ * left / right edge, or – for drawings – the drawing's outermost point (an arrow's tail, a
+ * circle's side). `null` for gap comments and slide-level comments without a drawing.
+ */
+export function connectorAnchor(
+  comment: Pick<Comment, 'anchor' | 'strokes' | 'source'>,
+  shapes: readonly Shape[],
+): ConnectorAnchor | null {
+  const { anchor, strokes } = comment;
+  // An arrow's line ends at its tail, where the pin sits – also when it was drawn from a box.
+  const arrowTail = strokes.find(isPathStroke);
+  if (arrowTail?.tool === 'arrow' && arrowTail.points[0]) {
+    const point = arrowTail.points[0];
+    return {
+      left: point.x,
+      right: point.x,
+      start: { left: point, right: point },
+      bottom: point,
+      inset: { left: PIN_RADIUS, right: PIN_RADIUS, bottom: PIN_RADIUS },
+    };
+  }
+  if (anchor.type === 'rect') {
+    const { x, y, w, h } = anchorRect(comment, shapes) ?? anchor.rect;
+    const mid = y + h / 2;
+    return {
+      left: x,
+      right: x + w,
+      start: { left: { x, y: mid }, right: { x: x + w, y: mid } },
+      bottom: { x: x + w / 2, y: y + h },
+      inset: { left: 0, right: 0, bottom: 0 },
+    };
+  }
+  if (strokes.length > 0) {
+    let left: { point: Point; pad: number } | null = null;
+    let right: { point: Point; pad: number } | null = null;
+    let bottom: { point: Point; pad: number } | null = null;
+    for (const stroke of strokes) {
+      const pad = stroke.tool === 'text' ? 0 : STROKE_STYLE[stroke.tool].width / 2;
+      for (const point of strokeOutline(stroke)) {
+        if (!left || point.x < left.point.x) left = { point, pad };
+        if (!right || point.x > right.point.x) right = { point, pad };
+        if (!bottom || point.y > bottom.point.y) bottom = { point, pad };
+      }
+    }
+    if (left && right && bottom)
+      return {
+        left: left.point.x,
+        right: right.point.x,
+        start: { left: left.point, right: right.point },
+        bottom: bottom.point,
+        inset: { left: left.pad, right: right.pad, bottom: bottom.pad },
+      };
+  }
+  if (anchor.type !== 'point') return null;
+  const rect = anchorRect(comment, shapes)!;
+  const point = { x: rect.x, y: rect.y };
+  return {
+    left: point.x,
+    right: point.x,
+    start: { left: point, right: point },
+    bottom: point,
+    inset: { left: PIN_RADIUS, right: PIN_RADIUS, bottom: PIN_RADIUS },
+  };
+}
+
+/** Exit side of a connector: the nearer vertical slide edge, ties go left. */
+export const connectorSide = (anchor: Pick<ConnectorAnchor, 'left' | 'right'>) =>
+  anchor.left <= 1 - anchor.right ? ('left' as const) : ('right' as const);
+
+/** Where a connector line leaves its mark: sideways to a slide edge, or straight down. */
+export type ConnectorExit = 'left' | 'right' | 'down';
+
+/**
+ * Exits for the marks of one slide (`aspectRatio` = width / height): straight down when the
+ * slide's bottom edge is nearer than its side edge, else sideways. A drop never cuts through a
+ * sideways start: a mark below it that leaves sideways is even nearer its edge, so it starts
+ * outside the drop. Without an aspect ratio every line leaves sideways.
+ */
+export function connectorExits(
+  anchors: readonly (ConnectorAnchor | null)[],
+  aspectRatio?: number,
+): (ConnectorExit | null)[] {
+  return anchors.map((anchor) => {
+    if (!anchor) return null;
+    const side = connectorSide(anchor);
+    if (aspectRatio === undefined) return side;
+    // In slide heights, so both distances are on the same scale.
+    const toSide = (side === 'left' ? anchor.left : 1 - anchor.right) * aspectRatio;
+    return 1 - anchor.bottom.y < toSide ? 'down' : side;
+  });
+}
+
+/**
+ * Card order for the active slide (B1): clockwise around the slide – lines leaving to the left
+ * from top to bottom, lines leaving downwards from left to right, then lines leaving to the right
+ * from bottom to top, then comments without a line. Lanes and cards then follow the same order
+ * and the lines don't cross.
+ */
+export function sortThreadsClockwise(
+  threads: readonly Thread[],
+  shapes: readonly Shape[],
+  aspectRatio?: number,
+): Thread[] {
+  const anchors = threads.map((thread) => connectorAnchor(thread.root, shapes));
+  const exits = connectorExits(anchors, aspectRatio);
+  const keyed = threads.map((thread, index) => {
+    const anchor = anchors[index];
+    const exit = exits[index];
+    if (!anchor || !exit) return { thread, group: 3, key: index };
+    if (exit === 'down') return { thread, group: 1, key: anchor.bottom.x };
+    const y = anchor.start[exit].y;
+    return exit === 'left' ? { thread, group: 0, key: y } : { thread, group: 2, key: -y };
+  });
+  return keyed.sort((a, b) => a.group - b.group || a.key - b.key).map(({ thread }) => thread);
+}
+
+/** Number of threads whose line leaves the slide to the left – the head of the clockwise order. */
+export const countLeftExits = (
+  threads: readonly Thread[],
+  shapes: readonly Shape[],
+  aspectRatio?: number,
+) =>
+  connectorExits(
+    threads.map((thread) => connectorAnchor(thread.root, shapes)),
+    aspectRatio,
+  ).filter((exit) => exit === 'left').length;
+
+export const rectsMatch = (a: Rect, b: Rect) =>
+  Math.abs(a.x - b.x) < 1e-6 &&
+  Math.abs(a.y - b.y) < 1e-6 &&
+  Math.abs(a.w - b.w) < 1e-6 &&
+  Math.abs(a.h - b.h) < 1e-6;
+
+/**
+ * The rect anchor only repeats what is drawn – a text box or the bounds of the drawing – so no
+ * extra frame is drawn around it: the text box or drawing is the mark itself.
+ */
+export function isImplicitFrame(comment: Pick<Comment, 'anchor' | 'strokes'>): boolean {
+  const { anchor, strokes } = comment;
+  if (anchor.type !== 'rect' || strokes.length === 0) return false;
+  if (strokes.some((stroke) => stroke.tool === 'text' && rectsMatch(textBox(stroke), anchor.rect)))
+    return true;
+  // Drawn without a box (freehand, arrow, marker, shapes): the box is the drawing's own bounds.
+  const bounds = strokesBounds(strokes);
+  return bounds !== null && rectsMatch(bounds, anchor.rect);
+}
+
+/** The text written on the slide, if the comment has one ("Text auf Folie"). */
+export const textAnnotation = (comment: Pick<Comment, 'strokes'>) =>
+  comment.strokes.find(isTextStroke) ?? null;
+
+/** True when the body only consists of a drawing (shown as "✏️ Markierung"). */
+export const isStrokeOnly = (comment: Comment) =>
+  comment.body.trim() === '' && comment.strokes.length > 0;
+
+/**
+ * A drawing or text on the slide made without a comment: no body, recording, image or replies. It
+ * stays on the slide but gets no card or connector line – a click on its badge adds the comment.
+ */
+export const isBareDrawing = ({ root, replies }: Thread) =>
+  replies.length === 0 &&
+  !root.media &&
+  !root.image &&
+  root.body.trim() === '' &&
+  root.strokes.length > 0;
+
+/** Stand-in for an empty body: the text on the slide, if any, else "✏️ Markierung". */
+export const strokeOnlyLabel = (comment: Pick<Comment, 'strokes'>) => {
+  const text = textAnnotation(comment);
+  return text ? `„${text.text}“` : '✏️ Markierung';
+};
+
+const MEDIA_ICONS = { audio: '🎙', video: '🎬' } as const;
+const MEDIA_NOUNS = { audio: 'Sprachkommentar', video: 'Videokommentar' } as const;
+
+/**
+ * One line of text for a comment in tight spots (compact cards, tooltips): the body, else the
+ * "🎙 Sprachkommentar | 0:42" for recordings, else the drawing label.
+ */
+export function commentPreview(comment: Comment): string {
+  if (comment.body.trim()) return comment.body;
+  const { media } = comment;
+  if (media) {
+    return `${MEDIA_ICONS[media.kind]} ${MEDIA_NOUNS[media.kind]} | ${formatDuration(media.durationMs)}`;
+  }
+  return isStrokeOnly(comment) ? strokeOnlyLabel(comment) : comment.body;
+}
+
+/** An imported comment deleted where it came from (PowerPoint, Google Slides) – kept, but shown muted (BER-114). */
+export const isRemovedInSource = (comment: Pick<Comment, 'sourceStatus'>) =>
+  comment.sourceStatus === 'removed_in_pptx';

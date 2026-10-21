@@ -1,0 +1,35 @@
+---
+/**
+ * The app's comment pin (UI kit "Pin"): a 14px dot in the reviewer's colour with a 2px white
+ * ring – or, for a comment imported from PowerPoint, the 20px orange "P" badge.
+ */
+interface Props {
+  accent?: string;
+  powerpoint?: boolean;
+  class?: string;
+  style?: string;
+}
+
+const { accent = 'var(--color-sage)', powerpoint = false, class: className, style } = Astro.props;
+---
+
+{
+  powerpoint ? (
+    <span
+      class:list={[
+        'pb-pin absolute flex size-5 items-center justify-center rounded-badge bg-powerpoint text-micro leading-none font-semibold text-primary-hover shadow-pin ring-2 ring-white',
+        className,
+      ]}
+      style={style}
+      data-pop
+    >
+      P
+    </span>
+  ) : (
+    <span
+      class:list={['pb-pin absolute size-3.5 rounded-full shadow-pin ring-2 ring-white', className]}
+      style={`background: ${accent}; ${style ?? ''}`}
+      data-pop
+    />
+  )
+}
