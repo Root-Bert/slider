@@ -4,11 +4,23 @@ name: CI
 # across runners), build, e2e, Caddyfiles, secret scan, and the container image built and
 # smoke-tested. No image is published: self-hosters build it from their checkout
 # (docs/self-hosting.md).
+#
+# Changes only to the website (apps/site, which deploy-website.yml checks and builds itself) or
+# to Markdown no code reads start no run. README.md and docs/self-hosting.md are not on the list:
+# test/self-hosting.test.ts checks them.
 
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - apps/site/**
+      - apps/web/design-system.md
+      - packages/pptx/test/corpus/README.md
   pull_request:
+    paths-ignore:
+      - apps/site/**
+      - apps/web/design-system.md
+      - packages/pptx/test/corpus/README.md
   workflow_dispatch:
 
 permissions:
@@ -144,9 +156,10 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bunx vitest run --project api $(bun scripts/api-test-group.ts ${{ matrix.shard }} 2) --maxWorkers=2
 
-  # Builds the Dockerfile for both published platforms and starts each like a self-hoster would,
-  # on every PR as well. arm64 (e.g. Hetzner CAX) is built and run under QEMU, hence the longer
-  # budgets. The builds go to their own cache scope, which the publish job then builds from.
+  # Builds the Dockerfile for both platforms self-hosters run and starts each like a self-hoster
+  # would. amd64 on every push and PR. arm64 (e.g. Hetzner CAX) is built and run under QEMU, which
+  # takes long: only in the public repository, where every release lands as a commit and Actions
+  # minutes are free, or on a manual run. Each architecture has its own build cache scope.
   image-smoke:
     name: Container image ${{ matrix.arch }} (build + smoke test)
     runs-on: ubuntu-latest
@@ -154,7 +167,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, arm64]
+        arch: ${{ fromJSON((github.repository == 'Root-Bert/slider' || github.event_name == 'workflow_dispatch') && '["amd64", "arm64"]' || '["amd64"]') }}
     env:
       SMOKE_PLATFORM: linux/${{ matrix.arch }}
       SMOKE_WAIT: ${{ matrix.arch == 'arm64' && 600 || 90 }}

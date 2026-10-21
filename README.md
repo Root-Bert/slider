@@ -62,6 +62,9 @@ Slider is open source under the [GNU Affero General Public License v3.0](LICENSE
 change and host it, including commercially. If you offer a changed version to others over a
 network, you must share its source code under the same license.
 
+The AGPL covers the code. The name Slider, its logo and the website's texts and pictures
+(`apps/site`) are not licensed under it: all rights reserved.
+
 If the AGPL doesn't work for your organisation, for example because you want to keep changes
 private or your company doesn't allow AGPL software, a commercial license is available:
 slider@bertro.dev.

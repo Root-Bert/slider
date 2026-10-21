@@ -2,7 +2,7 @@ name: Publish
 
 # Publishing a release here (the private development repository) also publishes its code to the
 # public repository Root-Bert/slider: one commit per release on top of the previous one, by
-# "Slider", tagged like here – none of this repository's history goes along. The public
+# "Slider", tagged like here – none of this repository's history goes along, nor blog drafts. The public
 # repository's release.yml then creates the GitHub release from the tag. Runs only here, never in
 # the public repository or a fork.
 #
@@ -61,8 +61,16 @@ jobs:
           parent=
           if git fetch --depth=1 public main 2>/dev/null; then parent=$(git rev-parse FETCH_HEAD); fi
 
-          # The release's files, without this repository's local tool settings.
+          # The release's files, without this repository's local tool settings and without blog posts
+          # still marked as drafts: they go public once they are published on the website.
           git rm -r -q --cached --ignore-unmatch .claude
+          git ls-files -z apps/site/src/content/blog | while IFS= read -r -d '' post; do
+            # Only the front matter: the lines between the opening and the closing "---".
+            if awk 'NR == 1 { if ($0 != "---") exit; next } $0 == "---" { exit } 1' "$post" |
+              grep -qx 'draft: true'; then
+              git rm -q --cached -- "$post"
+            fi
+          done
           tree=$(git write-tree)
 
           name=$(gh release view "$TAG" --json name --jq .name)
@@ -75,5 +83,7 @@ jobs:
           # The checkout's tag points at this repository's commit; the public one gets its own.
           git tag -d "$TAG" >/dev/null 2>&1 || true
           git tag -a "$TAG" "$commit" -F message.md
-          git push public "$commit:refs/heads/main" "refs/tags/$TAG"
+          git push public "$commit:refs/heads/main"
+          # On its own: a tag pushed together with the branch may start no workflow there.
+          git push public "refs/tags/$TAG"
           echo "published $TAG as $commit"

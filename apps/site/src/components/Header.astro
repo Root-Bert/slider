@@ -1,7 +1,8 @@
 ---
-import { Icon, type IconName } from '@/ui/Icon';
+import { Icon } from '@/ui/Icon';
 import { Logo } from '@/ui/Logo';
 import Button from './Button.astro';
+import NavIcon from './NavIcon.astro';
 import { APP_URL, page } from '~/lib/links';
 
 /** Site / Header: logo = home, glass nav pill with the current page selected, login + CTA. */
@@ -12,12 +13,12 @@ interface Props {
 }
 
 const { current } = Astro.props;
-const nav: { id: SitePage; label: string; href: string; icon: IconName }[] = [
-  { id: 'home', label: 'Home', href: page(), icon: 'home' },
-  { id: 'product', label: 'Product', href: page('product'), icon: 'slideshow' },
-  { id: 'vision', label: 'Vision', href: page('vision'), icon: 'visibility' },
-  { id: 'pricing', label: 'Pricing', href: page('pricing'), icon: 'localOffer' },
-  { id: 'blog', label: 'Blog', href: page('blog'), icon: 'article' },
+const nav: { id: SitePage; label: string; href: string }[] = [
+  { id: 'home', label: 'Home', href: page() },
+  { id: 'product', label: 'Product', href: page('product') },
+  { id: 'vision', label: 'Vision', href: page('vision') },
+  { id: 'pricing', label: 'Pricing', href: page('pricing') },
+  { id: 'blog', label: 'Blog', href: page('blog') },
 ];
 ---
 
@@ -38,7 +39,7 @@ const nav: { id: SitePage; label: string; href: string; icon: IconName }[] = [
             item.id === current ? 'bg-selected text-fg' : 'text-fg-muted hover:bg-hover hover:text-fg',
           ]}
         >
-          <Icon name={item.icon} size={18} />
+          <NavIcon name={item.id} size={18} active={item.id === current} />
           {item.label}
         </a>
       ))
@@ -72,7 +73,7 @@ const nav: { id: SitePage; label: string; href: string; icon: IconName }[] = [
                 item.id === current ? 'bg-selected text-fg' : 'text-fg-muted hover:bg-hover hover:text-fg',
               ]}
             >
-              <Icon name={item.icon} size={20} />
+              <NavIcon name={item.id} size={20} active={item.id === current} />
               {item.label}
             </a>
           ))

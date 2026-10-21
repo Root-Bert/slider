@@ -6,7 +6,7 @@ import Connector from './a/Connector.astro';
 import Button from '~/components/Button.astro';
 import Cursor from '~/components/Cursor.astro';
 import Slide from '~/components/slides/Slide.astro';
-import { APP_URL, SELF_HOSTING_URL, asset } from '~/lib/links';
+import { APP_URL, REPO_URL, asset } from '~/lib/links';
 import { person } from '~/lib/people';
 
 /*
@@ -79,7 +79,7 @@ const mark = `border: 2px solid ${paul}; background: ${accentAlpha(paulColor, 14
     </p>
     <div class="flex flex-wrap gap-3" data-reveal style="--i: 5">
       <Button href={`${APP_URL}/`}>Start for free</Button>
-      <Button href={SELF_HOSTING_URL} variant="secondary">Host it yourself</Button>
+      <Button href={REPO_URL} variant="secondary">Host it yourself</Button>
     </div>
     <p class="text-body text-fg-subtle" data-reveal style="--i: 6">
       Free to start | Open source | Hosted in the EU

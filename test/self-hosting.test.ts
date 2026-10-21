@@ -76,16 +76,45 @@ describe('the container image', () => {
     }
   });
 
-  it('starts both platforms self-hosters build on (amd64, arm64)', () => {
+  it('starts both platforms self-hosters build on: amd64 always, arm64 for every release', () => {
     const smoke = jobs.get('image-smoke') ?? '';
-    const tested = (/^ {8}arch: \[([^\]]*)\]/m.exec(smoke)?.[1] ?? '')
-      .split(',')
-      .map((arch) => `linux/${arch.trim()}`);
-    expect(tested.sort()).toEqual(['linux/amd64', 'linux/arm64']);
+    const arches = (list: string) =>
+      (JSON.parse(list) as string[]).map((arch) => `linux/${arch}`).sort();
+    // arm64 under QEMU is slow: in the public repository (one commit per release) or by hand.
+    const [, when = '', all = '[]', always = '[]'] =
+      /^ {8}arch: \$\{\{ fromJSON\(\((.*)\) && '(\[[^\]]*\])' \|\| '(\[[^\]]*\])'\) \}\}$/m.exec(
+        smoke,
+      ) ?? [];
+    expect(when).toBe(
+      "github.repository == 'Root-Bert/slider' || github.event_name == 'workflow_dispatch'",
+    );
+    expect(arches(all)).toEqual(['linux/amd64', 'linux/arm64']);
+    expect(arches(always)).toEqual(['linux/amd64']);
     expect(smoke).toMatch(/platforms: linux\/\$\{\{ matrix\.arch \}\}/);
     expect(smoke).toMatch(/SMOKE_PLATFORM: linux\/\$\{\{ matrix\.arch \}\}/);
     expect(smoke).toMatch(/docker\/setup-qemu-action/);
     expect(read('scripts/smoke-image.sh')).toMatch(/\$\{SMOKE_PLATFORM:\+--platform=/);
+  });
+});
+
+describe('CI runs it all', () => {
+  it('for every change except the website and Markdown no code or test reads', () => {
+    const ci = read('.github/workflows/ci.yml');
+    const ignored = (trigger: string) => {
+      const block = new RegExp(`^ {2}${trigger}:\\n(?: {4}.*\\n)*`, 'm').exec(ci)?.[0] ?? '';
+      return [...block.matchAll(/^ {6}- (\S+)$/gm)].map((m) => m[1]);
+    };
+    const expected = [
+      'apps/site/**',
+      'apps/web/design-system.md',
+      'packages/pptx/test/corpus/README.md',
+    ];
+    expect(ignored('push')).toEqual(expected);
+    expect(ignored('pull_request')).toEqual(expected);
+    // The app imports its legal templates; the tests here read README.md and the guide.
+    expect(read('apps/web/src/features/legal/LegalTextsSection.tsx')).toMatch(
+      /templates\/\w+\.md\?raw/,
+    );
   });
 });
 

@@ -1,6 +1,6 @@
 ---
 import Button from '~/components/Button.astro';
-import { CONTACT_URL, SELF_HOSTING_URL } from '~/lib/links';
+import { CONTACT_URL, REPO_URL } from '~/lib/links';
 
 /**
  * Strip under the plans: self-hosting is free and unlimited, one command. Below it, where to ask
@@ -23,7 +23,7 @@ import { CONTACT_URL, SELF_HOSTING_URL } from '~/lib/links';
     <code class="w-max rounded-chip bg-surface-1 px-3 py-2 font-mono text-xs whitespace-nowrap text-fg-muted ring-hairline">
       $ docker compose up -d --build
     </code>
-    <Button href={SELF_HOSTING_URL} variant="ghost" class="self-start md:self-auto">Self-hosting guide</Button>
+    <Button href={REPO_URL} variant="ghost" class="self-start md:self-auto">View on GitHub</Button>
   </div>
   <p class="mt-4 text-center text-sm leading-[1.5] text-fg-subtle" data-reveal style="--i: 5">
     Open source under the AGPL-3.0. Need a commercial license?{' '}

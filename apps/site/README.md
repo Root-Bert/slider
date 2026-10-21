@@ -32,3 +32,10 @@ WEBSITE_DOMAIN=bertro.dev
 `docker compose up -d --build` then builds the site from the checkout into a small container,
 and Caddy routes `https://bertro.dev/slider/…` to it; every other path on the domain redirects
 to `/slider/`. DNS for `bertro.dev` must point at the server, like `slider.bertro.dev`.
+
+## License
+
+The website's code is under the repository's AGPL-3.0. Its texts and pictures, and the name and
+logo of Slider, are not: all rights reserved. The fonts in `src/components/slides/fonts/` are
+under the SIL Open Font License (`OFL.txt` there). Blog posts with `draft: true` are not
+published to the public repository until they go live.

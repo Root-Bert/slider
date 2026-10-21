@@ -1,7 +1,6 @@
-/** Where the website points to: the hosted app, the source and the self-hosting guide. */
+/** Where the website points to: the hosted app and the public repository. */
 export const APP_URL = 'https://slider.bertro.dev';
 export const REPO_URL = 'https://github.com/Root-Bert/slider';
-export const SELF_HOSTING_URL = `${REPO_URL}/blob/main/docs/self-hosting.md`;
 export const CHANGELOG_URL = `${REPO_URL}/releases`;
 export const BERTRO_URL = 'https://bertro.dev';
 export const CONTACT_URL = 'mailto:slider@bertro.dev';
