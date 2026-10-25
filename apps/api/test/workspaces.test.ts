@@ -62,12 +62,12 @@ const invite = async (body: { email?: string; role?: string }, cookie?: string) 
 };
 
 describe('workspaces', () => {
-  it('the dev owner has "Meine Organisation"; others found their own', async () => {
+  it('the dev owner has "Mein Workspace"; others found their own', async () => {
     const me = (await (await ctx.request('/api/me')).json()) as MeResponse;
     expect(me.workspaces).toEqual([
-      expect.objectContaining({ id: ctx.workspaceId, name: 'Meine Organisation', role: 'admin' }),
+      expect.objectContaining({ id: ctx.workspaceId, name: 'Mein Workspace', role: 'admin' }),
     ]);
-    // One self-founded organisation per account (BER-130).
+    // One self-founded workspace per account (BER-130).
     expect(me.limits).toEqual({ canCreateWorkspace: false, domainJoin: false });
 
     const anna = await signedInUser(ctx, { name: 'Anna', email: 'anna@firma.de' });
@@ -409,7 +409,7 @@ describe('members', () => {
     ).toBe(404);
   });
 
-  it('the last admin leaves by handing the organisation to a successor', async () => {
+  it('the last admin leaves by handing the workspace to a successor', async () => {
     const memberA = await member('Mia', 'member');
     const reviewer = await member('Rita', 'reviewer');
     const base = `/api/workspaces/${ctx.workspaceId}/members`;
@@ -509,7 +509,7 @@ describe('invitations', () => {
       await (await ctx.request(`/api/join/${created.token}`)).json(),
     );
     expect(preview).toEqual({
-      workspaceName: 'Meine Organisation',
+      workspaceName: 'Mein Workspace',
       workspaceLogoUrl: null,
       inviterName: 'Robert Hofmann',
       role: 'reviewer',
@@ -757,7 +757,7 @@ describe('invitations', () => {
     expect(me.pendingInvites).toEqual([
       expect.objectContaining({
         id: created.invite.id,
-        workspaceName: 'Meine Organisation',
+        workspaceName: 'Mein Workspace',
         inviterName: 'Robert Hofmann',
         role: 'member',
       }),
@@ -793,7 +793,7 @@ describe('invitation mails', () => {
     const [mail] = mailer.sent;
     expect(mail).toMatchObject({
       to: 'lena@firma.de',
-      subject: 'Robert Hofmann lädt dich zu „Meine Organisation“ ein',
+      subject: 'Robert Hofmann lädt dich zu „Mein Workspace“ ein',
     });
     expect(mail?.text).toContain(created.url);
     expect(mail?.html).toContain(`href="${created.url}"`);
@@ -845,7 +845,7 @@ describe('invitation mails', () => {
 });
 
 describe('no deck sharing', () => {
-  it('has no share endpoint: people join only through the organisation’s invites', async () => {
+  it('has no share endpoint: people join only through the workspace’s invites', async () => {
     const { deckId } = await createReadyDeck(ctx);
     const res = await ctx.request(`/api/decks/${deckId}/share`, { method: 'POST', json: {} });
     expect(res.status).toBe(404);

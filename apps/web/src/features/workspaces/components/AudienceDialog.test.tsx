@@ -59,7 +59,7 @@ const workspace: Workspace = {
 const choice = (name: RegExp) => screen.getByRole('button', { name, hidden: true });
 
 describe('AudienceDialog (BER-148)', () => {
-  it('"für mein Team" opens the organisation to the domain', async () => {
+  it('"für mein Team" opens the workspace to the domain', async () => {
     render(<AudienceDialog workspace={workspace} email="anna@firma.de" />);
     await userEvent.click(choice(/Für mein Team bei firma\.de/));
     expect(api.rename).not.toHaveBeenCalled();

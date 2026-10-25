@@ -117,12 +117,9 @@ function fakeNextcloud() {
     }
     if (path === '/remote.php/dav/' && method === 'SEARCH') {
       const body = String(init?.body ?? '');
-      if (body.includes('%.pptx')) {
-        // Every presentation of the account.
-        const below = [...files].filter(
-          ([, f]) => f.mime === PPTX_MIME || f.path.endsWith('.pptx'),
-        );
-        return multistatus(below.map(([id, f]) => davResponse(account.id, id, f)).join(''));
+      if (body.includes('<d:literal>%</d:literal>')) {
+        // Every file of the account.
+        return multistatus([...files].map(([id, f]) => davResponse(account.id, id, f)).join(''));
       }
       const id = /<oc:fileid\/><\/d:prop><d:literal>(\d+)<\/d:literal>/.exec(body)?.[1];
       const file = id ? files.get(id) : undefined;
@@ -255,8 +252,8 @@ describe('Nextcloud (BER-135)', () => {
     const listing = (await (
       await ctx.request(`/api/nextcloud/${connection.id}/files?path=/Decks`)
     ).json()) as NextcloudListing;
-    expect(listing.entries.map((e) => e.name)).toEqual(['Q4.pptx']);
-    expect(listing.entries[0]).toMatchObject({
+    expect(listing.entries.map((e) => e.name)).toEqual(['Notizen.docx', 'Q4.pptx']);
+    expect(listing.entries[1]).toMatchObject({
       fileId: '101',
       path: '/Decks/Q4.pptx',
       folder: false,
@@ -298,7 +295,7 @@ describe('Nextcloud (BER-135)', () => {
     expect(opened.status).toBe(200);
   });
 
-  it('lists only presentations and the folders that hold one somewhere inside', async () => {
+  it('lists every file and folder, and turns down importing one that is no PowerPoint', async () => {
     const nc = fakeNextcloud();
     nc.files.set('103', {
       path: '/Leer/Brief.docx',
@@ -321,9 +318,16 @@ describe('Nextcloud (BER-135)', () => {
         ).json()) as NextcloudListing
       ).entries.map((e) => `${e.folder ? 'dir' : 'file'}:${e.name}`);
 
-    expect(await list('/')).toEqual(['dir:Archiv', 'dir:Decks']);
+    expect(await list('/')).toEqual(['dir:Archiv', 'dir:Decks', 'dir:Leer']);
     expect(await list('/Archiv')).toEqual(['dir:2025']);
-    expect(await list('/Decks')).toEqual(['file:Q4.pptx']);
+    expect(await list('/Decks')).toEqual(['file:Notizen.docx', 'file:Q4.pptx']);
+    expect(await list('/Leer')).toEqual(['file:Brief.docx']);
+
+    const refused = await ctx.request('/api/decks/nextcloud-item', {
+      method: 'POST',
+      json: { connectionId: connection.id, fileId: '103' },
+    });
+    expect(refused.status).toBe(400);
   });
 
   it('sorts numbers like Nextcloud and finds presentations by every word, in any order', async () => {

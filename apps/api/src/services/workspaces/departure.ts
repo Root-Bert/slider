@@ -72,7 +72,7 @@ export async function departurePreview(
     throw forbidden('Nur Admins sehen, was mit den Präsentationen anderer passiert.');
   }
   if (!(await getRole(db, workspaceId, targetId))) {
-    throw notFound('Diese Person ist nicht Mitglied der Organisation.');
+    throw notFound('Diese Person ist nicht Mitglied des Workspace.');
   }
   const owned = await db
     .select({ id: decks.id, title: decks.title, source: decks.source })

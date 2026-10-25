@@ -1,9 +1,9 @@
 import type { ParsedShareLink } from '@slider/shared';
 import type { MicrosoftConfig } from '../config';
 import { ApiError, notAPowerPoint } from '../http/errors';
+import { markPdfMaker } from '../import/pdf-maker';
 import { downloadPptx, type DirectUrlAdapter } from './direct-url';
 import {
-  LINK_NOT_A_POWERPOINT_MESSAGE,
   microsoftLoginRequired,
   microsoftNotConfigured,
   sourceForbidden,
@@ -241,11 +241,9 @@ export class GraphClient {
     }
   }
 
-  /** Graph item → {@link RemoteFile}; folders and non-PPTX files are rejected. */
+  /** Graph item → {@link RemoteFile}; folders are rejected, any file goes (the import converts it). */
   toRemoteFile(item: DriveItem): RemoteFile {
-    if (!item.file || !item.name.toLowerCase().endsWith('.pptx')) {
-      throw notAPowerPoint(LINK_NOT_A_POWERPOINT_MESSAGE);
-    }
+    if (!item.file) throw notAPowerPoint(FOLDER_MESSAGE);
     const driveId = item.parentReference?.driveId;
     return {
       ref: driveId ? `drives/${driveId}/items/${item.id}` : `items/${item.id}`,
@@ -268,7 +266,7 @@ export class GraphClient {
     }
     if (!downloadUrl)
       throw sourceUnreachable('Microsoft Graph liefert keinen Download für diese Datei.');
-    return (await downloadPptx(new URL(downloadUrl), this.deps.http)).bytes;
+    return (await downloadPptx(new URL(downloadUrl), this.deps.http, { anyFile: true })).bytes;
   }
 
   /**
@@ -376,6 +374,8 @@ export class OneDriveAdapter implements SourceAdapter {
   }
 
   async download(file: RemoteFile, context: SourceContext): Promise<Uint8Array> {
+    const converted = await officePdfOf(file, () => this.exportPdf(file, context));
+    if (converted) return converted;
     if (file.bytes || file.downloadUrl) return this.graph.download(file, context);
     return this.graph.download(await this.graphFile(file), context);
   }
@@ -405,6 +405,59 @@ export class OneDriveAdapter implements SourceAdapter {
     return { ...file, ref };
   }
 }
+
+const FOLDER_MESSAGE = 'Unter diesem Link liegt ein Ordner – wähle eine Datei darin.';
+
+/**
+ * What Office turns into a PDF itself (Graph `content?format=pdf`) – besides PPTX, which is read
+ * as it is: Word, Excel, older PowerPoints, OpenDocument, RTF, mails, web pages and TIFF.
+ */
+const OFFICE_PDF_EXTENSIONS = new Set([
+  'doc',
+  'docx',
+  'eml',
+  'htm',
+  'html',
+  'md',
+  'msg',
+  'odp',
+  'ods',
+  'odt',
+  'pps',
+  'ppsx',
+  'ppt',
+  'pptm',
+  'rtf',
+  'tif',
+  'tiff',
+  'xls',
+  'xlsm',
+  'xlsx',
+]);
+
+/**
+ * Office's PDF of a file Office converts – the deck it becomes. `null` for every other file, and
+ * when Office cannot without a Microsoft login (a public link): then the file itself is read.
+ */
+async function officePdfOf(
+  file: RemoteFile,
+  exportPdf: () => Promise<Uint8Array>,
+): Promise<Uint8Array | null> {
+  const extension = /\.([a-z0-9]+)$/i.exec(file.fileName)?.[1]?.toLowerCase() ?? '';
+  if (!OFFICE_PDF_EXTENSIONS.has(extension)) return null;
+  try {
+    return markPdfMaker(await exportPdf(), 'office');
+  } catch (error) {
+    if (error instanceof ApiError && LOGIN_CODES.has(error.code)) return null;
+    throw error;
+  }
+}
+
+const LOGIN_CODES = new Set([
+  'microsoft_login_required',
+  'microsoft_consent_required',
+  'microsoft_not_configured',
+]);
 
 /** Errors that mean "this did not work anonymously" rather than "this link is broken". */
 const ANONYMOUS_FALLBACK_CODES = new Set([
@@ -512,9 +565,12 @@ export class SharePointAdapter implements SourceAdapter {
    * a drive item path.
    */
   async download(file: RemoteFile, context: SourceContext): Promise<Uint8Array> {
+    const converted = await officePdfOf(file, () => this.exportPdf(file, context));
+    if (converted) return converted;
     if (file.bytes || isGraphRef(file.ref)) return this.graph.download(file, context);
     try {
-      return (await downloadPptx(anonymousDownloadUrl(file.ref), this.http)).bytes;
+      return (await downloadPptx(anonymousDownloadUrl(file.ref), this.http, { anyFile: true }))
+        .bytes;
     } catch (error) {
       if (!(error instanceof ApiError) || !ANONYMOUS_FALLBACK_CODES.has(error.code)) throw error;
       const remote = this.graph.toRemoteFile(await this.graph.getShare(file.ref, context));

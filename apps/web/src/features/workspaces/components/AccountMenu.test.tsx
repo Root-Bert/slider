@@ -6,7 +6,6 @@ import { AccountMenu } from './AccountMenu';
 
 const api = vi.hoisted(() => ({
   me: null as unknown,
-  providers: [] as { id: string }[],
   passkeys: [] as unknown[] | undefined,
   logout: vi.fn(),
   logoutFailed: false,
@@ -16,7 +15,6 @@ const api = vi.hoisted(() => ({
 
 vi.mock('@/lib/api', () => ({
   useMe: () => ({ data: api.me }),
-  useAuthProviders: () => ({ data: { providers: api.providers } }),
   useLogout: () => ({ mutate: api.logout, isPending: false, isError: api.logoutFailed }),
   usePasskeys: () => ({ data: api.passkeys }),
 }));
@@ -68,7 +66,6 @@ function setup() {
 
 beforeEach(() => {
   signIn();
-  api.providers = [];
   api.passkeys = [{ id: 'p1' }];
   api.hintDismissed = false;
   api.logout.mockReset();
@@ -97,8 +94,6 @@ describe('AccountMenu', () => {
     expect(panel.className).toContain('z-(--z-popover)');
     expect(panel.textContent).toContain('Anna Berg');
     expect(panel.textContent).toContain('anna@firma.de');
-    // No Microsoft row when the instance has no Microsoft login.
-    expect(screen.queryByText(/Microsoft/)).toBeNull();
 
     await userEvent.keyboard('{Escape}');
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
@@ -136,23 +131,11 @@ describe('AccountMenu', () => {
     expect(screen.queryByRole('button', { name: 'Instanz-Dashboard' })).toBeNull();
   });
 
-  it('offers to connect Microsoft as a full page link, or shows it connected', async () => {
-    api.providers = [{ id: 'microsoft' }];
-    const trigger = setup();
-    await userEvent.click(trigger);
-    const connect = screen.getByRole('link', { name: /Microsoft verbinden/ });
-    expect(connect.getAttribute('href')).toMatch(/^\/api\/auth\/microsoft\/login/);
-  });
-
-  it('shows connected Microsoft accounts and manages them on the account page', async () => {
+  it('shows no Microsoft row: logins and connections live on the account page', async () => {
     signIn({ microsoftConnected: true, microsoftConnections: 2 });
     const trigger = setup();
     await userEvent.click(trigger);
-    const row = screen.getByRole('button', { name: /Microsoft verbunden/ });
-    expect(row.textContent).toContain('2 Konten');
-    expect(screen.queryByRole('link', { name: /Microsoft verbinden/ })).toBeNull();
-    await userEvent.click(row);
-    expect(screen.getByTestId('where').textContent).toBe('/konto');
+    expect(screen.queryByText(/Microsoft/)).toBeNull();
   });
 
   it('nudges to add a passkey until the hint is dismissed', async () => {

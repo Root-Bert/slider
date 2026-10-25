@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { Deck } from '@slider/shared';
 import { uploadWithProgress } from '@/lib/api-client';
 import { queryKeys, reportSessionError } from '@/lib/api';
-import { validatePptxFile } from '../lib/upload-validation';
+import { validateUploadFile } from '../lib/upload-validation';
 
 export type UploadState =
   | { status: 'idle' }
@@ -20,7 +20,7 @@ export function useDeckUpload(workspaceId: string, onUploaded: (deck: Deck) => v
   useEffect(() => () => controllerRef.current?.abort(), []);
 
   const start = async (file: File) => {
-    const problem = validatePptxFile(file);
+    const problem = validateUploadFile(file);
     if (problem) {
       setState({ status: 'error', message: problem });
       return;

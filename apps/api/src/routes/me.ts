@@ -107,7 +107,7 @@ export function meRoutes(deps: AppDeps, gate: InstanceGate) {
         requireOwner(c.var.viewer);
         return zipResponse(c, await exportAccount(deps, c.var.viewer.author.id));
       })
-      /** Before deleting: organisations that need a new admin, and who could take over. */
+      /** Before deleting: workspaces that need a new admin, and who could take over. */
       .get('/me/deletion', viewerMiddleware(deps), async (c) => {
         requireOwner(c.var.viewer);
         return c.json<SuccessorChoice[]>(await successorChoices(deps.db, c.var.viewer.author.id));

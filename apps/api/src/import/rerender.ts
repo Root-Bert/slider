@@ -10,6 +10,7 @@ import { hasPdfRenderer, renderSlidePages, type SlidePagesDeps } from './office-
 
 /** The PDF renderers a server has – see {@link SlidePagesDeps}. */
 export type SlideRenderers = Pick<SlidePagesDeps, 'officePdf' | 'libreOfficePdf'>;
+import { openDeckFile } from './pdf-deck';
 import type { ImportJob, JobQueue } from './queue';
 
 export interface RerenderOutcome {
@@ -72,7 +73,7 @@ export async function rerenderRevision(
 
   const total = rows.length;
   deps.renderProgress?.running(deckId, 0, total);
-  const { presentation } = await deps.openPptx(bytes);
+  const { presentation } = await openDeckFile(deps.openPptx, bytes);
   const parsed = presentation.slides;
   const sameSlides =
     parsed.length === rows.length &&

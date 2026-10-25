@@ -134,7 +134,7 @@ describe('copy', () => {
     expect(syncErrorTitle('auth_required', '/konto?nextcloud=cloud.firma.de')).toBe(
       'Anmeldung bei Nextcloud abgelaufen',
     );
-    expect(syncErrorTitle('storage_full')).toBe('Speicher der Organisation voll');
+    expect(syncErrorTitle('storage_full')).toBe('Speicher des Workspace voll');
   });
 });
 

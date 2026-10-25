@@ -82,7 +82,7 @@ export async function revokeInvitesBy(
 }
 
 const lastAdmin = () =>
-  badRequest('Eine Organisation braucht mindestens einen Admin. Ernenne zuerst jemand anderen.');
+  badRequest('Ein Workspace braucht mindestens einen Admin. Ernenne zuerst jemand anderen.');
 
 /**
  * Admins change every role, their own and other admins' too. Check and write run under the
@@ -99,7 +99,7 @@ export async function updateMemberRole(
     await lockWorkspaceRow(tx, workspaceId);
     await requireRole(tx, workspaceId, actorId, 'admin');
     const current = await getRole(tx, workspaceId, targetId);
-    if (!current) throw notFound('Diese Person ist nicht Mitglied der Organisation.');
+    if (!current) throw notFound('Diese Person ist nicht Mitglied des Workspace.');
     if (current === 'admin' && role !== 'admin' && (await adminCount(tx, workspaceId)) <= 1) {
       throw lastAdmin();
     }
@@ -114,7 +114,7 @@ export async function updateMemberRole(
       );
     if (current === 'admin' && role !== 'admin') {
       await revokeInvitesBy(tx, workspaceId, targetId);
-      // The billing owner must be an admin (BER-154): a free organisation's role moves on.
+      // The billing owner must be an admin (BER-154): a free workspace's role moves on.
       await reassignBillingOwner(tx, workspaceId, targetId, new Date());
     }
     const [row] = await tx
@@ -138,7 +138,7 @@ export async function updateMemberRole(
  * (`VIEWER_LAST_RESORT`). Checked under the workspace lock, so two
  * admins removing each other can't leave none. Whoever pays for a running subscription neither
  * leaves nor is removed before handing over paying (`assertBillingOwnerMayGo`); the billing
- * role of a free organisation passes on. Returns the subscription to cancel should the billing
+ * role of a free workspace passes on. Returns the subscription to cancel should the billing
  * owner still go with one (`cancelSubscriptions`, after the commit) and the deleted decks, whose
  * files go after the commit too (`deleteDeckFiles`). `now`: the app's clock.
  */
@@ -157,7 +157,7 @@ export async function removeMember(
       allowBlocked: actorId === targetId,
     });
     const target = actorId === targetId ? actorRole : await getRole(tx, workspaceId, targetId);
-    if (!target) throw notFound('Diese Person ist nicht Mitglied der Organisation.');
+    if (!target) throw notFound('Diese Person ist nicht Mitglied des Workspace.');
     if (actorId !== targetId) {
       if (!atLeast(actorRole, 'admin')) throw forbidden('Nur Admins können Mitglieder entfernen.');
       if (successorId) throw badRequest('Einen Nachfolger ernennt nur, wer selbst geht.');
@@ -165,7 +165,7 @@ export async function removeMember(
     if (successorId && actorRole === 'admin') {
       if (successorId === actorId) throw badRequest('Wähle jemand anderen als Nachfolger.');
       const successorRole = await getRole(tx, workspaceId, successorId);
-      if (!successorRole) throw notFound('Der Nachfolger ist nicht Mitglied der Organisation.');
+      if (!successorRole) throw notFound('Der Nachfolger ist nicht Mitglied des Workspace.');
       if (successorRole === 'viewer' && (await hasNonViewer(tx, workspaceId, actorId))) {
         throw badRequest(VIEWER_LAST_RESORT);
       }

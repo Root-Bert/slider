@@ -5,7 +5,7 @@ import { memberCountLabel } from '../lib/join-labels';
 import { WorkspaceMark } from './WorkspaceMark';
 
 /**
- * The company organisation of the viewer's e-mail domain (BER-148) in the switcher menu, with
+ * The company workspace of the viewer's e-mail domain (BER-148) in the switcher menu, with
  * "Beitreten" – no invitation needed, they join as member. The welcome page shows it as a card.
  */
 export function DomainWorkspaceRow({
@@ -15,7 +15,7 @@ export function DomainWorkspaceRow({
 }: {
   workspace: DomainWorkspace;
   onError: ShowToast;
-  /** Joined, right before going to the organisation (the switcher closes its menu). */
+  /** Joined, right before going to the workspace (the switcher closes its menu). */
   onJoined?: () => void;
 }) {
   const { pending, join } = useJoinDomainWorkspace(workspace, { onError, onJoined });

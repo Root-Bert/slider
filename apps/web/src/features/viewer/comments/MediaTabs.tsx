@@ -1,13 +1,13 @@
 import type { Comment, MediaKind as RecordingKind } from '@slider/shared';
 import { IconButton, SegmentedControl } from '@/ui';
 import { useKeepThreadListed } from './hooks/useKeepThreadListed';
-import { MEDIA_KINDS, MEDIA_SOON, type MediaKindId } from './lib/media-kinds';
+import { COMPOSER_TABS, MEDIA_KINDS, MEDIA_SOON, type MediaKindId } from './lib/media-kinds';
 import { RecordReplyDialog } from '../media/RecordReplyDialog';
 import { SketchReplyDialog } from '../media/SketchReplyDialog';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, useViewerState, type MediaReply } from '../state/viewer-state';
 
-/** Text / Audio / Video / Bild switch of the composers (Figma B2, B4 "Tabs"). */
+/** Text (with voice) / Video / Bild switch of the new-comment composer (Figma B2 "Tabs"). */
 export function MediaTabs({
   value,
   onChange,
@@ -25,7 +25,7 @@ export function MediaTabs({
       track="soft"
       value={value}
       onChange={onChange}
-      segments={MEDIA_KINDS.map((kind) => ({
+      segments={COMPOSER_TABS.map((kind) => ({
         value: kind.id,
         label: kind.label,
         icon: kind.icon,

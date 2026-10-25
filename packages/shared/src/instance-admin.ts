@@ -4,8 +4,8 @@ import { PLAN_IDS, storageBreakdownSchema } from './workspaces';
 
 /**
  * The instance admin's dashboard (`/instanz`, BER-167): numbers for the whole instance, and the
- * accounts and organisations to block or – where plans limit anything – to put on a plan.
- * Organisations show sizes only, never what is in them (no review titles, no member names).
+ * accounts and workspaces to block or – where plans limit anything – to put on a plan.
+ * Workspaces show sizes only, never what is in them (no review titles, no member names).
  */
 
 const HOUR_MS = 3_600_000;
@@ -28,7 +28,7 @@ export const intervalMs = (interval: InstanceInterval) =>
 export const stretchMs = (interval: InstanceInterval) =>
   INSTANCE_INTERVALS[interval].stretchHours * HOUR_MS;
 
-/** What was created in one stretch (accounts, organisations, reviews). */
+/** What was created in one stretch (accounts, workspaces, reviews). */
 export const instanceBucketSchema = z.object({
   /** Start of the stretch; the stretches are equally long. */
   start: z.iso.datetime(),
@@ -79,7 +79,7 @@ export const instanceOverviewSchema = z.object({
   }),
   /** Reviews, archived ones included. */
   decks: z.number().int(),
-  /** The organisations taking up the most storage – name and size only. */
+  /** The workspaces taking up the most storage – name and size only. */
   largest: z.array(
     z.object({
       id: z.string(),
@@ -92,7 +92,7 @@ export const instanceOverviewSchema = z.object({
   storage: storageBreakdownSchema,
   /**
    * The plans differ (the hosted instance, or limits set by `PLAN_FREE_*`): only then the admin
-   * puts organisations on a plan.
+   * puts workspaces on a plan.
    */
   plans: z.boolean(),
 });
@@ -127,7 +127,7 @@ export const instanceUserSchema = z.object({
   color: accentColorSchema,
   createdAt: z.iso.datetime(),
   lastActiveAt: z.iso.datetime(),
-  /** Organisations the account is in. */
+  /** Workspaces the account is in. */
   workspaceCount: z.number().int(),
   isInstanceAdmin: z.boolean(),
   blockedAt: z.iso.datetime().nullable(),
@@ -145,7 +145,7 @@ export const instanceWorkspaceSchema = z.object({
   id: z.string(),
   name: z.string(),
   logoUrl: z.string().nullable(),
-  /** Company organisation of this domain; `null` = private. */
+  /** Company workspace of this domain; `null` = private. */
   joinDomain: z.string().nullable(),
   createdAt: z.iso.datetime(),
   /** Usually a `PlanId`. */

@@ -12,8 +12,14 @@ import { openDatabase } from './db/client';
 import { releaseRunningImportAttempts } from './import/attempts';
 import { findInterruptedImports, importDeck } from './import/import-deck';
 import { createOfficePdf } from './import/office-pages';
+import { configurePdfJobs, stopPdfJobs } from './import/pdf-jobs';
 import { createSlidesExtras } from './import/slides-extras';
-import { createLibreOfficePdf, findSoffice, stopRunningConversions } from './import/libreoffice';
+import {
+  createLibreOfficeDocumentPdf,
+  createLibreOfficePdf,
+  findSoffice,
+  stopRunningConversions,
+} from './import/libreoffice';
 import { importJobKey, importJobPriority, InProcessQueue, type ImportJob } from './import/queue';
 import { RenderProgress } from './import/render-progress';
 import { scheduleFileAuthorBackfill } from './import/file-author-backfill';
@@ -130,6 +136,12 @@ async function main(): Promise<void> {
   const libreOfficePdf = soffice
     ? createLibreOfficePdf({ binary: soffice, log, timeoutMs: config.libreOfficeTimeoutMs })
     : null;
+  // Word, Excel and text files picked in a cloud become PDF decks through it, too.
+  const documentPdf = soffice
+    ? createLibreOfficeDocumentPdf({ binary: soffice, log, timeoutMs: config.libreOfficeTimeoutMs })
+    : null;
+  // PDFs are read in worker threads, cut off after this long (plus a second per page).
+  configurePdfJobs({ timeoutMs: config.pdfTimeoutMs });
   const renderProgress = new RenderProgress();
   const queue = new InProcessQueue<ImportJob>(
     (job) =>
@@ -165,7 +177,7 @@ async function main(): Promise<void> {
   });
 
   scheduleFileAuthorBackfill({ db, storage, openPptx, log });
-  // Decks from before storage counted per organisation (BER-151) get measured once.
+  // Decks from before storage counted per workspace (BER-151) get measured once.
   backfillDeckFilesBytes({ db, storage, log }).catch((error: unknown) =>
     log.error('Measuring the storage of older decks failed', error),
   );
@@ -183,6 +195,7 @@ async function main(): Promise<void> {
     log,
     config,
     connections: microsoft,
+    documentPdf,
   });
   const live = new LiveHub();
   const deps: AppDeps = {
@@ -199,6 +212,7 @@ async function main(): Promise<void> {
     log,
     sync,
     rendering: { renderers: { officePdf, libreOfficePdf }, progress: renderProgress },
+    documentPdf,
     oidc,
     google,
     billing: config.billing ? new StripeBilling(config.billing) : null,
@@ -234,6 +248,8 @@ async function main(): Promise<void> {
     sweeper.stop();
     // LibreOffice runs in its own process group and would outlive this process.
     stopRunningConversions();
+    // PDF workers too: their imports resume on the next start, like those of LibreOffice.
+    stopPdfJobs();
     // A running import is cut off, not crashed: its run must not count towards giving up.
     const imports = releaseRunningImportAttempts(db).catch((error: unknown) =>
       log.error('Could not release the running imports', error),

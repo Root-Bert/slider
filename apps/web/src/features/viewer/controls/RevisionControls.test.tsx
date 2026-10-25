@@ -70,7 +70,9 @@ describe('UploadRevisionControl', () => {
 
     mocks.revision.isLinked = false;
     rerender(<UploadRevisionControl />);
-    expect(screen.getByRole('button', { name: 'Neue Version hochladen (.pptx)' })).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Neue Version hochladen' }),
+    ).toBeTruthy();
   });
 
   it('uploads the picked file and toasts the result', () => {
@@ -82,7 +84,9 @@ describe('UploadRevisionControl', () => {
     );
     const input = fileInput(container);
     const click = vi.spyOn(input, 'click');
-    fireEvent.click(screen.getByRole('button', { name: 'Neue Version hochladen (.pptx)' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Neue Version hochladen' }),
+    );
     expect(click).toHaveBeenCalled();
 
     const file = new File(['x'], 'deck.pptx');
@@ -101,7 +105,7 @@ describe('UploadRevisionControl', () => {
 
   it('keeps the focused button while the version is processed, with a spinner over its icon', () => {
     const { rerender, container } = render(<UploadRevisionControl />);
-    const button = screen.getByRole('button', { name: 'Neue Version hochladen (.pptx)' });
+    const button = screen.getByRole('button', { name: 'Neue Version hochladen' });
     button.focus();
 
     mocks.upload.isPending = true;

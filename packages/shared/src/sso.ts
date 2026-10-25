@@ -1,11 +1,11 @@
 import { z } from 'zod';
 
 /**
- * Company login per organisation (BER-162): an organisation's admins connect their own OpenID
- * Connect provider (Entra, Okta, Keycloak, Google Workspace, …). People at the organisation's
- * domain then sign in through it and land in the organisation.
+ * Company login per workspace (BER-162): a workspace's admins connect their own OpenID
+ * Connect provider (Entra, Okta, Keycloak, Google Workspace, …). People at the workspace's
+ * domain then sign in through it and land in the workspace.
  *
- * The domain is the organisation's company domain (`Workspace.joinDomain`), proven by a DNS TXT
+ * The domain is the workspace's company domain (`Workspace.joinDomain`), proven by a DNS TXT
  * record: a mailbox at the domain is not enough, as the provider vouches for every address there.
  */
 
@@ -17,9 +17,9 @@ export const workspaceSsoSchema = z.object({
   clientId: z.string().nullable(),
   /** The secret itself never leaves the server. */
   hasSecret: z.boolean(),
-  /** Redirect URI to register at the provider – the same for every organisation. */
+  /** Redirect URI to register at the provider – the same for every workspace. */
   redirectUri: z.string(),
-  /** The organisation's company domain; `null`: not opened to a domain yet, SSO can't work. */
+  /** The workspace's company domain; `null`: not opened to a domain yet, SSO can't work. */
   domain: z.string().nullable(),
   /** TXT record that proves the domain; `null` until the settings are saved. */
   dnsRecord: z.object({ name: z.string(), value: z.string() }).nullable(),
@@ -51,7 +51,7 @@ export const discoverSsoInputSchema = z.object({
 export type DiscoverSsoInput = z.infer<typeof discoverSsoInputSchema>;
 
 /** Where the browser goes for the company login: `${loginUrl}&returnTo=<path>`. */
-export const ssoLoginSchema = z.object({ loginUrl: z.string(), organisation: z.string() });
+export const ssoLoginSchema = z.object({ loginUrl: z.string(), workspace: z.string() });
 export type SsoLogin = z.infer<typeof ssoLoginSchema>;
 
 /** DNS name of the TXT record that proves `domain` for the company login. */

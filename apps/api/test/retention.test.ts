@@ -50,7 +50,7 @@ describe('files that could not be deleted (BER-143)', () => {
   });
 });
 
-describe('organisations without members (BER-145)', () => {
+describe('workspaces without members (BER-145)', () => {
   it('are purged once they are a day old; ones with members stay', async () => {
     const now = ctx.clock.now().getTime();
     const org = (id: string, createdAt: Date) =>
@@ -149,7 +149,7 @@ describe('unused decks (BER-143)', () => {
     ).toHaveLength(1);
   });
 
-  it('reminds the admins instead of an owner removed from the organisation', async () => {
+  it('reminds the admins instead of an owner removed from the workspace', async () => {
     const deck = await unusedDeck(17);
     const gone = await signedInUser(ctx, { name: 'Anna', email: 'anna@firma.de' });
     await ctx.deps.db.update(decks).set({ ownerId: gone.user.id }).where(eq(decks.id, deck.deckId));

@@ -33,7 +33,7 @@ interface FakeIdp {
   requests: string[];
 }
 
-/** The organisation's provider (no network). */
+/** The workspace's provider (no network). */
 function fakeIdp(claims: Record<string, unknown> = {}): FakeIdp {
   const idp: FakeIdp = {
     nonce: '',
@@ -85,7 +85,7 @@ async function context(idp: FakeIdp, auth: Partial<Config['auth']> = {}) {
   });
 }
 
-/** Anna, admin of a paid organisation opened to firma.de. */
+/** Anna, admin of a paid workspace opened to firma.de. */
 async function companyAdmin(plan = 'paid') {
   const { user, cookie } = await signedInUser(ctx, { name: 'Anna Becker', email: 'anna@firma.de' });
   const res = await ctx.request('/api/workspaces', {
@@ -151,7 +151,7 @@ async function ssoLogin(idp: FakeIdp, email = 'ben@firma.de', returnTo = '/') {
 const me = async (cookie: string) =>
   (await (await ctx.request('/api/me', { cookie })).json()) as MeResponse;
 
-describe('company login per organisation (BER-162)', () => {
+describe('company login per workspace (BER-162)', () => {
   it('is set up by an admin: discovery checked, secret kept back, domain proven by DNS', async () => {
     const idp = fakeIdp();
     await context(idp);
@@ -226,7 +226,7 @@ describe('company login per organisation (BER-162)', () => {
     expect(workspaceSsoSchema.parse(await again.json())).toMatchObject({ active: true });
   });
 
-  it('signs a new colleague up and into the organisation, then in again as the same account', async () => {
+  it('signs a new colleague up and into the workspace, then in again as the same account', async () => {
     const idp = fakeIdp();
     await context(idp);
     const admin = await activeSso();
@@ -242,7 +242,7 @@ describe('company login per organisation (BER-162)', () => {
     const cookie = sessionCookieFrom(callback) ?? '';
     const body = await me(cookie);
     expect(body.user).toMatchObject({ email: 'ben@firma.de', name: 'Ben Krause' });
-    // In the company's organisation, no own one founded.
+    // In the company's workspace, no own one founded.
     expect(body.workspaces).toEqual([
       expect.objectContaining({ id: admin.workspaceId, role: 'member' }),
     ]);
@@ -298,14 +298,14 @@ describe('company login per organisation (BER-162)', () => {
       json: { email: 'ben@firma.de' },
     });
     expect(found.status).toBe(404);
-    const direct = await ctx.request(`/api/auth/sso/login?organisation=${admin.workspaceId}`);
+    const direct = await ctx.request(`/api/auth/sso/login?workspace=${admin.workspaceId}`);
     expect(direct.headers.get('location')).toContain('/login?error=sso_unavailable');
     expect(
       authProvidersSchema.parse(await (await ctx.request('/api/auth/providers')).json()).sso,
     ).toBe(false);
   });
 
-  it('is for admins of paid organisations on the hosted instance, with a public https issuer', async () => {
+  it('is for admins of paid workspaces on the hosted instance, with a public https issuer', async () => {
     const idp = fakeIdp();
     await context(idp);
     const admin = await companyAdmin('free');
@@ -357,22 +357,25 @@ describe('company login per organisation (BER-162)', () => {
     await context(idp);
     const admin = await activeSso();
     for (let i = 0; i < SSO_LOGINS_PER_HOUR; i++) {
-      const res = await ctx.request('/api/auth/sso/login?organisation=unknown');
+      const res = await ctx.request('/api/auth/sso/login?workspace=unknown');
       expect(res.headers.get('location')).toContain('/login?error=sso_unavailable');
     }
     const asked = idp.requests.length;
-    const refused = await ctx.request(`/api/auth/sso/login?organisation=${admin.workspaceId}`);
+    const refused = await ctx.request(`/api/auth/sso/login?workspace=${admin.workspaceId}`);
     expect(refused.status).toBe(302);
     expect(refused.headers.get('location')).toContain('/login?error=rate_limited');
     expect(Number(refused.headers.get('retry-after'))).toBeGreaterThan(0);
     expect(idp.requests).toHaveLength(asked);
 
     ctx.clock.advance(60 * 60_000);
-    const later = await ctx.request(`/api/auth/sso/login?organisation=${admin.workspaceId}`);
+    const later = await ctx.request(`/api/auth/sso/login?workspace=${admin.workspaceId}`);
     expect(later.headers.get('location')).toContain(`${ISSUER}/protocol/openid-connect/auth`);
+    // Links from before the rename to Workspace still carry `?organisation=`.
+    const old = await ctx.request(`/api/auth/sso/login?organisation=${admin.workspaceId}`);
+    expect(old.headers.get('location')).toContain(`${ISSUER}/protocol/openid-connect/auth`);
   });
 
-  it('is gone with its organisation, and admins can delete it', async () => {
+  it('is gone with its workspace, and admins can delete it', async () => {
     const idp = fakeIdp();
     await context(idp);
     const admin = await activeSso();

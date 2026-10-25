@@ -4,7 +4,7 @@ import type { Deck, Workspace } from '@slider/shared';
 import { routes } from '@/lib/routes';
 import { AppHeader } from '@/shell/AppHeader';
 import { LoginErrorBanner } from '@/features/auth';
-import { rememberWorkspace } from '@/features/workspaces';
+import { rememberWorkspace, WorkspaceMark } from '@/features/workspaces';
 import { GOOGLE_RETURN_PARAMS, useGooglePick } from '@/features/google';
 import { NextcloudBrowser } from '@/features/nextcloud';
 import { useAuthProviders, useMe, useNextcloudConnections, useNextcloudSettings } from '@/lib/api';
@@ -21,9 +21,7 @@ import { useDeckUpload } from '../hooks/useDeckUpload';
 import { useLinkImport } from '../hooks/useLinkImport';
 import { useOneDrivePicker } from '../hooks/useOneDrivePicker';
 import { connectErrorFrom, googleConnectErrorMessage } from '../lib/link-import-errors';
-import { newReviewSubtitle } from '../lib/new-review-copy';
 import { PICKER_EXPAND_MS } from '../lib/picker-motion';
-import { PPTX_ACCEPT } from '../lib/upload-validation';
 
 /**
  * A1 "Neue Review" (BER-91, BER-92) with the A3 "no access" state, for one workspace.
@@ -167,16 +165,6 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
       <title>Neue Review | Slider</title>
       <AppHeader />
 
-      {!link.noAccess && (
-        // Same place and type as "Reviews".
-        <PageHeader
-          title="Neue Review"
-          subtitle={newReviewSubtitle(showPicker, nextcloudAvailable, googleAvailable)}
-          subtitleSize="body"
-          back={{ to: routes.workspace(workspace.id) }}
-          className="px-4 pt-2 md:px-14"
-        />
-      )}
       {connectError && (
         <div className="px-4 pt-4 md:px-14">
           <div className="max-w-[640px]">
@@ -189,7 +177,7 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
         className={cn(
           'flex flex-1 justify-center px-4 pb-16',
           // A3 drops the heading; the field moves down to where the card reads centred (Figma 92:2472).
-          link.noAccess ? 'pt-[clamp(8px,19vh,190px)]' : 'pt-[clamp(24px,7vh,72px)]',
+          link.noAccess ? 'pt-[clamp(8px,19vh,190px)]' : 'pt-2',
         )}
       >
         <div
@@ -199,6 +187,17 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
             link.noAccess ? 'max-w-[560px]' : 'max-w-[680px]',
           )}
         >
+          {!link.noAccess && (
+            // Like the settings pages: mark and title over the column, no subtitle. The workspace's
+            // mark, as on its settings: the review goes there.
+            <PageHeader
+              title="Neue Review"
+              leading={
+                <WorkspaceMark name={workspace.name} logoUrl={workspace.logoUrl} size={32} />
+              }
+              back={{ to: routes.workspace(workspace.id) }}
+            />
+          )}
           <div className="flex flex-col gap-3">
             {/* First, so it opens up right under the heading. Also while `me` still loads: back
                 from the Microsoft consent it opens right away. */}
@@ -307,7 +306,6 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
           <input
             ref={fileInputRef}
             type="file"
-            accept={PPTX_ACCEPT}
             hidden
             tabIndex={-1}
             onChange={(event) => {

@@ -10,7 +10,7 @@ import { z } from 'zod';
 
 /**
  * Why the last automatic update failed. The current revision always stays visible.
- * `storage_full`: the organisation's storage limit (BER-151) – the update waits, and is taken
+ * `storage_full`: the workspace's storage limit (BER-151) – the update waits, and is taken
  * over by itself once there is room again.
  */
 export const SYNC_ERROR_CODES = [

@@ -26,7 +26,7 @@ export interface CheckoutInput {
   purpose: 'upgrade' | 'transfer';
   /**
    * Days of Paid before the first payment, with no payment method needed. Whoever hasn't added
-   * one by then is simply cancelled – the organisation stays on Free.
+   * one by then is simply cancelled – the workspace stays on Free.
    */
   trialDays?: number;
   successUrl: string;

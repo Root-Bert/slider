@@ -491,15 +491,15 @@ const SIGNUP_LABELS: Record<SignupMode, string> = {
   invite: 'Nur mit Einladung',
 };
 
-/** What each mode means for joining organisations by company domain (BER-148). */
+/** What each mode means for joining workspaces by company domain (BER-148). */
 const SIGNUP_HINTS: Record<SignupMode, string> = {
-  open: 'Organisationen können sich für ihre Firmen-Domain öffnen: Kolleg:innen finden sie dann und treten ohne Einladung bei.',
+  open: 'Workspaces können sich für ihre Firmen-Domain öffnen: Kolleg:innen finden sie dann und treten ohne Einladung bei.',
   company:
-    'Ein Konto bekommt, wer eingeladen ist oder eine Adresse einer Domain hat, für die sich eine Organisation geöffnet hat.',
+    'Ein Konto bekommt, wer eingeladen ist oder eine Adresse einer Domain hat, für die sich ein Workspace geöffnet hat.',
   domains:
-    'Nur Adressen dieser Domains bekommen ein Konto. Organisationen können sich zusätzlich für ihre Firmen-Domain öffnen.',
+    'Nur Adressen dieser Domains bekommen ein Konto. Workspaces können sich zusätzlich für ihre Firmen-Domain öffnen.',
   invite:
-    'Ausschließlich Einladungen – Organisationen lassen sich nicht per Domain finden oder beitreten.',
+    'Ausschließlich Einladungen – Workspaces lassen sich nicht per Domain finden oder beitreten.',
 };
 
 /** A heading over cards that belong together. */

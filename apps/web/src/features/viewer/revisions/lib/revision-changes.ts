@@ -178,9 +178,9 @@ export function syncResultMessage(result: SyncResult): { text: string; tone: Toa
 }
 
 /**
- * The sync error the banner shows, if any. Only link imports update themselves: a failed
+ * The sync error the status icon next to the comment filter shows, if any. Only link imports update themselves: a failed
  * upload of an uploaded deck was already reported to its uploader (toast) and has nothing to
- * retry, so it never becomes a banner for everybody. An error older than the last successful
+ * retry, so it never shows for everybody. An error older than the last successful
  * update is stale.
  */
 export function bannerSyncError(
@@ -213,7 +213,7 @@ export const sourceLoginLabel = (loginUrl: string | undefined) =>
       ? 'Google Drive verbinden'
       : 'Mit Microsoft anmelden';
 
-/** Headline of the sync error banner (the server's `message` is the detail line). */
+/** Headline of the sync error (the server's `message` is the detail line). */
 export function syncErrorTitle(code: SyncErrorCode, loginUrl?: string): string {
   switch (code) {
     case 'auth_required':
@@ -231,7 +231,7 @@ export function syncErrorTitle(code: SyncErrorCode, loginUrl?: string): string {
     case 'unreachable':
       return 'Quelle gerade nicht erreichbar';
     case 'storage_full':
-      return 'Speicher der Organisation voll';
+      return 'Speicher des Workspace voll';
     default:
       return 'Aktualisierung fehlgeschlagen';
   }

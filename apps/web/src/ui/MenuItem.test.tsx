@@ -145,13 +145,13 @@ describe('MenuDivider and MenuHeading', () => {
   it('render a hairline separator and an uppercase caption', () => {
     render(
       <>
-        <MenuHeading id="orgs">Organisationen</MenuHeading>
+        <MenuHeading id="orgs">Workspaces</MenuHeading>
         <MenuDivider />
       </>,
     );
     const separator = screen.getByRole('separator');
     expect(classesOf(separator)).toEqual(expect.arrayContaining(['bg-hairline', 'mx-2', 'my-1']));
-    const heading = screen.getByText('Organisationen');
+    const heading = screen.getByText('Workspaces');
     expect(heading.id).toBe('orgs');
     expect(classesOf(heading)).toEqual(expect.arrayContaining(['text-caption', 'uppercase']));
   });

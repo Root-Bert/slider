@@ -21,12 +21,12 @@ export const routes = {
   account: () => '/konto',
   /** "Einstellungen": your colour and how decks open – kept apart from the account. */
   preferences: () => '/einstellungen',
-  /** "Nutzung": plan, limits, storage and billing of an organisation (BER-151..155). */
+  /** "Nutzung": plan, limits, storage and billing of a workspace (BER-151..155). */
   usage: (workspaceId?: string | null) =>
-    workspaceId ? `/nutzung?organisation=${encodeURIComponent(workspaceId)}` : '/nutzung',
+    workspaceId ? `/nutzung?workspace=${encodeURIComponent(workspaceId)}` : '/nutzung',
   /** Logins, mail and sign-up of a self-hosted instance (instance admin). */
   setup: () => '/einrichtung',
-  /** The instance admin's dashboard: numbers, organisations, accounts (BER-167). */
+  /** The instance admin's dashboard: numbers, workspaces, accounts (BER-167). */
   instance: () => '/instanz',
   /** Privacy policy and imprint of the instance (BER-141). */
   privacy: () => '/datenschutz',

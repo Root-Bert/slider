@@ -106,8 +106,8 @@ export function UsageSection({ workspace }: { workspace: Workspace }) {
       title="Plan & Nutzung"
       description={
         unlimited
-          ? 'Zusammenarbeit und Kommentare gibt es innerhalb der Organisation.'
-          : 'Zusammenarbeit und Kommentare gibt es innerhalb der Organisation. Offene E-Mail-Einladungen halten einen Platz frei.'
+          ? 'Zusammenarbeit und Kommentare gibt es innerhalb des Workspace.'
+          : 'Zusammenarbeit und Kommentare gibt es innerhalb des Workspace. Offene E-Mail-Einladungen halten einen Platz frei.'
       }
       aside={unlimited ? undefined : <PlanBadge plan={workspace.plan} />}
     >

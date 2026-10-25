@@ -39,7 +39,7 @@ type CreateCommentData = z.output<typeof createCommentInputSchema>;
 
 export function toCommentDto(
   row: CommentRow,
-  { media, image }: CommentAttachments = { media: null, image: null },
+  { media, images }: CommentAttachments = { media: null, images: [] },
 ): Comment {
   return {
     id: row.id,
@@ -51,7 +51,7 @@ export function toCommentDto(
     anchor: row.anchor,
     strokes: row.strokes,
     media,
-    image,
+    images,
     status: row.status,
     resolvedBy: row.resolvedBy,
     resolvedAt: row.resolvedAt?.toISOString() ?? null,
@@ -116,7 +116,7 @@ export async function createComment(
   input: CreateCommentData,
 ): Promise<Comment> {
   const deck = await requireDeckAccess(deps, viewer, deckId, 'comment');
-  // No new comments or replies while the organisation is over its plan's limits (BER-155).
+  // No new comments or replies while the workspace is over its plan's limits (BER-155).
   await assertWithinLimits(deps.db, deps.config, deck.workspaceId, deps.clock.now());
   const comment = toCommentDto(await insertComment(deps.db, deps, viewer, deck, input));
   deps.live?.commentsChanged(deck.id);

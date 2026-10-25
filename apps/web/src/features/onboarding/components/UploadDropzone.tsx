@@ -1,7 +1,5 @@
 import { useState, type DragEvent } from 'react';
-import { MAX_UPLOAD_BYTES } from '@slider/shared';
-import { formatBytes } from '@/lib/format';
-import { cn, ErrorText, Icon, TextLink } from '@/ui';
+import { cn, ErrorText } from '@/ui';
 
 interface UploadDropzoneProps {
   onFile: (file: File) => void;
@@ -11,13 +9,19 @@ interface UploadDropzoneProps {
 
 const hasFiles = (event: DragEvent) => event.dataTransfer.types.includes('Files');
 
-/** Slim dashed drop target – uploads are the rare path. "Datei auswählen" is the keyboard path. */
+/**
+ * The whole dashed zone is one button that opens the file picker – no button, no icon inside
+ * it – lit by the website's sage horizon (`drop-glow`), brighter on hover and while a file is dragged over.
+ * Dropping a file anywhere on it works too.
+ */
 export function UploadDropzone({ onFile, onBrowse, error }: UploadDropzoneProps) {
   const [dragOver, setDragOver] = useState(false);
 
   return (
     <div className="flex flex-col gap-2">
-      <div
+      <button
+        type="button"
+        onClick={onBrowse}
         onDragEnter={(event) => {
           if (hasFiles(event)) setDragOver(true);
         }}
@@ -35,36 +39,31 @@ export function UploadDropzone({ onFile, onBrowse, error }: UploadDropzoneProps)
           const file = event.dataTransfer.files[0];
           if (file) onFile(file);
         }}
-        onClick={(event) => {
-          // Mouse convenience: the whole row opens the picker; the inner button handles keyboard.
-          if (event.target === event.currentTarget) onBrowse();
-        }}
         className={cn(
-          'flex cursor-pointer items-center gap-3 rounded-control border border-dashed px-4 py-8 transition-colors',
+          'group relative flex w-full cursor-pointer flex-col items-center justify-center overflow-hidden rounded-control border border-dashed px-4 py-10 transition-colors',
           // One border colour at a time: `cn` is clsx, and in the CSS `border-hairline-strong`
           // comes after `border-danger/45`, so both together never showed the error edge.
           dragOver
-            ? 'border-fg bg-surface-1'
-            : cn(error ? 'border-danger/45' : 'border-hairline-strong', 'hover:bg-surface-1'),
+            ? 'border-fg'
+            : error
+              ? 'border-danger/45'
+              : 'border-hairline-strong hover:border-fg-subtle',
         )}
       >
-        <Icon name="upload" size="lg" className="pointer-events-none shrink-0 text-fg-subtle" />
-        <p className="pointer-events-none min-w-0 flex-1 text-sm text-fg-muted">
-          {dragOver ? (
-            'Loslassen zum Hochladen'
-          ) : (
-            <>
-              Präsentation hierher ziehen oder{' '}
-              <TextLink variant="inline" onClick={onBrowse} className="pointer-events-auto">
-                Datei auswählen
-              </TextLink>
-            </>
+        <span
+          aria-hidden
+          className={cn(
+            'drop-glow pointer-events-none absolute inset-0 transition-opacity duration-300',
+            dragOver ? 'opacity-100' : 'opacity-70 group-hover:opacity-100',
           )}
-        </p>
-        <span className="pointer-events-none shrink-0 text-xs text-fg-subtle">
-          bis {formatBytes(MAX_UPLOAD_BYTES)}
+        />
+        <span className="relative flex flex-col items-center gap-0.5">
+          <span className="text-body font-medium text-fg">
+            {dragOver ? 'Loslassen zum Hochladen' : 'Datei auswählen'}
+          </span>
+          <span className="text-caption text-fg-subtle">oder hierher ziehen</span>
         </span>
-      </div>
+      </button>
       {error && (
         <ErrorText role="alert" size="xs">
           {error}

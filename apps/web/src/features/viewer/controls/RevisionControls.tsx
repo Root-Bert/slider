@@ -71,7 +71,7 @@ function UploadButton() {
     <span className="relative inline-flex">
       <IconButton
         icon="upload"
-        label={busy ? 'Neue Version wird verarbeitet …' : 'Neue Version hochladen (.pptx)'}
+        label={busy ? 'Neue Version wird verarbeitet …' : 'Neue Version hochladen'}
         size="sm"
         aria-disabled={busy || undefined}
         aria-busy={busy || undefined}
@@ -91,7 +91,6 @@ function UploadButton() {
       <input
         ref={inputRef}
         type="file"
-        accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation"
         className="hidden"
         tabIndex={-1}
         aria-hidden

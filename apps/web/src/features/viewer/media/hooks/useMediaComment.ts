@@ -12,7 +12,7 @@ import type { Recording } from './useRecorder';
 
 const mediaUsageKey = (deckId: string) => [...queryKeys.deck(deckId), 'media-usage'] as const;
 
-/** Storage of the deck's organisation – every file of its reviews counts (BER-151). */
+/** Storage of the deck's workspace – every file of its reviews counts (BER-151). */
 export const useMediaUsage = (deckId: string) =>
   useQuery({
     queryKey: mediaUsageKey(deckId),
@@ -28,19 +28,20 @@ function fileFor(recording: Recording): File {
   return new File([recording.blob], `aufnahme.${extension}`, { type: recording.mimeType });
 }
 
-const isAbort = (error: unknown) => error instanceof DOMException && error.name === 'AbortError';
+export const isAbort = (error: unknown) =>
+  error instanceof DOMException && error.name === 'AbortError';
 
 export interface MediaCommentUpload {
   input: CreateCommentInput;
   /** Voice or video – or the memo recorded while drawing. */
   recording?: Recording | null;
-  /** The drawn image (Bild tab), exported to PNG when sending. */
-  image?: (() => Promise<Blob>) | null;
+  /** Its images in order – the drawn one (Bild tab, exported to PNG when sending) first. */
+  images?: (() => Promise<Blob>)[];
 }
 
 /**
- * Sends a voice or video comment, or a drawn image with an optional voice memo – root or
- * reply – with upload progress.
+ * Sends a voice or video comment, or images (a drawn one with an optional voice memo, pasted or
+ * picked ones) – root or reply – with upload progress.
  *
  * `cancel()` aborts a running upload; leaving (unmount) does too. An aborted upload creates
  * nothing here – no cache entry – and is not reported as an error.
@@ -58,7 +59,7 @@ export function useCreateMediaComment(deckId: string) {
   useEffect(() => cancel, [cancel]);
 
   const mutation = useMutation({
-    mutationFn: async ({ input, recording, image }: MediaCommentUpload) => {
+    mutationFn: async ({ input, recording, images = [] }: MediaCommentUpload) => {
       controllerRef.current?.abort();
       const controller = new AbortController();
       controllerRef.current = controller;
@@ -71,7 +72,8 @@ export function useCreateMediaComment(deckId: string) {
       const form = new FormData();
       form.append('comment', JSON.stringify(body));
       if (recording) form.append('file', fileFor(recording));
-      if (image) form.append('image', new File([await image()], 'bild.png', { type: 'image/png' }));
+      for (const image of images)
+        form.append('image', new File([await image()], 'bild.png', { type: 'image/png' }));
       setProgress(0);
       return uploadWithProgress<Comment>(
         `/decks/${deckId}/media-comments`,

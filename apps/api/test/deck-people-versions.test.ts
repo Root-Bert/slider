@@ -40,7 +40,7 @@ describe('GET /decks/:deckId/people and /slides/:slideId/versions', () => {
     return revisionId;
   }
 
-  it('lists the members of the deck’s organisation, sorted by name', async () => {
+  it('lists the members of the deck’s workspace, sorted by name', async () => {
     const zoe = await signedInUser(ctx, { name: 'Zoe Zimmer', email: 'zoe@firma.de' });
     const anna = await signedInUser(ctx, { name: 'Anna Arndt', email: 'anna@firma.de' });
     await signedInUser(ctx, { name: 'Fremd', email: 'fremd@example.com' });
@@ -66,7 +66,7 @@ describe('GET /decks/:deckId/people and /slides/:slideId/versions', () => {
     expect(asViewer.status).toBe(200);
   });
 
-  it('hides people and versions from accounts outside the organisation', async () => {
+  it('hides people and versions from accounts outside the workspace', async () => {
     const { cookie } = await signedInUser(ctx, { name: 'Fremd', email: 'fremd@example.com' });
     const slideId = deck.slideIds[0] ?? '';
     expect((await ctx.request(`/api/decks/${deck.deckId}/people`, { cookie })).status).toBe(404);

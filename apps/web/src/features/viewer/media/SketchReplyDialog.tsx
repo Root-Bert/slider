@@ -1,16 +1,20 @@
-import { MAX_COMMENT_BODY_LENGTH, type Comment } from '@slider/shared';
+import type { Comment } from '@slider/shared';
 import { useState } from 'react';
-import { AutosizeTextarea, Button, Dialog, ErrorText } from '@/ui';
+import { Button, Dialog, ErrorText } from '@/ui';
 import { replyInput } from '../comments/lib/replies';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerToast } from '../state/viewer-toast';
 import { DEFAULT_SKETCH_ASPECT, exportSketch } from './lib/sketch';
 import { SketchPanel, type Sketch } from './SketchPanel';
 import { useCreateMediaComment } from './hooks/useMediaComment';
+import { asUploads, useImageAttachments } from './hooks/useImageAttachments';
+import { NoteField } from './NoteField';
 import { useHoldUnsavedWork } from '../lib/unsaved-work';
-import { isModEnter } from '@/lib/keyboard';
 
-/** Reply to a thread with a drawn image, optionally with a voice memo recorded while drawing. */
+/**
+ * Reply to a thread with a drawn image, optionally with a voice memo recorded while drawing and
+ * images pasted into or picked for the note.
+ */
 export function SketchReplyDialog({
   root,
   deckId,
@@ -26,10 +30,14 @@ export function SketchReplyDialog({
     slides.find((slide) => slide.id === root.slideId)?.aspectRatio ?? DEFAULT_SKETCH_ASPECT;
   const [sketch, setSketch] = useState<Sketch | null>(null);
   const [note, setNote] = useState('');
+  // The sketch takes one of the comment's image places.
+  const images = useImageAttachments(1);
   const create = useCreateMediaComment(deckId);
   const showToast = useViewerToast();
   // Leaving the review would drop the sketch and abort its upload: ask first.
-  useHoldUnsavedWork(sketch !== null || note.trim() !== '' || create.isPending);
+  useHoldUnsavedWork(
+    sketch !== null || note.trim() !== '' || images.attachments.length > 0 || create.isPending,
+  );
 
   // Cancelling (button, Esc, backdrop) also aborts a running upload: nothing is sent.
   const cancel = () => {
@@ -44,7 +52,7 @@ export function SketchReplyDialog({
       {
         input: replyInput(root, note),
         recording: memo,
-        image: () => exportSketch(strokes, aspect),
+        images: [() => exportSketch(strokes, aspect), ...asUploads(images.attachments)],
       },
       {
         onSuccess: () => {
@@ -89,19 +97,14 @@ export function SketchReplyDialog({
             onCancel: cancel,
           }}
         />
-        <div className="field-well focus-field rounded-control-sm px-3 py-2">
-          <AutosizeTextarea
-            aria-label="Notiz zum Bild"
-            maxLength={MAX_COMMENT_BODY_LENGTH}
-            placeholder="Optional: Notiz zum Bild"
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            onKeyDown={(event) => {
-              if (isModEnter(event)) send();
-            }}
-            className="text-body leading-5 text-fg"
-          />
-        </div>
+        <NoteField
+          label="Notiz zum Bild"
+          value={note}
+          onChange={setNote}
+          onSend={send}
+          images={images}
+          disabled={create.isPending}
+        />
         {create.error && (
           <ErrorText role="alert" size="xs">
             {create.error.message}

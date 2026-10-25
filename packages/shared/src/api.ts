@@ -68,7 +68,7 @@ import type { DomainWorkspace, MeLimits, MeUser, PendingInvite, Workspace } from
  * | GET    | /auth/oidc/login?returnTo=&intent=     | (`intent=connect`: link to me) | 302 to the SSO provider |
  * | GET    | /auth/oidc/callback                    |                            | 302 back to the web app |
  * | POST   | /auth/sso/discover                     | DiscoverSsoInput           | SsoLogin (404: none for the address) |
- * | GET    | /auth/sso/login?organisation=&returnTo= | (an organisation's company login) | 302 to its provider |
+ * | GET    | /auth/sso/login?workspace=&returnTo= | (a workspace's company login) | 302 to its provider |
  * | GET    | /auth/sso/callback                     |                            | 302 back to the web app |
  * | GET    | /auth/nextcloud/login?returnTo=&intent= | (the organisation's Nextcloud, OAuth 2.0) | 302 to Nextcloud |
  * | GET    | /auth/nextcloud/callback               |                            | 302 back to the web app |
@@ -154,10 +154,10 @@ export const ERROR_CODES = [
   'link_expired',
   'invite_used',
   'rate_limited',
-  /** A limit of the organisation's plan (members, decks, own organisations) is reached (BER-130). */
+  /** A limit of the workspace's plan (members, decks, own workspaces) is reached (BER-130). */
   'plan_limit',
   /**
-   * The organisation is on the free plan and over one of its limits (members, reviews, storage):
+   * The workspace is on the free plan and over one of its limits (members, reviews, storage):
    * reading, deleting and upgrading work, creating does not until it fits again (BER-155).
    */
   'plan_over_limit',
@@ -168,13 +168,13 @@ export const ERROR_CODES = [
    * first (`POST /setup/claim`); until then every other route answers with this (403).
    */
   'instance_unclaimed',
-  /** Another organisation is already opened to this e-mail domain (BER-148). */
+  /** Another workspace is already opened to this e-mail domain (BER-148). */
   'domain_taken',
   /** The website's contact form is off: no `CONTACT_EMAIL` or no SMTP. */
   'contact_unavailable',
   /** A mail (the login link, BER-168) could not be sent just now; trying again may work. */
   'mail_failed',
-  /** The instance admin blocked the organisation (BER-167): only leaving it still works. */
+  /** The instance admin blocked the workspace (BER-167): only leaving it still works. */
   'workspace_blocked',
   /** The instance admin blocked the account (BER-167): it can't sign in. */
   'account_blocked',
@@ -207,9 +207,9 @@ export interface MeResponse {
   user?: MeUser;
   workspaces?: Workspace[];
   pendingInvites?: PendingInvite[];
-  /** The company organisation of the viewer's e-mail domain, if they are not in it (BER-148). */
+  /** The company workspace of the viewer's e-mail domain, if they are not in it (BER-148). */
   domainWorkspace?: DomainWorkspace | null;
-  /** What the account may still do (BER-130), e.g. found its own organisation. */
+  /** What the account may still do (BER-130), e.g. found its own workspace. */
   limits?: MeLimits;
   /**
    * `false`: the instance has no admin yet and this account must enter the setup token
@@ -294,12 +294,12 @@ export interface DataRequestInfo {
 }
 
 /**
- * Who becomes admin, per organisation where the deleted account was the only admin among others
+ * Who becomes admin, per workspace where the deleted account was the only admin among others
  * (workspace id → member id). Deleting oneself asks for one each (BER-145).
  */
 export const successorsSchema = z.record(z.string().max(100), z.string().max(100)).default({});
 
-/** An organisation that needs a new admin before the account can be deleted. */
+/** A workspace that needs a new admin before the account can be deleted. */
 export interface SuccessorChoice {
   workspaceId: string;
   workspaceName: string;
@@ -395,6 +395,9 @@ export const MEDIA_MIME_TYPES = {
 /** A drawn image (PNG from the composer's canvas); a full-screen sketch is well below this. */
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
+/** Images one comment can carry (pasted or picked, BER-174). */
+export const MAX_COMMENT_IMAGES = 10;
+
 /** `audio/webm;codecs=opus` → `audio/webm`. */
 export const baseMimeType = (mimeType: string) => mimeType.split(';')[0]!.trim().toLowerCase();
 
@@ -421,7 +424,7 @@ export const createMediaCommentInputSchema = createCommentInputSchema.extend({
 });
 export type CreateMediaCommentInput = z.input<typeof createMediaCommentInputSchema>;
 
-/** Storage of the deck's organisation (BER-151): every file of its reviews counts. */
+/** Storage of the deck's workspace (BER-151): every file of its reviews counts. */
 export interface MediaUsage {
   usedBytes: number;
   /** `null` = unlimited (self-hosted). */

@@ -3,6 +3,7 @@ import type { DeckRow, RevisionRow, SlideRenderer } from '../db/schema';
 import type { Logger } from '../logger';
 import { isGraphRef, OFFICE_FILE_TOO_BIG, OfficePdfError } from '../sources/microsoft-graph';
 import { withDeckConnection, type ConnectionLookup } from '../sources/connections';
+import { isPdfBytes } from '../sources/safe-fetch';
 import type { SourceAdapters } from '../sources/source-adapter';
 import { blobKeys, type BlobStorage } from '../storage/blob-storage';
 import { ConversionAborted, type PptxToPdf } from './libreoffice';
@@ -179,7 +180,11 @@ export async function renderSlidePages(
   const candidates: { renderer: PdfRenderer; pdf: () => Promise<Uint8Array | null> }[] = [];
   const { officePdf, libreOfficePdf } = deps;
   let officeFailure: string | null = null;
-  if (officePdf) {
+  // A review deck that came as a PDF: its own pages are the pictures – one per slide, drawn
+  // by whoever made the PDF of a converted file.
+  if (isPdfBytes(pptx)) {
+    candidates.push({ renderer: revision.pdfRenderer ?? 'pdf', pdf: async () => pptx });
+  } else if (officePdf) {
     candidates.push({
       renderer: 'office',
       pdf: async () => {
@@ -192,7 +197,7 @@ export async function renderSlidePages(
       },
     });
   }
-  if (libreOfficePdf) {
+  if (libreOfficePdf && !isPdfBytes(pptx)) {
     candidates.push({
       renderer: 'libreoffice',
       pdf: async () => {
@@ -234,13 +239,13 @@ export async function renderSlidePages(
         deps.log.warn(
           `PDF (${candidate.renderer}) of deck ${deck.id} has ${error.pages} pages for ${visible} visible slides`,
         );
-        if (candidate.renderer === 'office') {
+        if (candidate.renderer === 'office' && !isPdfBytes(pptx)) {
           officeFailure = `Das PDF von Microsoft hat ${error.pages} Seiten für ${visible} sichtbare Folien.`;
         }
         continue;
       }
       deps.log.warn(`PDF (${candidate.renderer}) of deck ${deck.id} could not be rendered`, error);
-      if (candidate.renderer === 'office')
+      if (candidate.renderer === 'office' && !isPdfBytes(pptx))
         officeFailure = 'Das PDF von Microsoft ist nicht lesbar.';
       continue;
     }

@@ -18,7 +18,7 @@ import { workspaceStorageUsage } from './workspace-storage';
 import { getRole, requireRole, workspaceNotFound } from './workspaces/roles';
 
 /**
- * The paid plan through Stripe Billing (BER-152), paid per organisation by its billing owner
+ * The paid plan through Stripe Billing (BER-152), paid per workspace by its billing owner
  * (BER-154). Slider never sees payment data: Checkout takes the payment method, the customer
  * portal manages it, and signed webhooks switch `workspaces.plan`. Without Stripe (self-hosting,
  * `config.billing` null) none of this exists – no limits, nothing to pay.
@@ -27,7 +27,7 @@ import { getRole, requireRole, workspaceNotFound } from './workspaces/roles';
 type BillingDeps = Pick<AppDeps, 'db' | 'config' | 'clock' | 'billing' | 'mailer' | 'log'>;
 
 const ACTIVE_STATUSES = new Set(['active', 'trialing']);
-/** The first subscription of an organisation starts with this many days of Paid, no card needed. */
+/** The first subscription of a workspace starts with this many days of Paid, no card needed. */
 export const TRIAL_DAYS = 14;
 /** Stripe still retries the payment: paid for now, the grace period runs (BER-155). */
 const FAILING_STATUSES = new Set(['past_due', 'unpaid', 'incomplete']);
@@ -36,7 +36,7 @@ const notConfigured = () =>
   new ApiError(404, 'not_found', 'Auf dieser Instanz gibt es keine Bezahlung.');
 const ownerOnly = () =>
   forbidden(
-    'Nur die Person, die für die Organisation bezahlt, kann das. Frag sie oder übernimm die Zahlung.',
+    'Nur die Person, die für den Workspace bezahlt, kann das. Frag sie oder übernimm die Zahlung.',
   );
 
 function requireProvider(deps: BillingDeps) {
@@ -44,9 +44,9 @@ function requireProvider(deps: BillingDeps) {
   return deps.billing;
 }
 
-/** `/nutzung?organisation=<id>` – where checkout and portal lead back to. */
+/** `/nutzung?workspace=<id>` – where checkout and portal lead back to. */
 export const usagePageUrl = (webOrigin: string, workspaceId: string, extra = '') =>
-  `${webOrigin}/nutzung?organisation=${encodeURIComponent(workspaceId)}${extra}`;
+  `${webOrigin}/nutzung?workspace=${encodeURIComponent(workspaceId)}${extra}`;
 
 // ── DTOs ────────────────────────────────────────────────────────────────────
 
@@ -126,7 +126,7 @@ async function loadWorkspace(db: Executor, workspaceId: string): Promise<Workspa
 }
 
 /**
- * The way out of paying stays open in a blocked organisation (BER-167): its usage, the customer
+ * The way out of paying stays open in a blocked workspace (BER-167): its usage, the customer
  * portal to cancel, and handing paying over – so whoever pays can stop and leave.
  */
 const EVEN_IF_BLOCKED = { allowBlocked: true };
@@ -160,7 +160,7 @@ export async function getUsageDetails(
 
 /**
  * The billing owner (an admin); with nobody set yet, any admin – they become it by paying.
- * `allowBlocked`: also in a blocked organisation (portal, handing over – not a new checkout).
+ * `allowBlocked`: also in a blocked workspace (portal, handing over – not a new checkout).
  */
 async function requireBillingOwner(
   deps: BillingDeps,
@@ -181,7 +181,7 @@ async function userOf(db: Executor, userId: string) {
 }
 
 const GRANTED_MESSAGE =
-  'Die Organisation ist schon im Paid-Plan – freigeschaltet von der Person, die Slider hier betreibt. Hier gibt es nichts zu bezahlen.';
+  'Der Workspace ist schon im Paid-Plan – freigeschaltet von der Person, die Slider hier betreibt. Hier gibt es nichts zu bezahlen.';
 
 /** `POST /workspaces/:id/billing/checkout`: Stripe Checkout for the paid plan. */
 export async function startCheckout(
@@ -196,7 +196,7 @@ export async function startCheckout(
     throw badRequest(
       row.cancelAtPeriodEnd
         ? 'Das Abo ist zum Periodenende gekündigt. Unter „Zahlung verwalten“ kannst du es fortsetzen.'
-        : 'Die Organisation ist bereits im Paid-Plan. Zahlungsmethode und Rechnungen findest du unter „Zahlung verwalten“.',
+        : 'Der Workspace ist bereits im Paid-Plan. Zahlungsmethode und Rechnungen findest du unter „Zahlung verwalten“.',
     );
   }
   let customerId = row.billingOwnerId === userId ? row.stripeCustomerId : null;
@@ -228,7 +228,7 @@ export async function openPortal(
 ): Promise<BillingRedirect> {
   const provider = requireProvider(deps);
   const row = await requireBillingOwner(deps, userId, workspaceId, EVEN_IF_BLOCKED);
-  if (!row.stripeCustomerId) throw badRequest('Für diese Organisation wurde noch nie bezahlt.');
+  if (!row.stripeCustomerId) throw badRequest('Für diesen Workspace wurde noch nie bezahlt.');
   return {
     url: await provider.createPortal({
       customerId: row.stripeCustomerId,
@@ -241,7 +241,7 @@ export async function openPortal(
 
 /**
  * `POST /workspaces/:id/billing/transfer`: the billing owner asks another admin to pay from now
- * on. Free organisations hand over at once – there is nothing to pay. Paid ones only once the
+ * on. Free workspaces hand over at once – there is nothing to pay. Paid ones only once the
  * admin paid through their own checkout ({@link acceptTransfer}); until then nothing changes.
  */
 export async function requestTransfer(
@@ -251,7 +251,7 @@ export async function requestTransfer(
   targetId: string,
 ): Promise<WorkspaceUsageDetails> {
   await requireBillingOwner(deps, userId, workspaceId, EVEN_IF_BLOCKED);
-  if (targetId === userId) throw badRequest('Du bezahlst schon für diese Organisation.');
+  if (targetId === userId) throw badRequest('Du bezahlst schon für diesen Workspace.');
   if ((await getRole(deps.db, workspaceId, targetId)) !== 'admin') {
     throw badRequest(
       'Die Zahlung kann nur ein anderer Admin übernehmen. Ernenne die Person zuerst.',
@@ -324,7 +324,7 @@ export async function cancelTransfer(
 }
 
 /**
- * `POST /workspaces/:id/billing/transfer/accept` (the asked admin): on a paid organisation their
+ * `POST /workspaces/:id/billing/transfer/accept` (the asked admin): on a paid workspace their
  * own checkout – once paid, the webhook makes them the owner and ends the old subscription. On a
  * free one (it fell back meanwhile) the handover is done at once.
  */

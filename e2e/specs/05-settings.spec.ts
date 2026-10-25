@@ -39,7 +39,7 @@ test('workspace settings page', async ({ page }) => {
   await page.goto('/');
   await expect(page).toHaveURL(/\/w\/[0-9a-f-]{36}$/);
   await page.goto(`${new URL(page.url()).pathname}/einstellungen`);
-  await expect(page.getByRole('heading', { level: 1, name: 'Meine Organisation' })).toBeVisible();
-  await expect(page).toHaveTitle('Einstellungen | Meine Organisation | Slider');
+  await expect(page.getByRole('heading', { level: 1, name: 'Mein Workspace' })).toBeVisible();
+  await expect(page).toHaveTitle('Einstellungen | Mein Workspace | Slider');
   await shot(page, 'workspace-settings');
 });

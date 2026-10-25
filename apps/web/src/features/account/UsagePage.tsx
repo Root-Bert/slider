@@ -14,17 +14,18 @@ const CHECKOUT_POLL_MS = 2000;
 const CHECKOUT_POLL_FOR_MS = 10_000;
 
 /**
- * `/nutzung` – "Nutzung" (BER-151..155): plan, limits, storage and billing of one organisation.
- * `?organisation=<id>` picks it (else the last used one, else the first); Stripe's checkout and
- * customer portal come back here, with `&checkout=success` after paying.
+ * `/nutzung` – "Nutzung" (BER-151..155): plan, limits, storage and billing of one workspace.
+ * `?workspace=<id>` picks it (else the last used one, else the first); Stripe's checkout and
+ * customer portal come back here, with `&checkout=success` after paying. Older links (mails,
+ * Stripe) still say `?organisation=<id>`.
  */
 export function Component() {
   const { user, workspaces } = useAccount();
   const [toast, showToast] = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
-  // Asked for by name, an organisation shows even when blocked (BER-167): whoever pays for it
+  // Asked for by name, a workspace shows even when blocked (BER-167): whoever pays for it
   // can still manage or cancel the payment. Otherwise the last used open one.
-  const requested = searchParams.get('organisation');
+  const requested = searchParams.get('workspace') ?? searchParams.get('organisation');
   const workspace =
     workspaces.find((candidate) => candidate.id === requested) ??
     pickWorkspace(workspaces, readLastWorkspaceId());
@@ -73,14 +74,14 @@ export function Component() {
       toast={toast}
     >
       {!workspace ? (
-        <Section title="Keine Organisation" description="Du bist in keiner Organisation." />
+        <Section title="Kein Workspace" description="Du bist in keinem Workspace." />
       ) : (
         <>
           {workspaces.length > 1 && (
             <Select<string>
-              aria-label="Organisation"
+              aria-label="Workspace"
               value={workspace.id}
-              onChange={(id) => setSearchParams({ organisation: id })}
+              onChange={(id) => setSearchParams({ workspace: id })}
               options={workspaces.map((each) => ({ value: each.id, label: each.name }))}
               className="self-start sm:min-w-[280px]"
             />

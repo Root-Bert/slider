@@ -53,8 +53,8 @@ const connectionLabel = (connection: NextcloudConnection) =>
 /**
  * Picks a presentation from a connected Nextcloud (BER-135) – the body of the panel the
  * "Aus Nextcloud wählen" button opens into. Nextcloud has no picker to embed, so this lists its
- * folders, "Mit mir geteilt" and search results through the API; only folders and `.pptx` files
- * show. Without an account it connects one first.
+ * folders, "Mit mir geteilt" and search results through the API; every file and
+ * folder shows. Without an account it connects one first.
  */
 export function NextcloudBrowser({
   workspaceId,
@@ -185,7 +185,7 @@ function FileList({
           }}
         />
         <TextField
-          aria-label="Präsentationen suchen"
+          aria-label="Dateien suchen"
           placeholder="Suchen"
           icon="search"
           value={typed}
@@ -212,10 +212,10 @@ function FileList({
         ) : entries.length === 0 ? (
           <p className="text-body text-fg-subtle">
             {searching
-              ? 'Keine Präsentation gefunden.'
+              ? 'Keine Datei gefunden.'
               : view.kind === 'shared'
-                ? 'Niemand hat Präsentationen oder Ordner mit dir geteilt.'
-                : 'Keine Präsentationen in diesem Ordner.'}
+                ? 'Niemand hat Dateien oder Ordner mit dir geteilt.'
+                : 'Dieser Ordner ist leer.'}
           </p>
         ) : (
           <ul className={cn('-mx-2 flex flex-col', listing.isPlaceholderData && 'opacity-60')}>

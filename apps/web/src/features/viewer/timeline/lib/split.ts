@@ -38,20 +38,19 @@ export const stepSplit = (
   stepPx = SPLIT_KEY_STEP_PX,
 ) => splitForHeight(slideHeightAt(split, geo) + direction * stepPx, geo);
 
+/** Ctrl/⌘ + wheel and trackpad pinch as a size factor: scrolling down (positive delta) shrinks. */
+export const wheelFactor = (deltaY: number, deltaMode: number) =>
+  Math.exp(
+    -clamp(wheelPixels(deltaY, deltaMode), -WHEEL_MAX_DELTA, WHEEL_MAX_DELTA) * WHEEL_SENSITIVITY,
+  );
+
 /** Ctrl/⌘ + wheel and trackpad pinch: scrolling down (positive delta) makes the slides smaller. */
-export function wheelSplit(
+export const wheelSplit = (
   split: number | null,
   deltaY: number,
   deltaMode: number,
   geo: TrackGeometry,
-): number {
-  const pixels = wheelPixels(deltaY, deltaMode);
-  const h = slideHeightAt(split, geo);
-  return splitForHeight(
-    h * Math.exp(-clamp(pixels, -WHEEL_MAX_DELTA, WHEEL_MAX_DELTA) * WHEEL_SENSITIVITY),
-    geo,
-  );
-}
+): number => splitForHeight(slideHeightAt(split, geo) * wheelFactor(deltaY, deltaMode), geo);
 
 /** Safari pinch: `scale` is relative to the slide height when the gesture started. */
 export const pinchSplit = (startSplit: number | null, scale: number, geo: TrackGeometry) =>

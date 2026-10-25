@@ -9,17 +9,21 @@ import {
 import {
   fileNameFor,
   isHtmlResponse,
-  isPptxBytes,
+  isDeckBytes,
   readBodyCapped,
   safeFetch,
   type SafeFetchOptions,
 } from './safe-fetch';
 import type { RemoteFile, SourceAdapter } from './source-adapter';
 
-/** Downloads `url` and returns it as a PPTX, or throws the matching link error. */
+/**
+ * Downloads `url` and returns it as a deck – a PPTX or a PDF –, or throws the matching link error.
+ * `anyFile`: any file but a web page – a cloud file the import turns into a deck itself.
+ */
 export async function downloadPptx(
   url: URL,
   http: SafeFetchOptions,
+  { anyFile = false }: { anyFile?: boolean } = {},
 ): Promise<RemoteFile & { bytes: Uint8Array }> {
   const { response, url: finalUrl } = await safeFetch(url, http);
   if (!response.ok) {
@@ -31,12 +35,12 @@ export async function downloadPptx(
     throw notAPowerPoint(LINK_NOT_A_POWERPOINT_MESSAGE);
   }
   const bytes = await readBodyCapped(response, http.maxBytes);
-  if (!isPptxBytes(bytes)) throw notAPowerPoint(LINK_NOT_A_POWERPOINT_MESSAGE);
+  if (!anyFile && !isDeckBytes(bytes)) throw notAPowerPoint(LINK_NOT_A_POWERPOINT_MESSAGE);
   return {
     // The URL asked for, not the one after redirects: those are often short-lived signed
     // download URLs (GitHub release assets, Dropbox `?dl=1`) that sync could not use later.
     ref: url.href,
-    fileName: fileNameFor(response, finalUrl),
+    fileName: fileNameFor(response, finalUrl, bytes),
     sizeBytes: bytes.byteLength,
     changeToken: changeTokenOf(response),
     bytes,

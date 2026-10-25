@@ -68,7 +68,7 @@ async function create(input = voiceComment(), bytes = webm()): Promise<Comment> 
   return commentSchema.parse(await res.json());
 }
 
-/** Another member of the organisation who may comment. */
+/** Another member of the workspace who may comment. */
 async function joinAsMember(name: string): Promise<string> {
   const person = await signedInUser(ctx, { name, email: `${name.toLowerCase()}@firma.de` });
   await ctx.deps.db
@@ -221,7 +221,7 @@ describe('voice and video comments', () => {
     expect(await big.json()).toMatchObject({ error: { code: 'file_too_large' } });
   });
 
-  it("enforces the organisation's storage, whoever records", async () => {
+  it("enforces the workspace's storage, whoever records", async () => {
     await create(voiceComment(), webm(2500));
     const guest = await joinAsMember('Mara');
     const res = await upload(voiceComment(), webm(2000), 'audio/webm', guest);
@@ -294,7 +294,7 @@ describe('voice and video comments', () => {
   });
 });
 
-describe('drawn images', () => {
+describe('images', () => {
   /** A tiny "PNG": the signature followed by filler bytes. */
   const png = (size = 500) => {
     const bytes = new Uint8Array(size).fill(3);
@@ -304,12 +304,13 @@ describe('drawn images', () => {
 
   function uploadImage(
     input: CreateMediaCommentInput,
-    image: Uint8Array<ArrayBuffer>,
+    image: Uint8Array<ArrayBuffer> | Uint8Array<ArrayBuffer>[],
     recording?: Uint8Array<ArrayBuffer>,
   ) {
     const form = new FormData();
     form.append('comment', JSON.stringify(input));
-    form.append('image', new File([image], 'bild.png', { type: 'image/png' }));
+    for (const bytes of [image].flat())
+      form.append('image', new File([bytes], 'bild.png', { type: 'image/png' }));
     if (recording) form.append('file', new File([recording], 'memo.webm', { type: 'audio/webm' }));
     return ctx.request(`/api/decks/${deck.deckId}/media-comments`, { method: 'POST', body: form });
   }
@@ -319,9 +320,9 @@ describe('drawn images', () => {
     expect(res.status).toBe(201);
     const comment = commentSchema.parse(await res.json());
     expect(comment.media).toBeNull();
-    expect(comment.image).toMatchObject({ mimeType: 'image/png', sizeBytes: 500 });
+    expect(comment.images).toMatchObject([{ mimeType: 'image/png', sizeBytes: 500 }]);
 
-    const file = await ctx.request(comment.image!.url);
+    const file = await ctx.request(comment.images![0]!.url);
     expect(file.status).toBe(200);
     expect(file.headers.get('content-type')).toBe('image/png');
   });
@@ -330,13 +331,13 @@ describe('drawn images', () => {
     const res = await uploadImage(voiceComment(), png(), webm());
     expect(res.status).toBe(201);
     const comment = commentSchema.parse(await res.json());
-    expect(comment.image?.sizeBytes).toBe(500);
+    expect(comment.images?.[0]?.sizeBytes).toBe(500);
     expect(comment.media).toMatchObject({ kind: 'audio', sizeBytes: 1000 });
 
     const list = commentSchema
       .array()
       .parse(await (await ctx.request(`/api/decks/${deck.deckId}/comments`)).json());
-    expect(list[0]?.image?.id).toBe(comment.image?.id);
+    expect(list[0]?.images?.[0]?.id).toBe(comment.images?.[0]?.id);
     expect(list[0]?.media?.id).toBe(comment.media?.id);
 
     // Both count towards the storage.
@@ -353,6 +354,32 @@ describe('drawn images', () => {
     });
     expect(edited.status).toBe(200);
     expect(commentSchema.parse(await edited.json())).toMatchObject({ body: '', media: null });
+  });
+
+  it('stores several images in their order', async () => {
+    const res = await uploadImage(voiceComment({ media: undefined }), [
+      png(500),
+      png(600),
+      png(700),
+    ]);
+    expect(res.status).toBe(201);
+    const comment = commentSchema.parse(await res.json());
+    expect(comment.images?.map((image) => image.sizeBytes)).toEqual([500, 600, 700]);
+
+    const list = commentSchema
+      .array()
+      .parse(await (await ctx.request(`/api/decks/${deck.deckId}/comments`)).json());
+    expect(list[0]?.images?.map((image) => image.id)).toEqual(
+      comment.images?.map((image) => image.id),
+    );
+  });
+
+  it('takes at most ten images', async () => {
+    const res = await uploadImage(
+      voiceComment({ media: undefined }),
+      Array.from({ length: 11 }, () => png()),
+    );
+    expect(res.status).toBe(400);
   });
 
   it('rejects images that are not PNG, and memo details without a memo', async () => {

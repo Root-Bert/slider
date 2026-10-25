@@ -64,7 +64,7 @@ export function useWorkspaceLogo(workspaceId: string) {
 }
 
 /**
- * Admins only (BER-148): `true` opens the organisation to the admin's e-mail domain, `false` makes
+ * Admins only (BER-148): `true` opens the workspace to the admin's e-mail domain, `false` makes
  * it private. Either answers the question after sign-up.
  */
 export function useSetWorkspaceDomain(workspaceId: string) {
@@ -76,7 +76,7 @@ export function useSetWorkspaceDomain(workspaceId: string) {
   });
 }
 
-/** Joins `me.domainWorkspace`, the company organisation of the viewer's domain. */
+/** Joins `me.domainWorkspace`, the company workspace of the viewer's domain. */
 export function useJoinByDomain() {
   const reloadMembership = useReloadMembership();
   return useMutation({
@@ -150,7 +150,7 @@ export function useRemoveMember(workspaceId: string) {
   const queryClient = useQueryClient();
   const reloadMembership = useReloadMembership();
   return useMutation({
-    /** `successor`: the last owner leaves and hands the organisation to this member. */
+    /** `successor`: the last owner leaves and hands the workspace to this member. */
     mutationFn: ({ userId, successor }: { userId: string; successor?: string }) =>
       api.delete(
         `/workspaces/${workspaceId}/members/${userId}${successor ? `?successor=${encodeURIComponent(successor)}` : ''}`,

@@ -49,8 +49,8 @@ import { emptyBreakdown, totalBytes, workspaceStorage } from './workspace-storag
 
 /**
  * The instance admin's dashboard (BER-167): how big the instance is, and the accounts and
- * organisations on it – to block them, or to put an organisation on the paid plan without Stripe
- * (paid by invoice, a partner). Organisations show sizes only, never what is in them.
+ * workspaces on it – to block them, or to put a workspace on the paid plan without Stripe
+ * (paid by invoice, a partner). Workspaces show sizes only, never what is in them.
  */
 
 type AdminDeps = Pick<AppDeps, 'db' | 'config' | 'clock' | 'log'>;
@@ -74,7 +74,7 @@ export async function requireInstanceAdmin(
   if (!(await isInstanceAdmin(db, viewer))) throw forbidden(message);
 }
 
-/** Organisations can be put on a plan only where the plans differ in anything. */
+/** Workspaces can be put on a plan only where the plans differ in anything. */
 const plansDiffer = (config: AppDeps['config']) =>
   JSON.stringify(config.plans.free) !== JSON.stringify(config.plans.paid);
 
@@ -86,7 +86,7 @@ const HISTORY_STRETCHES = 200;
 /** The strip reaches back at least this far, also on a young instance. */
 const HISTORY_MIN_DAYS = 31;
 
-/** Organisations listed as the largest. */
+/** Workspaces listed as the largest. */
 const LARGEST = 5;
 
 /** `count(*) filter (where …)` – several counts of one table in one query. */
@@ -116,7 +116,7 @@ async function createdPerBucket(
   return new Map(rows.map((row) => [Number(row.bucket), row.count]));
 }
 
-/** Accounts, organisations and reviews created per stretch of `[start, start + n × stretch)`. */
+/** Accounts, workspaces and reviews created per stretch of `[start, start + n × stretch)`. */
 async function timelineOf(
   db: Executor,
   start: Date,
@@ -175,7 +175,7 @@ export async function instanceTimeline(
   };
 }
 
-/** The instance as it is now: counts, storage and the largest organisations. */
+/** The instance as it is now: counts, storage and the largest workspaces. */
 export async function instanceOverview(deps: AdminDeps): Promise<InstanceOverview> {
   const now = deps.clock.now().getTime();
   const ago = (days: number) => new Date(now - days * DAY_MS);
@@ -323,7 +323,7 @@ export async function setUserBlocked(
   return toInstanceUser(row);
 }
 
-// ── Organisations ───────────────────────────────────────────────────────────
+// ── Workspaces ──────────────────────────────────────────────────────────────
 
 async function toInstanceWorkspaces(
   db: Executor,
@@ -379,12 +379,12 @@ export async function listInstanceWorkspaces(
 async function instanceWorkspace(db: Executor, workspaceId: string): Promise<InstanceWorkspace> {
   const [row] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
   const [dto] = row ? await toInstanceWorkspaces(db, [row]) : [];
-  if (!dto) throw notFound('Diese Organisation gibt es nicht (mehr).');
+  if (!dto) throw notFound('Diesen Workspace gibt es nicht (mehr).');
   return dto;
 }
 
 /**
- * Blocks or unblocks an organisation. Blocked, nobody opens it or joins it, its company login is
+ * Blocks or unblocks a workspace. Blocked, nobody opens it or joins it, its company login is
  * off, and its members can only leave; nothing is deleted. Open live views end within half a
  * minute (their access check).
  */
@@ -402,13 +402,13 @@ export async function setWorkspaceBlocked(
     })
     .where(eq(workspaces.id, workspaceId))
     .returning({ id: workspaces.id });
-  if (!row) throw notFound('Diese Organisation gibt es nicht (mehr).');
+  if (!row) throw notFound('Diesen Workspace gibt es nicht (mehr).');
   deps.log.info(`Instance admin ${blocked ? 'blocked' : 'unblocked'} workspace ${workspaceId}`);
   return instanceWorkspace(deps.db, workspaceId);
 }
 
 /**
- * Puts an organisation on a plan by hand: `paid` grants it without Stripe (a running payment
+ * Puts a workspace on a plan by hand: `paid` grants it without Stripe (a running payment
  * grace ends with it), `free` takes it back. Not while a Stripe subscription runs – then its
  * billing owner decides – and only where the plans differ.
  */
@@ -418,7 +418,7 @@ export async function setWorkspacePlan(
   plan: PlanId,
 ): Promise<InstanceWorkspace> {
   if (!plansDiffer(deps.config)) {
-    throw badRequest('Auf dieser Instanz haben alle Organisationen dieselben Limits.');
+    throw badRequest('Auf dieser Instanz haben alle Workspaces dieselben Limits.');
   }
   await deps.db.transaction(async (tx) => {
     // Locked like `lockWorkspaceRow`: a checkout landing meanwhile waits.
@@ -427,10 +427,10 @@ export async function setWorkspacePlan(
       .from(workspaces)
       .where(eq(workspaces.id, workspaceId))
       .for('update');
-    if (!row) throw notFound('Diese Organisation gibt es nicht (mehr).');
+    if (!row) throw notFound('Diesen Workspace gibt es nicht (mehr).');
     if (isPaying(row)) {
       throw badRequest(
-        'Für diese Organisation läuft ein Abo. Den Plan ändert dann nur, wer dafür bezahlt.',
+        'Für diesen Workspace läuft ein Abo. Den Plan ändert dann nur, wer dafür bezahlt.',
       );
     }
     const settled = { downgradeAt: null, downgradeReason: null, downgradeNotices: 0 };

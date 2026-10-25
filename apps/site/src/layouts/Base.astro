@@ -63,10 +63,16 @@ const ogImage = new URL(asset('og.png'), Astro.site);
   </head>
   <body class="dot-grid">
     <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-(--z-toast) focus:rounded-control focus:bg-primary focus:px-3 focus:py-2 focus:text-on-primary">Skip to content</a>
-    <Header current={current} />
-    <main id="main">
-      <slot />
-    </main>
-    {footer && <Footer />}
+    <!--
+      Cursors, glows and name tags may reach past the screen: cut here, so a phone never scrolls
+      sideways. Not on <body> – its overflow goes to the viewport, where iOS ignores it.
+    -->
+    <div class="overflow-x-clip">
+      <Header current={current} />
+      <main id="main">
+        <slot />
+      </main>
+      {footer && <Footer />}
+    </div>
   </body>
 </html>

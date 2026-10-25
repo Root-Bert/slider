@@ -70,7 +70,7 @@ async function seedContext(deps: SeedDeps, robert: UserRow): Promise<SeedContext
   };
 
   const workspaceId = await ensurePersonalWorkspace(deps.db, robert.id, now);
-  // Reviewers are members of Robert's organisation – there are no guests.
+  // Reviewers are members of Robert's workspace – there are no guests.
   const reviewer = async (key: Exclude<PersonKey, 'robert'>): Promise<Author> => {
     const user = await upsertUser(deps.db, PEOPLE[key]);
     await deps.db

@@ -111,7 +111,7 @@ export async function sendEmailLogin(
         ...noLink,
         heading: 'Noch kein Konto',
         intro:
-          'Für diese Adresse gibt es auf dieser Slider-Instanz kein Konto, und neue Konten entstehen hier nur mit einer Einladung. Bitte jemanden aus deiner Organisation, dich einzuladen.',
+          'Für diese Adresse gibt es auf dieser Slider-Instanz kein Konto, und neue Konten entstehen hier nur mit einer Einladung. Bitte jemanden aus deinem Team, dich in euren Workspace einzuladen.',
         button: 'Zu Slider',
         url: url(loginPath()),
       }),

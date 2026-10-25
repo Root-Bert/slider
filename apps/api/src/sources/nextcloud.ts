@@ -6,17 +6,13 @@ import {
   type ParsedShareLink,
 } from '@slider/shared';
 import { ApiError, notAPowerPoint } from '../http/errors';
-import {
-  LINK_NOT_A_POWERPOINT_MESSAGE,
-  sourceForbidden,
-  sourceNotFound,
-  sourceUnreachable,
-} from './errors';
+import { sourceForbidden, sourceNotFound, sourceUnreachable } from './errors';
 import {
   fetchHop,
   fileNameFor,
   isHtmlResponse,
-  isPptxBytes,
+  deckFileName,
+  isDeckName,
   parseContentDispositionFileName,
   readBodyCapped,
   safeFetch,
@@ -48,9 +44,9 @@ export const PPTX_MIME =
 const MAX_LISTING_BYTES = 8 * 1024 * 1024;
 const MAX_PREVIEW_BYTES = 2 * 1024 * 1024;
 const SEARCH_LIMIT = 50;
-/** Presentations one scan of the account takes in; beyond that every folder shows. */
-const MAX_PRESENTATION_SCAN = 10_000;
-/** How long a scan answers folder listings and searches before Nextcloud is asked again. */
+/** Files one scan of the account takes in; beyond that Nextcloud's own search stands in. */
+const MAX_FILE_SCAN = 10_000;
+/** How long a scan answers searches before Nextcloud is asked again. */
 const SCAN_TTL_MS = 60_000;
 
 export const NEXTCLOUD_LOGIN_MESSAGE =
@@ -193,11 +189,8 @@ const NAMESPACES =
 
 const escapeXml = (text: string) => text.replace(/[<>&'"]/g, (c) => `&#${c.charCodeAt(0)};`);
 
-/** Matches what `toEntry` takes for a presentation: the PowerPoint type, or a `.pptx` name. */
-const PPTX_WHERE = `<d:or>
-  <d:eq><d:prop><d:getcontenttype/></d:prop><d:literal>${PPTX_MIME}</d:literal></d:eq>
-  <d:like><d:prop><d:displayname/></d:prop><d:literal>%.pptx</d:literal></d:like>
-</d:or>`;
+/** Every file and folder; the scan keeps the files. */
+const ANY_WHERE = `<d:like><d:prop><d:displayname/></d:prop><d:literal>%</d:literal></d:like>`;
 
 function searchBody(userId: string, where: string, limit: number): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -239,16 +232,23 @@ export function pathFromHref(href: string): string {
 /** `Decks/` → `/Decks`; `''` → `/`. */
 export const normalizePath = (path: string) => `/${path.replace(/^\/+|\/+$/g, '')}`;
 
-const isPptxName = (name: string) => /\.pptx$/i.test(name);
+const PDF_MIME = 'application/pdf';
 
-/** A DAV resource as the browser shows it; `null` for files that are no PowerPoint. */
+const FOLDER_MESSAGE = 'Unter diesem Link liegt ein Ordner – wähle eine Datei darin.';
+
+/** A deck – PowerPoint or PDF – by its name or by the type Nextcloud knows it by. */
+const isDeckResource = (resource: DavResource, name: string) =>
+  isDeckName(name) ||
+  resource.props['getcontenttype'] === PPTX_MIME ||
+  resource.props['getcontenttype'] === PDF_MIME;
+
+/** A DAV resource as the browser shows it – every file and folder. */
 export function toEntry(resource: DavResource): NextcloudEntry | null {
   const path = pathFromHref(resource.href);
   const name = path.split('/').pop() ?? '';
   const folder = resource.props['resourcetype'] === 'collection';
   const fileId = resource.props['fileid'];
   if (!fileId || !name) return null;
-  if (!folder && !isPptxName(name) && resource.props['getcontenttype'] !== PPTX_MIME) return null;
   const size = Number(resource.props[folder ? 'size' : 'getcontentlength'] ?? NaN);
   const modified = Date.parse(resource.props['getlastmodified'] ?? '');
   return {
@@ -262,12 +262,6 @@ export function toEntry(resource: DavResource): NextcloudEntry | null {
   };
 }
 
-/** Drops the folders without a presentation inside; `holding: null` keeps them all. */
-const keepFoldersIn = (entries: NextcloudEntry[], holding: Set<string> | null) =>
-  holding
-    ? entries.filter((entry) => !entry.folder || holding.has(normalizePath(entry.path)))
-    : entries;
-
 /** Like Nextcloud's own list: folders first, `2_…` before `10_…`. */
 const byFolderThenName = (a: NextcloudEntry, b: NextcloudEntry) =>
   Number(b.folder) - Number(a.folder) ||
@@ -280,23 +274,19 @@ const searchable = (text: string) =>
     .toLocaleLowerCase('de')
     .replace(/[_\-.]+/g, ' ');
 
-/** Every presentation of an account, and every folder that holds one somewhere inside. */
-interface PresentationScan {
+/** Every file of an account. */
+interface FileScan {
   files: NextcloudEntry[];
-  folders: Set<string>;
 }
 
 /**
- * Scans per account for a minute, so that opening folder after folder asks Nextcloud once. Keyed
+ * Scans per account for a minute, so that typing search after search asks Nextcloud once. Keyed
  * by the app password too: a connection only ever sees what it can read itself.
  */
-export class PresentationScans {
-  private readonly scans = new Map<
-    string,
-    { until: number; scan: Promise<PresentationScan | null> }
-  >();
+export class FileScans {
+  private readonly scans = new Map<string, { until: number; scan: Promise<FileScan | null> }>();
 
-  get(credentials: NextcloudCredentials, load: () => Promise<PresentationScan | null>) {
+  get(credentials: NextcloudCredentials, load: () => Promise<FileScan | null>) {
     const key = createHash('sha256')
       .update(`${credentials.server}\n${credentials.userId}\n${credentials.appPassword}`)
       .digest('hex');
@@ -340,7 +330,7 @@ export class NextcloudClient {
   constructor(
     private readonly http: SafeFetchOptions,
     readonly credentials: NextcloudCredentials,
-    private readonly scans = new PresentationScans(),
+    private readonly scans = new FileScans(),
   ) {}
 
   /**
@@ -381,23 +371,17 @@ export class NextcloudClient {
     return `/remote.php/dav/files/${encodeURIComponent(this.credentials.userId)}/${encoded}`;
   }
 
-  /**
-   * A folder's presentations, and its folders that hold one somewhere inside (`PROPFIND` depth 1,
-   * next to the account's presentation scan).
-   */
+  /** A folder's files and folders (`PROPFIND` depth 1). */
   async listFolder(path: string): Promise<NextcloudEntry[]> {
     const self = normalizePath(path);
-    const [response, scan] = await Promise.all([
-      this.request('PROPFIND', this.davPath(path), {
-        headers: { Depth: '1' },
-        body: `<?xml version="1.0" encoding="UTF-8"?><d:propfind ${NAMESPACES}>${PROPS}</d:propfind>`,
-      }),
-      this.presentations(),
-    ]);
-    const entries = parseMultistatus(await this.text(response))
+    const response = await this.request('PROPFIND', this.davPath(path), {
+      headers: { Depth: '1' },
+      body: `<?xml version="1.0" encoding="UTF-8"?><d:propfind ${NAMESPACES}>${PROPS}</d:propfind>`,
+    });
+    return parseMultistatus(await this.text(response))
       .map(toEntry)
-      .filter((entry): entry is NextcloudEntry => entry !== null && entry.path !== self);
-    return keepFoldersIn(entries, scan?.folders ?? null).sort(byFolderThenName);
+      .filter((entry): entry is NextcloudEntry => entry !== null && entry.path !== self)
+      .sort(byFolderThenName);
   }
 
   private async search(where: string, limit: number): Promise<DavResource[]> {
@@ -408,58 +392,52 @@ export class NextcloudClient {
   }
 
   /**
-   * Every presentation of the account – one search over all of it. Searching only below a folder
-   * finds nothing inside group folders, so the folders holding one are told from the whole.
-   * `null` when that cannot be told – too many presentations, or the search failed – and then
-   * every folder shows.
+   * Every file of the account – one search over all of it. `null` when that cannot be told – too
+   * many files, or the search failed – and then Nextcloud's own search stands in.
    */
-  private presentations(): Promise<PresentationScan | null> {
+  private allFiles(): Promise<FileScan | null> {
     return this.scans.get(this.credentials, async () => {
       let resources: DavResource[];
       try {
-        resources = await this.search(PPTX_WHERE, MAX_PRESENTATION_SCAN + 1);
+        resources = await this.search(ANY_WHERE, MAX_FILE_SCAN + 1);
       } catch (error) {
-        // A refused app password still asks to reconnect; anything else only skips the filter.
+        // A refused app password still asks to reconnect; anything else only skips the scan.
         if (error instanceof NextcloudUnauthorized) throw error;
         return null;
       }
-      if (resources.length > MAX_PRESENTATION_SCAN) return null;
+      if (resources.length > MAX_FILE_SCAN) return null;
       const files = resources
         .map(toEntry)
         .filter((entry): entry is NextcloudEntry => entry !== null && !entry.folder);
-      const folders = new Set<string>();
-      for (const file of files) {
-        const segments = file.path.split('/').filter(Boolean);
-        for (let end = segments.length - 1; end >= 0; end--) {
-          const folder = normalizePath(segments.slice(0, end).join('/'));
-          if (folders.has(folder)) break;
-          folders.add(folder);
-        }
-      }
-      return { files, folders };
+      return { files };
     });
   }
 
   /** Where a file is now – by id, so renaming or moving it does not lose it. */
-  async fileById(fileId: string): Promise<{ entry: NextcloudEntry; etag: string } | null> {
+  async fileById(
+    fileId: string,
+  ): Promise<{ entry: NextcloudEntry; etag: string; deck: boolean } | null> {
     const [resource] = await this.search(
       `<d:eq><d:prop><oc:fileid/></d:prop><d:literal>${escapeXml(fileId)}</d:literal></d:eq>`,
       1,
     );
     if (!resource) return null;
     const entry = toEntry(resource);
-    if (!entry) throw notAPowerPoint(LINK_NOT_A_POWERPOINT_MESSAGE);
-    if (entry.folder) throw notAPowerPoint(LINK_NOT_A_POWERPOINT_MESSAGE);
-    return { entry, etag: resource.props['getetag'] ?? '' };
+    if (!entry || entry.folder) throw notAPowerPoint(FOLDER_MESSAGE);
+    return {
+      entry,
+      etag: resource.props['getetag'] ?? '',
+      deck: isDeckResource(resource, entry.name),
+    };
   }
 
   /**
-   * Presentations whose name holds every word of `query`, in any order and case. Without a scan
-   * (too many presentations), Nextcloud's search for the whole phrase stands in.
+   * Files whose name holds every word of `query`, in any order and case. Without a scan (too
+   * many files), Nextcloud's search for the whole phrase stands in.
    */
   async searchByName(query: string): Promise<NextcloudEntry[]> {
     const words = searchable(query).split(/\s+/).filter(Boolean);
-    const scan = await this.presentations();
+    const scan = await this.allFiles();
     if (scan) {
       // The most recently changed ones when there are more hits than shown.
       return scan.files
@@ -473,10 +451,7 @@ export class NextcloudClient {
     }
     const literal = escapeXml(`%${query.replace(/[%_]/g, '')}%`);
     const resources = await this.search(
-      `<d:and>
-        <d:like><d:prop><d:displayname/></d:prop><d:literal>${literal}</d:literal></d:like>
-        <d:eq><d:prop><d:getcontenttype/></d:prop><d:literal>${PPTX_MIME}</d:literal></d:eq>
-      </d:and>`,
+      `<d:like><d:prop><d:displayname/></d:prop><d:literal>${literal}</d:literal></d:like>`,
       SEARCH_LIMIT,
     );
     return resources
@@ -485,7 +460,7 @@ export class NextcloudClient {
       .sort(byFolderThenName);
   }
 
-  /** "Mit mir geteilt": presentations, and folders holding one, others shared with this account. */
+  /** "Mit mir geteilt": the files and folders others shared with this account. */
   async sharedWithMe(): Promise<NextcloudEntry[]> {
     const response = await this.request(
       'GET',
@@ -506,7 +481,6 @@ export class NextcloudClient {
       const name = path.split('/').pop() ?? '';
       const folder = share.item_type === 'folder';
       if (!fileId || !name || seen.has(fileId)) continue;
-      if (!folder && !isPptxName(name) && share.mimetype !== PPTX_MIME) continue;
       seen.add(fileId);
       entries.push({
         fileId,
@@ -518,8 +492,7 @@ export class NextcloudClient {
         preview: !folder && share.has_preview !== false,
       });
     }
-    const scan = entries.some((entry) => entry.folder) ? await this.presentations() : null;
-    return keepFoldersIn(entries, scan?.folders ?? null).sort(byFolderThenName);
+    return entries.sort(byFolderThenName);
   }
 
   /** The file's bytes, by its current path. */
@@ -593,11 +566,8 @@ async function findById(client: NextcloudClient, fileId: string) {
   return found;
 }
 
-/** Nextcloud knows a PowerPoint by its type too; the deck's file name always says `.pptx`. */
-const pptxFileName = (name: string) => (isPptxName(name) ? name : `${name}.pptx`);
-
 export class NextcloudAdapter implements SourceAdapter {
-  private readonly scans = new PresentationScans();
+  private readonly scans = new FileScans();
 
   constructor(
     private readonly http: SafeFetchOptions,
@@ -698,7 +668,7 @@ export class NextcloudAdapter implements SourceAdapter {
     server: string,
     fileId: string,
     context: SourceContext,
-  ): Promise<{ entry: NextcloudEntry; etag: string }> {
+  ): Promise<{ entry: NextcloudEntry; etag: string; deck: boolean }> {
     return this.withClient(server, context, (client) => findById(client, fileId));
   }
 
@@ -711,12 +681,14 @@ export class NextcloudAdapter implements SourceAdapter {
 
   /** A file of one of the user's accounts, by id – a link to it, or picked in the browser. */
   async resolveFile(server: string, fileId: string, context: SourceContext): Promise<RemoteFile> {
-    const { entry, etag } = await this.locate(server, fileId, context);
+    const { entry, etag, deck } = await this.locate(server, fileId, context);
     if (context.nextcloudConnectionId) await this.access.markUsed(context.nextcloudConnectionId);
     const ref = nextcloudFileRef(server, fileId);
     return {
       ref,
-      fileName: pptxFileName(entry.name),
+      // Nextcloud knows a deck by its type too: the file name then gets the matching ending. Any
+      // other file keeps its name, which tells the import what it is.
+      fileName: deck ? deckFileName(entry.name, /\.pdf$/i.test(entry.name)) : entry.name,
       sizeBytes: entry.sizeBytes ?? 0,
       changeToken: etag || null,
       webUrl: ref,
@@ -728,11 +700,9 @@ export class NextcloudAdapter implements SourceAdapter {
     const link = refLink(file.ref);
     if (link.share) return (await this.downloadShare(link.base, link.share)).bytes;
     // Inside the account's turn: a refused app password asks to reconnect, like any other call.
-    const bytes = await this.withClient(link.base, context, async (client) =>
+    return this.withClient(link.base, context, async (client) =>
       client.download((await findById(client, link.fileId!)).entry.path),
     );
-    if (!isPptxBytes(bytes)) throw notAPowerPoint(LINK_NOT_A_POWERPOINT_MESSAGE);
-    return bytes;
   }
 
   /** The file's ETag; public shares: HTTP ETag/Last-Modified, `''` → compare the content. */
@@ -768,15 +738,14 @@ export class NextcloudAdapter implements SourceAdapter {
     }
     const named = parseContentDispositionFileName(response.headers.get('content-disposition'));
     // A shared folder downloads as a ZIP – which starts like a PPTX.
-    if (named && !isPptxName(named)) {
+    if (named && /\.zip$/i.test(named)) {
       await response.body?.cancel();
-      throw notAPowerPoint(LINK_NOT_A_POWERPOINT_MESSAGE);
+      throw notAPowerPoint(FOLDER_MESSAGE);
     }
     const bytes = await readBodyCapped(response, this.http.maxBytes);
-    if (!isPptxBytes(bytes)) throw notAPowerPoint(LINK_NOT_A_POWERPOINT_MESSAGE);
     return {
       ref: `${server}/s/${token}`,
-      fileName: fileNameFor(response, finalUrl),
+      fileName: fileNameFor(response, finalUrl, bytes),
       sizeBytes: bytes.byteLength,
       changeToken: response.headers.get('etag') ?? response.headers.get('last-modified'),
       webUrl: `${server}/s/${token}`,

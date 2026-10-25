@@ -6,7 +6,8 @@ export default defineProject({
     include: ['test/**/*.test.ts'],
     environment: 'node',
     // The data key for the encrypted columns (BER-149).
-    setupFiles: ['test/setup-data-key.ts'],
+    // PDFs are read on the test's own thread (Node cannot start the TypeScript worker).
+    setupFiles: ['test/setup-data-key.ts', 'test/setup-pdf-jobs.ts'],
     // Runs the migrations once for the whole run; each test copies the result.
     globalSetup: ['test/global-database.ts'],
     // Each test boots its own in-memory Postgres (PGlite); give it room on slow machines.

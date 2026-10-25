@@ -38,7 +38,7 @@ async function create(input: CreateCommentInput, cookie?: string): Promise<Comme
   return commentSchema.parse(await res.json());
 }
 
-/** A member of the deck's organisation – `reviewer` comments, `viewer` (shared with) only looks. */
+/** A member of the deck's workspace – `reviewer` comments, `viewer` (shared with) only looks. */
 async function asMember(name: string, role: 'reviewer' | 'viewer' = 'reviewer'): Promise<string> {
   const person = await signedInUser(ctx, {
     name,

@@ -21,9 +21,9 @@ import { findDomainWorkspace, isCompanyMailDomain } from './domains';
 import { requireRole, workspaceNotFound } from './roles';
 
 /**
- * Company login per organisation (BER-162). Admins connect their OpenID Connect provider; it
- * works for addresses at the organisation's company domain (`join_domain`) once a DNS TXT record
- * proved that domain – a mailbox there (what opening the organisation to it takes) is not enough,
+ * Company login per workspace (BER-162). Admins connect their OpenID Connect provider; it
+ * works for addresses at the workspace's company domain (`join_domain`) once a DNS TXT record
+ * proved that domain – a mailbox there (what opening the workspace to it takes) is not enough,
  * as the provider vouches for every address at the domain (`services/accounts`
  * `signInWithCompanySso`).
  */
@@ -117,7 +117,7 @@ export async function saveWorkspaceSso(
   }
   if (!workspace.joinDomain) {
     throw badRequest(
-      'Öffne die Organisation zuerst für eure Firmen-Domain – der Firmen-Login gilt für die Adressen dort.',
+      'Öffne den Workspace zuerst für eure Firmen-Domain – der Firmen-Login gilt für die Adressen dort.',
     );
   }
   const existing = await ssoRow(deps, workspaceId);
@@ -191,7 +191,7 @@ export interface ActiveSso {
   sso: WorkspaceSsoRow;
 }
 
-/** The company login for an address: its domain's organisation, if that one has one active. */
+/** The company login for an address: its domain's workspace, if that one has one active. */
 export async function findSsoForEmail(deps: SsoDeps, email: string): Promise<ActiveSso | null> {
   const workspace = await findDomainWorkspace(deps, emailDomain(email.trim().toLowerCase()));
   if (!workspace) return null;
@@ -199,12 +199,12 @@ export async function findSsoForEmail(deps: SsoDeps, email: string): Promise<Act
   return isActive(deps, workspace, sso) ? { workspace, sso } : null;
 }
 
-/** The organisation's company login, if active. */
+/** The workspace's company login, if active. */
 export async function findSsoForWorkspace(
   deps: SsoDeps,
   workspaceId: string,
 ): Promise<ActiveSso | null> {
-  // A blocked organisation (BER-167) has no company login, like it has no domain (`findDomainWorkspace`).
+  // A blocked workspace (BER-167) has no company login, like it has no domain (`findDomainWorkspace`).
   const [workspace] = await deps.db
     .select()
     .from(workspaces)
@@ -214,7 +214,7 @@ export async function findSsoForWorkspace(
   return isActive(deps, workspace, sso) ? { workspace, sso } : null;
 }
 
-/** Whether the login page offers "Mit Firmen-Login": some organisation proved its domain. */
+/** Whether the login page offers "Mit Firmen-Login": some workspace proved its domain. */
 export async function anyWorkspaceSso(deps: Pick<AppDeps, 'db' | 'config'>): Promise<boolean> {
   if (!domainJoinAllowed(deps.config.auth.signup)) return false;
   const [row] = await deps.db

@@ -26,7 +26,7 @@ export const DECK_REMINDERS: readonly Reminder[] = [
 ];
 
 /**
- * Who hears about a deck about to go: its owner while still in the organisation, else (they were
+ * Who hears about a deck about to go: its owner while still in the workspace, else (they were
  * removed, the uploaded deck stayed) its admins – an outsider learns nothing about it.
  */
 async function reminderRecipients(deps: AppDeps, deck: DeckRow, ownerEmail: string) {

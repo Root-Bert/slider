@@ -48,8 +48,8 @@ describe('PlanBanner', () => {
 
   it('over the plan’s limits: a warning to "Nutzung"', () => {
     show(workspace({ locked: true, role: 'member' }));
-    expect(screen.getByRole('status').textContent).toContain('über dem Limit ihres Plans');
-    expect(usageLink()).toBe('/nutzung?organisation=w1');
+    expect(screen.getByRole('status').textContent).toContain('über dem Limit seines Plans');
+    expect(usageLink()).toBe('/nutzung?workspace=w1');
   });
 
   it('a pending fall-back to free reaches admins only', () => {
@@ -81,6 +81,6 @@ describe('PlanBanner', () => {
     expect(screen.getByRole('status').textContent).toContain(
       'Anna Berg bittet dich, die Zahlung zu übernehmen.',
     );
-    expect(usageLink()).toBe('/nutzung?organisation=w1');
+    expect(usageLink()).toBe('/nutzung?workspace=w1');
   });
 });

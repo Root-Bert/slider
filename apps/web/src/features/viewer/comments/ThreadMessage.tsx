@@ -101,7 +101,7 @@ function EditForm({
   const [body, setBody] = useState(comment.body);
   const update = useUpdateComment(deckId);
   // A recording or image is content of its own: its note may go empty, plain text may not.
-  const canSave = body.trim() !== '' || comment.media != null || comment.image != null;
+  const canSave = body.trim() !== '' || comment.media != null || !!comment.images?.length;
   const save = () => {
     // ⌘↵ twice while saving must not send it twice.
     if (!canSave || update.isPending) return;

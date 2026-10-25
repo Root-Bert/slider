@@ -9,6 +9,15 @@ import { CommentCard } from './CommentCard';
 const lena = author('lena', { name: 'Lena Hoffmann', color: 'green' });
 const me = author('me', { name: 'Rita', color: 'violet' }) as Author;
 
+vi.mock('../media/hooks/useMediaComment', () => ({
+  useCreateMediaComment: () => ({
+    mutateAsync: vi.fn(),
+    cancel: vi.fn(),
+    isPending: false,
+    progress: 0,
+    error: null,
+  }),
+}));
 vi.mock('@/lib/api', () => ({
   useCreateReply: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false, error: null }),
   useUpdateComment: () => ({ mutate: vi.fn(), isError: false }),

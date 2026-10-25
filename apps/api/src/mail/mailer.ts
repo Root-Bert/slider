@@ -12,7 +12,7 @@ export interface InlineImage {
   content: Buffer;
 }
 
-/** Outgoing e-mail: invitations to an organisation or a shared deck. */
+/** Outgoing e-mail: invitations to a workspace or a shared deck. */
 export interface MailMessage {
   to: string;
   subject: string;

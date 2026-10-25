@@ -17,14 +17,14 @@ import {
 
 const METRICS = [
   { value: 'users', label: 'Personen' },
-  { value: 'workspaces', label: 'Organisationen' },
+  { value: 'workspaces', label: 'Workspaces' },
   { value: 'decks', label: 'Reviews' },
 ] as const satisfies readonly { value: Metric; label: string }[];
 
 /** "4 neue Personen" – the tooltip's and the screen reader's value. */
 const NEW_LABEL: Record<Metric, (count: number) => string> = {
   users: (n) => pluralize(n, 'neue Person', 'neue Personen'),
-  workspaces: (n) => pluralize(n, 'neue Organisation', 'neue Organisationen'),
+  workspaces: (n) => pluralize(n, 'neuer Workspace', 'neue Workspaces'),
   decks: (n) => pluralize(n, 'neue Review', 'neue Reviews'),
 };
 

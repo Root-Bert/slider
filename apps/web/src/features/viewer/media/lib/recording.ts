@@ -3,7 +3,7 @@ import { MAX_MEDIA_PEAKS, type MediaKind } from '@slider/shared';
 /*
  * Recording settings for voice and video comments (BER-116). Everything is compressed on the
  * device while recording – the server stores the bytes as they are – so the bitrates here decide
- * how much of the organisation's storage a recording costs.
+ * how much of the workspace's storage a recording costs.
  */
 
 /**

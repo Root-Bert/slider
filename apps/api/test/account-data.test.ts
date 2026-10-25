@@ -129,7 +129,7 @@ describe('data export (BER-145)', () => {
     const read = async (name: string) => JSON.parse((await zip.file(name)?.async('string')) ?? '');
     const account = await read('konto.json');
     expect(account.profile).toMatchObject({ name: 'Anna Schmidt', email: 'anna@firma.de' });
-    expect(account.organisations).toEqual([
+    expect(account.workspaces).toEqual([
       expect.objectContaining({ id: ctx.workspaceId, role: 'member' }),
     ]);
     expect(account.sessions).toHaveLength(1);
@@ -171,7 +171,7 @@ describe('data export (BER-145)', () => {
     expect(res.status).toBe(200);
     const zip = await JSZip.loadAsync(await res.arrayBuffer());
     const deckList = JSON.parse((await zip.file('praesentationen.json')?.async('string')) ?? '');
-    // The upload is the organisation's now (BER-165), with the company's newer version.
+    // The upload is the workspace's now (BER-165), with the company's newer version.
     expect(deckList).toEqual([]);
     expect(Object.keys(zip.files).some((name) => name.startsWith('praesentationen/'))).toBe(false);
   });
@@ -220,7 +220,7 @@ describe('deleting an account (BER-145)', () => {
   it('anonymises comments, deletes recordings, hands decks over and removes everything personal', async () => {
     const person = await anna();
     const annaId = person.user.id;
-    // Her own organisation, alone, with a deck: gone with her.
+    // Her own workspace, alone, with a deck: gone with her.
     const soloId = crypto.randomUUID();
     await ctx.deps.db.insert(workspaces).values({ id: soloId, name: 'Privat', slug: 'privat' });
     await join(annaId, soloId, 'admin');
@@ -229,7 +229,7 @@ describe('deleting an account (BER-145)', () => {
       .update(decks)
       .set({ ownerId: annaId, workspaceId: soloId })
       .where(eq(decks.id, solo.deckId));
-    // Her upload in the shared organisation: passes to the admin.
+    // Her upload in the shared workspace: passes to the admin.
     const upload = await createReadyDeck(ctx, { title: 'Annas Upload' });
     await ctx.deps.db.update(decks).set({ ownerId: annaId }).where(eq(decks.id, upload.deckId));
     // Her linked deck there: deleted – Slider read its file with her accounts (BER-165).
@@ -293,9 +293,9 @@ describe('deleting an account (BER-145)', () => {
     expect(anonymous?.resolvedBy).toBe(author.id);
     expect(await db.select().from(media).where(eq(media.uploaderId, annaId))).toEqual([]);
     expect(await ctx.deps.media.get(recordingKey)).toBeNull();
-    // The drawing stays with the comment, under its anonymous id.
-    const [drawing] = await db.select().from(media).where(eq(media.storageKey, drawingKey));
-    expect(drawing?.uploaderId).toBe(author.id);
+    // Images go too (what a screenshot shows can't be anonymised); the comment text stays.
+    expect(await db.select().from(media).where(eq(media.storageKey, drawingKey))).toEqual([]);
+    expect(await ctx.deps.media.get(drawingKey)).toBeNull();
     const [mentioning] = await db.select().from(comments).where(eq(comments.id, mention));
     expect(mentioning?.body).toBe(`Danke @${DELETED_ACCOUNT_NAME}! Und @Anna Schmidtke?`);
 
@@ -338,7 +338,7 @@ describe('deleting an account (BER-145)', () => {
       {
         workspaceId: teamId,
         workspaceName: 'Annas Team',
-        // Viewers are guests: they take an organisation over only when nobody else is left.
+        // Viewers are guests: they take a workspace over only when nobody else is left.
         candidates: [{ userId: bob.user.id, name: 'Bob', role: 'member' }],
       },
     ]);
@@ -385,18 +385,18 @@ describe('deleting an account (BER-145)', () => {
     );
   });
 
-  it('closes the organisations it is the last member of at once', async () => {
+  it('closes the workspaces it is the last member of at once', async () => {
     const person = await anna();
     const soloId = crypto.randomUUID();
     await ctx.deps.db
       .insert(workspaces)
       .values({ id: soloId, name: 'Firma', slug: 'firma', joinDomain: 'firma.de' });
     await join(person.user.id, soloId, 'admin');
-    // Alone there: nobody to choose, the organisation is not among the choices.
+    // Alone there: nobody to choose, the workspace is not among the choices.
     const choices = await (await ctx.request('/api/me/deletion', { cookie: person.cookie })).json();
     expect(choices).toEqual([]);
 
-    // Right after the deletion's transaction, before the organisation is purged: nobody can join
+    // Right after the deletion's transaction, before the workspace is purged: nobody can join
     // it by domain or invite in between.
     const transaction = ctx.deps.db.transaction.bind(ctx.deps.db);
     let between: unknown;
@@ -417,7 +417,7 @@ describe('deleting an account (BER-145)', () => {
     );
   });
 
-  it('hands an organisation with only viewers left to a viewer: it goes only with its last member', async () => {
+  it('hands a workspace with only viewers left to a viewer: it goes only with its last member', async () => {
     const person = await anna();
     const guestsId = crypto.randomUUID();
     await ctx.deps.db.insert(workspaces).values({ id: guestsId, name: 'Gäste', slug: 'gaeste' });
@@ -455,7 +455,7 @@ describe('deleting an account (BER-145)', () => {
     const [kept] = await ctx.deps.db.select().from(decks).where(eq(decks.id, deck.deckId));
     expect(kept?.ownerId).toBe(vera.user.id);
 
-    // Vera is the last member now: deleting her account takes the organisation along.
+    // Vera is the last member now: deleting her account takes the workspace along.
     expect((await deleteMe(vera.cookie, 'vera@extern.de')).status).toBe(204);
     expect(await ctx.deps.db.select().from(workspaces).where(eq(workspaces.id, guestsId))).toEqual(
       [],
@@ -532,7 +532,7 @@ describe('deleting an account (BER-145)', () => {
     );
   });
 
-  it('closes the organisation when the only other member, an admin, left right before the lock', async () => {
+  it('closes the workspace when the only other member, an admin, left right before the lock', async () => {
     const person = await anna();
     const teamId = crypto.randomUUID();
     await ctx.deps.db.insert(workspaces).values({ id: teamId, name: 'Team', slug: 'team' });
@@ -683,7 +683,7 @@ describe('data requests without login (BER-146)', () => {
     );
     const invites = JSON.parse((await zip.file('einladungen.json')?.async('string')) ?? '[]');
     expect(invites).toEqual([
-      expect.objectContaining({ organisation: 'Meine Organisation', invitedBy: 'Robert Hofmann' }),
+      expect.objectContaining({ workspace: 'Mein Workspace', invitedBy: 'Robert Hofmann' }),
     ]);
 
     await ask('gast@extern.de', 'delete');
@@ -872,7 +872,7 @@ describe('unused accounts (BER-147)', () => {
     expect(toBob?.text).toContain('lange nicht genutzt');
   });
 
-  it('promotes a viewer when nobody else is left: the organisation stays', async () => {
+  it('promotes a viewer when nobody else is left: the workspace stays', async () => {
     const person = await unusedAnna(19);
     const guestsId = crypto.randomUUID();
     await ctx.deps.db.insert(workspaces).values({ id: guestsId, name: 'Gäste', slug: 'gaeste' });

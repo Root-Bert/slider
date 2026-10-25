@@ -17,6 +17,8 @@ export const useMe = () =>
 export function useUpdateMe() {
   const queryClient = useQueryClient();
   return useMutation({
+    // One after another: a name saved as you type must not be overtaken by an older save.
+    scope: { id: 'me' },
     mutationFn: (input: UpdateMeInput) => api.patch<MeResponse>('/me', input),
     onSuccess: (me) => {
       queryClient.setQueryData(queryKeys.me, me);

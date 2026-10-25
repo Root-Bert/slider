@@ -42,12 +42,12 @@ Solange es keinen Admin gibt, kommt jedes neue Konto nur bis zur Abfrage des Tok
 haben immer Vorrang und erscheinen dort schreibgeschützt.
 
 Die Seite **Instanz** (`/instanz`) zeigt dem Admin, wie groß die Instanz ist (Personen,
-Organisationen, Reviews, Speicher), dazu alle Organisationen mit Größe und Plan, nie ihre
-Inhalte, und alle Konten mit Name und E-Mail. Dort lassen sich Konten und Organisationen
-**sperren**: Ein gesperrtes Konto meldet sich nirgends mehr an, eine gesperrte Organisation
-öffnet niemand mehr, nur Austreten geht. Gelöscht wird dabei nichts. Wo die Pläne sich
-unterscheiden (`PLAN_FREE_*`), schaltet der Admin eine Organisation auch ohne Stripe in den
-Paid-Plan frei, etwa bei Zahlung per Rechnung.
+Workspaces, Reviews, Speicher), dazu alle Workspaces mit Größe und Plan, nie ihre Inhalte,
+und alle Konten mit Name und E-Mail. Dort lassen sich Konten und Workspaces **sperren**: Ein
+gesperrtes Konto meldet sich nirgends mehr an, einen gesperrten Workspace öffnet niemand mehr,
+nur Austreten geht. Gelöscht wird dabei nichts. Wo die Pläne sich unterscheiden
+(`PLAN_FREE_*`), schaltet der Admin einen Workspace auch ohne Stripe in den Paid-Plan frei,
+etwa bei Zahlung per Rechnung.
 
 Wer sich registrieren darf, regelt `SIGNUP`: Standard ist `open` (jede:r mit einem der Logins).
 Für eine Firmen-Instanz besser `invite`, `domains` oder `company`.
@@ -79,7 +79,7 @@ Admin unter Verwaltung → Sicherheit → OAuth-2.0-Clients einen Client mit
 `https://slider.firma.de/api/auth/nextcloud/callback` anlegen und mit `NEXTCLOUD_URL` eintragen.
 
 Passkeys brauchen keine Einrichtung. „Mit E-Mail fortfahren“ (Konto per Login-Link, ohne
-Passwort) ist an, sobald E-Mail-Versand eingerichtet ist. Organisationen können ihren eigenen
+Passwort) ist an, sobald E-Mail-Versand eingerichtet ist. Workspaces können ihren eigenen
 Firmen-Login (SSO) in ihren Einstellungen verbinden.
 
 ## E-Mail (optional)
@@ -156,12 +156,12 @@ Vorher ein Backup ziehen: Migrationen lassen sich nicht zurückdrehen.
   Vorlagen ersetzen keine Rechtsberatung.
 - **Auskunft und Löschung** erledigen Nutzer:innen selbst: unter Konto & Anmeldung oder ohne
   Login über `/datenanfrage` (braucht E-Mail-Versand).
-- **Wer was sieht:** Alle in einer Organisation sehen ihre Präsentationen, auch verknüpfte.
+- **Wer was sieht:** Alle in einem Workspace sehen seine Präsentationen, auch verknüpfte.
   Slider liest verknüpfte Dateien mit dem Konto der Person, die sie verknüpft hat, nie mit dem
   der Betrachter; Freigaben bei OneDrive, Google oder Nextcloud gelten in Slider nicht. Per
   Rechtsklick → „Zugriff einschränken“ lässt sich eine Präsentation auf einzelne Personen
-  begrenzen. Verlässt jemand eine Organisation oder löscht das Konto, werden die verknüpften
-  Präsentationen gelöscht, hochgeladene gehen an den Owner der Organisation.
+  begrenzen. Verlässt jemand einen Workspace oder löscht das Konto, werden die verknüpften
+  Präsentationen gelöscht, hochgeladene gehen an den Owner des Workspace.
 - **Löschfristen** (automatisch, stündlich geprüft): Konten und Präsentationen, die 18 Monate
   niemand genutzt hat, werden nach Erinnerungsmails gelöscht (`DELETE_UNUSED=false` schaltet das
   aus; Instanz-Admins sind ausgenommen). Einladungen verschwinden 30 Tage nach ihrem Ende,
@@ -227,9 +227,10 @@ gehen auch auf der Einrichtungsseite.
 | `MAX_UPLOAD_BYTES`, `MAX_MEDIA_BYTES`                             | nein              | Größte PowerPoint (Standard 200 MB) und Aufnahme (100 MB).                                     |
 | `SYNC_POLL_INTERVAL_MS`, `SYNC_DEBOUNCE_MS`                       | nein              | Abgleich verknüpfter Dateien, Standard je 1 Minute, `0` = aus.                                 |
 | `LIBREOFFICE_PATH`, `LIBREOFFICE_TIMEOUT_MS`                      | nein              | `soffice` für Folienbilder (im Image enthalten); Zeitlimit, Standard 2 Minuten.                |
+| `PDF_TIMEOUT_MS`                                                  | nein              | Zeitlimit für das Lesen eines PDFs, Standard 2 Minuten plus 1 Sekunde pro Seite.               |
 | `IMPORT_WORKERS`                                                  | nein              | Gleichzeitige Importe, Standard 1 (je ~1 Kern, 1 GB RAM).                                      |
-| `PLAN_FREE_MAX_MEMBERS`, `PLAN_FREE_MAX_DECKS`                    | nein              | Grenzen pro Organisation, Standard unbegrenzt.                                                 |
-| `PLAN_FREE_MAX_STORAGE_BYTES`                                     | nein              | Speicher pro Organisation, Standard unbegrenzt (früher `MEDIA_QUOTA_BYTES`).                   |
+| `PLAN_FREE_MAX_MEMBERS`, `PLAN_FREE_MAX_DECKS`                    | nein              | Grenzen pro Workspace, Standard unbegrenzt.                                                    |
+| `PLAN_FREE_MAX_STORAGE_BYTES`                                     | nein              | Speicher pro Workspace, Standard unbegrenzt (früher `MEDIA_QUOTA_BYTES`).                      |
 | `SLIDER_DEMO`                                                     | nein              | `true` schaltet die Grenzen der gehosteten Instanz ein.                                        |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`   | nein              | Bezahlung, nur für eine Instanz mit Grenzen. Webhook: `${SLIDER_URL}/api/billing/webhook`.     |
 

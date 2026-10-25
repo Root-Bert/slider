@@ -1,5 +1,5 @@
 /**
- * Workspaces, members and invitations (BER-129). In the UI a workspace is an "Organisation"
+ * Workspaces, members and invitations (BER-129). In the UI too it is a "Workspace"
  * (BER-130); its plan limits live in `../plans`.
  *
  * - `./roles`: roles, deck permissions, membership lookups (no further service imports)
@@ -7,8 +7,8 @@
  * - `./members`: member list, role changes, leaving and removing
  * - `./departure`: what happens to the decks of someone who goes (BER-165)
  * - `./invites`: e-mail invites and links, previews, joining
- * - `./domains`: company organisations found and joined by e-mail domain (BER-148)
- * - `./sso`: an organisation's own company login (BER-162)
+ * - `./domains`: company workspaces found and joined by e-mail domain (BER-148)
+ * - `./sso`: a workspace's own company login (BER-162)
  */
 
 export {

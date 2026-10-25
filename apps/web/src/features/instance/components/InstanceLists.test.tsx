@@ -80,7 +80,7 @@ beforeEach(() => {
   api.blockUser.mockReset();
 });
 
-describe('organisations on the dashboard (BER-167)', () => {
+describe('workspaces on the dashboard (BER-167)', () => {
   it('shows sizes, not contents, and blocks after asking', async () => {
     const notify = vi.fn();
     wrap(<WorkspacesTable plans onNotify={notify} />);

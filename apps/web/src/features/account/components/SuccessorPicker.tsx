@@ -3,8 +3,8 @@ import { ROLE_LABELS } from '@/features/workspaces';
 import { Select } from '@/ui';
 
 /**
- * Deleting oneself where one is the only admin of an organisation with others: choose who becomes
- * admin there (BER-145). One dropdown per organisation, nothing preselected.
+ * Deleting oneself where one is the only admin of a workspace with others: choose who becomes
+ * admin there (BER-145). One dropdown per workspace, nothing preselected.
  */
 export function SuccessorPicker({
   choices,
@@ -19,9 +19,8 @@ export function SuccessorPicker({
   return (
     <div className="flex flex-col gap-3 text-left">
       <p className="text-sm text-fg-muted">
-        Du bist einziger Admin{' '}
-        {choices.length === 1 ? 'dieser Organisation' : 'dieser Organisationen'}. Wähle, wer dort
-        Admin wird – die Person bekommt auch deine Präsentationen dort.
+        Du bist einziger Admin {choices.length === 1 ? 'dieses Workspace' : 'dieser Workspaces'}.
+        Wähle, wer dort Admin wird – die Person bekommt auch deine Präsentationen dort.
       </p>
       {choices.map((choice) => {
         const id = `successor-${choice.workspaceId}`;

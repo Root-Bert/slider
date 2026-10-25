@@ -14,7 +14,7 @@ import {
 import { accentColor } from '@/lib/accent';
 import { cn, Icon } from '@/ui';
 import { afterCommit, rafThrottle } from '@/lib/dom';
-import { atScrollEdge, wheelPixels } from '@/lib/wheel';
+import { wheelPixels } from '@/lib/wheel';
 import { smoothScroll } from '@/lib/motion';
 import { gapKey, openCountBySlide } from '../comments/lib/comment-selectors';
 import { slideLabel } from '../comments/lib/labels';
@@ -33,6 +33,7 @@ import {
 } from './lib/minimap';
 import { createClickGuard } from './lib/click-guard';
 import type { TrackLayout } from './lib/timeline-layout';
+import { useFrameAspects } from '../state/frame-format';
 import { useRevisionData } from '../state/revision-data';
 import { useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
@@ -88,7 +89,7 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
   const [availableW, setAvailableW] = useState(0);
 
   const rowH = THUMB_H + 2 * MINIMAP_PAD;
-  const aspectRatios = useMemo(() => slides.map((slide) => slide.aspectRatio), [slides]);
+  const { aspectRatios } = useFrameAspects();
   const mini = useMemo(
     () =>
       availableW > 0
@@ -141,27 +142,19 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
     };
   }, [scrollerRef]);
 
-  // Mouse wheels only scroll vertically: a row that overflows takes the wheel sideways. A row
-  // that fits leaves it to the timeline, which scrolls the track – and hands a sideways swipe
-  // (trackpad) on to the track too, which the row would otherwise swallow.
+  // Up/down never scrolls sideways. A sideways swipe (trackpad) scrolls a row that overflows
+  // natively; a row that fits hands it on to the track, which the row would otherwise swallow.
   useEffect(() => {
     const list = listRef.current;
     if (!list) return;
     const onWheel = (event: WheelEvent) => {
       if (isModKey(event)) return;
       const max = list.scrollWidth - list.clientWidth;
-      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
-        const scroller = scrollerRef.current;
-        if (max > 1 || !scroller) return;
-        event.preventDefault();
-        scroller.scrollLeft += wheelPixels(event.deltaX, event.deltaMode);
-        return;
-      }
-      if (max <= 1) return;
-      const delta = wheelPixels(event.deltaY, event.deltaMode);
-      if (atScrollEdge(list, delta)) return;
+      if (Math.abs(event.deltaY) >= Math.abs(event.deltaX)) return;
+      const scroller = scrollerRef.current;
+      if (max > 1 || !scroller) return;
       event.preventDefault();
-      list.scrollBy({ left: delta });
+      scroller.scrollLeft += wheelPixels(event.deltaX, event.deltaMode);
     };
     list.addEventListener('wheel', onWheel, { passive: false });
     return () => list.removeEventListener('wheel', onWheel);
@@ -503,7 +496,8 @@ const Thumbnail = memo(function Thumbnail({
           loading="lazy"
           decoding="async"
           draggable={false}
-          className="size-full object-cover"
+          // A portrait page in a 16:9 frame shows its top, like on the track.
+          className="size-full object-cover object-top"
         />
         {badge && (
           <ChangeBadge

@@ -12,7 +12,7 @@ import { badRequest } from '../http/errors';
  */
 
 export const NOT_A_MEMBER_MESSAGE =
-  'Zugriff können nur Personen bekommen, die in der Organisation sind. Lade die Seite neu und versuch es noch einmal.';
+  'Zugriff können nur Personen bekommen, die im Workspace sind. Lade die Seite neu und versuch es noch einmal.';
 
 /** The deck's restriction and its list, in the order the accounts were added. */
 export async function getDeckAccess(db: Executor, deck: DeckRow): Promise<DeckAccess> {

@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { loadStoredBoxMode, storeBoxMode } from '@/lib/preferences/box-mode';
 import { loadStoredSplit, storeSplit } from '@/lib/preferences/split';
+import { loadStoredWideFrames, storeWideFrames } from '@/lib/preferences/wide-frames';
 import { loadWorkPreferences } from '@/lib/preferences/work-preferences';
 import { createStageRegistry, StageRegistryContext } from './stage-registry';
 import {
@@ -48,6 +49,7 @@ export function ViewerStoreProvider({
         initial ?? all.slides.find((slide) => !slide.hidden)?.id ?? all.slides[0]?.id ?? null,
       split: loadStoredSplit(),
       boxMode: loadStoredBoxMode(),
+      wideFrames: loadStoredWideFrames(),
       ...preferences,
       showHiddenSlides: opensWithHiddenSlides(all, initial, preferences.showHiddenSlides),
       showMinimap: !hideMinimap,
@@ -62,6 +64,7 @@ export function ViewerStoreProvider({
   // The split is a per-browser preference, not per deck.
   useEffect(() => storeSplit(state.split), [state.split]);
   useEffect(() => storeBoxMode(state.boxMode), [state.boxMode]);
+  useEffect(() => storeWideFrames(state.wideFrames), [state.wideFrames]);
 
   // A new revision keeps the active slide by its stable id. When that slide is gone, the slide
   // that now stands at its old place takes over (before paint, so nothing points into the void).

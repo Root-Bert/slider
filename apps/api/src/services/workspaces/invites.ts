@@ -142,8 +142,8 @@ async function insertInvite(
     if (member) {
       throw badRequest(
         input.deck
-          ? 'Diese Person ist schon in der Organisation und sieht die Präsentation bereits.'
-          : 'Diese Person ist schon Mitglied der Organisation.',
+          ? 'Diese Person ist schon im Workspace und sieht die Präsentation bereits.'
+          : 'Diese Person ist schon Mitglied des Workspace.',
       );
     }
   }
@@ -277,8 +277,8 @@ export async function previewInvite(deps: AppDeps, token: string): Promise<JoinP
 }
 
 /**
- * The invite's state, `revoked` too once its creator is no admin of a usable organisation any
- * more (demoted, gone, or the organisation blocked – BER-167).
+ * The invite's state, `revoked` too once its creator is no admin of a usable workspace any
+ * more (demoted, gone, or the workspace blocked – BER-167).
  */
 export async function effectiveState(
   db: Executor,
@@ -310,7 +310,7 @@ async function deckRef(db: Executor, deckId: string | null): Promise<DeckRef> {
  */
 async function creatorIsAdmin(db: Executor, invite: WorkspaceInviteRow): Promise<boolean> {
   if (!invite.createdBy) return false;
-  // A blocked organisation (BER-167) takes nobody in: its invites count as withdrawn.
+  // A blocked workspace (BER-167) takes nobody in: its invites count as withdrawn.
   const creator = await membership(db, invite.workspaceId, invite.createdBy);
   return creator?.role === 'admin' && !creator.blocked;
 }
@@ -377,7 +377,7 @@ async function acceptInvite(
         role: invite.role,
         createdAt: now,
       });
-      // Invited back into the organisation: removed earlier or not, they are a member like anyone
+      // Invited back into the workspace: removed earlier or not, they are a member like anyone
       // else now. A deck share is no invitation back – leaving again must not reopen the domain.
       if (!invite.deckId) {
         await liftRemoval(tx, invite.workspaceId, user);

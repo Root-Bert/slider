@@ -8,11 +8,11 @@ import { api, apiRequest } from '../api-client';
 import { queryKeys, workspaceKeys } from './keys';
 
 /**
- * Plan, storage and billing of an organisation (BER-151..155). Checkout and the customer portal
+ * Plan, storage and billing of a workspace (BER-151..155). Checkout and the customer portal
  * are Stripe pages: their mutations answer a `url` to send the browser to.
  */
 
-/** "Nutzung" of one organisation (any member). `refetchInterval` while a payment is landing. */
+/** "Nutzung" of one workspace (any member). `refetchInterval` while a payment is landing. */
 export const useWorkspaceUsage = (
   workspaceId: string | null,
   options: { refetchInterval?: number | false } = {},
@@ -48,7 +48,7 @@ export const useOpenBillingPortal = (workspaceId: string) =>
     mutationFn: () => api.post<BillingRedirect>(`/workspaces/${workspaceId}/billing/portal`),
   });
 
-/** Billing owner asks another admin to pay from now on (free organisation: at once). */
+/** Billing owner asks another admin to pay from now on (free workspace: at once). */
 export function useRequestBillingTransfer(workspaceId: string) {
   const store = useStoreUsage();
   return useMutation({

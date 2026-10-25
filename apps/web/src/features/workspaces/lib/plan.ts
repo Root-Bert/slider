@@ -74,16 +74,16 @@ export function formatDeckUsage(usage: WorkspaceUsage): string {
 /** Why "Neue Review" is off, matching the API's `plan_limit` message. */
 export function deckLimitMessage(workspace: Pick<Workspace, 'plan' | 'usage'>): string {
   const max = workspace.usage.maxDecks ?? 0;
-  return `Im ${planLabel(workspace.plan)} ${max === 1 ? 'ist eine Review' : `sind ${max} Reviews`} pro Organisation möglich. Lösche eine, um Platz zu schaffen.`;
+  return `Im ${planLabel(workspace.plan)} ${max === 1 ? 'ist eine Review' : `sind ${max} Reviews`} pro Workspace möglich. Lösche eine, um Platz zu schaffen.`;
 }
 
 /**
  * Over a limit of the plan (BER-155, "Sperrmodus"): new reviews, uploads, invitations and
- * comments are off until the organisation is back within its plan. The API answers
+ * comments are off until the workspace is back within its plan. The API answers
  * `plan_over_limit`. Tooltip of every action that is off for this reason.
  */
 export const LOCKED_MESSAGE =
-  'Die Organisation liegt über dem Limit ihres Plans. Unter „Nutzung“ siehst du, was zu tun ist.';
+  'Der Workspace liegt über dem Limit seines Plans. Unter „Nutzung“ siehst du, was zu tun ist.';
 
 /** Why "Neue Review" is off – over the plan's limits or no review left – or `null`. */
 export function newReviewBlockedMessage(
@@ -131,7 +131,7 @@ export const formatPlanDate = (iso: string) =>
   new Date(iso).toLocaleDateString('de-DE', { day: 'numeric', month: 'long', year: 'numeric' });
 
 /**
- * A paid organisation about to fall back to free because nobody pays (a payment failed, the
+ * A paid workspace about to fall back to free because nobody pays (a payment failed, the
  * paying admin left) – someone can still act. A cancellation is wanted: no warning for it.
  */
 export const pendingDowngrade = (billing: WorkspaceBilling): string | null =>
@@ -144,7 +144,7 @@ export const pendingDowngrade = (billing: WorkspaceBilling): string | null =>
 const ENDED_STATUSES: ReadonlySet<string> = new Set(['canceled', 'incomplete_expired']);
 
 /**
- * A paid organisation whose subscription runs and renews (BER-154): its billing owner stays
+ * A paid workspace whose subscription runs and renews (BER-154): its billing owner stays
  * until someone else pays, and only they may delete it – that ends the subscription. Once it's
  * cancelled to the period end (`endsAt`), neither holds any more. Mirrors the API's guard
  * (`isPaying` in billing-owner): the billing DTO's `status` is non-null exactly when a

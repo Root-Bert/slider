@@ -185,4 +185,12 @@ describe('RecorderPanel', () => {
     expect(screen.getByRole('radio', { name: /Bildschirm/ })).toHaveProperty('disabled', true);
     expect(screen.getByRole('radio', { name: /Kamera/ }).getAttribute('aria-checked')).toBe('true');
   });
+
+  it('starts video on the screen, sources in the order screen, both, camera', () => {
+    screenSupported = true;
+    render(<RecorderPanel kind="video" deckId="d1" onChange={vi.fn()} />);
+    const sources = screen.getAllByRole('radio');
+    expect(sources.map((source) => source.textContent)).toEqual(['Bildschirm', 'Beides', 'Kamera']);
+    expect(sources[0]!.getAttribute('aria-checked')).toBe('true');
+  });
 });

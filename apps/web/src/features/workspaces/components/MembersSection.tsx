@@ -53,8 +53,8 @@ export function MembersSection({
       title="Mitglieder"
       description={
         canInvite
-          ? 'Wer in dieser Organisation Reviews sieht und kommentiert. Einladungen per E-Mail und Links gelten 7 Tage.'
-          : 'Wer in dieser Organisation Reviews sieht und kommentiert.'
+          ? 'Wer in diesem Workspace Reviews sieht und kommentiert. Einladungen per E-Mail und Links gelten 7 Tage.'
+          : 'Wer in diesem Workspace Reviews sieht und kommentiert.'
       }
       aside={
         canInvite &&
@@ -104,7 +104,7 @@ export function MembersSection({
           remove.reset();
         }}
         title={removing ? `${removing.name} entfernen?` : ''}
-        description="Die Person verliert den Zugriff auf alle Reviews dieser Organisation. Ihre Kommentare bleiben erhalten."
+        description="Die Person verliert den Zugriff auf alle Reviews dieses Workspace. Ihre Kommentare bleiben erhalten."
         confirmLabel="Entfernen"
         pending={remove.isPending}
         // In the dialog: a toast would sit behind its backdrop.

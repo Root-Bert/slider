@@ -35,7 +35,7 @@ describe('limitState', () => {
   it('reports free slots, fullness and a meter ratio', () => {
     expect(limitState(2, 3)).toEqual({ used: 2, max: 3, full: false, remaining: 1, ratio: 2 / 3 });
     expect(limitState(3, 3)).toMatchObject({ full: true, remaining: 0, ratio: 1 });
-    // Above the limit (an organisation from before the plan): full, never negative.
+    // Above the limit (a workspace from before the plan): full, never negative.
     expect(limitState(4, 3)).toMatchObject({ full: true, remaining: 0, ratio: 1 });
   });
 
@@ -72,12 +72,12 @@ describe('formatting', () => {
     expect(planLabel('team')).toBe('Team-Plan');
   });
 
-  it('explains a full organisation like the API does', () => {
+  it('explains a full workspace like the API does', () => {
     expect(deckLimitMessage({ plan: 'free', usage: usage({ decks: 3 }) })).toBe(
-      'Im Free-Plan sind 3 Reviews pro Organisation möglich. Lösche eine, um Platz zu schaffen.',
+      'Im Free-Plan sind 3 Reviews pro Workspace möglich. Lösche eine, um Platz zu schaffen.',
     );
     expect(deckLimitMessage({ plan: 'free', usage: usage({ maxDecks: 1 }) })).toMatch(
-      /^Im Free-Plan ist eine Review pro Organisation möglich\./,
+      /^Im Free-Plan ist eine Review pro Workspace möglich\./,
     );
   });
 

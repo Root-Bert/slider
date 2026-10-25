@@ -10,7 +10,7 @@ import { rememberWorkspace } from './lib/last-workspace';
 /**
  * `/w/:workspaceId/*`: remembers the workspace for `/`. Workspaces the account doesn't (or no
  * longer) belong to – just left, deleted, or a foreign link – go to `/`, which opens another one.
- * An organisation founded at sign-up asks its admin once whether it is private or the company's.
+ * A workspace founded at sign-up asks its admin once whether it is private or the company's.
  * Over the plan's limits, about to fall back to free or asked to pay: a banner to "Nutzung".
  * Blocked by the instance admin (BER-167): only that, and leaving.
  */
@@ -25,7 +25,7 @@ export function Component() {
 
   if (!workspace) return <Navigate to={routes.reviews()} replace />;
   if (workspace.blocked) return <BlockedWorkspace workspace={workspace} userId={user.id} />;
-  // A fresh page per organisation: /w/A → /w/B matches the same route, and without the key its
+  // A fresh page per workspace: /w/A → /w/B matches the same route, and without the key its
   // pages keep A's state (running bulk re-render, search, tab) – see WorkspaceLayout.test.tsx.
   return (
     <>

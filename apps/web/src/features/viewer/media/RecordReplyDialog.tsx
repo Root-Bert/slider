@@ -1,14 +1,15 @@
-import { MAX_COMMENT_BODY_LENGTH, type Comment, type MediaKind } from '@slider/shared';
+import type { Comment, MediaKind } from '@slider/shared';
 import { useState } from 'react';
-import { AutosizeTextarea, Button, Dialog, ErrorText } from '@/ui';
+import { Button, Dialog, ErrorText } from '@/ui';
 import { replyInput } from '../comments/lib/replies';
 import { useViewerToast } from '../state/viewer-toast';
 import { MEDIA_LABELS } from './lib/recording';
 import { RecorderPanel } from './RecorderPanel';
 import { useCreateMediaComment } from './hooks/useMediaComment';
+import { asUploads, useImageAttachments } from './hooks/useImageAttachments';
+import { NoteField } from './NoteField';
 import { useHoldUnsavedWork } from '../lib/unsaved-work';
 import type { Recording } from './hooks/useRecorder';
-import { isModEnter } from '@/lib/keyboard';
 
 /** Voice or video reply to a thread (BER-116, Figma B3 "Antworten in jedem Format"). */
 export function RecordReplyDialog({
@@ -25,10 +26,13 @@ export function RecordReplyDialog({
   const [recording, setRecording] = useState<Recording | null>(null);
   const [recordingRunning, setRecordingRunning] = useState(false);
   const [note, setNote] = useState('');
+  const images = useImageAttachments();
   const create = useCreateMediaComment(deckId);
   const showToast = useViewerToast();
   // Leaving the review would drop the recording and abort its upload: ask first.
-  useHoldUnsavedWork(recording !== null || recordingRunning || create.isPending);
+  useHoldUnsavedWork(
+    recording !== null || recordingRunning || images.attachments.length > 0 || create.isPending,
+  );
 
   // Cancelling (button, Esc, backdrop) also aborts a running upload: nothing is sent.
   const cancel = () => {
@@ -39,7 +43,11 @@ export function RecordReplyDialog({
   const send = () => {
     if (!recording || create.isPending) return;
     create.mutate(
-      { input: replyInput(root, note), recording },
+      {
+        input: replyInput(root, note),
+        recording,
+        images: asUploads(images.attachments),
+      },
       {
         onSuccess: () => {
           showToast(`${MEDIA_LABELS[kind].noun} gesendet`);
@@ -77,19 +85,14 @@ export function RecordReplyDialog({
           autoFocus
         />
         {recording && (
-          <div className="field-well focus-field rounded-control-sm px-3 py-2">
-            <AutosizeTextarea
-              aria-label="Notiz zur Aufnahme"
-              maxLength={MAX_COMMENT_BODY_LENGTH}
-              placeholder="Optional: Notiz zur Aufnahme"
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              onKeyDown={(event) => {
-                if (isModEnter(event)) send();
-              }}
-              className="text-body leading-5 text-fg"
-            />
-          </div>
+          <NoteField
+            label="Notiz zur Aufnahme"
+            value={note}
+            onChange={setNote}
+            onSend={send}
+            images={images}
+            disabled={create.isPending}
+          />
         )}
         {create.error && (
           <ErrorText role="alert" size="xs">

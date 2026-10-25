@@ -65,7 +65,7 @@ export function UsersTable({ userId, onNotify }: { userId: string; onNotify: Sho
 
 const COLUMNS = {
   name: { label: 'Person' },
-  workspaces: { label: 'Organisationen', numeric: true },
+  workspaces: { label: 'Workspaces', numeric: true },
   created: { label: 'Seit', className: 'max-md:hidden' },
   active: { label: 'Zuletzt aktiv' },
   actions: { label: 'Aktionen', hidden: true, className: 'w-10' },

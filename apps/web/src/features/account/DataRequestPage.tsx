@@ -108,7 +108,7 @@ export function Component() {
           message={
             request.data.hasAccount
               ? `${DELETION_RULES} Das lässt sich nicht rückgängig machen.`
-              : 'Zu dieser Adresse gibt es kein Konto, nur Einladungen in Organisationen. Sie werden gelöscht; wer dich eingeladen hat, sieht sie dann nicht mehr.'
+              : 'Zu dieser Adresse gibt es kein Konto, nur Einladungen in Workspaces. Sie werden gelöscht; wer dich eingeladen hat, sieht sie dann nicht mehr.'
           }
         >
           {choices.data && (
@@ -131,7 +131,7 @@ export function Component() {
               confirm.mutate(
                 { token, action: 'delete', successors },
                 {
-                  // Another admin left meanwhile: that organisation now needs one chosen too.
+                  // Another admin left meanwhile: that workspace now needs one chosen too.
                   onError: (error) => {
                     if (error instanceof ApiError && error.code === 'bad_request') {
                       void choices.refetch();

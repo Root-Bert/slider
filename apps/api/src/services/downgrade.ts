@@ -7,10 +7,10 @@ import { cancelSubscriptions } from './billing-owner';
 import { DAY_MS, formatDate } from './retention-rules';
 
 /**
- * Paid organisations without a working payment (BER-155): a failed payment, or a billing owner
+ * Paid workspaces without a working payment (BER-155): a failed payment, or a billing owner
  * who left before anyone else paid, gives 14 days (`workspaces.downgrade_at`) – the admins get a
  * mail right away, 7 days in and the day before. A subscription cancelled to the period end
- * falls back then, without mails (they chose it). When the time is up the organisation is free
+ * falls back then, without mails (they chose it). When the time is up the workspace is free
  * again; over the free limits it is locked until it fits or someone pays (`plans`). Runs in the
  * hourly sweep (`retention`), no admin tool; data is never deleted for it.
  */
@@ -41,7 +41,7 @@ async function mailAdmins(deps: AppDeps, row: WorkspaceRow, deadline: Date | nul
           button: 'Zur Nutzung',
           url,
           outro:
-            'Im Free-Plan bleibt alles erhalten. Liegt die Organisation dann über einem Limit, kann man nur noch lesen, löschen und upgraden.',
+            'Im Free-Plan bleibt alles erhalten. Liegt der Workspace dann über einem Limit, kann man nur noch lesen, löschen und upgraden.',
         })
       : inviteMail({
           to: admin.email,
@@ -61,7 +61,7 @@ async function mailAdmins(deps: AppDeps, row: WorkspaceRow, deadline: Date | nul
   }
 }
 
-/** Reminders that are due, and organisations whose time is up. */
+/** Reminders that are due, and workspaces whose time is up. */
 export async function sweepDowngrades(deps: AppDeps): Promise<void> {
   const now = deps.clock.now();
   const pending = await deps.db

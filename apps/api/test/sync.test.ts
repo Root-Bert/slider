@@ -397,7 +397,7 @@ describe('scheduler', () => {
     expect(source.getChangeToken).toHaveBeenCalledTimes(2);
   });
 
-  it('leaves the reviews of a blocked organisation alone (BER-167)', async () => {
+  it('leaves the reviews of a blocked workspace alone (BER-167)', async () => {
     const { ctx, scheduler } = await withScheduler();
     await ctx.deps.db
       .update(workspaces)

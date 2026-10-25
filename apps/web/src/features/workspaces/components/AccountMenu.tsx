@@ -1,35 +1,30 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { currentPath, routes } from '@/lib/routes';
+import { routes } from '@/lib/routes';
 import { dismissPasskeyHint, passkeyHintDismissed, passkeysSupported } from '@/lib/passkeys';
-import { providerLoginUrl } from '@/features/auth';
-import { useAuthProviders, useLogout, useMe, usePasskeys } from '@/lib/api';
+import { useLogout, useMe, usePasskeys } from '@/lib/api';
 import {
   Avatar,
   ErrorText,
   Icon,
   IconButton,
-  ListRow,
   MenuDivider,
   MenuHeading,
   MenuItem,
-  MicrosoftMark,
   PasskeyMark,
   Spinner,
 } from '@/ui';
 import { HeaderPopover } from './HeaderPopover';
 
-const MICROSOFT_CONNECT_URL = '/api/auth/microsoft/login';
-
 /**
  * Header avatar with the account menu: who is signed in, "Konto & Anmeldung", "Nutzung" (plan
- * and storage of the organisations), "Einstellungen" (its own page, kept apart from the
- * account), for the instance admin "Instanz" (dashboard and setup, BER-167), Microsoft
- * connections, sign out – and once, until dismissed, a nudge to add a passkey.
+ * and storage of the workspaces), "Einstellungen" (its own page, kept apart from the
+ * account), for the instance admin "Instanz" (dashboard and setup, BER-167), sign out – and once,
+ * until dismissed, a nudge to add a passkey. Logins and connections live on "Konto & Anmeldung".
+ * The panel unfolds out of the avatar: it stays where it is, in the panel's top-right corner.
  */
 export function AccountMenu() {
   const { data: me } = useMe();
-  const providers = useAuthProviders();
   const logout = useLogout();
   const navigate = useNavigate();
   const [hintWanted, setHintWanted] = useState(
@@ -40,8 +35,6 @@ export function AccountMenu() {
   const user = me.user;
   if (!user) return <Avatar author={me.viewer.author} size={32} />;
 
-  const microsoftAvailable =
-    user.microsoftConnected || providers.data?.providers.some((p) => p.id === 'microsoft');
   const signOut = () =>
     logout.mutate(undefined, { onSuccess: () => window.location.assign(routes.login()) });
 
@@ -49,20 +42,23 @@ export function AccountMenu() {
     <HeaderPopover
       label={`Konto: ${user.name}`}
       align="right"
+      unfold
+      // The header's room for the avatar (10px from the right, 8px from the top) plus the
+      // panel's 6px padding: the panel's corner lies around the avatar, not below it.
+      panelClassName="-top-3.5 -right-4"
       triggerClassName="flex rounded-full transition-opacity hover:opacity-85"
       trigger={() => <Avatar author={me.viewer.author} size={32} />}
     >
       {(close) => (
         <>
-          <ListRow
-            as="div"
-            variant="flush"
-            padding="header"
-            size="body"
-            leading={<Avatar author={me.viewer.author} size={32} />}
-            title={user.name}
-            subtitle={user.email}
-          />
+          <div className="flex items-start gap-3 px-2.5 pt-2 pb-2.5">
+            <div className="flex min-h-8 min-w-0 flex-1 flex-col justify-center">
+              <span className="truncate text-body font-medium text-fg">{user.name}</span>
+              <span className="truncate text-xs text-fg-subtle">{user.email}</span>
+            </div>
+            {/* The trigger's avatar shows here, above the panel. */}
+            <span aria-hidden className="size-8 shrink-0" />
+          </div>
           {hintWanted && passkeys.data?.length === 0 && (
             <div
               data-passkey-hint
@@ -151,45 +147,6 @@ export function AccountMenu() {
               >
                 Instanz-Dashboard
               </MenuItem>
-            </>
-          )}
-          {microsoftAvailable && (
-            <>
-              <MenuDivider />
-              {user.microsoftConnected ? (
-                // Several accounts can be connected: they are managed on /konto.
-                <MenuItem
-                  icon={<MicrosoftMark />}
-                  trailing={<Icon name="checkCircle" size={18} className="text-success" />}
-                  onClick={() => {
-                    close();
-                    void navigate(routes.account());
-                  }}
-                >
-                  <span className="flex flex-col">
-                    <span>Microsoft verbunden</span>
-                    <span className="text-xs text-fg-subtle">
-                      {user.microsoftConnections > 1
-                        ? `${user.microsoftConnections} Konten | verwalten`
-                        : 'Konten verwalten'}
-                    </span>
-                  </span>
-                </MenuItem>
-              ) : (
-                <MenuItem
-                  as="a"
-                  icon={<MicrosoftMark />}
-                  href={providerLoginUrl(MICROSOFT_CONNECT_URL, currentPath())}
-                  trailing={<Icon name="arrowForward" size={16} className="text-fg-subtle" />}
-                >
-                  <span className="flex flex-col">
-                    <span>Microsoft verbinden</span>
-                    <span className="text-xs text-fg-subtle">
-                      Für OneDrive- und SharePoint-Links
-                    </span>
-                  </span>
-                </MenuItem>
-              )}
             </>
           )}
           <MenuDivider />

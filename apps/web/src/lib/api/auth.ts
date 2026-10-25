@@ -32,7 +32,7 @@ export const startNextcloudSignIn = (input: StartNextcloudSignInInput) =>
 export const pollNextcloudSignIn = (id: string) =>
   api.post<NextcloudSignInPoll>(`/auth/nextcloud/flow/${encodeURIComponent(id)}/poll`);
 
-/** The company login of the address's organisation (BER-162); 404 when it has none. */
+/** The company login of the address's workspace (BER-162); 404 when it has none. */
 export const discoverSso = (email: string) => api.post<SsoLogin>('/auth/sso/discover', { email });
 
 /** The link from the confirmation mail of a new account through Nextcloud. */

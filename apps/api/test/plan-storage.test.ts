@@ -27,7 +27,7 @@ import {
 } from './helpers';
 import { pptxBytes } from './sync-helpers';
 
-/** BER-151: storage counted per organisation. BER-155: locked while over a limit. */
+/** BER-151: storage counted per workspace. BER-155: locked while over a limit. */
 
 let ctx: TestContext;
 afterEach(() => ctx.cleanup());
@@ -97,7 +97,7 @@ const usage = async () =>
     await (await ctx.request(`/api/workspaces/${ctx.workspaceId}/usage`)).json(),
   );
 
-describe('storage per organisation (BER-151)', () => {
+describe('storage per workspace (BER-151)', () => {
   it('adds up files and recordings of every review by kind, whoever uploaded them', async () => {
     await setup();
     const one = await createReadyDeck(ctx, { slideCount: 2 });
@@ -144,7 +144,7 @@ describe('storage per organisation (BER-151)', () => {
     expect(await full.json()).toMatchObject({
       error: {
         code: 'plan_limit',
-        message: expect.stringMatching(/Speicher der Organisation ist voll/),
+        message: expect.stringMatching(/Speicher des Workspace ist voll/),
       },
     });
   });
@@ -183,6 +183,19 @@ describe('lock mode over the limits (BER-155)', () => {
     });
     expect(link.status).toBe(403);
     expect((await upload()).status).toBe(403);
+    // Nor a comment with an image (pasted into any note field).
+    const withImage = new FormData();
+    withImage.append(
+      'comment',
+      JSON.stringify({ ...pinComment(first!.slideIds[0]!), body: '', media: undefined }),
+    );
+    withImage.append('image', new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1])], 'a.png'));
+    const imageRes = await ctx.request(`/api/decks/${first!.deckId}/media-comments`, {
+      method: 'POST',
+      body: withImage,
+    });
+    expect(imageRes.status).toBe(403);
+    expect(await imageRes.json()).toMatchObject({ error: { code: 'plan_over_limit' } });
 
     // Reading works.
     expect((await ctx.request(`/api/decks/${first!.deckId}/comments`)).status).toBe(200);
@@ -318,7 +331,7 @@ describe('storage reserved for imports under way (BER-151)', () => {
     const refused = await upload(second);
     expect(refused.status).toBe(403);
     expect(await refused.json()).toMatchObject({
-      error: { code: 'plan_limit', message: expect.stringMatching(/Speicher der Organisation/) },
+      error: { code: 'plan_limit', message: expect.stringMatching(/Speicher des Workspace/) },
     });
 
     // The import is over: its real files count instead, the reservation is gone.

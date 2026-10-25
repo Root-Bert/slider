@@ -6,7 +6,7 @@ import type { AppDeps } from '../deps';
 import { measureDeckFiles } from './deck-storage';
 
 /**
- * Storage per organisation (BER-151): every file of its reviews counts – originals, slide images
+ * Storage per workspace (BER-151): every file of its reviews counts – originals, slide images
  * and recordings – whoever uploaded them. Blob files are measured per deck after each import and
  * prune (`decks.files_bytes`), recordings come from `media.size_bytes`; both add up through
  * `decks.workspace_id`, so the sums need no `stat` per file.

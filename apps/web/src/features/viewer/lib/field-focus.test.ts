@@ -18,7 +18,7 @@ describe('text fields in a well', () => {
         (match) => [path, match[2]!] as const,
       ),
     );
-    expect(wells.length).toBeGreaterThanOrEqual(5);
+    expect(wells.length).toBeGreaterThanOrEqual(4);
     expect(wells.filter(([, classes]) => !/\bfocus-field\b/.test(classes))).toEqual([]);
   });
 });

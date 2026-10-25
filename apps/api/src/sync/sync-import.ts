@@ -45,6 +45,9 @@ import { deleteBlobs, storageBlobs } from '../services/blob-deletions';
 import { blobKeys } from '../storage/blob-storage';
 import { parseFailedMessage } from './errors';
 import { DEFAULT_SYNC_POLL_INTERVAL_MS } from '../config';
+import { carryShapeIds } from '../import/pdf-boxes';
+import { isPdfPage, openDeckFile } from '../import/pdf-deck';
+import { PdfTimedOut } from '../import/pdf-jobs';
 import { mergeSyncState, syncBackoffMs } from './state';
 
 type SlideVersionRow = typeof slideVersions.$inferSelect;
@@ -75,7 +78,7 @@ async function currentFingerprints(
   const bytes = revision?.pptxKey ? await deps.storage.get(revision.pptxKey) : null;
   if (!bytes) return null;
   try {
-    const document = await deps.openPptx(bytes);
+    const document = await openDeckFile(deps.openPptx, bytes);
     const parsed = document.presentation.slides;
     const sameSlides =
       parsed.length === rows.length &&
@@ -91,7 +94,7 @@ async function currentFingerprints(
       fingerprints.push(
         fingerprintFromShapes({
           key: row.slideId,
-          sldId: slide.sldId,
+          sldId: isPdfPage(slide) ? null : slide.sldId,
           position: row.position,
           title: slide.title,
           layoutName: slide.layoutName,
@@ -162,7 +165,7 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
       : null;
     const bytes = revision.pptxKey ? await storage.get(revision.pptxKey) : null;
     if (!bytes) throw new Error(`Original file of revision ${revisionId} is missing`);
-    const document = await deps.openPptx(bytes);
+    const document = await openDeckFile(deps.openPptx, bytes);
     const { presentation } = document;
     const aspectRatio = presentation.size.cx / presentation.size.cy;
     const extras = (await deps.slidesExtras?.(deck, revision)) ?? null;
@@ -218,10 +221,11 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
     };
     const prevFingerprints: SlideFingerprint[] = rebuilt ?? [];
     if (!rebuilt) for (const row of previous) prevFingerprints.push(await toFingerprint(row));
-    const nextFingerprints = planned.map((slide) =>
+    const fingerprintOf = (slide: PlannedSlide) =>
       fingerprintFromShapes({
         key: String(slide.position),
-        sldId: slide.parsed.sldId,
+        // A PDF's pages are matched by what they show: they have no slide id.
+        sldId: isPdfPage(slide.parsed) ? null : slide.parsed.sldId,
         position: slide.position,
         title: slide.parsed.title,
         layoutName: slide.parsed.layoutName,
@@ -232,9 +236,21 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
         creationId: slide.parsed.creationId,
         hidden: slide.parsed.hidden,
         sourceSlideId: slide.sourceSlideId,
-      }),
-    );
+      });
+    let nextFingerprints = planned.map(fingerprintOf);
     const results = matchSlides(prevFingerprints, nextFingerprints);
+    // A PDF's boxes are measured afresh each version: a page matched to one before takes over its
+    // boxes' ids, so comments bound to a box stay on it (PowerPoint keeps its shape ids itself).
+    if (planned.some((slide) => isPdfPage(slide.parsed))) {
+      const previousShapes = new Map(previous.map((row) => [row.slideId, row.shapes]));
+      for (const result of results) {
+        if (result.prevKey === null || result.nextKey === null) continue;
+        const slide = planned[Number(result.nextKey)];
+        const before = previousShapes.get(result.prevKey);
+        if (slide && before) slide.shapes = carryShapeIds(before, slide.shapes);
+      }
+      nextFingerprints = planned.map(fingerprintOf);
+    }
     // Where every box of the previous revision went: comments bound to one follow it (BER-111).
     const boxes = trackBoxes(prevFingerprints, nextFingerprints, results);
     const rendered = await storeImages(deps, {
@@ -340,7 +356,7 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
             slideId: slideIdAt(slide.position),
             revisionId,
             position: slide.position,
-            pptxSldId: slide.parsed.sldId,
+            pptxSldId: isPdfPage(slide.parsed) ? null : slide.parsed.sldId,
             hidden: slide.parsed.hidden,
             title: slide.parsed.title,
             layoutName: slide.parsed.layoutName,
@@ -437,7 +453,11 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
     // tried again with a backoff, and after a few failed imports of it in a row it is skipped
     // too – a manual "Neu rendern" still tries. Only import attempts of this very file count,
     // not the failed source checks before it.
-    const parseFailed = error instanceof PptxError || error instanceof ImportCrashLoop;
+    // A PDF cut off after its deadline would be cut off again: skipped until it changes, too.
+    const parseFailed =
+      error instanceof PptxError ||
+      error instanceof ImportCrashLoop ||
+      error instanceof PdfTimedOut;
     const previous = deck.syncState.importFailures;
     const failures = parseFailed
       ? null
@@ -553,6 +573,7 @@ function keepsImages(
   return (
     row.renderer === 'office' ||
     row.renderer === 'libreoffice' ||
+    row.renderer === 'pdf' ||
     slide.parsed.hidden ||
     !canRenderBetter
   );

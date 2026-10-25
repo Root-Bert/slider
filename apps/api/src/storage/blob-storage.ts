@@ -52,6 +52,7 @@ const CONTENT_TYPES: Record<string, string> = {
   jpeg: 'image/jpeg',
   webp: 'image/webp',
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  pdf: 'application/pdf',
   webm: 'video/webm',
   mp4: 'video/mp4',
   ogg: 'audio/ogg',
@@ -70,8 +71,9 @@ export function contentTypeForKey(key: string): string {
 export const blobKeys = {
   deckPrefix: (deckId: string) => `decks/${deckId}/`,
   revisionPrefix: (deckId: string, revisionId: string) => `decks/${deckId}/${revisionId}/`,
-  pptx: (deckId: string, revisionId: string) =>
-    `decks/${deckId}/${revisionId}/source-${crypto.randomUUID()}.pptx`,
+  /** The revision's original: a PowerPoint, or a PDF review deck. */
+  pptx: (deckId: string, revisionId: string, extension: 'pptx' | 'pdf' = 'pptx') =>
+    `decks/${deckId}/${revisionId}/source-${crypto.randomUUID()}.${extension}`,
   slideRenderPrefix: (deckId: string, revisionId: string) =>
     `decks/${deckId}/${revisionId}/slides/`,
   slideRender: (deckId: string, revisionId: string, extension: string) =>

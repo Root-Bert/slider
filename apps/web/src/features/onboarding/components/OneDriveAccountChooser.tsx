@@ -21,7 +21,7 @@ export function OneDriveAccountChooser({
       open={open}
       onClose={onClose}
       title="Welches Microsoft-Konto?"
-      description="Wähle das Konto, in dessen OneDrive oder SharePoint die PowerPoint liegt."
+      description="Wähle das Konto, in dessen OneDrive oder SharePoint die Datei liegt."
     >
       <RowList>
         {accounts.map((account) => {

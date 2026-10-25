@@ -7,6 +7,7 @@ import {
 import type { CommentAuthor, ParsedReply } from '@slider/pptx';
 import { googleLoginRequired } from '../auth/google';
 import { ApiError, notAPowerPoint } from '../http/errors';
+import { markPdfMaker } from '../import/pdf-maker';
 import {
   LINK_NOT_A_POWERPOINT_MESSAGE,
   sourceForbidden,
@@ -17,7 +18,8 @@ import {
   fetchHop,
   isHtmlResponse,
   isPdfBytes,
-  isPptxBytes,
+  deckFileName,
+  isDeckBytes,
   readBodyCapped,
   redirectTarget,
   safeFetch,
@@ -137,9 +139,29 @@ function refLink(ref: string): GoogleLink {
   return link;
 }
 
-const isPptxName = (name: string) => /\.pptx$/i.test(name);
-/** Google Slides files carry no extension; the deck's file name always says `.pptx`. */
-const pptxFileName = (name: string) => (isPptxName(name) ? name : `${name}.pptx`);
+const PDF_MIME = 'application/pdf';
+const isPdfFile = (file: Pick<DriveFile, 'mimeType' | 'name'>) =>
+  file.mimeType === PDF_MIME || /\.pdf$/i.test(file.name);
+/** Google Docs, Sheets and Drawings: exported as Google's PDF, which becomes the deck. */
+const GOOGLE_PDF_EXPORTS = new Set([
+  'application/vnd.google-apps.document',
+  'application/vnd.google-apps.spreadsheet',
+  'application/vnd.google-apps.drawing',
+]);
+const GOOGLE_APPS_PREFIX = 'application/vnd.google-apps.';
+
+/**
+ * Google files carry no extension: a Google Slides deck's file name says `.pptx` (what it is
+ * exported as), a Google Doc's `.pdf`, a PDF's `.pdf`. Any other file keeps its name, which tells
+ * the import what it is.
+ */
+const deckNameOf = (file: Pick<DriveFile, 'mimeType' | 'name'>) => {
+  if (GOOGLE_PDF_EXPORTS.has(file.mimeType)) return deckFileName(file.name, true);
+  if (file.mimeType === GOOGLE_SLIDES_MIME || file.mimeType === PPTX_MIME || isPdfFile(file)) {
+    return deckFileName(file.name, isPdfFile(file));
+  }
+  return file.name;
+};
 
 /**
  * The file's change token: the content checksum of a stored `.pptx`, the last change of a Google
@@ -147,12 +169,13 @@ const pptxFileName = (name: string) => (isPptxName(name) ? name : `${name}.pptx`
  */
 const changeTokenOf = (file: DriveFile) => file.md5Checksum ?? file.modifiedTime ?? '';
 
+/** Any file goes – the import turns it into a deck –, but no folder, form or other Google app. */
 function checkPresentation(file: DriveFile): void {
   if (file.trashed) throw sourceNotFound();
-  const slides = file.mimeType === GOOGLE_SLIDES_MIME;
-  if (!slides && file.mimeType !== PPTX_MIME && !isPptxName(file.name)) {
+  const googleApp = file.mimeType.startsWith(GOOGLE_APPS_PREFIX);
+  if (googleApp && file.mimeType !== GOOGLE_SLIDES_MIME && !GOOGLE_PDF_EXPORTS.has(file.mimeType)) {
     throw notAPowerPoint(
-      'Diese Google-Datei ist keine Präsentation. Slider liest Google Präsentationen und PowerPoint-Dateien (.pptx).',
+      'Diese Google-Datei kann Slider nicht öffnen. Es gehen Präsentationen, Dokumente, Tabellen, Zeichnungen und gespeicherte Dateien.',
     );
   }
 }
@@ -262,13 +285,15 @@ class DriveClient {
     }
   }
 
-  /** The file as PowerPoint: exported from Google Slides, else the stored bytes. */
+  /**
+   * The file: a Google Slides file exported as PowerPoint, a Google Doc, Sheet or Drawing as PDF,
+   * else the stored bytes, which the import turns into a deck.
+   */
   async pptx(file: DriveFile): Promise<Uint8Array> {
-    const bytes =
-      file.mimeType === GOOGLE_SLIDES_MIME
-        ? await this.export(file, PPTX_MIME)
-        : await this.read(this.mediaUrl(file.id));
-    if (!isPptxBytes(bytes)) throw notAPowerPoint(LINK_NOT_A_POWERPOINT_MESSAGE);
+    if (GOOGLE_PDF_EXPORTS.has(file.mimeType)) return markPdfMaker(await this.pdf(file), 'office');
+    if (file.mimeType !== GOOGLE_SLIDES_MIME) return this.read(this.mediaUrl(file.id));
+    const bytes = await this.export(file, PPTX_MIME);
+    if (!isDeckBytes(bytes)) throw notAPowerPoint(LINK_NOT_A_POWERPOINT_MESSAGE);
     return bytes;
   }
 
@@ -372,7 +397,7 @@ export class GoogleDriveAdapter implements SourceAdapter {
     const slides = file.mimeType === GOOGLE_SLIDES_MIME;
     return {
       ref: googleFileRef(file.id, slides),
-      fileName: pptxFileName(file.name),
+      fileName: deckNameOf(file),
       // Google Slides files have no size before the export.
       sizeBytes: Number(file.size ?? 0) || 0,
       changeToken: changeTokenOf(file) || null,
@@ -532,14 +557,22 @@ export class GoogleDriveAdapter implements SourceAdapter {
       throw googleLoginRequired(returnTo, link.fileId);
     }
     const bytes = await readBodyCapped(response, this.http.maxBytes);
-    if (!isPptxBytes(bytes)) throw notAPowerPoint(LINK_NOT_A_POWERPOINT_MESSAGE);
+    // A Google Slides export is a deck; any other public file the import turns into one.
+    if (link.slides && !isDeckBytes(bytes)) throw notAPowerPoint(LINK_NOT_A_POWERPOINT_MESSAGE);
+    const deck = isDeckBytes(bytes);
+    const pdf = isPdfBytes(bytes);
     const named = /filename\*=UTF-8''([^;]+)/i.exec(
       response.headers.get('content-disposition') ?? '',
     )?.[1];
-    let fileName = 'Google Präsentation.pptx';
+    let fileName = pdf
+      ? 'Google Präsentation.pdf'
+      : deck
+        ? 'Google Präsentation.pptx'
+        : 'Google-Datei';
     if (named) {
       try {
-        fileName = pptxFileName(decodeURIComponent(named));
+        const name = decodeURIComponent(named);
+        fileName = deck ? deckFileName(name, pdf) : name;
       } catch {
         // Keep the default name.
       }

@@ -12,6 +12,13 @@ describe('parseShareLink (BER-92 link types)', () => {
     ['https://1drv.ms/p/c/abc123/EaB3kQ', 'onedrive'],
     ['https://onedrive.live.com/edit?id=ABC!123&resid=ABC!123', 'onedrive'],
     ['https://contoso.sharepoint.com/:p:/s/strategie/EaB3kQxyz', 'sharepoint'],
+    // A PDF shared from SharePoint, and a PDF behind a plain link.
+    ['https://contoso.sharepoint.com/:b:/s/strategie/EaB3kQpdf', 'sharepoint'],
+    // Word, Excel and pictures shared from SharePoint: the import turns them into a deck.
+    ['https://contoso.sharepoint.com/:w:/s/team/EaB3kQdoc', 'sharepoint'],
+    ['https://contoso.sharepoint.com/:x:/s/team/EaB3kQxls', 'sharepoint'],
+    ['https://contoso-my.sharepoint.com/:i:/g/personal/robert/EaB3kQimg', 'sharepoint'],
+    ['https://example.com/decks/Keynote%20Export.pdf', 'url'],
     ['https://contoso-my.sharepoint.com/:p:/g/personal/robert/EaB3kQ', 'sharepoint'],
     ['https://contoso.sharepoint.com/sites/x/_layouts/15/Doc.aspx?sourcedoc={guid}', 'sharepoint'],
     ['https://contoso.sharepoint.com/sites/x/Shared%20Documents/Q4.pptx', 'sharepoint'],
@@ -31,7 +38,8 @@ describe('parseShareLink (BER-92 link types)', () => {
   it.each([
     'not a url',
     'http://1drv.ms/p/c/abc', // no TLS
-    'https://contoso.sharepoint.com/:w:/s/team/doc', // Word, not PowerPoint
+    'https://contoso.sharepoint.com/sites/team', // a site, no file
+    'https://contoso.sharepoint.com/:ww:/s/team/doc', // no share link
     'https://evil.com/?q=sharepoint.com/:p:/',
     'https://sharepoint.com.evil.com/:p:/x',
     'https://docs.google.com/presentation/d/abc',

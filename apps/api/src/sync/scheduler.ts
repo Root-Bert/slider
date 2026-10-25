@@ -97,7 +97,7 @@ export class SyncScheduler {
           // A queued import answers every check with "queued" and never moves `nextCheckAt`:
           // without this, a backlog of them would take every slot of every tick.
           sql`not exists (select 1 from ${revisions} where ${revisions.deckId} = ${decks.id} and ${revisions.status} = 'pending')`,
-          // Nobody opens a blocked organisation's reviews (BER-167): nothing to keep current.
+          // Nobody opens a blocked workspace's reviews (BER-167): nothing to keep current.
           sql`not exists (select 1 from ${workspaces} where ${workspaces.id} = ${decks.workspaceId} and ${workspaces.blockedAt} is not null)`,
         ),
       )

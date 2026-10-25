@@ -11,6 +11,7 @@ import type { Database } from './db/client';
 import type { ImportJob, JobQueue } from './import/queue';
 import type { RenderProgress } from './import/render-progress';
 import type { SlideRenderers } from './import/rerender';
+import type { DocumentToPdf } from './import/libreoffice';
 import type { Logger } from './logger';
 import type { Mailer } from './mail/mailer';
 import type { LiveHub } from './realtime/live-hub';
@@ -44,12 +45,14 @@ export interface AppDeps {
    * progress of background re-renders. Absent → SVG previews only.
    */
   rendering?: { renderers: SlideRenderers; progress: RenderProgress };
+  /** LibreOffice for Word, Excel and text files picked in a cloud; absent → none of those. */
+  documentPdf?: DocumentToPdf | null;
   /** Generic OpenID Connect login (BER-129); `null` when OIDC_ISSUER is not set. */
   oidc: OidcClient | null;
   /** "Weiter mit Google" – the OIDC client against accounts.google.com; `null` without GOOGLE_*. */
   google: OidcClient | null;
   /**
-   * How organisations' company logins (BER-162) reach their providers and DNS; real network
+   * How workspaces' company logins (BER-162) reach their providers and DNS; real network
    * when absent (tests inject fakes).
    */
   ssoNetwork?: SsoNetwork;

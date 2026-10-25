@@ -2,11 +2,12 @@ import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GoogleConnection } from '@slider/shared';
 import type { ParsedSlide } from '@slider/pptx';
-import { comments, decks, googleConnections, slideVersions } from '../src/db/schema';
+import { comments, decks, googleConnections, revisions, slideVersions } from '../src/db/schema';
 import type { OpenPptx } from '../src/import/pptx';
 import { slideOfAnchor } from '../src/sources/google-drive';
 import type { FetchLike } from '../src/sources/safe-fetch';
 import { createTestContext, fakeJwt, parsedSlide, stubPptx, type TestContext } from './helpers';
+import { makePdf } from './pdf';
 
 const CLIENT_ID = '123456789-abc.apps.googleusercontent.com';
 const SLIDES_MIME = 'application/vnd.google-apps.presentation';
@@ -158,8 +159,11 @@ function fakeGoogle() {
       const id = api[1]!;
       const file = files.get(id);
       if (!file?.picked) return notFound();
-      if (api[2])
-        return new Response(url.searchParams.get('mimeType') === PPTX_MIME ? file.bytes : pdf);
+      if (api[2]) {
+        // A Google Slides file exports as its PPTX (or a stub PDF); a Google Doc as its PDF.
+        const asPptx = url.searchParams.get('mimeType') === PPTX_MIME;
+        return new Response(asPptx || file.mimeType !== SLIDES_MIME ? file.bytes : pdf);
+      }
       if (url.searchParams.get('alt') === 'media') return new Response(file.bytes);
       return json({
         id,
@@ -243,8 +247,8 @@ describe('Google Drive (BER-119)', () => {
       prompt: 'consent',
       login_hint: 'robert@example.com',
       file_ids: '1SlidesAbCdEfGhIjKlMn',
-      mimetypes: `${SLIDES_MIME},${PPTX_MIME}`,
     });
+    expect(picked.authorize.searchParams.has('mimetypes')).toBe(false);
     expect(picked.location).toBe(
       `http://localhost:5173/neu?googlePicked=1SlidesAbCdEfGhIjKlMn&googleConnection=${row!.id}`,
     );
@@ -292,6 +296,84 @@ describe('Google Drive (BER-119)', () => {
     const [after] = await ctx.deps.db.select().from(decks).where(eq(decks.id, deckId));
     expect(after?.googleConnectionId).toBeNull();
     expect(after?.syncState.lastSyncError).toMatchObject({ code: 'auth_required' });
+  });
+
+  it('imports a PDF from Drive as a review deck', async () => {
+    const google = fakeGoogle();
+    google.files.set('1PdfAbCdEfGhIjKlMnOp', {
+      name: 'Keynote Export.pdf',
+      mimeType: 'application/pdf',
+      modifiedTime: '2026-10-19T10:00:00Z',
+      bytes: makePdf(2),
+      picked: true,
+      public: false,
+    });
+    ctx = await createTestContext({ fetch: google.fetch, config: { googleDrive } });
+    await connect(ctx, google);
+    const [row] = await ctx.deps.db.select().from(googleConnections);
+
+    const created = await ctx.request('/api/decks/google-item', {
+      method: 'POST',
+      json: { connectionId: row!.id, fileId: '1PdfAbCdEfGhIjKlMnOp' },
+    });
+    expect(created.status).toBe(201);
+    const { id: deckId } = (await created.json()) as { id: string };
+    await ctx.deps.queue.idle();
+    const [deck] = await ctx.deps.db.select().from(decks).where(eq(decks.id, deckId));
+    expect(deck?.fileName).toBe('Keynote Export.pdf');
+    const [revision] = await ctx.deps.db
+      .select()
+      .from(revisions)
+      .where(eq(revisions.deckId, deckId));
+    expect(revision?.pptxKey).toMatch(/\.pdf$/);
+    const slides = await ctx.deps.db
+      .select()
+      .from(slideVersions)
+      .where(eq(slideVersions.revisionId, revision!.id));
+    expect(slides).toHaveLength(2);
+  });
+
+  it("imports a Google Doc as Google's PDF of it, and refuses a folder", async () => {
+    const google = fakeGoogle();
+    google.files.set('1DocAbCdEfGhIjKlMnOpQ', {
+      name: 'Konzept',
+      mimeType: 'application/vnd.google-apps.document',
+      modifiedTime: '2026-10-19T10:00:00Z',
+      bytes: makePdf(3),
+      picked: true,
+      public: false,
+    });
+    google.files.set('1DirAbCdEfGhIjKlMnOpQ', {
+      name: 'Ablage',
+      mimeType: 'application/vnd.google-apps.folder',
+      modifiedTime: '2026-10-19T10:00:00Z',
+      bytes: new Uint8Array(),
+      picked: true,
+      public: false,
+    });
+    ctx = await createTestContext({ fetch: google.fetch, config: { googleDrive } });
+    await connect(ctx, google);
+    const [row] = await ctx.deps.db.select().from(googleConnections);
+    const pick = (fileId: string) =>
+      ctx!.request('/api/decks/google-item', {
+        method: 'POST',
+        json: { connectionId: row!.id, fileId },
+      });
+
+    const created = await pick('1DocAbCdEfGhIjKlMnOpQ');
+    expect(created.status).toBe(201);
+    const { id: deckId } = (await created.json()) as { id: string };
+    await ctx.deps.queue.idle();
+    const [deck] = await ctx.deps.db.select().from(decks).where(eq(decks.id, deckId));
+    expect(deck).toMatchObject({ fileName: 'Konzept.pdf', title: 'Konzept' });
+    expect(deck?.importState.status).toBe('ready');
+    const exports = google.fetch.mock.calls
+      .map(([input]) => new URL(String(input)))
+      .filter((url) => url.pathname.endsWith('/1DocAbCdEfGhIjKlMnOpQ/export'));
+    expect(exports.map((url) => url.searchParams.get('mimeType'))).toEqual(['application/pdf']);
+
+    const folder = await pick('1DirAbCdEfGhIjKlMnOpQ');
+    expect(folder.status).toBe(400);
   });
 
   it('imports a link anyone may open without an account, and asks to pick a private one', async () => {

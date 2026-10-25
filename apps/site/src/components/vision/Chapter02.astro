@@ -27,11 +27,11 @@ const voices = [
   <div class="flex w-full flex-wrap gap-3 lg:relative lg:block lg:h-[240px]">
     {
       voices.map((voice, i) => (
-        <Pill class="text-base sm:text-xl lg:absolute lg:top-(--y) lg:left-(--x)" style={`--x: ${voice.x}px; --y: ${voice.y}px; --i: ${i + 2}`} data-reveal>
+        <Pill class="lg:absolute lg:top-(--y) lg:left-(--x)" style={`--x: ${voice.x}px; --y: ${voice.y}px; --i: ${i + 2}`} data-reveal>
           <span class="text-sage">{voice.name}</span><span class="whitespace-pre">{' | '}</span>{voice.text}
         </Pill>
       ))
     }
-    <Pill on class="text-base sm:text-xl lg:absolute lg:top-(--y) lg:left-(--x)" style="--x: 300px; --y: 186px; --i: 7" data-reveal><span class="whitespace-pre">{'You | Here is my take.'}</span></Pill>
+    <Pill on class="lg:absolute lg:top-(--y) lg:left-(--x)" style="--x: 300px; --y: 186px; --i: 7" data-reveal><span class="whitespace-pre">{'You | Here is my take.'}</span></Pill>
   </div>
 </Chapter>

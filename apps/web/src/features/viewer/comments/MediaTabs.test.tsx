@@ -22,14 +22,14 @@ function Harness({ onChange }: { onChange: (kind: MediaKindId) => void }) {
 }
 
 describe('MediaTabs', () => {
-  it('is a tab list of the four comment kinds', () => {
+  it('is a tab list of the comment kinds – text and voice are one', () => {
     render(<Harness onChange={vi.fn()} />);
     expect(screen.getByRole('tablist', { name: 'Kommentarart' })).toBeTruthy();
     const tabs = screen.getAllByRole('tab');
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['Text', 'Audio', 'Video', 'Bild']);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['Text', 'Video', 'Bild']);
     expect(tabs[0]!.getAttribute('aria-selected')).toBe('true');
     // Roving focus: only the selected tab is a Tab stop.
-    expect(tabs.map((tab) => tab.tabIndex)).toEqual([0, -1, -1, -1]);
+    expect(tabs.map((tab) => tab.tabIndex)).toEqual([0, -1, -1]);
   });
 
   it('switches on click and with the arrow keys', async () => {

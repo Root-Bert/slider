@@ -1,6 +1,7 @@
 import { eq, inArray, or } from 'drizzle-orm';
 import {
   isAllowedMediaMimeType,
+  MAX_COMMENT_IMAGES,
   MAX_IMAGE_BYTES,
   type Comment,
   type CommentImage,
@@ -18,7 +19,7 @@ import { ApiError, badRequest, fileTooLarge, notFound } from '../http/errors';
 import { blobKeys } from '../storage/blob-storage';
 import { deleteBlobs } from './blob-deletions';
 import { insertComment, toCommentDto } from './comments';
-import { assertStorageFor, planLimits } from './plans';
+import { assertStorageFor, assertWithinLimits, planLimits } from './plans';
 import { totalBytes, workspaceStorageUsage } from './workspace-storage';
 
 type CreateMediaCommentData = z.output<typeof createMediaCommentInputSchema>;
@@ -47,10 +48,10 @@ export const toImageDto = (row: MediaRow): CommentImage => ({
 
 export interface CommentAttachments {
   media: CommentMedia | null;
-  image: CommentImage | null;
+  images: CommentImage[];
 }
 
-/** Recordings and drawn images of the given comments, by comment id. */
+/** Recordings and images of the given comments, by comment id; images in their order. */
 export async function mediaByComment(
   db: Executor,
   commentIds: readonly string[],
@@ -60,10 +61,11 @@ export async function mediaByComment(
   const rows = await db
     .select()
     .from(media)
-    .where(inArray(media.commentId, [...commentIds]));
+    .where(inArray(media.commentId, [...commentIds]))
+    .orderBy(media.position);
   for (const row of rows) {
-    const entry = byComment.get(row.commentId) ?? { media: null, image: null };
-    if (row.kind === 'image') entry.image = toImageDto(row);
+    const entry = byComment.get(row.commentId) ?? { media: null, images: [] };
+    if (row.kind === 'image') entry.images.push(toImageDto(row));
     else entry.media = toMediaDto(row);
     byComment.set(row.commentId, entry);
   }
@@ -83,7 +85,7 @@ const unsupportedImage = () =>
 const isPng = (bytes: Uint8Array) =>
   [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((byte, i) => bytes[i] === byte);
 
-/** The storage of the deck's organisation (BER-151) – the recorder shows how full it is. */
+/** The storage of the deck's workspace (BER-151) – the recorder shows how full it is. */
 export async function getMediaUsage(
   deps: AppDeps,
   viewer: Viewer,
@@ -127,8 +129,8 @@ export interface MediaFile {
 export interface MediaUpload {
   /** The voice or video recording (`input.media` describes it). */
   recording?: MediaFile;
-  /** The image drawn in the Bild tab (PNG). */
-  image?: MediaFile;
+  /** The images: drawn in the Bild tab, pasted or picked (PNG, in order). */
+  images?: MediaFile[];
 }
 
 interface StoredBlob {
@@ -137,8 +139,8 @@ interface StoredBlob {
 }
 
 /**
- * A comment with a voice or video recording, a drawn image, or both (an image with the voice
- * memo recorded while drawing). The recording was compressed on the device (Opus, AV1/VP9 at
+ * A comment with a voice or video recording, images, or both (a drawn image with the voice memo
+ * recorded while drawing). The recording was compressed on the device (Opus, AV1/VP9 at
  * low bitrates), so it is stored as it is – no server-side transcoding, which keeps the API
  * runnable on Cloudflare Workers.
  */
@@ -150,8 +152,13 @@ export async function createMediaComment(
   upload: MediaUpload,
 ): Promise<Comment> {
   const deck = await requireDeckAccess(deps, viewer, deckId, 'comment');
-  const { recording, image } = upload;
-  if (!recording && !image) throw badRequest('Bitte eine Aufnahme oder ein Bild mitsenden.');
+  // No new comments while the workspace is over its plan's limits (BER-155), as in createComment.
+  await assertWithinLimits(deps.db, deps.config, deck.workspaceId, deps.clock.now());
+  const { recording, images = [] } = upload;
+  if (!recording && images.length === 0)
+    throw badRequest('Bitte eine Aufnahme oder ein Bild mitsenden.');
+  if (images.length > MAX_COMMENT_IMAGES)
+    throw badRequest(`Höchstens ${MAX_COMMENT_IMAGES} Bilder pro Kommentar.`);
   if (!recording !== !input.media)
     throw badRequest('Angaben zur Aufnahme und Aufnahme gehören zusammen.');
 
@@ -184,7 +191,7 @@ export async function createMediaComment(
       },
     });
   }
-  if (image) {
+  for (const [position, image] of images.entries()) {
     if (image.bytes.byteLength === 0) throw badRequest('Das Bild ist leer.');
     if (image.bytes.byteLength > MAX_IMAGE_BYTES) throw fileTooLarge(MAX_IMAGE_BYTES);
     if (!isPng(image.bytes)) throw unsupportedImage();
@@ -196,6 +203,7 @@ export async function createMediaComment(
         id,
         commentId: '',
         kind: 'image',
+        position,
         mimeType: 'image/png',
         sizeBytes: image.bytes.byteLength,
         durationMs: 0,
@@ -219,7 +227,7 @@ export async function createMediaComment(
       stored.push(blob.row.storageKey);
     }
     const created = await deps.db.transaction(async (tx) => {
-      // The organisation's storage (BER-151), under its lock: two uploads can't share the rest.
+      // The workspace's storage (BER-151), under its lock: two uploads can't share the rest.
       await assertStorageFor(tx, deps.config, deck.workspaceId, uploadBytes, deps.clock.now());
       const row = await insertComment(tx, deps, viewer, deck, input, { hasMedia: true });
       const mediaRows = await tx
@@ -228,10 +236,12 @@ export async function createMediaComment(
         .returning();
       if (mediaRows.length !== blobs.length) throw new Error('Media insert returned no row');
       const recordingRow = mediaRows.find((mediaRow) => mediaRow.kind !== 'image');
-      const imageRow = mediaRows.find((mediaRow) => mediaRow.kind === 'image');
       return toCommentDto(row, {
         media: recordingRow ? toMediaDto(recordingRow) : null,
-        image: imageRow ? toImageDto(imageRow) : null,
+        images: mediaRows
+          .filter((mediaRow) => mediaRow.kind === 'image')
+          .sort((a, b) => a.position - b.position)
+          .map(toImageDto),
       });
     });
     deps.live?.commentsChanged(deckId);

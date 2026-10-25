@@ -39,7 +39,7 @@ export function Component() {
         description="Den Namen sehen die anderen an deinen Kommentaren. Die Adresse kommt von deiner Anmeldung."
       >
         <div className="grid gap-3 sm:grid-cols-2">
-          <NameField name={user.name} onNotify={showToast} />
+          <NameField name={user.name} />
           <TextField label="E-Mail" value={user.email} readOnly />
         </div>
       </Section>

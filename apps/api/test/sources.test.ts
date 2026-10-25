@@ -281,9 +281,23 @@ describe('OneDriveAdapter', () => {
     expect(getAccessToken).toHaveBeenLastCalledWith('conn-1', { forceRefresh: true });
   });
 
-  it('rejects files that are not .pptx', async () => {
+  it('takes a PDF too (Keynote, Canva, Google exports)', async () => {
+    const pdf = new TextEncoder().encode('%PDF-1.4 deck');
     const { fetch } = mockFetch({
-      'https://graph.microsoft.com/': () => json({ ...graphItem, name: 'Alt.ppt' }),
+      'https://graph.microsoft.com/v1.0/drives/ABC123/items/ABC123!s1a2b3c4d5e6f': () =>
+        json({ ...graphItem, name: 'Q4 Strategie.pdf', file: { mimeType: 'application/pdf' } }),
+      'https://public.files.1drv.com/': () => new Response(pdf),
+    });
+    const { sources } = adapters({ fetch });
+    const remote = await sources.onedrive.resolve(link(shareLink), context);
+    expect(remote.fileName).toBe('Q4 Strategie.pdf');
+    expect(await sources.onedrive.download(remote, context)).toEqual(pdf);
+  });
+
+  it('rejects folders – any file goes, the import turns it into a deck', async () => {
+    const { fetch } = mockFetch({
+      'https://graph.microsoft.com/': () =>
+        json({ ...graphItem, name: 'Decks', file: undefined, folder: {} }),
     });
     const { sources } = adapters({ fetch });
     expect((await apiErrorOf(sources.onedrive.resolve(link(shareLink), context))).code).toBe(
@@ -488,6 +502,18 @@ describe('DirectUrlAdapter', () => {
     const stored = { ...remote, bytes: undefined };
     expect(await sources.url.getChangeToken(stored, context)).toBe('"v2"');
     expect(await sources.url.download(stored, context)).toEqual(PPTX);
+  });
+
+  it('takes a PDF behind a link and names it .pdf', async () => {
+    const pdf = new TextEncoder().encode('%PDF-1.4 deck');
+    const { fetch } = mockFetch({ 'https://example.com/': () => new Response(pdf) });
+    const { sources } = adapters({ fetch });
+    const remote = await sources.url.resolve(
+      link('https://example.com/files/Keynote%20Export.pdf'),
+      context,
+    );
+    expect(remote.fileName).toBe('Keynote Export.pdf');
+    expect(await sources.url.download(remote, context)).toEqual(pdf);
   });
 
   it('rejects an HTML page behind a .pptx URL', async () => {

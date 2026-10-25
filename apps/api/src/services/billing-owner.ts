@@ -6,14 +6,14 @@ import { badRequest, forbidden } from '../http/errors';
 import { DAY_MS } from './retention-rules';
 
 /**
- * Who pays for an organisation (BER-154): one admin, the billing owner, apart from the admin
+ * Who pays for a workspace (BER-154): one admin, the billing owner, apart from the admin
  * role. When they leave – account deleted, left, removed or no admin any more – the role passes
  * on by itself: to the longest-standing other admin, else the longest-standing person, who is
  * made admin. A paid subscription is the old owner's and ends; the new owner has the grace
- * period (`services/downgrade`) to pay, else the organisation falls back to free (BER-155).
+ * period (`services/downgrade`) to pay, else the workspace falls back to free (BER-155).
  */
 
-/** Grace period before a paid organisation without payment falls back to free (BER-155). */
+/** Grace period before a paid workspace without payment falls back to free (BER-155). */
 export const DOWNGRADE_GRACE_DAYS = 14;
 
 export const graceEnd = (now: Date) => new Date(now.getTime() + DOWNGRADE_GRACE_DAYS * DAY_MS);
@@ -21,7 +21,7 @@ export const graceEnd = (now: Date) => new Date(now.getTime() + DOWNGRADE_GRACE_
 /** Stripe statuses of a subscription that is over: nothing runs, nothing to pay. */
 export const ENDED_STATUSES: ReadonlySet<string> = new Set(['canceled', 'incomplete_expired']);
 
-/** A paid organisation whose subscription still runs – its billing owner pays for it. */
+/** A paid workspace whose subscription still runs – its billing owner pays for it. */
 export const isPaying = (
   row: Pick<WorkspaceRow, 'plan' | 'stripeSubscriptionId' | 'subscriptionStatus'>,
 ) =>
@@ -31,7 +31,7 @@ export const isPaying = (
 
 /**
  * A subscription that renews – the one the guards below protect. One cancelled for the end of the
- * period ends anyway: its billing owner may go (and the organisation be deleted) before that.
+ * period ends anyway: its billing owner may go (and the workspace be deleted) before that.
  */
 export const isRenewing = (
   row: Pick<
@@ -44,14 +44,14 @@ export const isRenewing = (
 export const paidOwnerStays = (self: boolean) =>
   badRequest(
     self
-      ? 'Du bezahlst für die Organisation. Übergib zuerst die Zahlung an einen anderen Admin (unter „Nutzung“).'
-      : 'Diese Person bezahlt für die Organisation. Sie muss zuerst die Zahlung an einen anderen Admin übergeben (unter „Nutzung“).',
+      ? 'Du bezahlst für den Workspace. Übergib zuerst die Zahlung an einen anderen Admin (unter „Nutzung“).'
+      : 'Diese Person bezahlt für den Workspace. Sie muss zuerst die Zahlung an einen anderen Admin übergeben (unter „Nutzung“).',
   );
 
 /**
  * While a subscription runs, whoever pays for it stays (BER-154): they can't step down, leave or
  * be removed, and their account can't be deleted from under it – any of that would end the
- * subscription the others work with. They hand over paying first. Free organisations, and one
+ * subscription the others work with. They hand over paying first. Free workspaces, and one
  * whose subscription is cancelled for the end of the period, just pass the role on
  * ({@link reassignBillingOwner}). Call it under the workspace lock.
  */
@@ -66,7 +66,7 @@ export async function assertBillingOwnerMayGo(
 }
 
 /**
- * Deleting a paid organisation ends its subscription: while one runs, only the person paying
+ * Deleting a paid workspace ends its subscription: while one runs, only the person paying
  * for it decides that – not another admin.
  */
 export async function assertMayDeletePaid(
@@ -77,7 +77,7 @@ export async function assertMayDeletePaid(
   const [row] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
   if (row && isRenewing(row) && row.billingOwnerId !== userId) {
     throw forbidden(
-      'Nur die Person, die für die Organisation bezahlt, kann sie löschen – dabei endet das laufende Abo.',
+      'Nur die Person, die für den Workspace bezahlt, kann ihn löschen – dabei endet das laufende Abo.',
     );
   }
 }

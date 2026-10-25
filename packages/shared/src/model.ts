@@ -106,7 +106,8 @@ export const deckPermissionsSchema = z.object({
 });
 export type DeckPermissions = z.infer<typeof deckPermissionsSchema>;
 
-export const slideRendererSchema = z.enum(['office', 'libreoffice', 'svg']);
+/** Who drew a slide's picture: Office's or LibreOffice's PDF, the SVG preview, or the PDF it came as. */
+export const slideRendererSchema = z.enum(['office', 'libreoffice', 'svg', 'pdf']);
 export type SlideRenderer = z.infer<typeof slideRendererSchema>;
 
 export const deckSchema = z.object({
@@ -371,7 +372,10 @@ export const commentMediaSchema = z.object({
 });
 export type CommentMedia = z.infer<typeof commentMediaSchema>;
 
-/** A sketch drawn in the composer's Bild tab, stored as PNG beside an optional voice memo. */
+/**
+ * An image of a comment, stored as PNG: a sketch drawn in the composer's Bild tab (beside an
+ * optional voice memo) or pasted / picked ones (BER-174, up to `MAX_COMMENT_IMAGES`).
+ */
 export const commentImageSchema = z.object({
   id: z.string(),
   /** Same permission-checked route as recordings (`/api/media/:id`). */
@@ -393,8 +397,11 @@ export const commentSchema = z.object({
   strokes: z.array(strokeSchema),
   /** A voice or video recording (BER-116); `null` for text comments. */
   media: commentMediaSchema.nullable(),
-  /** A drawn image (Bild tab); `media` then holds the voice memo recorded while drawing. */
-  image: commentImageSchema.nullable().optional(),
+  /**
+   * Its images, in the order they were added: a drawn one (Bild tab; `media` then holds the voice
+   * memo recorded while drawing) or pasted / picked ones.
+   */
+  images: z.array(commentImageSchema).optional(),
   status: commentStatusSchema,
   resolvedBy: z.string().nullable(),
   resolvedAt: z.iso.datetime().nullable(),
@@ -409,7 +416,7 @@ export type Comment = z.infer<typeof commentSchema>;
 /**
  * Who is making a request: always a signed-in account (BER-129 – `owner` is historical; what the
  * account may do with a deck is in `Deck.permissions`). There are no guests: sharing a deck
- * invites the person into the organisation as `viewer`.
+ * invites the person into the workspace as `viewer`.
  */
 export const viewerSchema = z.object({ kind: z.literal('owner'), author: accountAuthorSchema });
 export type Viewer = z.infer<typeof viewerSchema>;

@@ -4,7 +4,7 @@ import { useRenameWorkspace, useSetWorkspaceDomain } from '@/lib/api';
 import { Button, Dialog, Icon, TextField, type IconName } from '@/ui';
 
 /**
- * Right after sign-up (BER-148): the organisation Slider founded for a company address – is it
+ * Right after sign-up (BER-148): the workspace Slider founded for a company address – is it
  * private, or the company's, which everyone with an address at the domain finds and joins?
  * Closing asks again on the next visit.
  */
@@ -29,8 +29,8 @@ export function AudienceDialog({ workspace, email }: { workspace: Workspace; ema
     <Dialog
       open={!dismissed}
       onClose={() => setDismissed(true)}
-      title="Für wen ist diese Organisation?"
-      description="Wir haben dir eine Organisation angelegt. Das kannst du später in den Einstellungen ändern."
+      title="Für wen ist dieser Workspace?"
+      description="Wir haben dir einen Workspace angelegt. Das kannst du später in den Einstellungen ändern."
     >
       <div className="flex flex-col gap-4">
         <TextField
@@ -51,7 +51,7 @@ export function AudienceDialog({ workspace, email }: { workspace: Workspace; ema
           <Choice
             icon="personAdd"
             title={`Für mein Team bei ${domain}`}
-            description={`Alle mit einer @${domain}-Adresse finden die Organisation und können beitreten.`}
+            description={`Alle mit einer @${domain}-Adresse finden den Workspace und können beitreten.`}
             disabled={busy || !parsed.success}
             onClick={() => void choose(true).catch(() => undefined)}
           />

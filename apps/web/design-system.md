@@ -173,16 +173,17 @@ primary button of the login page). Tailwind's `shadow-sm`/`shadow-lg` are not us
 
 Stacking uses named layers (`z-(--z-…)`):
 
-| Variable      | Value | Layer                                                               |
-| ------------- | ----- | ------------------------------------------------------------------- |
-| `--z-raised`  | 10    | Local lift, stretched links                                         |
-| `--z-overlay` | 20    | Drawing surfaces, cursors, sticky timeline header                   |
-| `--z-sticky`  | 25    | Sticky timeline column above overlays                               |
-| `--z-chrome`  | 30    | Floating viewer controls, annotation layers, banners, selection bar |
-| `--z-panel`   | 40    | Side panels                                                         |
-| `--z-popover` | 50    | Menus, popovers, composer, mention menu                             |
-| `--z-toast`   | 55    | Toasts (above popovers)                                             |
-| `--z-stage`   | 60    | Import stage                                                        |
+| Variable             | Value | Layer                                                               |
+| -------------------- | ----- | ------------------------------------------------------------------- |
+| `--z-raised`         | 10    | Local lift, stretched links                                         |
+| `--z-overlay`        | 20    | Drawing surfaces, cursors, sticky timeline header                   |
+| `--z-sticky`         | 25    | Sticky timeline column above overlays                               |
+| `--z-chrome`         | 30    | Floating viewer controls, annotation layers, banners, selection bar |
+| `--z-panel`          | 40    | Side panels                                                         |
+| `--z-popover`        | 50    | Menus, popovers, composer, mention menu                             |
+| `--z-popover-anchor` | 51    | A trigger its panel unfolds around (account avatar)                 |
+| `--z-toast`          | 55    | Toasts (above popovers)                                             |
+| `--z-stage`          | 60    | Import stage                                                        |
 
 ## 7. Motion
 

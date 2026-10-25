@@ -123,7 +123,7 @@ export function StatusCard({ overview }: { overview: InstanceOverview }) {
             caption={`von ${formatCount(workspaces.total)} im Paid-Plan`}
           />
           <PartsBar
-            label="Organisationen nach Plan"
+            label="Workspaces nach Plan"
             parts={[
               {
                 key: 'stripe',
@@ -155,7 +155,7 @@ export function StatusCard({ overview }: { overview: InstanceOverview }) {
           <span className="text-fg tabular-nums">{formatCount(users.blocked)}</span>
         </li>
         <li className="flex justify-between gap-3">
-          <span className="text-fg-muted">Gesperrte Organisationen</span>
+          <span className="text-fg-muted">Gesperrte Workspaces</span>
           <span className="text-fg tabular-nums">{formatCount(workspaces.blocked)}</span>
         </li>
       </ul>
@@ -164,7 +164,7 @@ export function StatusCard({ overview }: { overview: InstanceOverview }) {
 }
 
 /**
- * The organisations taking up the most storage: together first, like the other cards' figure,
+ * The workspaces taking up the most storage: together first, like the other cards' figure,
  * then each with its share of the whole instance as a thin bar – the largest in full white, the
  * rest quieter. Names and sizes only.
  */
@@ -178,7 +178,7 @@ export function LargestCard({ overview }: { overview: InstanceOverview }) {
     return value > 0 && value < 1 ? '< 1 %' : `${Math.round(value)} %`;
   };
   return (
-    <Section title="Größte Organisationen" density="compact">
+    <Section title="Größte Workspaces" density="compact">
       {overview.largest.length === 0 ? (
         <p className="text-body text-fg-subtle">Noch keine Dateien.</p>
       ) : (

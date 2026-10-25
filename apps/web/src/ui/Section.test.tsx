@@ -37,8 +37,8 @@ describe('Section', () => {
   });
 
   it('renders a decorative leading icon in the heading', () => {
-    render(<Section title="Organisation beitreten" icon="personAdd" />);
-    const heading = screen.getByRole('heading', { name: 'Organisation beitreten' });
+    render(<Section title="Workspace beitreten" icon="personAdd" />);
+    const heading = screen.getByRole('heading', { name: 'Workspace beitreten' });
     const svg = heading.querySelector('svg');
     expect(svg?.getAttribute('aria-hidden')).toBe('true');
   });

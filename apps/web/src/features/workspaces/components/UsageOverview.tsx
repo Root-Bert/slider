@@ -25,7 +25,7 @@ import {
 import { PlanBadge, UsageMeter } from './PlanUsage';
 
 /**
- * "Nutzung" of one organisation (BER-151..155): plan, people, reviews and storage against the
+ * "Nutzung" of one workspace (BER-151..155): plan, people, reviews and storage against the
  * plan's limits, warnings when it is (nearly) over them, and – with billing on – who pays and
  * the way to Stripe. Without billing and limits (self-hosting) only the numbers.
  */
@@ -84,12 +84,12 @@ function UsageWarnings({ details, isAdmin }: { details: WorkspaceUsageDetails; i
       <Notice
         tone="warning"
         variant="tinted"
-        title="Die Organisation liegt über dem Limit ihres Plans"
+        title="Der Workspace liegt über dem Limit seines Plans"
       >
-        Bis sie wieder hineinpasst, gehen keine neuen Reviews, Uploads und Importe, kein Abgleich
-        mit der Quelldatei, keine Einladungen und keine neuen Kommentare oder Antworten. Lesen,
-        Löschen und Personen entfernen geht weiter. Um das zu ändern: Personen entfernen oder
-        Einladungen zurückziehen, Reviews oder Aufnahmen löschen – oder upgraden.
+        Bis er wieder hineinpasst, gehen keine neuen Reviews, Uploads und Importe, kein Abgleich mit
+        der Quelldatei, keine Einladungen und keine neuen Kommentare oder Antworten. Lesen, Löschen
+        und Personen entfernen geht weiter. Um das zu ändern: Personen entfernen oder Einladungen
+        zurückziehen, Reviews oder Aufnahmen löschen – oder upgraden.
       </Notice>
     );
   }
@@ -288,10 +288,10 @@ function BillingOwnerSection({
   const { billing } = details;
   const asked = billing.transfer?.to.id === userId;
   const ownerLine = !billing.owner
-    ? 'Gerade zahlt niemand für diese Organisation.'
+    ? 'Gerade zahlt niemand für diesen Workspace.'
     : billing.isOwner
-      ? 'Du zahlst für diese Organisation.'
-      : `${billing.owner.name} zahlt für diese Organisation.`;
+      ? 'Du zahlst für diesen Workspace.'
+      : `${billing.owner.name} zahlt für diesen Workspace.`;
   return (
     <Section
       title="Zahlung"
@@ -352,7 +352,7 @@ function TransferRequest({
                 onSuccess: ({ url }) =>
                   url
                     ? window.location.assign(url)
-                    : onNotify('Du zahlst jetzt für diese Organisation.'),
+                    : onNotify('Du zahlst jetzt für diesen Workspace.'),
                 onError,
               })
             }
@@ -373,7 +373,7 @@ function TransferRequest({
         </div>
       }
     >
-      Bei einer bezahlten Organisation hinterlegst du danach deine Zahlungsmethode.
+      Bei einem bezahlten Workspace hinterlegst du danach deine Zahlungsmethode.
     </Notice>
   );
 }
@@ -438,11 +438,11 @@ function HandOver({
   }
   const handOver = () =>
     request.mutate(target.userId, {
-      // A free organisation changes hands at once; a paid one once the other admin pays.
+      // A free workspace changes hands at once; a paid one once the other admin pays.
       onSuccess: (result) =>
         onNotify(
           result.billing.owner?.id === target.userId
-            ? `${target.name} zahlt jetzt für diese Organisation`
+            ? `${target.name} zahlt jetzt für diesen Workspace`
             : `Anfrage an ${target.name} geschickt`,
         ),
       onError: (error) => onNotify(error.message, 'danger'),

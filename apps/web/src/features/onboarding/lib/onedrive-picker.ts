@@ -22,8 +22,8 @@ function pickerOptions(channelId: string) {
     authentication: {},
     messaging: { origin: window.location.origin, channelId },
     typesAndSources: {
+      // No type filter: every file shows; one Slider can't read is turned down after the pick.
       mode: 'files',
-      filters: ['.pptx'],
       pivots: { oneDrive: true, recent: true, shared: true },
     },
     selection: { mode: 'single' },

@@ -29,10 +29,10 @@ import { SpaceBackdrop } from './SpaceBackdrop';
 import { WorkspaceMark } from './WorkspaceMark';
 
 /**
- * Without an organisation (BER-130): join the company organisation of one's domain (BER-148), or
+ * Without a workspace (BER-130): join the company workspace of one's domain (BER-148), or
  * found one, or join one by invitation – a pending e-mail invite, or a pasted link or code.
  * Signing up without either founds one right away, so this is mostly seen by people whose
- * company is already in Slider, or who were invited: then those organisations are the page –
+ * company is already in Slider, or who were invited: then those workspaces are the page –
  * wide cards, no frame – and founding one's own is a quiet link above them.
  */
 export function WorkspaceOnboarding() {
@@ -70,11 +70,11 @@ export function WorkspaceOnboarding() {
         {canCreateWorkspace && (
           <div className="-mt-2 flex justify-center">
             <Button variant="ghost" size="sm" icon="add" onClick={() => setCreating(true)}>
-              Eigene Organisation erstellen
+              Eigenen Workspace erstellen
             </Button>
           </div>
         )}
-        <ul aria-label="Organisationen zum Beitreten" className="flex flex-col gap-3">
+        <ul aria-label="Workspaces zum Beitreten" className="flex flex-col gap-3">
           {domainWorkspace && <CompanyCard workspace={domainWorkspace} onError={showToast} />}
           {pendingInvites.map((invite) => (
             <InviteCard key={invite.id} invite={invite} onError={showToast} />
@@ -93,16 +93,16 @@ export function WorkspaceOnboarding() {
       <PageHeader
         align="center"
         title={`Willkommen an Bord, ${firstName}`}
-        subtitle="Starte deine eigene Organisation und bring deine Visionen mit deinem Team auf die Folie. Eingeladen? Dann steig unten mit dem Link ein."
+        subtitle="Starte deinen eigenen Workspace und bring deine Visionen mit deinem Team auf die Folie. Eingeladen? Dann steig unten mit dem Link ein."
       />
       <Section
         density="compact"
         icon="add"
-        title="Organisation erstellen"
+        title="Workspace erstellen"
         description={
           canCreateWorkspace
-            ? 'Du bist Admin und kannst danach dein Team einladen. Neue Organisationen starten im Free-Plan.'
-            : 'Du hast bereits eine eigene Organisation. Übergib sie an jemand anderen, um eine neue zu gründen – weiteren trittst du per Einladung bei.'
+            ? 'Du bist Admin und kannst danach dein Team einladen. Neue Workspaces starten im Free-Plan.'
+            : 'Du hast bereits einen eigenen Workspace. Übergib ihn an jemand anderen, um einen neuen zu gründen – weiteren trittst du per Einladung bei.'
         }
       >
         {canCreateWorkspace && (
@@ -119,7 +119,7 @@ export function WorkspaceOnboarding() {
   );
 }
 
-/** The company organisation of the viewer's domain: "Einsteigen" without an invitation. */
+/** The company workspace of the viewer's domain: "Einsteigen" without an invitation. */
 function CompanyCard({ workspace, onError }: { workspace: DomainWorkspace; onError: ShowToast }) {
   const { pending, join } = useJoinDomainWorkspace(workspace, { onError });
   return (

@@ -1,6 +1,8 @@
 import type { Comment } from '@slider/shared';
 import { useRef, type FormEvent, type KeyboardEvent } from 'react';
 import { useCreateReply } from '@/lib/api';
+import { isAbort, useCreateMediaComment } from '../../media/hooks/useMediaComment';
+import { asUploads, useImageAttachments } from '../../media/hooks/useImageAttachments';
 import { useReplyDraftBody } from '../lib/reply-drafts';
 import { replyInput } from '../lib/replies';
 import { useViewerData } from '../../state/viewer-data';
@@ -24,12 +26,38 @@ export function useReplyDraft(root: Comment, deckId: string, options: ReplyDraft
   const createReply = useCreateReply(deckId, viewer.author);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [body, setBody] = useReplyDraftBody(root.id);
-  const canSend = body.trim().length > 0 && !createReply.isPending;
+  // Pasted or picked images (BER-174) go the way of a drawn one: a reply with pictures.
+  const images = useImageAttachments();
+  const createPicture = useCreateMediaComment(deckId);
+  const canSend =
+    (body.trim().length > 0 || images.attachments.length > 0) &&
+    // An image still turning into a PNG would be left out.
+    !images.busy &&
+    !createReply.isPending &&
+    !createPicture.isPending;
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
     if (!canSend) return;
     const sent = body;
+    if (images.attachments.length > 0) {
+      const blobs = asUploads(images.attachments);
+      // Not optimistic: the pictures have to be uploaded first, the field shows the progress.
+      createPicture.mutateAsync({ input: replyInput(root, sent), images: blobs }).then(
+        (created) => {
+          // Typed on during the upload: that stays.
+          setBody((current) => (current === sent ? '' : current));
+          images.clear();
+          options.onSent?.();
+          return created;
+        },
+        // Discarded or left: nothing to report.
+        (error: Error) => {
+          if (!isAbort(error)) showToast(error.message, 'danger');
+        },
+      );
+      return;
+    }
     // Clear right away – the reply is already in the thread; restored if the request fails.
     setBody('');
     // The promise, not `mutate`'s callbacks: those are skipped once the field has unmounted.
@@ -45,7 +73,9 @@ export function useReplyDraft(root: Comment, deckId: string, options: ReplyDraft
 
   // Kept per thread, so discarding has to clear it – else it comes back with the next field.
   const cancel = () => {
+    createPicture.cancel();
     setBody('');
+    images.clear();
     options.onCancel?.();
   };
 
@@ -70,6 +100,10 @@ export function useReplyDraft(root: Comment, deckId: string, options: ReplyDraft
     cancel,
     onKeyDown,
     textareaRef,
-    error: createReply.isError ? createReply.error : null,
+    /** The pasted or picked images, and the upload of a reply with them. */
+    images,
+    uploading: createPicture.isPending,
+    progress: createPicture.progress,
+    error: createReply.isError ? createReply.error : createPicture.error,
   };
 }

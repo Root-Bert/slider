@@ -296,8 +296,8 @@ export function StorageSection({
       {/* The workspace decides who sees a linked deck, never the source (BER-165). */}
       {!empty && (
         <Notice tone="neutral" variant="inline" icon="visibility">
-          Präsentationen, die du verknüpfst, sehen alle Mitglieder der Organisation – Slider liest
-          die Datei mit deinem Konto, Freigaben in OneDrive, SharePoint, Nextcloud oder Google Drive
+          Präsentationen, die du verknüpfst, sehen alle Mitglieder des Workspace – Slider liest die
+          Datei mit deinem Konto, Freigaben in OneDrive, SharePoint, Nextcloud oder Google Drive
           gelten in Slider nicht. Wenn nur bestimmte Personen sie sehen sollen, schränke den Zugriff
           per Rechtsklick auf die Review ein („Zugriff einschränken …“).
         </Notice>

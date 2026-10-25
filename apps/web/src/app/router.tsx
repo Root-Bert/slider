@@ -7,7 +7,7 @@ import { RouteError } from './RouteError';
  *
  * Member pages sit below `AccountGate` (signed-out visitors go to `/login?returnTo=…`); the
  * deck viewer (sends signed-out visitors to the login itself), login and the invitation page
- * stay outside it. There are no guests: sharing invites into the organisation.
+ * stay outside it. There are no guests: sharing invites into the workspace.
  */
 export const router = createBrowserRouter([
   {

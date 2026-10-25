@@ -1,11 +1,16 @@
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { createMiddleware } from 'hono/factory';
-import { createMediaCommentInputSchema, MAX_IMAGE_BYTES, type MediaUsage } from '@slider/shared';
+import {
+  createMediaCommentInputSchema,
+  MAX_COMMENT_IMAGES,
+  MAX_IMAGE_BYTES,
+  type MediaUsage,
+} from '@slider/shared';
 import { requireDeckAccess } from '../auth/access';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import type { AppDeps } from '../deps';
-import { ApiError, badRequest, fileTooLarge, notFound } from '../http/errors';
+import { ApiError, badRequest, notFound } from '../http/errors';
 import { parseRange } from '../http/range';
 import { clientAddress, fixedWindow } from '../http/rate-limit';
 import { createMediaComment, getMediaForViewer, getMediaUsage } from '../services/media';
@@ -13,14 +18,17 @@ import { createMediaComment, getMediaForViewer, getMediaUsage } from '../service
 const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
 
 /**
- * Recordings and drawings per account and hour. Each one may be ~110 MB that the server buffers
+ * Recordings and images per account and hour. Each one may be ~210 MB that the server buffers
  * and stores; generous for reviewing, but one account cannot fill memory or disk in a loop.
  */
 export const MEDIA_UPLOADS_PER_HOUR = { limited: 60, unlimited: 300 } as const;
 /** Uploads one account may have in flight at once – each is buffered whole in memory. */
 export const MEDIA_UPLOADS_IN_FLIGHT = 2;
-/** All accounts together: bounds the memory of parallel uploads (~110 MB each, copied). */
-export const MEDIA_UPLOADS_IN_FLIGHT_TOTAL = 8;
+/**
+ * All accounts together: bounds the memory of parallel uploads (up to ~210 MB each – a recording
+ * plus ten images – held twice while parsed and copied).
+ */
+export const MEDIA_UPLOADS_IN_FLIGHT_TOTAL = 5;
 /** Per address: several people behind one office NAT share it. */
 const CLIENT_FACTOR = 5;
 const HOUR_MS = 60 * 60_000;
@@ -85,7 +93,7 @@ function mediaUploadGuard(deps: AppDeps) {
   });
 }
 
-/** Voice and video comments (BER-116) and drawn images with an optional voice memo. */
+/** Voice and video comments (BER-116), and images (drawn, pasted or picked) with an optional voice memo. */
 export function mediaRoutes(deps: AppDeps) {
   const viewer = viewerMiddleware(deps);
   const maxBytes = deps.config.media.maxBytes;
@@ -98,20 +106,31 @@ export function mediaRoutes(deps: AppDeps) {
         viewer,
         guard,
         bodyLimit({
-          maxSize: maxBytes + MAX_IMAGE_BYTES + MULTIPART_OVERHEAD_BYTES,
-          onError: (c) => c.json(fileTooLarge(maxBytes).toBody(), 413),
+          maxSize: maxBytes + MAX_COMMENT_IMAGES * MAX_IMAGE_BYTES + MULTIPART_OVERHEAD_BYTES,
+          onError: (c) =>
+            c.json(
+              new ApiError(
+                413,
+                'file_too_large',
+                `Die Aufnahme oder die Bilder sind zu groß (Aufnahme maximal ${Math.floor(maxBytes / 1024 / 1024)} MB, Bilder je ${Math.floor(MAX_IMAGE_BYTES / 1024 / 1024)} MB).`,
+              ).toBody(),
+              413,
+            ),
         }),
         async (c) => {
-          const body = await c.req.parseBody().catch(() => {
+          // `all`: several images come as repeated `image` fields, in their order.
+          const body = await c.req.parseBody({ all: true }).catch(() => {
             throw badRequest('Die Aufnahme konnte nicht gelesen werden.');
           });
           const file = body['file'];
-          const image = body['image'];
+          const images = [body['image'] ?? []].flat().filter((part) => part instanceof File);
           const comment = body['comment'];
-          if (!(file instanceof File) && !(image instanceof File))
+          if (!(file instanceof File) && images.length === 0)
             throw badRequest(
               'Bitte die Aufnahme im Feld „file“ oder ein Bild im Feld „image“ mitsenden.',
             );
+          if (images.length > MAX_COMMENT_IMAGES)
+            throw badRequest(`Höchstens ${MAX_COMMENT_IMAGES} Bilder pro Kommentar.`);
           if (typeof comment !== 'string') throw badRequest('Das Feld „comment“ fehlt.');
           let json: unknown;
           try {
@@ -129,9 +148,9 @@ export function mediaRoutes(deps: AppDeps) {
               ...(file instanceof File && {
                 recording: { bytes: new Uint8Array(await file.arrayBuffer()) },
               }),
-              ...(image instanceof File && {
-                image: { bytes: new Uint8Array(await image.arrayBuffer()) },
-              }),
+              images: await Promise.all(
+                images.map(async (image) => ({ bytes: new Uint8Array(await image.arrayBuffer()) })),
+              ),
             },
           );
           return c.json(created, 201);

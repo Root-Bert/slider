@@ -1,5 +1,6 @@
 import { MAX_COMMENT_BODY_LENGTH, type Comment } from '@slider/shared';
 import { Avatar, cn, ErrorText, IconButton } from '@/ui';
+import { AttachedImages, AttachImageButton } from '../media/AttachedImages';
 import { MediaReplyButtons } from './MediaTabs';
 import { useMentions } from './hooks/useMentions';
 import { useReplyDraft } from './hooks/useReplyDraft';
@@ -40,6 +41,7 @@ export function ReplyComposer({
       aria-label={`Antwort an ${root.author.name}`}
       maxLength={MAX_COMMENT_BODY_LENGTH}
       placeholder="Antworten …"
+      onPaste={draft.images.onPaste}
       value={body}
       autoFocus={autoFocus}
       maxHeight={variant === 'inline' ? 120 : 160}
@@ -53,13 +55,22 @@ export function ReplyComposer({
     <div className="relative min-w-0 flex-1">
       <MentionMenu mentions={mentions} />
       {textarea}
+      <AttachedImages attachments={draft.images.attachments} onRemove={draft.images.remove} />
     </div>
   );
 
-  const error = draft.error && (
+  const error = (draft.error || draft.images.error) && (
     <ErrorText role="alert" size="xs">
-      {draft.error.message}
+      {draft.error?.message ?? draft.images.error}
     </ErrorText>
+  );
+  const attach = (
+    <AttachImageButton
+      onPick={(files) => void draft.images.attach(files)}
+      busy={draft.images.busy}
+      disabled={draft.uploading || draft.images.room === 0}
+      size="compact"
+    />
   );
 
   if (variant === 'inline') {
@@ -78,6 +89,7 @@ export function ReplyComposer({
         </header>
         <div className="flex items-end gap-2 rounded-control bg-well-dark py-1.5 pr-2 pl-3">
           <div className="min-w-0 flex-1 py-[3px]">{field}</div>
+          {attach}
           <IconButton
             icon="close"
             label="Antwort verwerfen"
@@ -110,6 +122,7 @@ export function ReplyComposer({
       <div className="flex items-end gap-2">
         <div className="field-well focus-field flex min-h-10 min-w-0 flex-1 items-end gap-0.5 rounded-control py-1.5 pr-1 pl-3.5">
           <div className="min-w-0 flex-1 py-[5px]">{field}</div>
+          {attach}
           <MediaReplyButtons root={root} />
         </div>
         <IconButton

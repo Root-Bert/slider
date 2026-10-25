@@ -26,11 +26,6 @@ const AUTHORIZE_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
 const ABOUT_URL = 'https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)';
-/** What the picker offers: Google Slides and PowerPoint files. */
-const PICKER_MIME_TYPES = [
-  'application/vnd.google-apps.presentation',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-].join(',');
 const GOOGLE_ISSUERS = ['https://accounts.google.com', 'accounts.google.com'];
 
 const TOKEN_PURPOSE = 'google-refresh-token';
@@ -142,7 +137,7 @@ export function googlePickAuthorizeUrl(
     access_type: 'offline',
     prompt: 'consent',
     trigger_onepick: 'true',
-    mimetypes: PICKER_MIME_TYPES,
+    // No `mimetypes`: the picker shows every file.
     ...(fileId ? { file_ids: fileId } : {}),
     ...(loginHint ? { login_hint: loginHint } : {}),
   }).toString();

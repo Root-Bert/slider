@@ -35,6 +35,7 @@ export function Track({ layout, range, snap }: TrackProps) {
     boxMode,
     boxModeFlipped,
     showGuides,
+    slideZooms,
   } = useViewerState();
   const boxes = isBoxModeActive({ boxMode, boxModeFlipped });
   const { badges, deletedSlides, deletedThreads, revisionNumber } = useRevisionData();
@@ -80,6 +81,7 @@ export function Track({ layout, range, snap }: TrackProps) {
           badgeVersion={revisionNumber}
           boxMode={boxes}
           showGuides={showGuides}
+          zoom={slideZooms.get(slide.id) ?? null}
         />
         <GapDivider
           gapKey={key}

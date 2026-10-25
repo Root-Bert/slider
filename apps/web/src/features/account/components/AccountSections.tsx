@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react';
 import { passkeyNameSchema, USER_NAME_MAX, type LoginIdentity, type Passkey } from '@slider/shared';
 import { isPasskeyCancel, passkeyErrorMessage, passkeysSupported } from '@/lib/passkeys';
 import { NextcloudSignIn, providerLoginUrl } from '@/features/auth';
@@ -59,42 +59,49 @@ const providerIcon = (provider: LoginIdentity['provider']): ReactNode =>
     <Icon name="key" size={20} className="text-fg-muted" />
   );
 
-/** Logins stay: only the file access below can be disconnected. */
 /**
- * Your name as others see it (BER-145: correct your own data). Saved with Enter or "Speichern";
- * your comments show the new name too.
+ * Your name as others see it (BER-145: correct your own data). Saved as you type, once typing
+ * pauses, and at once on Enter or leaving the field; your comments show the new name too.
  */
-export function NameField({ name, onNotify }: { name: string; onNotify: ShowToast }) {
+export function NameField({ name }: { name: string }) {
   const [draft, setDraft] = useState(name);
-  const updateMe = useUpdateMe();
+  const { mutate, isPending, error } = useUpdateMe();
+  const timer = useRef<number | undefined>(undefined);
   const trimmed = draft.trim();
-  const changed = trimmed !== name;
-  const save = (event?: FormEvent) => {
-    event?.preventDefault();
-    if (!changed || !trimmed) return;
-    updateMe.mutate({ name: trimmed }, { onSuccess: () => onNotify('Name gespeichert') });
-  };
+  const save = useCallback(() => {
+    window.clearTimeout(timer.current);
+    if (trimmed && trimmed !== name) mutate({ name: trimmed });
+  }, [trimmed, name, mutate]);
+  useEffect(() => {
+    timer.current = window.setTimeout(save, 600);
+    return () => window.clearTimeout(timer.current);
+  }, [save]);
+  // Left before typing paused: still saved.
+  const flush = useEffectEvent(save);
+  useEffect(() => () => flush(), []);
   return (
-    <form noValidate onSubmit={save}>
+    <form
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        save();
+      }}
+    >
       <TextField
         label="Name"
         value={draft}
         maxLength={USER_NAME_MAX}
         autoComplete="name"
-        error={!trimmed ? 'Der Name darf nicht leer sein.' : (updateMe.error?.message ?? null)}
+        error={!trimmed ? 'Der Name darf nicht leer sein.' : (error?.message ?? null)}
         onChange={(event) => setDraft(event.target.value)}
-        trailing={
-          changed && trimmed ? (
-            <Button type="submit" variant="soft" size="xs" loading={updateMe.isPending}>
-              Speichern
-            </Button>
-          ) : undefined
-        }
+        onBlur={save}
+        trailing={isPending ? <Spinner size={16} className="text-fg-subtle" /> : undefined}
       />
     </form>
   );
 }
 
+/** Logins stay: only the file access below can be disconnected. */
 export function LoginsSection() {
   const identities = useIdentities();
   const providers = useAuthProviders();

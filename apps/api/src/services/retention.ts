@@ -48,7 +48,7 @@ export async function purgeStaleRows(deps: AppDeps): Promise<void> {
 }
 
 /**
- * Organisations without members: their last one deleted the account, and purging them right
+ * Workspaces without members: their last one deleted the account, and purging them right
  * after failed. Older than a day, so none is caught between being created and its first member.
  */
 export async function purgeEmptyWorkspaces(deps: AppDeps): Promise<void> {
@@ -71,7 +71,7 @@ export async function purgeEmptyWorkspaces(deps: AppDeps): Promise<void> {
     try {
       await purgeIfEmpty(deps, id);
     } catch (error) {
-      deps.log.error(`Could not purge empty organisation ${id}`, error);
+      deps.log.error(`Could not purge empty workspace ${id}`, error);
     }
   }
 }
@@ -84,7 +84,7 @@ export async function enforceRetention(deps: AppDeps): Promise<void> {
     sweepUnusedDecks,
     sweepUnusedAccounts,
     retryBlobDeletions,
-    // Not a deletion deadline, but the same hourly rhythm: paid organisations without payment.
+    // Not a deletion deadline, but the same hourly rhythm: paid workspaces without payment.
     sweepDowngrades,
   ] as const;
   for (const step of steps) {

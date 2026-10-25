@@ -7,7 +7,6 @@ import { readJson, writeJson } from '@/lib/storage';
  */
 
 const STORAGE_KEY = 'slider.seenRevisions.v1';
-const DISMISSED_ERRORS_KEY = 'slider.dismissedSyncErrors.v1';
 
 type Store = Record<string, number | string>;
 
@@ -39,11 +38,3 @@ export function markRevisionSeen(deckId: string, revisionNumber: number) {
  */
 export const shouldAnnounceRevision = (seen: number | null, current: number) =>
   seen !== null && current > 1 && current > seen;
-
-/** A dismissed sync error stays hidden until a newer error (another `at`) comes in. */
-export const isSyncErrorDismissed = (deckId: string, at: string) =>
-  read(DISMISSED_ERRORS_KEY)[deckId] === at;
-
-export function dismissSyncError(deckId: string, at: string) {
-  write(DISMISSED_ERRORS_KEY, { ...read(DISMISSED_ERRORS_KEY), [deckId]: at });
-}

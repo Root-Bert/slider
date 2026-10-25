@@ -3,20 +3,15 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { RevisionBanners } from './RevisionBanners';
+import { SyncStatus } from './SyncStatus';
 
 const revision = { sync: null as DeckSync | null, isLinked: true, revisionNumber: 4 };
 const viewer = { deck: { id: 'deck-1', workspaceId: 'w1' }, canManage: true };
-const dismissed = new Map<string, string>();
 const me = { data: { workspaces: [{ id: 'w1', role: 'admin' }] } };
 
 vi.mock('../state/revision-data', () => ({ useRevisionData: () => revision }));
 vi.mock('../state/viewer-data', () => ({ useViewerData: () => viewer }));
 vi.mock('@/lib/api', () => ({ useMe: () => me }));
-vi.mock('./lib/seen-revisions', () => ({
-  isSyncErrorDismissed: (deckId: string, at: string) => dismissed.get(deckId) === at,
-  dismissSyncError: (deckId: string, at: string) => dismissed.set(deckId, at),
-}));
 
 const syncWith = (patch: Partial<DeckSync>) => ({ ...patch }) as DeckSync;
 const error = (patch: Partial<SyncError> = {}): SyncError =>
@@ -33,89 +28,98 @@ beforeEach(() => {
   revision.isLinked = true;
   viewer.canManage = true;
   me.data.workspaces = [{ id: 'w1', role: 'admin' }];
-  dismissed.clear();
 });
 
 // Also when an assertion fails, so a stubbed `location` never leaks into the next test.
 afterEach(() => vi.unstubAllGlobals());
 
-describe('RevisionBanners', () => {
+describe('SyncStatus', () => {
   it('renders nothing without a pending change or error', () => {
-    const { container } = render(<RevisionBanners />);
+    const { container } = render(<SyncStatus />);
     expect(container.innerHTML).toBe('');
   });
 
-  it('says a pending change is being taken over', () => {
+  it('is a small spinner while a change is being taken over', () => {
     revision.sync = syncWith({ pending: true });
-    render(<RevisionBanners />);
-    const banner = screen.getByText(/Änderung erkannt/);
-    expect(banner.tagName).toBe('SECTION');
-    expect(banner.getAttribute('role')).toBe('status');
+    render(<SyncStatus />);
+    screen.getByRole('status', { name: /Änderung erkannt/ });
+    expect(screen.getByRole('tooltip').textContent).toContain('wird übernommen');
   });
 
-  it('shows a login error with its action, and the error wins over pending', async () => {
+  it('is an icon whose popover tells the error and offers the sign-in; the error wins over pending', async () => {
     const assign = vi.fn();
     vi.stubGlobal('location', { ...window.location, assign });
     revision.sync = syncWith({ pending: true, lastSyncError: error() });
-    render(<RevisionBanners />);
-    expect(screen.queryByText(/Änderung erkannt/)).toBeNull();
-    const banner = screen.getByRole('alert', { name: 'Anmeldung bei Microsoft abgelaufen' });
-    expect(banner.textContent).toContain('Bitte melde dich erneut an.');
-    expect(banner.textContent).toContain('Du siehst weiterhin Version 4');
+    render(<SyncStatus />);
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Anmeldung bei Microsoft abgelaufen' }),
+    );
+    const panel = screen.getByRole('dialog', { name: 'Anmeldung bei Microsoft abgelaufen' });
+    expect(panel.textContent).toContain('Bitte melde dich erneut an.');
+    expect(panel.textContent).toContain('Du siehst weiterhin Version 4');
     await userEvent.click(screen.getByRole('button', { name: 'Mit Microsoft anmelden' }));
     expect(assign).toHaveBeenCalledWith('https://login.example/start');
   });
 
-  it('names Nextcloud in the title when the owner connects it again', async () => {
+  it('names Nextcloud when the owner connects it again', async () => {
     const assign = vi.fn();
     vi.stubGlobal('location', { ...window.location, assign });
     revision.sync = syncWith({ lastSyncError: error({ loginUrl: '/konto' }) });
-    render(<RevisionBanners />);
-    screen.getByRole('alert', { name: 'Anmeldung bei Nextcloud abgelaufen' });
+    render(<SyncStatus />);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Anmeldung bei Nextcloud abgelaufen' }),
+    );
     await userEvent.click(screen.getByRole('button', { name: 'Nextcloud verbinden' }));
     expect(assign).toHaveBeenCalledWith('/konto');
   });
 
-  it('offers no sign-in to viewers who cannot manage the deck', () => {
+  it('offers no sign-in to viewers who cannot manage the deck', async () => {
     viewer.canManage = false;
     revision.sync = syncWith({ lastSyncError: error() });
-    render(<RevisionBanners />);
+    render(<SyncStatus />);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Anmeldung bei Microsoft abgelaufen' }),
+    );
+    screen.getByRole('dialog');
     expect(screen.queryByRole('button', { name: /anmelden/i })).toBeNull();
   });
 
-  it('expands the details on phones', async () => {
+  it('closes the popover on Escape', async () => {
     revision.sync = syncWith({ lastSyncError: error({ code: 'not_found', loginUrl: undefined }) });
-    render(<RevisionBanners />);
-    const toggle = screen.getByRole('button', { name: /Details anzeigen/ });
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    await userEvent.click(toggle);
-    expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    expect(toggle.textContent).toContain('Details ausblenden');
+    render(<SyncStatus />);
+    await userEvent.click(screen.getByRole('button', { name: 'Präsentation nicht mehr gefunden' }));
+    screen.getByRole('dialog');
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('remembers a dismissed error until a newer one arrives', async () => {
-    revision.sync = syncWith({ lastSyncError: error() });
-    const { rerender } = render(<RevisionBanners />);
-    await userEvent.click(screen.getByRole('button', { name: 'Hinweis schließen' }));
-    expect(screen.queryByRole('alert')).toBeNull();
-    expect(dismissed.get('deck-1')).toBe('2026-10-16T10:00:00.000Z');
-
-    revision.sync = syncWith({ lastSyncError: error({ at: '2026-10-16T11:00:00.000Z' }) });
-    rerender(<RevisionBanners />);
-    expect(screen.getByRole('alert')).toBeTruthy();
+  it('also shows an unreachable source', async () => {
+    revision.sync = syncWith({
+      lastSyncError: error({
+        code: 'unreachable',
+        message: 'Die Quelle ist gerade nicht erreichbar.',
+        loginUrl: undefined,
+      }),
+    });
+    render(<SyncStatus />);
+    await userEvent.click(screen.getByRole('button', { name: 'Quelle gerade nicht erreichbar' }));
+    expect(screen.getByRole('dialog').textContent).toContain('Du siehst weiterhin Version 4');
   });
 
   it('hides an error once a later sync succeeded, and for uploads', () => {
     revision.sync = syncWith({ lastSyncError: error(), lastSyncAt: '2026-10-16T12:00:00.000Z' });
-    const { container, rerender } = render(<RevisionBanners />);
+    const { container, rerender } = render(<SyncStatus />);
     expect(container.innerHTML).toBe('');
     revision.sync = syncWith({ lastSyncError: error() });
     revision.isLinked = false;
-    rerender(<RevisionBanners />);
+    rerender(<SyncStatus />);
     expect(container.innerHTML).toBe('');
   });
 
-  it('says the storage is full, and leads admins to "Nutzung"', () => {
+  it('says the storage is full, and leads admins to "Nutzung"', async () => {
     const storageFull = error({
       code: 'storage_full',
       message:
@@ -123,18 +127,19 @@ describe('RevisionBanners', () => {
       loginUrl: undefined,
     });
     revision.sync = syncWith({ lastSyncError: storageFull });
-    const { unmount } = render(<RevisionBanners />, { wrapper: MemoryRouter });
-    const banner = screen.getByRole('alert', { name: 'Speicher der Organisation voll' });
-    expect(banner.textContent).toContain('neue Versionen aus OneDrive');
+    const { unmount } = render(<SyncStatus />, { wrapper: MemoryRouter });
+    await userEvent.click(screen.getByRole('button', { name: 'Speicher des Workspace voll' }));
+    expect(screen.getByRole('dialog').textContent).toContain('neue Versionen aus OneDrive');
     expect(screen.getByRole('link', { name: 'Speicher verwalten' }).getAttribute('href')).toBe(
-      '/nutzung?organisation=w1',
+      '/nutzung?workspace=w1',
     );
     unmount();
 
     // Members only read why.
     me.data.workspaces = [{ id: 'w1', role: 'member' }];
-    render(<RevisionBanners />, { wrapper: MemoryRouter });
-    screen.getByRole('alert', { name: 'Speicher der Organisation voll' });
+    render(<SyncStatus />, { wrapper: MemoryRouter });
+    await userEvent.click(screen.getByRole('button', { name: 'Speicher des Workspace voll' }));
+    screen.getByRole('dialog');
     expect(screen.queryByRole('link', { name: 'Speicher verwalten' })).toBeNull();
   });
 });

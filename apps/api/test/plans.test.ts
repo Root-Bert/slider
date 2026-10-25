@@ -12,7 +12,7 @@ import { decks, workspaceMembers } from '../src/db/schema';
 import { createReadyDeck, createTestContext, signedInUser, type TestContext } from './helpers';
 import { FakeSource, pptxBytes } from './sync-helpers';
 
-/** BER-130: one own organisation per account, free plan with 5 seats and 3 decks. */
+/** BER-130: one own workspace per account, free plan with 5 seats and 3 decks. */
 
 let ctx: TestContext;
 let source: FakeSource;
@@ -72,7 +72,7 @@ const importLink = () =>
 const deckCount = async () =>
   (await ctx.deps.db.select().from(decks).where(eq(decks.workspaceId, ctx.workspaceId))).length;
 
-describe('own organisations', () => {
+describe('own workspaces', () => {
   beforeEach(() => setup());
 
   it('lets every account found exactly one, and another once it is deleted', async () => {
@@ -92,10 +92,10 @@ describe('own organisations', () => {
     const second = await found('Noch eine');
     expect(second.status).toBe(403);
     expect(await body(second)).toEqual({
-      error: { code: 'plan_limit', message: 'Du hast bereits eine eigene Organisation.' },
+      error: { code: 'plan_limit', message: 'Du hast bereits einen eigenen Workspace.' },
     });
 
-    // Being invited into other organisations is unlimited.
+    // Being invited into other workspaces is unlimited.
     const link = await tokenOf(await invite({}));
     expect(
       (await ctx.request(`/api/join/${link.token}`, { method: 'POST', cookie: anna.cookie }))
@@ -112,7 +112,7 @@ describe('own organisations', () => {
   });
 });
 
-describe('handing over the own organisation', () => {
+describe('handing over the own workspace', () => {
   beforeEach(() => setup());
 
   it('does not free the account to found a new one', async () => {
@@ -141,7 +141,7 @@ describe('handing over the own organisation', () => {
 describe('self-hosted (no limits)', () => {
   beforeEach(() => setup({ limited: false }));
 
-  it('lets an account found as many organisations as it likes', async () => {
+  it('lets an account found as many workspaces as it likes', async () => {
     const anna = await signedInUser(ctx, { name: 'Anna', email: 'anna@firma.de' });
     const found = (name: string) =>
       ctx.request('/api/workspaces', { method: 'POST', json: { name }, cookie: anna.cookie });
@@ -180,7 +180,7 @@ describe('seats (members + pending e-mail invites)', () => {
     expect(await body(full)).toEqual({
       error: {
         code: 'plan_limit',
-        message: 'Die Organisation hat bereits 5 von 5 Plätzen belegt.',
+        message: 'Der Workspace hat bereits 5 von 5 Plätzen belegt.',
       },
     });
     // Links may still be created; joining through them checks.
@@ -205,7 +205,7 @@ describe('seats (members + pending e-mail invites)', () => {
     expect(await body(refused)).toMatchObject({
       error: {
         code: 'plan_limit',
-        message: expect.stringMatching(/^Diese Organisation ist voll\./),
+        message: expect.stringMatching(/^Dieser Workspace ist voll\./),
       },
     });
 
@@ -262,7 +262,7 @@ describe('seats (members + pending e-mail invites)', () => {
   });
 });
 
-describe('decks per organisation', () => {
+describe('decks per workspace', () => {
   beforeEach(() => setup());
 
   it('stops uploads and link imports at 3 decks; deleting one frees the slot', async () => {
@@ -281,7 +281,7 @@ describe('decks per organisation', () => {
       error: {
         code: 'plan_limit',
         message:
-          'Im Free-Plan sind 3 Reviews pro Organisation möglich. Lösche eine, um Platz zu schaffen.',
+          'Im Free-Plan sind 3 Reviews pro Workspace möglich. Lösche eine, um Platz zu schaffen.',
       },
     });
     const downloads = source.download.mock.calls.length;

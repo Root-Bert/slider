@@ -14,8 +14,8 @@ import {
 import { OidcClient } from './oidc';
 
 /**
- * The network side of organisations' company logins (BER-162). Unlike the instance's
- * `OIDC_ISSUER`, an organisation admin types the issuer – so every request to it goes through
+ * The network side of workspaces' company logins (BER-162). Unlike the instance's
+ * `OIDC_ISSUER`, a workspace admin types the issuer – so every request to it goes through
  * `safeFetch` (public https addresses only, every redirect re-checked, answers capped).
  */
 
@@ -44,7 +44,7 @@ function safeOidcFetch(network: SsoNetwork): FetchLike {
   };
 }
 
-/** The OIDC client of one organisation's company login. */
+/** The OIDC client of one workspace's company login. */
 export function workspaceSsoClient(
   config: Pick<Config, 'webOrigin'>,
   row: Pick<WorkspaceSsoRow, 'issuer' | 'clientId' | 'clientSecret'>,

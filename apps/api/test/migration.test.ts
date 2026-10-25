@@ -97,7 +97,7 @@ describe('migration 0004_workspaces', () => {
 });
 
 describe('migration 0005_plans', () => {
-  it('puts existing organisations on the free plan and keeps everything else', async () => {
+  it('puts existing workspaces on the free plan and keeps everything else', async () => {
     client = new PGlite();
     const db = drizzle({ client });
     await migrate(db, { migrationsFolder: await migrationsBefore(PLANS_TAG) });

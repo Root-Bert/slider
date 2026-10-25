@@ -248,7 +248,7 @@ describe('sessions', () => {
       microsoftConnected: false,
     });
     expect(body.workspaces).toEqual([
-      expect.objectContaining({ name: 'Meine Organisation', role: 'admin', memberCount: 1 }),
+      expect.objectContaining({ name: 'Mein Workspace', role: 'admin', memberCount: 1 }),
     ]);
 
     // Only the hash is stored.
@@ -367,7 +367,7 @@ describe('OIDC login', () => {
     expect(cookie).toBeTruthy();
     const { body } = await me(cookie ?? '');
     expect(body.user).toMatchObject({ name: 'Anna Becker', email: 'anna@firma.de' });
-    // An organisation of their own right away, named after the company; they are asked whether
+    // A workspace of their own right away, named after the company; they are asked whether
     // it is private or the company's (BER-148).
     expect(body.workspaces).toEqual([
       expect.objectContaining({ name: 'Firma', role: 'admin', audiencePending: true }),
@@ -432,7 +432,7 @@ describe('OIDC login', () => {
     const { body } = await me(cookie);
     expect(body.workspaces).toEqual([]);
     expect(body.pendingInvites).toEqual([
-      expect.objectContaining({ workspaceName: 'Meine Organisation', role: 'reviewer' }),
+      expect.objectContaining({ workspaceName: 'Mein Workspace', role: 'reviewer' }),
     ]);
   });
 

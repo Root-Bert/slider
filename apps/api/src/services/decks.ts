@@ -15,6 +15,8 @@ import {
 } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { sha256Hex } from '../import/common';
+import { isPdfBytes } from '../sources/safe-fetch';
+import { pdfMakerOf } from '../import/pdf-maker';
 import { blobKeys, fileUrl } from '../storage/blob-storage';
 import { deckBlobs, deleteBlobs } from './blob-deletions';
 import { toDeckSync } from './deck-sync';
@@ -241,6 +243,11 @@ export async function touchDeck(db: Executor, deckId: string, now: Date): Promis
 export interface NewDeckFile {
   fileName: string;
   bytes: Uint8Array;
+  /**
+   * SHA-256 of the file as it came, when `bytes` is the PDF it became (a Word file, a picture):
+   * conversions differ byte by byte each run, so versions are compared by the original.
+   */
+  sourceSha256?: string;
   source: DeckSource;
   /** For link imports: the pasted link, the provider reference and its change token (BER-92). */
   sourceUrl?: string;
@@ -268,7 +275,7 @@ export async function createDeckFromFile(
 ): Promise<Deck> {
   const deckId = crypto.randomUUID();
   const revisionId = crypto.randomUUID();
-  const pptxKey = blobKeys.pptx(deckId, revisionId);
+  const pptxKey = blobKeys.pptx(deckId, revisionId, isPdfBytes(file.bytes) ? 'pdf' : 'pptx');
   const now = deps.clock.now();
 
   await deps.storage.put(pptxKey, file.bytes);
@@ -306,7 +313,8 @@ export async function createDeckFromFile(
         pptxKey,
         sourceChangeToken: file.changeToken ?? null,
         trigger: 'initial',
-        contentSha256: sha256Hex(file.bytes),
+        contentSha256: file.sourceSha256 ?? sha256Hex(file.bytes),
+        pdfRenderer: pdfMakerOf(file.bytes),
         // Held until the import was measured (BER-151): the next upload's check sees it.
         reservedBytes: file.bytes.byteLength,
       });

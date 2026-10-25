@@ -8,7 +8,7 @@ type Tab = 'workspaces' | 'users';
 const TABS = [
   {
     value: 'workspaces',
-    label: 'Organisationen',
+    label: 'Workspaces',
     description:
       'Größe und Plan, nie ihre Inhalte. Gesperrt öffnet sie niemand mehr, nur Austreten geht.',
   },
@@ -20,7 +20,7 @@ const TABS = [
   },
 ] as const satisfies readonly { value: Tab; label: string; description: string }[];
 
-/** Organisations and accounts of the instance, one table at a time, to find and act on them. */
+/** Workspaces and accounts of the instance, one table at a time, to find and act on them. */
 export function DirectoryCard({
   plans,
   userId,

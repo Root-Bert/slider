@@ -21,7 +21,7 @@ export function usePruneDeckStorage(deckId: string) {
     mutationFn: () => api.post<PruneDeckStorageResult>(`/decks/${deckId}/storage/prune`),
     onSuccess: (result) => {
       queryClient.setQueryData(queryKeys.storage(deckId), result.storage);
-      // Frees the organisation's storage (`Workspace.usage`, the "Nutzung" page – BER-151).
+      // Frees the workspace's storage (`Workspace.usage`, the "Nutzung" page – BER-151).
       void queryClient.invalidateQueries({ queryKey: queryKeys.me });
       void queryClient.invalidateQueries({
         predicate: ({ queryKey }) => queryKey[0] === 'workspaces' && queryKey[2] === 'usage',

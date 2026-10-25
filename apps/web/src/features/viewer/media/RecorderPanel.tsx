@@ -41,8 +41,8 @@ interface RecorderPanelProps {
 
 const NO_SCREEN = 'Bildschirm teilen geht in diesem Browser nicht';
 
+/** Screen first – a review mostly shows something on it –, then both, then the camera alone. */
 const VIDEO_SOURCES = (screen: boolean): readonly Segment<VideoSource>[] => [
-  { value: 'camera', label: 'Kamera', icon: 'cameraVideo' },
   {
     value: 'screen',
     label: 'Bildschirm',
@@ -57,6 +57,7 @@ const VIDEO_SOURCES = (screen: boolean): readonly Segment<VideoSource>[] => [
     disabled: !screen,
     title: screen ? 'Bildschirm mit Kamera in der Ecke' : NO_SCREEN,
   },
+  { value: 'camera', label: 'Kamera', icon: 'cameraVideo' },
 ];
 
 /** What the start button records – told by its icon alone, the label is always „Aufnahme starten“. */
@@ -71,10 +72,11 @@ const IDLE_ICONS = {
  * again. Five minutes at most; compressed while recording. Keyboard: Space starts, pauses and
  * resumes (afterwards: plays and pauses the recording), ↵ stops.
  *
- * Video picks its picture first: camera, shared screen, or both (camera bubble in the corner).
+ * Video picks its picture first: shared screen (the default where a browser can share it), both
+ * (camera bubble in the corner) or the camera.
  */
 export function RecorderPanel(props: RecorderPanelProps) {
-  const [source, setSource] = useState<VideoSource>('camera');
+  const [source, setSource] = useState<VideoSource>(() => (canShareScreen() ? 'screen' : 'camera'));
   if (props.kind !== 'video') return <RecorderBody {...props} source="camera" />;
   // Remount per source: the previous camera or screen goes off.
   return <RecorderBody key={source} {...props} source={source} onSourceChange={setSource} />;

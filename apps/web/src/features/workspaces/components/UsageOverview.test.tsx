@@ -172,7 +172,7 @@ describe('UsageOverview', () => {
     );
 
     expect(screen.getByText('Zahlung über Anna Berg')).toBeTruthy();
-    expect(screen.getByText(/Anna Berg zahlt für diese Organisation/)).toBeTruthy();
+    expect(screen.getByText(/Anna Berg zahlt für diesen Workspace/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Zahlung verwalten' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Zahlung übergeben' })).toBeNull();
   });
@@ -262,7 +262,7 @@ describe('UsageOverview', () => {
     unmount();
 
     show(details({ usage: { ...details().usage, seatsUsed: 7 }, locked: true }));
-    expect(screen.getByText('Die Organisation liegt über dem Limit ihres Plans')).toBeTruthy();
+    expect(screen.getByText('Der Workspace liegt über dem Limit seines Plans')).toBeTruthy();
     expect(screen.getByText(/Personen entfernen oder\s+Einladungen zurückziehen/)).toBeTruthy();
     expect(screen.queryByText('Bald am Limit')).toBeNull();
     // Upgrading still works while locked.

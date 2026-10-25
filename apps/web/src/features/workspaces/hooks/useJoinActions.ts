@@ -6,12 +6,12 @@ import type { ShowToast } from '@/ui';
 
 interface JoinOptions {
   onError: ShowToast;
-  /** Joined, right before going to the organisation (the switcher closes its menu). */
+  /** Joined, right before going to the workspace (the switcher closes its menu). */
   onJoined?: () => void;
 }
 
 /**
- * "Beitreten" for the company organisation of the viewer's domain (BER-148): no invitation
+ * "Beitreten" for the company workspace of the viewer's domain (BER-148): no invitation
  * needed, they join as member and land in it.
  */
 export function useJoinDomainWorkspace(
@@ -33,7 +33,7 @@ export function useJoinDomainWorkspace(
   };
 }
 
-/** "Beitreten" for an e-mail invitation: into the organisation, or straight to its review. */
+/** "Beitreten" for an e-mail invitation: into the workspace, or straight to its review. */
 export function useAcceptPendingInvite(invite: PendingInvite, { onError, onJoined }: JoinOptions) {
   const navigate = useNavigate();
   const accept = useAcceptInvite();

@@ -61,7 +61,7 @@ function DeleteOwnAccountDialog({ email, onClose }: { email: string; onClose: ()
     remove.mutate(
       { confirmEmail: typed, successors },
       {
-        // Another admin left meanwhile: the organisation now needs one chosen too – ask again.
+        // Another admin left meanwhile: the workspace now needs one chosen too – ask again.
         onError: (error) => {
           if (error instanceof ApiError && error.code === 'bad_request') void choices.refetch();
         },

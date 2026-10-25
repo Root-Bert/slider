@@ -2,7 +2,7 @@ import { useEffect, useRef, type PointerEvent, type ReactNode } from 'react';
 import { TransitLines } from './TransitLines';
 
 /**
- * The one company organisation of the viewer's domain on the welcome page: big, over a moving
+ * The one company workspace of the viewer's domain on the welcome page: big, over a moving
  * transit map in space, mark and name top left, the action bottom right. On hover it grows a
  * little and glows like the website's plan cards – a light following the pointer, the rim lit
  * around it.

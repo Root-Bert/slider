@@ -27,7 +27,7 @@ const CLOSED_COPY: Record<Exclude<InviteState, 'valid'>, { title: string; messag
   used: {
     title: 'Einladung schon angenommen',
     message:
-      'Diese Einladung wurde bereits verwendet. Bist du schon Mitglied, findest du die Organisation in deinen Reviews.',
+      'Diese Einladung wurde bereits verwendet. Bist du schon Mitglied, findest du den Workspace in deinen Reviews.',
   },
 };
 
@@ -43,8 +43,8 @@ export function Invitation({
   const role = <span className="font-medium text-fg">{ROLE_LABELS[preview.role]}</span>;
   const roleLine = preview.deck ? (
     <>
-      {preview.inviterName ?? 'Jemand'} teilt „{preview.deck.title}“ mit dir. Du trittst der
-      Organisation als {role} bei.
+      {preview.inviterName ?? 'Jemand'} teilt „{preview.deck.title}“ mit dir. Du trittst dem
+      Workspace als {role} bei.
     </>
   ) : preview.inviterName ? (
     <>
@@ -104,8 +104,8 @@ export function Invitation({
 
 /**
  * "Beitreten". `auto`: joins right away (BER-148) – whoever follows an invitation signed in, or
- * comes back from signing in through it, lands in the organisation without a question; the
- * button stays for errors (wrong account, organisation full).
+ * comes back from signing in through it, lands in the workspace without a question; the
+ * button stays for errors (wrong account, workspace full).
  */
 export function JoinButton({ token, auto = false }: { token: string; auto?: boolean }) {
   const join = useJoinWorkspace(token);
@@ -140,7 +140,7 @@ export function JoinButton({ token, auto = false }: { token: string; auto?: bool
           variant="tinted"
           size="sm"
           role="alert"
-          title="Organisation voll"
+          title="Workspace voll"
           className="w-full"
         >
           {join.error?.message}

@@ -102,19 +102,19 @@ describe('LoginOptions', () => {
     ]);
   });
 
-  it('company login (BER-162): the address finds the organisation’s provider', async () => {
+  it('company login (BER-162): the address finds the workspace’s provider', async () => {
     const assign = vi.fn();
     vi.stubGlobal('location', { ...window.location, assign });
     sso.discover.mockResolvedValueOnce({
-      loginUrl: '/api/auth/sso/login?organisation=w1',
-      organisation: 'Firma',
+      loginUrl: '/api/auth/sso/login?workspace=w1',
+      workspace: 'Firma',
     });
     render(<LoginOptions config={{ ...config, sso: true }} returnTo="/decks" />);
     await userEvent.click(screen.getByRole('button', { name: /Mit Firmen-Login anmelden/ }));
     await userEvent.type(screen.getByLabelText('Deine Firmen-Adresse'), 'ben@firma.de');
     await userEvent.click(screen.getByRole('button', { name: 'Weiter' }));
     expect(sso.discover).toHaveBeenCalledWith('ben@firma.de');
-    expect(assign).toHaveBeenCalledWith('/api/auth/sso/login?organisation=w1&returnTo=%2Fdecks');
+    expect(assign).toHaveBeenCalledWith('/api/auth/sso/login?workspace=w1&returnTo=%2Fdecks');
     const address = screen.getByLabelText('Deine Firmen-Adresse') as HTMLInputElement;
     expect(address.disabled).toBe(true);
 
@@ -157,8 +157,8 @@ describe('LoginOptions', () => {
     vi.stubGlobal('location', { ...window.location, assign });
     sso.startEmail.mockResolvedValue(undefined);
     sso.discover.mockResolvedValueOnce({
-      loginUrl: '/api/auth/sso/login?organisation=w1',
-      organisation: 'Firma',
+      loginUrl: '/api/auth/sso/login?workspace=w1',
+      workspace: 'Firma',
     });
     const { unmount } = render(
       <LoginOptions config={{ ...config, sso: true, emailLogin: true }} returnTo="/" />,
@@ -167,7 +167,7 @@ describe('LoginOptions', () => {
     expect(screen.queryByRole('button', { name: /Mit Firmen-Login anmelden/ })).toBeNull();
     await userEvent.type(screen.getByLabelText('E-Mail-Adresse'), 'ben@firma.de');
     await userEvent.click(screen.getByRole('button', { name: 'Mit E-Mail fortfahren' }));
-    expect(assign).toHaveBeenCalledWith('/api/auth/sso/login?organisation=w1&returnTo=%2F');
+    expect(assign).toHaveBeenCalledWith('/api/auth/sso/login?workspace=w1&returnTo=%2F');
     expect(sso.startEmail).not.toHaveBeenCalled();
     unmount();
 
@@ -194,8 +194,8 @@ describe('LoginOptions', () => {
   it('back from the company login with the back button: the field is usable again', async () => {
     vi.stubGlobal('location', { ...window.location, assign: vi.fn() });
     sso.discover.mockReset().mockResolvedValue({
-      loginUrl: '/api/auth/sso/login?organisation=w1',
-      organisation: 'Firma',
+      loginUrl: '/api/auth/sso/login?workspace=w1',
+      workspace: 'Firma',
     });
     render(<LoginOptions config={{ ...config, sso: true, emailLogin: true }} returnTo="/" />);
     await userEvent.type(screen.getByLabelText('E-Mail-Adresse'), 'ben@firma.de');

@@ -13,23 +13,23 @@ export const RANK: Record<WorkspaceRole, number> = {
   viewer: 0,
 };
 /**
- * Viewers (guests) take an organisation over only as the last resort, when nobody else is left:
+ * Viewers (guests) take a workspace over only as the last resort, when nobody else is left:
  * it goes only with its last member (account deletion, leaving).
  */
 export const VIEWER_LAST_RESORT =
-  'Betrachter übernehmen die Organisation nur, wenn sonst niemand mehr da ist. Wähle ein anderes Mitglied.';
+  'Betrachter übernehmen den Workspace nur, wenn sonst niemand mehr da ist. Wähle ein anderes Mitglied.';
 
 export const atLeast = (role: WorkspaceRole, min: WorkspaceRole) => RANK[role] >= RANK[min];
 export const stronger = (a: WorkspaceRole, b: WorkspaceRole) => (RANK[a] >= RANK[b] ? a : b);
 
-export const workspaceNotFound = () => notFound('Diese Organisation gibt es nicht (mehr).');
+export const workspaceNotFound = () => notFound('Diesen Workspace gibt es nicht (mehr).');
 
-/** The instance admin blocked the organisation (BER-167): members see why, nothing more. */
+/** The instance admin blocked the workspace (BER-167): members see why, nothing more. */
 export const workspaceBlocked = () =>
   new ApiError(
     403,
     'workspace_blocked',
-    'Diese Organisation wurde von der Person gesperrt, die Slider hier betreibt. Austreten geht weiter.',
+    'Dieser Workspace wurde von der Person gesperrt, die Slider hier betreibt. Austreten geht weiter.',
   );
 
 /**
@@ -75,7 +75,7 @@ export async function requireRole(
   workspaceId: string,
   userId: string,
   min: WorkspaceRole = 'viewer',
-  message = 'Dafür brauchst du mehr Rechte in dieser Organisation.',
+  message = 'Dafür brauchst du mehr Rechte in diesem Workspace.',
   { allowBlocked = false }: { allowBlocked?: boolean } = {},
 ): Promise<WorkspaceRole> {
   const member = await membership(db, workspaceId, userId);

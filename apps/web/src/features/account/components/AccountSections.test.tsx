@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { LoginIdentity, Passkey } from '@slider/shared';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { LoginsSection, PasskeysSection } from './AccountSections';
+import { LoginsSection, NameField, PasskeysSection } from './AccountSections';
 
 const api = vi.hoisted(() => ({
   supported: true,
@@ -13,6 +13,7 @@ const api = vi.hoisted(() => ({
   remove: vi.fn(),
   register: vi.fn(),
   unlink: vi.fn(),
+  updateMe: vi.fn(),
   /** What the dialogs' mutations report as failed. */
   error: null as Error | null,
 }));
@@ -25,6 +26,7 @@ vi.mock('@/lib/api', () => ({
   useRenamePasskey: () => ({ mutate: api.rename, isPending: false, error: api.error }),
   useDeletePasskey: () => ({ mutate: api.remove, isPending: false, error: api.error }),
   useUnlinkIdentity: () => ({ mutate: api.unlink, isPending: false, error: api.error }),
+  useUpdateMe: () => ({ mutate: api.updateMe, isPending: false, error: null }),
 }));
 
 vi.mock('@/lib/passkeys', () => ({
@@ -62,7 +64,7 @@ beforeEach(() => {
   api.identities = { isPending: false, isError: false, data: [] };
   api.providers = [];
   api.passkeys = { isPending: false, isError: false, data: [] };
-  for (const fn of [api.rename, api.remove, api.register, api.unlink]) fn.mockReset();
+  for (const fn of [api.rename, api.remove, api.register, api.unlink, api.updateMe]) fn.mockReset();
 });
 
 describe('LoginsSection', () => {
@@ -117,6 +119,28 @@ describe('LoginsSection', () => {
 
     await userEvent.click(within(dialog).getByRole('button', { name: 'Trennen', hidden: true }));
     expect(api.unlink).toHaveBeenCalledWith('microsoft:1', expect.anything());
+  });
+});
+
+describe('NameField', () => {
+  it('saves the trimmed name once typing pauses, without a button; never an empty one', async () => {
+    render(<NameField name="Robert" />);
+    const field = screen.getByRole('textbox', { name: 'Name' });
+    expect(screen.queryByRole('button')).toBeNull();
+
+    await userEvent.clear(field);
+    expect(screen.getByText('Der Name darf nicht leer sein.')).toBeTruthy();
+    await userEvent.type(field, '  Rob ');
+    expect(api.updateMe).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(api.updateMe).toHaveBeenCalledWith({ name: 'Rob' }));
+    expect(api.updateMe).toHaveBeenCalledTimes(1);
+  });
+
+  it('saves at once on leaving the field', async () => {
+    render(<NameField name="Robert" />);
+    await userEvent.type(screen.getByRole('textbox', { name: 'Name' }), 'a');
+    await userEvent.tab();
+    expect(api.updateMe).toHaveBeenCalledWith({ name: 'Roberta' });
   });
 });
 

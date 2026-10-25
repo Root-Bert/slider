@@ -24,8 +24,8 @@ import { inviteEntries, invitesTo } from './data-requests';
 /**
  * Everything Slider stores about an account, as a ZIP (BER-145: DSGVO Art. 15 copy and Art. 20
  * portability): `konto.json` (profile, logins, passkeys, Microsoft accounts, sessions,
- * organisations), `praesentationen.json` + the original file of each deck they own in an
- * organisation they are still in,
+ * workspaces), `praesentationen.json` + the original file of each deck they own in a
+ * workspace they are still in,
  * `kommentare.json` (what they wrote, in any deck) and `aufnahmen/` (their recordings).
  * Secrets are left out: tokens, passkey keys, session hashes.
  */
@@ -129,7 +129,7 @@ export async function exportAccount(
         expiresAt: row.expiresAt.toISOString(),
         userAgent: row.userAgent,
       })),
-      organisations: memberships.map(({ member, name }) => ({
+      workspaces: memberships.map(({ member, name }) => ({
         id: member.workspaceId,
         name,
         role: member.role,
@@ -138,20 +138,25 @@ export async function exportAccount(
     }),
   );
 
-  // Decks from organisations they left (from before BER-165, which hands them over): newer
+  // Decks from workspaces they left (from before BER-165, which hands them over): newer
   // versions there are others' work – files and links only where they still are a member.
   const memberOf = new Set(memberships.map(({ member }) => member.workspaceId));
   const deckEntries = [];
   for (const [index, { deck, workspace, pptxKey }] of ownedDecks.entries()) {
     const allowed = memberOf.has(deck.workspaceId);
     const bytes = pptxKey && allowed ? await deps.storage.get(pptxKey) : null;
-    const file = bytes ? `praesentationen/${index + 1}-${safeName(deck.fileName)}` : null;
+    // A Word file, a picture … is kept as the PDF it became.
+    const stored =
+      pptxKey?.endsWith('.pdf') && !/\.pdf$/i.test(deck.fileName)
+        ? `${deck.fileName.replace(/\.[^.]*$/, '')}.pdf`
+        : deck.fileName;
+    const file = bytes ? `praesentationen/${index + 1}-${safeName(stored)}` : null;
     if (file && bytes) zip.file(file, bytes, { compression: 'STORE' });
     deckEntries.push({
       id: deck.id,
       title: deck.title,
       fileName: deck.fileName,
-      organisation: workspace,
+      workspace,
       source: deck.source,
       sourceUrl: allowed && deck.sourceUrl ? withoutCredentials(deck.sourceUrl) : null,
       createdAt: deck.createdAt.toISOString(),
@@ -189,6 +194,7 @@ export async function exportAccount(
       id: row.id,
       commentId: row.commentId,
       kind: row.kind,
+      position: row.position,
       mimeType: row.mimeType,
       durationMs: row.durationMs,
       createdAt: row.createdAt.toISOString(),
@@ -213,11 +219,11 @@ const safeName = (name: string) =>
 
 const README = `Deine Daten aus Slider
 
-konto.json            Profil, Anmeldewege, Passkeys, verbundene Microsoft-, Nextcloud- und Google-Konten, Sitzungen, Organisationen
+konto.json            Profil, Anmeldewege, Passkeys, verbundene Microsoft-, Nextcloud- und Google-Konten, Sitzungen, Workspaces
 praesentationen.json  Präsentationen, die dir gehören; die Originaldateien liegen in praesentationen/
 kommentare.json       Kommentare und Antworten, die du geschrieben hast – in allen Präsentationen
-aufnahmen.json        Sprach- und Videoaufnahmen sowie Zeichnungen zu deinen Kommentaren (Dateien in aufnahmen/)
-einladungen.json      Einladungen in Organisationen an deine Adresse
+aufnahmen.json        Sprach- und Videoaufnahmen sowie Bilder zu deinen Kommentaren (Dateien in aufnahmen/)
+einladungen.json      Einladungen in Workspaces an deine Adresse
 
 Zugangsdaten (Tokens, Passkey-Schlüssel) sind aus Sicherheitsgründen nicht enthalten.
 `;

@@ -4,7 +4,6 @@ import {
   Badge,
   cn,
   GoogleMark,
-  GoogleSlidesMark,
   Icon,
   MicrosoftMark,
   NextcloudMark,
@@ -29,14 +28,10 @@ export function SlideCountChip({ count }: { count: number }) {
   );
 }
 
-const RENDERER_LABELS: Partial<Record<SlideRenderer, string>> = {
-  office: 'Gerendert mit PowerPoint',
-  libreoffice: 'Gerendert mit LibreOffice',
-};
-
 /**
  * Bottom-left logos on the thumbnail: where the deck comes from and – once there are slides –
- * who drew the slide images. `compact` (list rows) shows only the source.
+ * who drew the slide images (Microsoft, Google or LibreOffice). One logo when both are the same
+ * (a OneDrive file Microsoft drew). `compact` (list rows) shows only the source.
  *
  * Laid over the thumbnail instead of inside it: above the card's stretched title link (so the
  * chips get hover) and outside the frame's overflow clip (so their tooltips show). `className`
@@ -51,6 +46,11 @@ export function OriginChips({
   compact?: boolean;
   className?: string;
 }) {
+  const source = SOURCES[deck.source];
+  const renderer =
+    !compact && deck.slideCount > 0 ? rendererOf(deck.thumbnailRenderer, deck.source) : null;
+  const rendererLabel = renderer && rendererTitle(renderer, deck.source, deck.officeFailure);
+  const same = renderer === source.vendor;
   return (
     <div className={cn('pointer-events-none absolute inset-0 z-(--z-raised)', className)}>
       {/* Hovering the chips counts as hovering the deck: otherwise the card would shrink back
@@ -62,13 +62,13 @@ export function OriginChips({
           compact ? 'bottom-1 left-1' : 'bottom-2 left-2',
         )}
       >
-        <SourceChip source={deck.source} />
-        {!compact && deck.slideCount > 0 && (
-          <RendererChip
-            renderer={deck.thumbnailRenderer}
-            source={deck.source}
-            officeFailure={deck.officeFailure}
-          />
+        <OriginChip
+          label={same && rendererLabel ? `${source.title}, ${lower(rendererLabel)}` : source.title}
+        >
+          {source.mark}
+        </OriginChip>
+        {renderer && rendererLabel && !same && (
+          <OriginChip label={rendererLabel}>{RENDERER_MARKS[renderer]}</OriginChip>
         )}
       </div>
     </div>
@@ -86,81 +86,59 @@ function OriginChip({ label, children }: { label: string; children: ReactNode })
   );
 }
 
-const SOURCE_TITLES: Record<DeckSource, string> = {
-  onedrive: 'Aus OneDrive',
-  sharepoint: 'Aus SharePoint',
-  nextcloud: 'Aus Nextcloud',
-  google: 'Aus Google Drive',
-  url: 'Aus einem Link',
-  upload: 'Hochgeladen',
-};
+/** Who drew the slide images – the vendor, not the app: a Word file's pages are Microsoft's too. */
+type RendererVendor = 'microsoft' | 'google' | 'libreoffice';
+
+const microsoftMark = <MicrosoftMark size={12} />;
+const googleMark = <GoogleMark size={12} />;
 
 /** Where the deck comes from, instead of the old "OneDrive | …" text line. */
-function SourceChip({ source }: { source: DeckSource }) {
-  const label = SOURCE_TITLES[source];
-  return (
-    <OriginChip label={label}>
-      {(source === 'onedrive' || source === 'sharepoint') && <MicrosoftMark size={12} />}
-      {source === 'nextcloud' && <NextcloudMark size={16} />}
-      {source === 'google' && <GoogleMark size={12} />}
-      {source === 'url' && <Icon name="link" size={16} className="text-fg" />}
-      {source === 'upload' && <Icon name="upload" size={16} className="text-fg" />}
-    </OriginChip>
-  );
-}
+const SOURCES: Record<DeckSource, { title: string; mark: ReactNode; vendor?: RendererVendor }> = {
+  onedrive: { title: 'Aus OneDrive', mark: microsoftMark, vendor: 'microsoft' },
+  sharepoint: { title: 'Aus SharePoint', mark: microsoftMark, vendor: 'microsoft' },
+  nextcloud: { title: 'Aus Nextcloud', mark: <NextcloudMark size={16} /> },
+  google: { title: 'Aus Google Drive', mark: googleMark, vendor: 'google' },
+  url: { title: 'Aus einem Link', mark: <Icon name="link" size={16} className="text-fg" /> },
+  upload: { title: 'Hochgeladen', mark: <Icon name="upload" size={16} className="text-fg" /> },
+};
+
+const RENDERER_MARKS: Record<RendererVendor, ReactNode> = {
+  microsoft: microsoftMark,
+  google: googleMark,
+  libreoffice: <LibreOfficeMark />,
+};
+
+const RENDERER_NAMES: Record<RendererVendor, string> = {
+  microsoft: 'Microsoft',
+  google: 'Google',
+  libreoffice: 'LibreOffice',
+};
 
 /**
- * Who drew the slide images (BER-94). Nothing for the built-in SVG preview. When PowerPoint was
- * tried and failed, the tooltip says why. A Google Slides deck's `office` render is Google's own
- * PDF export (BER-119) – no Microsoft involved – so it says Google Slides.
+ * Who drew the slide images (BER-94); `null` for the built-in SVG preview and a PDF's own pages.
+ * An `office` render of a Google deck is Google's own PDF (BER-119) – no Microsoft involved.
  */
-function RendererChip({
-  renderer,
-  source,
-  officeFailure,
-}: {
-  renderer: SlideRenderer | null | undefined;
-  source: DeckSource;
-  officeFailure?: string | null;
-}) {
-  const google = source === 'google';
-  const name =
-    renderer === 'office' && google
-      ? 'Gerendert mit Google Slides'
-      : renderer
-        ? RENDERER_LABELS[renderer]
-        : undefined;
-  if (!renderer || !name) return null;
-  const label =
-    renderer !== 'office' && officeFailure
-      ? `${name} – ${google ? 'Google Slides' : 'PowerPoint'} ging nicht: ${officeFailure}`
-      : name;
-  return (
-    <OriginChip label={label}>
-      {renderer === 'office' && google ? (
-        <GoogleSlidesMark />
-      ) : renderer === 'office' ? (
-        <LetterMark letter="P" className="bg-powerpoint" />
-      ) : (
-        <LibreOfficeMark />
-      )}
-    </OriginChip>
-  );
+function rendererOf(
+  renderer: SlideRenderer | null | undefined,
+  source: DeckSource,
+): RendererVendor | null {
+  if (renderer === 'office') return source === 'google' ? 'google' : 'microsoft';
+  if (renderer === 'libreoffice') return 'libreoffice';
+  return null;
 }
 
-/** Office-style letter tile: PowerPoint's orange "P" (as on imported comments). */
-function LetterMark({ letter, className }: { letter: string; className: string }) {
-  return (
-    <span
-      className={cn(
-        'flex size-4 items-center justify-center rounded-thumb text-tiny leading-none font-semibold text-primary-hover',
-        className,
-      )}
-    >
-      {letter}
-    </span>
-  );
+/** The renderer's tooltip; when Microsoft or Google was tried and failed, it says why. */
+function rendererTitle(
+  renderer: RendererVendor,
+  source: DeckSource,
+  officeFailure?: string | null,
+): string {
+  const name = `Gerendert mit ${RENDERER_NAMES[renderer]}`;
+  if (renderer !== 'libreoffice' || !officeFailure) return name;
+  return `${name} – ${source === 'google' ? 'Google' : 'Microsoft'} ging nicht: ${officeFailure}`;
 }
+
+const lower = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
 
 /** LibreOffice's green document with the folded corner. */
 function LibreOfficeMark() {

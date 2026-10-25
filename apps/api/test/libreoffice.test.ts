@@ -1,18 +1,27 @@
 import { EventEmitter } from 'node:events';
 import { spawnSync, type ChildProcess } from 'node:child_process';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { describe, expect, it, vi } from 'vitest';
 import {
   ConversionAborted,
+  ConversionFailed,
+  ConversionTimedOut,
+  createLibreOfficeDocumentPdf,
   createLibreOfficePdf,
+  DOCUMENT_IMPORT_FILTERS,
   findSoffice,
+  MAX_PARALLEL_CONVERSIONS,
   resumeConversions,
   stopRunningConversions,
 } from '../src/import/libreoffice';
+import { STANDARD_FONTS } from '../src/import/pdf-pages';
 import { silentLogger } from '../src/logger';
 import { makePdf } from './pdf';
 import { storedZip, unzipText } from './zip';
@@ -30,13 +39,17 @@ const DECK = storedZip({
     '</Relationships>',
 });
 
-type Behaviour = 'pdf' | 'nothing' | 'fail' | 'hang';
+type Behaviour = 'pdf' | 'nothing' | 'fail' | 'hang' | 'held';
 
 /** A fake `soffice`: reads the arguments like LibreOffice would and writes `<outdir>/deck.pdf`. */
 function fakeSoffice(behaviour: Behaviour) {
   const calls: { command: string; args: string[] }[] = [];
   /** The `deck.pptx` each run was given. */
   const inputs: Uint8Array[] = [];
+  /** The profile (`registrymodifications.xcu`) each run was given. */
+  const profiles: string[] = [];
+  /** `held`: runs waiting to be let finish, with a PDF. */
+  const held: (() => void)[] = [];
   const spawn = vi.fn((command: string, args: string[]) => {
     calls.push({ command, args });
     const child = new EventEmitter() as ChildProcess;
@@ -53,9 +66,14 @@ function fakeSoffice(behaviour: Behaviour) {
       // Like a real process: events only after `spawn` returned and listeners are attached.
       await new Promise((resolve) => setImmediate(resolve));
       inputs.push(new Uint8Array(await readFile(args.at(-1) ?? '')));
+      const profile = new URL(args[0]?.replace('-env:UserInstallation=', '') ?? '');
+      profiles.push(
+        await readFile(path.join(profile.pathname, 'user/registrymodifications.xcu'), 'utf8'),
+      );
       if (behaviour === 'hang') return;
+      if (behaviour === 'held') await new Promise<void>((resolve) => held.push(resolve));
       const outDir = args[args.indexOf('--outdir') + 1] ?? '';
-      if (behaviour === 'pdf') {
+      if (behaviour === 'pdf' || behaviour === 'held') {
         await mkdir(outDir, { recursive: true });
         await writeFile(path.join(outDir, 'deck.pdf'), makePdf(1));
       }
@@ -65,7 +83,7 @@ function fakeSoffice(behaviour: Behaviour) {
     })();
     return child;
   });
-  return { spawn, calls, inputs };
+  return { spawn, calls, inputs, profiles, held };
 }
 
 describe('createLibreOfficePdf (BER-94)', () => {
@@ -117,6 +135,7 @@ describe('createLibreOfficePdf (BER-94)', () => {
       spawn: fakeSoffice('fail').spawn,
     });
     await expect(failing(DECK)).rejects.toThrow(/exited with 1.*could not be loaded/);
+    await expect(failing(DECK)).rejects.toBeInstanceOf(ConversionFailed);
     const silent = createLibreOfficePdf({
       binary: 'soffice',
       log: silentLogger,
@@ -134,6 +153,7 @@ describe('createLibreOfficePdf (BER-94)', () => {
       timeoutMs: 20,
     });
     await expect(convert(DECK)).rejects.toThrow('timed out after 20 ms');
+    await expect(convert(DECK)).rejects.toBeInstanceOf(ConversionTimedOut);
     const child = spawn.mock.results[0]?.value as ChildProcess;
     expect(child.kill).toHaveBeenCalledWith('SIGKILL');
   });
@@ -203,6 +223,106 @@ describe('createLibreOfficePdf (BER-94)', () => {
       resumeConversions();
     }
   });
+});
+
+describe('LibreOffice hardening and limits', () => {
+  it('starts every run with links never updated, no macros and no recalculation on load', async () => {
+    const { spawn, profiles } = fakeSoffice('pdf');
+    await createLibreOfficePdf({ binary: 'soffice', log: silentLogger, spawn })(DECK);
+    const profile = profiles[0] ?? '';
+    expect(profile).toContain('<prop oor:name="DisableMacrosExecution" oor:op="fuse"><value>true');
+    // Writer counts 0 as never, Calc 1.
+    expect(profile).toMatch(
+      /Office\.Writer\/Content\/Update"><prop oor:name="Link" oor:op="fuse"><value>0</,
+    );
+    expect(profile).toMatch(
+      /Office\.Calc\/Content\/Update"><prop oor:name="Link" oor:op="fuse"><value>1</,
+    );
+    expect(profile).toMatch(/OOXMLRecalcMode" oor:op="fuse"><value>1</);
+  });
+
+  it('reads a CSV with formulas as text (CSV filter token 13 off)', async () => {
+    const { spawn, calls } = fakeSoffice('pdf');
+    const convert = createLibreOfficeDocumentPdf({ binary: 'soffice', log: silentLogger, spawn });
+    await convert(new TextEncoder().encode('a,b\n1,=1+1\n'), 'csv');
+    const filter = calls[0]?.args.find((arg) => arg.startsWith('--infilter='));
+    expect(filter).toBe(`--infilter=${DOCUMENT_IMPORT_FILTERS.csv}`);
+    const tokens = DOCUMENT_IMPORT_FILTERS.csv.split(':')[1]?.split(',') ?? [];
+    expect(tokens.slice(0, 3)).toEqual(['44', '34', '76']);
+    expect(tokens[12]).toBe('false');
+  });
+
+  it(`runs at most ${MAX_PARALLEL_CONVERSIONS} conversions at once, across converters; the rest wait`, async () => {
+    const { spawn, calls, held } = fakeSoffice('held');
+    const slides = createLibreOfficePdf({ binary: 'soffice', log: silentLogger, spawn });
+    const documents = createLibreOfficeDocumentPdf({ binary: 'soffice', log: silentLogger, spawn });
+    const text = new TextEncoder().encode('Hallo');
+    const results = [slides(DECK), documents(text, 'txt'), slides(DECK), documents(text, 'md')];
+    await vi.waitFor(() => expect(held).toHaveLength(MAX_PARALLEL_CONVERSIONS));
+    // Give a third run every chance to start: it must not.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(calls).toHaveLength(MAX_PARALLEL_CONVERSIONS);
+
+    // One finishes: the next one waiting starts, in order of arrival.
+    held.shift()?.();
+    await vi.waitFor(() => expect(calls).toHaveLength(3));
+    expect(calls[2]?.args.at(-1)).toMatch(/deck\.pptx$/);
+    while (calls.length < 4 || held.length > 0) {
+      await vi.waitFor(() => expect(held.length).toBeGreaterThan(0));
+      held.shift()?.();
+    }
+    await expect(Promise.all(results)).resolves.toHaveLength(4);
+  });
+
+  it('logs why a document could not be converted', async () => {
+    const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const convert = createLibreOfficeDocumentPdf({
+      binary: 'soffice',
+      log,
+      spawn: fakeSoffice('fail').spawn,
+    });
+    await expect(convert(new TextEncoder().encode('x'), 'txt')).rejects.toBeInstanceOf(
+      ConversionFailed,
+    );
+    expect(log.warn).toHaveBeenCalledWith(
+      'LibreOffice could not convert a .txt file',
+      expect.any(ConversionFailed),
+    );
+  });
+
+  it('never fetches from a CSV formula with a real LibreOffice, when installed', async () => {
+    const soffice = await findSoffice();
+    if (!soffice) return;
+    const hits: string[] = [];
+    const server = createServer((request, response) => {
+      hits.push(request.url ?? '');
+      response.end('geholt');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const { port } = server.address() as AddressInfo;
+      const csv = `a,b\n1,=1+1\n2,"=WEBSERVICE(""http://127.0.0.1:${port}/csv"")"\n`;
+      const convert = createLibreOfficeDocumentPdf({ binary: soffice, log: silentLogger });
+      const pdf = await convert(new TextEncoder().encode(csv), 'csv');
+      expect(hits).toEqual([]);
+      // Formulas are not evaluated at all: the cells show them as text.
+      const loading = getDocument({
+        data: pdf.slice(),
+        standardFontDataUrl: STANDARD_FONTS,
+        verbosity: 0,
+      });
+      const document = await loading.promise;
+      const page = await document.getPage(1);
+      const text = (await page.getTextContent()).items
+        .map((item) => ('str' in item ? item.str : ''))
+        .join(' ');
+      expect(text).toContain('=1+1');
+      expect(text).toContain('WEBSERVICE');
+      await loading.destroy();
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  }, 60_000);
 });
 
 describe('findSoffice', () => {

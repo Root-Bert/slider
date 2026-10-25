@@ -83,6 +83,8 @@ export function followConnectors(element: Element, ms: number): void {
   element.dispatchEvent(new CustomEvent(FOLLOW_EVENT, { bubbles: true, detail: ms }));
 }
 
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
 const relative = (rect: DOMRect, origin: DOMRect): Box => ({
   left: rect.left - origin.left,
   right: rect.right - origin.left,
@@ -196,8 +198,16 @@ export function useConnectorLayout({
         for (const item of route.items) colorOf.set(item.threadId, item.color);
         const slideElement = registry.getSlideElement(route.slideId);
         if (!slideElement) continue;
+        // Zoomed (`stage/lib/slide-zoom`), the slide box is bigger than its frame, which crops
+        // it: lines leave the frame, from marks clamped into it.
         const slideRect = slideElement.getBoundingClientRect();
-        const slide = relative(slideRect, origin);
+        const content = relative(slideRect, origin);
+        const frame = slideElement.closest('[data-slide-frame]') ?? slideElement;
+        const slide = relative(frame.getBoundingClientRect(), origin);
+        // Either way: a portrait page in a 16:9 frame is cropped top and bottom.
+        const cropped =
+          content.right - content.left > slide.right - slide.left + 1 ||
+          content.bottom - content.top > slide.bottom - slide.top + 1;
         const column = scroller.querySelector<HTMLElement>(
           `[data-column="${CSS.escape(route.slideId)}"]`,
         );
@@ -265,8 +275,10 @@ export function useConnectorLayout({
           const entry = compact ? COMPACT_ENTRY_X : CARD_ENTRY_X;
           const target = card ? { x: card.left + entry, y: card.top } : { x: 0, y: 0 };
           const { anchor } = item.source;
-          const x = (value: number) => slide.left + value * slideRect.width;
-          const y = (value: number) => slide.top + value * slideRect.height;
+          const x = (value: number) =>
+            clamp(content.left + value * slideRect.width, slide.left, slide.right);
+          const y = (value: number) =>
+            clamp(content.top + value * slideRect.height, slide.top, slide.bottom);
           requests.push({
             id: item.threadId,
             anchor: { left: x(anchor.left), right: x(anchor.right) },
@@ -284,7 +296,7 @@ export function useConnectorLayout({
           });
         }
         if (requests.length === 0) {
-          cutouts.push(...measureCutouts(slideElement, origin));
+          cutouts.push(...measureCutouts(slideElement, origin, cropped ? slide : null));
           continue;
         }
 
@@ -314,7 +326,7 @@ export function useConnectorLayout({
             color: colorOf.get(connector.id) ?? 'var(--color-fg)',
             d: roundedPath(connector.points),
           });
-        cutouts.push(...measureCutouts(slideElement, origin));
+        cutouts.push(...measureCutouts(slideElement, origin, cropped ? slide : null));
       }
 
       commit({
@@ -455,14 +467,27 @@ function cutoutMarkup(cutouts: readonly Cutout[]): string {
 
 /**
  * Mark shapes on a slide ([data-mark] in the annotation layer) as mask cutouts, so the lines run
- * behind pins, frames and drawings instead of over them.
+ * behind pins, frames and drawings instead of over them. On a zoomed slide only marks in its
+ * `frame` count – cropped ones would cut holes beside it – and drawings, which can reach out of
+ * it, are left out.
  */
-function measureCutouts(slideElement: HTMLElement, origin: DOMRect): Cutout[] {
+function measureCutouts(slideElement: HTMLElement, origin: DOMRect, frame: Box | null): Cutout[] {
   const cutouts: Cutout[] = [];
+  const outside = (rect: DOMRect) => {
+    if (!frame) return false;
+    const box = relative(rect, origin);
+    return (
+      box.right < frame.left ||
+      box.left > frame.right ||
+      box.bottom < frame.top ||
+      box.top > frame.bottom
+    );
+  };
   for (const mark of slideElement.querySelectorAll<HTMLElement | SVGElement>('[data-mark]')) {
     const kind = mark.dataset.mark;
     if (kind === 'pin') {
       const dot = (mark.firstElementChild ?? mark).getBoundingClientRect();
+      if (outside(dot)) continue;
       cutouts.push({
         kind: 'circle',
         cx: (dot.left + dot.right) / 2 - origin.left,
@@ -470,8 +495,10 @@ function measureCutouts(slideElement: HTMLElement, origin: DOMRect): Cutout[] {
         r: Math.max(dot.width, dot.height) / 2 + CUTOUT_PAD,
       });
     } else if (kind === 'frame') {
-      cutouts.push({ kind: 'rect', box: relative(mark.getBoundingClientRect(), origin) });
-    } else if (kind === 'stroke' && mark instanceof SVGPathElement) {
+      const rect = mark.getBoundingClientRect();
+      if (outside(rect)) continue;
+      cutouts.push({ kind: 'rect', box: relative(rect, origin) });
+    } else if (kind === 'stroke' && mark instanceof SVGPathElement && !frame) {
       const svg = mark.ownerSVGElement?.getBoundingClientRect();
       if (!svg) continue;
       cutouts.push({

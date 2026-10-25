@@ -103,7 +103,7 @@ describe('runPicker', () => {
     expect(`${action.origin}${action.pathname}`).toBe(SESSION.pickerUrl);
     const options = JSON.parse(action.searchParams.get('filePicker') ?? '{}');
     expect(options.entry).toEqual({ oneDrive: { sharedWithMe: {} } });
-    expect(options.typesAndSources.filters).toEqual(['.pptx']);
+    expect(options.typesAndSources.filters).toBeUndefined();
     expect(options.messaging.origin).toBe('http://localhost:5173');
     expect(form.children[0]!.attributes['value']).toBe(`token for ${SESSION.baseUrl}`);
 

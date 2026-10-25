@@ -33,7 +33,7 @@ function Page() {
 }
 
 describe('WorkspaceLayout', () => {
-  it('switching the organisation starts its pages fresh, without the previous one’s state', async () => {
+  it('switching the workspace starts its pages fresh, without the previous one’s state', async () => {
     const router = createMemoryRouter(
       [
         {
@@ -52,7 +52,7 @@ describe('WorkspaceLayout', () => {
     expect(screen.getByRole('button').textContent).toBe('Neu rendern');
   });
 
-  it('a blocked organisation shows only that it is blocked (BER-167)', () => {
+  it('a blocked workspace shows only that it is blocked (BER-167)', () => {
     const router = createMemoryRouter(
       [
         {

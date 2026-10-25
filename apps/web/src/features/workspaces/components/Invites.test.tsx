@@ -183,7 +183,7 @@ describe('InviteForm', () => {
 
   it('over the plan’s limits: no invitations at all, neither by mail nor by link', () => {
     render(<InviteForm workspace={{ ...makeWorkspace(), locked: true }} onNotify={vi.fn()} />);
-    expect(screen.getByText(/liegt über dem Limit ihres Plans/)).toBeTruthy();
+    expect(screen.getByText(/liegt über dem Limit seines Plans/)).toBeTruthy();
     const invite = screen.getByRole('button', { name: 'Einladen' }) as HTMLButtonElement;
     const link = screen.getByRole('button', { name: 'Link' }) as HTMLButtonElement;
     expect(invite.disabled).toBe(true);

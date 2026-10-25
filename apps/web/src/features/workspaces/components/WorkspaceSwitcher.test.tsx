@@ -25,7 +25,7 @@ const workspace = (id: string, name: string) => ({
   role: 'admin',
 });
 
-// jsdom has no matchMedia; a wide screen puts the "Neue Organisation" choices beside the menu.
+// jsdom has no matchMedia; a wide screen puts the "Neuer Workspace" choices beside the menu.
 beforeEach(() => {
   window.matchMedia = ((query: string) => ({
     matches: false,
@@ -40,7 +40,7 @@ function Where() {
 }
 
 describe('WorkspaceSwitcher – pending invites', () => {
-  it('"Beitreten" closes the menu before going to the new organisation', async () => {
+  it('"Beitreten" closes the menu before going to the new workspace', async () => {
     api.me = {
       user: { id: 'u1', name: 'Anna' },
       workspaces: [workspace('A', 'Alpha')],
@@ -75,7 +75,7 @@ describe('WorkspaceSwitcher – pending invites', () => {
       </QueryClientProvider>,
     );
     const user = userEvent.setup();
-    await user.click(screen.getByRole('button', { name: /^Organisation: Alpha/ }));
+    await user.click(screen.getByRole('button', { name: /^Workspace: Alpha/ }));
     await user.click(screen.getByRole('button', { name: 'Beitreten' }));
     expect(screen.getByTestId('where').textContent).toBe('/w/B');
     expect(screen.queryByRole('button', { name: 'Beitreten' })).toBeNull();
@@ -83,8 +83,8 @@ describe('WorkspaceSwitcher – pending invites', () => {
   });
 });
 
-describe('WorkspaceSwitcher – settings per organisation', () => {
-  it('every row has its own settings button; the bottom "Organisation verwalten" row is gone', async () => {
+describe('WorkspaceSwitcher – settings per workspace', () => {
+  it('every row has its own settings button; the bottom "Workspace verwalten" row is gone', async () => {
     api.me = {
       user: { id: 'u1', name: 'Anna' },
       workspaces: [workspace('A', 'Alpha'), workspace('B', 'Beta')],
@@ -108,9 +108,9 @@ describe('WorkspaceSwitcher – settings per organisation', () => {
       </QueryClientProvider>,
     );
     const user = userEvent.setup();
-    await user.click(screen.getByRole('button', { name: /^Organisation: Alpha/ }));
+    await user.click(screen.getByRole('button', { name: /^Workspace: Alpha/ }));
     expect(screen.getByRole('button', { name: 'Alpha verwalten' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Organisation verwalten' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Workspace verwalten' })).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Beta verwalten' }));
     expect(screen.getByTestId('where').textContent).toBe('/w/B/einstellungen');
     expect(screen.queryByRole('button', { name: 'Alpha verwalten' })).toBeNull();
@@ -138,45 +138,45 @@ function renderSwitcher() {
   return userEvent.setup();
 }
 
-describe('WorkspaceSwitcher – invite and new organisation', () => {
-  it('members of an organisation get no invite button', async () => {
+describe('WorkspaceSwitcher – invite and new workspace', () => {
+  it('members of a workspace get no invite button', async () => {
     api.me = {
       user: { id: 'u1', name: 'Anna' },
       workspaces: [{ ...workspace('A', 'Alpha'), role: 'member' }],
       pendingInvites: [],
     };
     const user = renderSwitcher();
-    await user.click(screen.getByRole('button', { name: /^Organisation: Alpha/ }));
+    await user.click(screen.getByRole('button', { name: /^Workspace: Alpha/ }));
     expect(screen.queryByRole('button', { name: 'Mitglieder zu Alpha einladen' })).toBeNull();
   });
 
-  it('every organisation the user administers has an invite button in its row', async () => {
+  it('every workspace the user administers has an invite button in its row', async () => {
     api.me = {
       user: { id: 'u1', name: 'Anna' },
       workspaces: [workspace('A', 'Alpha'), workspace('B', 'Beta')],
       pendingInvites: [],
     };
     const user = renderSwitcher();
-    await user.click(screen.getByRole('button', { name: /^Organisation: Alpha/ }));
+    await user.click(screen.getByRole('button', { name: /^Workspace: Alpha/ }));
     expect(screen.getByRole('button', { name: 'Mitglieder zu Alpha einladen' })).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Mitglieder zu Beta einladen' }));
     expect(screen.getByTestId('where').textContent).toBe('/w/B/einstellungen');
   });
 
-  it('"Neue Organisation" folds out joining first, then creating', async () => {
+  it('"Neuer Workspace" folds out joining first, then creating', async () => {
     api.me = {
       user: { id: 'u1', name: 'Anna' },
       workspaces: [workspace('A', 'Alpha')],
       pendingInvites: [],
     };
     const user = renderSwitcher();
-    await user.click(screen.getByRole('button', { name: /^Organisation: Alpha/ }));
+    await user.click(screen.getByRole('button', { name: /^Workspace: Alpha/ }));
     expect(screen.queryByRole('button', { name: 'Mit Einladung beitreten' })).toBeNull();
-    const toggle = screen.getByRole('button', { name: 'Neue Organisation' });
+    const toggle = screen.getByRole('button', { name: 'Neuer Workspace' });
     await user.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     const join = screen.getByRole('button', { name: 'Mit Einladung beitreten' });
-    const create = screen.getByRole('button', { name: 'Eigene erstellen' });
+    const create = screen.getByRole('button', { name: 'Eigenen erstellen' });
     expect(join.compareDocumentPosition(create) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     await user.click(toggle);
     expect(screen.queryByRole('button', { name: 'Mit Einladung beitreten' })).toBeNull();

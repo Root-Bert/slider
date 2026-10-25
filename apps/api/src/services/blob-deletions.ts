@@ -3,7 +3,7 @@ import { blobDeletions } from '../db/schema';
 import type { AppDeps } from '../deps';
 
 /**
- * Deleting files for good (BER-143): a deck, an account's recordings, an organisation. Storage can
+ * Deleting files for good (BER-143): a deck, an account's recordings, a workspace. Storage can
  * fail after the rows are gone; then the deletion is noted in `blob_deletions` and the hourly sweep
  * ({@link retryBlobDeletions}) tries again until it works – no file stays behind unnoticed.
  */

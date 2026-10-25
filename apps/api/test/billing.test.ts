@@ -196,7 +196,7 @@ describe('paid plan through Stripe', () => {
       trialEndsAt: trialEnd.toISOString(),
     });
 
-    // No card by the end: Stripe cancels, the organisation is back on Free – and the trial is used.
+    // No card by the end: Stripe cancels, the workspace is back on Free – and the trial is used.
     await webhook(
       stripeEvents.subscriptionDeleted(
         stripeSubscription({ id: 'sub_1', status: 'trialing', periodEnd: trialEnd }),
@@ -245,7 +245,7 @@ describe('paid plan through Stripe', () => {
     expect(mailer.sent).toHaveLength(0);
   });
 
-  it('keeps paying organisations paid for 14 days after a failed payment', async () => {
+  it('keeps paying workspaces paid for 14 days after a failed payment', async () => {
     await upgrade();
     await failPayment();
     const failing = await row();
@@ -352,7 +352,7 @@ describe('downgrade after the grace period (BER-155)', () => {
 });
 
 describe('billing owner (BER-154)', () => {
-  it('starts with the founder and hands a free organisation over at once', async () => {
+  it('starts with the founder and hands a free workspace over at once', async () => {
     expect((await row()).billingOwnerId).toBe(ctx.ownerId);
     const ada = await person('Ada');
     const res = await post('/billing/transfer', undefined, { userId: ada.user.id });
@@ -367,7 +367,7 @@ describe('billing owner (BER-154)', () => {
     expect(res.status).toBe(400);
   });
 
-  it('hands a paid organisation over only once the new owner paid', async () => {
+  it('hands a paid workspace over only once the new owner paid', async () => {
     await upgrade();
     const ada = await person('Ada');
     await post('/billing/transfer', undefined, { userId: ada.user.id });
@@ -423,12 +423,12 @@ describe('billing owner (BER-154)', () => {
     const left = await member(ctx.ownerId);
     expect(left.status).toBe(400);
     expect((await left.json()) as unknown).toMatchObject({
-      error: { message: expect.stringMatching(/^Du bezahlst für die Organisation\. Übergib/) },
+      error: { message: expect.stringMatching(/^Du bezahlst für den Workspace\. Übergib/) },
     });
     const removed = await member(ctx.ownerId, ada.cookie);
     expect(removed.status).toBe(400);
     expect((await removed.json()) as unknown).toMatchObject({
-      error: { message: expect.stringMatching(/^Diese Person bezahlt für die Organisation/) },
+      error: { message: expect.stringMatching(/^Diese Person bezahlt für den Workspace/) },
     });
     expect(await row()).toMatchObject({
       billingOwnerId: ctx.ownerId,
@@ -465,7 +465,7 @@ describe('billing owner (BER-154)', () => {
     expect(stripe.cancelled).toEqual(['sub_1']);
   });
 
-  it('a free organisation passes the billing role on when its owner leaves', async () => {
+  it('a free workspace passes the billing role on when its owner leaves', async () => {
     const ada = await person('Ada');
     const res = await ctx.request(`/api/workspaces/${ctx.workspaceId}/members/${ctx.ownerId}`, {
       method: 'DELETE',
@@ -533,7 +533,7 @@ describe('billing owner (BER-154)', () => {
     expect(res.status).toBe(400);
   });
 
-  it('lets only the paying admin delete a paid organisation, which cancels the subscription', async () => {
+  it('lets only the paying admin delete a paid workspace, which cancels the subscription', async () => {
     await upgrade();
     const ada = await person('Ada');
     const other = await ctx.request(`/api/workspaces/${ctx.workspaceId}`, {
@@ -542,7 +542,7 @@ describe('billing owner (BER-154)', () => {
     });
     expect(other.status).toBe(403);
     expect((await other.json()) as unknown).toMatchObject({
-      error: { message: expect.stringMatching(/Nur die Person, die für die Organisation bezahlt/) },
+      error: { message: expect.stringMatching(/Nur die Person, die für den Workspace bezahlt/) },
     });
     expect(stripe.cancelled).toEqual([]);
 
@@ -579,7 +579,7 @@ describe('billing owner (BER-154)', () => {
     await endingWith(ben.user.id);
     expect(await deleteAccount(ctx.deps, ben.user.id, {})).toBe(true);
     expect((await row()).billingOwnerId).not.toBe(ben.user.id);
-    // …and another admin deleting the organisation.
+    // …and another admin deleting the workspace.
     const cleo = await person('Cleo');
     await endingWith(ctx.ownerId);
     const res = await ctx.request(`/api/workspaces/${ctx.workspaceId}`, {

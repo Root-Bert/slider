@@ -28,13 +28,13 @@ import { getRole, requireRole, stronger, workspaceNotFound } from './roles';
 import { createWorkspace, getWorkspace, PERSONAL_WORKSPACE_NAME } from './workspaces';
 
 /**
- * Company organisations (BER-148), like Slack: an organisation opened to a domain is found by
+ * Company workspaces (BER-148), like Slack: a workspace opened to a domain is found by
  * everyone signing in with a verified address there, and they may join it as members. Addresses
  * count as verified: accounts are only created from addresses the login provider vouches for
  * (`services/accounts`) – but the domain only counts when a login vouches for it too
  * ({@link domainVerified}: not a personal Microsoft account). Mail providers' domains never belong to a company. Someone an admin
  * removed comes back only with an invitation (`workspace_removals`).
- * With `SIGNUP=invite` all of this is off: only invitations lead into organisations.
+ * With `SIGNUP=invite` all of this is off: only invitations lead into workspaces.
  */
 
 type DomainDeps = Pick<AppDeps, 'db' | 'config'>;
@@ -45,7 +45,7 @@ const domainJoinOff = (deps: Pick<AppDeps, 'config'>) =>
 /**
  * The maintained list of free and disposable mail providers (~15 000 domains, `free-email-domains`)
  * on top of the shared short list, which the web app uses only as a hint: this is the check that
- * counts – a company organisation opened to `hotmail.co.uk` would be open to everyone.
+ * counts – a company workspace opened to `hotmail.co.uk` would be open to everyone.
  */
 const FREE_MAIL = new Set<string>(freeEmailDomains);
 export const isCompanyMailDomain = (domain: string) =>
@@ -68,7 +68,7 @@ export const vouchesForDomain = (identity: { provider: string; subject: string }
   );
 
 /**
- * Whether the account's domain counts for company organisations: one of its logins vouches for
+ * Whether the account's domain counts for company workspaces: one of its logins vouches for
  * it ({@link vouchesForDomain}) with an address there. Accounts without logins (from before
  * logins existed, dev login) keep counting.
  */
@@ -91,7 +91,7 @@ export async function domainVerified(db: Executor, user: UserRow): Promise<boole
 }
 
 /**
- * The removal entry of `user` in the organisation: by account, or by the hash of the address –
+ * The removal entry of `user` in the workspace: by account, or by the hash of the address –
  * so deleting the account and signing up again with it doesn't lift it.
  */
 const removalOf = (workspaceId: string, user: Pick<UserRow, 'id' | 'email'>) =>
@@ -147,7 +147,7 @@ export async function recordRemoval(
     .values({ workspaceId, userId: user.id, emailHash: emailHash(user.email), createdAt: now });
 }
 
-/** Invited back into the organisation: the entry ends, by account and by address. */
+/** Invited back into the workspace: the entry ends, by account and by address. */
 export async function liftRemoval(
   tx: Executor,
   workspaceId: string,
@@ -156,7 +156,7 @@ export async function liftRemoval(
   await tx.delete(workspaceRemovals).where(removalOf(workspaceId, user));
 }
 
-/** The organisation opened to `domain`, if any (and joining by domain is on). */
+/** The workspace opened to `domain`, if any (and joining by domain is on). */
 export async function findDomainWorkspace(
   { db, config }: DomainDeps,
   domain: string,
@@ -171,7 +171,7 @@ export async function findDomainWorkspace(
 }
 
 /**
- * For `GET /me`: the company organisation of the user's domain, unless they are in it or were
+ * For `GET /me`: the company workspace of the user's domain, unless they are in it or were
  * removed from it.
  */
 export async function domainWorkspaceFor(
@@ -197,7 +197,7 @@ export async function domainWorkspaceFor(
 }
 
 /**
- * Joins the company organisation of the user's domain as member – or with the stronger role of a
+ * Joins the company workspace of the user's domain as member – or with the stronger role of a
  * pending e-mail invite to it, which is used up (it held a seat). Idempotent for members.
  * Someone removed by an admin needs such an invite.
  */
@@ -208,7 +208,7 @@ export async function joinByDomain(
 ): Promise<JoinResult> {
   const now = deps.clock.now();
   const domain = emailDomain(user.email);
-  // A mail provider's domain never opens an organisation – also not one opened to it before the
+  // A mail provider's domain never opens a workspace – also not one opened to it before the
   // list of providers grew (`join_domain` may still hold e.g. `web.de`).
   if (domainJoinOff(deps) || !isCompanyMailDomain(domain)) throw joinNeedsInvite();
   if (!(await domainVerified(deps.db, user))) throw joinNeedsInvite();
@@ -219,7 +219,7 @@ export async function joinByDomain(
       .select({ joinDomain: workspaces.joinDomain, blockedAt: workspaces.blockedAt })
       .from(workspaces)
       .where(eq(workspaces.id, workspaceId));
-    // A blocked organisation (BER-167) takes nobody in.
+    // A blocked workspace (BER-167) takes nobody in.
     if (!row?.joinDomain || row.joinDomain !== domain || row.blockedAt) {
       throw joinNeedsInvite();
     }
@@ -239,7 +239,7 @@ export async function joinByDomain(
           gt(workspaceInvites.expiresAt, now),
         ),
       );
-    // Only an invitation to the organisation brings someone removed back, not a deck share.
+    // Only an invitation to the workspace brings someone removed back, not a deck share.
     const invitedBack = pending.some((invite) => !invite.deckId);
     if (!invitedBack && (await wasRemoved(tx, workspaceId, user))) {
       throw joinNeedsInvite();
@@ -264,17 +264,17 @@ export async function joinByDomain(
 }
 
 const joinNeedsInvite = () =>
-  forbidden('Dieser Organisation kannst du nur mit einer Einladung beitreten.');
+  forbidden('Diesem Workspace kannst du nur mit einer Einladung beitreten.');
 
 const domainTaken = (domain: string) =>
   new ApiError(
     409,
     'domain_taken',
-    `Für ${domain} gibt es schon eine Organisation. Tritt ihr bei, statt eine zweite zu öffnen.`,
+    `Für ${domain} gibt es schon einen Workspace. Tritt ihm bei, statt einen zweiten zu öffnen.`,
   );
 
 /**
- * Admins only. Opens the organisation to the admin's own domain (`enabled`) or makes it private.
+ * Admins only. Opens the workspace to the admin's own domain (`enabled`) or makes it private.
  * Either answers the sign-up question (`audiencePending`).
  */
 export async function setWorkspaceDomain(
@@ -293,7 +293,7 @@ export async function setWorkspaceDomain(
   const domain = emailDomain(user.email);
   if (enabled && domainJoinOff(deps)) {
     throw badRequest(
-      'Auf dieser Instanz kommt man nur mit einer Einladung in eine Organisation (SIGNUP=invite).',
+      'Auf dieser Instanz kommt man nur mit einer Einladung in einen Workspace (SIGNUP=invite).',
     );
   }
   if (enabled && !isCompanyMailDomain(domain)) {
@@ -329,7 +329,7 @@ export function nameFromDomain(domain: string): string {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
-/** Some organisation – a blocked one too – is opened to the domain. */
+/** Some workspace – a blocked one too – is opened to the domain. */
 async function domainInUse(db: Executor, domain: string): Promise<boolean> {
   const [row] = await db
     .select({ id: workspaces.id })
@@ -340,7 +340,7 @@ async function domainInUse(db: Executor, domain: string): Promise<boolean> {
 }
 
 /**
- * A new account (not invited) gets an organisation of its own right away – unless the company
+ * A new account (not invited) gets a workspace of its own right away – unless the company
  * of its domain already has one, which the onboarding offers to join. A mail provider's address
  * gets a private one; a company address one named after the company, whose admin is asked
  * whether it is private or the company's.

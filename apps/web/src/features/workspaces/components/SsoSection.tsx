@@ -17,8 +17,8 @@ import {
 
 /**
  * Company login (BER-162): admins connect their own OpenID Connect provider for the addresses at
- * the organisation's company domain. Two steps – the provider, then a DNS TXT record proving
- * the domain. Admins only, and only where organisations can be opened to a domain.
+ * the workspace's company domain. Two steps – the provider, then a DNS TXT record proving
+ * the domain. Admins only, and only where workspaces can be opened to a domain.
  */
 export function SsoSection({
   workspace,
@@ -41,7 +41,7 @@ export function SsoSection({
     >
       {!workspace.joinDomain ? (
         <p className="text-body text-fg-subtle">
-          Öffne die Organisation zuerst unter „Beitritt per Domain“ für eure Firmen-Domain. Der
+          Öffne den Workspace zuerst unter „Beitritt per Domain“ für eure Firmen-Domain. Der
           Firmen-Login gilt für die Adressen dort.
         </p>
       ) : sso.data ? (
@@ -85,7 +85,7 @@ function SsoSettings({
   if (!sso.available) {
     return (
       <Notice tone="info">
-        Den Firmen-Login gibt es im Paid-Plan. Unter „Nutzung“ kannst du die Organisation upgraden.
+        Den Firmen-Login gibt es im Paid-Plan. Unter „Nutzung“ kannst du den Workspace upgraden.
       </Notice>
     );
   }

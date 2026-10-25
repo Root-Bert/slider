@@ -224,8 +224,9 @@ describe('readBodyCapped', () => {
 });
 
 describe('content checks', () => {
-  it('isPdfBytes looks for %PDF', () => {
+  it('isPdfBytes looks for %PDF-', () => {
     expect(isPdfBytes(new TextEncoder().encode('%PDF-1.7'))).toBe(true);
+    expect(isPdfBytes(new TextEncoder().encode('%PDF'))).toBe(false);
     expect(isPdfBytes(new TextEncoder().encode('%PD'))).toBe(false);
     expect(isPdfBytes(new TextEncoder().encode('<html>'))).toBe(false);
   });

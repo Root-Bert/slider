@@ -24,9 +24,9 @@ import { PendingInvites } from './PendingInvites';
 import { WorkspaceMark } from './WorkspaceMark';
 
 /**
- * Header: current organisation with a menu to switch, invite people to an organisation, open its
- * settings, found or join another one (behind "Neue Organisation"), accept pending invites and
- * join the company organisation of one's domain (BER-148).
+ * Header: current workspace with a menu to switch, invite people to a workspace, open its
+ * settings, found or join another one (behind "Neuer Workspace"), accept pending invites and
+ * join the company workspace of one's domain (BER-148).
  */
 export function WorkspaceSwitcher() {
   const { data: me } = useMe();
@@ -55,7 +55,7 @@ export function WorkspaceSwitcher() {
               <Icon name="folder" size={20} />
             )}
             <span className="truncate text-sm font-medium max-sm:hidden">
-              {current?.name ?? 'Organisationen'}
+              {current?.name ?? 'Workspaces'}
             </span>
             {invites.length > 0 && (
               <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-thumb bg-info px-1 text-tiny font-semibold text-primary-hover">
@@ -68,11 +68,11 @@ export function WorkspaceSwitcher() {
       >
         {(close) => (
           <>
-            <MenuHeading>Organisationen</MenuHeading>
+            <MenuHeading>Workspaces</MenuHeading>
             <div className="flex max-h-[min(320px,50vh)] flex-col gap-0.5 overflow-y-auto">
               {workspaces.map((workspace) => (
                 // Each row carries its own settings button – and for admins an invite button – so
-                // every organisation is one click from its management; they sit over the row's
+                // every workspace is one click from its management; they sit over the row's
                 // right edge.
                 <div key={workspace.id} className="group relative">
                   <MenuItem
@@ -152,7 +152,7 @@ export function WorkspaceSwitcher() {
 }
 
 /**
- * "Neue Organisation" as one row: a click folds out the two ways to get one – joining by
+ * "Neuer Workspace" as one row: a click folds out the two ways to get one – joining by
  * invitation first, founding one's own second – beside the menu (below the row on narrow screens,
  * where there is no room to the side). It closes with the menu, which unmounts it.
  */
@@ -174,16 +174,17 @@ function NewWorkspaceFlyout({
       </MenuItem>
       {canCreate ? (
         <MenuItem icon="add" onClick={() => onPick('create')}>
-          Eigene erstellen
+          Eigenen erstellen
         </MenuItem>
       ) : (
-        // One own organisation per account (BER-130) – handing it over frees the slot.
+        // One own workspace per account (BER-130) – handing it over frees the slot.
         <div className="flex items-start gap-2.5 px-2.5 py-1.5 text-body text-fg-subtle">
           <Icon name="add" size={18} className="shrink-0 opacity-50" />
           <span className="flex flex-col gap-0.5">
-            <span>Eigene erstellen</span>
+            <span>Eigenen erstellen</span>
             <span className="text-xs leading-4">
-              Du hast bereits eine eigene. Übergib sie an jemand anderen, um eine neue zu gründen.
+              Du hast bereits einen eigenen. Übergib ihn an jemand anderen, um einen neuen zu
+              gründen.
             </span>
           </span>
         </div>
@@ -210,7 +211,7 @@ function NewWorkspaceFlyout({
         }
         onClick={() => setOpen((value) => !value)}
       >
-        Neue Organisation
+        Neuer Workspace
       </MenuItem>
       {open &&
         (beside ? (

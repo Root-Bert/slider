@@ -15,7 +15,7 @@ const LOGIN_ERROR_COPY: Record<LoginError, { title: string; message: string }> =
   signup_closed: {
     title: 'Kein Konto gefunden',
     message:
-      'Für diese Adresse gibt es noch kein Slider-Konto, und auf diesem Server entstehen neue Konten nur über eine Einladung oder mit einer freigegebenen Firmenadresse. Bitte jemanden aus deiner Organisation, dich einzuladen.',
+      'Für diese Adresse gibt es noch kein Slider-Konto, und auf diesem Server entstehen neue Konten nur über eine Einladung oder mit einer freigegebenen Firmenadresse. Bitte jemanden aus deinem Team, dich in euren Workspace einzuladen.',
   },
   account_exists: {
     title: 'Konto meldet sich anders an',
@@ -48,12 +48,12 @@ const LOGIN_ERROR_COPY: Record<LoginError, { title: string; message: string }> =
   sso_unavailable: {
     title: 'Firmen-Login nicht verfügbar',
     message:
-      'Der Firmen-Login dieser Organisation ist gerade nicht eingerichtet. Melde dich anders an oder frag die Admins deiner Organisation.',
+      'Der Firmen-Login dieses Workspace ist gerade nicht eingerichtet. Melde dich anders an oder frag die Admins deines Workspace.',
   },
   sso_domain: {
     title: 'Adresse passt nicht',
     message:
-      'Über diesen Firmen-Login kommen nur Adressen der Firmen-Domain der Organisation. Melde dich mit deiner Firmen-Adresse an.',
+      'Über diesen Firmen-Login kommen nur Adressen der Firmen-Domain des Workspace. Melde dich mit deiner Firmen-Adresse an.',
   },
   mail_unavailable: {
     title: 'Neues Konto gerade nicht möglich',

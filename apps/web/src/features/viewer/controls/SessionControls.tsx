@@ -3,7 +3,7 @@ import { routes } from '@/lib/routes';
 import { IconButton } from '@/ui';
 import { useViewerData } from '../state/viewer-data';
 
-/** Last button of the deck pill: closes the review. Inviting people lives in the organisation's members. */
+/** Last button of the deck pill: closes the review. Inviting people lives in the workspace's members. */
 export function SessionControls() {
   const { deck } = useViewerData();
   const navigate = useNavigate();

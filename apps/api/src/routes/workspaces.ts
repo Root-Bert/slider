@@ -57,7 +57,7 @@ async function requireUser(deps: AppDeps, viewer: Viewer): Promise<UserRow> {
 
 /**
  * Invite mails per hour, per account and per client address. Every one goes out from the
- * instance's sender with text the inviter chose (name, organisation), so the open demo keeps a
+ * instance's sender with text the inviter chose (name, workspace), so the open demo keeps a
  * tight cap; links (no mail) are not counted.
  */
 export const INVITE_MAILS_PER_HOUR = { limited: 20, unlimited: 200 } as const;
@@ -123,13 +123,13 @@ export function workspacesRoutes(deps: AppDeps) {
       .delete('/workspaces/:id/logo', viewer, async (c) =>
         c.json(await removeWorkspaceLogo(deps, userId(c.var.viewer), c.req.param('id'))),
       )
-      /** Company organisation (BER-148): open it to the admin's domain, or make it private. */
+      /** Company workspace (BER-148): open it to the admin's domain, or make it private. */
       .put('/workspaces/:id/domain', viewer, async (c) => {
         const user = await requireUser(deps, c.var.viewer);
         const { enabled } = await readJson(c, updateWorkspaceDomainInputSchema);
         return c.json(await setWorkspaceDomain(deps, user, c.req.param('id'), enabled));
       })
-      /** Joins the company organisation of the viewer's own domain, without an invitation. */
+      /** Joins the company workspace of the viewer's own domain, without an invitation. */
       .post('/workspaces/:id/domain-join', viewer, async (c) => {
         const user = await requireUser(deps, c.var.viewer);
         return c.json<JoinResult>(await joinByDomain(deps, user, c.req.param('id')));
@@ -170,7 +170,7 @@ export function workspacesRoutes(deps: AppDeps) {
         );
       })
       .delete('/workspaces/:id/members/:userId', viewer, async (c) => {
-        // `?successor=<userId>`: the last owner leaves and hands the organisation to them.
+        // `?successor=<userId>`: the last owner leaves and hands the workspace to them.
         const { cancelSubscriptionId, deletedDeckIds } = await removeMember(
           deps.db,
           userId(c.var.viewer),

@@ -12,6 +12,7 @@ export function createInitialState(options: {
   showGuides?: boolean;
   showHiddenSlides?: boolean;
   showMinimap?: boolean;
+  wideFrames?: boolean;
   statusFilter?: StatusFilter;
 }): ViewerState {
   return {
@@ -29,6 +30,7 @@ export function createInitialState(options: {
     mediaReply: null,
     personFilter: null,
     split: options.split == null ? null : clampSplit(options.split),
+    slideZooms: new Map(),
     showChanges: options.showChanges ?? false,
     deletedPanelOpen: false,
     boxMode: options.boxMode ?? true,
@@ -36,6 +38,7 @@ export function createInitialState(options: {
     showGuides: options.showGuides ?? false,
     showHiddenSlides: options.showHiddenSlides ?? false,
     showMinimap: options.showMinimap ?? true,
+    wideFrames: options.wideFrames ?? false,
   };
 }
 
@@ -123,6 +126,13 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
       const split = action.split === null ? null : clampSplit(action.split);
       return split === next.split ? next : { ...next, split };
     }
+    case 'slideZoomChanged': {
+      if (action.zoom === null && !next.slideZooms.has(action.slideId)) return next;
+      const slideZooms = new Map(next.slideZooms);
+      if (action.zoom === null) slideZooms.delete(action.slideId);
+      else slideZooms.set(action.slideId, action.zoom);
+      return { ...next, slideZooms };
+    }
     case 'showChangesSet':
       return next.showChanges === action.show ? next : { ...next, showChanges: action.show };
     case 'boxModeToggled':
@@ -137,6 +147,9 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
       return { ...next, showHiddenSlides: !next.showHiddenSlides };
     case 'showMinimapToggled':
       return { ...next, showMinimap: !next.showMinimap };
+    case 'wideFramesToggled':
+      // The frames change shape: a zoom or a moved part of the old shape means nothing in the new one.
+      return { ...next, wideFrames: !next.wideFrames, slideZooms: new Map() };
     case 'deletedPanelSet':
       return action.open
         ? { ...next, deletedPanelOpen: true, threadPanelOpen: false, focusedThreadId: null }
@@ -159,8 +172,14 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
     }
     case 'slidesReplaced': {
       const ids = new Set(action.slideIds);
-      if (next.activeSlideId !== null && ids.has(next.activeSlideId)) return next;
-      return { ...next, activeSlideId: action.fallbackSlideId };
+      const gone = [...next.slideZooms.keys()].some((id) => !ids.has(id));
+      const slideZooms = gone
+        ? new Map([...next.slideZooms].filter(([id]) => ids.has(id)))
+        : next.slideZooms;
+      if (next.activeSlideId !== null && ids.has(next.activeSlideId)) {
+        return gone ? { ...next, slideZooms } : next;
+      }
+      return { ...next, activeSlideId: action.fallbackSlideId, slideZooms };
     }
     default:
       return next;

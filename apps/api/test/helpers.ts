@@ -39,7 +39,7 @@ import type { BillingProvider } from '../src/billing/stripe-billing';
 import type { AppDeps, InstanceControl } from '../src/deps';
 import { importDeck } from '../src/import/import-deck';
 import { createSlidesExtras, type SlidesExtrasReader } from '../src/import/slides-extras';
-import type { PptxToPdf } from '../src/import/libreoffice';
+import type { DocumentToPdf, PptxToPdf } from '../src/import/libreoffice';
 import type { OfficePdf } from '../src/import/office-pages';
 import type { OpenPptx } from '../src/import/pptx';
 import {
@@ -160,7 +160,7 @@ export interface TestContext {
   deps: AppDeps;
   clock: TestClock;
   ownerId: string;
-  /** The dev owner's workspace ("Meine Organisation"); `createReadyDeck` puts decks here. */
+  /** The dev owner's workspace ("Mein Workspace"); `createReadyDeck` puts decks here. */
   workspaceId: string;
   blobsDir: string;
   request(
@@ -247,10 +247,12 @@ export async function createTestContext(
     officePdf?: OfficePdf;
     /** LibreOffice's PDF of a PPTX (BER-94); a fake – LibreOffice is not needed for tests. */
     libreOfficePdf?: PptxToPdf;
+    /** LibreOffice's PDF of a Word, Excel or text file; a fake too. Without it those are refused. */
+    documentPdf?: DocumentToPdf;
     config?: Partial<Config>;
     fetch?: FetchLike;
     lookup?: LookupAll;
-    /** DNS TXT records for organisations' company logins (BER-162); none without it. */
+    /** DNS TXT records for workspaces' company logins (BER-162); none without it. */
     resolveTxt?: ResolveTxt;
     /** Replaces individual source adapters, e.g. with a fake OneDrive (no network). */
     sources?: Partial<SourceAdapters>;
@@ -364,6 +366,7 @@ export async function createTestContext(
     log: silentLogger,
     config,
     connections: microsoft,
+    documentPdf: options.documentPdf,
   });
   const deps: AppDeps = {
     config,
@@ -379,6 +382,7 @@ export async function createTestContext(
     log: silentLogger,
     sync,
     rendering: { renderers, progress: renderProgress },
+    documentPdf: options.documentPdf,
     oidc: config.auth.oidc ? new OidcClient(config.auth.oidc, clock, fetch) : null,
     google: config.auth.google ? new OidcClient(config.auth.google, clock, fetch) : null,
     webauthn: options.webauthn,

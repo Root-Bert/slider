@@ -4,7 +4,7 @@ import { Notice, TextLink } from '@/ui';
 import { downgradeMessage, pendingDowngrade } from '../lib/plan';
 
 /**
- * Above the organisation's pages (BER-155): over the plan's limits, about to fall back to free
+ * Above the workspace's pages (BER-155): over the plan's limits, about to fall back to free
  * (admins – they can act), or asked to take over paying. One at a time, most urgent first; each
  * leads to "Nutzung".
  */
@@ -12,7 +12,7 @@ export function PlanBanner({ workspace, userId }: { workspace: Workspace; userId
   const { billing } = workspace;
   const downgradeAt = pendingDowngrade(billing);
   const message = workspace.locked
-    ? 'Die Organisation liegt über dem Limit ihres Plans: Neue Reviews, Uploads, Einladungen und Kommentare gehen gerade nicht.'
+    ? 'Der Workspace liegt über dem Limit seines Plans: Neue Reviews, Uploads, Einladungen und Kommentare gehen gerade nicht.'
     : downgradeAt && workspace.role === 'admin'
       ? downgradeMessage(downgradeAt)
       : billing.transfer?.to.id === userId

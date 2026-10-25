@@ -15,7 +15,7 @@ export function PendingInvites({
 }: {
   invites: readonly PendingInvite[];
   onError: ShowToast;
-  /** Accepted, right before going to the organisation or deck (the switcher closes its menu). */
+  /** Accepted, right before going to the workspace or deck (the switcher closes its menu). */
   onJoined?: () => void;
 }) {
   return (

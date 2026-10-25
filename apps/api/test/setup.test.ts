@@ -506,7 +506,7 @@ describe('claiming the instance with the setup token', () => {
     expect((await status(withToken())).body).toMatchObject({ authorized: true, claimed: false });
   });
 
-  it('takes over the decks and organisations of the dev owner nobody can sign in as', async () => {
+  it('takes over the decks and workspaces of the dev owner nobody can sign in as', async () => {
     const { deckId } = await createReadyDeck(ctx);
     const anna = await signedInUser(ctx, { name: 'Anna', email: 'anna@firma.de' });
     // Before the claim the account can't open anything (`instance_unclaimed`).

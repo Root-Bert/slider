@@ -28,6 +28,12 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ LIBREOFFICE_TIMEOUT_MS: '500' }, quiet)).toThrow();
   });
 
+  it('gives a PDF 2 minutes (plus a second per page) unless PDF_TIMEOUT_MS says otherwise', () => {
+    expect(loadConfig({}, quiet).pdfTimeoutMs).toBe(120_000);
+    expect(loadConfig({ PDF_TIMEOUT_MS: '300000' }, quiet).pdfTimeoutMs).toBe(300_000);
+    expect(() => loadConfig({ PDF_TIMEOUT_MS: '500' }, quiet)).toThrow();
+  });
+
   it('treats empty keys from .env as unset', () => {
     const config = loadConfig({ SLIDER_SECRET: '', MS_CLIENT_ID: '', MS_CLIENT_SECRET: '' }, quiet);
     expect(config.microsoft).toBeNull();

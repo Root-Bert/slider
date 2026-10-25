@@ -14,7 +14,7 @@ import {
 export type DeckRight = 'view' | 'comment' | 'own';
 
 export const VIEWER_COMMENT_MESSAGE =
-  'Als Betrachter kannst du nur ansehen. Zum Kommentieren braucht es eine andere Rolle in der Organisation.';
+  'Als Betrachter kannst du nur ansehen. Zum Kommentieren braucht es eine andere Rolle im Workspace.';
 
 export const deckNotFound = () => notFound('Diese Präsentation gibt es nicht (mehr).');
 

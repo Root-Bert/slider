@@ -30,6 +30,7 @@ import { RectFrame } from './RectFrame';
 import { ShapeOutline } from './ShapeOutline';
 import { TextBoxEditor } from './TextBox';
 import { slideSrcSet, THUMB_MAX_W } from './lib/slide-image';
+import { coverOf, isCropped, startView, zoomedBox, type SlideZoom } from './lib/slide-zoom';
 
 interface SlideFrameProps {
   slide: Slide;
@@ -61,6 +62,8 @@ interface SlideFrameProps {
   boxMode: boolean;
   /** "Hilfslinien zeigen": PowerPoint's guides and the boxes crossing them (not on thumbnails). */
   showGuides: boolean;
+  /** Zoom inside this slide (pinch past the largest slides) – only set when it is this slide's. */
+  zoom: SlideZoom | null;
 }
 
 /**
@@ -68,6 +71,10 @@ interface SlideFrameProps {
  * drawing surface, on every slide alike. With the pointer (the default tool) a click starts a
  * comment there: in box mode on the PowerPoint box under the pointer (outlined while hovered),
  * otherwise on the clicked spot. Which slide is "active" only matters to the slide counter.
+ * Zoomed, the slide box (and everything on it) is laid out that much bigger inside its frame,
+ * which crops it – pins and lines keep their size, and the sharper image loads by itself. A frame
+ * of another shape than the slide (portrait pages in the 16:9 view) is filled by the slide and
+ * crops it the same way, from its top until the wheel moves it.
  */
 export const SlideFrame = memo(function SlideFrame({
   slide,
@@ -88,6 +95,7 @@ export const SlideFrame = memo(function SlideFrame({
   badgeVersion,
   boxMode,
   showGuides,
+  zoom,
 }: SlideFrameProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const dispatch = useViewerDispatch();
@@ -95,6 +103,13 @@ export const SlideFrame = memo(function SlideFrame({
   const label = slideLabel(index);
   const small = w < THUMB_MAX_W;
   const src = small ? slide.thumbnailUrl : slide.imageUrl;
+  const zoomed = zoom && !small ? zoom : null;
+  // Filling a frame of another shape: cropped even unzoomed.
+  const cover = coverOf(slide.aspectRatio, w / h);
+  const cropped = isCropped(cover);
+  const view = zoomed ?? (cropped ? startView(cover) : null);
+  // Cropped, the chip goes back to the filled frame, not to the whole slide.
+  const unzoomLabel = cropped ? 'Zoom zurücksetzen' : 'Ganze Folie zeigen';
   // The image that failed (404, network): a quiet note instead of a placeholder pulsing forever.
   // Keyed by its URL – another size or a new version tries again on its own.
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
@@ -205,130 +220,156 @@ export const SlideFrame = memo(function SlideFrame({
       style={{ left: x, top, width: w, height: h }}
     >
       <div
-        ref={boxRef}
-        data-slide-box={slide.id}
+        data-slide-frame={slide.id}
         className={cn(
           'relative size-full',
-          !drawing && pointerTarget && 'cursor-pointer',
-          selecting && !boxes && 'cursor-crosshair',
+          view && 'overflow-hidden',
+          view && (small ? 'rounded-thumb' : 'rounded-panel'),
         )}
-        onClick={drawing ? undefined : activate}
-        onPointerDown={onBoxPointerDown}
-        onPointerMove={onBoxPointerMove}
-        onPointerUp={onBoxPointerUp}
-        onPointerCancel={() => setDrag(null)}
-        onPointerLeave={(event) => {
-          setHoveredShape(null);
-          // Left before the drag captured the pointer: its release never comes here.
-          if (!event.currentTarget.hasPointerCapture(event.pointerId)) setDrag(null);
-        }}
-        onContextMenu={drawing ? undefined : slideMenu.onContextMenu}
+        // The wheel moves the part a cropped slide shows (`useTimelineWheel`).
+        data-slide-cover={cropped && !small ? `${cover.x},${cover.y}` : undefined}
       >
         <div
+          ref={boxRef}
+          data-slide-box={slide.id}
           className={cn(
-            'absolute inset-0 overflow-hidden bg-placeholder',
-            small ? 'rounded-thumb' : 'rounded-panel',
-            !loaded && !failed && 'skeleton',
+            view ? 'absolute' : 'relative size-full',
+            !drawing && pointerTarget && 'cursor-pointer',
+            selecting && !boxes && 'cursor-crosshair',
           )}
+          style={view ? zoomedBox(view, w, h, cover) : undefined}
+          onClick={drawing ? undefined : activate}
+          onPointerDown={onBoxPointerDown}
+          onPointerMove={onBoxPointerMove}
+          onPointerUp={onBoxPointerUp}
+          onPointerCancel={() => setDrag(null)}
+          onPointerLeave={(event) => {
+            setHoveredShape(null);
+            // Left before the drag captured the pointer: its release never comes here.
+            if (!event.currentTarget.hasPointerCapture(event.pointerId)) setDrag(null);
+          }}
+          onContextMenu={drawing ? undefined : slideMenu.onContextMenu}
         >
-          {failed ? (
-            <SlideImageError
-              small={small}
-              onRetry={() => {
-                setFailedSrc(null);
-                setAttempt((n) => n + 1);
-              }}
-            />
-          ) : (
-            <img
-              // A new element asks again: the failed one is done for.
-              key={attempt}
-              src={src}
-              {...slideSrcSet(slide, w)}
-              alt={slide.title ?? label}
-              loading="lazy"
-              decoding="async"
-              draggable={false}
-              onLoad={() => setLoaded(true)}
-              onError={() => setFailedSrc(src)}
-              className={cn(
-                'size-full object-contain transition-opacity duration-300 select-none',
-                loaded ? 'opacity-100' : 'opacity-0',
-                slide.hidden && 'opacity-40',
-              )}
-            />
-          )}
-        </div>
-        {((slide.hidden && w >= 200) || visibility || badge) && (
-          // Top left (Figma D2). No z-index: pins and annotations (rendered after it) stay on top
-          // and clickable – the status banners take their own room above the track.
           <div
             className={cn(
-              'pointer-events-none absolute flex max-w-[calc(100%-16px)] items-center gap-1.5',
-              small ? 'top-1.5 left-1.5' : 'top-3 left-3',
+              'absolute inset-0 overflow-hidden bg-placeholder',
+              // Cropped, the frame rounds the corners – the slide's own are out of view.
+              !view && (small ? 'rounded-thumb' : 'rounded-panel'),
+              !loaded && !failed && 'skeleton',
             )}
           >
-            {slide.hidden && w >= 200 && (
-              <Badge
-                tone="overlay"
-                className="shrink-0"
-                title={visibility?.kind === 'hidden' ? visibility.description : undefined}
-                data-visibility-change={visibility?.kind === 'hidden' ? 'hidden' : undefined}
-              >
-                <Icon name="visibilityOff" size="sm" />
-                Ausgeblendet
-                {visibility?.kind === 'hidden' && (
-                  <span className="sr-only">: {visibility.description}</span>
+            {failed ? (
+              <SlideImageError
+                small={small}
+                onRetry={() => {
+                  setFailedSrc(null);
+                  setAttempt((n) => n + 1);
+                }}
+              />
+            ) : (
+              <img
+                // A new element asks again: the failed one is done for.
+                key={attempt}
+                src={src}
+                {...slideSrcSet(slide, view ? zoomedBox(view, w, h, cover).width : w)}
+                alt={slide.title ?? label}
+                loading="lazy"
+                decoding="async"
+                draggable={false}
+                onLoad={() => setLoaded(true)}
+                onError={() => setFailedSrc(src)}
+                className={cn(
+                  'size-full object-contain transition-opacity duration-300 select-none',
+                  loaded ? 'opacity-100' : 'opacity-0',
+                  slide.hidden && 'opacity-40',
                 )}
-              </Badge>
-            )}
-            {visibility?.kind === 'shown' && !slide.hidden && (
-              <Badge
-                tone="overlay"
-                className="shrink-0"
-                title={visibility.description}
-                data-visibility-change="shown"
-              >
-                <Icon name="visibility" size="sm" />
-                {visibility.label}
-              </Badge>
-            )}
-            {badge && (
-              <ChangeBadge
-                badge={badge}
-                version={badgeVersion}
-                size={w < 160 ? 'mini' : 'track'}
-                className="min-w-0"
               />
             )}
           </div>
-        )}
-        {w >= 120 && <LiveSlidePresence slideId={slide.id} small={small} />}
-        {showGuides && !small && <GuideLayer slide={slide} />}
-        <AnnotationLayer
-          slide={slide}
-          threads={threads}
-          emphasisId={emphasisId}
-          draft={draft}
-          boxes={boxes}
-          selecting={selecting}
-          // The eraser wipes over drawings, so it stays on top of them.
-          aboveTools={drawing && tool !== 'eraser'}
-        />
-        {dragRect && <RectFrame rect={dragRect} color={accentColor(color)} dashed />}
-        {pointerTarget && (
-          <ShapeOutline shape={pointerTarget} variant="target" color={accentColor(color)} />
-        )}
-        {drawing && (
-          <DrawingSurface
+          {((slide.hidden && w >= 200) || visibility || badge) && (
+            // Top left (Figma D2). No z-index: pins and annotations (rendered after it) stay on top
+            // and clickable – the status banners take their own room above the track.
+            <div
+              className={cn(
+                'pointer-events-none absolute flex max-w-[calc(100%-16px)] items-center gap-1.5',
+                small ? 'top-1.5 left-1.5' : 'top-3 left-3',
+              )}
+            >
+              {slide.hidden && w >= 200 && (
+                <Badge
+                  tone="overlay"
+                  className="shrink-0"
+                  title={visibility?.kind === 'hidden' ? visibility.description : undefined}
+                  data-visibility-change={visibility?.kind === 'hidden' ? 'hidden' : undefined}
+                >
+                  <Icon name="visibilityOff" size="sm" />
+                  Ausgeblendet
+                  {visibility?.kind === 'hidden' && (
+                    <span className="sr-only">: {visibility.description}</span>
+                  )}
+                </Badge>
+              )}
+              {visibility?.kind === 'shown' && !slide.hidden && (
+                <Badge
+                  tone="overlay"
+                  className="shrink-0"
+                  title={visibility.description}
+                  data-visibility-change="shown"
+                >
+                  <Icon name="visibility" size="sm" />
+                  {visibility.label}
+                </Badge>
+              )}
+              {badge && (
+                <ChangeBadge
+                  badge={badge}
+                  version={badgeVersion}
+                  size={w < 160 ? 'mini' : 'track'}
+                  className="min-w-0"
+                />
+              )}
+            </div>
+          )}
+          {w >= 120 && <LiveSlidePresence slideId={slide.id} small={small} />}
+          {showGuides && !small && <GuideLayer slide={slide} />}
+          <AnnotationLayer
             slide={slide}
-            boxRef={boxRef}
-            tool={tool}
-            color={color}
             threads={threads}
+            emphasisId={emphasisId}
+            draft={draft}
+            boxes={boxes}
+            selecting={selecting}
+            // The eraser wipes over drawings, so it stays on top of them.
+            aboveTools={drawing && tool !== 'eraser'}
           />
+          {dragRect && <RectFrame rect={dragRect} color={accentColor(color)} dashed />}
+          {pointerTarget && (
+            <ShapeOutline shape={pointerTarget} variant="target" color={accentColor(color)} />
+          )}
+          {drawing && (
+            <DrawingSurface
+              slide={slide}
+              boxRef={boxRef}
+              tool={tool}
+              color={color}
+              threads={threads}
+            />
+          )}
+          {textBox && <TextBoxEditor box={textBox} />}
+        </div>
+        {zoomed && zoomed.scale > 1 && (
+          <Button
+            variant="secondary"
+            size="xs"
+            trailingIcon="close"
+            className="absolute top-3 right-3 tabular-nums"
+            aria-label={`Zoom ${Math.round(zoomed.scale * 100)} % – ${unzoomLabel}`}
+            title={unzoomLabel}
+            onClick={() => dispatch({ type: 'slideZoomChanged', slideId: slide.id, zoom: null })}
+          >
+            {Math.round(zoomed.scale * 100)} %
+          </Button>
         )}
-        {textBox && <TextBoxEditor box={textBox} />}
       </div>
       {slideMenu.contextMenu}
     </div>

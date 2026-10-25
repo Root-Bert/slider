@@ -27,6 +27,27 @@ export interface PopoverPanelProps extends HTMLAttributes<HTMLElement> {
 
 const paddingClasses = { none: '', sm: 'p-1', md: 'p-1.5', lg: 'p-3' } as const;
 
+/** Room an absolutely placed panel keeps to the sides of the screen. */
+const VIEWPORT_MARGIN_PX = 16;
+
+/**
+ * Moves an absolutely placed panel sideways back onto the screen – on a narrow phone a panel
+ * lined up with its trigger may reach past the edge and make the whole page scroll sideways.
+ * From the layout box (`offsetLeft`), so the pop-in's scale doesn't skew it.
+ */
+function keepOnScreen(panel: HTMLElement) {
+  const parent = panel.offsetParent;
+  if (!(parent instanceof HTMLElement) || getComputedStyle(panel).position !== 'absolute') return;
+  const left = parent.getBoundingClientRect().left + panel.offsetLeft;
+  const right = left + panel.offsetWidth;
+  const max = document.documentElement.clientWidth - VIEWPORT_MARGIN_PX;
+  const shift =
+    right > max
+      ? Math.max(max - right, VIEWPORT_MARGIN_PX - left)
+      : Math.max(0, VIEWPORT_MARGIN_PX - left);
+  panel.style.translate = shift === 0 ? '' : `${shift}px 0`;
+}
+
 /**
  * The floating panel of a popover or menu: elevated glass, panel radius, pop-in, the popover
  * layer and – by default – anchored to the `relative` wrapper of its trigger (`usePopover`).
@@ -40,6 +61,7 @@ export function PopoverPanel({
   tone = 'elevated',
   padding = 'none',
   className,
+  ref,
   ...props
 }: PopoverPanelProps) {
   const anchored = position === 'anchored';
@@ -73,6 +95,11 @@ export function PopoverPanel({
         ],
         className,
       )}
+      ref={(panel: HTMLElement | null) => {
+        if (typeof ref === 'function') ref(panel);
+        else if (ref) ref.current = panel;
+        if (panel) keepOnScreen(panel);
+      }}
       {...props}
     />
   );

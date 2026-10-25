@@ -45,7 +45,7 @@ function renderOnboarding(pendingInvites: unknown[], domainWorkspace: unknown = 
 const order = () =>
   [...document.querySelectorAll('h1, h2, h3, button')]
     .map((element) => element.textContent?.trim())
-    .filter((text) => text && /Organisation|Beitreten|Einladungslink/.test(text));
+    .filter((text) => text && /Workspace|Beitreten|Einladungslink/.test(text));
 
 const company = { id: 'C', name: 'Firma', logoUrl: null, domain: 'firma.de', memberCount: 4 };
 
@@ -53,8 +53,8 @@ describe('WorkspaceOnboarding', () => {
   it('nothing to join: founding is the page, the invitation link second', () => {
     renderOnboarding([]);
     expect(order()).toEqual([
-      'Organisation erstellen',
-      'Organisation erstellen',
+      'Workspace erstellen',
+      'Workspace erstellen',
       'Mit Einladungslink beitreten',
       'Beitreten',
     ]);
@@ -64,14 +64,14 @@ describe('WorkspaceOnboarding', () => {
   it('invited: a quiet "erstellen" first, then the invitation as a card', () => {
     renderOnboarding([invite]);
     expect(order()).toEqual([
-      'Eigene Organisation erstellen',
+      'Eigenen Workspace erstellen',
       'Beitreten',
       'Mit Einladungslink beitreten',
       'Beitreten',
       // The founding dialog, closed.
-      'Neue Organisation',
+      'Neuer Workspace',
     ]);
-    const cards = screen.getByRole('list', { name: 'Organisationen zum Beitreten' });
+    const cards = screen.getByRole('list', { name: 'Workspaces zum Beitreten' });
     expect(cards.textContent).toContain('Beta');
     // Founding opens a dialog – no form on the page.
     expect(screen.queryByLabelText('Name')).toBeNull();
@@ -79,7 +79,7 @@ describe('WorkspaceOnboarding', () => {
 
   it('the company of the domain is already there: its card before invitations (BER-148)', () => {
     renderOnboarding([invite], company);
-    const cards = screen.getByRole('list', { name: 'Organisationen zum Beitreten' });
+    const cards = screen.getByRole('list', { name: 'Workspaces zum Beitreten' });
     expect([...cards.children].map((card) => card.textContent)).toEqual([
       expect.stringContaining('Firma'),
       expect.stringContaining('Beta'),

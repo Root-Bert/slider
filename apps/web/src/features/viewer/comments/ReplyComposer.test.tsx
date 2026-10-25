@@ -1,7 +1,8 @@
 import { MAX_COMMENT_BODY_LENGTH, type Author, type Comment } from '@slider/shared';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type * as ImageFile from '../media/lib/image-file';
 import { replyDrafts } from './lib/reply-drafts';
 import { MediaReplyDialog } from './MediaTabs';
 import { ReplyComposer } from './ReplyComposer';
@@ -16,7 +17,21 @@ const createReply = {
 };
 const showToast = vi.fn();
 
+const createPicture = {
+  mutateAsync: vi.fn(async (_variables: unknown): Promise<unknown> => ({})),
+  cancel: vi.fn(),
+  isPending: false,
+  progress: 0,
+  error: null as Error | null,
+};
+
 vi.mock('@/lib/api', () => ({ useCreateReply: () => createReply }));
+vi.mock('../media/hooks/useMediaComment', () => ({ useCreateMediaComment: () => createPicture }));
+// A browser decodes and draws the picture; here it is just handed through.
+vi.mock('../media/lib/image-file', async (original) => ({
+  ...(await original<typeof ImageFile>()),
+  imageToPng: async (file: Blob) => file,
+}));
 vi.mock('../state/viewer-data', () => ({
   useViewerData: () => ({
     deck: { id: 'deck-1' },
@@ -44,6 +59,9 @@ const root = { id: 'r1', slideId: 's1', author: anna } as Comment;
 
 beforeEach(() => {
   createReply.mutateAsync.mockReset();
+  createPicture.mutateAsync.mockClear();
+  URL.createObjectURL = vi.fn(() => 'blob:preview');
+  URL.revokeObjectURL = vi.fn();
   createReply.mutateAsync.mockResolvedValue({});
   replyDrafts.clear();
   mediaReply = null;
@@ -188,5 +206,28 @@ describe('ReplyComposer', () => {
     createReply.error = new Error('Keine Verbindung');
     render(<ReplyComposer root={root} deckId="deck-1" />);
     expect(screen.getByRole('alert').textContent).toBe('Keine Verbindung');
+  });
+
+  it('sends a screenshot pasted into the field as a reply with a picture (BER-174)', async () => {
+    render(<ReplyComposer root={root} deckId="deck-1" />);
+    const field = screen.getByRole('combobox', { name: 'Antwort an Anna' });
+    fireEvent.paste(field, {
+      clipboardData: {
+        files: [new File(['png'], 'screenshot.png', { type: 'image/png' })],
+        types: ['Files'],
+      },
+    });
+    expect(await screen.findByAltText('Angehängtes Bild 1')).toBeTruthy();
+    // The picture is the reply: no text needed.
+    await userEvent.click(screen.getByRole('button', { name: 'Antwort senden' }));
+    expect(createReply.mutateAsync).not.toHaveBeenCalled();
+    const [upload] = createPicture.mutateAsync.mock.calls[0] as [
+      { input: { parentId: string; body: string }; images: (() => Promise<Blob>)[] },
+    ];
+    expect(upload.input).toMatchObject({ parentId: 'r1', body: '' });
+    expect(upload.images).toHaveLength(1);
+    expect(await upload.images[0]!()).toBeInstanceOf(Blob);
+    // Sent: the picture is gone from the field.
+    await vi.waitFor(() => expect(screen.queryByAltText('Angehängtes Bild 1')).toBeNull());
   });
 });

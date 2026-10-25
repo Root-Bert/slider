@@ -127,7 +127,7 @@ export function MenuDivider({ className }: { className?: string }) {
   return <Divider className={cn('mx-2 my-1', className)} />;
 }
 
-/** Small uppercase caption above a group of rows ("Organisationen"). Give it an `id` to label a group. */
+/** Small uppercase caption above a group of rows ("Workspaces"). Give it an `id` to label a group. */
 export function MenuHeading({ className, ...props }: HTMLAttributes<HTMLParagraphElement>) {
   return (
     <p

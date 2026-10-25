@@ -16,6 +16,7 @@ import {
   sourceNotFound,
   sourceUnreachable,
 } from '../src/sources/errors';
+import { PdfTimedOut } from '../src/import/pdf-jobs';
 import { deckLoginUrl, parseFailedMessage, SYNC_MESSAGES, toSyncError } from '../src/sync/errors';
 
 const NOW = new Date(Date.UTC(2026, 9, 16, 12));
@@ -89,5 +90,9 @@ describe('parseFailedMessage', () => {
     expect(texts[2]).toContain('keine PowerPoint-Datei');
     expect(texts[3]).toContain('mehr als 1024 Folien');
     expect(parseFailedMessage(new Error('x'))).toBe(SYNC_MESSAGES.internal);
+  });
+
+  it('tells a PDF cut off after its deadline from a broken one', () => {
+    expect(parseFailedMessage(new PdfTimedOut(120_000))).toContain('zu lange gedauert');
   });
 });

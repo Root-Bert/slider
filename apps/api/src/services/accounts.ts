@@ -87,7 +87,7 @@ export async function loginCount(db: Executor, userId: string): Promise<number> 
 /**
  * Whether a person without an account may create one: an invitation (pending for the address or
  * the link they came through), `SIGNUP=open`, `SIGNUP=domains` with a verified address of the
- * list, or `SIGNUP=company` with a verified address at a domain an organisation is opened to
+ * list, or `SIGNUP=company` with a verified address at a domain a workspace is opened to
  * (BER-148). `SIGNUP=invite` is only invitations. The domain rules also need the login to vouch
  * for the domain (`domainVouched`, not a personal Microsoft account – `vouchesForDomain`).
  */
@@ -114,7 +114,7 @@ export async function maySignUp(
   }
   const { signup, signupDomains } = deps.config.auth;
   if (signup === 'open') return { allowed: true, viaInvite: false };
-  // An organisation opened to the domain invites everyone there – its admins chose so.
+  // A workspace opened to the domain invites everyone there – its admins chose so.
   if (
     signup === 'company' &&
     emailVerified &&
@@ -222,15 +222,15 @@ export async function signInWithIdentity(
     return signInWithIdentity(deps, input, false);
   }
   const result = { ok: true as const, user, created: true };
-  // Invited people land in the inviting organisation (the onboarding offers their invitations);
+  // Invited people land in the inviting workspace (the onboarding offers their invitations);
   // everyone else gets one of their own, unless their company already has one (BER-148).
   if (!signup.viaInvite) await foundAtSignUp(deps, user);
   return result;
 }
 
 /**
- * Sign-in through an organisation's company login (BER-162). Its provider vouches for every
- * address at the organisation's domain – proven by a DNS record, so whoever runs the provider
+ * Sign-in through a workspace's company login (BER-162). Its provider vouches for every
+ * address at the workspace's domain – proven by a DNS record, so whoever runs the provider
  * runs the domain – and so, unlike other logins, it also signs into an existing account at that
  * domain that signs in another way, and becomes one of its logins. Addresses elsewhere are
  * refused before (`routes/auth`).
@@ -286,7 +286,7 @@ export type ClaimResult = { ok: true } | { ok: false; error: 'claimed' | 'invali
 /**
  * Makes the account instance admin with the one-time setup token from the server log – the only
  * way to become admin. Under a lock, so two claims at once can't both win; the token is gone
- * afterwards (single use). The account takes over the dev owner's decks and organisations when
+ * afterwards (single use). The account takes over the dev owner's decks and workspaces when
  * there is one nobody can sign in as (decks made in development before logins existed).
  */
 export async function claimInstance(
@@ -319,7 +319,7 @@ export async function claimInstance(
 
 /**
  * The dev owner's decks (and its recordings' quota) move to the new admin, who joins its
- * organisations as admin. Only while nobody can sign in as the dev owner – an account with a login
+ * workspaces as admin. Only while nobody can sign in as the dev owner – an account with a login
  * of its own keeps what is its own.
  */
 async function adoptDevOwner(deps: AppDeps, tx: Transaction, userId: string): Promise<void> {
@@ -355,7 +355,7 @@ async function adoptDevOwner(deps: AppDeps, tx: Transaction, userId: string): Pr
   await tx.update(media).set({ ownerId: userId }).where(eq(media.ownerId, devOwner.id));
   if (memberships.length > 0 || moved.length > 0) {
     deps.log.info(
-      `Instance claim: ${userId} took over ${moved.length} deck(s) and ${memberships.length} organisation(s) of the dev owner ${devOwner.id}`,
+      `Instance claim: ${userId} took over ${moved.length} deck(s) and ${memberships.length} workspace(s) of the dev owner ${devOwner.id}`,
     );
   }
 }

@@ -79,21 +79,27 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe('UsagePage', () => {
-  it('opens ?organisation=, else the last used one, and switches between them', async () => {
+  it('opens ?workspace=, else the last used one, and switches between them', async () => {
     state.lastId = 'B';
     const { router } = open('/nutzung');
     expect(screen.getByText('Übersicht B free')).toBeTruthy();
 
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Organisation' }), 'A');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Workspace' }), 'A');
     expect(screen.getByText('Übersicht A free')).toBeTruthy();
-    expect(router.state.location.search).toBe('?organisation=A');
+    expect(router.state.location.search).toBe('?workspace=A');
+  });
+
+  it('still opens the old ?organisation= links from mails and Stripe', () => {
+    state.lastId = 'B';
+    open('/nutzung?organisation=A');
+    expect(screen.getByText('Übersicht A free')).toBeTruthy();
   });
 
   it('back from paying: thanks once, drops the flag and asks again until the plan is paid', async () => {
     vi.useFakeTimers();
-    const { router, invalidate } = open('/nutzung?organisation=A&checkout=success');
+    const { router, invalidate } = open('/nutzung?workspace=A&checkout=success');
     expect(screen.getByRole('status').textContent).toBe('Danke! Die Zahlung ist eingegangen.');
-    expect(router.state.location.search).toBe('?organisation=A');
+    expect(router.state.location.search).toBe('?workspace=A');
     expect(state.usageCalls.at(-1)?.refetchInterval).toBe(2000);
 
     // At most ten seconds, then the header learns the plan from `me`.
@@ -104,7 +110,7 @@ describe('UsagePage', () => {
 
   it('stops asking as soon as the plan arrived', () => {
     state.plan = 'paid';
-    open('/nutzung?organisation=A&checkout=success');
+    open('/nutzung?workspace=A&checkout=success');
     expect(state.usageCalls.at(-1)?.refetchInterval).toBe(false);
   });
 });

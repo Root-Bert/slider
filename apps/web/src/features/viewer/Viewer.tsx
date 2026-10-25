@@ -12,13 +12,14 @@ import { RevisionControls, UploadRevisionControl } from './controls/RevisionCont
 import { SessionControls } from './controls/SessionControls';
 import { SlideCounter } from './controls/SlideCounter';
 import { ToolBar } from './controls/ToolBar';
+import { WideFramesToggle } from './controls/WideFramesToggle';
 import { useThreadHover } from './hooks/useThreadHover';
 import { useSlideUrlSync } from './hooks/useSlideUrlSync';
 import { useViewerShortcuts } from './hooks/useViewerShortcuts';
 import { CursorLayer } from './live/CursorLayer';
 import { useLive } from './live/hooks/useLive';
 import { DeletedSlidesPanel } from './revisions/DeletedSlidesPanel';
-import { RevisionBanners } from './revisions/RevisionBanners';
+import { SyncStatus } from './revisions/SyncStatus';
 import { useViewerData } from './state/viewer-data';
 import { useViewerState } from './state/viewer-state';
 import { ViewerToastContext } from './state/viewer-toast';
@@ -59,8 +60,6 @@ export function Viewer() {
         {/* The first focus stop: keyboard users skip the slides to the controls row. */}
         <SkipToControls targetId={CONTROLS_ID} />
         <h1 className="sr-only">{deck.title}</h1>
-        {/* In the flow above the track: a banner shortens the track instead of covering it. */}
-        <RevisionBanners />
         <Timeline
           controls={
             // On desktop this row never wraps – its height is part of where the comment area
@@ -69,6 +68,7 @@ export function Viewer() {
             <div id={CONTROLS_ID} className="flex flex-wrap items-center gap-3 md:flex-nowrap">
               <ToolBar />
               <CommentFilterBar />
+              <SyncStatus />
               {/* Figma 87:359: right-aligned, 10px apart. */}
               <div className="ml-auto flex shrink-0 items-center gap-2.5">
                 <RevisionControls />
@@ -77,6 +77,7 @@ export function Viewer() {
                 <Toolbar role={false} className="shrink-0">
                   <UploadRevisionControl />
                   <MinimapToggle />
+                  <WideFramesToggle />
                   <ToolbarDivider />
                   {/* Gives way on a narrow band, with its divider. */}
                   <span className="flex items-center gap-1 md:@max-[740px]:hidden">

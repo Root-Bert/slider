@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 /**
- * An organisation one can join right away, as a wide card on the welcome page: mark, name with
+ * A workspace one can join right away, as a wide card on the welcome page: mark, name with
  * a badge, details and "Beitreten". The company of one's domain gets a `FeaturedJoinCard`; the
  * switcher menu uses compact rows.
  */

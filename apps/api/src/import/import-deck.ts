@@ -12,6 +12,8 @@ import { beginImportAttempt, endImportAttempt, ImportCrashLoop, importsStopping 
 import { deleteOrphanSlides, FINGERPRINT_VERSION, sha256Hex, toShape } from './common';
 import { ConversionAborted, type PptxToPdf } from './libreoffice';
 import { renderSlidePages, slideRenderer, storeSlideRender, type OfficePdf } from './office-pages';
+import { isPdfPage, openDeckFile } from './pdf-deck';
+import { PdfTimedOut } from './pdf-jobs';
 import type { OpenPptx } from './pptx';
 import { upsertPptxComments, type ImportedSlide } from './pptx-comments';
 import type { ImportJob } from './queue';
@@ -49,6 +51,9 @@ const PPTX_ERROR_MESSAGES: Record<PptxError['code'], string> = {
   too_many_slides: `Diese Präsentation hat mehr als ${MAX_SLIDES} Folien – so große Decks können wir nicht übernehmen.`,
 };
 const GENERIC_FAILURE = 'Import fehlgeschlagen. Bitte erneut versuchen.';
+/** A PDF cut off after its deadline (`pdf-jobs.ts`): trying the same file again would not help. */
+const PDF_TIMEOUT_FAILURE =
+  'Das Lesen der Datei hat zu lange gedauert und wurde abgebrochen – sie ist vermutlich zu aufwendig. Bitte vereinfacht (z. B. mit kleineren Bildern) erneut hochladen.';
 const CRASH_LOOP_FAILURE =
   'Import abgebrochen – die Datei ist zu groß oder beschädigt. Bitte verkleinert oder neu gespeichert erneut hochladen.';
 
@@ -56,7 +61,7 @@ const CRASH_LOOP_FAILURE =
 class DeckGoneError extends Error {}
 
 /**
- * Runs an import job of any kind, then measures the deck: the organisation's storage adds up
+ * Runs an import job of any kind, then measures the deck: the workspace's storage adds up
  * measured decks (BER-151), and the measurement ends the reservation of an import that is over
  * (`revisions.reserved_bytes`) – one still under way after a shutdown keeps it.
  */
@@ -102,7 +107,9 @@ async function runJob(deps: ImportDeps, job: ImportJob): Promise<void> {
         ? PPTX_ERROR_MESSAGES[error.code]
         : error instanceof ImportCrashLoop
           ? CRASH_LOOP_FAILURE
-          : GENERIC_FAILURE;
+          : error instanceof PdfTimedOut
+            ? PDF_TIMEOUT_FAILURE
+            : GENERIC_FAILURE;
     await setImportState(
       deps,
       job.deckId,
@@ -131,7 +138,7 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
   if (!bytes) throw new Error(`Original file of revision ${revisionId} is missing`);
 
   await running({ status: 'running', step: 'parsing', progress: null });
-  const document = await deps.openPptx(bytes);
+  const document = await openDeckFile(deps.openPptx, bytes);
   const { presentation } = document;
   const aspectRatio = presentation.size.cx / presentation.size.cy;
   const extras = (await deps.slidesExtras?.(deck, revision)) ?? null;
@@ -167,7 +174,8 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
         slideId,
         revisionId,
         position,
-        pptxSldId: parsed.sldId,
+        // A PDF's pages have no PowerPoint slide id.
+        pptxSldId: isPdfPage(parsed) ? null : parsed.sldId,
         hidden: parsed.hidden,
         title: parsed.title,
         layoutName: parsed.layoutName,

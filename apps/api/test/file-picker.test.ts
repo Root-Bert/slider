@@ -1,3 +1,4 @@
+import { createCanvas } from '@napi-rs/canvas';
 import { afterEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import type { Deck } from '@slider/shared';
@@ -12,12 +13,18 @@ import {
   MICROSOFT_TEST_CONFIG,
   type TestContext,
 } from './helpers';
+import { makePdf } from './pdf';
 
 const SECRET = 'test-secret-test-secret-test-secret!';
 const TOKEN_URL =
   /^https:\/\/login\.microsoftonline\.com\/(common|consumers)\/oauth2\/v2\.0\/token$/;
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 const PPTX = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00]);
+const PNG = (() => {
+  const canvas = createCanvas(40, 30);
+  canvas.getContext('2d').fillRect(0, 0, 40, 30);
+  return new Uint8Array(canvas.toBuffer('image/png'));
+})();
 
 type Drive = { driveType: 'personal' | 'business'; webUrl: string };
 const PERSONAL: Drive = { driveType: 'personal', webUrl: 'https://onedrive.live.com/?cid=abc' };
@@ -300,6 +307,13 @@ describe('POST /api/decks/drive-item', () => {
       '@microsoft.graph.downloadUrl': 'https://download.example.com/file',
     });
   const download = () => new Response(PPTX, { status: 200 });
+  const photo = {
+    name: 'Foto.png',
+    size: PNG.byteLength,
+    cTag: 'ctag-p',
+    file: { mimeType: 'image/png' },
+    '@microsoft.graph.downloadUrl': 'https://download.example.com/photo',
+  };
 
   it.each([
     ['b!work-drive', 'sharepoint'],
@@ -350,16 +364,62 @@ describe('POST /api/decks/drive-item', () => {
     expect(await ctx.deps.db.select().from(decks)).toHaveLength(1);
   });
 
-  it('refuses anything but a PowerPoint', async () => {
+  it('imports a Word file as the PDF Office makes of it, a picture as one page', async () => {
+    const pdfs: string[] = [];
     const { ctx } = await pickerContext({
-      graph: { [`${GRAPH}/drives/b!d/items/ITEM!1`]: item('Notes.docx', 'b!d') },
+      graph: {
+        [`${GRAPH}/drives/b!d/items/ITEM!1/content?format=pdf`]: () => {
+          pdfs.push('ITEM!1');
+          return new Response(makePdf(2), { status: 200 });
+        },
+        [`${GRAPH}/drives/b!d/items/ITEM!1`]: item('Bericht.docx', 'b!d'),
+        [`${GRAPH}/drives/b!d/items/ITEM!2`]: () =>
+          Response.json({ ...photo, id: 'ITEM!2', parentReference: { driveId: 'b!d' } }),
+        'https://download.example.com/photo': () => new Response(PNG, { status: 200 }),
+      },
     });
-    const res = await ctx.request('/api/decks/drive-item', {
-      method: 'POST',
-      json: { driveId: 'b!d', itemId: 'ITEM!1' },
+    const pick = (itemId: string) =>
+      ctx.request('/api/decks/drive-item', {
+        method: 'POST',
+        json: { driveId: 'b!d', itemId, workspaceId: ctx.workspaceId },
+      });
+
+    const word = await pick('ITEM!1');
+    expect(word.status).toBe(201);
+    expect(((await word.json()) as Deck).title).toBe('Bericht');
+    expect(pdfs).toEqual(['ITEM!1']);
+    const picture = await pick('ITEM!2');
+    expect(picture.status).toBe(201);
+    await ctx.deps.queue.idle();
+    const rows = await ctx.deps.db.select().from(decks);
+    expect(rows.map((row) => [row.fileName, row.importState.status]).sort()).toEqual([
+      ['Bericht.docx', 'ready'],
+      ['Foto.png', 'ready'],
+    ]);
+  });
+
+  it('refuses folders and files Slider cannot read', async () => {
+    const { ctx } = await pickerContext({
+      graph: {
+        [`${GRAPH}/drives/b!d/items/ITEM!1`]: item('Film.mov', 'b!d'),
+        [`${GRAPH}/drives/b!d/items/DIR`]: () =>
+          Response.json({
+            id: 'DIR',
+            name: 'Decks',
+            folder: {},
+            parentReference: { driveId: 'b!d' },
+          }),
+        'https://download.example.com/': () => new Response(new Uint8Array([0, 0, 0, 20])),
+      },
     });
-    expect(res.status).toBe(400);
-    expect((await errorOf(res)).code).toBe('not_a_powerpoint');
+    for (const itemId of ['ITEM!1', 'DIR']) {
+      const res = await ctx.request('/api/decks/drive-item', {
+        method: 'POST',
+        json: { driveId: 'b!d', itemId },
+      });
+      expect(res.status).toBe(400);
+      expect((await errorOf(res)).code).toBe('not_a_powerpoint');
+    }
   });
 
   it('sends the person to sign in again, back to the start page', async () => {

@@ -14,20 +14,23 @@ function setup(error: string | null = null) {
   const onFile = vi.fn();
   const onBrowse = vi.fn();
   render(<UploadDropzone onFile={onFile} onBrowse={onBrowse} error={error} />);
-  const zone = screen.getByText(/Präsentation hierher ziehen/).parentElement!;
+  const zone = screen.getByRole('button', { name: /Datei auswählen/ });
   return { onFile, onBrowse, zone };
 }
 
 describe('UploadDropzone', () => {
-  it('"Datei auswählen" is a button that opens the file picker', async () => {
-    const { onBrowse } = setup();
-    await userEvent.click(screen.getByRole('button', { name: 'Datei auswählen' }));
+  it('the whole zone is one button that opens the file picker – no button inside', async () => {
+    const { onBrowse, zone } = setup();
+    expect(zone.textContent).toContain('oder hierher ziehen');
+    expect(zone.querySelector('button')).toBeNull();
+    await userEvent.click(zone);
     expect(onBrowse).toHaveBeenCalledOnce();
   });
 
-  it('a click on the row itself opens the picker too', () => {
+  it('opens the picker from the keyboard', async () => {
     const { onBrowse, zone } = setup();
-    fireEvent.click(zone);
+    zone.focus();
+    await userEvent.keyboard('{Enter}');
     expect(onBrowse).toHaveBeenCalledOnce();
   });
 
@@ -35,7 +38,7 @@ describe('UploadDropzone', () => {
     const { onFile, zone } = setup();
     fireEvent.dragEnter(zone, transfer(['Files']));
     expect(screen.getByText('Loslassen zum Hochladen')).toBeTruthy();
-    expect(zone.className).toContain('bg-surface-1');
+    expect(zone.className).toContain('border-fg');
     fireEvent.drop(zone, transfer(['Files'], [file]));
     expect(onFile).toHaveBeenCalledWith(file);
     expect(screen.queryByText('Loslassen zum Hochladen')).toBeNull();

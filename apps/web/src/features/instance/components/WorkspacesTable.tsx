@@ -11,8 +11,8 @@ import { DirectoryList } from './ListControls';
 type Kind = 'block' | 'unblock' | 'grant' | 'revoke';
 
 /**
- * Every organisation on the instance with its size and plan – never what is in it (BER-167), the
- * dashboard's "Organisationen" tab. The admin blocks one, or – where the plans differ – grants it
+ * Every workspace on the instance with its size and plan – never what is in it (BER-167), the
+ * dashboard's "Workspaces" tab. The admin blocks one, or – where the plans differ – grants it
  * Paid without Stripe or takes that back.
  */
 export function WorkspacesTable({ plans, onNotify }: { plans: boolean; onNotify: ShowToast }) {
@@ -34,9 +34,9 @@ export function WorkspacesTable({ plans, onNotify }: { plans: boolean; onNotify:
 
   return (
     <DirectoryList
-      label="Organisationen"
+      label="Workspaces"
       searchLabel="Name oder Domain suchen"
-      empty="Keine Organisation gefunden."
+      empty="Kein Workspace gefunden."
       columns={columnsFor(plans)}
       search={search}
       list={list}
@@ -56,7 +56,7 @@ export function WorkspacesTable({ plans, onNotify }: { plans: boolean; onNotify:
 }
 
 const COLUMNS = {
-  name: { label: 'Organisation' },
+  name: { label: 'Workspace' },
   members: { label: 'Personen', numeric: true },
   decks: { label: 'Reviews', numeric: true },
   storage: { label: 'Speicher', numeric: true },

@@ -1,12 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stubBrokenStorage, stubStorage } from '@/test/storage';
-import {
-  dismissSyncError,
-  isSyncErrorDismissed,
-  markRevisionSeen,
-  seenRevision,
-  shouldAnnounceRevision,
-} from './seen-revisions';
+import { markRevisionSeen, seenRevision, shouldAnnounceRevision } from './seen-revisions';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -40,19 +34,9 @@ describe('seen revisions', () => {
     expect(seenRevision('d1')).toBeNull();
   });
 
-  it('keeps a sync error dismissed until a newer one comes in', () => {
-    stubStorage();
-    dismissSyncError('d1', '2026-10-01T10:00:00Z');
-    expect(isSyncErrorDismissed('d1', '2026-10-01T10:00:00Z')).toBe(true);
-    expect(isSyncErrorDismissed('d1', '2026-10-02T10:00:00Z')).toBe(false);
-    expect(isSyncErrorDismissed('d2', '2026-10-01T10:00:00Z')).toBe(false);
-  });
-
   it('forgets everything quietly without storage', () => {
     stubBrokenStorage();
     expect(() => markRevisionSeen('d1', 2)).not.toThrow();
     expect(seenRevision('d1')).toBeNull();
-    expect(() => dismissSyncError('d1', 'x')).not.toThrow();
-    expect(isSyncErrorDismissed('d1', 'x')).toBe(false);
   });
 });

@@ -17,7 +17,7 @@ import { routes } from '../routes';
 /** Download link of the own data (a plain GET: the browser saves the ZIP). */
 export const ACCOUNT_EXPORT_URL = `${API_PREFIX}/me/export`;
 
-/** Before deleting the own account: organisations that need a new admin. */
+/** Before deleting the own account: workspaces that need a new admin. */
 export const useDeletionChoices = (enabled: boolean) =>
   useQuery({
     queryKey: ['me', 'deletion'],
@@ -56,7 +56,7 @@ export const useDataRequest = (token: string) =>
 export const dataRequestExportUrl = (token: string) =>
   `${API_PREFIX}/data-requests/${encodeURIComponent(token)}/export`;
 
-/** Before confirming a deletion link: organisations that need a new admin. */
+/** Before confirming a deletion link: workspaces that need a new admin. */
 export const useDataRequestSuccessors = (token: string, enabled: boolean) =>
   useQuery({
     queryKey: ['data-request', token, 'successors'],

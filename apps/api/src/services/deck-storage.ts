@@ -198,7 +198,7 @@ function importUnderWay(
 /**
  * Stores what `files` take up in `decks.files_bytes` and hands over from reservations
  * (`revisions.reserved_bytes`): an import that is over – ready, failed, given up – loses its
- * reservation in the same transaction that counts its real files, so the organisation's storage
+ * reservation in the same transaction that counts its real files, so the workspace's storage
  * never counts them twice nor not at all. Files of an import still under way are left out: its
  * reservation stands in for them until the measurement after it. Under a lock on the deck row,
  * so two measurements can't each decide with the other's half.
@@ -234,7 +234,7 @@ async function storeFilesBytes(
 
 /**
  * Measures the deck's files and stores the result in `decks.files_bytes`, which the
- * organisation's storage adds up (`workspace-storage`). After every import and prune; ends the
+ * workspace's storage adds up (`workspace-storage`). After every import and prune; ends the
  * reservations of imports that are over ({@link storeFilesBytes}).
  */
 export async function measureDeckFiles(
@@ -251,7 +251,7 @@ export async function getDeckStorage(deps: StorageDeps, deck: DeckRow): Promise<
     mediaBytesOf(deps.db, deck.id),
     loadReferences(deps.db, deck),
   ]);
-  // Measured anyway: keep the organisation's sum current.
+  // Measured anyway: keep the workspace's sum current.
   await storeFilesBytes(deps.db, deck.id, files);
   return toDto(deps, deck, {
     files,

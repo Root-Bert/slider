@@ -53,7 +53,7 @@ const put = (path: string, json: unknown, cookie?: string) =>
   ctx.request(`/api/instance${path}`, { method: 'PUT', json, cookie });
 
 describe('instance dashboard (BER-167)', () => {
-  it('only the instance admin sees or changes anything – nobody else, not even organisation admins', async () => {
+  it('only the instance admin sees or changes anything – nobody else, not even workspace admins', async () => {
     const anna = await member('Anna', 'admin');
     const endpoints: [string, string, unknown?][] = [
       ['GET', '/overview'],
@@ -106,7 +106,7 @@ describe('instance dashboard (BER-167)', () => {
     }
   });
 
-  it('counts accounts, organisations, reviews and storage – no names', async () => {
+  it('counts accounts, workspaces, reviews and storage – no names', async () => {
     await member('Anna');
     await createReadyDeck(ctx, { title: 'Q3' });
     const overview = instanceOverviewSchema.parse(
@@ -250,7 +250,7 @@ describe('instance dashboard (BER-167)', () => {
     expect(response.status).toBe(400);
   });
 
-  it('a blocked organisation opens nowhere, takes nobody in, and its members can leave', async () => {
+  it('a blocked workspace opens nowhere, takes nobody in, and its members can leave', async () => {
     const anna = await member('Anna');
     const { deckId } = await createReadyDeck(ctx);
     const invite = newSecretToken();
@@ -290,7 +290,7 @@ describe('instance dashboard (BER-167)', () => {
     expect((await ctx.request(`/api/decks/${deckId}`)).status).toBe(200);
   });
 
-  it('lists organisations with sizes only, found by name or domain', async () => {
+  it('lists workspaces with sizes only, found by name or domain', async () => {
     await createReadyDeck(ctx, { title: 'Geheim' });
     await ctx.deps.db
       .update(workspaces)
@@ -340,7 +340,7 @@ describe('plans by hand (BER-167)', () => {
     expect((await usage()).billing.granted).toBe(false);
   });
 
-  it('a blocked organisation still lets whoever pays see the usage and stop paying', async () => {
+  it('a blocked workspace still lets whoever pays see the usage and stop paying', async () => {
     await ctx.deps.db
       .update(workspaces)
       .set({
@@ -356,7 +356,7 @@ describe('plans by hand (BER-167)', () => {
       ctx.request(`/api/workspaces/${ctx.workspaceId}/billing/${path}`, { method: 'POST' });
     expect((await ctx.request(`/api/workspaces/${ctx.workspaceId}/usage`)).status).toBe(200);
     expect((await billing('portal')).status).toBe(200);
-    // Paying anew for a blocked organisation: no.
+    // Paying anew for a blocked workspace: no.
     expect((await billing('checkout')).status).toBe(403);
   });
 
@@ -369,7 +369,7 @@ describe('plans by hand (BER-167)', () => {
     expect((await plan('paid')).status).toBe(400);
   });
 
-  it('not where every organisation has the same limits', async () => {
+  it('not where every workspace has the same limits', async () => {
     await ctx.cleanup();
     ctx = await createTestContext({
       instanceAdmin: true,
@@ -385,7 +385,7 @@ describe('plans by hand (BER-167)', () => {
 
 const UNLIMITED = { maxMembers: null, maxDecks: null, maxStorageBytes: null };
 
-describe('nobody joins a blocked organisation (BER-167)', () => {
+describe('nobody joins a blocked workspace (BER-167)', () => {
   const block = () =>
     ctx.deps.db
       .update(workspaces)

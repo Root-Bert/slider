@@ -53,13 +53,15 @@ ENV NODE_ENV=production \
     DATA_DIR=/data
 
 # LibreOffice draws the slide images of uploaded decks like PowerPoint (BER-94; linked decks use
-# Office via Microsoft Graph). Impress only (no Java, no recommends), plus fonts metric-compatible with the
+# Office via Microsoft Graph), and turns Word, Excel and text files picked in a cloud into PDF decks.
+# Impress, Writer and Calc only (no Java, no recommends), plus fonts metric-compatible with the
 # Office ones (Carlito ≙ Calibri, Caladea ≙ Cambria, Liberation ≙ Arial/Times/Courier) so text
-# wraps where PowerPoint wraps it. Costs roughly 450–550 MB of image size; without it uploads
-# fall back to the built-in SVG preview. The `soffice` binary is found on the PATH.
+# wraps where PowerPoint wraps it. Costs roughly 450–550 MB of image size (Impress; Writer and
+# Calc add some more); without it uploads fall back to the built-in SVG preview and Word, Excel
+# and text files are refused. The `soffice` binary is found on the PATH.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      libreoffice-impress \
+      libreoffice-impress libreoffice-writer libreoffice-calc \
       fonts-liberation fonts-crosextra-carlito fonts-crosextra-caladea fonts-dejavu \
       tini \
  && rm -rf /var/lib/apt/lists/*

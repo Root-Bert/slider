@@ -4,7 +4,7 @@ import { formatDay } from '@/lib/format';
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 
-/** A measure of what was created: accounts, organisations or reviews. */
+/** A measure of what was created: accounts, workspaces or reviews. */
 export type Metric = keyof Omit<InstanceBucket, 'start'>;
 
 /** Per window width: its label above the dashboard, and "in 31 Tagen" after a count of it. */

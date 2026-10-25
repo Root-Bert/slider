@@ -19,9 +19,10 @@ import {
 import { deckAccess, requireDeckAccess, requireOwner, viewerAccess } from '../auth/access';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import { decks, revisions, type DeckRow } from '../db/schema';
+import { toDeckBytes } from '../import/any-file';
 import { sha256Hex } from '../import/common';
 import type { AppDeps } from '../deps';
-import { ApiError, badRequest, fileTooLarge, notAPowerPoint, notFound } from '../http/errors';
+import { ApiError, badRequest, fileTooLarge, notFound } from '../http/errors';
 import { deckUploadSlot, importLimit } from '../http/import-limit';
 import { readJson } from '../http/validate';
 import { withConnections } from '../sources/connections';
@@ -96,15 +97,15 @@ const findLinkedDeck = (deps: AppDeps, viewer: Viewer, workspaceId: string, ref:
   findExistingDeck(deps, viewer, workspaceId, eq(decks.sourceRef, ref));
 
 /**
- * The deck whose current version is exactly these bytes – the same file reached another way
- * (OneDrive picker vs. pasted link, uploaded twice). `linkedOnly`: only decks linked to a source,
+ * The deck whose current version is exactly this file (by the SHA-256 of the file as it came) –
+ * the same file reached another way (OneDrive picker vs. pasted link, uploaded twice). `linkedOnly`: only decks linked to a source,
  * so a linked file never ends up on an uploaded copy that would not sync.
  */
 const findDeckWithContent = (
   deps: AppDeps,
   viewer: Viewer,
   workspaceId: string,
-  bytes: Uint8Array,
+  sourceSha256: string,
   { linkedOnly }: { linkedOnly: boolean },
 ) =>
   findExistingDeck(
@@ -112,7 +113,7 @@ const findDeckWithContent = (
     viewer,
     workspaceId,
     and(
-      eq(revisions.contentSha256, sha256Hex(bytes)),
+      eq(revisions.contentSha256, sourceSha256),
       linkedOnly ? ne(decks.source, 'upload') : undefined,
     ),
   );
@@ -143,13 +144,17 @@ async function importRemote(
   const nextcloudConnectionId = context.nextcloudConnectionId ?? null;
   const googleConnectionId = context.googleConnectionId ?? null;
   const maxBytes = deps.config.maxUploadBytes;
-  if (!remote.fileName.toLowerCase().endsWith('.pptx')) throw notAPowerPoint();
   if (remote.sizeBytes > maxBytes) throw fileTooLarge(maxBytes);
-  const [bytes, contributors] = await Promise.all([
+  const [file, contributors] = await Promise.all([
     adapter.download(remote, context),
     readContributors(adapter, remote, context, deps.log),
   ]);
-  const same = await findDeckWithContent(deps, viewer, workspaceId, bytes, { linkedOnly: true });
+  // A PowerPoint or a PDF as it is; any other file becomes a PDF.
+  const bytes = await toDeckBytes(remote.fileName, file, deps.documentPdf);
+  const sourceSha256 = sha256Hex(file);
+  const same = await findDeckWithContent(deps, viewer, workspaceId, sourceSha256, {
+    linkedOnly: true,
+  });
   if (same) return { deck: await existingDeckDto(deps, viewer, same), created: false };
   const deck = await createDeckFromFile(
     deps,
@@ -157,6 +162,7 @@ async function importRemote(
     {
       fileName: remote.fileName,
       bytes,
+      sourceSha256,
       source: source.kind,
       sourceUrl: source.url,
       sourceRef: remote.ref,
@@ -269,7 +275,6 @@ export function decksRoutes(deps: AppDeps) {
           const file = body['file'];
           if (!(file instanceof File))
             throw badRequest('Bitte eine Datei im Feld „file“ mitsenden.');
-          if (!file.name.toLowerCase().endsWith('.pptx')) throw notAPowerPoint();
           if (file.size > maxBytes) throw fileTooLarge(maxBytes);
           if (file.size === 0) throw badRequest('Die Datei ist leer.');
 
@@ -279,19 +284,23 @@ export function decksRoutes(deps: AppDeps) {
             viewer.author.id,
             c.req.query('workspaceId') || (typeof field === 'string' && field ? field : undefined),
           );
-          const bytes = new Uint8Array(await file.arrayBuffer());
+          // A PowerPoint or a PDF as it is; any other file becomes a PDF.
+          const original = new Uint8Array(await file.arrayBuffer());
+          const bytes = await toDeckBytes(file.name, original, deps.documentPdf);
+          const sourceSha256 = sha256Hex(original);
           // The same file uploaded (or linked) before: open that review instead of a second one.
-          const same = await findDeckWithContent(deps, viewer, workspaceId, bytes, {
+          const same = await findDeckWithContent(deps, viewer, workspaceId, sourceSha256, {
             linkedOnly: false,
           });
           if (same) return c.json(await existingDeckDto(deps, viewer, same), 200);
-          await assertDeckSlot(deps.db, deps.config, workspaceId, { addBytes: file.size });
+          await assertDeckSlot(deps.db, deps.config, workspaceId, { addBytes: bytes.byteLength });
           const deck = await createDeckFromFile(
             deps,
             { ownerId: viewer.author.id, workspaceId },
             {
               fileName: file.name,
               bytes,
+              sourceSha256,
               source: 'upload',
             },
           );

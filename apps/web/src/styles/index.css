@@ -377,6 +377,17 @@
     );
 }
 
+/* The upload zone of "Neue Review": the website's sage horizon below, fading out towards the
+   dashed edge. */
+@utility drop-glow {
+  background-image:
+    radial-gradient(
+      ellipse 75% 70% at 50% 115%,
+      color-mix(in srgb, var(--color-sage) 18%, transparent),
+      transparent 70%
+    );
+}
+
 /* Fades its content out towards the left and right edge (the featured card's transit map). */
 @utility fade-x {
   mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
@@ -440,6 +451,7 @@
     --z-chrome: 30;
     --z-panel: 40;
     --z-popover: 50;
+    --z-popover-anchor: 51;
     --z-toast: 55;
     --z-stage: 60;
   }
@@ -448,6 +460,14 @@
   body,
   #root {
     height: 100%;
+  }
+
+  /*
+   * Nothing makes a phone scroll the page sideways – a glow or a panel reaching past the edge is
+   * cut there. On #root, not body: body's overflow goes to the viewport, where iOS ignores it.
+   */
+  #root {
+    overflow-x: clip;
   }
 
   body {

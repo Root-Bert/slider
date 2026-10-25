@@ -98,7 +98,7 @@ export function GeneralSection({
 }
 
 /**
- * Company organisation (BER-148): everyone with an address at the admin's domain finds it and
+ * Company workspace (BER-148): everyone with an address at the admin's domain finds it and
  * joins as member. Admins only; mail provider domains can't be opened, only closed again.
  */
 export function DomainSection({
@@ -122,7 +122,7 @@ export function DomainSection({
   return (
     <Section
       title="Beitritt per Domain"
-      description="Wie bei Slack: Wer sich mit einer Adresse eurer Firma anmeldet, sieht die Organisation und kann ohne Einladung beitreten."
+      description="Wie bei Slack: Wer sich mit einer Adresse eurer Firma anmeldet, sieht den Workspace und kann ohne Einladung beitreten."
     >
       <Toggle
         checked={workspace.joinDomain !== null}
@@ -204,7 +204,7 @@ function LogoRow({
         </div>
       ) : (
         <p className="text-body text-fg-subtle">
-          {workspace.logoUrl ? 'Logo der Organisation' : 'Noch kein Logo'}
+          {workspace.logoUrl ? 'Logo des Workspace' : 'Noch kein Logo'}
         </p>
       )}
     </div>
@@ -212,7 +212,7 @@ function LogoRow({
 }
 
 /**
- * Leaving. The last admin hands the organisation to another member first – picked right in the
+ * Leaving. The last admin hands the workspace to another member first – picked right in the
  * dialog, they become admin in the same step. Alone in it, only deleting is left. Whoever pays
  * for a running subscription hands over paying first (BER-154).
  */
@@ -222,7 +222,7 @@ export function LeaveSection({ workspace, userId }: { workspace: Workspace; user
   const members = useMembers(workspace.id);
   const navigate = useNavigate();
   const list = members.data ?? [];
-  // Viewers (guests) take the organisation over only when nobody else is left (the API too).
+  // Viewers (guests) take the workspace over only when nobody else is left (the API too).
   const rest = list.filter((member) => member.userId !== userId);
   const nonViewers = rest.filter((member) => member.role !== 'viewer');
   const others = nonViewers.length > 0 ? nonViewers : rest;
@@ -247,26 +247,26 @@ export function LeaveSection({ workspace, userId }: { workspace: Workspace; user
 
   return (
     <Section
-      title="Organisation verlassen"
+      title="Workspace verlassen"
       description={
         // The id ties the reason to the disabled button.
         <span id={descriptionId}>
           {noSuccessor ? (
-            'Du bist allein in dieser Organisation. Lade jemanden ein und übergib sie, oder lösche sie.'
+            'Du bist allein in diesem Workspace. Lade jemanden ein und übergib ihn, oder lösche ihn.'
           ) : paying && noOtherAdmin ? (
             <>
-              Du bezahlst für diese Organisation. Mach zuerst jemanden zum Admin und übergib dann
-              die Zahlung (unter {usageLink}), dann kannst du sie verlassen.
+              Du bezahlst für diesen Workspace. Mach zuerst jemanden zum Admin und übergib dann die
+              Zahlung (unter {usageLink}), dann kannst du ihn verlassen.
             </>
           ) : paying ? (
             <>
-              Du bezahlst für diese Organisation. Übergib zuerst die Zahlung an einen anderen Admin
-              (unter {usageLink}), dann kannst du sie verlassen.
+              Du bezahlst für diesen Workspace. Übergib zuerst die Zahlung an einen anderen Admin
+              (unter {usageLink}), dann kannst du ihn verlassen.
             </>
           ) : mustHandOver ? (
-            'Du verlierst den Zugriff auf die Reviews dieser Organisation. Als einziger Admin übergibst du sie beim Verlassen an ein anderes Mitglied – danach kannst du eine neue eigene gründen.'
+            'Du verlierst den Zugriff auf die Reviews dieses Workspace. Als einziger Admin übergibst du ihn beim Verlassen an ein anderes Mitglied – danach kannst du einen neuen eigenen gründen.'
           ) : (
-            'Du verlierst den Zugriff auf die Reviews dieser Organisation. Deine Kommentare bleiben hier; was mit deinen Reviews passiert, zeigt der nächste Schritt.'
+            'Du verlierst den Zugriff auf die Reviews dieses Workspace. Deine Kommentare bleiben hier; was mit deinen Reviews passiert, zeigt der nächste Schritt.'
           )}
         </span>
       }
@@ -343,7 +343,7 @@ export function DeleteSection({ workspace }: { workspace: Workspace }) {
   const navigate = useNavigate();
   const paid = subscriptionRenews(workspace);
   const blocked = paid && !workspace.billing.isOwner;
-  const payer = workspace.billing.owner?.name ?? 'die Person, die für sie bezahlt';
+  const payer = workspace.billing.owner?.name ?? 'die Person, die das Abo bezahlt,';
   const descriptionId = useId();
   const close = () => {
     setConfirming(false);
@@ -354,13 +354,13 @@ export function DeleteSection({ workspace }: { workspace: Workspace }) {
   return (
     <Section
       tone="danger"
-      title="Organisation löschen"
+      title="Workspace löschen"
       description={
         // The id ties the reason to the disabled button.
         <span id={descriptionId}>
           {blocked
-            ? `Solange das Abo läuft, kann nur ${payer} die Organisation löschen – dabei wird das Abo gekündigt.`
-            : 'Löscht die Organisation mit allen Reviews, Kommentaren, Aufnahmen und Einladungen. Das lässt sich nicht rückgängig machen.'}
+            ? `Solange das Abo läuft, kann nur ${payer} den Workspace löschen – dabei wird das Abo gekündigt.`
+            : 'Löscht den Workspace mit allen Reviews, Kommentaren, Aufnahmen und Einladungen. Das lässt sich nicht rückgängig machen.'}
         </span>
       }
       aside={
@@ -382,8 +382,8 @@ export function DeleteSection({ workspace }: { workspace: Workspace }) {
         description={
           <>
             Alle Reviews, Kommentare und Mitgliedschaften gehen verloren.
-            {paid && ' Das laufende Abo wird dabei gekündigt.'} Tippe zur Bestätigung den Namen der
-            Organisation ein.
+            {paid && ' Das laufende Abo wird dabei gekündigt.'} Tippe zur Bestätigung den Namen des
+            Workspace ein.
           </>
         }
         confirmLabel="Endgültig löschen"
@@ -400,7 +400,7 @@ export function DeleteSection({ workspace }: { workspace: Workspace }) {
       >
         {confirming && (
           <TextField
-            aria-label="Name der Organisation"
+            aria-label="Name des Workspace"
             placeholder={workspace.name}
             value={typed}
             autoFocus

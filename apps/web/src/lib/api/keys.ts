@@ -42,9 +42,9 @@ export const workspaceKeys = {
   /** What happens to someone's reviews if they left now (BER-165). */
   departure: (workspaceId: string, userId: string, successor: string | null) =>
     ['workspaces', workspaceId, 'departure', userId, successor] as const,
-  /** Plan, limits, storage and billing of one organisation – the "Nutzung" page (BER-151). */
+  /** Plan, limits, storage and billing of one workspace – the "Nutzung" page (BER-151). */
   usage: (workspaceId: string) => ['workspaces', workspaceId, 'usage'] as const,
-  /** Company login of one organisation (BER-162), admins only. */
+  /** Company login of one workspace (BER-162), admins only. */
   sso: (workspaceId: string) => ['workspaces', workspaceId, 'sso'] as const,
   join: (token: string) => ['join', token] as const,
   passkeys: ['account', 'passkeys'] as const,

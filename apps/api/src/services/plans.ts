@@ -7,9 +7,9 @@ import { ApiError } from '../http/errors';
 import { emptyBreakdown, totalBytes, workspaceStorage } from './workspace-storage';
 
 /**
- * Plans and their limits (BER-130, BER-152) – the one place that knows them. An organisation
+ * Plans and their limits (BER-130, BER-152) – the one place that knows them. A workspace
  * (`workspaces.plan`) is on a plan; the plan decides how many people, decks and bytes fit.
- * Billing (Stripe) only switches `workspaces.plan` (`services/billing`). An organisation over a
+ * Billing (Stripe) only switches `workspaces.plan` (`services/billing`). A workspace over a
  * limit – free again after paying, see `services/downgrade` – is locked: reading, deleting and
  * upgrading work, creating does not ({@link assertWithinLimits}, BER-155).
  */
@@ -17,7 +17,7 @@ import { emptyBreakdown, totalBytes, workspaceStorage } from './workspace-storag
 export interface PlanLimits {
   /** Members plus pending e-mail invites; `null` = unlimited. */
   maxMembers: number | null;
-  /** Decks per organisation, archived ones included; `null` = unlimited. */
+  /** Decks per workspace, archived ones included; `null` = unlimited. */
   maxDecks: number | null;
   /** Every file of its reviews, recordings included (BER-151); `null` = unlimited. */
   maxStorageBytes: number | null;
@@ -45,26 +45,26 @@ export function planLimits(config: Pick<Config, 'plans'>, plan: string): PlanLim
 export const planLimit = (message: string) => new ApiError(403, 'plan_limit', message);
 
 /**
- * Company login per organisation (BER-162): part of the paid plan where plans limit anything
- * (the hosted instance); self-hosted instances have it for every organisation.
+ * Company login per workspace (BER-162): part of the paid plan where plans limit anything
+ * (the hosted instance); self-hosted instances have it for every workspace.
  */
 export const ssoAvailable = (config: Pick<Config, 'limited'>, plan: string) =>
   !config.limited || plan === 'paid';
 
-export const OWN_WORKSPACE_LIMIT_MESSAGE = 'Du hast bereits eine eigene Organisation.';
+export const OWN_WORKSPACE_LIMIT_MESSAGE = 'Du hast bereits einen eigenen Workspace.';
 export const workspaceFullMessage = () =>
-  'Diese Organisation ist voll. Bitte die Person, die dich eingeladen hat, einen Platz freizumachen.';
+  'Dieser Workspace ist voll. Bitte die Person, die dich eingeladen hat, einen Platz freizumachen.';
 export const seatsFullMessage = (max: number) =>
-  `Die Organisation hat bereits ${max} von ${max} Plätzen belegt.`;
+  `Der Workspace hat bereits ${max} von ${max} Plätzen belegt.`;
 export const decksFullMessage = (max: number) =>
-  `Im Free-Plan ${max === 1 ? 'ist eine Review' : `sind ${max} Reviews`} pro Organisation möglich. Lösche eine, um Platz zu schaffen.`;
+  `Im Free-Plan ${max === 1 ? 'ist eine Review' : `sind ${max} Reviews`} pro Workspace möglich. Lösche eine, um Platz zu schaffen.`;
 
 /** `2 GB`, `1,5 GB` – German number format. */
 export const formatGigabytes = (bytes: number) =>
   `${(bytes / GIGABYTE).toLocaleString('de-DE', { maximumFractionDigits: 1 })} GB`;
 
 export const storageFullMessage = (max: number) =>
-  `Der Speicher der Organisation ist voll (${formatGigabytes(max)}). Lösche Reviews, ältere Versionen oder Aufnahmen, um Platz zu schaffen.`;
+  `Der Speicher des Workspace ist voll (${formatGigabytes(max)}). Lösche Reviews, ältere Versionen oder Aufnahmen, um Platz zu schaffen.`;
 
 /** What is over the plan's limits, e.g. `["7 von 5 Personen"]`; empty when everything fits. */
 export function overLimitParts(usage: WorkspaceUsage): string[] {
@@ -87,7 +87,7 @@ export const planOverLimit = (usage: WorkspaceUsage) =>
   new ApiError(
     403,
     'plan_over_limit',
-    `Die Organisation liegt über dem Limit ihres Plans (${overLimitParts(usage).join(', ')}). Lesen, Löschen und Exportieren gehen weiter, Neues erst wieder, wenn alles ins Limit passt: Personen entfernen, Einladungen zurückziehen, Reviews oder Aufnahmen löschen – oder auf den Paid-Plan upgraden.`,
+    `Der Workspace liegt über dem Limit seines Plans (${overLimitParts(usage).join(', ')}). Lesen, Löschen und Exportieren gehen weiter, Neues erst wieder, wenn alles ins Limit passt: Personen entfernen, Einladungen zurückziehen, Reviews oder Aufnahmen löschen – oder auf den Paid-Plan upgraden.`,
   );
 
 // ── Counting ────────────────────────────────────────────────────────────────
@@ -313,7 +313,7 @@ export async function assertSeatForJoin(
 }
 
 /**
- * Whether the user still may found an organisation – only limited on a limited instance (the
+ * Whether the user still may found a workspace – only limited on a limited instance (the
  * demo); self-hosted, anyone may found as many as they like. "Own" means founded by the user
  * (`createdBy`), whoever owns it now: handing it over doesn't free the slot, only deleting it does.
  */

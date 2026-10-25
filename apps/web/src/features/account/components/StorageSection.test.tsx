@@ -122,7 +122,7 @@ describe('StorageSection', () => {
     renderSection();
     expect(screen.getByText(/Verbinde Google Drive oder eine Nextcloud/)).toBeTruthy();
     // No account connected, no hint about whose access counts.
-    expect(screen.queryByText(/sehen alle Mitglieder der Organisation/)).toBeNull();
+    expect(screen.queryByText(/sehen alle Mitglieder des Workspace/)).toBeNull();
     const menu = await openConnectMenu('Konto verbinden');
     const items = within(menu).getAllByRole('menuitem');
     expect(items.map((item) => item.textContent)).toEqual(['Google Drive', 'Nextcloud']);
@@ -144,10 +144,10 @@ describe('StorageSection', () => {
     renderSection();
     expect(screen.getByText('Google Drive | 2 Reviews synchronisieren darüber')).toBeTruthy();
     // The source's sharing doesn't count in Slider: the hint says who sees such reviews.
-    expect(screen.getByText(/sehen alle Mitglieder der Organisation/).textContent).toMatch(
+    expect(screen.getByText(/sehen alle Mitglieder des Workspace/).textContent).toMatch(
       /Freigaben in OneDrive, SharePoint, Nextcloud oder Google Drive\s+gelten in Slider nicht/,
     );
-    expect(screen.getByText(/sehen alle Mitglieder der Organisation/).textContent).toMatch(
+    expect(screen.getByText(/sehen alle Mitglieder des Workspace/).textContent).toMatch(
       /per Rechtsklick auf die Review ein \(„Zugriff einschränken …“\)\./,
     );
     await userEvent.click(screen.getByRole('button', { name: 'Neu verbinden' }));

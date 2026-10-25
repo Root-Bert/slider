@@ -1,5 +1,6 @@
 import type { Anchor, PathStrokeTool, Rect, Stroke } from '@slider/shared';
 import type { StatusFilter } from '../comments/lib/comment-selectors';
+import type { SlideZoom } from '../stage/lib/slide-zoom';
 
 /**
  * Drawing tools of the tool bar: freehand, arrow, marker (BER-98). Boxes are the pointer's
@@ -119,6 +120,11 @@ export interface ViewerState {
   /** Split handle position `t` ∈ [0, 1] (slide size vs comment area), `null` = default; see `timeline/lib/split`. */
   split: number | null;
   /**
+   * Zoom inside slides, past the largest slide size (`stage/lib/slide-zoom`), by slide id: every
+   * slide keeps its own zoom and the part it shows. Missing = whole (or, cropped, from its top).
+   */
+  slideZooms: ReadonlyMap<string, SlideZoom>;
+  /**
    * "Änderungen": badges of the latest revision on track and minimap (Figma D2). On by default –
    * the switch only shows when the latest revision changed slides, so there is always something
    * to mark.
@@ -139,6 +145,11 @@ export interface ViewerState {
   showHiddenSlides: boolean;
   /** The minimap under the track: opens as set on /konto, the button left of the slide counter toggles it. */
   showMinimap: boolean;
+  /**
+   * Portrait pages in 16:9 frames, the page filling its frame – the wheel moves the part it
+   * shows. Only counts when the deck has portrait pages (`frame-format`).
+   */
+  wideFrames: boolean;
 }
 
 export type ViewerAction =
@@ -193,6 +204,8 @@ export type ViewerAction =
   | { type: 'personFilterToggled'; authorId: string }
   /** `null` resets the split to the default. */
   | { type: 'splitChanged'; split: number | null }
+  /** `null` ends that slide's zoom: it shows whole again. */
+  | { type: 'slideZoomChanged'; slideId: string; zoom: SlideZoom | null }
   | { type: 'showChangesSet'; show: boolean }
   | { type: 'deletedPanelSet'; open: boolean }
   | { type: 'boxModeToggled' }
@@ -200,6 +213,7 @@ export type ViewerAction =
   | { type: 'showGuidesToggled' }
   | { type: 'showHiddenSlidesToggled' }
   | { type: 'showMinimapToggled' }
+  | { type: 'wideFramesToggled' }
   /** Comments refetched: a thread deleted meanwhile (by someone else) loses focus and panel. */
   | { type: 'threadsReplaced'; threadIds: ReadonlySet<string> }
   /** A new revision arrived: drop what points at slides that are gone (BER-107). */

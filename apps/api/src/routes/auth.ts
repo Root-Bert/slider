@@ -88,7 +88,7 @@ export const GOOGLE_COOKIE = 'slider_google';
 /** "Connect Google Drive" (BER-119): the same callback as the login, told apart by this cookie. */
 export const GOOGLE_DRIVE_COOKIE = 'slider_google_drive';
 export const NEXTCLOUD_COOKIE = 'slider_nextcloud';
-/** An organisation's company login (BER-162); the organisation is in the cookie. */
+/** A workspace's company login (BER-162); the workspace is in the cookie. */
 export const SSO_COOKIE = 'slider_sso';
 /** This browser's key for Login Flow v2 sign-ins: only the browser that started one picks it up. */
 export const NEXTCLOUD_FLOW_COOKIE = 'slider_nc_flow';
@@ -109,7 +109,7 @@ const NEXTCLOUD_FLOWS_PER_HOUR = 20;
  * company behind one NAT may sign in at once when it rolls its login out.
  */
 export const SSO_DISCOVERIES_PER_HOUR = 600;
-/** Company-login starts per client address and hour: each fetches the organisation's discovery. */
+/** Company-login starts per client address and hour: each fetches the workspace's discovery. */
 export const SSO_LOGINS_PER_HOUR = 600;
 /**
  * Confirmation mails per address and hour: whoever runs a Nextcloud can give it any address, so
@@ -169,7 +169,7 @@ export const safeReturnTo = (value: string | undefined, fallback = DEFAULT_RETUR
 /**
  * `email` claim or UPN; only the UPN is vouched for by the directory (its domain is verified).
  * In the personal-accounts tenant it is only the address the account was registered with: it
- * signs in, but its domain counts for no company organisation (`vouchesForDomain`).
+ * signs in, but its domain counts for no company workspace (`vouchesForDomain`).
  */
 function microsoftIdentity(
   claims: IdTokenClaims,
@@ -679,8 +679,8 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
       .get('/auth/oidc/login', viewer, oidcLogin('oidc'))
       .get('/auth/oidc/callback', viewer, oidcCallback('oidc'))
 
-      // ── Company login of an organisation (BER-162) ───────────────────────
-      /** The address typed on the login page → its organisation's company login, if any. */
+      // ── Company login of a workspace (BER-162) ───────────────────────────
+      /** The address typed on the login page → its workspace's company login, if any. */
       .post('/auth/sso/discover', async (c) => {
         assertWithinLimit(
           c,
@@ -692,8 +692,8 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
         if (!found) {
           throw notFound('Für diese Adresse gibt es keinen Firmen-Login. Melde dich anders an.');
         }
-        const loginUrl = `/api/auth/sso/login?${new URLSearchParams({ organisation: found.workspace.id })}`;
-        return c.json<SsoLogin>({ loginUrl, organisation: found.workspace.name });
+        const loginUrl = `/api/auth/sso/login?${new URLSearchParams({ workspace: found.workspace.id })}`;
+        return c.json<SsoLogin>({ loginUrl, workspace: found.workspace.name });
       })
       .get('/auth/sso/login', async (c) => {
         const returnTo = safeReturnTo(c.req.query('returnTo'), DEFAULT_LOGIN_RETURN_TO);
@@ -703,7 +703,11 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
           c.header('Retry-After', String(hit.retryAfterS));
           return loginFailed(c, 'rate_limited', returnTo);
         }
-        const found = await findSsoForWorkspace(deps, c.req.query('organisation') ?? '');
+        const found = await findSsoForWorkspace(
+          deps,
+          // `organisation`: links from before the rename to Workspace.
+          c.req.query('workspace') ?? c.req.query('organisation') ?? '',
+        );
         if (!found) return loginFailed(c, 'sso_unavailable', returnTo);
         const pkce = await createPkce();
         let url: string;
@@ -715,7 +719,7 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
             deps.ssoNetwork,
           ).authorizeUrl(pkce);
         } catch (error) {
-          deps.log.warn(`SSO discovery of organisation ${found.workspace.id} failed`, error);
+          deps.log.warn(`SSO discovery of workspace ${found.workspace.id} failed`, error);
           return loginFailed(c, 'failed', returnTo);
         }
         await writeState(c, SSO_COOKIE, {
@@ -758,7 +762,7 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
             deps.ssoNetwork,
           ).exchangeCode(query['code'], saved.verifier, saved.nonce);
         } catch (error) {
-          deps.log.warn(`SSO token exchange of organisation ${found.workspace.id} failed`, error);
+          deps.log.warn(`SSO token exchange of workspace ${found.workspace.id} failed`, error);
           return loginFailed(c, 'failed', returnTo);
         }
         const identity = oidcIdentity('oidc', claims, inviteTokenFromPath(returnTo));
@@ -769,11 +773,11 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
           found.workspace.joinDomain,
         );
         if (!signIn.ok) return loginFailed(c, signIn.error, returnTo);
-        // Into the organisation right away – unless an admin removed them (then it needs an
+        // Into the workspace right away – unless an admin removed them (then it needs an
         // invitation) or it is full: they are signed in all the same.
         if (!(await getRole(deps.db, found.workspace.id, signIn.user.id))) {
           await joinByDomain(deps, signIn.user, found.workspace.id).catch((error: unknown) => {
-            deps.log.info(`SSO sign-in did not join organisation ${found.workspace.id}`, error);
+            deps.log.info(`SSO sign-in did not join workspace ${found.workspace.id}`, error);
           });
         }
         return loggedIn(c, signIn.user.id, returnTo);

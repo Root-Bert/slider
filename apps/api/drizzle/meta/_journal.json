@@ -365,6 +365,27 @@
       "when": 1792589777415,
       "tag": "0051_instance_admin",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1792658116718,
+      "tag": "0052_workspace_default_name",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1792947136659,
+      "tag": "0053_comment_images",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1792949768904,
+      "tag": "0054_revision_pdf_renderer",
+      "breakpoints": true
     }
   ]
 }

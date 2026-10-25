@@ -22,7 +22,7 @@ export function NoResults({
         message={
           onAdd
             ? 'Füge eine PowerPoint per OneDrive- oder SharePoint-Link hinzu oder lade eine PPTX hoch, um gemeinsam daran zu arbeiten.'
-            : 'In dieser Organisation gibt es noch keine Reviews. Sobald jemand eine anlegt, erscheint sie hier.'
+            : 'In diesem Workspace gibt es noch keine Reviews. Sobald jemand eine anlegt, erscheint sie hier.'
         }
         action={
           onAdd && (

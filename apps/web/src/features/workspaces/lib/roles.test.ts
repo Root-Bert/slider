@@ -81,10 +81,10 @@ describe('formatExpiry', () => {
 });
 
 describe('switcherLabel', () => {
-  it('names the organisation and counts invites in singular and plural', () => {
-    expect(switcherLabel('Nord', 0)).toBe('Organisation: Nord');
-    expect(switcherLabel('Nord', 1)).toBe('Organisation: Nord, 1 Einladung');
-    expect(switcherLabel('Nord', 3)).toBe('Organisation: Nord, 3 Einladungen');
-    expect(switcherLabel(null, 2)).toBe('Organisationen');
+  it('names the workspace and counts invites in singular and plural', () => {
+    expect(switcherLabel('Nord', 0)).toBe('Workspace: Nord');
+    expect(switcherLabel('Nord', 1)).toBe('Workspace: Nord, 1 Einladung');
+    expect(switcherLabel('Nord', 3)).toBe('Workspace: Nord, 3 Einladungen');
+    expect(switcherLabel(null, 2)).toBe('Workspaces');
   });
 });

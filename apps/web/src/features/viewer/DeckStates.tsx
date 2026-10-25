@@ -14,7 +14,7 @@ export function DeckError({ error }: { error: Error }) {
       : status === 401 || status === 403
         ? [
             'Kein Zugriff',
-            'Du hast keinen Zugriff auf diese Review. Bitte eine Admin-Person der Organisation, dich einzuladen.',
+            'Du hast keinen Zugriff auf diese Review. Bitte eine Admin-Person des Workspace, dich einzuladen.',
           ]
         : ['Das hat nicht geklappt', error.message];
 

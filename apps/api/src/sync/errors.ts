@@ -4,6 +4,7 @@ import { googleDriveConnectUrl } from '../auth/google';
 import type { DeckRow } from '../db/schema';
 import { ApiError } from '../http/errors';
 import { ImportCrashLoop } from '../import/attempts';
+import { PdfTimedOut } from '../import/pdf-jobs';
 
 /**
  * Maps whatever went wrong during an automatic update to a {@link SyncError} with a German
@@ -25,7 +26,7 @@ export const SYNC_MESSAGES = {
     'Slider hat keinen Zugriff mehr auf die Datei – die Freigabe wurde vermutlich entfernt. Es bleibt die letzte Version sichtbar.',
   not_found: 'Die Datei wurde gelöscht oder verschoben. Slider zeigt weiter die letzte Version.',
   unreachable: 'Die Quelle ist gerade nicht erreichbar. Slider versucht es automatisch erneut.',
-  not_a_powerpoint: 'Unter dem Link liegt keine PowerPoint-Datei mehr.',
+  not_a_powerpoint: 'Unter dem Link liegt keine PowerPoint-Datei und kein PDF mehr.',
   internal: 'Aktualisierung fehlgeschlagen. Slider versucht es später erneut.',
 } satisfies Partial<
   Record<SyncErrorCode | 'nextcloud_auth_required' | 'google_auth_required', string>
@@ -33,15 +34,15 @@ export const SYNC_MESSAGES = {
 
 /** Banner of a deck archived because the file is in the OneDrive of someone who left. */
 export const OWNER_LEFT_MESSAGE =
-  'Die PowerPoint liegt im OneDrive einer Person, die nicht mehr in der Organisation ist. Slider aktualisiert die Präsentation nicht mehr – es bleibt die letzte Version sichtbar.';
+  'Die PowerPoint liegt im OneDrive einer Person, die nicht mehr im Workspace ist. Slider aktualisiert die Präsentation nicht mehr – es bleibt die letzte Version sichtbar.';
 
 /** The same for a file in the Nextcloud of someone who left. */
 export const NEXTCLOUD_OWNER_LEFT_MESSAGE =
-  'Die PowerPoint liegt in der Nextcloud einer Person, die nicht mehr in der Organisation ist. Slider aktualisiert die Präsentation nicht mehr, es bleibt die letzte Version sichtbar.';
+  'Die PowerPoint liegt in der Nextcloud einer Person, die nicht mehr im Workspace ist. Slider aktualisiert die Präsentation nicht mehr, es bleibt die letzte Version sichtbar.';
 
 /** The same for a file in the Google Drive of someone who left. */
 export const GOOGLE_OWNER_LEFT_MESSAGE =
-  'Die Präsentation liegt im Google Drive einer Person, die nicht mehr in der Organisation ist. Slider aktualisiert sie nicht mehr, es bleibt die letzte Version sichtbar.';
+  'Die Präsentation liegt im Google Drive einer Person, die nicht mehr im Workspace ist. Slider aktualisiert sie nicht mehr, es bleibt die letzte Version sichtbar.';
 
 const SOURCE_NAMES: Record<DeckRow['source'], string> = {
   onedrive: 'OneDrive',
@@ -53,7 +54,7 @@ const SOURCE_NAMES: Record<DeckRow['source'], string> = {
 };
 
 /**
- * Banner of a deck whose new version doesn't fit into the organisation's storage (BER-151): it
+ * Banner of a deck whose new version doesn't fit into the workspace's storage (BER-151): it
  * waits, and the next check after something was deleted takes it over by itself.
  */
 export const storageFullMessage = (deck: Pick<DeckRow, 'source'>) =>
@@ -188,7 +189,12 @@ export const parseFailedMessage = (error: unknown): string =>
     ? PARSE_MESSAGES[error.code]
     : error instanceof ImportCrashLoop
       ? CRASH_LOOP_MESSAGE
-      : SYNC_MESSAGES.internal;
+      : error instanceof PdfTimedOut
+        ? PDF_TIMEOUT_MESSAGE
+        : SYNC_MESSAGES.internal;
+
+const PDF_TIMEOUT_MESSAGE =
+  'Die neue Version zu lesen hat zu lange gedauert – sie ist vermutlich zu aufwendig. Es bleibt die letzte Version sichtbar.';
 
 const CRASH_LOOP_MESSAGE =
   'Die neue Version ist zu groß oder beschädigt – ihr Import wurde mehrmals abgebrochen. Es bleibt die letzte Version sichtbar.';

@@ -82,14 +82,15 @@ export function parseGoogleLink(url: URL): GoogleLink | null {
   return null;
 }
 
-function pointsAtPptx(url: URL): boolean {
+/** A URL to a deck file: a PowerPoint or a PDF. */
+function pointsAtDeckFile(url: URL): boolean {
   let pathname = url.pathname;
   try {
     pathname = decodeURIComponent(pathname);
   } catch {
     // Malformed escapes: judge the raw path.
   }
-  return pathname.toLowerCase().endsWith('.pptx');
+  return /\.(pptx|pdf)$/i.test(pathname);
 }
 
 export interface ParseShareLinkOptions {
@@ -169,12 +170,14 @@ export function parseShareLink(
   if (isOneDriveHost(host)) return { kind: 'onedrive', url, host };
 
   if (isSharePointHost(host)) {
-    const isPowerPointShare = url.pathname.startsWith('/:p:/');
+    // A share link: `/:p:/` a PowerPoint, `/:b:/` a PDF, `/:w:/` Word, `/:x:/` Excel, `/:i:/` a
+    // picture … – any file goes, like in the picker (the import converts it or says why not).
+    // A shared folder (`/:f:/`) is resolved and refused with its own message.
+    const isShare = /^\/:[a-z]:\//i.test(url.pathname);
     const isDocViewer = url.pathname.includes('/_layouts/15/Doc.aspx');
     // A file URL copied from the library (…/Shared Documents/deck.pptx) resolves like a share link.
-    if (isPowerPointShare || isDocViewer || pointsAtPptx(url))
-      return { kind: 'sharepoint', url, host };
-    // Other SharePoint URLs (Word, folders) are not PowerPoint files.
+    if (isShare || isDocViewer || pointsAtDeckFile(url)) return { kind: 'sharepoint', url, host };
+    // Other SharePoint URLs (sites, lists, library pages) point at no file.
     return null;
   }
 
@@ -182,7 +185,7 @@ export function parseShareLink(
 
   if (parseNextcloudLink(url)) return { kind: 'nextcloud', url, host };
 
-  if (pointsAtPptx(url)) return { kind: 'url', url, host };
+  if (pointsAtDeckFile(url)) return { kind: 'url', url, host };
 
   return null;
 }

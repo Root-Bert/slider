@@ -60,7 +60,7 @@ describe('SsoSection (BER-162)', () => {
     api.sso = { data: sso() };
   });
 
-  it('is for admins of instances that open organisations to domains only', () => {
+  it('is for admins of instances that open workspaces to domains only', () => {
     const { container, rerender } = render(
       <SsoSection workspace={workspace('member')} enabled onNotify={notify} />,
     );
@@ -69,9 +69,9 @@ describe('SsoSection (BER-162)', () => {
     expect(container.textContent).toBe('');
   });
 
-  it('asks to open the organisation to the domain first', () => {
+  it('asks to open the workspace to the domain first', () => {
     render(<SsoSection workspace={workspace('admin', null)} enabled onNotify={notify} />);
-    expect(screen.getByText(/Öffne die Organisation zuerst/)).toBeTruthy();
+    expect(screen.getByText(/Öffne den Workspace zuerst/)).toBeTruthy();
     expect(api.enabledWith).toBe(false);
   });
 

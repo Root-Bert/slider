@@ -16,6 +16,7 @@ import { useFoldProgress } from './hooks/useFoldProgress';
 import { useScrollActiveSlide } from './hooks/useScrollActiveSlide';
 import { useTimelineMetrics } from './hooks/useTimelineMetrics';
 import { useTimelineWheel } from './hooks/useTimelineWheel';
+import { useFrameAspects } from '../state/frame-format';
 import {
   anchoredScrollLeft,
   revealScrollLeft,
@@ -87,7 +88,8 @@ export function Timeline({ controls }: { controls: ReactNode }) {
   // the height the band gives up, so the comment area doesn't move.
   const fold = useFoldProgress(showMinimap, MINIMAP_FOLD_MS);
   const foldH = Math.round(fold * MINIMAP_ROW_H);
-  const aspectRatios = useMemo(() => slides.map((slide) => slide.aspectRatio), [slides]);
+  // The frames' shapes: the slides' own, or 16:9 in the wide view.
+  const { aspectRatios } = useFrameAspects();
   const geometry = useMemo(
     () =>
       metrics &&
@@ -209,10 +211,9 @@ export function Timeline({ controls }: { controls: ReactNode }) {
     if (narrow || !geometry || !layout || !activeSlideId) return;
     const index = slideIndex.get(activeSlideId);
     const box = index === undefined ? undefined : layout.slides[index];
-    const slide = index === undefined ? undefined : slides[index];
-    if (!box || !slide) return;
-    if (box.w >= DRAW_MIN_W) return;
-    const target = splitForWidth(DRAW_MIN_W, slide.aspectRatio, geometry);
+    if (!box || box.w >= DRAW_MIN_W) return;
+    // The frame's shape, not the slide's: in the wide view they differ.
+    const target = splitForWidth(DRAW_MIN_W, box.w / layout.h, geometry);
     if (slideHeightAt(target, geometry) <= layout.h + 0.5) return;
     const scroller = scrollerRef.current;
     if (scroller) {

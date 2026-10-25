@@ -1,4 +1,4 @@
-import { MAX_COMMENT_BODY_LENGTH } from '@slider/shared';
+import { MAX_COMMENT_BODY_LENGTH, MAX_COMMENT_IMAGES } from '@slider/shared';
 import {
   useEffect,
   useEffectEvent,
@@ -10,7 +10,17 @@ import {
 } from 'react';
 import { isApplePlatform } from '@/lib/platform';
 import { useCreateComment, useDeleteComment } from '@/lib/api';
-import { Avatar, Button, cn, ErrorText, Kbd, Notice, ReturnKey, useIsNarrow } from '@/ui';
+import {
+  Avatar,
+  Button,
+  cn,
+  ErrorText,
+  IconButton,
+  Kbd,
+  Notice,
+  ReturnKey,
+  useIsNarrow,
+} from '@/ui';
 import { accentAlpha } from '@/lib/accent';
 import { isTypingTarget } from '@/lib/dom';
 import { MediaTabs } from './MediaTabs';
@@ -18,7 +28,9 @@ import type { MediaKindId } from './lib/media-kinds';
 import { RecorderPanel } from '../media/RecorderPanel';
 import { DEFAULT_SKETCH_ASPECT, exportSketch } from '../media/lib/sketch';
 import { SketchPanel, type Sketch } from '../media/SketchPanel';
+import { AttachedImages, AttachImageButton } from '../media/AttachedImages';
 import { useCreateMediaComment } from '../media/hooks/useMediaComment';
+import { asUploads, useImageAttachments } from '../media/hooks/useImageAttachments';
 import type { Recording } from '../media/hooks/useRecorder';
 import { useRestoreFocus } from '../hooks/useRestoreFocus';
 import { useComposerPosition } from './hooks/useComposerPosition';
@@ -51,8 +63,14 @@ function ComposerPopover({ draft }: { draft: Draft }) {
   const deleteComment = useDeleteComment(deck.id);
   const [body, setBody] = useState(draft.initialBody ?? '');
   const [tab, setTab] = useState<MediaKindId>('text');
+  // The text tab's mic: a voice comment, the text its note (text and audio are one tab).
+  const [voice, setVoice] = useState(false);
   const [recording, setRecording] = useState<Recording | null>(null);
   const [sketch, setSketch] = useState<Sketch | null>(null);
+  // Pasted or picked images (BER-174), in every kind of comment – like its note. A drawn sketch
+  // takes one of the places.
+  const images = useImageAttachments(sketch === null ? 0 : 1);
+  const attached = images.attachments.length > 0;
   // A recording running or paused: not in `recording` until it is stopped.
   const [recordingRunning, setRecordingRunning] = useState(false);
   const showToast = useViewerToast();
@@ -81,7 +99,8 @@ function ComposerPopover({ draft }: { draft: Draft }) {
   const { author } = viewer;
   // "Text auf Folie": the text is typed on the slide; the composer adds an optional comment.
   const onSlideText = draft.textBox !== null;
-  const recordingTab = tab === 'audio' || tab === 'video';
+  const recorderKind = tab === 'video' ? 'video' : tab === 'text' && voice ? 'audio' : null;
+  const recordingTab = recorderKind !== null;
   const imageTab = tab === 'image';
   // A box just drawn: the first keys are typed into it on the slide (`DraftMark`), not here.
   const freshBox =
@@ -90,8 +109,8 @@ function ComposerPopover({ draft }: { draft: Draft }) {
   const forDrawing = draft.commentId !== null;
   const textSubmission =
     forDrawing && body.trim() === '' ? null : draftSubmission(draft, body, author.color);
-  // With a recording or a drawn image, text and drawing are optional: that is the comment (BER-116).
-  const mediaReady = recordingTab ? recording !== null : imageTab ? sketch !== null : false;
+  // With a recording or images, text and drawing are optional: that is the comment (BER-116).
+  const mediaReady = attached || (recordingTab ? recording !== null : imageTab && sketch !== null);
   // The slide left the deck (new revision) or is hidden now: nothing to send it to.
   const submission = draft.slideGone
     ? null
@@ -100,7 +119,11 @@ function ComposerPopover({ draft }: { draft: Draft }) {
       : recordingTab || imageTab
         ? null
         : textSubmission;
-  const canSend = submission !== null;
+  // Ten images attached on the text tab leave no place for a sketch drawn after.
+  const sketchTooMany =
+    imageTab && sketch !== null && images.attachments.length >= MAX_COMMENT_IMAGES;
+  // An image still turning into a PNG would be left out: sent once it's there.
+  const canSend = submission !== null && !images.busy && !sketchTooMany;
   const pending = createComment.isPending || createMediaComment.isPending;
   const error = createComment.error ?? createMediaComment.error;
   const subtitle =
@@ -110,15 +133,27 @@ function ComposerPopover({ draft }: { draft: Draft }) {
 
   const switchTab = (next: MediaKindId) => {
     setTab(next);
+    setVoice(false);
     setRecording(null);
     setSketch(null);
+    setRecordingRunning(false);
+  };
+
+  const toggleVoice = () => {
+    setVoice((on) => !on);
+    setRecording(null);
     setRecordingRunning(false);
   };
 
   // What only the composer holds keeps the draft from being replaced by a click on another slide
   // (`keepsDraft`) – and, with the draft's own strokes and slide text, from leaving unasked.
   const held =
-    body.trim() !== '' || recording !== null || recordingRunning || sketch !== null || pending;
+    body.trim() !== '' ||
+    recording !== null ||
+    recordingRunning ||
+    sketch !== null ||
+    attached ||
+    pending;
   useEffect(() => {
     dispatch({ type: 'draftHeld', held });
   }, [dispatch, held]);
@@ -173,21 +208,22 @@ function ComposerPopover({ draft }: { draft: Draft }) {
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
-    if (!submission || pending) return;
+    if (!submission || !canSend || pending) return;
     const input = { slideId: draft.slideId, parentId: null, ...submission };
     const onSuccess = () => {
       // The comment carries the drawing now; the bare one goes.
       if (draft.commentId) deleteComment.mutate({ commentId: draft.commentId });
       dispatch({ type: 'draftSubmitted' });
     };
-    if (recordingTab && recording) createMediaComment.mutate({ input, recording }, { onSuccess });
-    else if (imageTab && sketch) {
-      const { strokes, memo } = sketch;
-      createMediaComment.mutate(
-        { input, recording: memo, image: () => exportSketch(strokes, sketchAspect) },
-        { onSuccess },
-      );
-    } else createComment.mutate(input, { onSuccess });
+    const drawn = imageTab ? sketch : null;
+    const memo = recordingTab ? recording : (drawn?.memo ?? null);
+    const pictures = [
+      ...(drawn ? [() => exportSketch(drawn.strokes, sketchAspect)] : []),
+      ...asUploads(images.attachments),
+    ];
+    if (memo || pictures.length > 0)
+      createMediaComment.mutate({ input, recording: memo, images: pictures }, { onSuccess });
+    else createComment.mutate(input, { onSuccess });
   };
 
   return (
@@ -227,14 +263,15 @@ function ComposerPopover({ draft }: { draft: Draft }) {
 
       <MediaTabs value={tab} onChange={switchTab} />
 
-      {recordingTab && (
-        // Remount per kind: switching tabs turns the previous device off.
+      {recorderKind && (
+        // Remount per kind: switching tabs turns the previous device off. The mic starts at once.
         <RecorderPanel
-          key={tab}
-          kind={tab}
+          key={recorderKind}
+          kind={recorderKind}
           deckId={deck.id}
           onChange={setRecording}
           onRecordingChange={setRecordingRunning}
+          autoStart={recorderKind === 'audio'}
           autoFocus
         />
       )}
@@ -263,6 +300,7 @@ function ComposerPopover({ draft }: { draft: Draft }) {
             (draft.strokes.length === 0 && !onSlideText && !recordingTab && !imageTab && !freshBox)
           }
           aria-label="Kommentar"
+          onPaste={images.onPaste}
           maxLength={MAX_COMMENT_BODY_LENGTH}
           placeholder={
             recordingTab
@@ -291,7 +329,21 @@ function ComposerPopover({ draft }: { draft: Draft }) {
           }}
           className="text-body leading-5 text-fg"
         />
+        <AttachedImages attachments={images.attachments} onRemove={images.remove} />
       </div>
+
+      {sketchTooMany && (
+        <ErrorText role="alert" size="xs">
+          Höchstens {MAX_COMMENT_IMAGES} Bilder pro Kommentar – entferne ein Bild, um die Skizze zu
+          senden.
+        </ErrorText>
+      )}
+
+      {images.error && (
+        <ErrorText role="alert" size="xs">
+          {images.error}
+        </ErrorText>
+      )}
 
       {draft.slideGone && (
         <Notice variant="tinted" tone="warning" size="sm" role="alert">
@@ -308,11 +360,29 @@ function ComposerPopover({ draft }: { draft: Draft }) {
         </ErrorText>
       )}
 
-      <footer className="flex items-center justify-end gap-2">
+      <footer className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="sm" onClick={cancel}>
             Abbrechen
           </Button>
+          <AttachImageButton
+            onPick={(files) => void images.attach(files)}
+            busy={images.busy}
+            disabled={pending || images.room === 0}
+          />
+          {tab === 'text' && (
+            <IconButton
+              icon="mic"
+              label={voice ? 'Sprachaufnahme verwerfen' : 'Sprachkommentar aufnehmen'}
+              variant="subtle"
+              size="sm"
+              active={voice}
+              disabled={pending}
+              onClick={toggleVoice}
+            />
+          )}
+        </div>
+        <div className="flex items-center gap-1">
           <Button
             type="submit"
             size="sm"

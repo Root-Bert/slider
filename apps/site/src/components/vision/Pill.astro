@@ -1,7 +1,10 @@
 ---
 import { asset } from '~/lib/links';
 
-/** A node of the Vision diagrams: glass pill with a sage dot, or the sage "arrived" pill. */
+/**
+ * A node of the Vision diagrams: glass pill with a sage dot, or the sage "arrived" pill. On phones
+ * a smaller size, and a long one wraps instead of reaching past the screen.
+ */
 interface Props {
   on?: boolean;
   class?: string;
@@ -14,7 +17,7 @@ const { on = false, class: className, style, ...rest } = Astro.props;
 
 <span
   class:list={[
-    'inline-flex shrink-0 items-center gap-2.5 rounded-full py-3.5 pr-5.5 pl-4.5 text-xl font-semibold whitespace-nowrap',
+    'inline-flex max-w-full shrink-0 items-center gap-2.5 rounded-full py-3.5 pr-5.5 pl-4.5 text-base font-semibold sm:text-xl sm:whitespace-nowrap',
     on
       ? 'vision-on bg-sage text-on-primary'
       : 'bg-glass text-fg shadow-[inset_0_0_0_1px_var(--color-hairline-strong)]',

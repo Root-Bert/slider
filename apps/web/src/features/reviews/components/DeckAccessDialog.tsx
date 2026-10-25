@@ -10,7 +10,7 @@ const lockedReason = (member: WorkspaceMember, ownerId: string): string | null =
   member.userId === ownerId
     ? 'Hat die Review angelegt'
     : member.role === 'admin'
-      ? 'Admin der Organisation'
+      ? 'Admin des Workspace'
       : null;
 
 const matches = (member: WorkspaceMember, query: string) =>
@@ -18,8 +18,8 @@ const matches = (member: WorkspaceMember, query: string) =>
 
 /**
  * "Zugriff einschränken …" in a deck's ⋯ / right-click menu (managers only): everyone in the
- * organisation may open the review, or only the people ticked here. Whoever added the review and
- * the organisation's admins always may – their rows stay ticked and can't be changed.
+ * workspace may open the review, or only the people ticked here. Whoever added the review and
+ * the workspace's admins always may – their rows stay ticked and can't be changed.
  */
 export function DeckAccessDialog({
   deck,
@@ -33,7 +33,7 @@ export function DeckAccessDialog({
 }) {
   const { workspaces } = useAccount();
   const workspaceName =
-    workspaces.find((workspace) => workspace.id === deck.workspaceId)?.name ?? 'der Organisation';
+    workspaces.find((workspace) => workspace.id === deck.workspaceId)?.name ?? 'diesem Workspace';
   const access = useDeckAccess(deck.id);
   const members = useMembers(deck.workspaceId);
 
@@ -149,7 +149,7 @@ function AccessForm({
           onSelect={() => choose(false)}
           icon="person"
           title={`Alle in ${workspaceName}`}
-          description="Jedes Mitglied der Organisation kann die Review öffnen."
+          description="Jedes Mitglied des Workspace kann die Review öffnen."
         />
         <ChoiceRow
           name={choiceName}

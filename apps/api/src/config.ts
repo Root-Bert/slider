@@ -12,6 +12,7 @@ import {
   type SignupMode,
 } from '@slider/shared';
 import { LIBREOFFICE_TIMEOUT_MS } from './import/libreoffice';
+import { PDF_TIMEOUT_MS } from './import/pdf-jobs';
 import { DEFAULT_PLAN_LIMITS, UNLIMITED_PLAN, type PlanLimits } from './services/plans';
 
 export interface Config {
@@ -57,7 +58,7 @@ export interface Config {
   media: MediaConfig;
   /**
    * Whether this instance limits its users at all: the hosted demo does (plans, one own
-   * organisation per account, storage), a self-hosted instance doesn't. See
+   * workspace per account, storage), a self-hosted instance doesn't. See
    * {@link isLimitedInstance}.
    */
   limited: boolean;
@@ -81,6 +82,11 @@ export interface Config {
    */
   libreOfficeTimeoutMs?: number;
   /**
+   * `PDF_TIMEOUT_MS`: how long reading one PDF (and drawing its slide images) may take before it
+   * is cut off, plus a second per page. A PDF that takes longer fails its import.
+   */
+  pdfTimeoutMs?: number;
+  /**
    * `IMPORT_WORKERS`: how many decks are imported side by side, each with its own LibreOffice
    * (~1 CPU core and up to 1 GB RAM). Imports of one deck always run one after another.
    */
@@ -100,7 +106,7 @@ export interface BillingConfig {
   secretKey: string;
   /** `whsec_…` of the webhook endpoint `<SLIDER_URL>/api/billing/webhook`. */
   webhookSecret: string;
-  /** `price_…` of the paid plan (per organisation, monthly or yearly – decided in Stripe). */
+  /** `price_…` of the paid plan (per workspace, monthly or yearly – decided in Stripe). */
   priceId: string;
 }
 
@@ -230,7 +236,7 @@ export const MICROSOFT_CALLBACK_PATH = '/api/auth/microsoft/callback';
 export const OIDC_CALLBACK_PATH = '/api/auth/oidc/callback';
 export const GOOGLE_CALLBACK_PATH = '/api/auth/google/callback';
 export const NEXTCLOUD_CALLBACK_PATH = '/api/auth/nextcloud/callback';
-/** Company login of an organisation (BER-162): one redirect URI for all of them. */
+/** Company login of a workspace (BER-162): one redirect URI for all of them. */
 export const SSO_CALLBACK_PATH = '/api/auth/sso/callback';
 const booleanEnv = z.enum(['true', 'false', '1', '0']).transform((v) => v === 'true' || v === '1');
 
@@ -294,13 +300,14 @@ const envSchema = z.object({
   SLIDER_DEMO: booleanEnv.optional(),
   PLAN_FREE_MAX_MEMBERS: z.coerce.number().int().min(0).optional(),
   PLAN_FREE_MAX_DECKS: z.coerce.number().int().min(0).optional(),
-  /** `0` = unlimited. Every file of an organisation's reviews counts (BER-151). */
+  /** `0` = unlimited. Every file of a workspace's reviews counts (BER-151). */
   PLAN_FREE_MAX_STORAGE_BYTES: z.coerce.number().int().min(0).optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_PRICE_ID: z.string().optional(),
   LIBREOFFICE_PATH: z.string().min(1).optional(),
   LIBREOFFICE_TIMEOUT_MS: z.coerce.number().int().min(10_000).default(LIBREOFFICE_TIMEOUT_MS),
+  PDF_TIMEOUT_MS: z.coerce.number().int().min(10_000).default(PDF_TIMEOUT_MS),
   IMPORT_WORKERS: z.coerce.number().int().min(1).max(16).default(1),
 });
 
@@ -540,6 +547,7 @@ export function loadConfig(
       ? path.resolve(REPO_ROOT, expandHome(parsed.LIBREOFFICE_PATH))
       : null,
     libreOfficeTimeoutMs: parsed.LIBREOFFICE_TIMEOUT_MS,
+    pdfTimeoutMs: parsed.PDF_TIMEOUT_MS,
     importWorkers: parsed.IMPORT_WORKERS,
   };
 }

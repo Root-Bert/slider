@@ -22,12 +22,12 @@ export const ROLE_HINTS: Record<WorkspaceRole, string> = {
   viewer: 'Reviews nur ansehen – so teilst du eine Review.',
   reviewer: 'Reviews ansehen und kommentieren.',
   member: 'Zusätzlich eigene Reviews anlegen.',
-  admin: 'Alles: Mitglieder, Einladungen, alle Reviews, die Organisation umbenennen und löschen.',
+  admin: 'Alles: Mitglieder, Einladungen, alle Reviews, den Workspace umbenennen und löschen.',
 };
 
-/** Not a role – who founded the organisation. Nobody becomes creator, you are or aren't. */
+/** Not a role – who founded the workspace. Nobody becomes creator, you are or aren't. */
 export const CREATOR_LABEL = 'Creator';
-export const CREATOR_HINT = 'Hat die Organisation gegründet. Keine Rolle, die man vergeben kann.';
+export const CREATOR_HINT = 'Hat den Workspace gegründet. Keine Rolle, die man vergeben kann.';
 
 export const INVITE_ROLES = WORKSPACE_ROLES satisfies readonly InviteRole[];
 
@@ -53,11 +53,11 @@ export const canRemoveMember = (actor: WorkspaceRole) => canManageMembers(actor)
 export const isLastAdmin = (role: WorkspaceRole, adminCount: number) =>
   role === 'admin' && adminCount <= 1;
 
-/** Accessible name of the header's organisation switcher, with the pending invites. */
+/** Accessible name of the header's workspace switcher, with the pending invites. */
 export const switcherLabel = (workspaceName: string | null, pendingInvites: number): string =>
   workspaceName === null
-    ? 'Organisationen'
-    : `Organisation: ${workspaceName}${
+    ? 'Workspaces'
+    : `Workspace: ${workspaceName}${
         pendingInvites > 0 ? `, ${pluralize(pendingInvites, 'Einladung', 'Einladungen')}` : ''
       }`;
 

@@ -5,7 +5,9 @@ import type { RerenderResult } from '@slider/shared';
 import { deckAccess, requireDeckAccess } from '../auth/access';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import type { AppDeps } from '../deps';
-import { badRequest, fileTooLarge, forbidden, notAPowerPoint } from '../http/errors';
+import { toDeckBytes } from '../import/any-file';
+import { sha256Hex } from '../import/common';
+import { badRequest, fileTooLarge, forbidden } from '../http/errors';
 import { deckUploadSlot, importLimit } from '../http/import-limit';
 import { hasPdfRenderer } from '../import/office-pages';
 import { isSyncEnabled } from '../services/deck-sync';
@@ -132,11 +134,12 @@ export function syncRoutes(deps: AppDeps) {
           if (!(file instanceof File)) {
             throw badRequest('Bitte eine Datei im Feld „file“ mitsenden.');
           }
-          if (!file.name.toLowerCase().endsWith('.pptx')) throw notAPowerPoint();
           if (file.size > maxBytes) throw fileTooLarge(maxBytes);
           if (file.size === 0) throw badRequest('Die Datei ist leer.');
-          const bytes = new Uint8Array(await file.arrayBuffer());
-          return c.json(await deps.sync.importUpload(deckId, bytes));
+          // A PowerPoint or a PDF as it is; any other file becomes a PDF.
+          const original = new Uint8Array(await file.arrayBuffer());
+          const bytes = await toDeckBytes(file.name, original, deps.documentPdf);
+          return c.json(await deps.sync.importUpload(deckId, bytes, sha256Hex(original)));
         },
       )
 

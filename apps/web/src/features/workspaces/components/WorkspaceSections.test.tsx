@@ -126,7 +126,7 @@ describe('DomainSection', () => {
   const section = (ws: Workspace, email = 'anna@agentur-nord.de', enabled = true) =>
     render(<DomainSection workspace={ws} email={email} enabled={enabled} onNotify={vi.fn()} />);
 
-  it('admins open the organisation to their own domain', async () => {
+  it('admins open the workspace to their own domain', async () => {
     section(workspace());
     const toggle = screen.getByRole('switch', { name: /Alle mit @agentur-nord\.de/ });
     await userEvent.click(toggle);
@@ -156,11 +156,9 @@ describe('DeleteSection', () => {
         <DeleteSection workspace={workspace()} />
       </MemoryRouter>,
     );
-    expect(screen.getByRole('region', { name: 'Organisation löschen' })).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Workspace löschen' })).toBeTruthy();
     // The type-to-confirm field only exists while the dialog is open.
-    expect(
-      screen.queryByRole('textbox', { name: 'Name der Organisation', hidden: true }),
-    ).toBeNull();
+    expect(screen.queryByRole('textbox', { name: 'Name des Workspace', hidden: true })).toBeNull();
 
     await userEvent.click(button('Löschen'));
     expect(
@@ -169,7 +167,7 @@ describe('DeleteSection', () => {
     const confirm = button('Endgültig löschen') as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
 
-    const field = screen.getByRole('textbox', { name: 'Name der Organisation', hidden: true });
+    const field = screen.getByRole('textbox', { name: 'Name des Workspace', hidden: true });
     await userEvent.type(field, 'Agentur');
     expect(confirm.disabled).toBe(true);
     await userEvent.type(field, ' Nord ');
@@ -177,7 +175,7 @@ describe('DeleteSection', () => {
 
     await userEvent.click(confirm);
     expect(api.remove).toHaveBeenCalledOnce();
-    // A free organisation has no subscription to mention.
+    // A free workspace has no subscription to mention.
     expect(screen.queryByText(/Abo/)).toBeNull();
   });
 
@@ -204,7 +202,7 @@ describe('DeleteSection', () => {
     expect(dialog.textContent).toContain('Das laufende Abo wird dabei gekündigt.');
   });
 
-  it('other admins of a paid organisation cannot delete it and see who can', () => {
+  it('other admins of a paid workspace cannot delete it and see who can', () => {
     render(
       <MemoryRouter>
         <DeleteSection workspace={paid(false)} />
@@ -214,7 +212,7 @@ describe('DeleteSection', () => {
     expect((trigger as HTMLButtonElement).disabled).toBe(true);
     // The reason is tied to the disabled button.
     expect(document.getElementById(trigger.getAttribute('aria-describedby')!)?.textContent).toMatch(
-      /Solange das Abo läuft, kann nur Ada die Organisation löschen/,
+      /Solange das Abo läuft, kann nur Ada den Workspace löschen/,
     );
   });
 
@@ -226,13 +224,13 @@ describe('DeleteSection', () => {
     );
     await userEvent.click(button('Löschen'));
     await userEvent.type(
-      screen.getByRole('textbox', { name: 'Name der Organisation', hidden: true }),
+      screen.getByRole('textbox', { name: 'Name des Workspace', hidden: true }),
       'Agentur Nord',
     );
     await userEvent.click(button('Abbrechen'));
     await userEvent.click(button('Löschen'));
     const field = screen.getByRole('textbox', {
-      name: 'Name der Organisation',
+      name: 'Name des Workspace',
       hidden: true,
     }) as HTMLInputElement;
     expect(field.value).toBe('');
@@ -310,7 +308,7 @@ describe('LeaveSection', () => {
       </MemoryRouter>,
     );
     expect(leaveTrigger().disabled).toBe(true);
-    expect(screen.getByText(/Du bist allein in dieser Organisation/)).toBeTruthy();
+    expect(screen.getByText(/Du bist allein in diesem Workspace/)).toBeTruthy();
   });
 
   it('whoever pays for a running subscription hands over paying first', () => {
@@ -325,9 +323,9 @@ describe('LeaveSection', () => {
     );
     expect(leaveTrigger().disabled).toBe(true);
     const reason = document.getElementById(leaveTrigger().getAttribute('aria-describedby')!);
-    expect(reason?.textContent).toMatch(/Du bezahlst für diese Organisation\. Übergib zuerst/);
+    expect(reason?.textContent).toMatch(/Du bezahlst für diesen Workspace\. Übergib zuerst/);
     expect(screen.getByRole('link', { name: '„Nutzung“' }).getAttribute('href')).toBe(
-      '/nutzung?organisation=w1',
+      '/nutzung?workspace=w1',
     );
   });
 
@@ -347,7 +345,7 @@ describe('LeaveSection', () => {
     ).toBeTruthy();
   });
 
-  it('other admins of a paid organisation leave as usual', () => {
+  it('other admins of a paid workspace leave as usual', () => {
     api.members = {
       isSuccess: true,
       data: [member('me', 'Anna', 'admin'), member('u9', 'Ada', 'admin')],
@@ -376,7 +374,7 @@ describe('LeaveSection', () => {
   });
 
   it('shows a refusal inside the dialog', async () => {
-    api.leaveError = new Error('Du bezahlst für die Organisation.');
+    api.leaveError = new Error('Du bezahlst für den Workspace.');
     api.members = {
       isSuccess: true,
       data: [member('me', 'Anna', 'member'), member('u2', 'Ben', 'admin')],
@@ -388,7 +386,7 @@ describe('LeaveSection', () => {
     );
     await userEvent.click(leaveTrigger());
     const dialog = screen.getByRole('dialog', { name: '„Agentur Nord“ verlassen?', hidden: true });
-    expect(dialog.textContent).toContain('Du bezahlst für die Organisation.');
+    expect(dialog.textContent).toContain('Du bezahlst für den Workspace.');
   });
 
   it('with only viewers left, the last admin hands over to one of them', async () => {

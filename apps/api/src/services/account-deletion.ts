@@ -1,7 +1,6 @@
 import { and, asc, count, eq, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
 import {
   DELETED_ACCOUNT_NAME,
-  MEDIA_KINDS,
   type Author,
   type SuccessorChoice,
   type WorkspaceRole,
@@ -36,23 +35,24 @@ import { purgeIfEmpty } from './workspaces/workspaces';
  * Deleting an account (BER-145, rules from the deletion concept BER-143). Nothing personal stays
  * behind except what other people need to keep working:
  *
- * - Organisations the person is alone in are deleted with all their decks: only the last member
- *   takes an organisation along.
- * - In shared organisations they leave like `removeMember`: their linked decks are deleted, their
+ * - Workspaces the person is alone in are deleted with all their decks: only the last member
+ *   takes a workspace along.
+ * - In shared workspaces they leave like `removeMember`: their linked decks are deleted, their
  *   uploads pass to the workspace owner (`departDecks`, BER-165). The same for decks still theirs
- *   in organisations they left earlier; with nobody there, those are deleted.
+ *   in workspaces they left earlier; with nobody there, those are deleted.
  * - Their comments in other people's decks stay, anonymised: no name, no avatar, a fresh id
  *   that leads nowhere (`DELETED_ACCOUNT_NAME`). @mentions of them read the same. Voice and video
- *   recordings can't be anonymised (voice, face) and are deleted; the comment text stays.
+ *   recordings and images (drawn, pasted or picked) can't be anonymised (voice, face, what a
+ *   screenshot shows) and are deleted; the comment text stays.
  * - Invitations to their address are deleted; logins, passkeys, sessions, Microsoft connections
  *   (and tokens) and memberships go with the account row (`on delete cascade`).
  *
- * Where they are the only admin of an organisation with others, someone else becomes admin
+ * Where they are the only admin of a workspace with others, someone else becomes admin
  * first: whom the person chose when they delete themselves (`successors`, one per such
- * organisation – see {@link successorChoices}), or, for unused accounts deleted without anyone
+ * workspace – see {@link successorChoices}), or, for unused accounts deleted without anyone
  * (`'automatic'`), the longest-standing member with the highest role. Viewers (guests) are the last
  * resort: one takes over only if nobody else is left. Refused for the only instance admin: the
- * instance needs one – and, deleting oneself, while paying for an organisation others work in:
+ * instance needs one – and, deleting oneself, while paying for a workspace others work in:
  * paying is handed over first ({@link assertNotPaying}). An erasure asked for by mail (`erasure`)
  * is not held up by that – the person may not be able to sign in to hand over: their
  * subscription ends, the next billing owner gets the grace, as for unused accounts.
@@ -124,7 +124,7 @@ export async function deleteAccount(
     }
     const promoted: { workspaceId: string; workspaceName: string; userId: string }[] = [];
     const cancelled: (string | null)[] = [];
-    // Organisations they are alone in go after the transaction: should it fail, nothing is lost.
+    // Workspaces they are alone in go after the transaction: should it fail, nothing is lost.
     // Counted again under the lock – whoever joined meanwhile makes it a shared one – and they
     // close now (`closeWorkspace`), so nobody joins one that is about to go.
     const solo: string[] = [];
@@ -160,7 +160,7 @@ export async function deleteAccount(
       if (needsSuccessor(membership)) {
         const candidates = await candidatesOf(tx, workspaceId, userId);
         let successorId = chosen.get(workspaceId);
-        // Changed since the check above – someone joined an organisation they were alone in, the
+        // Changed since the check above – someone joined a workspace they were alone in, the
         // chosen person left, or a viewer was chosen and now someone else is there: only the sweep
         // picks an admin itself, a person deleting themselves is asked again, rather than having
         // chosen someone they never saw.
@@ -182,7 +182,7 @@ export async function deleteAccount(
       cancelled.push(handover.cancelSubscriptionId);
     }
 
-    // Every deck still theirs – in the organisations above, those they left earlier and those
+    // Every deck still theirs – in the workspaces above, those they left earlier and those
     // they are alone in – goes as on leaving: linked ones are deleted, uploads pass to the
     // workspace owner; with nobody there, deleted too.
     const orphaned: string[] = [];
@@ -197,17 +197,12 @@ export async function deleteAccount(
 
     const recordings = await tx
       .delete(media)
-      .where(and(eq(media.uploaderId, userId), inArray(media.kind, [...MEDIA_KINDS])))
+      .where(eq(media.uploaderId, userId))
       .returning({ key: media.storageKey, deckId: media.deckId });
 
     const touched = new Set(recordings.map((r) => r.deckId));
     const anonymised = await anonymiseComments(tx, user.id, user.name, memberships);
     for (const deckId of anonymised.decks) touched.add(deckId);
-    // Drawings stay with their comments, under the same id that leads nowhere.
-    await tx
-      .update(media)
-      .set({ uploaderId: anonymised.authorId })
-      .where(eq(media.uploaderId, userId));
 
     await tx
       .delete(workspaceInvites)
@@ -242,7 +237,7 @@ export async function deleteAccount(
   // Left over on an error here, `purgeEmptyWorkspaces` in the hourly sweep finishes the job.
   for (const workspaceId of result.solo) {
     await purgeIfEmpty(deps, workspaceId).catch((error: unknown) =>
-      deps.log.error(`Deleting account ${userId}: organisation ${workspaceId} failed`, error),
+      deps.log.error(`Deleting account ${userId}: workspace ${workspaceId} failed`, error),
     );
   }
   for (const deckId of result.touched) deps.live?.commentsChanged(deckId);
@@ -279,9 +274,9 @@ async function tellNewAdmins(
       subject: `Du bist jetzt Admin von „${workspaceName}“`,
       heading: `Du bist jetzt Admin von „${workspaceName}“`,
       intro: unused
-        ? `Das Slider-Konto von ${name} wurde gelöscht, weil es lange nicht genutzt wurde. Du warst am längsten dabei und bist jetzt Admin der Organisation; die hochgeladenen Präsentationen von ${name} dort gehören jetzt dir, die verknüpften wurden gelöscht.`
-        : `${name} hat das Slider-Konto gelöscht und dich als neuen Admin der Organisation bestimmt. Die hochgeladenen Präsentationen von ${name} dort gehören jetzt dir, die verknüpften wurden gelöscht.`,
-      button: 'Organisation öffnen',
+        ? `Das Slider-Konto von ${name} wurde gelöscht, weil es lange nicht genutzt wurde. Du warst am längsten dabei und bist jetzt Admin des Workspace; die hochgeladenen Präsentationen von ${name} dort gehören jetzt dir, die verknüpften wurden gelöscht.`
+        : `${name} hat das Slider-Konto gelöscht und dich als neuen Admin des Workspace bestimmt. Die hochgeladenen Präsentationen von ${name} dort gehören jetzt dir, die verknüpften wurden gelöscht.`,
+      button: 'Workspace öffnen',
       outro:
         'Kam das unerwartet? Frag bei der Person nach oder wende dich an den Betreiber dieser Slider-Instanz.',
     });
@@ -329,7 +324,7 @@ async function countsOf(db: Executor, workspaceId: string) {
 }
 
 /**
- * Whoever pays for an organisation others work in hands paying over before deleting their
+ * Whoever pays for a workspace others work in hands paying over before deleting their
  * account – like leaving it (`assertBillingOwnerMayGo`): deleting would end the subscription. An
  * account unused for long (`'automatic'`) goes anyway; the next billing owner gets the grace.
  */
@@ -354,7 +349,7 @@ const needsSuccessor = (m: Membership) => m.role === 'admin' && m.admins === 1 &
 /**
  * Who could become admin of a workspace: its other members, highest role first, then
  * longest-standing. Viewers (guests) only as the last resort, when nobody else is left – like
- * `removeMember`. An organisation goes only with its last member.
+ * `removeMember`. A workspace goes only with its last member.
  */
 async function candidatesOf(db: Executor, workspaceId: string, leaverId: string) {
   const rows = await db
@@ -375,7 +370,7 @@ async function candidatesOf(db: Executor, workspaceId: string, leaverId: string)
 }
 
 /**
- * The organisations where the person is the only admin among others, with who could take over –
+ * The workspaces where the person is the only admin among others, with who could take over –
  * deleting oneself asks to choose one each (BER-145), a viewer only where nobody else is left.
  */
 export async function successorChoices(db: Executor, userId: string): Promise<SuccessorChoice[]> {
@@ -391,7 +386,7 @@ export async function successorChoices(db: Executor, userId: string): Promise<Su
 }
 
 /**
- * An organisation about to go with the account: invitations end and it is no company's any more,
+ * A workspace about to go with the account: invitations end and it is no company's any more,
  * so nobody gets in – by invite or by domain – before it is purged after the transaction.
  */
 async function closeWorkspace(tx: Executor, workspaceId: string) {
@@ -420,7 +415,7 @@ const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\
 /**
  * Rewrites the person's comments to a deleted author – a fresh id per deletion, so nothing links
  * them to the account or to each other across accounts – and their @mentions in the decks of
- * their organisations. Returns the decks whose comments changed and the id they now carry.
+ * their workspaces. Returns the decks whose comments changed and the id they now carry.
  */
 async function anonymiseComments(
   tx: Executor,

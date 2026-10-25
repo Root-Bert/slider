@@ -20,6 +20,29 @@ const stroke = (x: number): Stroke => ({
 });
 
 describe('viewerReducer', () => {
+  it('keeps every slide’s own zoom, and ends one without touching the others', () => {
+    const zoom = (slideId: string) => ({ slideId, scale: 2, x: 0, y: 0 });
+    const both = run(
+      { type: 'slideZoomChanged', slideId: 's1', zoom: zoom('s1') },
+      { type: 'slideZoomChanged', slideId: 's2', zoom: zoom('s2') },
+    );
+    expect([...both.slideZooms.keys()]).toEqual(['s1', 's2']);
+    const one = viewerReducer(both, { type: 'slideZoomChanged', slideId: 's1', zoom: null });
+    expect([...one.slideZooms.keys()]).toEqual(['s2']);
+  });
+
+  it('toggles the 16:9 view and drops a zoom of the old frame shape', () => {
+    const zoomed = run({
+      type: 'slideZoomChanged',
+      slideId: 's1',
+      zoom: { slideId: 's1', scale: 2, x: 0.1, y: 0.1 },
+    });
+    const wide = viewerReducer(zoomed, { type: 'wideFramesToggled' });
+    expect(wide.wideFrames).toBe(true);
+    expect(wide.slideZooms.size).toBe(0);
+    expect(viewerReducer(wide, { type: 'wideFramesToggled' }).wideFrames).toBe(false);
+  });
+
   it('keeps no copy of the viewer’s colour – it is read live from the viewer data', () => {
     // A copy taken at mount went stale when the colour was changed mid-session: pen previews and
     // draft frames kept the old one.

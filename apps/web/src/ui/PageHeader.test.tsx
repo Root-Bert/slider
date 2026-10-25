@@ -27,7 +27,7 @@ describe('PageHeader', () => {
   it('puts leading and actions in the title row and can truncate', () => {
     inRouter(
       <PageHeader
-        title="Sehr langer Organisationsname"
+        title="Sehr langer Workspace-Name"
         leading={<span data-testid="mark" />}
         actions={<button type="button">Neu</button>}
         truncate

@@ -9,7 +9,7 @@ import { accentColorSchema, workspaceRoleSchema } from './model';
 
 /**
  * How new accounts may be created: only by invitation, by anyone, by verified addresses of the
- * instance's `SIGNUP_DOMAINS`, or (`company`, BER-148) by invitation or through an organisation
+ * instance's `SIGNUP_DOMAINS`, or (`company`, BER-148) by invitation or through a workspace
  * opened to one's company domain.
  */
 export const SIGNUP_MODES = ['invite', 'open', 'domains', 'company'] as const;
@@ -17,8 +17,8 @@ export const signupModeSchema = z.enum(SIGNUP_MODES);
 export type SignupMode = z.infer<typeof signupModeSchema>;
 
 /**
- * Whether organisations can be opened to a company domain (BER-148). `invite` means only
- * invitations lead anywhere – no organisation is found or joined by domain.
+ * Whether workspaces can be opened to a company domain (BER-148). `invite` means only
+ * invitations lead anywhere – no workspace is found or joined by domain.
  */
 export const domainJoinAllowed = (signup: SignupMode) => signup !== 'invite';
 
@@ -51,7 +51,7 @@ export const authProvidersSchema = z.object({
    */
   googleDrive: z.boolean(),
   /**
-   * Some organisation has its own company login (BER-162): the login page offers "Mit
+   * Some workspace has its own company login (BER-162): the login page offers "Mit
    * Firmen-Login" – the address typed finds it (`POST /auth/sso/discover`).
    */
   sso: z.boolean(),
@@ -81,9 +81,9 @@ export const LOGIN_ERRORS = [
   'account_limit',
   /** A new account through any Nextcloud needs its address confirmed by mail, and this instance sends none. */
   'mail_unavailable',
-  /** The organisation's company login is off (deleted, domain changed, plan). */
+  /** The workspace's company login is off (deleted, domain changed, plan). */
   'sso_unavailable',
-  /** The company login sent an address outside the organisation's domain. */
+  /** The company login sent an address outside the workspace's domain. */
   'sso_domain',
   /** Too many sign-in attempts from this client address; it may try again in a few minutes. */
   'rate_limited',
@@ -151,7 +151,7 @@ export type VerifyPasskeyLoginInput = z.infer<typeof verifyPasskeyLoginInputSche
 export const loginIdentitySchema = z.object({
   /** `<provider>:<subject>`. */
   id: z.string(),
-  /** `sso`: an organisation's own company login (BER-162); `email`: login link by mail (BER-168). */
+  /** `sso`: a workspace's own company login (BER-162); `email`: login link by mail (BER-168). */
   provider: z.enum(['microsoft', 'google', 'oidc', 'nextcloud', 'sso', 'email']),
   /** The address the provider reported at the last login. */
   email: z.string().nullable(),
@@ -191,14 +191,14 @@ export type MicrosoftConnection = z.infer<typeof microsoftConnectionSchema>;
 // ── Plans (BER-130, BER-152) ────────────────────────────────────────────────
 
 /**
- * Plans an organisation can be on: `free`, and `paid` – billed per organisation through Stripe,
+ * Plans a workspace can be on: `free`, and `paid` – billed per workspace through Stripe,
  * never per seat (BER-152).
  */
 export const PLAN_IDS = ['free', 'paid'] as const;
 export type PlanId = (typeof PLAN_IDS)[number];
 
 /**
- * What an organisation uses of its plan. `seatsUsed` = members + pending e-mail invites (a sent
+ * What a workspace uses of its plan. `seatsUsed` = members + pending e-mail invites (a sent
  * invite reserves a seat). `max*` is `null` for unlimited (self-hosted instances may lift limits).
  * `storageBytes` counts every file of its reviews: originals, slide images, recordings (BER-151).
  */
@@ -213,7 +213,7 @@ export const workspaceUsageSchema = z.object({
 });
 export type WorkspaceUsage = z.infer<typeof workspaceUsageSchema>;
 
-/** Bytes per kind of file an organisation stores (BER-151) – the "Nutzung" page's bar. */
+/** Bytes per kind of file a workspace stores (BER-151) – the "Nutzung" page's bar. */
 export const storageBreakdownSchema = z.object({
   /** Images drawn in comments. */
   images: z.number().int().nonnegative(),
@@ -238,7 +238,7 @@ export const STORAGE_CATEGORIES = [
 export type StorageCategory = (typeof STORAGE_CATEGORIES)[number];
 
 /**
- * Why a paid organisation is about to fall back to free (BER-155): a payment failed, the person
+ * Why a paid workspace is about to fall back to free (BER-155): a payment failed, the person
  * paying left and nobody added a payment method yet, or the subscription was cancelled.
  */
 export const DOWNGRADE_REASONS = ['payment_failed', 'owner_changed', 'canceled'] as const;
@@ -248,7 +248,7 @@ export type DowngradeReason = z.infer<typeof downgradeReasonSchema>;
 const personSchema = z.object({ id: z.string(), name: z.string() });
 
 /**
- * Billing of an organisation (BER-152, BER-154). Exactly one admin pays – the billing owner –
+ * Billing of a workspace (BER-152, BER-154). Exactly one admin pays – the billing owner –
  * apart from the admin role. `enabled` is false without Stripe (self-hosting): no billing at all.
  */
 export const workspaceBillingSchema = z.object({
@@ -262,14 +262,14 @@ export const workspaceBillingSchema = z.object({
   renewsAt: z.iso.datetime().nullable(),
   /**
    * Never had a subscription: the first checkout starts with 14 days of Paid, no payment method
-   * needed. Without one by then, the organisation simply stays on Free.
+   * needed. Without one by then, the workspace simply stays on Free.
    */
   trialAvailable: z.boolean(),
   /** End of the running trial; `null` outside a trial. */
   trialEndsAt: z.iso.datetime().nullable(),
   /** Cancelled to the end of the period: free from then on. */
   endsAt: z.iso.datetime().nullable(),
-  /** Paid organisation without a working payment: free from then on unless someone pays. */
+  /** Paid workspace without a working payment: free from then on unless someone pays. */
   downgradeAt: z.iso.datetime().nullable(),
   downgradeReason: downgradeReasonSchema.nullable(),
   /** The billing owner asked this admin to take over paying; effective once they pay. */
@@ -281,7 +281,7 @@ export const workspaceBillingSchema = z.object({
 });
 export type WorkspaceBilling = z.infer<typeof workspaceBillingSchema>;
 
-/** `GET /workspaces/:id/usage` (members) – the "Nutzung" page of one organisation. */
+/** `GET /workspaces/:id/usage` (members) – the "Nutzung" page of one workspace. */
 export const workspaceUsageDetailsSchema = z.object({
   workspaceId: z.string(),
   plan: z.string(),
@@ -302,7 +302,7 @@ export const billingTransferInputSchema = z.object({ userId: z.string().min(1) }
 export type BillingTransferInput = z.infer<typeof billingTransferInputSchema>;
 
 /**
- * `POST /workspaces/:id/billing/transfer/accept`: on a paid organisation the checkout where the
+ * `POST /workspaces/:id/billing/transfer/accept`: on a paid workspace the checkout where the
  * new owner adds their payment method (`url`); on a free one the handover is done (`url: null`).
  */
 export const billingTransferAcceptResultSchema = z.object({
@@ -313,16 +313,16 @@ export type BillingTransferAcceptResult = z.infer<typeof billingTransferAcceptRe
 
 /** `GET /me` → `limits`. */
 export const meLimitsSchema = z.object({
-  /** Every account may found one organisation of its own (joining others is unlimited). */
+  /** Every account may found one workspace of its own (joining others is unlimited). */
   canCreateWorkspace: z.boolean(),
-  /** Organisations can be opened to a company domain on this instance (`SIGNUP` is not `invite`). */
+  /** Workspaces can be opened to a company domain on this instance (`SIGNUP` is not `invite`). */
   domainJoin: z.boolean(),
 });
 export type MeLimits = z.infer<typeof meLimitsSchema>;
 
 // ── Workspaces ──────────────────────────────────────────────────────────────
 
-/** A workspace is called "Organisation" in the UI (BER-130). */
+/** A workspace – "Workspace" in the UI too (BER-130). */
 export const workspaceSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -340,7 +340,7 @@ export const workspaceSchema = z.object({
   /** Free and over a limit: only reading, deleting and upgrading work (BER-155). */
   locked: z.boolean(),
   /**
-   * Company organisation (BER-148): everyone with a verified address at this domain finds it and
+   * Company workspace (BER-148): everyone with a verified address at this domain finds it and
    * may join as member. `null`: private – only invitations lead in.
    */
   joinDomain: z.string().nullable(),
@@ -364,13 +364,13 @@ export const updateWorkspaceInputSchema = z.object({ name: workspaceNameSchema }
 export type UpdateWorkspaceInput = z.infer<typeof updateWorkspaceInputSchema>;
 
 /**
- * `PUT /workspaces/:id/domain` (admins): `enabled` opens the organisation to the admin's own
+ * `PUT /workspaces/:id/domain` (admins): `enabled` opens the workspace to the admin's own
  * e-mail domain, `false` makes it private again. Either answers the sign-up question.
  */
 export const updateWorkspaceDomainInputSchema = z.object({ enabled: z.boolean() });
 export type UpdateWorkspaceDomainInput = z.infer<typeof updateWorkspaceDomainInputSchema>;
 
-/** `GET /me` → `domainWorkspace`: the company organisation of the viewer's domain, not joined yet. */
+/** `GET /me` → `domainWorkspace`: the company workspace of the viewer's domain, not joined yet. */
 export const domainWorkspaceSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -382,7 +382,7 @@ export type DomainWorkspace = z.infer<typeof domainWorkspaceSchema>;
 
 /**
  * Mail providers anyone can get an address at: their domains never stand for a company, so
- * nobody can open an organisation to them (BER-148). Only the most common ones – enough for the
+ * nobody can open a workspace to them (BER-148). Only the most common ones – enough for the
  * web app's hints; the API checks against a maintained list of all of them (`isCompanyMailDomain`).
  */
 export const FREEMAIL_DOMAINS: ReadonlySet<string> = new Set([
@@ -447,7 +447,7 @@ export const emailDomain = (email: string) =>
     .trim()
     .toLowerCase();
 
-/** A domain an organisation can be opened to: not a mail provider's. */
+/** A domain a workspace can be opened to: not a mail provider's. */
 export const isCompanyDomain = (domain: string) =>
   domain.includes('.') && !FREEMAIL_DOMAINS.has(domain);
 

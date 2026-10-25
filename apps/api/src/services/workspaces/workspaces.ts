@@ -21,7 +21,7 @@ import { requireRole, workspaceNotFound } from './roles';
 /** What reading workspaces with their usage needs. */
 type WorkspaceDeps = Pick<AppDeps, 'db' | 'config' | 'clock'>;
 
-export const PERSONAL_WORKSPACE_NAME = 'Meine Organisation';
+export const PERSONAL_WORKSPACE_NAME = 'Mein Workspace';
 
 // ── Workspaces ──────────────────────────────────────────────────────────────
 
@@ -52,7 +52,7 @@ async function uniqueSlug(db: Executor, name: string): Promise<string> {
 }
 
 /**
- * Inserts the workspace under the first free slug. Two organisations of the same name founded at
+ * Inserts the workspace under the first free slug. Two workspaces of the same name founded at
  * once both see it free: the loser takes the next one (each try in a savepoint, so a clash leaves
  * the caller's transaction usable).
  */
@@ -77,7 +77,7 @@ async function insertWithFreeSlug(
 }
 
 /**
- * Founds an organisation for `userId` (BER-130: on a limited instance one per account, as long
+ * Founds a workspace for `userId` (BER-130: on a limited instance one per account, as long
  * as it exists). Joining
  * others by invitation is unlimited.
  */
@@ -116,8 +116,8 @@ export async function createWorkspace(
 }
 
 /**
- * The user's first workspace; creates "Meine Organisation" when they have none. Only for the dev
- * owner (and the seed) – everyone else founds or joins an organisation in the onboarding
+ * The user's first workspace; creates "Mein Workspace" when they have none. Only for the dev
+ * owner (and the seed) – everyone else founds or joins a workspace in the onboarding
  * (BER-130).
  */
 export async function ensurePersonalWorkspace(
@@ -150,7 +150,7 @@ export async function resolveUploadWorkspace(
       workspaceId,
       userId,
       'member',
-      'Als Reviewer kannst du in dieser Organisation keine Präsentationen anlegen.',
+      'Als Reviewer kannst du in diesem Workspace keine Präsentationen anlegen.',
     );
     return workspaceId;
   }
@@ -168,7 +168,7 @@ export async function resolveUploadWorkspace(
     .orderBy(asc(workspaceMembers.createdAt))
     .limit(1);
   if (first) return first.id;
-  throw badRequest('Erstelle zuerst eine Organisation oder tritt einer bei.');
+  throw badRequest('Erstelle zuerst einen Workspace oder tritt einem bei.');
 }
 
 /** Workspace rows with the caller's role → DTOs with member count, plan and usage. */
@@ -308,7 +308,7 @@ export async function deleteWorkspace(
     workspaceId,
     userId,
     'admin',
-    'Nur Admins können eine Organisation löschen.',
+    'Nur Admins können einen Workspace löschen.',
   );
   await assertMayDeletePaid(deps.db, workspaceId, userId);
   await purgeWorkspace(deps, workspaceId);

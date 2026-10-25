@@ -1,7 +1,7 @@
 /* Vision page: headline scale, pins and the hero's choreography (Figma "Vision", 8 s timeline). */
 
 .vision-h {
-  font-size: clamp(30px, 6.4vw, 52px);
+  font-size: clamp(27px, 6.4vw, 52px);
   line-height: 1.12;
   font-weight: 700;
   letter-spacing: -0.03em;

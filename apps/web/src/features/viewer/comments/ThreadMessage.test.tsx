@@ -51,7 +51,7 @@ describe('ThreadMessage editing', () => {
 
   it('saves an empty note on an image comment', async () => {
     const save = await clearNote({
-      image: { id: 'i1', mimeType: 'image/png', sizeBytes: 500, url: '/api/media/i1' },
+      images: [{ id: 'i1', mimeType: 'image/png', sizeBytes: 500, url: '/api/media/i1' }],
     });
     expect(save).toHaveProperty('disabled', false);
   });

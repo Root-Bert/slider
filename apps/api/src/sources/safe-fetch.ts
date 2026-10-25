@@ -283,13 +283,30 @@ export const isPptxBytes = (bytes: Uint8Array): boolean =>
   bytes[2] === 0x03 &&
   bytes[3] === 0x04;
 
-/** A PDF starts with `%PDF`. */
+/**
+ * A PDF, by its header `%PDF-` – the one check for every PDF the server takes: downloads, Office
+ * and Google exports, LibreOffice's output and stored originals.
+ */
 export const isPdfBytes = (bytes: Uint8Array): boolean =>
-  bytes.length >= 4 &&
+  bytes.length >= 5 &&
   bytes[0] === 0x25 &&
   bytes[1] === 0x50 &&
   bytes[2] === 0x44 &&
-  bytes[3] === 0x46;
+  bytes[3] === 0x46 &&
+  bytes[4] === 0x2d;
+
+/** What a linked deck may be: a PowerPoint or a PDF (Keynote, Canva, Google exports). */
+export const isDeckBytes = (bytes: Uint8Array): boolean => isPptxBytes(bytes) || isPdfBytes(bytes);
+
+/** A deck file by its name: `.pptx` or `.pdf`. */
+export const isDeckName = (name: string): boolean => /\.(pptx|pdf)$/i.test(name);
+
+/** A deck's file name ending in what it is – `.pdf` for a PDF, else `.pptx`. */
+export function deckFileName(name: string, pdf: boolean): string {
+  const extension = pdf ? '.pdf' : '.pptx';
+  if (name.toLowerCase().endsWith(extension)) return name;
+  return `${isDeckName(name) ? name.replace(/\.[^.]*$/, '') : name}${extension}`;
+}
 
 export const isHtmlResponse = (response: Response): boolean =>
   (response.headers.get('content-type') ?? '').toLowerCase().startsWith('text/html');
@@ -312,8 +329,11 @@ export function parseContentDispositionFileName(header: string | null): string |
   return name || null;
 }
 
-/** File name for a downloaded deck: header, then last path segment, always ending in `.pptx`. */
-export function fileNameFor(response: Response, url: URL): string {
+/**
+ * File name for a downloaded deck: header, then last path segment, always ending in what it is
+ * (`.pdf` for a PDF, else `.pptx`). Any other file keeps its name: it tells the import what it is.
+ */
+export function fileNameFor(response: Response, url: URL, bytes?: Uint8Array): string {
   const fromHeader = parseContentDispositionFileName(response.headers.get('content-disposition'));
   let fromPath = url.pathname.split('/').pop() ?? '';
   try {
@@ -321,6 +341,9 @@ export function fileNameFor(response: Response, url: URL): string {
   } catch {
     // Keep the raw segment.
   }
-  const name = (fromHeader ?? fromPath).replace(/[\\/]/g, '').trim() || 'Präsentation.pptx';
-  return /\.pptx$/i.test(name) ? name : `${name.replace(/\.[^.]*$/, '')}.pptx`;
+  const name = (fromHeader ?? fromPath).replace(/[\\/]/g, '').trim() || 'Präsentation';
+  if (bytes && !isDeckBytes(bytes)) return name;
+  const pdf = bytes ? isPdfBytes(bytes) : /\.pdf$/i.test(name);
+  if (!pdf && /\.pptx$/i.test(name)) return name;
+  return deckFileName(pdf ? name : name.replace(/\.[^.]*$/, ''), pdf);
 }

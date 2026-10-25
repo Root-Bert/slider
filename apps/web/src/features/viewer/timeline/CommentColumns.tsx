@@ -188,7 +188,7 @@ function SlideBubble({
     const scroller = scrollerRef.current;
     const box = layout.slides[index];
     if (!scroller || !box) return;
-    const target = splitForWidth(BUBBLE_TARGET_W, slide.aspectRatio, geometry);
+    const target = splitForWidth(BUBBLE_TARGET_W, box.w / layout.h, geometry);
     if (slideHeightAt(target, geometry) <= layout.h + 0.5) {
       registry.revealSlide(slide.id);
       return;

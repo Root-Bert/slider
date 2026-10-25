@@ -4,8 +4,8 @@ import Tag from '~/components/Tag.astro';
 import { APP_URL, CONTACT_URL, asset } from '~/lib/links';
 
 /**
- * Three plans per workspace, never per seat: Free, Team (€79/month) and Enterprise, under a
- * wide orbit; the fine print says nothing gets deleted over a limit.
+ * Four plans per workspace, never per seat: Free, Team (€79/month), AI (€249/month, we run the
+ * AI so nobody brings their own key) and Enterprise, under a wide orbit; the fine print says nothing gets deleted over a limit.
  */
 const plans = [
   {
@@ -34,10 +34,22 @@ const plans = [
     check: 'check-bright.svg',
   },
   {
+    name: 'AI',
+    price: '€249',
+    unit: 'per month',
+    pitch: 'Slider with AI built in. No own API key, no tokens to manage, we run it all for you.',
+    cta: { label: 'Coming soon', href: `${APP_URL}/`, variant: 'secondary' as const },
+    note: 'Start with Free today, upgrading comes soon.',
+    lead: 'Everything in Team, plus:',
+    features: ['AI included, no own key', 'Tokens covered by us', 'Models kept up to date', 'One bill, no extra AI costs'],
+    look: 'bg-glass-elevated ring-hairline-strong shadow-[0_0_120px_rgb(255_255_255/0.05),0_0_40px_rgb(255_255_255/0.1)]',
+    check: 'check-bright.svg',
+  },
+  {
     name: 'Enterprise',
     price: 'Custom',
     unit: 'per contract',
-    pitch: 'For organisations with more than 100 people or their own requirements.',
+    pitch: 'For teams with more than 100 people or their own requirements.',
     cta: { label: 'Contact us', href: CONTACT_URL, variant: 'secondary' as const },
     note: 'We set it up together with you.',
     lead: 'Everything in Team, plus:',
@@ -74,7 +86,7 @@ const src = (name: string) => asset(`pricing/${name}`);
   <img src={src('plans-starfield.svg')} alt="" aria-hidden="true" class="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[700px] w-full object-cover" />
 
   <!-- One grid row per card part, shared through subgrid, so prices, buttons, dividers and lists line up. -->
-  <div class="grid w-full max-w-[1248px] gap-6 lg:grid-cols-3">
+  <div class="grid w-full max-w-[1248px] gap-6 lg:grid-cols-2 xl:grid-cols-4">
     {
       plans.map((plan, i) => (
         <div class="flex flex-col lg:row-span-6 lg:grid lg:grid-rows-subgrid" data-reveal style={`--i: ${i === 0 ? 0 : 1.5}`}>
@@ -93,7 +105,7 @@ const src = (name: string) => asset(`pricing/${name}`);
               {plan.tag && <Tag label={plan.tag} accent="var(--color-sage)" />}
             </div>
             <p class="flex flex-wrap items-baseline gap-2.5">
-              <span class="plan-price text-[64px] leading-none font-black tracking-[-0.03em] text-fg">{plan.price}</span>
+              <span class="plan-price text-[64px] leading-none font-black xl:text-[52px] tracking-[-0.03em] text-fg">{plan.price}</span>
               <span class="text-sm text-fg-subtle">{plan.unit}</span>
             </p>
             <p class="text-[15px] text-fg-muted">

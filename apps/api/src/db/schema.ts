@@ -36,6 +36,7 @@ import type {
   WorkspaceRole,
 } from '@slider/shared';
 import { encryptedJson, encryptedJsonList, encryptedText } from './encrypted-columns';
+import type { PdfMaker } from '../import/pdf-maker';
 
 /**
  * Database schema (BER-90). Designed for revisions from day one:
@@ -268,7 +269,7 @@ export const userIdentities = pgTable(
   ],
 );
 
-/** `sso`: an organisation's own company login (BER-162), subject `<workspace id>:<sub>`. */
+/** `sso`: a workspace's own company login (BER-162), subject `<workspace id>:<sub>`. */
 export type IdentityProvider = 'microsoft' | 'google' | 'oidc' | 'nextcloud' | 'sso' | 'email';
 
 /**
@@ -341,8 +342,8 @@ export const workspaces = pgTable('workspaces', {
   /** Uploaded logo in blob storage (`workspaces/<id>/logo-<uuid>.<ext>`); `null` shows the monogram. */
   logoKey: text('logo_key'),
   /**
-   * Company organisation (BER-148): people with a verified address at this (lower-case) domain
-   * find it and may join as members. `null`: private. One organisation per domain.
+   * Company workspace (BER-148): people with a verified address at this (lower-case) domain
+   * find it and may join as members. `null`: private. One workspace per domain.
    */
   joinDomain: text('join_domain').unique(),
   /** Founded at sign-up, its admins not yet asked whether it is private or the company's. */
@@ -359,7 +360,7 @@ export const workspaces = pgTable('workspaces', {
     onDelete: 'set null',
   }),
   billingTransferAt: timestamptz('billing_transfer_at'),
-  /** Stripe customer of the billing owner for this organisation (BER-152). */
+  /** Stripe customer of the billing owner for this workspace (BER-152). */
   stripeCustomerId: text('stripe_customer_id'),
   stripeSubscriptionId: text('stripe_subscription_id').unique(),
   /** Stripe's subscription status (`active`, `past_due`, `canceled`, …). */
@@ -395,7 +396,7 @@ export const stripeEvents = pgTable('stripe_events', {
 });
 
 /**
- * An organisation's own company login (BER-162): its OpenID Connect provider, for people at its
+ * A workspace's own company login (BER-162): its OpenID Connect provider, for people at its
  * company domain (`workspaces.join_domain`). Works only once a DNS TXT record proved the domain
  * (`verified_domain` equal to `join_domain`) – changing the domain turns it off by itself.
  */
@@ -436,11 +437,11 @@ export const workspaceMembers = pgTable(
 );
 
 /**
- * People an admin removed from an organisation: they don't come back by domain (`joinByDomain`),
+ * People an admin removed from a workspace: they don't come back by domain (`joinByDomain`),
  * only with an invitation – joining by one ends the entry. Leaving on one's own leaves none.
  * Also by a keyed hash of the address (`emailHash`): deleting the account and signing up again
  * must not lift it, so the row outlives the account (`user_id` set null) and goes with the
- * organisation. Rows from before the hash have none until their account is deleted.
+ * workspace. Rows from before the hash have none until their account is deleted.
  */
 export const workspaceRemovals = pgTable(
   'workspace_removals',
@@ -478,7 +479,7 @@ export const workspaceInvites = pgTable(
     acceptedAt: timestamptz('accepted_at'),
     revokedAt: timestamptz('revoked_at'),
     useCount: integer('use_count').notNull().default(0),
-    /** The deck that was shared; `null` for plain organisation invites. */
+    /** The deck that was shared; `null` for plain workspace invites. */
     deckId: text('deck_id').references(() => decks.id, { onDelete: 'set null' }),
   },
   (t) => [
@@ -586,7 +587,7 @@ export const decks = pgTable(
     deletionNoticeAt: timestamptz('deletion_notice_at'),
     /**
      * Bytes of its files in blob storage – originals, slide images, the rest – measured after
-     * every import and prune (`services/workspace-storage`, BER-151), so an organisation's storage
+     * every import and prune (`services/workspace-storage`, BER-151), so a workspace's storage
      * adds up without a `stat` per file. Recordings count from `media.size_bytes`. `null` until
      * first measured.
      */
@@ -656,7 +657,10 @@ export const revisions = pgTable(
     status: text('status').$type<RevisionStatus>().notNull().default('ready'),
     /** What created the revision; `null` for revisions from before BER-107. */
     trigger: text('trigger').$type<RevisionTrigger>(),
-    /** SHA-256 (hex) of the original file, to skip re-imports of identical bytes. */
+    /**
+     * SHA-256 (hex) of the original file, to skip re-imports of identical bytes – the file as it
+     * came, also when it was turned into a PDF (a Word file, a picture).
+     */
     contentSha256: text('content_sha256'),
     /** Who last saved the file, else its creator (PPTX core properties) – shown as a participant. */
     fileAuthor: text('file_author'),
@@ -668,6 +672,12 @@ export const revisions = pgTable(
      * for Microsoft's conversion; `null` when Office drew them or was not tried.
      */
     officeFailure: text('office_failure'),
+    /**
+     * Who made the PDF this revision's file became (`import/pdf-maker`): Office or Google
+     * (`office`), or LibreOffice. Its pages are the slide images under that renderer instead of
+     * `pdf`; `null` for a PowerPoint, a PDF as it came, or a picture.
+     */
+    pdfRenderer: text('pdf_renderer').$type<PdfMaker>(),
     /**
      * Import runs of this revision that started and never finished – the process died (OOM
      * kill, native crash). Back to 0 when a run ends; past the limit the import gives up
@@ -690,7 +700,7 @@ export const revisions = pgTable(
      * Storage held for this revision while it is imported (BER-151): the original's size,
      * recorded under the workspace lock in the same transaction whose storage check let it in.
      * A deck is measured (`decks.files_bytes`) only after its import, so without this two uploads
-     * at once would both fit into the same rest. The organisation's storage counts it as an
+     * at once would both fit into the same rest. The workspace's storage counts it as an
      * original until the measurement after the import takes over the real sizes and clears it
      * (`measureDeckFiles`); a revision removed on failure takes it along. Slide images rendered
      * meanwhile are not reserved – the original is the one size known up front. `null` = nothing
@@ -857,7 +867,7 @@ export const media = pgTable(
       .notNull()
       .references(() => comments.id, { onDelete: 'cascade' }),
     /**
-     * The deck owner at upload time. Storage counts per organisation now (BER-151, through the
+     * The deck owner at upload time. Storage counts per workspace now (BER-151, through the
      * deck), so this only records who owned the deck.
      */
     ownerId: text('owner_id').notNull(),
@@ -868,12 +878,14 @@ export const media = pgTable(
     sizeBytes: integer('size_bytes').notNull(),
     durationMs: integer('duration_ms').notNull(),
     peaks: jsonb('peaks').$type<number[]>().notNull().default([]),
+    /** Order of a comment's images (0, 1, …); always 0 for a recording. */
+    position: integer('position').notNull().default(0),
     storageKey: text('storage_key').notNull(),
     sha256: text('sha256').notNull(),
     createdAt: createdAt(),
   },
   (t) => [
-    uniqueIndex('media_comment_kind_idx').on(t.commentId, t.kind),
+    uniqueIndex('media_comment_kind_position_idx').on(t.commentId, t.kind, t.position),
     index('media_owner_idx').on(t.ownerId),
     index('media_deck_idx').on(t.deckId),
   ],

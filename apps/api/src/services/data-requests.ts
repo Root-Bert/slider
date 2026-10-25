@@ -192,7 +192,7 @@ export async function invitesTo(deps: AppDeps, address: string) {
 export const inviteEntries = (rows: Awaited<ReturnType<typeof invitesTo>>) =>
   rows.map(({ invite, workspace, invitedBy }) => ({
     email: invite.email,
-    organisation: workspace,
+    workspace,
     role: invite.role,
     invitedBy,
     createdAt: invite.createdAt.toISOString(),
@@ -224,7 +224,7 @@ export async function deleteRequested(
   successors: Successors,
 ): Promise<void> {
   if (request.user) {
-    // Paying for an organisation doesn't hold it up: signing in to hand over may be impossible.
+    // Paying for a workspace doesn't hold it up: signing in to hand over may be impossible.
     await deleteAccount(deps, request.user.id, successors, undefined, { erasure: true });
     return;
   }

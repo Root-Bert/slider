@@ -206,7 +206,7 @@ export function DeckActions({
                 ? `Zugriff auf „${deck.title}“ gespeichert`
                 : access.restricted
                   ? `Zugriff auf „${deck.title}“ eingeschränkt`
-                  : `„${deck.title}“ ist wieder für alle in der Organisation offen`,
+                  : `„${deck.title}“ ist wieder für alle im Workspace offen`,
             );
           }}
         />

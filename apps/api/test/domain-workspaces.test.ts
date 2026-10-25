@@ -20,7 +20,7 @@ import {
   type TestContext,
 } from './helpers';
 
-/** Company organisations found and joined by e-mail domain (BER-148). */
+/** Company workspaces found and joined by e-mail domain (BER-148). */
 
 let ctx: TestContext;
 let cleanup: (() => Promise<void>) | null = null;
@@ -60,7 +60,7 @@ const setDomain = (workspaceId: string, cookie: string, enabled: boolean) =>
     cookie,
   });
 
-/** Anna signs up at firma.de and makes her organisation the company's. */
+/** Anna signs up at firma.de and makes her workspace the company's. */
 async function companyOfAnna() {
   const anna = await signUp('anna@firma.de');
   const [workspace] = await listWorkspaces(ctx.deps, anna.id);
@@ -70,7 +70,7 @@ async function companyOfAnna() {
 }
 
 describe('signing up', () => {
-  it('a company address gets an organisation named after the company, its audience still open', async () => {
+  it('a company address gets a workspace named after the company, its audience still open', async () => {
     ctx = await open();
     const anna = await signUp('anna@firma.de');
     expect(await listWorkspaces(ctx.deps, anna.id)).toEqual([
@@ -83,19 +83,19 @@ describe('signing up', () => {
     ]);
   });
 
-  it('a mail provider address gets a private organisation, nobody asks', async () => {
+  it('a mail provider address gets a private workspace, nobody asks', async () => {
     ctx = await open();
     const max = await signUp('max@gmail.com');
     expect(await listWorkspaces(ctx.deps, max.id)).toEqual([
       expect.objectContaining({
-        name: 'Meine Organisation',
+        name: 'Mein Workspace',
         joinDomain: null,
         audiencePending: false,
       }),
     ]);
   });
 
-  it('with a company organisation of the domain: none of their own, /me offers to join it', async () => {
+  it('with a company workspace of the domain: none of their own, /me offers to join it', async () => {
     ctx = await open();
     const { workspaceId } = await companyOfAnna();
     const bert = await signUp('bert@firma.de');
@@ -110,7 +110,7 @@ describe('signing up', () => {
     });
   });
 
-  it('invited people get no organisation of their own', async () => {
+  it('invited people get no workspace of their own', async () => {
     ctx = await open();
     const owner = await signedInUser(ctx, { name: 'Robert Hofmann', email: 'robert@example.org' });
     const created = createdWorkspaceInviteSchema.parse(
@@ -166,7 +166,7 @@ describe('PUT /workspaces/:id/domain', () => {
     expect(await closed.json()).toMatchObject({ joinDomain: null, audiencePending: false });
   });
 
-  it('refuses mail provider domains, non-admins and a second organisation of a domain', async () => {
+  it('refuses mail provider domains, non-admins and a second workspace of a domain', async () => {
     ctx = await open();
     const { workspaceId } = await companyOfAnna();
 
@@ -179,7 +179,7 @@ describe('PUT /workspaces/:id/domain', () => {
     for (const email of ['max@hotmail.co.uk', 'max@yahoo.fr', 'max@ymail.com', 'max@qq.com']) {
       const user = await signUp(email);
       const [workspace] = await listWorkspaces(ctx.deps, user.id);
-      expect(workspace).toMatchObject({ name: 'Meine Organisation', audiencePending: false });
+      expect(workspace).toMatchObject({ name: 'Mein Workspace', audiencePending: false });
       const userCookie = (await signedInUser(ctx, { name: user.name, email })).cookie;
       expect((await setDomain(workspace!.id, userCookie, true)).status).toBe(400);
     }
@@ -282,7 +282,7 @@ describe('POST /workspaces/:id/domain-join', () => {
     expect((await join(carlaCookie)).status).toBe(200);
   });
 
-  it('a deck share brings nobody removed back into the organisation', async () => {
+  it('a deck share brings nobody removed back into the workspace', async () => {
     ctx = await open();
     const { anna, workspaceId, cookie: annaCookie } = await companyOfAnna();
     const join = (cookie: string) =>
@@ -310,7 +310,7 @@ describe('POST /workspaces/:id/domain-join', () => {
     });
     expect((await join(cookie)).status).toBe(403);
 
-    // Accepted, then left: still only an invitation to the organisation brings him back.
+    // Accepted, then left: still only an invitation to the workspace brings him back.
     const accepted = await ctx.request(`/api/workspace-invites/${shareId}/accept`, {
       method: 'POST',
       cookie,
@@ -350,7 +350,7 @@ describe('POST /workspaces/:id/domain-join', () => {
     expect(rows[0]!.emailHash).not.toContain('bert');
     expect(emailHash(' Bert@Firma.de ')).toBe(rows[0]!.emailHash);
 
-    // Back with the same address: no offer, no join – but an organisation of his own.
+    // Back with the same address: no offer, no join – but a workspace of his own.
     const again = await signUp('bert@firma.de');
     expect(again.id).not.toBe(bert.id);
     const { cookie } = await signedInUser(ctx, again);
@@ -366,7 +366,7 @@ describe('POST /workspaces/:id/domain-join', () => {
     expect((await me(carlaCookie)).domainWorkspace).toMatchObject({ id: workspaceId });
     expect((await join(carlaCookie)).status).toBe(200);
 
-    // Invited to the organisation, he is back, and the entry is gone.
+    // Invited to the workspace, he is back, and the entry is gone.
     await ctx.request(`/api/workspaces/${workspaceId}/invites`, {
       method: 'POST',
       json: { email: 'bert@firma.de', role: 'member' },
@@ -376,7 +376,7 @@ describe('POST /workspaces/:id/domain-join', () => {
     expect(await ctx.deps.db.select().from(workspaceRemovals)).toEqual([]);
   });
 
-  it('refuses an organisation opened to a mail provider before the list knew it', async () => {
+  it('refuses a workspace opened to a mail provider before the list knew it', async () => {
     ctx = await open();
     const { workspaceId } = await companyOfAnna();
     await ctx.deps.db
@@ -392,7 +392,7 @@ describe('POST /workspaces/:id/domain-join', () => {
     expect(res.status).toBe(403);
   });
 
-  it('refuses other domains and private organisations', async () => {
+  it('refuses other domains and private workspaces', async () => {
     ctx = await open();
     const { workspaceId } = await companyOfAnna();
     const fremd = await signedInUser(ctx, { name: 'Fremd', email: 'fremd@andere.de' });
@@ -427,7 +427,7 @@ describe('personal Microsoft accounts vouch for no domain', () => {
       inviteToken: null,
     });
 
-  it('sign up and in under SIGNUP=open, but neither find, join nor open the company organisation', async () => {
+  it('sign up and in under SIGNUP=open, but neither find, join nor open the company workspace', async () => {
     ctx = await open();
     const { workspaceId } = await companyOfAnna();
     const signedUp = await microsoft('ex@firma.de');
@@ -475,7 +475,7 @@ describe('nameFromDomain', () => {
 });
 
 describe('SIGNUP=invite: only invitations', () => {
-  it('nobody signs up by domain, finds, joins or opens an organisation by domain', async () => {
+  it('nobody signs up by domain, finds, joins or opens a workspace by domain', async () => {
     ctx = await open();
     const { workspaceId, cookie: annaCookie } = await companyOfAnna();
     ctx.deps.config.auth.signup = 'invite';
@@ -511,7 +511,7 @@ describe('SIGNUP=invite: only invitations', () => {
     cleanup = ctx.cleanup;
     const anna = await signUp('anna@firma.de');
     expect(await listWorkspaces(ctx.deps, anna.id)).toEqual([
-      expect.objectContaining({ name: 'Meine Organisation', audiencePending: false }),
+      expect.objectContaining({ name: 'Mein Workspace', audiencePending: false }),
     ]);
   });
 });

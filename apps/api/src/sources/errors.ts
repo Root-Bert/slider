@@ -65,4 +65,4 @@ export const sourceUnreachable = (
 ) => new ApiError(502, 'source_unreachable', message);
 
 export const LINK_NOT_A_POWERPOINT_MESSAGE =
-  'Unter diesem Link liegt keine PowerPoint-Datei (.pptx).';
+  'Unter diesem Link liegt keine PowerPoint-Datei (.pptx) und kein PDF.';

@@ -14,7 +14,11 @@ import {
   type RevisionRow,
 } from '../db/schema';
 import { ApiError, notFound } from '../http/errors';
+import { toDeckBytes } from '../import/any-file';
+import { pdfMakerOf } from '../import/pdf-maker';
 import { sha256Hex } from '../import/common';
+import { isPdfBytes } from '../sources/safe-fetch';
+import type { DocumentToPdf } from '../import/libreoffice';
 import type { ImportJob, JobQueue } from '../import/queue';
 import type { Logger } from '../logger';
 import { isSyncEnabled } from '../services/deck-sync';
@@ -52,6 +56,12 @@ export const SYNC_MANUAL_WAIT_MS = 25_000;
 
 const CONTENT_TOKEN_PREFIX = 'sha256:';
 
+/** A version's deck file, and the SHA-256 of the file it was made from (`contentSha256`). */
+interface Downloaded {
+  bytes: Uint8Array;
+  sha: string;
+}
+
 export interface SyncServiceDeps {
   db: Database;
   storage: BlobStorage;
@@ -62,6 +72,8 @@ export interface SyncServiceDeps {
   config: Pick<Config, 'sync' | 'plans'>;
   /** The owners' Microsoft connections, for decks that do not know theirs yet. */
   connections?: ConnectionLookup;
+  /** LibreOffice for Word, Excel and text files (see `toDeckBytes`); absent → none of those. */
+  documentPdf?: DocumentToPdf | null;
 }
 
 export interface CheckOptions {
@@ -103,7 +115,12 @@ export class SyncService {
    * never share a running call (each carries its own bytes); they run one after the other, and
    * one that still finds an unfinished revision is refused instead of being dropped silently.
    */
-  importUpload(deckId: string, bytes: Uint8Array): Promise<SyncResult> {
+  /** `sourceSha` is that of the file as it came, when `bytes` is the PDF it was turned into. */
+  importUpload(
+    deckId: string,
+    bytes: Uint8Array,
+    sourceSha = sha256Hex(bytes),
+  ): Promise<SyncResult> {
     return this.exclusive(
       deckId,
       true,
@@ -119,7 +136,17 @@ export class SyncService {
           );
         }
         const { deck, current } = await this.load(deckId);
-        if (current && sha256Hex(bytes) === (await this.revisionSha(current))) {
+        // A deck stays what it came as: its versions are compared slide by slide.
+        if (current?.pptxKey && current.pptxKey.endsWith('.pdf') !== isPdfBytes(bytes)) {
+          throw new ApiError(
+            400,
+            'not_a_powerpoint',
+            current.pptxKey.endsWith('.pdf')
+              ? 'Diese Präsentation kam als PDF – bitte auch die neue Version als PDF hochladen.'
+              : 'Diese Präsentation kam als PowerPoint – bitte auch die neue Version als .pptx hochladen.',
+          );
+        }
+        if (current && sourceSha === (await this.revisionSha(current))) {
           return { status: 'unchanged' };
         }
         // Not while over the plan's limits (BER-155), nor past the storage limit (BER-151) –
@@ -133,7 +160,7 @@ export class SyncService {
             this.deps.clock.now(),
           ),
         );
-        return this.createRevision(deck, bytes, null, 'upload', true);
+        return this.createRevision(deck, { bytes, sha: sourceSha }, null, 'upload', true);
       },
       { join: false },
     );
@@ -158,6 +185,19 @@ export class SyncService {
     });
     this.inFlight.set(deckId, { promise, manual });
     return promise;
+  }
+
+  /**
+   * The source's file as the deck it becomes – any file but a PPTX or PDF turned into a PDF – and
+   * the SHA-256 of the file as it came: a conversion differs byte by byte on every run, so
+   * versions are told apart by the original.
+   */
+  private async download({ adapter, file, context }: Remote): Promise<Downloaded> {
+    const original = await adapter.download(file, context);
+    return {
+      bytes: await toDeckBytes(file.fileName, original, this.deps.documentPdf),
+      sha: sha256Hex(original),
+    };
   }
 
   private async load(deckId: string): Promise<{ deck: DeckRow; current: RevisionRow | null }> {
@@ -228,7 +268,7 @@ export class SyncService {
       const knowsContributors = deck.sourceContributors !== null;
       if (!knowsContributors) await this.refreshContributors(deck, remote);
       let baseline = current.sourceChangeToken;
-      let bytes: Uint8Array | null = null;
+      let downloaded: Downloaded | null = null;
       const bookkeeping: Partial<DeckSyncStateRow> = {};
 
       if (token === '') {
@@ -243,8 +283,8 @@ export class SyncService {
           });
           return { status: 'unchanged' };
         }
-        bytes = await remote.adapter.download(remote.file, remote.context);
-        token = CONTENT_TOKEN_PREFIX + sha256Hex(bytes);
+        downloaded = await this.download(remote);
+        token = CONTENT_TOKEN_PREFIX + downloaded.sha;
         const sha = await this.revisionSha(current);
         baseline = sha ? CONTENT_TOKEN_PREFIX + sha : null;
         bookkeeping.lastContentCheckAt = now.toISOString();
@@ -269,7 +309,7 @@ export class SyncService {
         return { status: 'error', error: this.storedError(deck) };
       }
 
-      // The organisation's storage is full (BER-151): no new version comes in – neither waited
+      // The workspace's storage is full (BER-151): no new version comes in – neither waited
       // for nor downloaded – until there is room. Then the next check takes it over by itself.
       // A version found too big before waits for room for its own size, without a new download.
       const blockedBytes = state.storageBlocked?.token === token ? state.storageBlocked.bytes : 0;
@@ -288,9 +328,10 @@ export class SyncService {
       if (Object.keys(bookkeeping).length > 0) {
         await mergeSyncState(this.deps.db, deckId, bookkeeping);
       }
-      bytes ??= await remote.adapter.download(remote.file, remote.context);
+      downloaded ??= await this.download(remote);
+      const { bytes } = downloaded;
       const realToken = token.startsWith(CONTENT_TOKEN_PREFIX) ? null : token;
-      if (sha256Hex(bytes) === (await this.revisionSha(current))) {
+      if (downloaded.sha === (await this.revisionSha(current))) {
         // A new token for the same bytes (e.g. metadata only): remember it, no new revision.
         if (realToken !== null) {
           await this.deps.db
@@ -315,7 +356,7 @@ export class SyncService {
       const size = bytes.byteLength;
       return await this.createRevision(
         deck,
-        bytes,
+        downloaded,
         realToken,
         manual ? 'manual' : 'poll',
         manual,
@@ -367,16 +408,15 @@ export class SyncService {
   /** Stores the file as a pending revision and queues its import. */
   private async createRevision(
     deck: DeckRow,
-    bytes: Uint8Array,
+    { bytes, sha }: Downloaded,
     token: string | null,
     trigger: 'poll' | 'manual' | 'upload',
     wait: boolean,
   ): Promise<SyncResult> {
     const { db, storage, clock, queue } = this.deps;
     const revisionId = crypto.randomUUID();
-    const pptxKey = blobKeys.pptx(deck.id, revisionId);
+    const pptxKey = blobKeys.pptx(deck.id, revisionId, isPdfBytes(bytes) ? 'pdf' : 'pptx');
     const now = clock.now();
-    const sha = sha256Hex(bytes);
     await storage.put(pptxKey, bytes);
     let stale: SyncResult | null = null;
     try {
@@ -407,7 +447,7 @@ export class SyncService {
           }
           return;
         }
-        // The organisation's storage (BER-151) under its lock, reserved in the same transaction:
+        // The workspace's storage (BER-151) under its lock, reserved in the same transaction:
         // versions and uploads arriving at once can't both take the rest.
         await assertStorageFor(tx, this.deps.config, deck.workspaceId, bytes.byteLength, now);
         const [last] = await tx
@@ -425,6 +465,7 @@ export class SyncService {
           status: 'pending',
           trigger,
           contentSha256: sha,
+          pdfRenderer: pdfMakerOf(bytes),
           // Held until the import was measured (`measureDeckFiles`) or the revision discarded.
           reservedBytes: bytes.byteLength,
         });

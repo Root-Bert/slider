@@ -35,9 +35,9 @@ const LIVE_REFRESH_MS = 30_000;
 /**
  * `/instanz` – the instance admin's dashboard (BER-167). Headline tiles, what was created over
  * time – in a window whose width is chosen above and whose place is moved on the history strip
- * under the chart – storage, activity, plans and the largest organisations; then the directory
- * of organisations and accounts, to block one or to grant an organisation Paid without Stripe.
- * Organisations never show what is in them. Logins, mail and legal texts stay on `/einrichtung`.
+ * under the chart – storage, activity, plans and the largest workspaces; then the directory
+ * of workspaces and accounts, to block one or to grant a workspace Paid without Stripe.
+ * Workspaces never show what is in them. Logins, mail and legal texts stay on `/einrichtung`.
  */
 export function Component() {
   const { user } = useAccount();
@@ -125,7 +125,7 @@ export function Component() {
                   delta={`${share(data.users.active, data.users.total)} aller Personen`}
                 />
                 <KpiTile
-                  label="Organisationen"
+                  label="Workspaces"
                   value={formatCount(data.workspaces.total)}
                   delta={added('workspaces')}
                   trend={trend('workspaces')}

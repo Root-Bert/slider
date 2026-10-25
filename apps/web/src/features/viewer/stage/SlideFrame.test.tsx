@@ -36,6 +36,7 @@ describe('SlideFrame – hidden / shown in this revision', () => {
         badgeVersion={2}
         boxMode={false}
         showGuides={false}
+        zoom={null}
       />,
     );
   }
@@ -93,6 +94,7 @@ describe('SlideFrame – dragging an area', () => {
         badgeVersion={1}
         boxMode={false}
         showGuides={false}
+        zoom={null}
       />,
     );
     return document.querySelector<HTMLElement>('[data-slide-box]')!;
@@ -144,6 +146,7 @@ describe('SlideFrame – image that fails to load', () => {
         badgeVersion={1}
         boxMode={false}
         showGuides={false}
+        zoom={null}
       />,
     );
   }
@@ -165,5 +168,41 @@ describe('SlideFrame – image that fails to load', () => {
     fireEvent.error(document.querySelector('img')!);
     expect(document.querySelector('[data-slide-image-error]')).not.toBeNull();
     expect(screen.queryByRole('button', { name: 'Erneut laden' })).toBeNull();
+  });
+});
+
+describe('SlideFrame – frame of another shape (16:9 view)', () => {
+  it('fills a 16:9 frame with a portrait page, from its top, and marks it for the wheel', () => {
+    render(
+      <SlideFrame
+        slide={slide('s1', 0, { aspectRatio: 0.75 })}
+        index={0}
+        total={1}
+        x={0}
+        top={0}
+        w={800}
+        h={450}
+        isActive
+        threads={[]}
+        emphasisId={null}
+        draft={null}
+        tool={null}
+        canSelect={false}
+        color="red"
+        badge={null}
+        badgeVersion={2}
+        boxMode={false}
+        showGuides={false}
+        zoom={null}
+      />,
+    );
+    const frame = document.querySelector<HTMLElement>('[data-slide-frame]')!;
+    const box = document.querySelector<HTMLElement>('[data-slide-box]')!;
+    expect(frame.dataset.slideCover).toBe(`1,${(16 / 9 / 0.75).toString()}`);
+    expect(box.style.width).toBe('800px');
+    expect(box.style.top).toBe('0px');
+    expect(parseFloat(box.style.height)).toBeCloseTo(800 / 0.75);
+    // Unzoomed: no zoom chip.
+    expect(screen.queryByRole('button', { name: /Zoom/ })).toBeNull();
   });
 });

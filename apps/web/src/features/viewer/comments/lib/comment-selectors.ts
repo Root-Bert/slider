@@ -493,7 +493,7 @@ export const isStrokeOnly = (comment: Comment) =>
 export const isBareDrawing = ({ root, replies }: Thread) =>
   replies.length === 0 &&
   !root.media &&
-  !root.image &&
+  !root.images?.length &&
   root.body.trim() === '' &&
   root.strokes.length > 0;
 
