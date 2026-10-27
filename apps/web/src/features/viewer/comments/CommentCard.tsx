@@ -68,6 +68,8 @@ export const CommentCard = memo(function CommentCard({
     .flatMap((comment) => proposalsOf(comment.id))
     .filter((proposal) => proposal.status !== 'discarded');
   const aiWorking = aiAnswers.some((proposal) => proposal.status === 'running');
+  // Only a change it made (taken back or not) is one; otherwise it just answered.
+  const aiChanged = aiAnswers.some((proposal) => ['applied', 'reverted'].includes(proposal.status));
   const stacked = (replies.length > 0 || aiAnswers.length > 0) && !expanded;
   const canReply = canResolve;
   const removed = isRemovedInSource(root);
@@ -180,7 +182,11 @@ export const CommentCard = memo(function CommentCard({
               <span className="text-xs text-fg-subtle">
                 {[
                   replies.length > 0 && pluralize(replies.length, 'Antwort', 'Antworten'),
-                  aiWorking ? 'KI arbeitet …' : aiAnswers.length > 0 && 'KI hat geändert',
+                  aiWorking
+                    ? 'KI arbeitet …'
+                    : aiChanged
+                      ? 'KI hat geändert'
+                      : aiAnswers.length > 0 && 'KI hat geantwortet',
                 ]
                   .filter(Boolean)
                   .join(' | ')}

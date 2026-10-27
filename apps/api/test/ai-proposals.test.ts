@@ -40,7 +40,7 @@ class FakeAnthropic {
   readonly client = (apiKey: string): Anthropic =>
     ({
       models: {
-        retrieve: async (model: string) => ({ id: model, apiKey }),
+        retrieve: async (model: string) => ({ id: model, apiKey, max_tokens: 128_000 }),
         list: () =>
           (async function* () {
             await Promise.resolve();
@@ -223,7 +223,9 @@ describe('AI proposals', () => {
       'move_slide',
       'read_styles',
       'write_slide',
+      'edit_slide',
     ]);
+    expect(first.max_tokens).toBe(128_000);
     expect(first.output_config?.task_budget).toMatchObject({ type: 'tokens' });
     expect(first.betas).toContain('task-budgets-2026-03-13');
     const firstContent = first.messages[0]!.content as Anthropic.Beta.BetaContentBlockParam[];
@@ -455,6 +457,60 @@ describe('AI proposals', () => {
     expect(content).toContain('>Umsatz</text:a>');
     expect(content).not.toContain('javascript:');
     expect(content).not.toContain('vnd.sun.star.script');
+  });
+
+  it('changes parts of a slide – a find not there or there twice is refused, nothing changed', async () => {
+    const { ctx, anthropic, deckId, state } = await setup();
+    anthropic.steps = [
+      message(
+        [
+          toolUse('edit_slide', {
+            slide: 3,
+            edits: [
+              { find: '>Umsatz nach Region<', replace: '>Umsatz 2026<' },
+              { find: '>Gibt es nicht<', replace: '>x<' },
+            ],
+          }),
+        ],
+        'tool_use',
+      ),
+      message(
+        [toolUse('edit_slide', { slide: 3, edits: [{ find: '<', replace: '' }] })],
+        'tool_use',
+      ),
+      message(
+        [
+          toolUse('edit_slide', {
+            slide: 3,
+            edits: [
+              { find: '>Umsatz nach Region<', replace: '>Umsatz 2026<' },
+              { find: '>Umsatz 2026<', replace: '>Umsatz 2026: +10 %<' },
+            ],
+          }),
+        ],
+        'tool_use',
+      ),
+      message([text('Titel geändert.')], 'end_turn'),
+    ];
+    await ask(ctx, deckId, state.slides[2]!.slideId, 'Mach den Titel zu einer Aussage');
+    expect(await settled(ctx, deckId)).toMatchObject({ status: 'applied' });
+
+    expect(toolResults(anthropic.requests[1]!)[0]).toMatchObject({
+      is_error: true,
+      content: expect.stringContaining('Edit 2: its find is not in slide 3'),
+    });
+    expect(toolResults(anthropic.requests[2]!)[0]).toMatchObject({
+      is_error: true,
+      content: expect.stringContaining('more than once'),
+    });
+    const drawn = toolResults(anthropic.requests[3]!)[0]!;
+    expect(drawn.is_error).toBeUndefined();
+    expect(JSON.stringify(drawn.content)).toContain('image/webp');
+
+    const slides = slideSchema
+      .array()
+      .parse(await (await ctx.request(`/api/decks/${deckId}/slides`)).json());
+    expect(slides[2]!.title).toBe('Umsatz 2026: +10 %');
   });
 
   it('searches the deck, lists its pictures and looks at one', async () => {

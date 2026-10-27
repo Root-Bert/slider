@@ -390,16 +390,37 @@ export async function runTurn(
   return openAiTurn(deps, connection, request);
 }
 
+/** What a turn may write when the model's own limit is unknown. */
+const DEFAULT_MAX_TOKENS = 32_000;
+/** The most each model may write in one answer, as Anthropic tells it. */
+const maxTokensOf = new Map<string, number>();
+
+/** The model's own output limit – a large slide fits in one write – or the default. */
+async function maxTokens(client: Anthropic, model: string): Promise<number> {
+  const known = maxTokensOf.get(model);
+  if (known) return known;
+  try {
+    const limit = (await client.models.retrieve(model)).max_tokens;
+    if (!limit) return DEFAULT_MAX_TOKENS;
+    maxTokensOf.set(model, limit);
+    return limit;
+  } catch {
+    // Asked again next turn; the turn itself tells what is wrong with the key.
+    return DEFAULT_MAX_TOKENS;
+  }
+}
+
 async function anthropicTurn(
   deps: Pick<AppDeps, 'anthropic'>,
   connection: AiConnection,
   request: TurnRequest,
 ): Promise<TurnResult> {
-  const message = await anthropicClient(deps, connection.apiKey)
-    .beta.messages.stream(
+  const client = anthropicClient(deps, connection.apiKey);
+  const message = await client.beta.messages
+    .stream(
       {
         model: connection.model,
-        max_tokens: 32_000,
+        max_tokens: await maxTokens(client, connection.model),
         system: request.system,
         tools: request.tools,
         messages: request.messages,

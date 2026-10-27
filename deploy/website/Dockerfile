@@ -21,6 +21,7 @@ COPY apps/web/package.json apps/web/
 COPY apps/site/package.json apps/site/
 COPY packages/shared/package.json packages/shared/
 COPY packages/pptx/package.json packages/pptx/
+COPY packages/odp/package.json packages/odp/
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 # All workspaces: the site renders the app's components (apps/web/src) with the app's dependencies.
 RUN bun install --frozen-lockfile

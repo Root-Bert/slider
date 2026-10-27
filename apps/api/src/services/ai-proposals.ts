@@ -135,12 +135,14 @@ The presentation is an OpenDocument presentation (ODP), and you work on its XML:
 - search_deck finds text or XML (any case) in all slides – speaker notes included – and in the styles and master pages, so you know where something is without looking at every slide.
 - read_styles shows styles, master pages, gradients and the like by name – or, without names, the deck's common styles and master pages.
 - list_pictures lists the pictures in the file (size in pixels, which slides show them); view_picture shows one.
-- add_picture makes a picture attached to the comment thread available as a file path for write_slide.
+- add_picture makes a picture attached to the comment thread available as a file path for write_slide and edit_slide.
 - write_slide replaces a slide's <draw:page> with yours, optionally adding styles, and shows the slide drawn.
+- edit_slide changes parts of a slide's <draw:page>: each edit replaces a piece of its XML by yours. It optionally adds styles, and shows the slide drawn.
 - insert_slide adds a slide – your <draw:page>, or a copy of a slide to rewrite afterwards – and shows it drawn; delete_slide removes one, move_slide moves one. Slide numbers change with them: the results give the new order.
 
 Writing:
-- Write the complete <draw:page>, starting from its current XML, and keep everything the request is not about as it is – element ids (xml:id), names, placeholders (presentation:class), notes and animations included. Use the file's namespace prefixes (draw, svg, text, style, fo, presentation, table, …) without declaring them.
+- With write_slide, write the complete <draw:page>, starting from its current XML, and keep everything the request is not about as it is – element ids (xml:id), names, placeholders (presentation:class), notes and animations included. Use the file's namespace prefixes (draw, svg, text, style, fo, presentation, table, …) without declaring them.
+- With edit_slide, give only the pieces you change: each one copied exactly from the slide's XML as you were last shown it, long enough to occur only once, and what replaces it. Use it when the request is about some elements or attributes and the rest of the slide stays – always on a large slide (a table, many shapes), which is never too large for it. Do the whole request in one run; there is no later one.
 - Styles are shared between slides. To change how an element looks, add a style of your own (e.g. a style:style of family graphic, paragraph or text, under a new name, with the properties you want and the same parent as the old one) and point the element at it. Existing styles stay as they are; your own you can write again.
 - Pictures can be ones already in the file (Pictures/…, the same path on several slides is fine) or ones from the thread after add_picture. Keep a picture's proportions (its pixel size) when you size its frame. Scripts, events and links out are removed.
 - A draw:frame is always a rectangle. For a picture with rounded corners, as a circle or in another shape, replace its frame by a shape filled with the picture: a draw:rect with draw:corner-radius (or a draw:ellipse, or a draw:custom-shape) of the frame's position and size, whose graphic style has draw:fill="bitmap", draw:fill-image-name naming a draw:fill-image you add (draw:name, xlink:href the Pictures/… path, xlink:type="simple", xlink:show="embed", xlink:actuate="onLoad"), style:repeat="stretch" and draw:stroke="none". The shape needs the picture's proportions, or it is stretched.
@@ -153,7 +155,7 @@ When the slides are right, or when the request cannot be done, stop. What you wr
 
 const STOCK_SYSTEM = `
 
-Stock photos (Unsplash): when the request asks for a photo or picture you do not have – a new one, a better or different one – search_photos finds photos (you see small previews) and add_photo makes one available as a file path for write_slide, cut to the frame's proportions. Search with a short English query for what the photo should show; search again only if nothing fits. Pass the best photo and up to two good alternatives to add_photo: the people can switch to an alternative with one click. Put the photo into a draw:frame with the proportions you gave (replacing an existing picture: its draw:image inside the existing frame, same size). The photographer's credit is added to the frame automatically – do not write it on the slide. Never use stock photos for logos, charts, screenshots or people the deck names.`;
+Stock photos (Unsplash): when the request asks for a photo or picture you do not have – a new one, a better or different one – search_photos finds photos (you see small previews) and add_photo makes one available as a file path for write_slide and edit_slide, cut to the frame's proportions. Search with a short English query for what the photo should show; search again only if nothing fits. Pass the best photo and up to two good alternatives to add_photo: the people can switch to an alternative with one click. Put the photo into a draw:frame with the proportions you gave (replacing an existing picture: its draw:image inside the existing frame, same size). The photographer's credit is added to the frame automatically – do not write it on the slide. Never use stock photos for logos, charts, screenshots or people the deck names.`;
 
 /** What the AI is told – with stock photos when this server can search them. */
 const systemPrompt = (stock: boolean) => BASE_SYSTEM + (stock ? STOCK_SYSTEM : '');
@@ -199,7 +201,7 @@ const TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: 'add_picture',
     description:
-      'Makes a picture attached to the comment thread (numbered as shown to you) available to write_slide, and returns its Pictures/… path and size in pixels.',
+      'Makes a picture attached to the comment thread (numbered as shown to you) available to write_slide and edit_slide, and returns its Pictures/… path and size in pixels.',
     input_schema: {
       type: 'object',
       properties: { picture: { type: 'integer', minimum: 1 } },
@@ -265,6 +267,32 @@ const TOOLS: Anthropic.Beta.BetaTool[] = [
       required: ['slide', 'xml'],
     },
   },
+  {
+    name: 'edit_slide',
+    description:
+      'Changes parts of a slide: replaces each `find` – XML copied exactly from the slide as last shown, occurring there once – by its `replace`, in order, after adding your styles, and returns the slide drawn. All edits apply or none; a `find` not there or there more than once comes back as an error.',
+    eager_input_streaming: true,
+    input_schema: {
+      type: 'object',
+      properties: {
+        slide: slideNumber,
+        edits: {
+          type: 'array',
+          minItems: 1,
+          items: {
+            type: 'object',
+            properties: {
+              find: { type: 'string', minLength: 1 },
+              replace: { type: 'string' },
+            },
+            required: ['find', 'replace'],
+          },
+        },
+        styles: { type: 'string', description: 'New styles, as for write_slide.' },
+      },
+      required: ['slide', 'edits'],
+    },
+  },
 ];
 
 const STOCK_TOOLS: Anthropic.Beta.BetaTool[] = [
@@ -284,7 +312,7 @@ const STOCK_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: 'add_photo',
     description:
-      'Makes a found photo available to write_slide, cut to `aspect` (the frame’s width / height), and returns its Pictures/… path and size in pixels. `alternatives`: up to two other good photos found – people can switch to them.',
+      'Makes a found photo available to write_slide and edit_slide, cut to `aspect` (the frame’s width / height), and returns its Pictures/… path and size in pixels. `alternatives`: up to two other good photos found – people can switch to them.',
     input_schema: {
       type: 'object',
       properties: {
@@ -329,6 +357,14 @@ const stylesInput = z.object({ names: z.array(z.string()).max(200).optional() })
 const writeInput = z.object({
   slide: z.number().int().min(1),
   xml: z.string(),
+  styles: z.string().optional(),
+});
+const editInput = z.object({
+  slide: z.number().int().min(1),
+  edits: z
+    .array(z.object({ find: z.string().min(1), replace: z.string() }))
+    .min(1)
+    .max(500),
   styles: z.string().optional(),
 });
 
@@ -1075,6 +1111,31 @@ class DeckCopy {
     return this.drawnResult(slide, picture, 'now');
   }
 
+  /** Changes pieces of a slide's XML – each found exactly once – and writes and draws it. */
+  async edit(
+    slide: number,
+    edits: { find: string; replace: string }[],
+    styles: string | undefined,
+  ): Promise<Anthropic.Beta.BetaToolResultBlockParam['content']> {
+    let xml = this.document.slideXml(this.index(slide));
+    for (const [i, { find, replace }] of edits.entries()) {
+      const at = xml.indexOf(find);
+      const which = edits.length > 1 ? `Edit ${i + 1}: its find` : 'The find';
+      if (at === -1) {
+        throw new ToolProblem(
+          `${which} is not in slide ${slide}'s XML${i > 0 ? ' after the edits before it' : ''} – copy it exactly from the XML view_slide shows. Nothing was changed.`,
+        );
+      }
+      if (xml.includes(find, at + 1)) {
+        throw new ToolProblem(
+          `${which} occurs more than once in slide ${slide}'s XML – include more around it. Nothing was changed.`,
+        );
+      }
+      xml = xml.slice(0, at) + replace + xml.slice(at + find.length);
+    }
+    return this.write(slide, xml, styles);
+  }
+
   /** Adds a slide after slide `after` (0: first) – written, or a copy of a slide – and draws it. */
   async insert(
     after: number,
@@ -1235,6 +1296,10 @@ async function runTool(
     if (call.name === 'write_slide') {
       const input = writeInput.parse(call.input);
       return result(await deck.write(input.slide, input.xml, input.styles));
+    }
+    if (call.name === 'edit_slide') {
+      const input = editInput.parse(call.input);
+      return result(await deck.edit(input.slide, input.edits, input.styles));
     }
     return result(`There is no tool ${call.name}.`, true);
   } catch (error) {
@@ -1415,7 +1480,8 @@ async function runProposal(
               type: 'tool_result' as const,
               tool_use_id: call.id,
               is_error: true,
-              content: 'Your output was cut off. Write one slide per call.',
+              content:
+                'Your output was cut off. Write one slide per call – or change only the parts of it the request is about with edit_slide.',
             })),
           });
           continue;

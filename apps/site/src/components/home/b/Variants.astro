@@ -41,7 +41,7 @@ const opinions: { by: PersonName; meta: string; text: string }[] = [
 const rowOf = (by: PersonName) => rows.findIndex((r) => r?.by === by);
 ---
 
-<div class="mv relative grid gap-8 lg:grid-cols-[360px_minmax(0,912px)] lg:items-start lg:gap-10" data-mv data-state="idle">
+<div class="mv relative grid gap-8 lg:grid-cols-[360px_minmax(0,912px)] lg:items-start lg:gap-10" data-mv data-state="idle" data-step={H + GAP}>
   <!-- Glows are radial gradients, not filter: blur – Safari streaks large blurs across the page. -->
   <div class="mv-aura pointer-events-none absolute top-0 left-[-120px] h-[760px] w-[660px] opacity-0" style="background: radial-gradient(closest-side, white, transparent)" aria-hidden="true"></div>
 
@@ -187,11 +187,12 @@ const rowOf = (by: PersonName) => rows.findIndex((r) => r?.by === by);
    * Idle → generating (skeletons) → done (slides drop in, the canvas scrolls up to the first) →
    * picked (back to the main track; once there, the pick lands in the middle).
    */
-  const STEP = 315 + 80; // slide height + gap, see the frontmatter
   const CURRENT = 1;
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   for (const root of document.querySelectorAll<HTMLElement>('[data-mv]')) {
+    // Slide height + gap, from the frontmatter.
+    const STEP = Number(root.dataset.step);
     const scroller = root.querySelector<HTMLElement>('[data-mv-scroll]')!;
     const rows = root.querySelectorAll<HTMLElement>('.mv-row');
     const ops = root.querySelectorAll<HTMLButtonElement>('.mv-op');
@@ -266,6 +267,19 @@ const rowOf = (by: PersonName) => rows.findIndex((r) => r?.by === by);
         window.setTimeout(() => go(0), 2700),
       );
     });
+    // A scroll set before the canvas has its size (Safari runs this before the built CSS applies)
+    // is clamped to 0 and fires no scroll event, so the locked canvas would show the empty row
+    // above slide 3. Whenever its layout changes – and on load or back/forward – it goes back.
+    const settle = () => {
+      if (!locked() || Math.abs(scroller.scrollTop - CURRENT * STEP) <= 1) return;
+      scroller.scrollTop = CURRENT * STEP;
+      mark();
+    };
+    const sized = new ResizeObserver(settle);
+    sized.observe(scroller);
+    sized.observe(scroller.firstElementChild!);
+    addEventListener('load', settle);
+    addEventListener('pageshow', settle);
     root.querySelector('[data-mv-reset]')!.addEventListener('click', reset);
     root.querySelectorAll<HTMLElement>('[data-mv-pick]').forEach((el) =>
       el.addEventListener('click', () => {
