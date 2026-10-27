@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useDebounced } from './useDebounced';
+import { useDebounced } from '@/ui';
 
 const SEARCH_DEBOUNCE_MS = 250;
 

@@ -1,13 +1,12 @@
 name: CI
 
-# Every pull request and push: lint, typecheck, tests (PGlite and a real Postgres, each split
-# across runners), build, e2e, Caddyfiles, secret scan, and the container image built and
+# Every pull request and push to main: lint, typecheck, the focused test suite on PGlite,
+# Postgres driver/migration checks, build, e2e, Caddyfiles, secret scan, and the container image built and
 # smoke-tested. No image is published: self-hosters build it from their checkout
 # (docs/self-hosting.md).
 #
 # Changes only to the website (apps/site, which deploy-website.yml checks and builds itself), to
-# the logo files (brand) or to Markdown no code reads start no run. README.md and
-# docs/self-hosting.md are not on the list: test/self-hosting.test.ts checks them.
+# the logo files (brand) or to Markdown no code reads start no run.
 
 on:
   push:
@@ -67,7 +66,7 @@ jobs:
           - name: API 3/3
             run: bunx vitest run --project api $(bun scripts/api-test-group.ts 3 3)
           - name: web, packages
-            run: bunx vitest run --project web --project web-dom --project pptx --project shared --project infra
+            run: bunx vitest run --project web --project web-dom --project pptx --project odp --project shared
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
@@ -123,15 +122,11 @@ jobs:
             e2e/.results
           retention-days: 7
 
-  # The production database path: DATABASE_URL, the postgres-js driver and its migrator. The
-  # whole API suite runs once more, each test context on a fresh database of this server.
+  # The production driver, migration idempotency, upserts and transaction rollback.
+  # Business behavior is covered by the PGlite suite above instead of repeated here.
   postgres:
-    name: API tests on Postgres (${{ matrix.shard }}/2)
+    name: Postgres driver and migrations
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2]
     services:
       postgres:
         # Same major as deploy/docker-compose.yml.
@@ -156,7 +151,7 @@ jobs:
         with:
           node-version-file: .nvmrc
       - run: bun install --frozen-lockfile
-      - run: bunx vitest run --project api $(bun scripts/api-test-group.ts ${{ matrix.shard }} 2) --maxWorkers=2
+      - run: bunx vitest run --project api apps/api/test/postgres.test.ts --maxWorkers=2
 
   # Builds the Dockerfile for both platforms self-hosters run and starts each like a self-hoster
   # would. amd64 on every push and PR. arm64 (e.g. Hetzner CAX) is built and run under QEMU, which

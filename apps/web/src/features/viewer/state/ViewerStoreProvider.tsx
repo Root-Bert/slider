@@ -22,7 +22,9 @@ import {
 import {
   createInitialState,
   ViewerDispatchContext,
+  ViewerHoverContext,
   viewerReducer,
+  ViewerSetHoverContext,
   ViewerStateContext,
 } from './viewer-state';
 
@@ -33,7 +35,7 @@ interface ViewerStoreProviderProps {
 }
 
 /**
- * Provides server data, UI state and the stage registry as three separate contexts. `data` is
+ * Provides server data, UI state, the hovered thread and the stage registry as separate contexts. `data` is
  * the whole deck; the viewer gets it without the slides hidden in PowerPoint unless they show.
  */
 export function ViewerStoreProvider({
@@ -42,7 +44,13 @@ export function ViewerStoreProvider({
   children,
 }: ViewerStoreProviderProps) {
   const [state, dispatch] = useReducer(viewerReducer, null, () => {
-    const { hideMinimap, ...preferences } = loadWorkPreferences();
+    // The zooms are read where they happen (`useZoomToRect`), so a change applies at once.
+    const {
+      hideMinimap,
+      autoZoom: _autoZoom,
+      commentZoom: _commentZoom,
+      ...preferences
+    } = loadWorkPreferences();
     const initial = initialSlideId && all.slideIndex.has(initialSlideId) ? initialSlideId : null;
     return createInitialState({
       activeSlideId:
@@ -60,6 +68,9 @@ export function ViewerStoreProvider({
     [all, state.showHiddenSlides],
   );
   const [registry] = useState(createStageRegistry);
+  const [hovered, setHoveredThreadId] = useState<string | null>(null);
+  // A thread deleted meanwhile is hovered no more (until the pointer moves, see `useThreadHover`).
+  const hoveredThreadId = hovered !== null && all.threadById.has(hovered) ? hovered : null;
 
   // The split is a per-browser preference, not per deck.
   useEffect(() => storeSplit(state.split), [state.split]);
@@ -104,7 +115,11 @@ export function ViewerStoreProvider({
     <ViewerDataContext value={data}>
       <StageRegistryContext value={registry}>
         <ViewerDispatchContext value={dispatch}>
-          <ViewerStateContext value={state}>{children}</ViewerStateContext>
+          <ViewerSetHoverContext value={setHoveredThreadId}>
+            <ViewerStateContext value={state}>
+              <ViewerHoverContext value={hoveredThreadId}>{children}</ViewerHoverContext>
+            </ViewerStateContext>
+          </ViewerSetHoverContext>
         </ViewerDispatchContext>
       </StageRegistryContext>
     </ViewerDataContext>

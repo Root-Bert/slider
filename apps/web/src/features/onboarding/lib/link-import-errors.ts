@@ -7,12 +7,12 @@ import {
 } from '@slider/shared';
 import { ACCOUNT_LIMIT_MESSAGE, isLoginError } from '@/features/auth';
 
-/** Copy and A3 ("no access") states of the "PowerPoint-Link einfügen" form (BER-92). */
+/** Copy and A3 ("no access") states of the "Link zur Präsentation einfügen" form (BER-92). */
 
 export const INVALID_LINK_MESSAGE =
-  'Kein gültiger OneDrive-, SharePoint-, Nextcloud-, Google- oder PPTX-Link';
+  'Kein gültiger OneDrive-, SharePoint-, Nextcloud-, Google- oder Datei-Link';
 export const EMPTY_LINK_MESSAGE =
-  'Füge einen OneDrive-, SharePoint-, Nextcloud-, Google- oder PPTX-Link ein.';
+  'Füge einen OneDrive-, SharePoint-, Nextcloud-, Google- oder Datei-Link ein.';
 export const NO_ACCESS_MESSAGE = 'Kein Zugriff – der Link ist nur intern freigegeben.';
 
 /**
@@ -32,7 +32,7 @@ export const invalidLinkMessage = (link: string) =>
 
 export const LOGIN_DENIED_MESSAGE = 'Die Anmeldung wurde abgebrochen.';
 export const CONSENT_MESSAGE =
-  'Deine Organisation erlaubt Slider noch keinen Zugriff auf Dateien. Eine Administratorin oder ein Administrator muss Slider einmalig freigeben (Admin-Zustimmung). Bis dahin kannst du die Datei als PPTX hochladen.';
+  'Deine Organisation erlaubt Slider noch keinen Zugriff auf Dateien. Eine Administratorin oder ein Administrator muss Slider einmalig freigeben (Admin-Zustimmung). Bis dahin kannst du die Datei hochladen.';
 export const LOGIN_FAILED_MESSAGE =
   'Die Anmeldung bei Microsoft hat nicht geklappt. Bitte versuche es erneut oder lade die Datei hoch.';
 

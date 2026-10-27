@@ -1,4 +1,4 @@
-import { MAX_COMMENT_BODY_LENGTH, MAX_COMMENT_IMAGES } from '@slider/shared';
+import { MAX_COMMENT_BODY_LENGTH, MAX_COMMENT_IMAGES, type Comment } from '@slider/shared';
 import {
   useEffect,
   useEffectEvent,
@@ -7,6 +7,8 @@ import {
   useState,
   type CSSProperties,
   type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { isApplePlatform } from '@/lib/platform';
 import { useCreateComment, useDeleteComment } from '@/lib/api';
@@ -15,6 +17,7 @@ import {
   Button,
   cn,
   ErrorText,
+  Icon,
   IconButton,
   Kbd,
   Notice,
@@ -45,6 +48,7 @@ import { useViewerToast } from '../state/viewer-toast';
 import { useHoldUnsavedWork } from '../lib/unsaved-work';
 import { MentionMenu } from './MentionMenu';
 import { MentionTextarea } from './MentionTextarea';
+import { useAskAi } from '../editing/hooks/useAskAi';
 import { isModEnter, isModKey, typesCharacter } from '@/lib/keyboard';
 
 /** Popover for a new comment, anchored next to the draft mark (B2). Rendered only while drafting. */
@@ -61,11 +65,21 @@ function ComposerPopover({ draft }: { draft: Draft }) {
   const createComment = useCreateComment(deck.id);
   const createMediaComment = useCreateMediaComment(deck.id);
   const deleteComment = useDeleteComment(deck.id);
+  const ai = useAskAi();
   const [body, setBody] = useState(draft.initialBody ?? '');
   const [tab, setTab] = useState<MediaKindId>('text');
   // The text tab's mic: a voice comment, the text its note (text and audio are one tab).
   const [voice, setVoice] = useState(false);
+  // The mic starts recording at once; reached by Tab it waits for Space, so Tab can go on.
+  const [voiceAutoStart, setVoiceAutoStart] = useState(true);
+  // Reached by Tab, not started yet: the mic beside the field turns into "Aufnehmen".
+  const voiceArmed = voice && !voiceAutoStart;
+  const micRef = useRef<HTMLButtonElement>(null);
   const [recording, setRecording] = useState<Recording | null>(null);
+  // The video's start beside the field, like the mic: counted up per click.
+  const [videoStart, setVideoStart] = useState(0);
+  // Dropping a video remounts its recorder: a fresh take, the picture source kept.
+  const [videoTake, setVideoTake] = useState(0);
   const [sketch, setSketch] = useState<Sketch | null>(null);
   // Pasted or picked images (BER-174), in every kind of comment – like its note. A drawn sketch
   // takes one of the places.
@@ -80,6 +94,25 @@ function ComposerPopover({ draft }: { draft: Draft }) {
   const placement = useComposerPosition(narrow ? null : draft, popoverRef);
   // Measured right away, shown floating after the mark – it hovers over the slide.
   useFloatingFollow(popoverRef, placement);
+  // Taken apart in 3D the slide shows more of itself: the popover can be pushed aside by its
+  // handle, while it is open (a margin – its place and the following stay as they are).
+  const [pushed, setPushed] = useState({ x: 0, y: 0 });
+  const push = useRef<{ x: number; y: number; from: { x: number; y: number } } | null>(null);
+  const movable = useViewerState().layersOpen && !narrow;
+  const onHandleDown = (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    push.current = { x: event.clientX, y: event.clientY, from: pushed };
+  };
+  const onHandleMove = (event: ReactPointerEvent<HTMLElement>) => {
+    const start = push.current;
+    if (!start) return;
+    setPushed({
+      x: start.from.x + event.clientX - start.x,
+      y: start.from.y + event.clientY - start.y,
+    });
+  };
   const titleId = useId();
   // The sheet takes the commented slide's format.
   const sketchAspect =
@@ -99,9 +132,14 @@ function ComposerPopover({ draft }: { draft: Draft }) {
   const { author } = viewer;
   // "Text auf Folie": the text is typed on the slide; the composer adds an optional comment.
   const onSlideText = draft.textBox !== null;
-  const recorderKind = tab === 'video' ? 'video' : tab === 'text' && voice ? 'audio' : null;
-  const recordingTab = recorderKind !== null;
   const imageTab = tab === 'image';
+  // The mic beside the field: a voice comment on the text tab, a memo to the sketch on the image tab.
+  const recorderKind =
+    tab === 'video' ? 'video' : (tab === 'text' || imageTab) && voice ? 'audio' : null;
+  // The recording is the comment – the sketch's memo only goes along with it.
+  const recordingTab = tab === 'video' || (tab === 'text' && voice);
+  // The sketch's memo records (or pauses): sending now would leave it behind.
+  const memoRunning = imageTab && recordingRunning;
   // A box just drawn: the first keys are typed into it on the slide (`DraftMark`), not here.
   const freshBox =
     draft.anchor.type === 'rect' && !draft.anchorFromStrokes && draft.strokes.length === 0;
@@ -123,7 +161,7 @@ function ComposerPopover({ draft }: { draft: Draft }) {
   const sketchTooMany =
     imageTab && sketch !== null && images.attachments.length >= MAX_COMMENT_IMAGES;
   // An image still turning into a PNG would be left out: sent once it's there.
-  const canSend = submission !== null && !images.busy && !sketchTooMany;
+  const canSend = submission !== null && !images.busy && !sketchTooMany && !memoRunning;
   const pending = createComment.isPending || createMediaComment.isPending;
   const error = createComment.error ?? createMediaComment.error;
   const subtitle =
@@ -141,9 +179,72 @@ function ComposerPopover({ draft }: { draft: Draft }) {
 
   const toggleVoice = () => {
     setVoice((on) => !on);
+    setVoiceAutoStart(true);
     setRecording(null);
     setRecordingRunning(false);
   };
+
+  // On video the recorder is always there: the mic starts it, and is on once something runs.
+  const videoOn = tab === 'video' && (recording !== null || recordingRunning);
+  const micOn = tab === 'video' ? videoOn : voice;
+  const micLabel =
+    tab === 'video'
+      ? 'Videoaufnahme starten'
+      : imageTab
+        ? 'Sprachmemo zur Skizze aufnehmen'
+        : 'Sprachkommentar aufnehmen';
+  const micOffLabel = tab === 'video' ? 'Videoaufnahme verwerfen' : 'Sprachaufnahme verwerfen';
+  const micTitle =
+    tab === 'video'
+      ? 'Aufnahme starten (Leertaste)'
+      : imageTab
+        ? 'Sprachmemo aufnehmen'
+        : 'Sprachmemo aufnehmen (Tab)';
+  const toggleVideo = () => {
+    if (!videoOn) {
+      setVideoStart((count) => count + 1);
+      return;
+    }
+    setVideoTake((take) => take + 1);
+    setRecording(null);
+    setRecordingRunning(false);
+  };
+
+  // Tab walks the kinds in a loop: comment → Memo → Video → Skizze → comment, from the comment
+  // field, the recorder or the sheet (after the text on the slide, which Tab leaves for the comment
+  // field). Once something is recorded or drawn, Tab moves the focus on as usual – nothing is
+  // dropped by it; Esc and ⌘↵ work all along.
+  const onFormKeyDown = (event: ReactKeyboardEvent<HTMLFormElement>) => {
+    if (event.defaultPrevented || event.key !== 'Tab' || event.shiftKey) return;
+    if (isModKey(event) || event.altKey || event.nativeEvent.isComposing) return;
+    if (recording !== null || recordingRunning || sketch !== null) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (tab === 'text' && !voice && target === commentRef.current) {
+      event.preventDefault();
+      setVoice(true);
+      setVoiceAutoStart(false);
+    } else if (voiceArmed && target === micRef.current) {
+      event.preventDefault();
+      switchTab('video');
+    } else if (recordingTab && target?.closest('[data-recorder]')) {
+      event.preventDefault();
+      switchTab(recorderKind === 'audio' ? 'video' : 'image');
+    } else if (imageTab && target?.closest('[data-sketch]') && !target.closest('dialog')) {
+      event.preventDefault();
+      switchTab('text');
+      focusFieldNext.current = true;
+    }
+  };
+  useEffect(() => {
+    if (voiceArmed) micRef.current?.focus();
+  }, [voiceArmed]);
+  // Back on the comment after the sheet: the field takes the focus the sheet had.
+  const focusFieldNext = useRef(false);
+  useEffect(() => {
+    if (!focusFieldNext.current) return;
+    focusFieldNext.current = false;
+    commentRef.current?.focus();
+  }, [tab]);
 
   // What only the composer holds keeps the draft from being replaced by a click on another slide
   // (`keepsDraft`) – and, with the draft's own strokes and slide text, from leaving unasked.
@@ -165,8 +266,8 @@ function ComposerPopover({ draft }: { draft: Draft }) {
   }, [nudge, showToast]);
 
   // Focus outside the composer – after a click on the slide: Tab moves into it (Shift+Tab to its
-  // last control), typing writes the comment. Inside, Tab moves the focus as usual – the kinds
-  // switch with ←/→ on their tabs – so nothing (a recording, a sketch) is dropped by a key press.
+  // last control), typing writes the comment. Inside, Tab walks the kinds (`onFormKeyDown`) or
+  // moves the focus as usual.
   // A fresh box takes the keys itself (`DraftMark`).
   const onWindowKeyDown = useEffectEvent((event: KeyboardEvent) => {
     if (event.defaultPrevented || event.isComposing || isTypingTarget(event.target)) return;
@@ -206,17 +307,19 @@ function ComposerPopover({ draft }: { draft: Draft }) {
     dispatch({ type: 'draftCancelled' });
   };
 
-  const submit = (event?: FormEvent) => {
+  // Enter sends the comment; ⌘↵ sends it and asks the AI to change the slide (BER-183).
+  const submit = (event?: FormEvent, { askAi = false } = {}) => {
     event?.preventDefault();
     if (!submission || !canSend || pending) return;
     const input = { slideId: draft.slideId, parentId: null, ...submission };
-    const onSuccess = () => {
+    const onSuccess = (comment: Comment) => {
       // The comment carries the drawing now; the bare one goes.
       if (draft.commentId) deleteComment.mutate({ commentId: draft.commentId });
       dispatch({ type: 'draftSubmitted' });
+      if (askAi) ai.ask(comment);
     };
     const drawn = imageTab ? sketch : null;
-    const memo = recordingTab ? recording : (drawn?.memo ?? null);
+    const memo = recorderKind ? recording : null;
     const pictures = [
       ...(drawn ? [() => exportSketch(drawn.strokes, sketchAspect)] : []),
       ...asUploads(images.attachments),
@@ -234,6 +337,7 @@ function ComposerPopover({ draft }: { draft: Draft }) {
       role="dialog"
       aria-labelledby={titleId}
       onSubmit={submit}
+      onKeyDown={onFormKeyDown}
       className={cn(
         'glass-elevated fixed z-(--z-popover) flex w-[min(340px,calc(100vw-24px))] animate-pop-in flex-col gap-3 rounded-panel p-3',
         // The sheet to draw on needs room.
@@ -243,6 +347,7 @@ function ComposerPopover({ draft }: { draft: Draft }) {
       style={
         {
           ...(narrow ? {} : { left: placement?.left ?? 0, top: placement?.top ?? 0 }),
+          ...(movable ? { marginLeft: pushed.x, marginTop: pushed.y } : {}),
           visibility: narrow || placement ? 'visible' : 'hidden',
           boxShadow: `inset 0 0 0 1px ${accentAlpha(author.color, 90)}, 0 0 32px ${accentAlpha(author.color, 35)}, var(--shadow-float)`,
         } as CSSProperties
@@ -259,22 +364,22 @@ function ComposerPopover({ draft }: { draft: Draft }) {
             {subtitle}
           </span>
         </div>
+        {movable && (
+          <span
+            data-composer-handle
+            title="Verschieben"
+            className="ml-auto flex shrink-0 cursor-grab touch-none self-start rounded-thumb p-0.5 text-fg-subtle hover:text-fg-muted active:cursor-grabbing"
+            onPointerDown={onHandleDown}
+            onPointerMove={onHandleMove}
+            onPointerUp={() => (push.current = null)}
+            onPointerCancel={() => (push.current = null)}
+          >
+            <Icon name="dragIndicator" size={14} />
+          </span>
+        )}
       </header>
 
       <MediaTabs value={tab} onChange={switchTab} />
-
-      {recorderKind && (
-        // Remount per kind: switching tabs turns the previous device off. The mic starts at once.
-        <RecorderPanel
-          key={recorderKind}
-          kind={recorderKind}
-          deckId={deck.id}
-          onChange={setRecording}
-          onRecordingChange={setRecordingRunning}
-          autoStart={recorderKind === 'audio'}
-          autoFocus
-        />
-      )}
 
       {imageTab && (
         <SketchPanel
@@ -284,53 +389,115 @@ function ComposerPopover({ draft }: { draft: Draft }) {
           aspect={sketchAspect}
           onChange={setSketch}
           autoFocus
+          withMemo={false}
           actions={{ canSend, pending, onSend: () => submit(), onCancel: cancel }}
         />
       )}
 
-      <div className="field-well focus-field relative rounded-control-sm px-3 py-2">
-        <MentionMenu mentions={mentions} />
-        <MentionTextarea
-          {...mentions.fieldProps}
-          ref={commentRef}
-          // While drawing or writing on the slide, keep focus there (⌘Z undoes strokes).
-          // A saved drawing's comment is typed right away.
-          autoFocus={
-            forDrawing ||
-            (draft.strokes.length === 0 && !onSlideText && !recordingTab && !imageTab && !freshBox)
-          }
-          aria-label="Kommentar"
-          onPaste={images.onPaste}
-          maxLength={MAX_COMMENT_BODY_LENGTH}
-          placeholder={
-            recordingTab
-              ? 'Optional: Notiz zur Aufnahme'
-              : imageTab
-                ? 'Optional: Notiz zum Bild'
-                : onSlideText
-                  ? 'Optional: Kommentar zum Text auf der Folie'
-                  : draft.strokes.length > 0 && !forDrawing
-                    ? 'Optional: Kommentar zur Zeichnung'
-                    : 'Was fällt dir auf?'
-          }
-          value={body}
-          onKeyDown={(event) => {
-            if (mentions.onKeyDown(event)) return;
-            if (isModEnter(event)) submit();
-            if (event.key !== 'Tab' || !event.shiftKey || isModKey(event) || event.altKey) return;
-            // Shift+Tab goes back to the text on the slide; otherwise Tab moves on as usual.
-            const slideText =
-              tab === 'text'
-                ? document.querySelector<HTMLTextAreaElement>('[data-text-editor] textarea')
-                : null;
-            if (!slideText) return;
-            event.preventDefault();
-            slideText.focus();
-          }}
-          className="text-body leading-5 text-fg"
+      {recorderKind && !voiceArmed && (
+        // Remount per kind: switching tabs turns the previous device off. The mic starts at once.
+        <RecorderPanel
+          key={`${recorderKind}-${videoTake}`}
+          kind={recorderKind}
+          deckId={deck.id}
+          onChange={setRecording}
+          onRecordingChange={setRecordingRunning}
+          autoStart={recorderKind === 'audio' && voiceAutoStart}
+          autoFocus
+          startButton={recorderKind === 'audio'}
+          startRequest={videoStart}
         />
-        <AttachedImages attachments={images.attachments} onRemove={images.remove} />
+      )}
+
+      <div className="flex items-end gap-2">
+        <div className="field-well focus-field relative min-w-0 flex-1 rounded-control-sm px-3 py-2">
+          <MentionMenu mentions={mentions} />
+          <MentionTextarea
+            {...mentions.fieldProps}
+            ref={commentRef}
+            // While drawing or writing on the slide, keep focus there (⌘Z undoes strokes).
+            // A saved drawing's comment is typed right away.
+            autoFocus={
+              forDrawing ||
+              (draft.strokes.length === 0 &&
+                !onSlideText &&
+                !recordingTab &&
+                !imageTab &&
+                !freshBox)
+            }
+            aria-label="Kommentar"
+            onPaste={images.onPaste}
+            maxLength={MAX_COMMENT_BODY_LENGTH}
+            placeholder={
+              recordingTab
+                ? 'Optional: Notiz zur Aufnahme'
+                : imageTab
+                  ? 'Optional: Notiz zur Skizze'
+                  : onSlideText
+                    ? 'Optional: Kommentar zum Text auf der Folie'
+                    : draft.strokes.length > 0 && !forDrawing
+                      ? 'Optional: Kommentar zur Zeichnung'
+                      : 'Was fällt dir auf?'
+            }
+            value={body}
+            onKeyDown={(event) => {
+              if (mentions.onKeyDown(event)) return;
+              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                // Shift+Enter adds a line.
+                event.preventDefault();
+                submit(undefined, { askAi: isModEnter(event) });
+                return;
+              }
+              if (event.key !== 'Tab' || !event.shiftKey || isModKey(event) || event.altKey) return;
+              // Shift+Tab goes back to the text on the slide; otherwise Tab moves on as usual.
+              const slideText =
+                tab === 'text'
+                  ? document.querySelector<HTMLTextAreaElement>('[data-text-editor] textarea')
+                  : null;
+              if (!slideText) return;
+              event.preventDefault();
+              slideText.focus();
+            }}
+            className="text-body leading-5 text-fg"
+          />
+          <AttachedImages attachments={images.attachments} onRemove={images.remove} />
+        </div>
+        {/* Right of the field, so a voice memo is as near at hand as typing. */}
+        {voiceArmed ? (
+          <Button
+            ref={micRef}
+            size="sm"
+            icon="mic"
+            title="Aufnahme starten (Leertaste)"
+            disabled={pending}
+            onClick={() => setVoiceAutoStart(true)}
+            className="mb-0.5"
+          >
+            Aufnehmen
+          </Button>
+        ) : (
+          // One mic in every kind: it records (the video too), pressed it drops the take again.
+          <IconButton
+            ref={micRef}
+            icon="mic"
+            label={micOn ? micOffLabel : micLabel}
+            title={micOn ? micOffLabel : micTitle}
+            // White like its "Aufnehmen" form; the pressed look while recording.
+            variant={micOn ? 'subtle' : 'primary'}
+            size="sm"
+            active={micOn}
+            disabled={pending}
+            onClick={tab === 'video' ? toggleVideo : toggleVoice}
+            className="mb-0.5"
+          />
+        )}
       </div>
+
+      {memoRunning && sketch !== null && (
+        <p role="status" className="text-caption text-fg-subtle">
+          Beende erst die Aufnahme – dann kannst du senden.
+        </p>
+      )}
 
       {sketchTooMany && (
         <ErrorText role="alert" size="xs">
@@ -370,19 +537,18 @@ function ComposerPopover({ draft }: { draft: Draft }) {
             busy={images.busy}
             disabled={pending || images.room === 0}
           />
-          {tab === 'text' && (
-            <IconButton
-              icon="mic"
-              label={voice ? 'Sprachaufnahme verwerfen' : 'Sprachkommentar aufnehmen'}
-              variant="subtle"
-              size="sm"
-              active={voice}
-              disabled={pending}
-              onClick={toggleVoice}
-            />
-          )}
         </div>
         <div className="flex items-center gap-1">
+          {ai.available && draft.slideId !== null && (
+            <IconButton
+              icon="autoAwesome"
+              label="Senden und die KI die Folie ändern lassen"
+              title={`Senden und an die KI geben (${isApplePlatform() ? '⌘' : 'Strg'}↵)`}
+              size="sm"
+              disabled={!canSend || pending}
+              onClick={() => submit(undefined, { askAi: true })}
+            />
+          )}
           <Button
             type="submit"
             size="sm"
@@ -399,7 +565,6 @@ function ComposerPopover({ draft }: { draft: Draft }) {
                 Senden
                 {/* Only on hover / keyboard focus, so the button stays calm. */}
                 <Kbd className="-mr-1 hidden text-on-primary/55 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-on-primary)_15%,transparent)] group-hover:inline-flex group-focus-visible:inline-flex max-sm:hidden max-sm:group-hover:hidden">
-                  {isApplePlatform() ? '⌘' : 'Strg'}
                   <ReturnKey />
                 </Kbd>
               </>

@@ -415,7 +415,7 @@ const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\
 /**
  * Rewrites the person's comments to a deleted author – a fresh id per deletion, so nothing links
  * them to the account or to each other across accounts – and their @mentions in the decks of
- * their workspaces. Returns the decks whose comments changed and the id they now carry.
+ * the workspaces they are or were in. Returns the decks whose comments changed and the id they now carry.
  */
 async function anonymiseComments(
   tx: Executor,
@@ -437,8 +437,21 @@ async function anonymiseComments(
   await tx.update(comments).set({ resolvedBy: deleted.id }).where(eq(comments.resolvedBy, userId));
   const touched = new Set(authored.map((row) => row.deckId));
 
-  // Mentions are plain `@Name` text (BER-105). Too short a name would match other words.
-  const workspaceIds = memberships.map((m) => m.workspaceId);
+  // Mentions are plain `@Name` text (BER-105). Too short a name would match other words. Also
+  // where they once were: workspaces they were removed from, and where they wrote.
+  const removedFrom = await tx
+    .select({ workspaceId: workspaceRemovals.workspaceId })
+    .from(workspaceRemovals)
+    .where(eq(workspaceRemovals.userId, userId));
+  const wroteIn = touched.size
+    ? await tx
+        .selectDistinct({ workspaceId: decks.workspaceId })
+        .from(decks)
+        .where(inArray(decks.id, [...touched]))
+    : [];
+  const workspaceIds = [
+    ...new Set([...memberships, ...removedFrom, ...wroteIn].map((row) => row.workspaceId)),
+  ];
   if (name.trim().length >= 2 && workspaceIds.length > 0) {
     const mention = `@${name}`;
     const pattern = new RegExp(`${escapeRegExp(mention)}(?![\\p{L}\\p{N}])`, 'gu');

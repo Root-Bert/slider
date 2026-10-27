@@ -7,12 +7,14 @@ import type { AppDeps } from '../deps';
 import { ApiError, notFound } from '../http/errors';
 import { readJson } from '../http/validate';
 import type { LiveHub } from '../realtime/live-hub';
+import type { WorkspacePresence } from '../realtime/workspace-presence';
+import { getRole } from '../services/workspaces';
 
 /** A tab id from the query (`?tab=…&replaces=…`): something short and plain, else none. */
 const tabId = (value: string | undefined) => (value && /^[\w-]{8,64}$/.test(value) ? value : null);
 
 /** Realtime in the viewer (BER-104): presence, live cursors, live comments. */
-export function liveRoutes(deps: AppDeps, hub: LiveHub) {
+export function liveRoutes(deps: AppDeps, hub: LiveHub, presence: WorkspacePresence) {
   const viewer = viewerMiddleware(deps);
 
   return (
@@ -31,6 +33,12 @@ export function liveRoutes(deps: AppDeps, hub: LiveHub) {
             'Du hast Slider in sehr vielen Tabs offen. Schließ ein paar davon und lade die Seite neu.',
           );
         }
+        // Someone in a deck is online in its workspace too – members only, not guests by link.
+        const member =
+          author.type === 'owner' && (await getRole(deps.db, deck.workspaceId, author.id)) !== null;
+        const markOnline = () => {
+          if (member) presence.touch(deck.workspaceId, author);
+        };
         // nginx & co. would otherwise buffer the stream.
         c.header('X-Accel-Buffering', 'no');
         /** Still signed in as the same person, and still allowed to see the deck? */
@@ -64,6 +72,7 @@ export function liveRoutes(deps: AppDeps, hub: LiveHub) {
             },
           );
           stream.onAbort(() => hub.leave(connectionKey));
+          markOnline();
           const open = () => !stream.aborted && !stream.closed && hub.has(connectionKey);
           let checkedAt = Date.now();
           try {
@@ -76,6 +85,7 @@ export function liveRoutes(deps: AppDeps, hub: LiveHub) {
                 checkedAt = Date.now();
                 if (!(await stillAllowed())) break;
               }
+              markOnline();
               await stream.write(': ping\n\n');
             }
           } finally {

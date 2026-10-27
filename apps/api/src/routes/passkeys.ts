@@ -20,7 +20,7 @@ import {
 } from '../auth/passkeys';
 import { readSignedCookie, removeCookie, writeSignedCookie } from '../auth/cookies';
 import { loginErrorPath } from '../auth/login-paths';
-import { startSession } from '../auth/session';
+import { endOtherSessions, startSession } from '../auth/session';
 import { optionalViewerMiddleware, unauthorized, type OptionalViewerEnv } from '../auth/viewer';
 import { authChallenges, passkeys, users } from '../db/schema';
 import type { AppDeps } from '../deps';
@@ -132,7 +132,11 @@ export function passkeysRoutes(deps: AppDeps) {
 
       .delete('/me/identities/:id', viewer, async (c) => {
         const result = await unlinkIdentity(deps, accountId(c), c.req.param('id'));
-        if (result.ok) return c.body(null, 204);
+        if (result.ok) {
+          // Whoever signed in with it elsewhere is out too.
+          await endOtherSessions(c, deps, accountId(c));
+          return c.body(null, 204);
+        }
         if (result.error === 'not_found') throw notFound('Diese Anmeldung gibt es nicht (mehr).');
         throw badRequest(
           'Das ist deine letzte Anmeldung. Verbinde vorher eine andere, ein Passkey reicht dafür nicht.',
@@ -246,7 +250,10 @@ export function passkeysRoutes(deps: AppDeps) {
 
       .delete('/passkeys/:id', viewer, async (c) => {
         const result = await deletePasskey(deps, accountId(c), c.req.param('id'));
-        if (result.ok) return c.body(null, 204);
+        if (result.ok) {
+          await endOtherSessions(c, deps, accountId(c));
+          return c.body(null, 204);
+        }
         if (result.error === 'not_found') throw notFound('Diesen Passkey gibt es nicht (mehr).');
         throw badRequest(
           'Das ist deine letzte Anmeldung. Verbinde vorher eine andere oder lege einen weiteren Passkey an.',

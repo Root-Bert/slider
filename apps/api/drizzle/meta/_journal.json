@@ -386,6 +386,76 @@
       "when": 1792949768904,
       "tag": "0054_revision_pdf_renderer",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1793022263876,
+      "tag": "0055_deck_editing",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1793026738001,
+      "tag": "0056_ai_proposal_comments",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1793027305057,
+      "tag": "0057_ai_proposal_revert",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1793028492066,
+      "tag": "0058_ai_slide_changes",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1793029954296,
+      "tag": "0059_slide_page_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1793055674275,
+      "tag": "0060_comment_reactions",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1793064453578,
+      "tag": "0061_workspace_fonts",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1793107099479,
+      "tag": "0062_workspace_ai_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1793114077271,
+      "tag": "0063_workspace_font_source",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1793118047608,
+      "tag": "0064_edit_images_since",
+      "breakpoints": true
     }
   ]
 }

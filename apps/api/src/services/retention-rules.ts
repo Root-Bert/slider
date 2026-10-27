@@ -5,6 +5,9 @@ export const DAY_MS = 24 * 60 * 60 * 1000;
 /** Invitations stay this long after they expired, were accepted or withdrawn (shown as such). */
 export const INVITE_KEEP_DAYS = 30;
 
+/** Pictures uploaded or fetched in the editor stay this long – once in the file, it has its own copy. */
+export const EDIT_IMAGE_KEEP_DAYS = 7;
+
 export function addMonths(date: Date, months: number): Date {
   const next = new Date(date);
   next.setUTCMonth(next.getUTCMonth() + months);

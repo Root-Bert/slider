@@ -1,15 +1,16 @@
 import { and, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { StorageBreakdown } from '@slider/shared';
 import type { Executor } from '../db/client';
-import { decks, media, revisions, type DeckFilesBytes } from '../db/schema';
+import { decks, media, revisions, workspaceFonts, type DeckFilesBytes } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { measureDeckFiles } from './deck-storage';
 
 /**
  * Storage per workspace (BER-151): every file of its reviews counts – originals, slide images
- * and recordings – whoever uploaded them. Blob files are measured per deck after each import and
- * prune (`decks.files_bytes`), recordings come from `media.size_bytes`; both add up through
- * `decks.workspace_id`, so the sums need no `stat` per file.
+ * and recordings – whoever uploaded them, and its own fonts. Blob files are measured per deck
+ * after each import and prune (`decks.files_bytes`), recordings come from `media.size_bytes`;
+ * both add up through `decks.workspace_id`, so the sums need no `stat` per file. Fonts count
+ * by `workspace_fonts.size_bytes`.
  *
  * A deck is measured only once its import ended, so the original of an import still under way
  * counts through its reservation (`revisions.reserved_bytes`) instead – as an original, the
@@ -42,7 +43,7 @@ export async function workspaceStorage(
   const result = new Map(workspaceIds.map((id) => [id, emptyBreakdown()]));
   if (workspaceIds.length === 0) return result;
   const ids = [...workspaceIds];
-  const [fileRows, reservedRows, mediaRows] = await Promise.all([
+  const [fileRows, reservedRows, mediaRows, fontRows] = await Promise.all([
     db
       .select({
         id: decks.workspaceId,
@@ -74,6 +75,14 @@ export async function workspaceStorage(
       .innerJoin(decks, eq(decks.id, media.deckId))
       .where(inArray(decks.workspaceId, ids))
       .groupBy(decks.workspaceId, media.kind),
+    db
+      .select({
+        id: workspaceFonts.workspaceId,
+        bytes: sql<string | number | null>`sum(${workspaceFonts.sizeBytes})`,
+      })
+      .from(workspaceFonts)
+      .where(inArray(workspaceFonts.workspaceId, ids))
+      .groupBy(workspaceFonts.workspaceId),
   ]);
   for (const row of fileRows) {
     const entry = result.get(row.id);
@@ -85,6 +94,11 @@ export async function workspaceStorage(
   for (const row of reservedRows) {
     const entry = result.get(row.id);
     if (entry) entry.originals += Number(row.bytes ?? 0);
+  }
+  // The workspace's own fonts count as other files.
+  for (const row of fontRows) {
+    const entry = result.get(row.id);
+    if (entry) entry.other += Number(row.bytes ?? 0);
   }
   for (const row of mediaRows) {
     const entry = result.get(row.id);

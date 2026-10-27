@@ -30,8 +30,9 @@ const DIRECTIVES: [string, ...string[]][] = [
   ['script-src', "'self'"],
   ['style-src', "'self'"],
   ['font-src', "'self'"],
-  // `data:`: generated avatars (DiceBear); `blob:`: images and recordings before upload.
-  ['img-src', "'self'", 'data:', 'blob:'],
+  // `data:`: generated avatars (DiceBear); `blob:`: images and recordings before upload;
+  // Unsplash: stock photos are shown from Unsplash itself (its terms), until one is picked.
+  ['img-src', "'self'", 'data:', 'blob:', 'https://images.unsplash.com'],
   ['media-src', "'self'", 'blob:'],
   ['connect-src', "'self'"],
   ['worker-src', "'self'"],

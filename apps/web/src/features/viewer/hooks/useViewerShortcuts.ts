@@ -8,14 +8,28 @@ import { isModKey } from '@/lib/keyboard';
 
 /**
  * Global keyboard shortcuts of the viewer:
- * ←/→ previous/next slide, Home/End first/last, F fullscreen, B PowerPoint boxes on/off,
+ * ←/→ previous/next slide, Home/End first/last, F fullscreen, P presentation, B PowerPoint boxes on/off,
  * G PowerPoint guides on/off, C comments on the active slide (in box mode on the box under the pointer), typing right after a drawing comments on it, Tab / ⇧Tab next/previous tool (while nothing is focused, once the pointer was used),
- * ⌘Z / ⇧⌘Z undo/redo while drawing, ⌘↵ sends the draft, Esc cancels the draft → drops the tool → closes the thread (or the deleted slides panel).
+ * ⌘Z / ⇧⌘Z undo/redo while drawing, ⌘↵ sends the draft, Esc cancels the draft → drops the tool → closes the thread (or the deleted slides or the layers panel) → leaves the layers.
  */
-export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen: () => void }) {
+export function useViewerShortcuts({
+  onToggleFullscreen,
+  onPresent,
+}: {
+  onToggleFullscreen: () => void;
+  onPresent: () => void;
+}) {
   const { slides, slideIndex, canComment } = useViewerData();
-  const { activeSlideId, draft, tool, lastDrawing, threadPanelOpen, deletedPanelOpen } =
-    useViewerState();
+  const {
+    activeSlideId,
+    draft,
+    tool,
+    lastDrawing,
+    threadPanelOpen,
+    deletedPanelOpen,
+    layersOpen,
+    layersPanelOpen,
+  } = useViewerState();
   const dispatch = useViewerDispatch();
   const goTo = useGoToSlide();
   const startComment = useStartComment();
@@ -34,6 +48,8 @@ export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen:
       else if (tool) dispatch({ type: 'toolSelected', tool: null });
       else if (threadPanelOpen) dispatch({ type: 'threadPanelClosed' });
       else if (deletedPanelOpen) dispatch({ type: 'deletedPanelSet', open: false });
+      else if (layersPanelOpen) dispatch({ type: 'layersPanelSet', open: false });
+      else if (layersOpen) dispatch({ type: 'layersSet', open: false });
       else return;
       event.preventDefault();
       return;
@@ -95,6 +111,10 @@ export function useViewerShortcuts({ onToggleFullscreen }: { onToggleFullscreen:
       case 'f':
       case 'F':
         onToggleFullscreen();
+        break;
+      case 'p':
+      case 'P':
+        onPresent();
         break;
       case 'b':
       case 'B':

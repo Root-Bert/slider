@@ -1,7 +1,7 @@
 import type { Rect } from '@slider/shared';
 import type { MouseEvent, ReactNode } from 'react';
 import { cn } from '@/ui';
-import { CORNERS } from './corners';
+import { CORNERS, OUTER_CORNERS } from './corners';
 import { FrameEdges } from './RectFrame';
 import { FRAME_ATTR, useRectEdit } from './hooks/useRectEdit';
 import { frameHalo, HANDLE_CLASS, handleRing } from './lib/mark-chrome';
@@ -14,12 +14,17 @@ interface EditableFrameProps {
   /** The box as shown while dragged, `null` once it is back to `rect`. */
   onPreview?: (rect: Rect | null) => void;
   /** A click (not a drag) on the box. */
-  onActivate?: () => void;
+  onActivate?: (event: MouseEvent) => void;
   /** A double click on the box. */
-  onDoubleClick?: () => void;
+  onDoubleClick?: (event: MouseEvent) => void;
   onContextMenu?: (event: MouseEvent) => void;
   /** Show the corner handles (always for the draft, on hover/focus for a sent box). */
   handles: boolean;
+  /**
+   * A slide element: the line centred on its edge, where LibreOffice draws an outline, and the
+   * handles outside its corners – what it shows stays clear.
+   */
+  elementEdge?: boolean;
   emphasized?: boolean;
   /** A comment's mark: connector lines pass behind it. */
   isMark?: boolean;
@@ -45,6 +50,7 @@ export function EditableFrame({
   onDoubleClick,
   onContextMenu,
   handles,
+  elementEdge = false,
   emphasized = false,
   isMark = false,
   edgesOnly = false,
@@ -65,18 +71,19 @@ export function EditableFrame({
       {...edit.boxProps}
       onClick={(event) => {
         event.stopPropagation();
-        if (!edit.wasDragged()) onActivate?.();
+        if (!edit.wasDragged()) onActivate?.(event);
       }}
       onDoubleClick={
         onDoubleClick &&
         ((event) => {
           event.stopPropagation();
-          onDoubleClick();
+          onDoubleClick(event);
         })
       }
       onContextMenu={onContextMenu}
       className={cn(
-        'absolute cursor-move touch-none rounded-thumb border-2',
+        'absolute cursor-move touch-none rounded-thumb',
+        !elementEdge && 'border-2',
         edgesOnly ? 'pointer-events-none' : 'pointer-events-auto',
         lit && 'z-(--z-raised)',
         className,
@@ -86,7 +93,9 @@ export function EditableFrame({
         top: `${shown.y * 100}%`,
         width: `${shown.w * 100}%`,
         height: `${shown.h * 100}%`,
-        borderColor: color,
+        ...(elementEdge
+          ? { outline: `2px solid ${color}`, outlineOffset: -1 }
+          : { borderColor: color }),
         boxShadow: lit ? frameHalo(color) : undefined,
       }}
     >
@@ -104,8 +113,9 @@ export function EditableFrame({
         </span>
       )}
       {(handles || edit.dragging) &&
-        CORNERS.filter(({ corner }) => !(badge && corner === 'nw')).map(
-          ({ corner, className: position }) => (
+        (elementEdge ? OUTER_CORNERS : CORNERS)
+          .filter(({ corner }) => !(badge && corner === 'nw'))
+          .map(({ corner, className: position }) => (
             <span
               key={corner}
               role="presentation"
@@ -114,8 +124,7 @@ export function EditableFrame({
               className={cn('pointer-events-auto', HANDLE_CLASS, position)}
               style={{ boxShadow: handleRing(color) }}
             />
-          ),
-        )}
+          ))}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stubBrokenStorage, stubStorage } from '@/test/storage';
-import { installChunkReload } from './chunk-reload';
+import { installChunkReload, isModuleLoadError } from './chunk-reload';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -49,5 +49,16 @@ describe('installChunkReload', () => {
     const event = fire();
     expect(reload).not.toHaveBeenCalled();
     expect(event.preventDefault).not.toHaveBeenCalled();
+  });
+});
+
+describe('isModuleLoadError', () => {
+  it('tells a page module the browser could not load', () => {
+    expect(isModuleLoadError(new TypeError('Importing a module script failed.'))).toBe(true);
+    expect(
+      isModuleLoadError(new TypeError('Failed to fetch dynamically imported module: /x.js')),
+    ).toBe(true);
+    expect(isModuleLoadError(new TypeError('Cannot read properties of undefined'))).toBe(false);
+    expect(isModuleLoadError(new Error('Importing a module script failed.'))).toBe(false);
   });
 });

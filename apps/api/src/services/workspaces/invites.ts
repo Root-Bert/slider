@@ -30,7 +30,7 @@ import {
   assertWithinLimits,
   lockWorkspaceRow,
 } from '../plans';
-import { liftRemoval, removedSince } from './domains';
+import { createdByAdmin, liftRemoval, removedSince } from './domains';
 import { getRole, membership, requireRole, stronger } from './roles';
 import { getWorkspace } from './workspaces';
 
@@ -209,7 +209,7 @@ async function insertInvite(
       emailSent = true;
     } catch (error) {
       // The invite stands either way – the dialog then shows the link to send by hand.
-      deps.log.warn(`Invite mail to ${email} failed`, error);
+      deps.log.warn(`Invite mail to ${maskEmail(email)} failed`, error);
     }
   }
   return {
@@ -437,9 +437,6 @@ export async function acceptInviteById(
   if (!invite?.email || invite.email !== normalizeEmail(user.email)) throw inviteNotFound();
   return join(deps, user, invite);
 }
-
-/** SQL twin of `creatorIsAdmin`. */
-const createdByAdmin = sql`exists (select 1 from ${workspaceMembers} join ${workspaces} on ${workspaces.id} = ${workspaceMembers.workspaceId} where ${workspaceMembers.workspaceId} = ${workspaceInvites.workspaceId} and ${workspaceMembers.userId} = ${workspaceInvites.createdBy} and ${workspaceMembers.role} = 'admin' and ${workspaces.blockedAt} is null)`;
 
 /** Valid e-mail invites for this address, in workspaces the user is not in yet. */
 export async function pendingInvitesFor(

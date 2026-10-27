@@ -4,7 +4,7 @@ export const IMPORT_STEP_LABELS: Record<ImportStep, string> = {
   received: 'Datei empfangen',
   parsing: 'Folien erkennen',
   rendering: 'Folien werden gerendert',
-  comments: 'PowerPoint-Kommentare importieren',
+  comments: 'Kommentare aus der Datei importieren',
 };
 
 export type StepStatus = 'done' | 'current' | 'pending';

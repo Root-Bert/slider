@@ -5,6 +5,8 @@ export const routes = {
   /** Redirects to the last used workspace (or the onboarding without one). */
   reviews: () => '/',
   workspace: (workspaceId: string) => `/w/${workspaceId}`,
+  /** "Workspace" next to "Reviews": the workspace's material, for now its fonts. */
+  workspaceMaterial: (workspaceId: string) => `/w/${workspaceId}/material`,
   workspaceSettings: (workspaceId: string) => `/w/${workspaceId}/einstellungen`,
   /** The invitations on the settings page (BER-130). */
   workspaceInvites: (workspaceId: string) => `/w/${workspaceId}/einstellungen#einladen`,

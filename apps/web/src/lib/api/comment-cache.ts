@@ -1,4 +1,4 @@
-import type { Author, Comment, CreateCommentInput } from '@slider/shared';
+import type { Author, Comment, CommentReactionKind, CreateCommentInput } from '@slider/shared';
 
 /* Cache helpers for optimistic comment inserts (used by `useCreateReply`). */
 
@@ -74,4 +74,14 @@ export function keepPending(previous: readonly Comment[] | undefined, fresh: Com
     return false;
   });
   return kept.length === 0 ? fresh : [...fresh, ...kept];
+}
+
+/** The comment as the server will return it after `author` reacted with `kind` (`null`: took it back). */
+export function withReaction(
+  comment: Comment,
+  author: Author,
+  kind: CommentReactionKind | null,
+): Comment {
+  const others = (comment.reactions ?? []).filter((reaction) => reaction.author.id !== author.id);
+  return { ...comment, reactions: kind ? [...others, { kind, author }] : others };
 }

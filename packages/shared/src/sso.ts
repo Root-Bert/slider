@@ -51,7 +51,8 @@ export const discoverSsoInputSchema = z.object({
 export type DiscoverSsoInput = z.infer<typeof discoverSsoInputSchema>;
 
 /** Where the browser goes for the company login: `${loginUrl}&returnTo=<path>`. */
-export const ssoLoginSchema = z.object({ loginUrl: z.string(), workspace: z.string() });
+/** Only where to go – anyone may ask, so no workspace name. */
+export const ssoLoginSchema = z.object({ loginUrl: z.string() });
 export type SsoLogin = z.infer<typeof ssoLoginSchema>;
 
 /** DNS name of the TXT record that proves `domain` for the company login. */

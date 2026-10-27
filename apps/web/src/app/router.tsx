@@ -41,6 +41,7 @@ export const router = createBrowserRouter([
             lazy: () => import('@/features/workspaces/WorkspaceLayout'),
             children: [
               { index: true, lazy: () => import('@/features/reviews/ReviewsPage') },
+              { path: 'material', lazy: () => import('@/features/workspaces/MaterialPage') },
               {
                 path: 'einstellungen',
                 lazy: () => import('@/features/workspaces/SettingsPage'),

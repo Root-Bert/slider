@@ -6,6 +6,9 @@ export const queryKeys = {
   deckLists: ['decks', 'list'] as const,
   deckList: (workspaceId: string) => ['decks', 'list', workspaceId] as const,
   deck: (deckId: string) => ['decks', deckId] as const,
+  /** Text search through a workspace's slides and comments (BER-175); under `decks`, so changes refresh it. */
+  deckSearch: (workspaceId: string, query: string) =>
+    ['decks', 'search', workspaceId, query] as const,
   /** The folders of one workspace – outside `decks`, so deck invalidation leaves them alone. */
   folders: (workspaceId: string) => ['folders', workspaceId] as const,
   slides: (deckId: string) => ['decks', deckId, 'slides'] as const,
@@ -29,6 +32,22 @@ export const queryKeys = {
   storage: (deckId: string) => ['decks', deckId, 'storage'] as const,
   /** Who may open a review (managers only, "Zugriff einschränken …"). */
   access: (deckId: string) => ['decks', deckId, 'access'] as const,
+  /** Whether and how a deck can be edited, with its elements (BER-180, managers only). */
+  edit: (deckId: string) => ['decks', deckId, 'edit'] as const,
+  /**
+   * A slide taken apart at an edit step – never changes, so outside the deck's keys: what
+   * refreshes the deck (`useLive`) does not ask for it again.
+   */
+  slideLayers: (deckId: string, slideId: string | null, seq: number | undefined) =>
+    ['slideLayers', deckId, slideId, seq] as const,
+  /**
+   * Stock photos for a search – outside the deck's keys too: every refresh of the deck would
+   * search again, and each search counts against the person's limit on the server.
+   */
+  stockSearch: (deckId: string, query: string, orientation: string) =>
+    ['stockSearch', deckId, query, orientation] as const,
+  /** The AI's proposals for the deck's slides (BER-183). */
+  proposals: (deckId: string) => ['decks', deckId, 'proposals'] as const,
 };
 
 /**
@@ -44,8 +63,13 @@ export const workspaceKeys = {
     ['workspaces', workspaceId, 'departure', userId, successor] as const,
   /** Plan, limits, storage and billing of one workspace – the "Nutzung" page (BER-151). */
   usage: (workspaceId: string) => ['workspaces', workspaceId, 'usage'] as const,
+  /** The other members online right now (the header's avatars). */
+  online: (workspaceId: string) => ['workspaces', workspaceId, 'online'] as const,
   /** Company login of one workspace (BER-162), admins only. */
   sso: (workspaceId: string) => ['workspaces', workspaceId, 'sso'] as const,
+  /** The workspace's AI keys (BER-183), admins only. */
+  ai: (workspaceId: string) => ['workspaces', workspaceId, 'ai'] as const,
+  fonts: (workspaceId: string) => ['workspaces', workspaceId, 'fonts'] as const,
   join: (token: string) => ['join', token] as const,
   passkeys: ['account', 'passkeys'] as const,
   identities: ['account', 'identities'] as const,

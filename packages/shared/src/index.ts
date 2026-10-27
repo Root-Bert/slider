@@ -15,3 +15,6 @@ export * from './nextcloud';
 export * from './google';
 export * from './deck-access';
 export * from './instance-admin';
+export * from './search';
+export * from './editing';
+export * from './office-fonts';

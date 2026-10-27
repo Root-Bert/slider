@@ -1,201 +1,21 @@
-# Test corpus: decks with every kind of change (BER-106)
+# PPTX fixture corpus
 
-Pairs of decks (`v1.pptx` → `v2.pptx`), each showing one change a reviewer can make between two
-uploads, plus the result Slider is expected to compute for it (`expected.json`). The corpus
-checks slide matching (`matchSlides`, BER-108) end to end on real files, plus what the parser
-reads around it: hidden flags, sections and comments.
+These pairs of decks (`v1.pptx` → `v2.pptx`) and their `expected.json` files remain available
+for manual investigation of slide matching and parser behavior. They are no longer an
+automated test suite. API sync tests cover preservation of slide identity and comments.
 
-```
-test/corpus/
-  cases.ts        the case list (declarative: v1 and v2 as DeckSpecs with slide labels)
-  bases.ts        basis decks + producer transforms (Google Slides, PowerPoint Win/Mac/Online)
-  spec.ts         labelled deck types and the transforms (insertAt, move, duplicate, …)
-  run-case.ts     fingerprints + matching exactly like apps/api/src/sync/sync-import.ts
-  corpus.test.ts  the checks
-  decks/<id>/     v1.pptx, v2.pptx, expected.json – generated, committed
-  real/<name>/    optional: real exported files (see below)
-```
+- `cases.ts`: declarative cases and paths.
+- `bases.ts`: basis decks and producer transforms.
+- `spec.ts`: labelled deck types and transforms.
+- `run-case.ts`: parsing, fingerprinting, matching, and fixture generation.
+- `decks/<id>/`: generated deck pairs and expected results.
+- `real/<name>/`: optional real exported files.
 
-## What the test checks
+To regenerate the declared fixtures from `packages/pptx`:
 
-For every case in `cases.ts`:
-
-1. **Byte identity.** The committed `v1.pptx` / `v2.pptx` are exactly what `cases.ts` builds
-   today (like `test/sample.test.ts`). A change to a case or to the fixture builder fails here
-   until the corpus is regenerated.
-2. **Expected result.** Parsing and matching the committed files gives exactly `expected.json`.
-3. **Intent.** Hand-written assertions per case in `corpus.test.ts` (`INTENTS`) state what the
-   case is about, e.g. "insert-start: exactly one `new`, everything else `unchanged`, nothing
-   moved". On top of that, invariants hold for every case: each slide appears once, deleted
-   slides come last, confidences are in [0, 1], and a matched pair always joins the same label.
-   Regenerating `expected.json` therefore cannot silently bless wrong behaviour: the intent
-   still fails.
-
-CI runs it as part of `bun run test` (Vitest picks up `packages/*`); nothing extra is needed.
-
-### `expected.json`
-
-```jsonc
-{
-  "case": "insert-start",
-  "tags": ["structure"],
-  "synthetic": false,
-  // matchSlides(prev, next) with slide keys replaced by the case's labels
-  "matches": [{ "prev": null, "next": "neu", "status": "new", "moved": false,
-                "confidence": 1, "matchedBy": null, "previousPosition": null, "position": 0 }, …],
-  // only when a slide was hidden / shown again: "hiddenChanged": "hidden" | "shown" on its match
-  // trackBoxes(prev, next, matches): boxes that now live on another slide (only when there are any)
-  "movedBoxes": [{ "prev": "agenda", "shape": "4", "next": "ziele", "nextShape": "4" }],
-  // what the parser read from each deck
-  "prev": { "author": …, "slides": […], "sections": […], "comments": […] },
-  "next": {
-    "author": "Slider",
-    "slides": [{ "label": "neu", "sldId": 261, "part": "ppt/slides/slide1.xml", "hidden": false,
-                 "title": "Executive Summary", "layoutName": "Title and Content", "section": null }, …],
-    "sections": [{ "name": "Einleitung", "slides": ["titel", "agenda"] }],
-    "comments": [{ "slide": "agenda", "format": "modern", "status": "open", "author": "…",
-                   "providerId": "AD", "anchor": "shape", "text": "…", "replies": 1 }]
-  }
-}
+```sh
+bun run corpus
 ```
 
-Fingerprints are built like production: `fingerprintFromShapes` over the shapes with the API's
-bbox clamping (`apps/api/src/import/common.ts`) and
-`renderHash = sha256(svgForRenderHash(renderSlideSvg))`.
-Labels come from the case definition, never from parsing, so a renumbered sldId cannot change
-the keys. Confidences are rounded to two decimals.
-
-## Cases
-
-| id                                                                     | covers                                                                                                                                                            |
-| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `basis-simple`                                                         | five plain slides (title, text, picture, table), nothing changed                                                                                                  |
-| `basis-hidden`                                                         | two hidden slides (middle and end), nothing changed                                                                                                               |
-| `basis-groups`                                                         | group shapes, one nested, nothing changed                                                                                                                         |
-| `basis-sections`                                                       | seven slides in three sections, nothing changed                                                                                                                   |
-| `insert-start` / `insert-middle` / `insert-end`                        | one new slide at position 1 / 3 / 6                                                                                                                               |
-| `delete-middle`                                                        | one slide deleted                                                                                                                                                 |
-| `move-slide`                                                           | one slide moved from the end to position 3                                                                                                                        |
-| `move-section`                                                         | a three-slide section moved to the end                                                                                                                            |
-| `duplicate`                                                            | PowerPoint "Duplicate slide": identical copy, new sldId                                                                                                           |
-| `reuse-slides`                                                         | "Reuse slides → keep source formatting": a slide from another deck with its own master and layout (`1_Title and Content`) and the same title as an existing slide |
-| `text-changed`                                                         | body text edited                                                                                                                                                  |
-| `image-swapped`                                                        | picture replaced (same box, other pixels)                                                                                                                         |
-| `layout-changed`                                                       | layout switched, text unchanged                                                                                                                                   |
-| `groups-text-changed`                                                  | text changed inside a nested group                                                                                                                                |
-| `hide` / `unhide`                                                      | `show="0"` set / removed                                                                                                                                          |
-| `comments-modern`                                                      | modern comments anchored to a shape, a point and the slide                                                                                                        |
-| `comments-legacy`                                                      | legacy comments (`p:cmLst`) by two authors                                                                                                                        |
-| `comments-threads`                                                     | modern thread gets two more replies                                                                                                                               |
-| `comments-legacy-threads`                                              | legacy replies (`p15:threadingInfo`)                                                                                                                              |
-| `comments-resolved`                                                    | modern comments resolved / closed / still open                                                                                                                    |
-| `comments-moved-slide`                                                 | commented slide moved; the comment stays with its sldId                                                                                                           |
-| `google-roundtrip`                                                     | PowerPoint deck (sections, comments, grown sldIds) → Google Slides download, no edits _(synthetic)_                                                               |
-| `google-insert` / `google-move`                                        | both versions from Google Slides, with an insert / a move _(synthetic)_                                                                                           |
-| `google-hidden`                                                        | skipped slides from Google Slides, one unhidden _(synthetic)_                                                                                                     |
-| `producer-win` / `producer-mac` / `producer-online`                    | the same edit (text, thread answered and resolved, new comment) saved by PowerPoint for Windows / 2019 for Mac / the web _(synthetic)_                            |
-| `producer-win-to-online`                                               | saved on Windows, re-saved unchanged on the web _(synthetic)_                                                                                                     |
-| `producer-win-move`                                                    | PowerPoint move with stable part names, rIds and creationIds _(synthetic)_                                                                                        |
-| `rewrite-most-slides`                                                  | four of five slides translated, sldIds kept: all still matched by sldId                                                                                           |
-| `ppt-delete-last-insert`                                               | last slide deleted, new one inserted on the reused max sldId, told apart by creationId _(synthetic)_                                                              |
-| `google-insert-late` / `google-delete-late`                            | Google Slides insert / delete late in the deck: shifted sldIds are not trusted _(synthetic)_                                                                      |
-| `google-insert-footer` / `google-delete-footer` / `google-move-footer` | Google Slides insert / delete / move with the same footer line on every slide: shared text does not make the shifted sldIds trustworthy _(synthetic)_             |
-| `insert-start-slide-numbers`                                           | insert at the start in a deck with slide numbers and an auto date: renumbered fields do not mark slides as modified                                               |
-| `google-insert-edits`                                                  | Google Slides insert at the start plus edits to the first three slides: edited slides on shifted sldIds still find themselves _(synthetic)_                       |
-| `ppt-replace-slide-same-title`                                         | slide deleted and a new one with the same title inserted in its place: different creationId, so deleted + new _(synthetic)_                                       |
-| `freed-id-new-boxes`                                                   | slide deleted, a new one (picture + text box) inherits its freed sldId without a creationId: no old box survives, so deleted + new                                |
-| `box-moved-to-other-slide`                                             | a text box cut from one slide and pasted on another (same name and text, new id): `movedBoxes` carries comments bound to it along                                 |
-| `one-box-survives`                                                     | slide rebuilt, only its title box (with new text) survives: still the same slide, slide comments stay                                                             |
-
-## Synthetic cases
-
-We cannot drive Google Slides or the PowerPoint apps in CI, so the producer cases imitate their
-output with opt-in options of the fixture builder (`test/fixtures/build-pptx.ts`). The quirks are
-plausible, from what these apps are known to write, but **not verified against real files**:
-
-- **Google Slides** (`asGoogleSlides`): sldIds renumbered from 256 in the current order; slide
-  parts and rIds renamed by position; no `p14:creationId`; no sections; no PowerPoint comments
-  or author parts; layouts named `TITLE` / `TITLE_AND_BODY`; Google-style shape ids (54, 64, …)
-  with explicit placeholder boxes; an app.xml without an Office application; hidden ("skipped")
-  slides keep `show="0"`.
-- **PowerPoint for Windows** (`asPowerPointWin`): `Microsoft Office PowerPoint` 16.0000 with
-  TotalTime and Company; `p14:creationId` on every slide (also the `pc:sldMk/@cId` of its
-  comments and part of the comment file name); slide parts numbered by history, not position;
-  modern comments by work (`AD`, `S::upn::oid`) and personal (`Windows Live`) accounts;
-  `cp:lastModifiedBy` and `cp:revision`.
-- **PowerPoint 2019 for Mac** (`asPowerPointMac`): `Microsoft Macintosh PowerPoint`; that
-  build predates modern comments, so it writes legacy comments, replies as
-  `p15:threadingInfo/p15:parentCm`, and cannot store "resolved". (Current Mac 365 builds write
-  modern comments like Windows.)
-- **PowerPoint for the web** (`asPowerPointOnline`): a sparse app.xml (Application and
-  AppVersion only), modern comments by work accounts, `lastModifiedBy` = the signed-in user.
-
-Matching ignores app.xml, core.xml, part names and rIds; these cases mainly pin down that it
-keeps ignoring them, plus the sldId checks (creationIds, Google's renumbering) and the comment
-parsing.
-
-### Real files
-
-Real exports belong in `real/<name>/v1.pptx`, `v2.pptx` (e.g. one deck uploaded, then edited
-and downloaded again from Google Slides, PowerPoint Win/Mac/Online). The test picks up every
-folder there. Slides are keyed by position (`v1:1`, `v2:1`, …). After checking the result by
-hand, write its `expected.json` with `UPDATE_CORPUS=1 bunx vitest run packages/pptx/test/corpus`;
-without it the test fails. Real files do not get intent assertions automatically – add a line
-to this README on what the pair shows. Mind that real decks may contain personal data.
-
-## Adding a case
-
-1. Add an entry to `CASES` in `cases.ts`: `id` (folder name), `title`, `description`, `tags`
-   (`synthetic` plus a `synthetic` note for imitated producers), `v1` and `v2`. Build v2 from v1
-   with the transforms in `spec.ts`. Give new slides a new `label`; keep the label of a slide
-   that is "the same slide" in both versions.
-2. If the builder lacks a feature, add it to `build-pptx.ts` as an **opt-in** option: leaving it
-   out must produce exactly the bytes it did before (`test/sample.test.ts` and every committed
-   corpus deck check that).
-3. Add the case's intent to `INTENTS` in `corpus.test.ts` (the test fails without one).
-4. Run `bun run corpus` (in `packages/pptx`) and review `decks/<id>/expected.json`.
-
-## Regenerating
-
-- `bun run corpus` (in `packages/pptx`) rewrites every `decks/<id>/` and removes folders of
-  deleted cases.
-- `UPDATE_CORPUS=1 bunx vitest run packages/pptx/test/corpus` does the same from the test, and
-  also writes `expected.json` for `real/` folders.
-
-A change to matching (weights, thresholds) changes confidences in many files. Review the diff:
-the intents keep the meaning in check, the numbers are for reviewing.
-
-## Known behaviour
-
-What the matcher does today that a reader might not expect. These are recorded, not fixed, here.
-
-- **Hide / unhide is not a content change.** `hide`, `unhide` and `google-hidden` come out
-  `unchanged`, with the separate signal `hiddenChanged: "hidden" | "shown"` on the match (the
-  viewer shows it as "Ausgeblendet" / "Wieder eingeblendet").
-- **Moving a section marks the other slides as moved.** In `move-section` the three "Analyse"
-  slides were dragged to the end, but the result marks the two "Abschluss" slides as `moved`:
-  the matcher keeps the longest run in order and calls everything else moved.
-- **A duplicate is `new` with confidence 1.** The original keeps its sldId and its boxes and is
-  matched first; the copy is a new slide (with copies of the boxes, which `trackBoxes` never
-  mistakes for moved ones: the originals are still in place). "How sure is it that there is no
-  counterpart" is 1 because none is left – the slide really is new.
-- **Google round trip without edits is `unchanged`.** All sldIds are reassigned, so the renumber
-  guard drops them (`matchedBy: "content"`; with ids counting up from 256 in slide order a single
-  shifted pair is enough, so even the slides before an insert are matched by content), and since the render is identical nothing counts as
-  modified, although layout names and shape ids changed. Sections and comments are gone from
-  the Google file.
-- **Legacy comments are always `open`.** Reply threads come back from
-  `p15:threadingInfo/p15:parentCm` (`comments-legacy-threads`, `producer-mac`), but legacy
-  comments cannot store "resolved".
-- **Boxes decide whether a reused sldId is the same slide.** A pair on the same sldId is only
-  kept when at least one of the old slide's boxes is still on it (same shape id, and the same
-  name or place – the rule comment anchors follow shapes by): `freed-id-new-boxes` is deleted +
-  new without any creationId. A slide whose boxes kept their ids counts as the same slide,
-  however much its text changed (`rewrite-most-slides`, `one-box-survives`). So a new slide
-  that reuses a freed sldId _and_ the same placeholder boxes (a fresh "Title and Content" slide
-  has "Title 1" again) is only told apart by `p14:creationId` (`ppt-delete-last-insert`) or a
-  better content match elsewhere. Slides without boxes are judged by content as before.
-- **A box comment follows its box to a new slide with the same box.** In
-  `ppt-replace-slide-same-title` the deleted slide's title box ("Ziele 2027", "Title 1") is the
-  only box like it in the new deck, so `movedBoxes` sends it to the replacing slide; comments on
-  the slide as a whole stay with the deleted slide.
+Review generated differences manually; regenerating expected output does not verify that the
+new behavior is correct. See [the test strategy](../../../../docs/testing.md) for CI coverage.

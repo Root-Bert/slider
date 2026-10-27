@@ -34,6 +34,11 @@ export interface ThreadFilter {
   status: StatusFilter;
   /** Avatar filter (BER-105): only these thread ids; `null`/absent = no such filter. */
   threadIds?: ReadonlySet<string> | null;
+  /**
+   * Threads the AI finished a change on (BER-183): while still open they are "KI" – as good as
+   * done, waiting to be confirmed – and no longer "Offen".
+   */
+  aiThreadIds?: ReadonlySet<string> | null;
   /** Listed whatever their status: threads being replied to (see `composingThreads`). */
   keep?: ReadonlySet<string> | null;
 }
@@ -41,6 +46,8 @@ export interface ThreadFilter {
 export interface StatusCounts {
   all: number;
   open: number;
+  /** Open threads the AI changed something for – not counted as open. */
+  ai: number;
   done: number;
 }
 
@@ -84,9 +91,9 @@ export function buildThreads(comments: readonly Comment[]): Thread[] {
 
 export function matchesFilter(thread: Thread, filter: ThreadFilter): boolean {
   if (filter.threadIds && !filter.threadIds.has(thread.id)) return false;
-  return (
-    filter.status === 'all' || thread.root.status === filter.status || !!filter.keep?.has(thread.id)
-  );
+  if (filter.keep?.has(thread.id) || filter.status === 'all') return true;
+  if (filter.status === 'hidden') return false;
+  return threadStatus(thread, filter.aiThreadIds) === filter.status;
 }
 
 export const filterThreads = (threads: readonly Thread[], filter: ThreadFilter): Thread[] =>
@@ -108,22 +115,35 @@ export function openCountBySlide(threads: readonly Thread[]): Map<string, number
   return counts;
 }
 
-/** Counts for the Alle / Offen / Erledigt chips; respects the avatar filter but not the status. */
+/** Done threads step back among the others; filtered to „Erledigt“ alone they show as usual. */
+export const fadesDone = (filter: StatusFilter) => filter !== 'done';
+
+/** Where a thread belongs in the filter: done, else "KI" once the AI changed something, else open. */
+export function threadStatus(
+  thread: Thread,
+  aiThreadIds: ReadonlySet<string> | null | undefined,
+): Exclude<StatusFilter, 'all' | 'hidden'> {
+  if (thread.root.status === 'done') return 'done';
+  return aiThreadIds?.has(thread.id) ? 'ai' : 'open';
+}
+
+/** Counts for the Alle / Offen / KI / Erledigt chips; respects the avatar filter but not the status. */
 export function countByStatus(
   threads: readonly Thread[],
   threadIds: ReadonlySet<string> | null = null,
+  aiThreadIds: ReadonlySet<string> | null = null,
 ): StatusCounts {
-  const counts: StatusCounts = { all: 0, open: 0, done: 0 };
+  const counts: StatusCounts = { all: 0, open: 0, ai: 0, done: 0 };
   for (const thread of threads) {
     if (threadIds && !threadIds.has(thread.id)) continue;
     counts.all += 1;
-    counts[thread.root.status] += 1;
+    counts[threadStatus(thread, aiThreadIds)] += 1;
   }
   return counts;
 }
 
 /**
- * Alle / Offen / Erledigt for the whole deck. Threads on deleted slides are only reachable through
+ * Alle / Offen / KI / Erledigt for the whole deck. Threads on deleted slides are only reachable through
  * "Gelöschte Folien": not counted here. Drawings without a comment are no comments either.
  */
 export function deckStatusCounts(
@@ -131,10 +151,12 @@ export function deckStatusCounts(
   slides: SlideOrder,
   slideIndex: ReadonlyMap<string, number>,
   threadIds: ReadonlySet<string> | null = null,
+  aiThreadIds: ReadonlySet<string> | null = null,
 ): StatusCounts {
   return countByStatus(
     threadsOnCurrentSlides(threads, slides, slideIndex).filter((thread) => !isBareDrawing(thread)),
     threadIds,
+    aiThreadIds,
   );
 }
 

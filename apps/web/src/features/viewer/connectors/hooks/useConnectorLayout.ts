@@ -1,14 +1,17 @@
+import type { Point, Rect } from '@slider/shared';
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { afterCommit, commitPending, rafThrottle } from '@/lib/dom';
 import type { ConnectorAnchor, ConnectorExit } from '../../comments/lib/comment-selectors';
 import {
+  bundleConnectors,
   layoutBlobConnectors,
   layoutConnectors,
   type Box,
   type ConnectorRequest,
 } from '../lib/connector-routing';
 import { roundedPath } from '@/lib/rounded-path';
+import { projectUnitSquare, type Projection, type Quad } from '../lib/plane-projection';
 import { useStageRegistry } from '../../state/stage-registry';
 
 export interface ConnectorItem {
@@ -193,6 +196,14 @@ export function useConnectorLayout({
         if (!visible(box)) continue;
         cutouts.push({ kind: 'fill', box: clipped(box) });
       }
+      // The reaction pickers float above a card's top edge, where lines come in: while one shows,
+      // the lines pass behind it too.
+      for (const element of area?.querySelectorAll('[data-reaction-picker]') ?? []) {
+        if (getComputedStyle(element).visibility === 'hidden') continue;
+        const box = relative(element.getBoundingClientRect(), origin);
+        if (!visible(box)) continue;
+        cutouts.push({ kind: 'fill', box: clipped(box) });
+      }
 
       for (const route of routes) {
         for (const item of route.items) colorOf.set(item.threadId, item.color);
@@ -275,6 +286,33 @@ export function useConnectorLayout({
           const entry = compact ? COMPACT_ENTRY_X : CARD_ENTRY_X;
           const target = card ? { x: card.left + entry, y: card.top } : { x: 0, y: 0 };
           const { anchor } = item.source;
+          // Turned in 3D (`LayerStage`): from where its mark is seen on its plane.
+          const plane = markPlane(frame, item.threadId);
+          if (plane) {
+            const at = (point: Point) => {
+              const seen = plane(point);
+              return {
+                x: clamp(seen.x - origin.left, slide.left, slide.right),
+                y: clamp(seen.y - origin.top, slide.top, slide.bottom),
+              };
+            };
+            const left = at(anchor.start.left);
+            const right = at(anchor.start.right);
+            const down = at(anchor.bottom);
+            requests.push({
+              id: item.threadId,
+              anchor: { left: Math.min(left.x, right.x), right: Math.max(left.x, right.x) },
+              start: {
+                left: { x: left.x - anchor.inset.left, y: left.y },
+                right: { x: right.x + anchor.inset.right, y: right.y },
+                down: { x: down.x, y: down.y + anchor.inset.bottom },
+              },
+              // Its exit was chosen flat: turned, the nearest edge.
+              target,
+              margin,
+            });
+            continue;
+          }
           const x = (value: number) =>
             clamp(content.left + value * slideRect.width, slide.left, slide.right);
           const y = (value: number) =>
@@ -297,6 +335,7 @@ export function useConnectorLayout({
         }
         if (requests.length === 0) {
           cutouts.push(...measureCutouts(slideElement, origin, cropped ? slide : null));
+          cutouts.push(...layerCutouts(frame, origin));
           continue;
         }
 
@@ -320,6 +359,8 @@ export function useConnectorLayout({
             margins: margins ?? undefined,
           });
         }
+        // Lines of one author lying close together merge into one and branch off.
+        routed = bundleConnectors(routed, (id) => colorOf.get(id) ?? '');
         for (const connector of routed)
           lines.push({
             threadId: connector.id,
@@ -327,6 +368,7 @@ export function useConnectorLayout({
             d: roundedPath(connector.points),
           });
         cutouts.push(...measureCutouts(slideElement, origin, cropped ? slide : null));
+        cutouts.push(...layerCutouts(frame, origin));
       }
 
       commit({
@@ -391,6 +433,12 @@ export function useConnectorLayout({
     };
     scroller?.addEventListener('scroll', onScroll, { passive: true });
     wrapper?.addEventListener('transitionend', throttled.schedule);
+    // A reaction picker cuts the lines from the start of its fade-in, not only once it is in.
+    const onTransitionRun = (event: TransitionEvent) => {
+      if (event.target instanceof Element && event.target.matches('[data-reaction-picker]'))
+        throttled.schedule();
+    };
+    wrapper?.addEventListener('transitionrun', onTransitionRun);
     window.addEventListener('resize', throttled.schedule);
     // Frame by frame while an animation moves line ends (`followConnectors`), one frame past it.
     // Past `ms` too while the sender still animates: an animation started in a commit only begins
@@ -437,6 +485,7 @@ export function useConnectorLayout({
       mutationObserver.disconnect();
       scroller?.removeEventListener('scroll', onScroll);
       wrapper?.removeEventListener('transitionend', throttled.schedule);
+      wrapper?.removeEventListener('transitionrun', onTransitionRun);
       window.removeEventListener('resize', throttled.schedule);
     };
   }, [layer, svg, registry, routes, enabled]);
@@ -510,6 +559,106 @@ function measureCutouts(slideElement: HTMLElement, origin: DOMRect, frame: Box |
     }
   }
   return cutouts;
+}
+
+/** A plane of a slide turned in 3D (`LayerStage`) as seen, from its corners. */
+function planeProjection(plane: Element): Projection | null {
+  const corners = [...plane.querySelectorAll(':scope > [data-plane-corner]')].map((corner) => {
+    const rect = corner.getBoundingClientRect();
+    return { x: rect.left, y: rect.top };
+  });
+  return corners.length === 4 ? projectUnitSquare(corners as unknown as Quad) : null;
+}
+
+/** Where the plane a comment's marks lie on is seen, while its slide is turned in 3D. */
+function markPlane(frame: Element, threadId: string): Projection | null {
+  const plane = frame
+    .querySelector(`[data-layer-marks] [data-hover-thread="${CSS.escape(threadId)}"]`)
+    ?.closest('[data-layer-marks]');
+  return plane ? planeProjection(plane) : null;
+}
+
+/** Points along a stroke for its cutout: enough that the line bends as the stroke does. */
+const STROKE_SAMPLES = 48;
+
+/**
+ * The marks on the planes of a slide turned in 3D as cutouts, each mapped through its plane:
+ * pins as seen, frames as the quads they show as, drawings along their projected paths.
+ */
+function layerCutouts(frame: Element, origin: DOMRect): Cutout[] {
+  const cutouts: Cutout[] = [];
+  const seen = (project: Projection, point: Point) => {
+    const { x, y } = project(point);
+    return `${num(x - origin.left)} ${num(y - origin.top)}`;
+  };
+  for (const plane of frame.querySelectorAll<HTMLElement>('[data-layer-marks]')) {
+    const project = planeProjection(plane);
+    if (!project) continue;
+    for (const mark of plane.querySelectorAll<HTMLElement | SVGElement>('[data-mark]')) {
+      const kind = mark.dataset.mark;
+      if (kind === 'pin') {
+        const dot = (mark.firstElementChild ?? mark).getBoundingClientRect();
+        cutouts.push({
+          kind: 'circle',
+          cx: (dot.left + dot.right) / 2 - origin.left,
+          cy: (dot.top + dot.bottom) / 2 - origin.top,
+          r: Math.max(dot.width, dot.height) / 2 + CUTOUT_PAD,
+        });
+      } else if (kind === 'frame' && mark instanceof HTMLElement) {
+        const box = boxOnPlane(mark, plane);
+        if (!box) continue;
+        const corners = [
+          { x: box.x, y: box.y },
+          { x: box.x + box.w, y: box.y },
+          { x: box.x + box.w, y: box.y + box.h },
+          { x: box.x, y: box.y + box.h },
+        ];
+        cutouts.push({
+          kind: 'path',
+          d: `M${corners.map((corner) => seen(project, corner)).join('L')}Z`,
+          transform: '',
+          width: 6,
+        });
+      } else if (kind === 'stroke' && mark instanceof SVGPathElement) {
+        // The SVG spans the plane in slide units (`viewBox="0 0 1 1"`).
+        if (typeof mark.getTotalLength !== 'function') continue;
+        const length = mark.getTotalLength();
+        const points = Array.from({ length: STROKE_SAMPLES + 1 }, (_, at) => {
+          const { x, y } = mark.getPointAtLength((length * at) / STROKE_SAMPLES);
+          return seen(project, { x, y });
+        });
+        cutouts.push({
+          kind: 'path',
+          d: `M${points.join('L')}`,
+          transform: '',
+          width: Number(mark.getAttribute('stroke-width') ?? 2) + 2 * CUTOUT_PAD,
+        });
+      }
+    }
+  }
+  return cutouts;
+}
+
+/** An element's box on its plane (0–1), from its layout – the plane's transform left out. */
+function boxOnPlane(element: HTMLElement, plane: HTMLElement): Rect | null {
+  const { offsetWidth: width, offsetHeight: height } = plane;
+  if (width === 0 || height === 0) return null;
+  let x = 0;
+  let y = 0;
+  let at: Element | null = element;
+  while (at && at !== plane) {
+    if (!(at instanceof HTMLElement)) return null;
+    x += at.offsetLeft;
+    y += at.offsetTop;
+    at = at.offsetParent;
+  }
+  if (at !== plane) return null;
+  return {
+    x: x / width,
+    y: y / height,
+    w: element.offsetWidth / width,
+    h: element.offsetHeight / height,
+  };
 }
 
 /**

@@ -1,4 +1,4 @@
-import { and, count, eq, gt, isNull, or } from 'drizzle-orm';
+import { and, count, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import freeEmailDomains from 'free-email-domains';
 import {
   domainJoinAllowed,
@@ -26,6 +26,9 @@ import { fileUrl } from '../../storage/blob-storage';
 import { assertSeatForJoin, lockWorkspaceRow } from '../plans';
 import { getRole, requireRole, stronger, workspaceNotFound } from './roles';
 import { createWorkspace, getWorkspace, PERSONAL_WORKSPACE_NAME } from './workspaces';
+
+/** SQL twin of `creatorIsAdmin` (`invites`): the invite's creator is still an admin there. */
+export const createdByAdmin = sql`exists (select 1 from ${workspaceMembers} join ${workspaces} on ${workspaces.id} = ${workspaceMembers.workspaceId} where ${workspaceMembers.workspaceId} = ${workspaceInvites.workspaceId} and ${workspaceMembers.userId} = ${workspaceInvites.createdBy} and ${workspaceMembers.role} = 'admin' and ${workspaces.blockedAt} is null)`;
 
 /**
  * Company workspaces (BER-148), like Slack: a workspace opened to a domain is found by
@@ -237,6 +240,8 @@ export async function joinByDomain(
           isNull(workspaceInvites.revokedAt),
           isNull(workspaceInvites.acceptedAt),
           gt(workspaceInvites.expiresAt, now),
+          // Like accepting it: an invite counts only while whoever sent it is still an admin.
+          createdByAdmin,
         ),
       );
     // Only an invitation to the workspace brings someone removed back, not a deck share.

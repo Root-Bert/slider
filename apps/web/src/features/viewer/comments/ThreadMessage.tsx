@@ -9,6 +9,7 @@ import { CommentContent } from './CommentContent';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
 import { RemovedInSourceNote } from './RevisionNotes';
 import { useCommentMenu } from './hooks/useCommentMenu';
+import { ReactionChips, ReactionPicker } from './Reactions';
 import { isModEnter } from '@/lib/keyboard';
 
 interface ThreadMessageProps {
@@ -49,7 +50,7 @@ export function ThreadMessage({ comment, deckId, isRoot, onDeleted }: ThreadMess
       aria-busy={pending || undefined}
       onContextMenu={editing ? undefined : menu.onContextMenu}
       className={cn(
-        'flex flex-col gap-2 rounded-panel px-3.5 py-3 transition-opacity',
+        'group/message relative flex flex-col gap-2 rounded-panel px-3.5 py-3 transition-opacity',
         isRoot
           ? 'bg-surface-1 shadow-[inset_0_0_0_1px_var(--card-accent),0_0_20px_-4px_color-mix(in_srgb,var(--card-accent)_50%,transparent)]'
           : cn('glass max-w-80', editing ? 'w-full' : 'w-fit min-w-48'),
@@ -75,15 +76,19 @@ export function ThreadMessage({ comment, deckId, isRoot, onDeleted }: ThreadMess
       {editing ? (
         <EditForm comment={comment} deckId={deckId} onDone={stopEditing} />
       ) : (
-        <CommentContent
-          comment={comment}
-          bodyClassName={cn(
-            'text-fg',
-            removed && 'text-fg-subtle line-through decoration-fg-faint',
-          )}
-        />
+        <>
+          <CommentContent
+            comment={comment}
+            bodyClassName={cn(
+              'text-fg',
+              removed && 'text-fg-subtle line-through decoration-fg-faint',
+            )}
+          />
+          <ReactionChips comment={comment} />
+        </>
       )}
 
+      {!editing && !pending && <ReactionPicker comment={comment} />}
       {menu.menus}
     </article>
   );

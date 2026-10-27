@@ -25,6 +25,8 @@ import {
 import { useMarkPreview, useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, type Draft } from '../state/viewer-state';
+import { useAiThreads } from '../comments/hooks/useAiThreads';
+import { AiScan } from './AiScan';
 import { markLabel } from '../comments/lib/labels';
 import { strokePath, strokesBounds, textBox } from './lib/stroke-path';
 import { dragTextBox, startFontSize } from './lib/text-box';
@@ -43,6 +45,8 @@ interface AnnotationLayerProps {
   threads: Thread[];
   emphasisId: string | null;
   draft: Draft | null;
+  /** Done threads' marks step back – not while only done ones are shown. */
+  fadeDone: boolean;
   /** Box mode: the box a hovered/focused comment or the draft attaches to is outlined. */
   boxes?: boolean;
   /** Pointer mode: a click on the slide starts a comment, so frames let it through. */
@@ -52,6 +56,11 @@ interface AnnotationLayerProps {
    * and one's own drawings still move – everywhere else the pen draws.
    */
   aboveTools?: boolean;
+  /**
+   * Laid over a plane of the slide turned in 3D (`LayerStage`): the marks show and open their
+   * thread, but nothing moves – a drag there would land somewhere else on the slide.
+   */
+  still?: boolean;
 }
 
 interface Mark {
@@ -87,9 +96,11 @@ export const AnnotationLayer = memo(function AnnotationLayer({
   threads,
   emphasisId,
   draft,
+  fadeDone,
   boxes = false,
   selecting = false,
   aboveTools = false,
+  still = false,
 }: AnnotationLayerProps) {
   const dispatch = useViewerDispatch();
   const { viewer, deck, canComment } = useViewerData();
@@ -110,7 +121,10 @@ export const AnnotationLayer = memo(function AnnotationLayer({
   });
   const isOwn = (comment: Comment) =>
     canComment && comment.source === 'app' && comment.author.id === viewer.author.id;
+  // What one may move or rework of one's own – not while held still.
+  const canEdit = (comment: Comment) => !still && isOwn(comment);
   const markMenu = useMarkMenu({ deckId: deck.id, isOwn });
+  const { working: aiWorking } = useAiThreads();
 
   const marks = useMemo<Mark[]>(() => {
     const result: Mark[] = [];
@@ -144,11 +158,13 @@ export const AnnotationLayer = memo(function AnnotationLayer({
   const composing = draft !== null;
   const opacityOf = (mark: Mark) => {
     if (composing || mark.state === 'dimmed') return 0.3;
-    return mark.thread.root.status === 'done' ? 0.5 : 1;
+    return fadeDone && mark.thread.root.status === 'done' ? 0.5 : 1;
   };
   // One's own freehand, arrow or marker drawing takes its comment in the composer.
   const commentable = (mark: Mark) =>
-    isOwn(mark.thread.root) && isBareDrawing(mark.thread) && mark.thread.root.anchor.type !== 'gap';
+    canEdit(mark.thread.root) &&
+    isBareDrawing(mark.thread) &&
+    mark.thread.root.anchor.type !== 'gap';
   const activate = (mark: Mark) => {
     const { root } = mark.thread;
     if (commentable(mark))
@@ -175,6 +191,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
           shape={emphasizedShape}
           variant="emphasis"
           color={accentColor(emphasized.thread.root.author.color)}
+          padded
         />
       )}
       {draftShape && (
@@ -182,6 +199,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
           shape={draftShape}
           variant="target"
           color={accentColor(viewer.author.color)}
+          padded
         />
       )}
       <svg
@@ -199,7 +217,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
               aspectRatio={slide.aspectRatio}
               opacity={opacityOf(mark)}
               interactive={!composing}
-              movable={isOwn(root) && isDrawing(root)}
+              movable={canEdit(root) && isDrawing(root)}
               onActivate={() => activate(mark)}
               onPreview={(shift) => {
                 const stored = anchorRect(root, slide.shapes);
@@ -235,7 +253,9 @@ export const AnnotationLayer = memo(function AnnotationLayer({
           isDrawing(root) && (root.anchor.type !== 'rect' || isImplicitFrame(root));
         // One's own plain box carries its badge on its corner: dragging the badge resizes it.
         const ownBox =
-          root.anchor.type === 'rect' && !isImplicitFrame(root) && isOwn(root) && !composing;
+          root.anchor.type === 'rect' && !isImplicitFrame(root) && canEdit(root) && !composing;
+        // The AI at work: it reads the marked area; a bare pin has none, so its dot shows it.
+        const aiScan = aiWorking.has(mark.thread.id) && area.w > 0 && area.h > 0;
         const openMenu = (event: MouseEvent) =>
           markMenu.onContextMenu(event, mark.thread, () => activate(mark));
         const pin = (inFrame: boolean) => (
@@ -246,9 +266,10 @@ export const AnnotationLayer = memo(function AnnotationLayer({
             state={inFrame && mark.state === 'dimmed' ? 'normal' : mark.state}
             onActivate={() => activate(mark)}
             onContextMenu={openMenu}
+            aiWorking={aiWorking.has(mark.thread.id) && !aiScan}
             drag={
               // One's own pin moves (with its drawing, if any).
-              !inFrame && root.anchor.type === 'point' && isOwn(root) && !composing
+              !inFrame && root.anchor.type === 'point' && canEdit(root) && !composing
                 ? {
                     clamp: (dx, dy) => clampDrawingShift(root, dx, dy),
                     onPreview: (shift) => {
@@ -274,6 +295,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
             data-hover-thread={mark.thread.id}
             className={cn(composing && 'opacity-30')}
           >
+            {aiScan && <AiScan rect={area} pinOnCorner={!root.strokes.some(isPathStroke)} />}
             {root.anchor.type === 'rect' &&
               !isImplicitFrame(root) &&
               (ownBox ? (
@@ -289,7 +311,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                   className={cn(
                     'transition-opacity duration-200',
                     mark.state === 'dimmed' && 'opacity-30',
-                    root.status === 'done' && 'opacity-50',
+                    fadeDone && root.status === 'done' && 'opacity-50',
                   )}
                   badge={badgeInFrame ? pin(true) : undefined}
                   onActivate={() => activate(mark)}
@@ -306,7 +328,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                   className={cn(
                     'transition-opacity duration-200',
                     mark.state === 'dimmed' && 'opacity-30',
-                    root.status === 'done' && 'opacity-50',
+                    fadeDone && root.status === 'done' && 'opacity-50',
                   )}
                   emphasized={mark.state === 'emphasized'}
                   isMark
@@ -317,13 +339,15 @@ export const AnnotationLayer = memo(function AnnotationLayer({
               <TextMark
                 stroke={{ ...text, color: root.author.color }}
                 label={markLabel(root)}
-                opacity={mark.state === 'dimmed' ? 0.3 : root.status === 'done' ? 0.5 : 1}
+                opacity={
+                  mark.state === 'dimmed' ? 0.3 : fadeDone && root.status === 'done' ? 0.5 : 1
+                }
                 emphasized={mark.state === 'emphasized'}
                 interactive={!composing}
                 onActivate={() => activate(mark)}
                 onContextMenu={openMenu}
                 onPlace={
-                  isOwn(root)
+                  canEdit(root)
                     ? (box, done) => save({ commentId: root.id, textBox: box }, done)
                     : undefined
                 }
@@ -336,7 +360,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
             {root.anchor.type === 'rect' &&
               !text &&
               !bareStrokes &&
-              !(isOwn(root) && !isImplicitFrame(root)) && (
+              !(canEdit(root) && !isImplicitFrame(root)) && (
                 // The frame's border is a pointer target; keyboard users reach it through the badge.
                 <button
                   type="button"
@@ -364,41 +388,48 @@ export const AnnotationLayer = memo(function AnnotationLayer({
       })}
 
       {draft && (
-        <DraftMark
-          draft={draft}
-          author={viewer.author}
-          aspectRatio={slide.aspectRatio}
-          // A box picked with the pointer is outlined (and named) as the shape itself.
-          frame={
-            !(
-              draftShape &&
-              draft.anchor.type === 'rect' &&
-              rectsMatch(draft.anchor.rect, draftShape.bbox)
-            )
-          }
-          onRectChange={(rect) => {
-            if (draft.slideId)
-              dispatch({ type: 'anchorPlaced', slideId: draft.slideId, anchor: rectAnchor(rect) });
-          }}
-          onPointChange={(point) => {
-            if (draft.slideId)
+        // Held still, the draft is only shown: a click past it lands on the plane below.
+        <div className={cn('contents', still && '*:pointer-events-none')}>
+          <DraftMark
+            draft={draft}
+            author={viewer.author}
+            aspectRatio={slide.aspectRatio}
+            // A box picked with the pointer is outlined (and named) as the shape itself.
+            frame={
+              !(
+                draftShape &&
+                draft.anchor.type === 'rect' &&
+                rectsMatch(draft.anchor.rect, draftShape.bbox)
+              )
+            }
+            onRectChange={(rect) => {
+              if (draft.slideId)
+                dispatch({
+                  type: 'anchorPlaced',
+                  slideId: draft.slideId,
+                  anchor: rectAnchor(rect),
+                });
+            }}
+            onPointChange={(point) => {
+              if (draft.slideId)
+                dispatch({
+                  type: 'anchorPlaced',
+                  slideId: draft.slideId,
+                  anchor: { type: 'point', point, shapeRef: null },
+                });
+            }}
+            onWriteInside={(rect, text) => {
+              if (!draft.slideId) return;
+              const fontSize = startFontSize(layerRef.current?.offsetHeight ?? 0);
               dispatch({
-                type: 'anchorPlaced',
+                type: 'textBoxPlaced',
                 slideId: draft.slideId,
-                anchor: { type: 'point', point, shapeRef: null },
+                box: dragTextBox(rect, fontSize),
+                text,
               });
-          }}
-          onWriteInside={(rect, text) => {
-            if (!draft.slideId) return;
-            const fontSize = startFontSize(layerRef.current?.offsetHeight ?? 0);
-            dispatch({
-              type: 'textBoxPlaced',
-              slideId: draft.slideId,
-              box: dragTextBox(rect, fontSize),
-              text,
-            });
-          }}
-        />
+            }}
+          />
+        </div>
       )}
       {markMenu.contextMenu}
     </div>

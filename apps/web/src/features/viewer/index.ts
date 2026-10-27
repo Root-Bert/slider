@@ -9,3 +9,4 @@ export {
   isRemovedInSource,
   type Thread,
 } from './comments/lib/comment-selectors';
+export { cssFamily, officeFontStyles, registerOfficeFonts } from './editing/live/fonts';

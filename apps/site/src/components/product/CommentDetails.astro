@@ -16,7 +16,7 @@ import { person } from '~/lib/people';
  * alternating sides. Lane colours follow the comment's author/source, as in the app.
  */
 const lara = person('Lara');
-const ingridFromPowerPoint = { id: 'ingrid-pptx', name: 'Ingrid', type: 'external', color: 'powerpoint' } as const;
+const marcel = person('Marcel');
 const accentOf = (name: Parameters<typeof person>[0]) => `var(--color-accent-${person(name).color})`;
 /** The version row's chips, as the app shows the latest revision's changes. */
 const change = (kind: SlideBadge['kind'], label: string): SlideBadge => ({
@@ -105,24 +105,16 @@ const changes = [change('new', '2 new'), change('modified', '3 changed'), change
   </Detail>
 
   <Detail
-    mark="Import"
-    accent="var(--color-powerpoint)"
-    title="PowerPoint comments"
-    copy="Comments already written in PowerPoint come along on import, marked with a P."
-    bullets={['Imported automatically', 'Shown next to Slider comments', 'Original file stays unchanged']}
+    mark="Edit"
+    accent="var(--color-accent-cyan)"
+    title="Edit right on the slide"
+    copy="Fix the number while you talk about it. Slider writes the change into the ODP, and LibreOffice draws the slide exactly as it is saved."
+    bullets={['Small changes to texts, boxes and pictures', 'Stays an ODP, the open standard', 'Everyone sees it live']}
     slide="Matrix"
     connector={{ x: 250, y: 145.25, w: 64, h: 6.75, d: 'M 0 0 L 64 0 L 64 6.75 L 58 6.75' }}
-    pin="powerpoint"
   >
-    <CommentCard
-      author={ingridFromPowerPoint}
-      source="pptx"
-      meta="from PowerPoint | Oct 3"
-      replies="1 reply"
-      class="absolute top-[108px] left-[308px] w-[372px]"
-    >
-      <Badge slot="badge" tone="powerpoint">PowerPoint</Badge>
-      Please double-check the churn figure.
+    <CommentCard author={marcel} meta="Oct 3 | Slide 4" replies="1 reply" class="absolute top-[108px] left-[308px] w-[372px]">
+      Churn figure fixed right on the slide.
     </CommentCard>
   </Detail>
 

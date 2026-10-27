@@ -11,6 +11,7 @@ import {
   NextcloudMark,
   Notice,
   PasskeyMark,
+  TextLink,
 } from '@/ui';
 import {
   isPasskeyCancel,
@@ -19,6 +20,7 @@ import {
   signInWithPasskey,
 } from '@/lib/passkeys';
 import { useOnPageRestore } from '@/lib/page-restore';
+import { routes } from '@/lib/routes';
 import { BESIDE } from '../lib/beside';
 import { loadPage } from '../lib/load-page';
 import { providerLoginUrl } from '../lib/return-to';
@@ -51,6 +53,19 @@ export function LoginOptions({ config, returnTo }: { config: AuthProviders; retu
   // The glowing button only when there is one way in – next to each other, all look alike.
   const single = providers.length + (nextcloudAt === -1 ? 0 : 1) === 1;
   const hasButtons = providers.length > 0 || anyNextcloud;
+
+  if (config.setupPending) {
+    // No admin yet: only the browser that typed in the setup token signs in, to claim it.
+    return (
+      <Notice tone="warning" variant="plain" title="Noch nicht eingerichtet">
+        Diese Slider-Instanz hat noch keinen Admin. Wer sie betreibt, gibt zuerst unter{' '}
+        <TextLink to={routes.setup()} variant="inline">
+          /einrichtung
+        </TextLink>{' '}
+        den Setup-Token aus dem Server-Log ein – danach geht die Anmeldung hier.
+      </Notice>
+    );
+  }
 
   if (confirmEmail) {
     return (

@@ -3,6 +3,7 @@ import { useId, useRef, useState, type ReactNode } from 'react';
 import {
   API_PREFIX,
   healthSchema,
+  SETUP_KEYS,
   type SaveSetupInput,
   type SaveSetupResult,
   type SetupField,
@@ -17,9 +18,12 @@ import { LegalTextsSection } from '@/features/legal';
 import {
   Badge,
   Button,
+  GlassPanel,
   Icon,
   Notice,
+  type IconName,
   Section,
+  SegmentedControl,
   Select,
   Spinner,
   TextField,
@@ -30,6 +34,7 @@ import {
 import {
   collectChanges,
   initialDraft,
+  isSecretKey,
   SETUP_PATH,
   smtpParts,
   smtpUrl,
@@ -38,6 +43,7 @@ import {
   type SmtpParts,
 } from '../lib/setup-form';
 import { Code } from './Code';
+import { SectionNav } from '@/shell/layouts/SectionNav';
 
 type Settings = NonNullable<SetupStatus['settings']>;
 
@@ -48,21 +54,75 @@ const MAIL_KEYS: SetupKey[] = ['SMTP_URL', 'MAIL_FROM'];
 const NEXTCLOUD_KEYS: SetupKey[] = ['NEXTCLOUD_URL'];
 const NEXTCLOUD_LOGIN_KEYS: SetupKey[] = ['NEXTCLOUD_CLIENT_ID', 'NEXTCLOUD_CLIENT_SECRET'];
 
+/** What each setting is called on the page – in its card and in the `.env` tab. */
+const LABELS: Record<SetupKey, string> = {
+  MS_CLIENT_ID: 'Anwendungs-ID (Client-ID)',
+  MS_CLIENT_SECRET: 'Geheimer Clientschlüssel',
+  MS_TENANT: 'Mandant',
+  GOOGLE_CLIENT_ID: 'Client-ID',
+  GOOGLE_CLIENT_SECRET: 'Clientschlüssel',
+  OIDC_ISSUER: 'Issuer-URL',
+  OIDC_CLIENT_ID: 'Client-ID',
+  OIDC_CLIENT_SECRET: 'Clientschlüssel',
+  OIDC_LABEL: 'Text auf dem Button',
+  NEXTCLOUD_CLIENT_ID: 'Client-Kennung',
+  NEXTCLOUD_CLIENT_SECRET: 'Geheimnis',
+  NEXTCLOUD_URL: 'Adresse der Firmen-Nextcloud',
+  SIGNUP: 'Neue Konten',
+  SIGNUP_DOMAINS: 'Domains',
+  SMTP_URL: 'Mailserver',
+  MAIL_FROM: 'Absender',
+  DELETE_UNUSED: 'Automatisch löschen',
+};
+
+/** The cards of the `.env` tab, in the order of the settings. */
+const ENV_CARDS: { title: string; keys: SetupKey[] }[] = [
+  { title: 'Microsoft', keys: MICROSOFT_KEYS },
+  { title: 'Google', keys: GOOGLE_KEYS },
+  { title: 'Firmen-Login (SSO)', keys: OIDC_KEYS },
+  { title: 'Nextcloud-Login', keys: NEXTCLOUD_LOGIN_KEYS },
+  { title: 'Registrierung', keys: ['SIGNUP', 'SIGNUP_DOMAINS'] },
+  { title: 'Nextcloud-Dateien', keys: NEXTCLOUD_KEYS },
+  { title: 'Mailserver', keys: MAIL_KEYS },
+  { title: 'Ungenutzte Daten löschen', keys: ['DELETE_UNUSED'] },
+];
+
+export type SetupTab = 'settings' | 'env';
+
+/** The groups of the settings tab, in order – headings and the nav at the side. */
+const GROUPS = {
+  login: { id: 'anmeldung', title: 'Anmeldung', icon: 'key' },
+  access: { id: 'zugang', title: 'Zugang', icon: 'personAdd' },
+  files: { id: 'dateien', title: 'Dateien', icon: 'folder' },
+  mail: { id: 'e-mail', title: 'E-Mail', icon: 'send' },
+  privacy: { id: 'datenschutz', title: 'Datenschutz', icon: 'history' },
+  legal: { id: 'rechtliches', title: 'Rechtliches', icon: 'article' },
+} as const satisfies Record<string, { id: string; title: string; icon: IconName }>;
+const NAV_SECTIONS = Object.values(GROUPS);
+
 /**
- * The settings in groups – login, access, mail, privacy, legal texts, server. Every card says
- * whether it is set up and where from; values from the environment are marked `.env`, locked, and
- * only change there. Imprint and privacy policy live in the database and save on their own.
+ * Two tabs, switched in a pill like the review's comment filter. „Einstellungen“: what is set
+ * here, in groups – login, access, mail, privacy, legal texts. Every card says whether it is set
+ * up and where from; a card whose values all come from the environment only says so, single
+ * values from there are locked in place. „Umgebungsvariablen“: everything the server's environment
+ * sets – the address, and each setting it fixes – read-only. Imprint and privacy policy live in
+ * the database and save on their own. From `xl` on, a nav at the side follows the groups of the
+ * settings. The tab is the page's: its subtitle says what the tab holds.
  */
 export function SetupForm({
   status,
   settings,
   headers,
   onNotify,
+  tab,
+  onTabChange,
 }: {
   status: SetupStatus;
   settings: Settings;
   headers: Record<string, string>;
   onNotify: ShowToast;
+  tab: SetupTab;
+  onTabChange: (tab: SetupTab) => void;
 }) {
   const queryClient = useQueryClient();
   const { fields } = settings;
@@ -144,10 +204,10 @@ export function SetupForm({
     save.mutate(values);
   };
 
-  const field = (key: SetupKey, label: string, props: FieldProps = {}) => (
+  const field = (key: SetupKey, props: FieldProps = {}) => (
     <SetupTextField
       key={key}
-      label={label}
+      label={LABELS[key]}
       field={fields[key]}
       value={draft[key]}
       onChange={set(key)}
@@ -188,251 +248,357 @@ export function SetupForm({
   const signup = (draft.SIGNUP || 'open') as SignupMode;
   // On unless switched off – the server defaults to on, too.
   const deleteUnused = ['false', '0'].includes(draft.DELETE_UNUSED) ? 'false' : 'true';
-  const anyFromEnv = Object.values(fields).some((f) => f.source === 'env');
+  const envKeys = SETUP_KEYS.filter((key) => fields[key].source === 'env');
+  const showEnv = () => onTabChange('env');
+  // A card set entirely in the environment has nothing to change here: it only says so.
+  const fromEnv = (keys: SetupKey[], body: ReactNode) =>
+    keys.every((key) => fields[key].source === 'env') ? <FromEnv onShow={showEnv} /> : body;
 
   return (
-    <form
-      className="flex flex-col gap-10"
-      onSubmit={(event) => {
-        event.preventDefault();
-        submit();
-      }}
-    >
-      {anyFromEnv && (
-        <p className="text-body text-fg-subtle">
-          Mit <EnvBadge /> markierte Felder sind auf dem Server festgelegt. Ändern geht nur dort,
-          danach Slider neu starten.
-        </p>
-      )}
-
-      {!status.claimed && status.loginConfigured && (
-        <Notice tone="info" title="Noch kein Admin">
-          Anmelden macht niemanden zum Admin. Melde dich an und gib danach hier den Setup-Token noch
-          einmal ein – damit wirst du Admin dieser Instanz.{' '}
-          <TextLink href={routes.login(SETUP_PATH)} variant="inline" weight="medium">
-            Zur Anmeldung
-          </TextLink>
-        </Notice>
-      )}
-
-      <Group
-        title="Anmeldung"
-        description="Wie man sich bei Slider anmeldet. Mindestens ein Weg muss eingerichtet sein; Passkeys gehen zusätzlich immer."
-      >
-        <Section
-          title="Microsoft"
-          description="„Weiter mit Microsoft“ und PowerPoints aus OneDrive/SharePoint. App registrieren unter entra.microsoft.com → App-Registrierungen, Plattform „Web“."
-          aside={aside(MICROSOFT_KEYS)}
+    <div className="flex flex-col gap-8">
+      <GlassPanel className="scrollbar-none flex max-w-full min-w-0 items-center self-start overflow-x-auto p-1">
+        <SegmentedControl<SetupTab>
+          label="Einstellungen oder Umgebungsvariablen"
+          mode="tabs"
+          value={tab}
+          onChange={onTabChange}
+          segments={[
+            { value: 'settings', label: 'Einstellungen', icon: 'settings' },
+            // The address always comes from there.
+            { value: 'env', label: 'Umgebungsvariablen', icon: 'lock', count: envKeys.length + 1 },
+          ]}
+        />
+      </GlassPanel>
+      {tab === 'env' ? (
+        <EnvTab settings={settings} />
+      ) : (
+        // The draft lives in this component, not the form: switching tabs keeps what was typed.
+        <form
+          className="relative flex flex-col gap-10"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
         >
-          <RedirectUri uri={settings.redirectUris.microsoft} />
-          <div className="grid gap-3 sm:grid-cols-2">
-            {field('MS_CLIENT_ID', 'Anwendungs-ID (Client-ID)')}
-            {field('MS_CLIENT_SECRET', 'Geheimer Clientschlüssel', { secret: true })}
-            {field('MS_TENANT', 'Mandant', {
-              placeholder: 'common',
-              hint: 'common = alle Microsoft-Konten; sonst die Verzeichnis-ID der Firma.',
-            })}
+          {/* Beside the 720px column, where the wide screen has room; out of the flow. */}
+          <div className="absolute inset-y-0 right-full mr-12 hidden w-44 xl:block">
+            <SectionNav sections={NAV_SECTIONS} />
           </div>
-        </Section>
-
-        <Section
-          title="Google"
-          description="„Weiter mit Google“ und Präsentationen aus Google Drive. OAuth-Client (Webanwendung) anlegen unter console.cloud.google.com → Google Auth Platform → Clients; für Drive im Projekt auch die Google Drive API und Google Picker API aktivieren."
-          aside={aside(GOOGLE_KEYS)}
-        >
-          <RedirectUri uri={settings.redirectUris.google} />
-          <div className="grid gap-3 sm:grid-cols-2">
-            {field('GOOGLE_CLIENT_ID', 'Client-ID')}
-            {field('GOOGLE_CLIENT_SECRET', 'Clientschlüssel', { secret: true })}
-          </div>
-        </Section>
-
-        <Section
-          title="Firmen-Login (SSO)"
-          description="Jeder OpenID-Connect-Anbieter: Authentik, Keycloak, Okta, Zitadel, …"
-          aside={aside(OIDC_KEYS)}
-        >
-          <RedirectUri uri={settings.redirectUris.oidc} />
-          <div className="grid gap-3 sm:grid-cols-2">
-            {field('OIDC_ISSUER', 'Issuer-URL', {
-              placeholder: 'https://auth.firma.de/application/o/slider/',
-              className: 'sm:col-span-2',
-            })}
-            {field('OIDC_CLIENT_ID', 'Client-ID')}
-            {field('OIDC_CLIENT_SECRET', 'Clientschlüssel', { secret: true })}
-            {field('OIDC_LABEL', 'Text auf dem Button', { placeholder: 'Weiter mit SSO' })}
-          </div>
-        </Section>
-
-        <Section
-          title="Nextcloud"
-          description="„Weiter mit Nextcloud“ für die Nextcloud eurer Firma (unter Dateien eingetragen). In Nextcloud unter Verwaltung → Sicherheit → OAuth-2.0-Clients einen Client anlegen."
-          aside={aside(NEXTCLOUD_LOGIN_KEYS)}
-        >
-          <RedirectUri uri={settings.redirectUris.nextcloud} />
-          <div className="grid gap-3 sm:grid-cols-2">
-            {field('NEXTCLOUD_CLIENT_ID', 'Client-Kennung')}
-            {field('NEXTCLOUD_CLIENT_SECRET', 'Geheimnis', { secret: true })}
-          </div>
-        </Section>
-      </Group>
-
-      <Group title="Zugang" description="Wer ein Konto anlegen darf.">
-        <Section
-          title="Registrierung"
-          description="Gilt für alle ohne Einladung. Eingeladene Personen dürfen immer."
-          aside={fields.SIGNUP.source === 'env' ? <EnvBadge /> : undefined}
-        >
-          {fields.SIGNUP.source === 'env' ? (
-            <LockedField label="Neue Konten" value={SIGNUP_LABELS[signup] ?? signup} />
-          ) : (
-            <label className="flex flex-col gap-1.5 text-xs text-fg-subtle">
-              Neue Konten
-              <Select<SignupMode>
-                value={signup}
-                onChange={set('SIGNUP')}
-                options={SIGNUP_MODES.map((value) => ({ value, label: SIGNUP_LABELS[value] }))}
-              />
-            </label>
+          {!status.claimed && status.loginConfigured && (
+            <Notice tone="info" title="Noch kein Admin">
+              Bis es einen Admin gibt, kann sich nur in diesem Browser jemand anmelden. Melde dich
+              an und bestätige danach hier den Setup-Token – damit wirst du Admin dieser Instanz.{' '}
+              <TextLink href={routes.login(SETUP_PATH)} variant="inline" weight="medium">
+                Zur Anmeldung
+              </TextLink>
+            </Notice>
           )}
-          {signup === 'domains' &&
-            field('SIGNUP_DOMAINS', 'Domains', { placeholder: 'firma.de, firma.com' })}
-          <p className="text-xs text-fg-subtle">{SIGNUP_HINTS[signup]}</p>
-        </Section>
-      </Group>
 
-      <Group
-        title="Dateien"
-        description="Optional. Woher Slider Präsentationen außer OneDrive/SharePoint holt."
-      >
-        <Section
-          title="Nextcloud"
-          description="Jede Nextcloud funktioniert ohne Einrichtung – man gibt beim Verbinden ihre Adresse ein. Trag hier die Nextcloud eurer Firma ein, dann entfällt das, und sie darf auch im internen Netz liegen."
-          aside={aside(NEXTCLOUD_KEYS)}
-        >
-          {field('NEXTCLOUD_URL', 'Adresse der Firmen-Nextcloud', {
-            placeholder: 'https://cloud.firma.de',
-          })}
-        </Section>
-      </Group>
-
-      <Group
-        title="E-Mail"
-        description="Optional. Ohne Mailserver gibt es für Einladungen einen Link zum Weitergeben."
-      >
-        <Section
-          title="Mailserver"
-          description="Verschickt Einladungen direkt per Mail. Jeder SMTP-Zugang passt, z. B. Brevo oder das Postfach beim Domain-Hoster."
-          aside={aside(MAIL_KEYS)}
-        >
-          {smtpFromEnv ? (
-            <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
-              <LockedField label="SMTP-Server" value={smtp.host || '–'} />
-              <LockedField label="Port" value={smtp.port} />
-              <LockedField label="Benutzer" value={smtp.user || '–'} />
-              <LockedField label="Passwort" value="••••••••" />
-            </div>
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
-              <TextField
-                label="SMTP-Server"
-                disabled={smtpRemoved}
-                placeholder="smtp-relay.brevo.com"
-                value={smtp.host}
-                onChange={(e) => setSmtpPart('host')(e.target.value)}
-              />
-              <TextField
-                label="Port"
-                disabled={smtpRemoved}
-                inputMode="numeric"
-                value={smtp.port}
-                hint={smtp.port === '465' ? 'TLS' : 'STARTTLS'}
-                onChange={(e) => setSmtpPart('port')(e.target.value)}
-              />
-              <TextField
-                label="Benutzer"
-                disabled={smtpRemoved}
-                autoComplete="off"
-                value={smtp.user}
-                onChange={(e) => setSmtpPart('user')(e.target.value)}
-              />
-              <TextField
-                label="Passwort"
-                disabled={smtpRemoved}
-                type="password"
-                autoComplete="new-password"
-                placeholder={
-                  savedSmtp && !smtpNeedsPassword ? 'Gespeichert – leer lassen zum Behalten' : ''
-                }
-                hint={
-                  smtpRemoved
-                    ? 'Wird beim Speichern entfernt'
-                    : smtpNeedsPassword && !smtp.password
-                      ? 'Neuer Benutzer – Passwort eingeben'
-                      : undefined
-                }
-                value={smtp.password}
-                onChange={(e) => setSmtpPart('password')(e.target.value)}
-              />
-            </div>
-          )}
-          {field('MAIL_FROM', 'Absender', { placeholder: 'Slider <slider@firma.de>' })}
-        </Section>
-      </Group>
-
-      <Group title="Datenschutz" description="Wie lange Slider ungenutzte Daten aufhebt.">
-        <Section
-          title="Ungenutzte Daten löschen"
-          description="Konten und Präsentationen, die 18 Monate niemand genutzt hat, werden gelöscht. Die Frist zählt frühestens ab dem Einschalten, vorher wird nichts gelöscht."
-          aside={fields.DELETE_UNUSED.source === 'env' ? <EnvBadge /> : undefined}
-        >
-          {fields.DELETE_UNUSED.source === 'env' ? (
-            <LockedField label="Automatisch löschen" value={DELETE_UNUSED_LABELS[deleteUnused]} />
-          ) : (
-            <label className="flex flex-col gap-1.5 text-xs text-fg-subtle">
-              Automatisch löschen
-              <Select<'true' | 'false'>
-                value={deleteUnused}
-                onChange={set('DELETE_UNUSED')}
-                options={(['false', 'true'] as const).map((value) => ({
-                  value,
-                  label: DELETE_UNUSED_LABELS[value],
-                }))}
-              />
-            </label>
-          )}
-          {deleteUnused === 'true' && (
-            <p className="text-xs text-fg-subtle">
-              Erinnerungen vor dem Löschen kommen nur per Mail, also nur mit eingerichtetem
-              Mailserver. Ohne wird trotzdem gelöscht, nur unangekündigt.
-            </p>
-          )}
-        </Section>
-      </Group>
-
-      <Group title="Rechtliches" description="Werden für sich gespeichert, ohne Neustart.">
-        {/* Authorized and claimed: the signed-in instance admin, whom `PUT /legal` requires. */}
-        {status.claimed ? (
-          <LegalTextsSection onNotify={onNotify} />
-        ) : (
-          <Section
-            title="Impressum & Datenschutz"
-            description="Pflegst du hier, sobald du als Admin dieser Instanz angemeldet bist."
+          <Group
+            {...GROUPS.login}
+            description="Wie man sich bei Slider anmeldet. Mindestens ein Weg muss eingerichtet sein; Passkeys gehen zusätzlich immer."
           >
-            {null}
-          </Section>
-        )}
-      </Group>
+            <Section
+              title="Microsoft"
+              description="„Weiter mit Microsoft“ und PowerPoints aus OneDrive/SharePoint. App registrieren unter entra.microsoft.com → App-Registrierungen, Plattform „Web“."
+              aside={aside(MICROSOFT_KEYS)}
+            >
+              <RedirectUri uri={settings.redirectUris.microsoft} />
+              {fromEnv(
+                MICROSOFT_KEYS,
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {field('MS_CLIENT_ID')}
+                  {field('MS_CLIENT_SECRET', { secret: true })}
+                  {field('MS_TENANT', {
+                    placeholder: 'common',
+                    hint: 'common = alle Microsoft-Konten; sonst die Verzeichnis-ID der Firma.',
+                  })}
+                </div>,
+              )}
+            </Section>
 
-      <Group
-        title="Server"
-        description={
-          <>
-            Steht nur in der <Code>.env</Code>: Adresse, Datenbank, Proxy und Limits. Dort ändern,
-            danach Slider neu starten.
-          </>
-        }
-      >
+            <Section
+              title="Google"
+              description="„Weiter mit Google“ und Präsentationen aus Google Drive. OAuth-Client (Webanwendung) anlegen unter console.cloud.google.com → Google Auth Platform → Clients; für Drive im Projekt auch die Google Drive API und Google Picker API aktivieren."
+              aside={aside(GOOGLE_KEYS)}
+            >
+              <RedirectUri uri={settings.redirectUris.google} />
+              {fromEnv(
+                GOOGLE_KEYS,
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {field('GOOGLE_CLIENT_ID')}
+                  {field('GOOGLE_CLIENT_SECRET', { secret: true })}
+                </div>,
+              )}
+            </Section>
+
+            <Section
+              title="Firmen-Login (SSO)"
+              description="Jeder OpenID-Connect-Anbieter: Authentik, Keycloak, Okta, Zitadel, …"
+              aside={aside(OIDC_KEYS)}
+            >
+              <RedirectUri uri={settings.redirectUris.oidc} />
+              {fromEnv(
+                OIDC_KEYS,
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {field('OIDC_ISSUER', {
+                    placeholder: 'https://auth.firma.de/application/o/slider/',
+                    className: 'sm:col-span-2',
+                  })}
+                  {field('OIDC_CLIENT_ID')}
+                  {field('OIDC_CLIENT_SECRET', { secret: true })}
+                  {field('OIDC_LABEL', { placeholder: 'Weiter mit SSO' })}
+                </div>,
+              )}
+            </Section>
+
+            <Section
+              title="Nextcloud"
+              description="„Weiter mit Nextcloud“ für die Nextcloud eurer Firma (unter Dateien eingetragen). In Nextcloud unter Verwaltung → Sicherheit → OAuth-2.0-Clients einen Client anlegen."
+              aside={aside(NEXTCLOUD_LOGIN_KEYS)}
+            >
+              <RedirectUri uri={settings.redirectUris.nextcloud} />
+              {fromEnv(
+                NEXTCLOUD_LOGIN_KEYS,
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {field('NEXTCLOUD_CLIENT_ID')}
+                  {field('NEXTCLOUD_CLIENT_SECRET', { secret: true })}
+                </div>,
+              )}
+            </Section>
+          </Group>
+
+          <Group {...GROUPS.access} description="Wer ein Konto anlegen darf.">
+            <Section
+              title="Registrierung"
+              description="Gilt für alle ohne Einladung. Eingeladene Personen dürfen immer."
+              aside={fields.SIGNUP.source === 'env' ? <EnvBadge /> : undefined}
+            >
+              {fields.SIGNUP.source === 'env' ? (
+                <LockedField label="Neue Konten" value={SIGNUP_LABELS[signup] ?? signup} />
+              ) : (
+                <label className="flex flex-col gap-1.5 text-xs text-fg-subtle">
+                  Neue Konten
+                  <Select<SignupMode>
+                    value={signup}
+                    onChange={set('SIGNUP')}
+                    options={SIGNUP_MODES.map((value) => ({ value, label: SIGNUP_LABELS[value] }))}
+                  />
+                </label>
+              )}
+              {signup === 'domains' &&
+                field('SIGNUP_DOMAINS', { placeholder: 'firma.de, firma.com' })}
+              <p className="text-xs text-fg-subtle">{SIGNUP_HINTS[signup]}</p>
+            </Section>
+          </Group>
+
+          <Group
+            {...GROUPS.files}
+            description="Optional. Woher Slider Präsentationen außer OneDrive/SharePoint holt."
+          >
+            <Section
+              title="Nextcloud"
+              description="Jede Nextcloud funktioniert ohne Einrichtung – man gibt beim Verbinden ihre Adresse ein. Trag hier die Nextcloud eurer Firma ein, dann entfällt das, und sie darf auch im internen Netz liegen."
+              aside={aside(NEXTCLOUD_KEYS)}
+            >
+              {fromEnv(
+                NEXTCLOUD_KEYS,
+                field('NEXTCLOUD_URL', { placeholder: 'https://cloud.firma.de' }),
+              )}
+            </Section>
+          </Group>
+
+          <Group
+            {...GROUPS.mail}
+            description="Optional. Ohne Mailserver gibt es für Einladungen einen Link zum Weitergeben."
+          >
+            <Section
+              title="Mailserver"
+              description="Verschickt Einladungen direkt per Mail. Jeder SMTP-Zugang passt, z. B. Brevo oder das Postfach beim Domain-Hoster."
+              aside={aside(MAIL_KEYS)}
+            >
+              {fromEnv(
+                MAIL_KEYS,
+                <>
+                  {smtpFromEnv ? (
+                    <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
+                      <LockedField label="SMTP-Server" value={smtp.host || '–'} />
+                      <LockedField label="Port" value={smtp.port} />
+                      <LockedField label="Benutzer" value={smtp.user || '–'} />
+                      <LockedField label="Passwort" value="••••••••" />
+                    </div>
+                  ) : (
+                    <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
+                      <TextField
+                        label="SMTP-Server"
+                        disabled={smtpRemoved}
+                        placeholder="smtp-relay.brevo.com"
+                        value={smtp.host}
+                        onChange={(e) => setSmtpPart('host')(e.target.value)}
+                      />
+                      <TextField
+                        label="Port"
+                        disabled={smtpRemoved}
+                        inputMode="numeric"
+                        value={smtp.port}
+                        hint={smtp.port === '465' ? 'TLS' : 'STARTTLS'}
+                        onChange={(e) => setSmtpPart('port')(e.target.value)}
+                      />
+                      <TextField
+                        label="Benutzer"
+                        disabled={smtpRemoved}
+                        autoComplete="off"
+                        value={smtp.user}
+                        onChange={(e) => setSmtpPart('user')(e.target.value)}
+                      />
+                      <TextField
+                        label="Passwort"
+                        disabled={smtpRemoved}
+                        type="password"
+                        autoComplete="new-password"
+                        placeholder={
+                          savedSmtp && !smtpNeedsPassword
+                            ? 'Gespeichert – leer lassen zum Behalten'
+                            : ''
+                        }
+                        hint={
+                          smtpRemoved
+                            ? 'Wird beim Speichern entfernt'
+                            : smtpNeedsPassword && !smtp.password
+                              ? 'Neuer Benutzer – Passwort eingeben'
+                              : undefined
+                        }
+                        value={smtp.password}
+                        onChange={(e) => setSmtpPart('password')(e.target.value)}
+                      />
+                    </div>
+                  )}
+                  {field('MAIL_FROM', { placeholder: 'Slider <slider@firma.de>' })}
+                </>,
+              )}
+            </Section>
+          </Group>
+
+          <Group {...GROUPS.privacy} description="Wie lange Slider ungenutzte Daten aufhebt.">
+            <Section
+              title="Ungenutzte Daten löschen"
+              description="Konten und Präsentationen, die 18 Monate niemand genutzt hat, werden gelöscht. Die Frist zählt frühestens ab dem Einschalten, vorher wird nichts gelöscht."
+              aside={fields.DELETE_UNUSED.source === 'env' ? <EnvBadge /> : undefined}
+            >
+              {fields.DELETE_UNUSED.source === 'env' ? (
+                <LockedField
+                  label="Automatisch löschen"
+                  value={DELETE_UNUSED_LABELS[deleteUnused]}
+                />
+              ) : (
+                <label className="flex flex-col gap-1.5 text-xs text-fg-subtle">
+                  Automatisch löschen
+                  <Select<'true' | 'false'>
+                    value={deleteUnused}
+                    onChange={set('DELETE_UNUSED')}
+                    options={(['false', 'true'] as const).map((value) => ({
+                      value,
+                      label: DELETE_UNUSED_LABELS[value],
+                    }))}
+                  />
+                </label>
+              )}
+              {deleteUnused === 'true' && (
+                <p className="text-xs text-fg-subtle">
+                  Erinnerungen vor dem Löschen kommen nur per Mail, also nur mit eingerichtetem
+                  Mailserver. Ohne wird trotzdem gelöscht, nur unangekündigt.
+                </p>
+              )}
+            </Section>
+          </Group>
+
+          <Group {...GROUPS.legal} description="Werden für sich gespeichert, ohne Neustart.">
+            {/* Authorized and claimed: the signed-in instance admin, whom `PUT /legal` requires. */}
+            {status.claimed ? (
+              <LegalTextsSection settings={settings} onNotify={onNotify} />
+            ) : (
+              <Section
+                title="Impressum & Datenschutz"
+                description="Pflegst du hier, sobald du als Admin dieser Instanz angemeldet bist."
+              >
+                {null}
+              </Section>
+            )}
+          </Group>
+
+          {save.isError && (
+            <Notice tone="danger" role="alert">
+              {save.error.message}
+            </Notice>
+          )}
+          {/* The result sits next to the button that was pressed, at the bottom of a long form. */}
+          {phase === 'saved' && <Saved status={status} manual={settings.restart === 'manual'} />}
+          {phase === 'unreachable' && (
+            <Notice
+              tone="warning"
+              role="alert"
+              title="Slider antwortet noch nicht"
+              footer={
+                <Button size="sm" variant="secondary" icon="refresh" onClick={() => void reload()}>
+                  Erneut prüfen
+                </Button>
+              }
+            >
+              Die Änderungen sind gespeichert, aber der Server ist nach dem Neustart nicht
+              erreichbar. Prüfe das Server-Log, zum Beispiel mit <Code>docker logs slider</Code>.
+            </Notice>
+          )}
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            {phase === 'restarting' && (
+              <span className="flex items-center gap-2 text-body text-fg-subtle">
+                <Spinner size="md" /> Slider startet neu …
+              </span>
+            )}
+            <Button type="submit" loading={save.isPending || phase === 'restarting'}>
+              Speichern
+            </Button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
+/** In place of a card's fields when all of them come from the environment. */
+function FromEnv({ onShow }: { onShow: () => void }) {
+  return (
+    <p className="text-body text-fg-subtle">
+      Steht komplett in der <Code>.env</Code> des Servers und ist nur dort änderbar.{' '}
+      <TextLink variant="inline" weight="medium" onClick={onShow}>
+        Werte ansehen
+      </TextLink>
+    </p>
+  );
+}
+
+/**
+ * Everything the server's environment sets, read-only: the address – only ever from there – and
+ * each setting it fixes, in the cards of the settings. Secrets stay hidden.
+ */
+function EnvTab({ settings }: { settings: Settings }) {
+  const { fields } = settings;
+  const cards = ENV_CARDS.map((card) => ({
+    ...card,
+    keys: card.keys.filter((key) => fields[key].source === 'env'),
+  })).filter((card) => card.keys.length > 0);
+  const shown = (key: SetupKey) => {
+    const value = fields[key].value ?? '';
+    if (isSecretKey(key) && key !== 'SMTP_URL') return '••••••••';
+    if (key === 'SIGNUP') return SIGNUP_LABELS[value as SignupMode] ?? value;
+    if (key === 'DELETE_UNUSED') {
+      return DELETE_UNUSED_LABELS[['false', '0'].includes(value) ? 'false' : 'true'];
+    }
+    return value || '–';
+  };
+
+  return (
+    <div className="flex flex-col gap-10">
+      <Group title="Server" description="Steht immer in der .env.">
         <Section
           title="Adresse"
           description="Alle Links und Weiterleitungen zeigen dorthin."
@@ -441,40 +607,27 @@ export function SetupForm({
           <LockedField label="Öffentliche Adresse (SLIDER_URL)" value={settings.url} />
         </Section>
       </Group>
-
-      {save.isError && (
-        <Notice tone="danger" role="alert">
-          {save.error.message}
-        </Notice>
-      )}
-      {/* The result sits next to the button that was pressed, at the bottom of a long form. */}
-      {phase === 'saved' && <Saved status={status} manual={settings.restart === 'manual'} />}
-      {phase === 'unreachable' && (
-        <Notice
-          tone="warning"
-          role="alert"
-          title="Slider antwortet noch nicht"
-          footer={
-            <Button size="sm" variant="secondary" icon="refresh" onClick={() => void reload()}>
-              Erneut prüfen
-            </Button>
-          }
-        >
-          Die Änderungen sind gespeichert, aber der Server ist nach dem Neustart nicht erreichbar.
-          Prüfe das Server-Log, zum Beispiel mit <Code>docker logs slider</Code>.
-        </Notice>
-      )}
-      <div className="flex flex-wrap items-center justify-end gap-3">
-        {phase === 'restarting' && (
-          <span className="flex items-center gap-2 text-body text-fg-subtle">
-            <Spinner size="md" /> Slider startet neu …
-          </span>
+      <Group
+        title="Einstellungen"
+        description="Was die .env hier festlegt – unter Einstellungen ist es gesperrt."
+      >
+        {cards.length === 0 ? (
+          <Notice tone="info" variant="tinted">
+            Sonst kommt nichts aus der .env – alles Weitere stellst du unter Einstellungen ein.
+          </Notice>
+        ) : (
+          cards.map((card) => (
+            <Section key={card.title} title={card.title} aside={<EnvBadge />}>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {card.keys.map((key) => (
+                  <LockedField key={key} label={`${LABELS[key]} (${key})`} value={shown(key)} />
+                ))}
+              </div>
+            </Section>
+          ))
         )}
-        <Button type="submit" loading={save.isPending || phase === 'restarting'}>
-          Speichern
-        </Button>
-      </div>
-    </form>
+      </Group>
+    </div>
   );
 }
 
@@ -502,21 +655,32 @@ const SIGNUP_HINTS: Record<SignupMode, string> = {
     'Ausschließlich Einladungen – Workspaces lassen sich nicht per Domain finden oder beitreten.',
 };
 
-/** A heading over cards that belong together. */
+/** A heading over cards that belong together; `id` is the nav's anchor, `icon` its mark. */
 function Group({
+  id,
   title,
+  icon,
   description,
   children,
 }: {
+  id?: string;
   title: string;
+  /** The same as in the nav at the side. */
+  icon?: IconName;
   description: ReactNode;
   children: ReactNode;
 }) {
   const headingId = useId();
   return (
-    <div role="group" aria-labelledby={headingId} className="flex flex-col gap-4">
+    <div
+      id={id}
+      role="group"
+      aria-labelledby={headingId}
+      className="flex scroll-mt-8 flex-col gap-4"
+    >
       <div className="flex flex-col gap-1 px-1">
-        <p id={headingId} className="text-sm font-semibold text-fg">
+        <p id={headingId} className="flex items-center gap-2 text-sm font-semibold text-fg">
+          {icon && <Icon name={icon} size={16} className="text-fg-subtle" />}
           {title}
         </p>
         <p className="text-body text-fg-subtle">{description}</p>

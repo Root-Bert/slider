@@ -1,3 +1,4 @@
+import type Anthropic from '@anthropic-ai/sdk';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -62,6 +63,7 @@ import { EncryptedBlobStorage } from '../src/storage/encrypted-blob-storage';
 import { TEST_DATA_KEY } from './setup-data-key';
 import { FsBlobStorage } from '../src/storage/fs-blob-storage';
 import { SyncService } from '../src/sync/sync-service';
+import type { StockPhotoSource } from '../src/services/stock-photos';
 
 export class TestClock implements Clock {
   private offsetMs = 0;
@@ -260,6 +262,12 @@ export async function createTestContext(
     mailer?: Mailer;
     /** A fake Stripe (`test/fakes/billing`); needs `config.billing` too. */
     billing?: BillingProvider;
+    /** A fake Anthropic client for the workspace AI (BER-183): no network. */
+    anthropic?: (apiKey: string) => Anthropic;
+    /** A fake OpenAI-compatible AI service: answers instead of the network. */
+    aiFetch?: (input: string, init?: RequestInit) => Promise<Response>;
+    /** A fake Unsplash: stock photos without network. */
+    stockPhotos?: StockPhotoSource;
     /** Fake passkey verification (no real authenticator in tests). */
     webauthn?: WebAuthn;
     /** Environment and restart hook for the setup page; without it `/api/setup` is a 404. */
@@ -386,6 +394,9 @@ export async function createTestContext(
     oidc: config.auth.oidc ? new OidcClient(config.auth.oidc, clock, fetch) : null,
     google: config.auth.google ? new OidcClient(config.auth.google, clock, fetch) : null,
     webauthn: options.webauthn,
+    anthropic: options.anthropic,
+    aiFetch: options.aiFetch,
+    stockPhotos: options.stockPhotos,
     ssoNetwork: {
       fetch,
       lookup: options.lookup ?? publicLookup,

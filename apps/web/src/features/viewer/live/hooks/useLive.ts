@@ -11,7 +11,7 @@ const COMMENTS_REFETCH_DELAY_MS = 120;
 
 /**
  * Realtime for the open deck (BER-104): keeps the live stream open, refetches comments when
- * someone changes them, and reports this viewer's active slide and pointer to the others.
+ * someone changes them (slides and AI proposals when the deck is edited), and reports this viewer's active slide and pointer to the others.
  */
 export function useLive() {
   const { deck } = useViewerData();
@@ -28,7 +28,15 @@ export function useLive() {
         void queryClient.invalidateQueries({ queryKey: queryKeys.comments(deckId) });
       }, COMMENTS_REFETCH_DELAY_MS);
     };
-    const disconnect = connectLive(deckId, refetchComments);
+    // Edited by someone (or the AI's proposals changed): the slides and the editor's state reload.
+    const onDeckChange = (change: 'slides' | 'proposals') => {
+      const keys =
+        change === 'slides'
+          ? [queryKeys.slides(deckId), queryKeys.edit(deckId), queryKeys.deck(deckId)]
+          : [queryKeys.proposals(deckId)];
+      for (const queryKey of keys) void queryClient.invalidateQueries({ queryKey });
+    };
+    const disconnect = connectLive(deckId, refetchComments, onDeckChange);
     return () => {
       if (timer) clearTimeout(timer);
       disconnect();

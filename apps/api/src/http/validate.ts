@@ -48,8 +48,11 @@ export async function readJson<S extends z.ZodType>(
   c: Context,
   schema: S,
   maxBytes = MAX_JSON_BODY_BYTES,
+  { allowEmpty = false }: { allowEmpty?: boolean } = {},
 ): Promise<z.output<S>> {
   const text = await readText(c.req.raw, maxBytes);
+  // Some POST actions have optional options and historically accept an absent body.
+  if (allowEmpty && !text.trim()) return schema.parse({});
   let body: unknown;
   try {
     body = JSON.parse(text);

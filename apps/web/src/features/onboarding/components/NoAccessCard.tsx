@@ -93,7 +93,7 @@ export function NoAccessCard({
           </span>
         )}
         <Button variant="secondary" size="lg" onClick={onUploadInstead}>
-          Stattdessen PPTX hochladen
+          Stattdessen Datei hochladen
         </Button>
       </div>
       <TextLink
@@ -142,7 +142,7 @@ function NextcloudNoAccess({
           Mit Nextcloud verbinden
         </Button>
         <Button variant="secondary" size="lg" onClick={onUpload}>
-          Stattdessen PPTX hochladen
+          Stattdessen Datei hochladen
         </Button>
       </div>
       {/* Like the connect form: the login window may be gone unnoticed, the spinner must end. */}
@@ -192,7 +192,7 @@ function GoogleNoAccess({
           In Google Drive auswählen
         </Button>
         <Button variant="secondary" size="lg" onClick={onUpload}>
-          Stattdessen PPTX hochladen
+          Stattdessen Datei hochladen
         </Button>
       </div>
       <p className="max-w-[420px] text-center text-xs text-fg-subtle">

@@ -22,6 +22,9 @@ type Drag = {
   slide: DOMRect;
   pointerX: number;
   pointerY: number;
+  /** Where on the handle it was grabbed, from the box's corner (px) – the corner keeps that offset. */
+  grabX: number;
+  grabY: number;
   start: Rect;
   moved: boolean;
 };
@@ -81,12 +84,18 @@ export function useRectEdit(
     frame.setPointerCapture(event.pointerId);
     // A drag that ended without a click (cancelled) must not swallow the next one.
     draggedRef.current = false;
+    const from = preview ?? rect;
+    // The corner doesn't jump to the pointer: a handle may sit off the corner (outside the box).
+    const cornerX = slide.left + (from.x + (kind.endsWith('e') ? from.w : 0)) * slide.width;
+    const cornerY = slide.top + (from.y + (kind.startsWith('s') ? from.h : 0)) * slide.height;
     dragRef.current = {
       kind,
       slide,
       pointerX: event.clientX,
       pointerY: event.clientY,
-      start: preview ?? rect,
+      grabX: kind === 'move' ? 0 : event.clientX - cornerX,
+      grabY: kind === 'move' ? 0 : event.clientY - cornerY,
+      start: from,
       moved: false,
     };
   };
@@ -105,8 +114,8 @@ export function useRectEdit(
         : resized(
             drag.start,
             drag.kind,
-            (event.clientX - slide.left) / slide.width,
-            (event.clientY - slide.top) / slide.height,
+            (event.clientX - drag.grabX - slide.left) / slide.width,
+            (event.clientY - drag.grabY - slide.top) / slide.height,
             minSize,
           ),
     );

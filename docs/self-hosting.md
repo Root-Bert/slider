@@ -91,6 +91,19 @@ Einladungslinks zum Weitergeben an. Jeder SMTP-Zugang geht, z. B. Brevo:
 Absender-Domain beim Dienst verifizieren (SPF/DKIM). Viele Cloud-Hoster sperren ausgehend Port 25
 und 465, dann 587 nehmen.
 
+## Fotos (optional)
+
+„Foto suchen“ im Editor und Fotos, die die KI für eine Folie aussucht, kommen von Unsplash. Auf
+[unsplash.com/oauth/applications](https://unsplash.com/oauth/applications) eine App anlegen und
+ihren Access Key als `UNSPLASH_ACCESS_KEY` setzen (den Secret Key braucht Slider nicht). Eine
+neue App ist im Demo-Modus: 50 Anfragen pro Stunde. Für mehr bei Unsplash „Production“
+beantragen, mit Screenshots der Fotonennung im Editor und im Kommentar der KI. Slider hält sich an
+die Regeln von Unsplash: Der Key bleibt auf dem Server, Vorschaubilder kommen direkt von
+`images.unsplash.com`, Fotograf und Unsplash werden verlinkt genannt (auch als Bildbeschreibung
+in der Datei), und ein Foto wird Unsplash einmal als verwendet gemeldet – sofort, wenn es jemand
+im Editor nimmt, bei der KI, wenn der Kommentar erledigt ist oder die Datei Slider verlässt.
+Datenschutzerklärung: „Vorlagen ausfüllen“ nimmt den Absatz „Fotosuche“ auf, sobald der Key gesetzt ist.
+
 ## Schlüssel sichern
 
 Slider verschlüsselt Inhalte (Dateien, Kommentare, Folientexte) mit `SLIDER_DATA_KEY`. Ohne ihn
@@ -152,8 +165,11 @@ Vorher ein Backup ziehen: Migrationen lassen sich nicht zurückdrehen.
 ## Datenschutz
 
 - **Impressum und Datenschutzerklärung** trägt der Admin auf der Einrichtungsseite ein.
-  „Vorlage einfügen“ füllt Vorlagen ein; Platzhalter in `[eckigen Klammern]` ausfüllen. Die
-  Vorlagen ersetzen keine Rechtsberatung.
+  „Vorlagen ausfüllen“ fragt Betreiberdaten einmal für beide Texte ab und schaltet Absätze nach
+  dem, was die Instanz nutzt (Logins, E-Mail, Stripe, Unsplash, Löschfristen – vorbelegt aus der
+  Einrichtung); KI ist immer drin, weil jeder Workspace einen Key hinterlegen kann. Was leer
+  bleibt, steht als `[Lücke]` im Text und lässt sich unter dem Feld einzeln setzen oder streichen.
+  Die Vorlagen ersetzen keine Rechtsberatung.
 - **Auskunft und Löschung** erledigen Nutzer:innen selbst: unter Konto & Anmeldung oder ohne
   Login über `/datenanfrage` (braucht E-Mail-Versand).
 - **Wer was sieht:** Alle in einem Workspace sehen seine Präsentationen, auch verknüpfte.
@@ -165,7 +181,8 @@ Vorher ein Backup ziehen: Migrationen lassen sich nicht zurückdrehen.
 - **Löschfristen** (automatisch, stündlich geprüft): Konten und Präsentationen, die 18 Monate
   niemand genutzt hat, werden nach Erinnerungsmails gelöscht (`DELETE_UNUSED=false` schaltet das
   aus; Instanz-Admins sind ausgenommen). Einladungen verschwinden 30 Tage nach ihrem Ende,
-  Sitzungen nach 30 Tagen ohne Nutzung, spätestens 90 Tage nach der Anmeldung. Kommentare
+  Sitzungen nach 30 Tagen ohne Nutzung, spätestens 90 Tage nach der Anmeldung, im Editor
+  hochgeladene Bilder nach 7 Tagen (eingesetzte stecken dann in der Datei). Kommentare
   gelöschter Konten bleiben ohne Namen, ihre Sprach- und Videoaufnahmen werden sofort gelöscht.
   Backups enthalten gelöschte Daten, bis sie rotiert sind; die Aufbewahrungsdauer gehört in die
   Datenschutzerklärung.
@@ -227,7 +244,9 @@ gehen auch auf der Einrichtungsseite.
 | `MAX_UPLOAD_BYTES`, `MAX_MEDIA_BYTES`                             | nein              | Größte PowerPoint (Standard 200 MB) und Aufnahme (100 MB).                                     |
 | `SYNC_POLL_INTERVAL_MS`, `SYNC_DEBOUNCE_MS`                       | nein              | Abgleich verknüpfter Dateien, Standard je 1 Minute, `0` = aus.                                 |
 | `LIBREOFFICE_PATH`, `LIBREOFFICE_TIMEOUT_MS`                      | nein              | `soffice` für Folienbilder (im Image enthalten); Zeitlimit, Standard 2 Minuten.                |
+| `LIBREOFFICE_WORKERS`                                             | nein              | Dauerhaft laufende LibreOffices für den Editor, Standard 2 (je ~300 MB), `0` = aus.            |
 | `PDF_TIMEOUT_MS`                                                  | nein              | Zeitlimit für das Lesen eines PDFs, Standard 2 Minuten plus 1 Sekunde pro Seite.               |
+| `UNSPLASH_ACCESS_KEY`                                             | nein              | Fotosuche im Editor und Fotos der KI: Access Key einer Unsplash-App.                           |
 | `IMPORT_WORKERS`                                                  | nein              | Gleichzeitige Importe, Standard 1 (je ~1 Kern, 1 GB RAM).                                      |
 | `PLAN_FREE_MAX_MEMBERS`, `PLAN_FREE_MAX_DECKS`                    | nein              | Grenzen pro Workspace, Standard unbegrenzt.                                                    |
 | `PLAN_FREE_MAX_STORAGE_BYTES`                                     | nein              | Speicher pro Workspace, Standard unbegrenzt (früher `MEDIA_QUOTA_BYTES`).                      |

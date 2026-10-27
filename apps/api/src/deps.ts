@@ -1,3 +1,4 @@
+import type Anthropic from '@anthropic-ai/sdk';
 import type { GoogleTokens } from './auth/google';
 import type { MicrosoftTokens } from './auth/microsoft';
 import type { NextcloudAccounts } from './auth/nextcloud';
@@ -15,7 +16,9 @@ import type { DocumentToPdf } from './import/libreoffice';
 import type { Logger } from './logger';
 import type { Mailer } from './mail/mailer';
 import type { LiveHub } from './realtime/live-hub';
+import type { WorkspacePresence } from './realtime/workspace-presence';
 import type { SourceAdapters } from './sources/source-adapter';
+import type { StockPhotoSource } from './services/stock-photos';
 import type { BlobStorage } from './storage/blob-storage';
 import type { SyncService } from './sync/sync-service';
 
@@ -38,6 +41,8 @@ export interface AppDeps {
   log: Logger;
   /** Presence, live cursors and live comments (BER-104); `createApp` makes one when absent. */
   live?: LiveHub;
+  /** Who of a workspace is online (the header's avatars); `createApp` makes one when absent. */
+  presence?: WorkspacePresence;
   /** Automatic updates of link-imported decks (BER-107). */
   sync: SyncService;
   /**
@@ -58,6 +63,12 @@ export interface AppDeps {
   ssoNetwork?: SsoNetwork;
   /** Passkey ceremonies; defaults to `@simplewebauthn/server` (tests inject fakes). */
   webauthn?: WebAuthn;
+  /** Makes the Anthropic client for a workspace's key (BER-183); tests inject a fake. */
+  anthropic?: (apiKey: string) => Anthropic;
+  /** How OpenAI-compatible AI services are reached (`ai-providers`); `fetch` when absent. */
+  aiFetch?: (input: string, init?: RequestInit) => Promise<Response>;
+  /** Unsplash; absent → the real one with `config.unsplash` (tests inject a fake). */
+  stockPhotos?: StockPhotoSource;
   /** Stripe for the paid plan (BER-152); `null` without `config.billing` (self-hosting). */
   billing: BillingProvider | null;
   /** Invitation mails; without SMTP a `DevMailer` in development, else a `NullMailer`. */

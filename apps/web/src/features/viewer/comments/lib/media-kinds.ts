@@ -17,7 +17,7 @@ export const MEDIA_KINDS: readonly MediaKind[] = [
   { id: 'text', label: 'Text', icon: 'notes', enabled: true },
   { id: 'audio', label: 'Audio', icon: 'mic', enabled: true },
   { id: 'video', label: 'Video', icon: 'cameraVideo', enabled: true },
-  { id: 'image', label: 'Bild', icon: 'image', enabled: true },
+  { id: 'image', label: 'Skizze', icon: 'image', enabled: true },
 ];
 
 /**
@@ -25,7 +25,7 @@ export const MEDIA_KINDS: readonly MediaKind[] = [
  * from its mic button, the text then is its note.
  */
 export const COMPOSER_TABS: readonly MediaKind[] = [
-  { id: 'text', label: 'Text', icon: 'notesMic', enabled: true },
+  { id: 'text', label: 'Kommentar', icon: 'notesMic', enabled: true },
   ...MEDIA_KINDS.filter((kind) => kind.id === 'video' || kind.id === 'image'),
 ];
 

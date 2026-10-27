@@ -305,6 +305,43 @@ describe('company login per workspace (BER-162)', () => {
     ).toBe(false);
   });
 
+  it('needs a new secret and a new DNS proof for another provider', async () => {
+    const idp = fakeIdp();
+    await context(idp);
+    const admin = await activeSso();
+    const oldRecord = txt['_slider-sso.firma.de']![0]![0]!;
+
+    // The stored secret never goes to another client.
+    const noSecret = await saveSso(admin.workspaceId, admin.cookie, {
+      clientId: 'other-client',
+      clientSecret: undefined,
+    });
+    expect(noSecret.status).toBe(400);
+
+    const other = workspaceSsoSchema.parse(
+      await (
+        await saveSso(admin.workspaceId, admin.cookie, {
+          clientId: 'other-client',
+          clientSecret: 'other-secret',
+        })
+      ).json(),
+    );
+    expect(other).toMatchObject({ verified: false, active: false });
+    expect(other.dnsRecord?.value).not.toBe(oldRecord);
+    const found = await ctx.request('/api/auth/sso/discover', {
+      method: 'POST',
+      json: { email: 'ben@firma.de' },
+    });
+    expect(found.status).toBe(404);
+
+    // The old TXT record proves nothing for it.
+    const stale = await ctx.request(`/api/workspaces/${admin.workspaceId}/sso/verify`, {
+      method: 'POST',
+      cookie: admin.cookie,
+    });
+    expect(stale.status).toBe(400);
+  });
+
   it('is for admins of paid workspaces on the hosted instance, with a public https issuer', async () => {
     const idp = fakeIdp();
     await context(idp);

@@ -5,6 +5,7 @@ import { useDeleteComment, useUpdateComment } from '@/lib/api';
 import { Button, ConfirmDialog, ContextMenu, type MenuAction } from '@/ui';
 import { useViewerData } from '../../state/viewer-data';
 import { useViewerToast } from '../../state/viewer-toast';
+import { reactionMenuActions, useCommentReaction } from './useCommentReaction';
 
 interface CommentMenuOptions {
   comment: Comment;
@@ -17,7 +18,7 @@ interface CommentMenuOptions {
 }
 
 /**
- * Actions of one comment – Erledigen / Wieder öffnen (roots), Bearbeiten and Löschen – for the
+ * Actions of one comment – Erledigen / Wieder öffnen (roots), 👍 / 👎 / egal, Bearbeiten and Löschen – for the
  * ⋯ menu and a right click at the pointer, with the delete confirmation. Mirrors the API: own
  * Slider comments can be edited, own comments and, for deck managers, any can be deleted.
  * Shift + right click keeps the browser's own menu.
@@ -27,6 +28,7 @@ export function useCommentMenu({ comment, deckId, isRoot, onEdit, onDeleted }: C
   const showToast = useViewerToast();
   const update = useUpdateComment(deckId);
   const remove = useDeleteComment(deckId);
+  const reaction = useCommentReaction(comment);
   const [contextAt, setContextAt] = useState<{ x: number; y: number } | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const closeContext = useCallback(() => setContextAt(null), []);
@@ -46,6 +48,7 @@ export function useCommentMenu({ comment, deckId, isRoot, onEdit, onDeleted }: C
             .mutateAsync({ commentId: comment.id, status: done ? 'open' : 'done' })
             .catch((error: Error) => showToast(error.message, 'danger')),
       });
+    actions.push(...reactionMenuActions(reaction));
     if (own && canComment && comment.source === 'app')
       actions.push({ label: 'Bearbeiten', icon: 'edit', onSelect: onEdit });
     if ((own && canComment) || canManage)

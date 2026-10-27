@@ -485,6 +485,12 @@ export async function handleStripeEvent(deps: BillingDeps, event: Stripe.Event):
           toCancel.push(subscription.id);
           return;
         }
+        // A checkout left open counts only while its payer still may pay: the billing owner, or
+        // the admin asked to take over. A withdrawn handover or an old upgrade takes nothing over.
+        if (row.billingOwnerId !== userId && row.billingTransferToId !== userId) {
+          toCancel.push(subscription.id);
+          return;
+        }
         if (row.stripeSubscriptionId && row.stripeSubscriptionId !== subscription.id) {
           toCancel.push(row.stripeSubscriptionId);
         }

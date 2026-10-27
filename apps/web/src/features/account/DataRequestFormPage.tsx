@@ -80,7 +80,7 @@ export function Component() {
           bleiben dann ohne deinen Namen erhalten.
         </p>
         <p>
-          Namen aus PowerPoint-Dateien hängen an keiner Adresse – dafür wende dich an die Person,
+          Namen aus Präsentationsdateien hängen an keiner Adresse – dafür wende dich an die Person,
           der die Präsentation gehört, oder an den Betreiber.
         </p>
       </div>

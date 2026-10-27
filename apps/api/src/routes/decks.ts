@@ -4,6 +4,8 @@ import { bodyLimit } from 'hono/body-limit';
 import { createMiddleware } from 'hono/factory';
 import { z } from 'zod';
 import {
+  DECK_SEARCH_MAX_LENGTH,
+  DECK_SEARCH_MIN_LENGTH,
   importDriveItemInputSchema,
   importGoogleItemInputSchema,
   importNextcloudItemInputSchema,
@@ -13,6 +15,7 @@ import {
   updateDeckAccessInputSchema,
   updateDeckInputSchema,
   type Deck,
+  type DeckSearchResult,
   type DeckSource,
   type Viewer,
 } from '@slider/shared';
@@ -24,6 +27,7 @@ import { sha256Hex } from '../import/common';
 import type { AppDeps } from '../deps';
 import { ApiError, badRequest, fileTooLarge, notFound } from '../http/errors';
 import { deckUploadSlot, importLimit } from '../http/import-limit';
+import { fixedWindow } from '../http/rate-limit';
 import { readJson } from '../http/validate';
 import { withConnections } from '../sources/connections';
 import { pickerContext, withPickerLogin } from '../sources/onedrive-picker';
@@ -41,6 +45,7 @@ import {
   toDeckDto,
 } from '../services/decks';
 import { getDeckAccess, updateDeckAccess } from '../services/deck-access';
+import { searchDecks } from '../services/deck-search';
 import { findFolder } from '../services/folders';
 import { assertDeckSlot } from '../services/plans';
 import { listSlides } from '../services/slides';
@@ -57,6 +62,8 @@ const linkBodySchema = z.object({
 
 /** Opening a deck keeps it in the automatic update rotation (BER-107); written at most hourly. */
 const LAST_VIEWED_THROTTLE_MS = 60 * 60 * 1000;
+/** Text searches per account and minute (BER-175): a search asks once typing pauses. */
+export const SEARCHES_PER_MINUTE = 60;
 
 async function touchLastViewed(deps: AppDeps, deck: DeckRow): Promise<void> {
   const now = deps.clock.now();
@@ -222,7 +229,7 @@ const unsupportedLink = () =>
   new ApiError(
     400,
     'unsupported_link',
-    'Kein gültiger OneDrive-, SharePoint-, Nextcloud-, Google- oder PPTX-Link.',
+    'Kein gültiger OneDrive-, SharePoint-, Nextcloud-, Google- oder Datei-Link.',
   );
 
 export function decksRoutes(deps: AppDeps) {
@@ -231,6 +238,8 @@ export function decksRoutes(deps: AppDeps) {
   const uploads = deckUploadSlot(deps);
   const downloads = remoteImportSlot();
   const maxBytes = deps.config.maxUploadBytes;
+  // Every search reads and decrypts the text of all decks: typing pauses ask, a loop does not.
+  const searches = fixedWindow({ limit: SEARCHES_PER_MINUTE, windowMs: 60_000, clock: deps.clock });
 
   return (
     new Hono<ViewerEnv>()
@@ -243,6 +252,35 @@ export function decksRoutes(deps: AppDeps) {
         if (workspaceId) await requireRole(deps.db, workspaceId, viewer.author.id);
         const workspaceIds = workspaceId ? [workspaceId] : [...access.roles.keys()];
         return c.json(await listWorkspaceDecks(deps, workspaceIds, access));
+      })
+
+      /**
+       * Text search through slides and comments (BER-175), like `/decks` for `?workspaceId=`
+       * or all my workspaces. Before `/decks/:deckId`, which would take `search` for an id.
+       */
+      .get('/decks/search', viewer, async (c) => {
+        const { viewer } = c.var;
+        requireOwner(viewer);
+        const searched = searches.hit(viewer.author.id);
+        if (!searched.allowed) {
+          c.header('Retry-After', String(searched.retryAfterS));
+          throw new ApiError(
+            429,
+            'rate_limited',
+            'Zu viele Suchen auf einmal – gleich noch einmal.',
+          );
+        }
+        const query = c.req.query('q') ?? '';
+        if (query.trim().length < DECK_SEARCH_MIN_LENGTH || query.length > DECK_SEARCH_MAX_LENGTH) {
+          throw badRequest(
+            `Bitte zwischen ${DECK_SEARCH_MIN_LENGTH} und ${DECK_SEARCH_MAX_LENGTH} Zeichen suchen.`,
+          );
+        }
+        const access = await viewerAccess(deps.db, viewer);
+        const workspaceId = c.req.query('workspaceId');
+        if (workspaceId) await requireRole(deps.db, workspaceId, viewer.author.id);
+        const workspaceIds = workspaceId ? [workspaceId] : [...access.roles.keys()];
+        return c.json<DeckSearchResult[]>(await searchDecks(deps, workspaceIds, access, query));
       })
 
       /**

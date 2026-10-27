@@ -41,6 +41,11 @@ export const authProvidersSchema = z.object({
   /** No login works yet: the login page points to the setup link in the server log. */
   needsSetup: z.boolean(),
   /**
+   * No instance admin yet, and this browser hasn't typed in the setup token: nobody may sign in
+   * or up – the login page points to `/einrichtung`.
+   */
+  setupPending: z.boolean(),
+  /**
    * "Weiter mit Nextcloud" for any Nextcloud: the address typed, then Login Flow v2
    * (`POST /auth/nextcloud/flow`). Next to a `nextcloud` provider it is the way for other ones.
    */
@@ -455,6 +460,41 @@ export const isCompanyDomain = (domain: string) =>
 export const WORKSPACE_LOGO_MAX_BYTES = 1024 * 1024;
 export const WORKSPACE_LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
 
+/** `POST /workspaces/:id/fonts` (multipart, field `files`, several): TTF or OTF files, or zips of them. */
+export const WORKSPACE_FONT_MAX_BYTES = 20 * 1024 ** 2;
+/** All files of one upload together. */
+export const WORKSPACE_FONT_UPLOAD_MAX_BYTES = 80 * 1024 ** 2;
+/** Faces one workspace may have. */
+export const WORKSPACE_FONT_MAX_FACES = 200;
+
+/**
+ * A font a workspace uploaded – or took from a deck that brought it along – one face of a
+ * family: its decks are drawn in it. `url` loads the file; the metrics (in font units) are how
+ * LibreOffice lays it out.
+ */
+export const workspaceFontSchema = z.object({
+  id: z.string(),
+  family: z.string(),
+  weight: z.union([z.literal(400), z.literal(700)]),
+  italic: z.boolean(),
+  url: z.string(),
+  upm: z.number().int().positive(),
+  ascent: z.number().int(),
+  descent: z.number().int(),
+  sizeBytes: z.number().int().nonnegative(),
+  /** The deck the face was taken from (the font came embedded in its file); `null`: uploaded. */
+  sourceFile: z.string().nullable().default(null),
+});
+export type WorkspaceFont = z.infer<typeof workspaceFontSchema>;
+
+/** `POST /workspaces/:id/fonts`: the workspace's fonts now, and the files that were no font. */
+export const workspaceFontUploadSchema = z.object({
+  fonts: z.array(workspaceFontSchema),
+  /** A file that could not be taken, and why (German). */
+  skipped: z.array(z.object({ name: z.string(), reason: z.string() })),
+});
+export type WorkspaceFontUpload = z.infer<typeof workspaceFontUploadSchema>;
+
 export const workspaceMemberSchema = z.object({
   userId: z.string(),
   name: z.string(),
@@ -563,3 +603,9 @@ export const joinResultSchema = z.object({
   deckId: z.string().nullable(),
 });
 export type JoinResult = z.infer<typeof joinResultSchema>;
+
+/**
+ * An open tab posts `POST /workspaces/:id/presence` this often while visible; it answers with
+ * the other members online right now (the header's avatars).
+ */
+export const WORKSPACE_PRESENCE_POLL_MS = 20_000;

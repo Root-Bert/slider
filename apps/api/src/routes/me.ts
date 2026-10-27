@@ -14,7 +14,7 @@ import {
 } from '@slider/shared';
 import type { Context } from 'hono';
 import type { InstanceGate } from '../auth/instance-gate';
-import { endSession } from '../auth/session';
+import { endSession, signedInAt } from '../auth/session';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import { users } from '../db/schema';
 import type { AppDeps } from '../deps';
@@ -30,9 +30,12 @@ import {
 import { disconnectGoogle, listGoogleConnections } from '../services/google-connections';
 import { disconnectNextcloud, listNextcloudConnections } from '../services/nextcloud-connections';
 import { requireOwner } from '../auth/access';
-import { badRequest, notFound } from '../http/errors';
+import { ApiError, badRequest, notFound } from '../http/errors';
 import { canCreateWorkspace } from '../services/plans';
 import { domainWorkspaceFor, listWorkspaces, pendingInvitesFor } from '../services/workspaces';
+
+/** How fresh a sign-in has to be to delete the account. */
+const REAUTH_WINDOW_MS = 10 * 60_000;
 
 /** The signed-in account with its workspaces and invitations. */
 async function meResponse(
@@ -126,6 +129,15 @@ export function meRoutes(deps: AppDeps, gate: InstanceGate) {
         if (!user) throw notFound('Dieses Konto gibt es nicht.');
         if (confirmEmail.trim().toLowerCase() !== user.email.toLowerCase()) {
           throw badRequest('Die E-Mail-Adresse stimmt nicht mit deinem Konto überein.');
+        }
+        // A session left open somewhere (or taken) can't delete the account: only a fresh login.
+        const since = await signedInAt(c, deps);
+        if (since && deps.clock.now().getTime() - since.getTime() > REAUTH_WINDOW_MS) {
+          throw new ApiError(
+            403,
+            'reauth_required',
+            'Melde dich zur Sicherheit noch einmal an – danach kannst du dein Konto löschen.',
+          );
         }
         await deleteAccount(deps, user.id, successors);
         await endSession(c, deps);

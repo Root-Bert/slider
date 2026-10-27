@@ -95,7 +95,6 @@ export interface ViewerState {
   /** The latest freehand, arrow or marker drawing while its tool is still picked. */
   lastDrawing: SavedDrawing | null;
   focusedThreadId: string | null;
-  hoveredThreadId: string | null;
   threadPanelOpen: boolean;
   /** "Bearbeiten" from a card's context menu: the thread panel opens with this comment's editor. */
   editingCommentId: string | null;
@@ -132,6 +131,13 @@ export interface ViewerState {
   showChanges: boolean;
   /** Side panel with the slides deleted in later revisions and their comments (BER-109). */
   deletedPanelOpen: boolean;
+  /** „Ebenen“ (L): the slides on the track shown taken apart in 3D. */
+  layersOpen: boolean;
+  /**
+   * The active slide's layers in the side panel, where the thread or the deleted slides would
+   * be – opens with „Ebenen“, closes on its own (the mode stays on).
+   */
+  layersPanelOpen: boolean;
   /**
    * Box mode (B): a click comments on the PowerPoint box under the pointer, which is outlined
    * while hovered. Off: a click places a free comment and boxes never show.
@@ -188,7 +194,6 @@ export type ViewerAction =
   | { type: 'draftHeld'; held: boolean }
   | { type: 'draftCancelled' }
   | { type: 'draftSubmitted' }
-  | { type: 'threadHovered'; threadId: string | null }
   | { type: 'threadFocused'; threadId: string; openPanel: boolean }
   | { type: 'threadPanelClosed' }
   | { type: 'commentEditRequested'; threadId: string; commentId: string }
@@ -208,6 +213,8 @@ export type ViewerAction =
   | { type: 'slideZoomChanged'; slideId: string; zoom: SlideZoom | null }
   | { type: 'showChangesSet'; show: boolean }
   | { type: 'deletedPanelSet'; open: boolean }
+  | { type: 'layersSet'; open: boolean }
+  | { type: 'layersPanelSet'; open: boolean }
   | { type: 'boxModeToggled' }
   | { type: 'boxModeFlipped'; flipped: boolean }
   | { type: 'showGuidesToggled' }

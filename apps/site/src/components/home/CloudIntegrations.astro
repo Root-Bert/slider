@@ -10,21 +10,20 @@ import { asset } from '~/lib/links';
 import { person, type PersonName } from '~/lib/people';
 
 /*
- * Homepage | Your decks: step one of the story. "Connect PowerPoint, OneDrive, … and every new
- * version shows up on its own." (Figma "Cloud Integrations" 316:6285) – the sources as chips, the
- * link field syncing a new version – and below it a slow belt of very different decks (Figma
- * "Every Deck" 316:6367) with reviewers on them: whatever you present, it works.
+ * Homepage | Your decks: step one of the story. "Connect OneDrive, SharePoint, … and work together
+ * on a copy, right beside the original." (Figma "Cloud Integrations" 316:6285) – the sources as
+ * chips, the link field syncing a new version, why ODP – and below it a slow belt of very different
+ * decks (Figma "Every Deck" 316:6367) with reviewers on them: whatever you present, it works.
  */
 const cyan = 'var(--color-accent-cyan)';
 const chip = (name: string, logo: string, w: number, h: number) => ({ name, logo, w, h });
 const firstRow = [
-  chip('PowerPoint', 'powerpoint', 34, 32.9),
   chip('OneDrive', 'onedrive', 34, 20.91),
   chip('SharePoint', 'sharepoint', 30.6, 34),
   chip('Nextcloud', 'nextcloud', 34, 34),
 ];
 const drive = chip('Google Drive', 'google-drive', 34, 30.38);
-const tail = 'and every new version shows up on its own.'.split(' ');
+const tail = 'and work together on a copy, right beside the original.'.split(' ');
 
 /** The belt: dark and light themes mixed, some with a reviewer's cursor or comment on them. */
 const decks: { name: SlideName; cursor?: [PersonName, number, number]; note?: [PersonName, string] }[] = [
@@ -69,19 +68,19 @@ const DECK_W = 352;
           </span>
         ))
       }
-      <span data-reveal style="--i: 5">or</span>
-      <span class="cloud-chip" data-reveal style="--i: 6">
+      <span data-reveal style="--i: 4">or</span>
+      <span class="cloud-chip" data-reveal style="--i: 5">
         <span class="cloud-icon">
           <img src={asset(`home/cloud/${drive.logo}.svg`)} alt="" style={`width: ${drive.w / 44}em; height: ${drive.h / 44}em`} />
         </span>
         {drive.name}
       </span>
-      {tail.map((word, i) => <span class="text-fg-subtle" data-reveal style={`--i: ${7 + i * 0.4}`}>{word}</span>)}
+      {tail.map((word, i) => <span class="text-fg-subtle" data-reveal style={`--i: ${6 + i * 0.4}`}>{word}</span>)}
     </h2>
 
     <div class="mt-9 flex flex-col items-start gap-3 lg:flex-row lg:items-center lg:gap-0" data-reveal style="--i: 9">
       <div class="flex max-w-full items-center gap-3 rounded-panel py-1.5 pr-1.5 pl-4 glass-elevated" style="box-shadow: inset 0 0 0 1px var(--color-hairline-strong), 0 0 90px rgb(0 224 255 / 0.07), 0 0 32px rgb(0 224 255 / 0.22)">
-        <span class="min-w-0 truncate text-[15px] text-fg-muted">https://contoso.sharepoint.com/sites/board/Q3-Strategy.pptx</span>
+        <span class="min-w-0 truncate text-[15px] text-fg-muted">https://contoso.sharepoint.com/sites/board/Q3-Strategy.odp</span>
         <span class={buttonClasses({ size: 'md' })}>Open</span>
       </div>
       <svg class="hidden h-0.5 w-14 overflow-visible lg:block" viewBox="0 0 56 2" fill="none" aria-hidden="true">
@@ -94,7 +93,13 @@ const DECK_W = 352;
       </div>
     </div>
 
-    <p class="mt-14 text-lg leading-[1.5] text-fg-muted lg:mt-16" data-reveal style="--i: 10">
+    <p class="mt-14 max-w-[820px] text-lg leading-[1.5] text-fg-muted lg:mt-16" data-reveal style="--i: 10">
+      <span class="text-fg">Built for open formats.</span> Slider is a collaborative, AI-native editor for ODP, the
+      OpenDocument presentation. Public administrations are moving to it: Germany's Deutschland-Stack allows only ODF and
+      PDF/UA for official documents. Your file stays in your cloud, LibreOffice draws every slide exactly as it is saved.
+    </p>
+
+    <p class="mt-6 text-lg leading-[1.5] text-fg-muted" data-reveal style="--i: 10.5">
       <span class="text-fg">Made for every deck you'll ever show.</span> Numbers, lectures, floor plans, roadmaps.
     </p>
   </div>

@@ -21,7 +21,6 @@ export function createInitialState(options: {
     draft: null,
     lastDrawing: null,
     focusedThreadId: null,
-    hoveredThreadId: null,
     threadPanelOpen: false,
     editingCommentId: null,
     // BER-101: done comments are hidden by default.
@@ -33,6 +32,8 @@ export function createInitialState(options: {
     slideZooms: new Map(),
     showChanges: options.showChanges ?? false,
     deletedPanelOpen: false,
+    layersOpen: false,
+    layersPanelOpen: false,
     boxMode: options.boxMode ?? true,
     boxModeFlipped: false,
     showGuides: options.showGuides ?? false,
@@ -41,6 +42,10 @@ export function createInitialState(options: {
     wideFrames: options.wideFrames ?? false,
   };
 }
+
+/** "Ausgeblendet" gives way to `fallback`; any other filter stays. */
+const shown = (filter: StatusFilter, fallback: StatusFilter): StatusFilter =>
+  filter === 'hidden' ? fallback : filter;
 
 export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerState {
   const draft = draftReducer(state.draft, action);
@@ -71,21 +76,21 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
       // Composing a new comment takes over the focus.
       return { ...next, focusedThreadId: null, threadPanelOpen: false, lastDrawing: null };
     case 'draftSubmitted':
-      return { ...next, tool: null };
-    case 'threadHovered':
-      return next.hoveredThreadId === action.threadId
-        ? next
-        : { ...next, hoveredThreadId: action.threadId };
+      // A comment written while all are hidden ends that: it is shown, among the open ones.
+      return { ...next, tool: null, statusFilter: shown(next.statusFilter, 'open') };
     case 'threadFocused': {
       const threadPanelOpen = action.openPanel || next.threadPanelOpen;
       return {
         ...next,
+        // A thread opened while all are hidden (a link, a notification) brings them back.
+        statusFilter: shown(next.statusFilter, 'all'),
         focusedThreadId: action.threadId,
         threadPanelOpen,
         // A pending "Bearbeiten" belongs to the thread it was asked for.
         editingCommentId: action.threadId === next.focusedThreadId ? next.editingCommentId : null,
-        // Both are right side panels: the thread panel takes the deleted slides' place.
+        // All are right side panels: the thread panel takes the deleted slides' or layers' place.
         deletedPanelOpen: threadPanelOpen ? false : next.deletedPanelOpen,
+        layersPanelOpen: threadPanelOpen ? false : next.layersPanelOpen,
       };
     }
     case 'threadPanelClosed':
@@ -96,6 +101,7 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
         focusedThreadId: action.threadId,
         threadPanelOpen: true,
         deletedPanelOpen: false,
+        layersPanelOpen: false,
         editingCommentId: action.commentId,
       };
     case 'commentEditEnded':
@@ -152,21 +158,45 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
       return { ...next, wideFrames: !next.wideFrames, slideZooms: new Map() };
     case 'deletedPanelSet':
       return action.open
-        ? { ...next, deletedPanelOpen: true, threadPanelOpen: false, focusedThreadId: null }
+        ? {
+            ...next,
+            deletedPanelOpen: true,
+            threadPanelOpen: false,
+            focusedThreadId: null,
+            layersPanelOpen: false,
+          }
         : next.deletedPanelOpen
           ? { ...next, deletedPanelOpen: false }
           : next;
+    case 'layersSet':
+    case 'layersPanelSet': {
+      // The mode on leaves the side as it is (its panel opens on asking); off, both go. The panel
+      // opens only with the mode on.
+      const layersOpen = action.type === 'layersSet' ? action.open : next.layersOpen;
+      const layersPanelOpen =
+        layersOpen && (action.type === 'layersSet' ? next.layersPanelOpen : action.open);
+      if (layersOpen === next.layersOpen && layersPanelOpen === next.layersPanelOpen) return next;
+      return layersPanelOpen
+        ? {
+            ...next,
+            layersOpen,
+            layersPanelOpen,
+            threadPanelOpen: false,
+            focusedThreadId: null,
+            editingCommentId: null,
+            deletedPanelOpen: false,
+          }
+        : { ...next, layersOpen, layersPanelOpen };
+    }
     case 'threadsReplaced': {
       const keepFocus = next.focusedThreadId === null || action.threadIds.has(next.focusedThreadId);
-      const keepHover = next.hoveredThreadId === null || action.threadIds.has(next.hoveredThreadId);
       const keepReply = next.mediaReply === null || action.threadIds.has(next.mediaReply.threadId);
-      if (keepFocus && keepHover && keepReply) return next;
+      if (keepFocus && keepReply) return next;
       return {
         ...next,
         ...(keepFocus
           ? {}
           : { focusedThreadId: null, threadPanelOpen: false, editingCommentId: null }),
-        hoveredThreadId: keepHover ? next.hoveredThreadId : null,
         mediaReply: keepReply ? next.mediaReply : null,
       };
     }

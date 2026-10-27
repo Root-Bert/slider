@@ -3,12 +3,13 @@ import {
   moveDrawing,
   type Author,
   type Comment,
+  type CommentReactionKind,
   type CreateCommentInput,
   type UpdateCommentInput,
 } from '@slider/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api-client';
-import { confirmComment, keepPending, pendingReply } from './comment-cache';
+import { confirmComment, keepPending, pendingReply, withReaction } from './comment-cache';
 import { queryKeys } from './keys';
 
 /**
@@ -97,10 +98,17 @@ export function useCreateReply(deckId: string, author: Author) {
 /** The comment as the server will return it after `input` (mirrors `updateComment`). */
 function withUpdate(
   comment: Comment,
-  { textBox, anchor: box, move, removeMarks, ...input }: UpdateCommentInput,
+  { textBox, anchor: box, move, removeMarks, addStrokes, ...input }: UpdateCommentInput,
 ): Comment {
   if (move) return { ...moveDrawing(comment, move.dx, move.dy), ...input };
   const current = comment.anchor;
+  if (addStrokes && current.type === 'rect')
+    return {
+      ...comment,
+      ...input,
+      strokes: [...comment.strokes, ...addStrokes.strokes],
+      anchor: { ...current, rect: addStrokes.rect },
+    };
   if (removeMarks) {
     const { pin } = removeMarks;
     const anchor =
@@ -164,6 +172,39 @@ export function useUpdateComment(deckId: string) {
       );
     },
     onSettled: invalidate,
+  });
+}
+
+/**
+ * Sets one's own reaction to a comment (👍 / 👎 / egal), `null` takes it back. Optimistic like
+ * status toggles; a failure restores the comment as it was.
+ */
+export function useReactToComment(deckId: string, author: Author) {
+  const queryClient = useQueryClient();
+  const key = queryKeys.comments(deckId);
+  return useMutation({
+    mutationFn: ({ commentId, kind }: { commentId: string; kind: CommentReactionKind | null }) =>
+      api.put<Comment>(`/comments/${commentId}/reaction`, { kind }),
+    onMutate: async ({ commentId, kind }) => {
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient
+        .getQueryData<Comment[]>(key)
+        ?.find((comment) => comment.id === commentId);
+      queryClient.setQueryData<Comment[]>(key, (current = []) =>
+        current.map((comment) =>
+          comment.id === commentId ? withReaction(comment, author, kind) : comment,
+        ),
+      );
+      return { previous };
+    },
+    onError: (_error, { commentId }, context) => {
+      const previous = context?.previous;
+      if (!previous) return;
+      queryClient.setQueryData<Comment[]>(key, (current = []) =>
+        current.map((comment) => (comment.id === commentId ? previous : comment)),
+      );
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
   });
 }
 

@@ -12,6 +12,7 @@ import { badRequest, forbidden, notFound } from '../../http/errors';
 import { assertBillingOwnerMayGo, reassignBillingOwner } from '../billing-owner';
 import { lockWorkspaceRow } from '../plans';
 import { departDecks } from './departure';
+import { maskEmail } from './invites';
 import { recordRemoval } from './domains';
 import { atLeast, getRole, RANK, requireRole, VIEWER_LAST_RESORT } from './roles';
 
@@ -37,7 +38,9 @@ export async function listMembers(
   workspaceId: string,
 ): Promise<WorkspaceMember[]> {
   // Also in a blocked workspace (BER-167): leaving it may need a successor from this list.
-  await requireRole(db, workspaceId, userId, 'viewer', undefined, { allowBlocked: true });
+  const role = await requireRole(db, workspaceId, userId, 'viewer', undefined, {
+    allowBlocked: true,
+  });
   const rows = await db
     .select({ user: users, member: workspaceMembers, creatorId: workspaces.createdBy })
     .from(workspaceMembers)
@@ -45,8 +48,16 @@ export async function listMembers(
     .innerJoin(workspaces, eq(workspaces.id, workspaceMembers.workspaceId))
     .where(eq(workspaceMembers.workspaceId, workspaceId))
     .orderBy(asc(workspaceMembers.createdAt));
+  // Full addresses for admins (inviting, roles) and one's own; others recognise colleagues by
+  // the masked one – a guest invited to one deck doesn't get everyone's address.
+  const seesAddresses = role === 'admin';
   return rows
-    .map((row) => toMemberDto(row.user, row.member, row.creatorId))
+    .map((row) => {
+      const member = toMemberDto(row.user, row.member, row.creatorId);
+      return seesAddresses || row.user.id === userId
+        ? member
+        : { ...member, email: maskEmail(member.email) };
+    })
     .sort((a, b) => RANK[b.role] - RANK[a.role]);
 }
 

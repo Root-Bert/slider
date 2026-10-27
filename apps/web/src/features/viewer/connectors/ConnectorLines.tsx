@@ -12,13 +12,14 @@ import {
 import {
   connectorAnchor,
   connectorExits,
+  fadesDone,
   gapKey,
   sortThreadsClockwise,
   type Thread,
 } from '../comments/lib/comment-selectors';
 import { useMarkPreview } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
-import { useViewerState } from '../state/viewer-state';
+import { useHoveredThreadId, useViewerState } from '../state/viewer-state';
 
 interface ConnectorLinesProps {
   /** The timeline wrapper (outside the scroller): keyboard focus on its cards highlights lines. */
@@ -45,7 +46,8 @@ export const ConnectorLines = memo(function ConnectorLines({
   layer,
 }: ConnectorLinesProps) {
   const { slides } = useViewerData();
-  const { focusedThreadId, hoveredThreadId, draft, threadPanelOpen } = useViewerState();
+  const { focusedThreadId, draft, threadPanelOpen, statusFilter } = useViewerState();
+  const hoveredThreadId = useHoveredThreadId();
   const { bySlide, byGap } = useCommentThreads();
   // A box being dragged: its line leaves it where it is shown, not where it is stored.
   const preview = useMarkPreview();
@@ -130,6 +132,7 @@ export const ConnectorLines = memo(function ConnectorLines({
           lines={lines}
           threadMap={threadMap}
           dimmed={!!draft}
+          fadeDone={fadesDone(statusFilter)}
           panelThreadId={panelThreadId}
           emphasisId={focusedThreadId ?? hoveredThreadId ?? keyboardThreadId}
         />
@@ -144,6 +147,7 @@ const ConnectorPaths = memo(function ConnectorPaths({
   lines,
   threadMap,
   dimmed,
+  fadeDone,
   panelThreadId,
   emphasisId,
 }: {
@@ -151,11 +155,13 @@ const ConnectorPaths = memo(function ConnectorPaths({
   threadMap: ReadonlyMap<string, Thread>;
   /** A draft is open: every line steps back. */
   dimmed: boolean;
+  /** Done threads' lines step back – not while only done ones are shown. */
+  fadeDone: boolean;
   panelThreadId: string | null;
   emphasisId: string | null;
 }) {
   const opacityOf = (threadId: string) => {
-    const base = threadMap.get(threadId)?.root.status === 'done' ? 0.5 : 1;
+    const base = fadeDone && threadMap.get(threadId)?.root.status === 'done' ? 0.5 : 1;
     if (dimmed) return 0.3;
     // B4: the open thread stays, the others step back half-way.
     if (panelThreadId) return threadId === panelThreadId ? base : Math.min(base, 0.5);

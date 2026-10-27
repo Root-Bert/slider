@@ -7,7 +7,7 @@ import { SketchReplyDialog } from '../media/SketchReplyDialog';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, useViewerState, type MediaReply } from '../state/viewer-state';
 
-/** Text (with voice) / Video / Bild switch of the new-comment composer (Figma B2 "Tabs"). */
+/** Text (with voice) / Video / Skizze switch of the new-comment composer (Figma B2 "Tabs"). */
 export function MediaTabs({
   value,
   onChange,
@@ -23,6 +23,8 @@ export function MediaTabs({
       mode="tabs"
       size="sm"
       track="soft"
+      // Full width: flush with the field and the footer below.
+      fill
       value={value}
       onChange={onChange}
       segments={COMPOSER_TABS.map((kind) => ({
@@ -40,12 +42,12 @@ export function MediaTabs({
 const REPLY_LABELS: Record<MediaReply['kind'], { label: string; title: string }> = {
   audio: { label: 'Mit Sprachkommentar antworten', title: 'Sprachkommentar' },
   video: { label: 'Mit Video antworten', title: 'Video' },
-  image: { label: 'Mit Bild antworten', title: 'Bild zeichnen' },
+  image: { label: 'Mit Skizze antworten', title: 'Skizze zeichnen' },
 };
 
 /**
- * Audio / Video / Bild icons beside a reply field. Text needs no button – typing is the text
- * reply. Mic and camera open the recorder, Bild the sheet to draw on – in `MediaReplyDialog`,
+ * Audio / Video / Skizze icons beside a reply field. Text needs no button – typing is the text
+ * reply. Mic and camera open the recorder, Skizze the sheet to draw on – in `MediaReplyDialog`,
  * which outlives this field (the card may be windowed out or turn compact meanwhile).
  */
 export function MediaReplyButtons({ root, size = 'sm' }: { root: Comment; size?: 'sm' | 'md' }) {

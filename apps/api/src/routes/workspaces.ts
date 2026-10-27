@@ -9,17 +9,26 @@ import {
   updateWorkspaceInputSchema,
   updateWorkspaceSsoInputSchema,
   WORKSPACE_LOGO_MAX_BYTES,
+  type Author,
   type JoinResult,
   type Viewer,
+  WORKSPACE_FONT_UPLOAD_MAX_BYTES,
 } from '@slider/shared';
 import { requireOwner } from '../auth/access';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
-import { users, type UserRow } from '../db/schema';
+import { decks, users, type UserRow } from '../db/schema';
 import type { AppDeps } from '../deps';
+import type { WorkspacePresence } from '../realtime/workspace-presence';
 import { ApiError, badRequest, fileTooLarge } from '../http/errors';
 import { clientAddress, fixedWindow, rateLimit } from '../http/rate-limit';
 import { readJson } from '../http/validate';
 import { cancelSubscriptions } from '../services/billing-owner';
+import {
+  deleteWorkspaceFonts,
+  listWorkspaceFonts,
+  requireFontUploader,
+  uploadWorkspaceFonts,
+} from '../services/workspace-fonts';
 import {
   acceptInviteById,
   createInvite,
@@ -39,6 +48,7 @@ import {
   removeMember,
   removeWorkspaceLogo,
   renameWorkspace,
+  requireRole,
   revokeInvite,
   saveWorkspaceSso,
   setWorkspaceDomain,
@@ -63,7 +73,7 @@ async function requireUser(deps: AppDeps, viewer: Viewer): Promise<UserRow> {
 export const INVITE_MAILS_PER_HOUR = { limited: 20, unlimited: 200 } as const;
 
 /** Workspaces, members and invitations (BER-129). */
-export function workspacesRoutes(deps: AppDeps) {
+export function workspacesRoutes(deps: AppDeps, presence: WorkspacePresence) {
   const viewer = viewerMiddleware(deps);
   const limited = rateLimit({
     limit: deps.config.inviteRateLimit,
@@ -108,6 +118,8 @@ export function workspacesRoutes(deps: AppDeps) {
           onError: (c) => c.json(fileTooLarge(WORKSPACE_LOGO_MAX_BYTES).toBody(), 413),
         }),
         async (c) => {
+          // Before the upload is read: outsiders don't make the server hold it.
+          await requireRole(deps.db, c.req.param('id'), userId(c.var.viewer), 'admin');
           const body = await c.req.parseBody().catch(() => {
             throw badRequest('Das Logo konnte nicht gelesen werden.');
           });
@@ -123,6 +135,59 @@ export function workspacesRoutes(deps: AppDeps) {
       .delete('/workspaces/:id/logo', viewer, async (c) =>
         c.json(await removeWorkspaceLogo(deps, userId(c.var.viewer), c.req.param('id'))),
       )
+      /** The workspace's own fonts: its decks are drawn in them. */
+      .get('/workspaces/:id/fonts', viewer, async (c) =>
+        c.json(await listWorkspaceFonts(deps, userId(c.var.viewer), c.req.param('id'))),
+      )
+      .post(
+        '/workspaces/:id/fonts',
+        viewer,
+        bodyLimit({
+          maxSize: WORKSPACE_FONT_UPLOAD_MAX_BYTES + 256 * 1024,
+          onError: (c) => c.json(fileTooLarge(WORKSPACE_FONT_UPLOAD_MAX_BYTES).toBody(), 413),
+        }),
+        async (c) => {
+          // Before the upload is read: no one else makes the server buffer it.
+          await requireFontUploader(deps, userId(c.var.viewer), c.req.param('id'));
+          const body = await c.req.parseBody({ all: true }).catch(() => {
+            throw badRequest('Die Schriften konnten nicht gelesen werden.');
+          });
+          const field = body['files'];
+          const files = (Array.isArray(field) ? field : [field]).filter(
+            (file): file is File => file instanceof File,
+          );
+          if (files.length === 0)
+            throw badRequest('Bitte die Schriften im Feld „files“ mitsenden.');
+          return c.json(
+            await uploadWorkspaceFonts(
+              deps,
+              userId(c.var.viewer),
+              c.req.param('id'),
+              await Promise.all(
+                files.map(async (file) => ({
+                  name: file.name,
+                  bytes: new Uint8Array(await file.arrayBuffer()),
+                })),
+              ),
+            ),
+          );
+        },
+      )
+      .delete('/workspaces/:id/fonts/:fontId', viewer, async (c) =>
+        c.json(
+          await deleteWorkspaceFonts(deps, userId(c.var.viewer), c.req.param('id'), {
+            fontId: c.req.param('fontId'),
+          }),
+        ),
+      )
+      /** Every face of a family (`?family=`). */
+      .delete('/workspaces/:id/fonts', viewer, async (c) => {
+        const family = c.req.query('family');
+        if (!family) throw badRequest('Bitte die Schriftfamilie angeben.');
+        return c.json(
+          await deleteWorkspaceFonts(deps, userId(c.var.viewer), c.req.param('id'), { family }),
+        );
+      })
       /** Company workspace (BER-148): open it to the admin's domain, or make it private. */
       .put('/workspaces/:id/domain', viewer, async (c) => {
         const user = await requireUser(deps, c.var.viewer);
@@ -157,6 +222,17 @@ export function workspacesRoutes(deps: AppDeps) {
       .get('/workspaces/:id/members', viewer, async (c) =>
         c.json(await listMembers(deps.db, userId(c.var.viewer), c.req.param('id'))),
       )
+      /**
+       * Heartbeat of an open tab (every `WORKSPACE_PRESENCE_POLL_MS` while visible): marks the
+       * viewer online, answers with who else of the workspace is.
+       */
+      .post('/workspaces/:id/presence', viewer, async (c) => {
+        const id = userId(c.var.viewer);
+        const workspaceId = c.req.param('id');
+        await requireRole(deps.db, workspaceId, id);
+        presence.touch(workspaceId, c.var.viewer.author);
+        return c.json<Author[]>(presence.online(workspaceId, id));
+      })
       .patch('/workspaces/:id/members/:userId', viewer, async (c) => {
         const { role } = await readJson(c, updateMemberInputSchema);
         return c.json(
@@ -179,6 +255,17 @@ export function workspacesRoutes(deps: AppDeps) {
           c.req.query('successor') || undefined,
           deps.clock.now(),
         );
+        const removedId = c.req.param('userId');
+        presence.forget(c.req.param('id'), removedId);
+        // Their open decks stop streaming now, not only at the stream's next access check.
+        if (deps.live) {
+          const workspaceDecks = await deps.db
+            .select({ id: decks.id })
+            .from(decks)
+            .where(eq(decks.workspaceId, c.req.param('id')));
+          for (const deck of workspaceDecks)
+            deps.live.evict(deck.id, (authorId) => authorId !== removedId);
+        }
         await cancelSubscriptions(deps, [cancelSubscriptionId]);
         await deleteDeckFiles(deps, deletedDeckIds);
         return c.body(null, 204);

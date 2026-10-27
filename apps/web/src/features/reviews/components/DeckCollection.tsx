@@ -1,5 +1,5 @@
 import type { DragEvent, MouseEvent } from 'react';
-import type { Deck } from '@slider/shared';
+import type { Deck, DeckSearchResult } from '@slider/shared';
 import type { ShowToast } from '@/ui';
 import { setDraggedDecks } from '../lib/deck-drag';
 import { DeckCard, DeckRow } from './DeckCard';
@@ -11,10 +11,12 @@ interface DeckCollectionProps {
   view: DeckView;
   onNotify: ShowToast;
   selected: ReadonlySet<string>;
-  /** ⌘/Ctrl/Shift-click on a deck; true when it changed the selection instead of opening it. */
+  /** ⌘/Ctrl/Shift-click on a deck, or any click while some are selected; true when it changed the selection instead of opening it. */
   onModifiedClick: (deckId: string, event: MouseEvent) => boolean;
   /** Right click on one of several selected decks: their shared actions instead of its own. */
   onSelectionMenu: (at: { x: number; y: number }) => void;
+  /** Search hits in the decks' text by deck id (BER-175). */
+  searchHits?: ReadonlyMap<string, DeckSearchResult>;
 }
 
 /** Clicks on these keep their own meaning, even with a modifier key. */
@@ -30,6 +32,7 @@ export function DeckCollection({
   selected,
   onModifiedClick,
   onSelectionMenu,
+  searchHits,
 }: DeckCollectionProps) {
   const Item = view === 'grid' ? DeckCard : DeckRow;
   const onClickCapture = (deckId: string) => (event: MouseEvent) => {
@@ -67,7 +70,12 @@ export function DeckCollection({
           onContextMenuCapture={onContextMenuCapture(deck.id)}
           onDragStart={deck.permissions.canManage ? onDragStart(deck) : undefined}
         >
-          <Item deck={deck} selected={selected.has(deck.id)} onNotify={onNotify} />
+          <Item
+            deck={deck}
+            selected={selected.has(deck.id)}
+            onNotify={onNotify}
+            searchHit={searchHits?.get(deck.id)}
+          />
         </li>
       ))}
     </ul>

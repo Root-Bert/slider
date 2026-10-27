@@ -23,7 +23,7 @@ export {
 } from '../lib/link-import-errors';
 
 /**
- * State of the "PowerPoint-Link einfügen" form (BER-92): live validation with `parseImportLink`
+ * State of the "Link zur Präsentation einfügen" form (BER-92): live validation with `parseImportLink`
  * (errors only after blur/submit), the import mutation and the A3 "no access" outcome.
  *
  * After the Microsoft login the API sends the browser back to `/neu?link=…`: the link is

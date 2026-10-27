@@ -5,6 +5,7 @@ import type { AppDeps } from '../deps';
 import { forbidden, notFound } from '../http/errors';
 import { contentTypeForKey, isValidKey } from '../storage/blob-storage';
 import { verifyFileUrl } from '../storage/file-urls';
+import { requireRole } from '../services/workspaces/roles';
 
 /** SVG renders must never run script, even when opened directly. */
 const SVG_CSP = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:";
@@ -22,7 +23,8 @@ const DECK_FILE_MAX_AGE_S = 5 * 60;
  * check as the deck itself, the source's included (`deckAccess`). So a link passed on opens
  * nothing, and a revocation in SharePoint or Nextcloud closes the files with the deck. Images
  * load same-origin, so the session cookie comes along. Workspace logos stay signature-only:
- * the invitation page shows them before anyone is signed in.
+ * the invitation page shows them before anyone is signed in. Workspace fonts require current
+ * membership and are not cached, so removing a member revokes their file links too.
  */
 export function filesRoutes(deps: AppDeps) {
   return new Hono().get('/*', async (c) => {
@@ -31,19 +33,27 @@ export function filesRoutes(deps: AppDeps) {
     const validFor = verifyFileUrl(key, c.req.query('exp'), c.req.query('sig'));
     if (validFor === null) throw forbidden('Dieser Link ist abgelaufen oder ungültig.');
     const deckId = /^decks\/([^/]+)\//.exec(key)?.[1];
+    const fontWorkspaceId = /^workspaces\/([^/]+)\/fonts\//.exec(key)?.[1];
     if (deckId) {
       const viewer = await resolveViewer(c, deps);
       if (!viewer) throw unauthorized();
       await deckAccess(deps, viewer, deckId, 'view');
     }
+    if (fontWorkspaceId) {
+      const viewer = await resolveViewer(c, deps);
+      if (!viewer) throw unauthorized();
+      await requireRole(deps.db, fontWorkspaceId, viewer.author.id);
+    }
 
     const contentType = contentTypeForKey(key);
     // Keys are content-unique: after the access check, a cached copy is still the file.
     const etag = `"${key}"`;
-    const cacheControl = deckId
-      ? `private, max-age=${Math.min(validFor, DECK_FILE_MAX_AGE_S)}`
-      : // The link expires: cache no longer than it is valid.
-        `private, max-age=${validFor}, immutable`;
+    const cacheControl = fontWorkspaceId
+      ? 'private, no-store'
+      : deckId
+        ? `private, max-age=${Math.min(validFor, DECK_FILE_MAX_AGE_S)}`
+        : // The link expires: cache no longer than it is valid.
+          `private, max-age=${validFor}, immutable`;
     if (deckId && c.req.header('If-None-Match') === etag) {
       c.header('Cache-Control', cacheControl);
       c.header('ETag', etag);

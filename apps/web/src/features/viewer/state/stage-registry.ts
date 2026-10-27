@@ -30,6 +30,12 @@ export interface HoveredBox {
   shape: Shape;
 }
 
+/** The box of the in-review search's current hit (BER-176), outlined on its slide. */
+export interface FindHighlight {
+  slideId: string;
+  rect: Rect;
+}
+
 export interface RevealOptions {
   behavior?: ScrollBehavior;
   align?: RevealAlign;
@@ -81,6 +87,13 @@ export interface StageRegistry {
    */
   setHoveredBox: (slideId: string, shape: Shape | null) => void;
   getHoveredBox: () => HoveredBox | null;
+  /**
+   * The in-review search's current hit on a slide (`null`: none). Outside React state like the
+   * mark preview: only the slide it is on re-renders its outline.
+   */
+  setFindHighlight: (highlight: FindHighlight | null) => void;
+  getFindHighlight: () => FindHighlight | null;
+  subscribeFindHighlight: (listener: () => void) => () => void;
 }
 
 /** Room kept between a revealed slide and a side panel floating over the track. */
@@ -104,6 +117,8 @@ export function createStageRegistry(): StageRegistry {
   let markPreview: MarkPreview | null = null;
   let hoveredBox: HoveredBox | null = null;
   const markListeners = new Set<() => void>();
+  let findHighlight: FindHighlight | null = null;
+  const findListeners = new Set<() => void>();
 
   const scrollTrackTo = (left: number, asked: ScrollBehavior = 'instant') => {
     if (!scroller || Math.abs(left - scroller.scrollLeft) < 0.5) return;
@@ -181,6 +196,16 @@ export function createStageRegistry(): StageRegistry {
       else if (hoveredBox?.slideId === slideId) hoveredBox = null;
     },
     getHoveredBox: () => hoveredBox,
+    setFindHighlight: (highlight) => {
+      if (highlight === findHighlight) return;
+      findHighlight = highlight;
+      for (const listener of findListeners) listener();
+    },
+    getFindHighlight: () => findHighlight,
+    subscribeFindHighlight: (listener) => {
+      findListeners.add(listener);
+      return () => findListeners.delete(listener);
+    },
   };
 }
 
@@ -196,4 +221,14 @@ export function useStageRegistry(): StageRegistry {
 export function useMarkPreview(): MarkPreview | null {
   const registry = useStageRegistry();
   return useSyncExternalStore(registry.subscribeMarkPreview, registry.getMarkPreview);
+}
+
+/** The search hit outlined on `slideId`, if the current one is there (`setFindHighlight`). */
+export function useFindHighlight(slideId: string): Rect | null {
+  const registry = useStageRegistry();
+  const highlight = useSyncExternalStore(
+    registry.subscribeFindHighlight,
+    registry.getFindHighlight,
+  );
+  return highlight?.slideId === slideId ? highlight.rect : null;
 }

@@ -1,10 +1,19 @@
-import { useEffect, useId, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+} from 'react';
 import { useNavigate } from 'react-router';
 import type { Deck, DeckFolder } from '@slider/shared';
 import { routes } from '@/lib/routes';
 import { AppHeader } from '@/shell/AppHeader';
-import { pluralize } from '@/lib/format';
-import { useDecks, useFolders } from '@/lib/api';
+import { isContentQuery, useDeckSearch, useDecks, useFolders } from '@/lib/api';
+import { useMarqueeSelect } from '@/lib/marquee-select';
+import { useMultiSelect } from '@/lib/multi-select';
 import { useAccount } from '@/features/auth';
 import {
   canCreateDecks,
@@ -12,6 +21,7 @@ import {
   formatDeckUsage,
   newReviewBlockedMessage,
   useWorkspace,
+  WorkspaceViews,
 } from '@/features/workspaces';
 import { accentColor, isLightAccent } from '@/lib/accent';
 import {
@@ -21,6 +31,7 @@ import {
   PageHeader,
   TextLink,
   Toast,
+  useDebounced,
   useToast,
   type MenuAction,
 } from '@/ui';
@@ -35,14 +46,11 @@ import { ReviewsToolbar } from './components/ReviewsToolbar';
 import { SelectionBar } from './components/SelectionBar';
 import { useBulkDeckActions } from './hooks/useBulkDeckActions';
 import { useDeckContextMenu } from './hooks/useDeckContextMenu';
-import { useDeckSelection } from './hooks/useDeckSelection';
 import { useFolderDialog } from './hooks/useFolderDialog';
-import { useMarqueeSelect } from './hooks/useMarqueeSelect';
 import { movedMessage, useMoveDecks } from './hooks/useMoveDecks';
 import { useOpenFolder } from './hooks/useOpenFolder';
 import { useStoredChoice } from './hooks/useStoredChoice';
 import {
-  activeTotals,
   countByFolder,
   countByTab,
   isEmptyFolder,
@@ -94,12 +102,39 @@ export function Component() {
   const folder: FolderScope = openFolder ? openFolder.id : query.trim() ? '*' : null;
   const atTop = folder === null;
 
-  const totals = activeTotals(decks);
-  const visible = selectDecks(decks, { tab, query, sort, folder, openedAt, isPinned });
+  // Names are filtered here; slides and comments only when switched on, searched on the server
+  // once typing pauses (BER-175). Off again on every visit.
+  const [searchContent, setSearchContent] = useState(false);
+  const settledQuery = useDebounced(query, 250);
+  const contentSearch = useDeckSearch(workspace.id, searchContent ? settledQuery : '');
+  const searchingContent = searchContent && isContentQuery(query);
+  const searchHits = useMemo(
+    () =>
+      searchingContent && isContentQuery(settledQuery) && contentSearch.data
+        ? new Map(contentSearch.data.map((result) => [result.deckId, result]))
+        : undefined,
+    [searchingContent, settledQuery, contentSearch.data],
+  );
+  const contentMatches = useMemo(
+    () => (searchHits ? new Set(searchHits.keys()) : undefined),
+    [searchHits],
+  );
+  // Nothing found by title yet, but the text is still being searched: no "Keine Treffer" yet.
+  const awaitingContent = searchingContent && (settledQuery !== query || contentSearch.isFetching);
+
+  const visible = selectDecks(decks, {
+    tab,
+    query,
+    sort,
+    folder,
+    openedAt,
+    isPinned,
+    contentMatches,
+  });
   const inScope = decks.filter((deck) => inFolder(deck, folder));
 
   // Multi-select: ⌘/Shift-click, ⌘A or a selection box dragged over empty space.
-  const selection = useDeckSelection(visible.map((deck) => deck.id));
+  const selection = useMultiSelect(visible.map((deck) => deck.id));
   const selectedDecks = visible.filter((deck) => selection.selected.has(deck.id));
   const bulk = useBulkDeckActions(selectedDecks, {
     workspaceId: workspace.id,
@@ -108,7 +143,10 @@ export function Component() {
   });
   const pageRef = useRef<HTMLDivElement>(null);
   const marqueeBoxRef = useRef<HTMLDivElement>(null);
-  const marquee = useMarqueeSelect(pageRef, marqueeBoxRef, selection.marquee);
+  const marquee = useMarqueeSelect(pageRef, marqueeBoxRef, {
+    attribute: 'data-deck-id',
+    ...selection.marquee,
+  });
   const [selectionMenuAt, setSelectionMenuAt] = useState<{ x: number; y: number } | null>(null);
 
   // A pinned deck deleted, moved away or archived (here or elsewhere) would otherwise hold one
@@ -199,7 +237,7 @@ export function Component() {
         <PageHeader
           layout="inline"
           subtitleSize="body"
-          titleRow={Boolean(openFolder)}
+          titleRow
           title={
             openFolder ? (
               <>
@@ -208,23 +246,16 @@ export function Component() {
                 <span className="truncate">{openFolder.name}</span>
               </>
             ) : (
-              'Reviews'
+              <WorkspaceViews workspaceId={workspace.id} current="reviews" />
             )
           }
           subtitle={
-            decksQuery.data !== undefined && (
-              <>
-                {pluralize(totals.reviews, 'Review', 'Reviews')} |{' '}
-                {pluralize(totals.openComments, 'offener Kommentar', 'offene Kommentare')}
-                {workspace.usage.maxDecks !== null && (
-                  <>
-                    {' | '}
-                    <span className={decksFull ? 'text-warning' : undefined}>
-                      {formatDeckUsage(workspace.usage)}
-                    </span>
-                  </>
-                )}
-              </>
+            // Only the plan's deck limit, when there is one.
+            decksQuery.data !== undefined &&
+            workspace.usage.maxDecks !== null && (
+              <span className={decksFull ? 'text-warning' : undefined}>
+                {formatDeckUsage(workspace.usage)}
+              </span>
             )
           }
         />
@@ -243,7 +274,15 @@ export function Component() {
           />
         ) : (
           <ReviewsToolbar
-            search={<DeckSearch value={query} onChange={setQuery} />}
+            search={
+              <DeckSearch
+                value={query}
+                onChange={setQuery}
+                content={searchContent}
+                onContentChange={setSearchContent}
+                searching={searchingContent && contentSearch.isFetching}
+              />
+            }
             tab={tab}
             onTabChange={setTab}
             counts={countByTab(decks, folder)}
@@ -326,7 +365,9 @@ export function Component() {
               atTop,
               folderCount: folders.length,
               deckCount: decks.length,
-            }) ? null : visible.length === 0 ? (
+            }) ? null : visible.length === 0 && awaitingContent ? (
+            <DeckCollectionSkeleton view={view} count={3} />
+          ) : visible.length === 0 ? (
             <NoResults hasDecks={decks.length > 0} query={query} tab={tab} onAdd={goToNew} />
           ) : (
             <DeckCollection
@@ -336,6 +377,7 @@ export function Component() {
               selected={selection.selected}
               onModifiedClick={selection.onModifiedClick}
               onSelectionMenu={setSelectionMenuAt}
+              searchHits={searchHits}
             />
           )}
         </section>

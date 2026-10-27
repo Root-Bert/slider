@@ -1,4 +1,5 @@
 import { MAX_COMMENT_BODY_LENGTH, type Comment } from '@slider/shared';
+import { isApplePlatform } from '@/lib/platform';
 import { Avatar, cn, ErrorText, IconButton } from '@/ui';
 import { AttachedImages, AttachImageButton } from '../media/AttachedImages';
 import { MediaReplyButtons } from './MediaTabs';
@@ -6,6 +7,8 @@ import { useMentions } from './hooks/useMentions';
 import { useReplyDraft } from './hooks/useReplyDraft';
 import { MentionMenu } from './MentionMenu';
 import { MentionTextarea } from './MentionTextarea';
+
+const modKey = () => (isApplePlatform() ? '⌘' : 'Strg');
 
 interface ReplyComposerProps {
   root: Comment;
@@ -72,6 +75,19 @@ export function ReplyComposer({
       size="compact"
     />
   );
+  // Same ✨ as the comment composer: sends the reply and has the AI change the slide (⌘↵).
+  const askAi = (size: 'xs' | 'sm', className?: string) =>
+    draft.aiAvailable && (
+      <IconButton
+        icon="autoAwesome"
+        label="Senden und die KI die Folie ändern lassen"
+        title={`Senden und an die KI geben (${modKey()}↵)`}
+        size={size}
+        disabled={!canSend}
+        onClick={() => submit(undefined, { askAi: true })}
+        className={className}
+      />
+    );
 
   if (variant === 'inline') {
     return (
@@ -98,6 +114,7 @@ export function ReplyComposer({
             size="xs"
             onClick={draft.cancel}
           />
+          {askAi('xs')}
           <IconButton
             type="submit"
             icon="arrowUpward"
@@ -125,6 +142,7 @@ export function ReplyComposer({
           {attach}
           <MediaReplyButtons root={root} />
         </div>
+        {askAi('sm', 'mb-1')}
         <IconButton
           type="submit"
           icon="arrowUpward"

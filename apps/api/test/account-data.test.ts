@@ -11,11 +11,13 @@ import {
   sessions,
   slides,
   slideVersions,
+  userIdentities,
   users,
   workspaceInvites,
   workspaceMembers,
   workspaces,
 } from '../src/db/schema';
+import { hashToken } from '../src/auth/session';
 import { ensurePersonalWorkspace } from '../src/services/workspaces';
 import { RecordingMailer } from '../src/mail/mailer';
 import { deleteAccount } from '../src/services/account-deletion';
@@ -209,11 +211,44 @@ describe('data export (BER-145)', () => {
   });
 });
 
+describe('removing a login', () => {
+  it('signs the account out everywhere else: whoever used it there is out too', async () => {
+    const here = await anna();
+    const elsewhere = await signedInUser(ctx, { name: 'Anna Schmidt', email: 'anna@firma.de' });
+    await ctx.deps.db.insert(userIdentities).values([
+      { provider: 'google', subject: 'g-anna', userId: here.user.id, email: 'anna@firma.de' },
+      { provider: 'oidc', subject: 'o-anna', userId: here.user.id, email: 'anna@firma.de' },
+    ]);
+    const res = await ctx.request('/api/me/identities/google:g-anna', {
+      method: 'DELETE',
+      cookie: here.cookie,
+    });
+    expect(res.status).toBe(204);
+    // Only this browser's session is left.
+    const left = await ctx.deps.db
+      .select({ tokenHash: sessions.tokenHash })
+      .from(sessions)
+      .where(eq(sessions.userId, here.user.id));
+    expect(left).toHaveLength(1);
+    expect(left[0]?.tokenHash).toBe(hashToken(here.cookie.split('=')[1] ?? ''));
+    expect(elsewhere.cookie).not.toBe(here.cookie);
+  });
+});
+
 describe('deleting an account (BER-145)', () => {
   it('wants the own e-mail address as confirmation', async () => {
     const person = await anna();
     const res = await deleteMe(person.cookie, 'falsch@firma.de');
     expect(res.status).toBe(400);
+    expect(await rowCount(ctx.deps.db.select({ count: count() }).from(users))).toBe(2);
+  });
+
+  it('wants a fresh sign-in: a session left open somewhere deletes nothing', async () => {
+    const person = await anna();
+    ctx.clock.advance(11 * 60_000);
+    const res = await deleteMe(person.cookie, 'anna@firma.de');
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: { code: 'reauth_required' } });
     expect(await rowCount(ctx.deps.db.select({ count: count() }).from(users))).toBe(2);
   });
 

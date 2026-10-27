@@ -15,7 +15,7 @@ export interface SlideZoom {
   y: number;
 }
 
-/** Deepest zoom: at 8× a 2400 px slide image is about as sharp as it gets. */
+/** Deepest zoom: at 8× a 3840 px slide image is about as sharp as it gets. */
 export const SLIDE_ZOOM_MAX = 8;
 
 type View = Pick<SlideZoom, 'scale' | 'x' | 'y'>;

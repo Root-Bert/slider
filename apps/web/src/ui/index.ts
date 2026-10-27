@@ -89,6 +89,7 @@ export { Toggle, type SwitchSize } from './Toggle';
 export { Toolbar, ToolbarDivider, type ToolbarDividerProps, type ToolbarProps } from './Toolbar';
 export { Tooltip, type TooltipProps } from './Tooltip';
 export { useCopyToClipboard } from './hooks/useCopyToClipboard';
+export { useDebounced } from './hooks/useDebounced';
 export { useDismiss, type DismissRef } from './hooks/useDismiss';
 export { useFullscreen } from './hooks/useFullscreen';
 export { useIsNarrow, useMediaQuery } from './hooks/useMediaQuery';

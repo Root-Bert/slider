@@ -2,19 +2,21 @@
 
 Angaben nach § 5 Digitale-Dienste-Gesetz (DDG)
 
-[Vorname Nachname]
-[Straße Hausnummer]
-[PLZ Ort]
+{{name}}
+{{street}}
+{{city}}
 Deutschland
 
 ## Kontakt
 
-E-Mail: [E-Mail-Adresse]
-Telefon: [Telefonnummer – optional, wenn E-Mail-Antworten schnell kommen]
+E-Mail: {{email}}
+{{#phone}}Telefon: {{phone}}{{/phone}}
 
+{{#vatId}}
 ## Umsatzsteuer
 
-[Umsatzsteuer-Identifikationsnummer nach § 27a UStG – nur wenn vorhanden, sonst diesen Abschnitt löschen]
+Umsatzsteuer-Identifikationsnummer nach § 27a UStG: {{vatId}}
+{{/vatId}}
 
 ## Verbraucherstreitbeilegung
 

@@ -26,6 +26,12 @@ export const PERMANENT: readonly RawValueException[] = [
       'Provider and app marks (Google, Microsoft hex colours; white "P" on the PowerPoint orange) keep their brand colours.',
   },
   {
+    path: 'features/viewer/editing/live/model.ts',
+    allow: [HEX],
+    reason:
+      'Colours of slide content the live editor writes into the deck (default text, a new box’s fill and border) – the deck’s, not the app’s.',
+  },
+  {
     path: 'ui/CountBubble.tsx',
     allow: [/^text-white$/],
     reason: 'Comment count on an accent fill: white on every accent, as in the design.',

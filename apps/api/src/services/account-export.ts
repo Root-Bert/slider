@@ -2,7 +2,10 @@ import { asc, eq, sql } from 'drizzle-orm';
 import JSZip from 'jszip';
 import { withoutCredentials } from '@slider/shared';
 import {
+  aiProposals,
+  commentReactions,
   comments,
+  deckEdits,
   decks,
   media,
   microsoftConnections,
@@ -26,7 +29,9 @@ import { inviteEntries, invitesTo } from './data-requests';
  * portability): `konto.json` (profile, logins, passkeys, Microsoft accounts, sessions,
  * workspaces), `praesentationen.json` + the original file of each deck they own in a
  * workspace they are still in,
- * `kommentare.json` (what they wrote, in any deck) and `aufnahmen/` (their recordings).
+ * `kommentare.json` (what they wrote, in any deck), `reaktionen.json` (their 👍 / 👎 / egal),
+ * `ki-auftraege.json` (what they asked the AI), `bearbeitungen.json` (their edit steps) and
+ * `aufnahmen/` (their recordings).
  * Secrets are left out: tokens, passkey keys, session hashes.
  */
 export async function exportAccount(
@@ -48,8 +53,11 @@ export async function exportAccount(
     memberships,
     ownedDecks,
     written,
+    reactions,
     recordings,
     invites,
+    asked,
+    edited,
   ] = await Promise.all([
     db.select().from(userIdentities).where(eq(userIdentities.userId, userId)),
     db.select().from(passkeys).where(eq(passkeys.userId, userId)),
@@ -75,8 +83,26 @@ export async function exportAccount(
       .innerJoin(decks, eq(decks.id, comments.deckId))
       .where(sql`${comments.author}->>'id' = ${userId}`)
       .orderBy(asc(comments.createdAt)),
+    db
+      .select({ reaction: commentReactions, deckId: comments.deckId })
+      .from(commentReactions)
+      .innerJoin(comments, eq(comments.id, commentReactions.commentId))
+      .where(eq(commentReactions.userId, userId))
+      .orderBy(asc(commentReactions.createdAt)),
     db.select().from(media).where(eq(media.uploaderId, userId)).orderBy(asc(media.createdAt)),
     invitesTo(deps, normalizeEmail(user.email)),
+    db
+      .select({ proposal: aiProposals, deckTitle: decks.title })
+      .from(aiProposals)
+      .innerJoin(decks, eq(decks.id, aiProposals.deckId))
+      .where(eq(aiProposals.createdById, userId))
+      .orderBy(asc(aiProposals.createdAt)),
+    db
+      .select({ edit: deckEdits, deckTitle: decks.title })
+      .from(deckEdits)
+      .innerJoin(decks, eq(decks.id, deckEdits.deckId))
+      .where(eq(deckEdits.authorId, userId))
+      .orderBy(asc(deckEdits.createdAt)),
   ]);
 
   const zip = new JSZip();
@@ -184,6 +210,18 @@ export async function exportAccount(
     ),
   );
 
+  zip.file(
+    'reaktionen.json',
+    json(
+      reactions.map(({ reaction, deckId }) => ({
+        commentId: reaction.commentId,
+        deckId,
+        kind: reaction.kind,
+        createdAt: reaction.createdAt.toISOString(),
+      })),
+    ),
+  );
+
   const recordingEntries = [];
   for (const row of recordings) {
     const bytes = await deps.media.get(row.storageKey);
@@ -203,6 +241,33 @@ export async function exportAccount(
   }
   zip.file('aufnahmen.json', json(recordingEntries));
   zip.file('einladungen.json', json(inviteEntries(invites)));
+  zip.file(
+    'ki-auftraege.json',
+    json(
+      asked.map(({ proposal, deckTitle }) => ({
+        id: proposal.id,
+        deck: { id: proposal.deckId, title: deckTitle },
+        slideId: proposal.slideId,
+        commentId: proposal.commentId,
+        prompt: proposal.prompt,
+        summary: proposal.summary,
+        status: proposal.status,
+        createdAt: proposal.createdAt.toISOString(),
+      })),
+    ),
+  );
+  zip.file(
+    'bearbeitungen.json',
+    json(
+      edited.map(({ edit, deckTitle }) => ({
+        deck: { id: edit.deckId, title: deckTitle },
+        step: edit.seq,
+        source: edit.source,
+        operations: edit.operations,
+        createdAt: edit.createdAt.toISOString(),
+      })),
+    ),
+  );
 
   const bytes = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
   return { fileName: `slider-daten-${now.toISOString().slice(0, 10)}.zip`, bytes };
@@ -222,8 +287,11 @@ const README = `Deine Daten aus Slider
 konto.json            Profil, Anmeldewege, Passkeys, verbundene Microsoft-, Nextcloud- und Google-Konten, Sitzungen, Workspaces
 praesentationen.json  Präsentationen, die dir gehören; die Originaldateien liegen in praesentationen/
 kommentare.json       Kommentare und Antworten, die du geschrieben hast – in allen Präsentationen
+reaktionen.json       Deine Reaktionen auf Kommentare (up = Daumen hoch, down = Daumen runter, neutral = egal)
 aufnahmen.json        Sprach- und Videoaufnahmen sowie Bilder zu deinen Kommentaren (Dateien in aufnahmen/)
 einladungen.json      Einladungen in Workspaces an deine Adresse
+ki-auftraege.json     Was du die KI an Präsentationen hast ändern lassen
+bearbeitungen.json    Deine Bearbeitungsschritte in Präsentationen
 
 Zugangsdaten (Tokens, Passkey-Schlüssel) sind aus Sicherheitsgründen nicht enthalten.
 `;

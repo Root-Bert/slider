@@ -13,6 +13,16 @@ export function LoginErrorBanner({ code }: { code: LoginError }) {
   );
 }
 
+/** Back from the organisation's Nextcloud with a new account: its address is confirmed by mail. */
+export function ConfirmMailBanner() {
+  return (
+    <Notice tone="success" variant="tinted" role="status" animated title="Schau in dein Postfach">
+      Wir haben dir eine Mail an die Adresse aus deiner Nextcloud geschickt. Klick den Link darin in
+      diesem Browser, dann ist dein Konto da. Er gilt eine Stunde.
+    </Notice>
+  );
+}
+
 /** Below the login card: how accounts come about in this instance's `SIGNUP` mode (BER-130). */
 export function SignupHint({
   signup,

@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { and, eq, gt, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull, ne } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { sessions, users, type UserRow } from '../db/schema';
 import type { AppDeps } from '../deps';
@@ -134,4 +134,31 @@ export async function endSession(c: Context, deps: AppDeps): Promise<void> {
   const token = readCookie(c, deps.config, SESSION_COOKIE);
   if (token) await deps.db.delete(sessions).where(eq(sessions.tokenHash, hashToken(token)));
   removeCookie(c, deps.config, SESSION_COOKIE);
+}
+
+/**
+ * Signs the account out everywhere but in this browser: after it removed a login or a passkey,
+ * whoever signed in with that one elsewhere is out too.
+ */
+export async function endOtherSessions(c: Context, deps: AppDeps, userId: string): Promise<void> {
+  const token = readCookie(c, deps.config, SESSION_COOKIE);
+  await deps.db
+    .delete(sessions)
+    .where(
+      and(
+        eq(sessions.userId, userId),
+        token ? ne(sessions.tokenHash, hashToken(token)) : undefined,
+      ),
+    );
+}
+
+/** When this browser signed in – `null` without a session (the dev login). */
+export async function signedInAt(c: Context, deps: AppDeps): Promise<Date | null> {
+  const token = readCookie(c, deps.config, SESSION_COOKIE);
+  if (!token) return null;
+  const [row] = await deps.db
+    .select({ createdAt: sessions.createdAt })
+    .from(sessions)
+    .where(eq(sessions.tokenHash, hashToken(token)));
+  return row?.createdAt ?? null;
 }

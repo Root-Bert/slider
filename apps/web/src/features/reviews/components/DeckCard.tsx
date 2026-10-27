@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
-import type { Deck } from '@slider/shared';
+import type { Deck, DeckSearchResult } from '@slider/shared';
 import { routes } from '@/lib/routes';
 import { AvatarStack, cn, Icon, Tooltip, type ShowToast } from '@/ui';
 import { isImporting } from '@/lib/deck-labels';
@@ -10,6 +10,7 @@ import { DeckActions } from './DeckActions';
 import { DeckTitleInput } from './DeckTitleInput';
 import { DeckStatusBadge, ImportOverlay, OriginChips, SlideCountChip } from './DeckBits';
 import { OpenCommentsButton } from './OpenComments';
+import { SearchHit } from './SearchHit';
 import { SlideThumbnail } from './SlideThumbnail';
 
 /**
@@ -74,7 +75,13 @@ export interface DeckItemProps {
   /** Part of the multi-selection in "Reviews". */
   selected?: boolean;
   onNotify: ShowToast;
+  /** Where its text matched the search (BER-175): shown under the title, opened at its slide. */
+  searchHit?: DeckSearchResult;
 }
+
+/** The deck's link: at the slide of its first search hit, if it has one. */
+const deckLink = (deck: Deck, searchHit: DeckSearchResult | undefined) =>
+  routes.deck(deck.id, searchHit?.hits[0]?.slideId);
 
 /** Tick in the thumbnail corner of a selected deck. */
 function SelectedMark({ compact = false }: { compact?: boolean }) {
@@ -148,7 +155,7 @@ function DeckFooter({
  * hovering them leaves the card alone – no open state to track. Deck actions open from the ⋯ button in the thumbnail corner
  * (shown on hover, focus and touch screens) or a right click.
  */
-export function DeckCard({ deck, selected = false, onNotify }: DeckItemProps) {
+export function DeckCard({ deck, selected = false, onNotify, searchHit }: DeckItemProps) {
   const { onContextMenu, ...contextMenu } = useDeckContextMenu();
   const [panelSlot, setPanelSlot] = useState<HTMLElement | null>(null);
   const { renaming, startRename, endRename, titleRef } = useInPlaceRename();
@@ -202,7 +209,7 @@ export function DeckCard({ deck, selected = false, onNotify }: DeckItemProps) {
           ) : (
             <Link
               ref={titleRef}
-              to={routes.deck(deck.id)}
+              to={deckLink(deck, searchHit)}
               data-deck-hover
               className="outline-none transition-colors duration-200 after:absolute after:inset-0 after:content-[''] hover:text-primary-hover"
             >
@@ -219,6 +226,7 @@ export function DeckCard({ deck, selected = false, onNotify }: DeckItemProps) {
           className="ml-auto shrink-0 pl-1.5"
         />
       </div>
+      {searchHit && <SearchHit result={searchHit} className="-mt-1.5 line-clamp-2" />}
     </article>
   );
 }
@@ -227,7 +235,7 @@ export function DeckCard({ deck, selected = false, onNotify }: DeckItemProps) {
  * Compact list-view row with the same information as the card. The open comments list and the
  * storage overview open in an area under the row, which expands.
  */
-export function DeckRow({ deck, selected = false, onNotify }: DeckItemProps) {
+export function DeckRow({ deck, selected = false, onNotify, searchHit }: DeckItemProps) {
   const { onContextMenu, ...contextMenu } = useDeckContextMenu();
   const [panelSlot, setPanelSlot] = useState<HTMLElement | null>(null);
   const { renaming, startRename, endRename, titleRef } = useInPlaceRename();
@@ -270,7 +278,7 @@ export function DeckRow({ deck, selected = false, onNotify }: DeckItemProps) {
               ) : (
                 <Link
                   ref={titleRef}
-                  to={routes.deck(deck.id)}
+                  to={deckLink(deck, searchHit)}
                   data-deck-hover
                   className="outline-none transition-colors duration-200 after:absolute after:inset-0 after:content-[''] hover:text-primary-hover"
                 >
@@ -280,6 +288,7 @@ export function DeckRow({ deck, selected = false, onNotify }: DeckItemProps) {
             </h3>
             <DeckStatusBadge deck={deck} />
           </div>
+          {searchHit && <SearchHit result={searchHit} className="truncate text-xs" />}
         </div>
 
         <DeckFooter

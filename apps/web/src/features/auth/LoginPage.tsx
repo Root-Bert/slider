@@ -2,7 +2,7 @@ import { Navigate, useSearchParams } from 'react-router';
 import { useAuthProviders, useMe } from '@/lib/api';
 import { CenteredLayout } from '@/shell/layouts/CenteredLayout';
 import { Spinner } from '@/ui';
-import { LoginErrorBanner, SignupHint } from './components/LoginBits';
+import { ConfirmMailBanner, LoginErrorBanner, SignupHint } from './components/LoginBits';
 import { LoginHero } from './components/LoginHero';
 import { LoginOptions } from './components/LoginOptions';
 import { isLoginError, safeReturnTo } from './lib/return-to';
@@ -36,6 +36,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
     >
       <div className="mx-auto flex w-full max-w-[420px] flex-col gap-6">
         {isLoginError(errorCode) && <LoginErrorBanner code={errorCode} />}
+        {searchParams.get('confirm') === 'nextcloud' && <ConfirmMailBanner />}
         <section
           aria-labelledby="login-title"
           className="flex flex-col items-center gap-8 text-center"

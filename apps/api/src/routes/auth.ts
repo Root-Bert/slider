@@ -34,7 +34,12 @@ import {
   type MicrosoftErrorKind,
 } from '../auth/microsoft';
 import { browserKey, readSignedCookie, removeCookie, writeSignedCookie } from '../auth/cookies';
-import { DEFAULT_LOGIN_RETURN_TO, loginErrorPath, loginPath } from '../auth/login-paths';
+import {
+  DEFAULT_LOGIN_RETURN_TO,
+  loginErrorPath,
+  loginPath,
+  nextcloudConfirmPath,
+} from '../auth/login-paths';
 import {
   exchangeNextcloudCode,
   nextcloudAuthorizeUrl,
@@ -369,6 +374,29 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
     windowMs: 60 * 60_000,
     clock: deps.clock,
   });
+
+  /**
+   * A new account through a Nextcloud: its mailbox confirms the address first
+   * (`services/nextcloud-signup`). `null`: mailed – or over the limit, where nothing is sent and
+   * the answer stays the same, as the links mailed before still work. Else why not.
+   */
+  const mailNextcloudSignup = async (
+    c: Context,
+    identity: IdentityInput,
+    returnTo: string,
+    server: string,
+  ): Promise<LoginError | null> => {
+    const blocked = await signUpBlocked(deps, identity);
+    if (blocked) return blocked;
+    if (!deps.mailer.configured) return 'mail_unavailable';
+    const browser = await readSignedCookie(c, config, NEXTCLOUD_SIGNUP_COOKIE);
+    if (!identity.email || !browser) return 'failed';
+    if (nextcloudSignupMailLimit.hit(normalizeEmail(identity.email)).allowed) {
+      const sent = await sendNextcloudSignupMail(deps, { identity, returnTo, server, browser });
+      if (!sent) return 'failed';
+    }
+    return null;
+  };
   const emailLoginAddressLimit = fixedWindow({
     limit: EMAIL_LOGIN_MAILS_PER_ADDRESS,
     windowMs: 60 * 60_000,
@@ -424,9 +452,10 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
         return c.json<AuthProviders>({
           providers,
           devLogin: config.auth.devLogin,
-          // No instance admin yet: anyone may sign up (and then has to enter the setup token).
+          // No instance admin yet: whoever typed in the setup token signs up, to claim it.
           signup: config.auth.devLogin || (await gate.claimed()) ? config.auth.signup : 'open',
           needsSetup: !config.auth.devLogin && !hasLogin(config),
+          setupPending: await gate.setupPending(c),
           nextcloudAnyServer: config.nextcloud.loginAnyServer,
           googleDrive: config.googleDrive !== null,
           sso: await anyWorkspaceSso(deps),
@@ -693,7 +722,7 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
           throw notFound('Für diese Adresse gibt es keinen Firmen-Login. Melde dich anders an.');
         }
         const loginUrl = `/api/auth/sso/login?${new URLSearchParams({ workspace: found.workspace.id })}`;
-        return c.json<SsoLogin>({ loginUrl, workspace: found.workspace.name });
+        return c.json<SsoLogin>({ loginUrl });
       })
       .get('/auth/sso/login', async (c) => {
         const returnTo = safeReturnTo(c.req.query('returnTo'), DEFAULT_LOGIN_RETURN_TO);
@@ -798,6 +827,15 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
           mode: connect ? 'connect' : 'login',
           userId: connect ? current.author.id : undefined,
         });
+        // A new account confirms its address by mail, in this browser only.
+        if (!connect) {
+          await browserKey(
+            c,
+            config,
+            NEXTCLOUD_SIGNUP_COOKIE,
+            NEXTCLOUD_SIGNUP_TTL_MS / 1000 + 3600,
+          );
+        }
         return c.redirect(nextcloudAuthorizeUrl(server, login, pkce), 302);
       })
 
@@ -841,8 +879,11 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
           return toWeb(c, returnTo);
         }
         const signIn = await signInWithIdentity(deps, identity);
-        if (!signIn.ok) return loginFailed(c, signIn.error, returnTo);
-        return loggedIn(c, signIn.user.id, returnTo);
+        if (signIn.ok) return loggedIn(c, signIn.user.id, returnTo);
+        if (signIn.error !== 'email_unverified') return loginFailed(c, signIn.error, returnTo);
+        const unsent = await mailNextcloudSignup(c, identity, returnTo, server);
+        if (unsent) return loginFailed(c, unsent, returnTo);
+        return toWeb(c, nextcloudConfirmPath(returnTo));
       })
 
       // ── Nextcloud (any one, Login Flow v2) ───────────────────────────────
@@ -917,11 +958,11 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
           await deps.nextcloud.discard(granted);
           throw error;
         }
-        // Whoever runs a Nextcloud can type any address into it: it is not confirmed here.
-        const identity: IdentityInput = {
-          ...nextcloudIdentity(granted.server, user, inviteTokenFromPath(flow.returnTo)),
-          emailVerified: false,
-        };
+        const identity = nextcloudIdentity(
+          granted.server,
+          user,
+          inviteTokenFromPath(flow.returnTo),
+        );
         /** The grant becomes the account's file connection (the password goes back on failure). */
         const keepAccess = async (userId: string) => {
           try {
@@ -958,25 +999,9 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
           return done(loginErrorPath(signIn.error, flow.returnTo));
         }
         // A new account: only once the mailbox confirms the address.
-        const blocked = await signUpBlocked(deps, identity);
-        if (blocked) return done(loginErrorPath(blocked, flow.returnTo));
-        if (!deps.mailer.configured) {
-          return done(loginErrorPath('mail_unavailable', flow.returnTo));
-        }
-        const browser = await readSignedCookie(c, config, NEXTCLOUD_SIGNUP_COOKIE);
-        if (!identity.email || !browser) return done(loginErrorPath('failed', flow.returnTo));
-        // Over the limit nothing is sent and the answer stays the same: the links already mailed
-        // still work.
-        if (nextcloudSignupMailLimit.hit(normalizeEmail(identity.email)).allowed) {
-          const sent = await sendNextcloudSignupMail(deps, {
-            identity,
-            returnTo: flow.returnTo,
-            server: granted.server,
-            browser,
-          });
-          if (!sent) return done(loginErrorPath('failed', flow.returnTo));
-        }
-        return c.json<NextcloudSignInPoll>({ status: 'confirm', email: identity.email });
+        const unsent = await mailNextcloudSignup(c, identity, flow.returnTo, granted.server);
+        if (unsent) return done(loginErrorPath(unsent, flow.returnTo));
+        return c.json<NextcloudSignInPoll>({ status: 'confirm', email: identity.email ?? '' });
       })
 
       .post('/auth/nextcloud/confirm', async (c) => {
@@ -1053,9 +1078,9 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
 }
 
 /**
- * The identity of a Nextcloud login: subject = `<server>:<Nextcloud user id>`. The address counts
- * as confirmed like a company SSO's – the admin chose this Nextcloud as a login – but never for a
- * whole domain (`vouchesForDomain`): people may change it in their Nextcloud settings.
+ * The identity of a Nextcloud login: subject = `<server>:<Nextcloud user id>`. The address is not
+ * confirmed – people may change it in their Nextcloud settings, also on the organisation's – so a
+ * new account confirms it by mail first (`services/nextcloud-signup`). A known identity signs in.
  */
 function nextcloudIdentity(
   server: string,
@@ -1066,7 +1091,7 @@ function nextcloudIdentity(
     provider: 'nextcloud',
     subject: `${server}:${user.id}`,
     email: user.email,
-    emailVerified: true,
+    emailVerified: false,
     name: user.displayName ?? user.id,
     inviteToken,
   };

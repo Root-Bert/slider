@@ -12,7 +12,8 @@ import { openDatabase } from './db/client';
 import { releaseRunningImportAttempts } from './import/attempts';
 import { findInterruptedImports, importDeck } from './import/import-deck';
 import { createOfficePdf } from './import/office-pages';
-import { configurePdfJobs, stopPdfJobs } from './import/pdf-jobs';
+import { createOfficePool } from './import/office-pool';
+import { configurePdfJobs, stopPdfJobs, warmPdfWorker } from './import/pdf-jobs';
 import { createSlidesExtras } from './import/slides-extras';
 import {
   createLibreOfficeDocumentPdf,
@@ -39,6 +40,7 @@ import { ensurePersonalWorkspace } from './services/workspaces';
 import { createSourceAdapters } from './sources/source-adapter';
 import { FsBlobStorage } from './storage/fs-blob-storage';
 import type { AppDeps } from './deps';
+import { deckFontAdopter } from './services/deck-fonts';
 import { RetentionSweeper } from './services/retention';
 import { SyncScheduler } from './sync/scheduler';
 import { SyncService } from './sync/sync-service';
@@ -133,8 +135,18 @@ async function main(): Promise<void> {
       'LibreOffice is not installed – uploaded decks get the built-in SVG preview (see docs/self-hosting.md).',
     );
   }
+  // Edited slides are drawn by LibreOffices kept running – about 0.1 s a slide instead of 2.
+  const officePool =
+    soffice && (config.libreOfficeWorkers ?? 0) > 0
+      ? await createOfficePool({ binary: soffice, size: config.libreOfficeWorkers!, log })
+      : null;
   const libreOfficePdf = soffice
-    ? createLibreOfficePdf({ binary: soffice, log, timeoutMs: config.libreOfficeTimeoutMs })
+    ? createLibreOfficePdf({
+        binary: soffice,
+        log,
+        timeoutMs: config.libreOfficeTimeoutMs,
+        pool: officePool,
+      })
     : null;
   // Word, Excel and text files picked in a cloud become PDF decks through it, too.
   const documentPdf = soffice
@@ -142,8 +154,10 @@ async function main(): Promise<void> {
     : null;
   // PDFs are read in worker threads, cut off after this long (plus a second per page).
   configurePdfJobs({ timeoutMs: config.pdfTimeoutMs });
+  // … one of them started ahead, so the first edit finds pdf.js loaded.
+  if (officePool) warmPdfWorker();
   const renderProgress = new RenderProgress();
-  const queue = new InProcessQueue<ImportJob>(
+  const queue: InProcessQueue<ImportJob> = new InProcessQueue<ImportJob>(
     (job) =>
       importDeck(
         {
@@ -157,6 +171,16 @@ async function main(): Promise<void> {
           slidesExtras,
           renderProgress,
           syncPollMs: config.sync.pollIntervalMs,
+          // Fonts an ODP brings along become its workspace's, before it is drawn.
+          adoptFonts: deckFontAdopter({
+            db,
+            storage,
+            log,
+            config,
+            clock,
+            queue,
+            rendering: { renderers: { officePdf, libreOfficePdf }, progress: renderProgress },
+          }),
         },
         job,
       ),
@@ -248,6 +272,7 @@ async function main(): Promise<void> {
     sweeper.stop();
     // LibreOffice runs in its own process group and would outlive this process.
     stopRunningConversions();
+    officePool?.close();
     // PDF workers too: their imports resume on the next start, like those of LibreOffice.
     stopPdfJobs();
     // A running import is cut off, not crashed: its run must not count towards giving up.

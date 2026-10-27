@@ -10,6 +10,7 @@ import { CSP_REPORT_PATH } from './http/csp';
 import { errorHandler, notFoundHandler } from './http/errors';
 import { healthCheck, trustProxy } from './http/hosting';
 import { LiveHub } from './realtime/live-hub';
+import { WorkspacePresence } from './realtime/workspace-presence';
 import { sameOriginWrites } from './http/same-origin';
 import { serveWebApp } from './http/static';
 import { authRoutes } from './routes/auth';
@@ -31,6 +32,8 @@ import { passkeysRoutes } from './routes/passkeys';
 import { setupRoutes } from './routes/setup';
 import { storageRoutes } from './routes/storage';
 import { syncRoutes } from './routes/sync';
+import { editsRoutes } from './routes/edits';
+import { workspaceAiRoutes } from './routes/workspace-ai';
 import { workspacesRoutes } from './routes/workspaces';
 import { foldersRoutes } from './routes/folders';
 import { configureFileUrls } from './storage/file-urls';
@@ -38,7 +41,8 @@ import { configureFileUrls } from './storage/file-urls';
 export function createApp(appDeps: AppDeps) {
   configureFileUrls(appDeps.config.secret);
   const live = appDeps.live ?? new LiveHub();
-  const deps: AppDeps = { ...appDeps, live };
+  const presence = appDeps.presence ?? new WorkspacePresence(() => appDeps.clock.now().getTime());
+  const deps: AppDeps = { ...appDeps, live, presence };
   const app = new Hono();
 
   if (deps.config.env === 'development') {
@@ -80,11 +84,13 @@ export function createApp(appDeps: AppDeps) {
     .route('/', filePickerRoutes(deps))
     .route('/', nextcloudRoutes(deps))
     .route('/', syncRoutes(deps))
+    .route('/', editsRoutes(deps))
+    .route('/', workspaceAiRoutes(deps))
     .route('/', storageRoutes(deps))
     .route('/', commentsRoutes(deps))
-    .route('/', liveRoutes(deps, live))
+    .route('/', liveRoutes(deps, live, presence))
     .route('/', mediaRoutes(deps))
-    .route('/', workspacesRoutes(deps))
+    .route('/', workspacesRoutes(deps, presence))
     .route('/', billingRoutes(deps))
     .route('/', foldersRoutes(deps))
     .route('/', authRoutes(deps, gate))

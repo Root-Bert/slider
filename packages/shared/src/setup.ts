@@ -81,6 +81,8 @@ export const setupStatusSchema = z.object({
         nextcloud: z.string(),
       }),
       fields: z.record(setupKeySchema, setupFieldSchema),
+      /** What only the environment switches on, for the legal templates: Stripe and Unsplash. */
+      features: z.object({ payments: z.boolean(), stockPhotos: z.boolean() }),
     })
     .optional(),
 });

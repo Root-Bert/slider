@@ -44,7 +44,11 @@ export type LiveEvent =
   | { type: 'peer'; peer: LivePeer }
   | { type: 'leave'; connectionId: string }
   /** Comments of the deck changed (new, edited, resolved, deleted) – refetch them. */
-  | { type: 'comments' };
+  | { type: 'comments' }
+  /** The deck was edited in Slider (BER-180): its slides and edit state changed – refetch them. */
+  | { type: 'slides' }
+  /** An AI proposal of the deck started, finished or was taken (BER-183) – refetch them. */
+  | { type: 'proposals' };
 
 /** SSE event name all {@link LiveEvent}s are sent under. */
 export const LIVE_EVENT = 'live';

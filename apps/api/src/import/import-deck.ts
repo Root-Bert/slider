@@ -11,7 +11,13 @@ import { importSyncRevision } from '../sync/sync-import';
 import { beginImportAttempt, endImportAttempt, ImportCrashLoop, importsStopping } from './attempts';
 import { deleteOrphanSlides, FINGERPRINT_VERSION, sha256Hex, toShape } from './common';
 import { ConversionAborted, type PptxToPdf } from './libreoffice';
-import { renderSlidePages, slideRenderer, storeSlideRender, type OfficePdf } from './office-pages';
+import {
+  renderSlidePages,
+  slideRenderer,
+  storeSlideRender,
+  type OfficePdf,
+  type SlidePagesDeps,
+} from './office-pages';
 import { isPdfPage, openDeckFile } from './pdf-deck';
 import { PdfTimedOut } from './pdf-jobs';
 import type { OpenPptx } from './pptx';
@@ -42,6 +48,8 @@ export interface ImportDeps {
   renderProgress?: RenderProgress;
   /** `SYNC_POLL_INTERVAL_MS`: the base of the backoff after a failed sync import. */
   syncPollMs?: number;
+  /** Fonts an ODP brings along become its workspace's (see {@link SlidePagesDeps}). */
+  adoptFonts?: SlidePagesDeps['adoptFonts'];
 }
 
 const PPTX_ERROR_MESSAGES: Record<PptxError['code'], string> = {

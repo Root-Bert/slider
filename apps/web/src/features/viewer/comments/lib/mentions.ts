@@ -23,15 +23,16 @@ export function mentionQueryAt(text: string, caret: number): MentionQuery | null
 
 const normalise = (value: string) => value.toLocaleLowerCase('de');
 
-/** People whose name, or a word of it, starts with `query`; in the given order. */
-export function suggestPeople(people: readonly Author[], query: string, limit = 6): Author[] {
+/**
+ * People whose name, or a word of it, starts with `query`; in the given order. All of them – the
+ * menu scrolls: a cap hid the workspace's members behind the deck's own people.
+ */
+export function suggestPeople(people: readonly Author[], query: string): Author[] {
   const wanted = normalise(query);
-  return people
-    .filter((person) => {
-      const name = normalise(person.name);
-      return name.startsWith(wanted) || name.split(/\s+/).some((word) => word.startsWith(wanted));
-    })
-    .slice(0, limit);
+  return people.filter((person) => {
+    const name = normalise(person.name);
+    return name.startsWith(wanted) || name.split(/\s+/).some((word) => word.startsWith(wanted));
+  });
 }
 
 /** Replaces the typed `@…` with `@Name ` and returns the new text and caret. */

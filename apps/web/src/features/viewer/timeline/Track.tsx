@@ -1,13 +1,15 @@
 import { Fragment } from 'react';
 import { threadsOf, useCommentThreads } from '../comments/hooks/useCommentThreads';
-import { gapKey } from '../comments/lib/comment-selectors';
+import { fadesDone, gapKey } from '../comments/lib/comment-selectors';
 import type { TrackLayout } from './lib/timeline-layout';
 import { DeletedSlidesEntry } from '../revisions/DeletedSlidesEntry';
 import { GapDivider } from '../stage/GapDivider';
+import { useLayers } from '../editing/layers/layers-context';
+import { useEditing } from '../editing/editing-context';
 import { SlideFrame } from '../stage/SlideFrame';
 import { useRevisionData } from '../state/revision-data';
 import { useViewerData } from '../state/viewer-data';
-import { isBoxModeActive, useViewerState } from '../state/viewer-state';
+import { isBoxModeActive, useHoveredThreadId, useViewerState } from '../state/viewer-state';
 
 interface TrackProps {
   layout: TrackLayout;
@@ -25,18 +27,23 @@ interface TrackProps {
  */
 export function Track({ layout, range, snap }: TrackProps) {
   const { slides, gapThreads, canComment, viewer } = useViewerData();
+  // Editing: a click picks an element instead of starting a comment.
+  const editing = useEditing();
+  // „Ebenen“: every slide in view shows taken apart in 3D.
+  const layers = useLayers();
   const {
     activeSlideId,
     tool,
     draft,
     focusedThreadId,
-    hoveredThreadId,
     showChanges,
     boxMode,
     boxModeFlipped,
     showGuides,
     slideZooms,
+    statusFilter,
   } = useViewerState();
+  const hoveredThreadId = useHoveredThreadId();
   const boxes = isBoxModeActive({ boxMode, boxModeFlipped });
   const { badges, deletedSlides, deletedThreads, revisionNumber } = useRevisionData();
   const { marksBySlide } = useCommentThreads();
@@ -73,8 +80,9 @@ export function Track({ layout, range, snap }: TrackProps) {
           threads={threads}
           emphasisId={ownsEmphasis ? emphasisId : null}
           draft={draft?.slideId === slide.id ? draft : null}
+          fadeDone={fadesDone(statusFilter)}
           tool={canComment ? tool : null}
-          canSelect={canComment && tool === null}
+          canSelect={canComment && tool === null && !editing.active}
           // Live, not captured once: picking a new colour mid-session changes pen and frames too.
           color={viewer.author.color}
           badge={showChanges ? (badges.get(slide.id) ?? null) : null}
@@ -82,6 +90,7 @@ export function Track({ layout, range, snap }: TrackProps) {
           boxMode={boxes}
           showGuides={showGuides}
           zoom={slideZooms.get(slide.id) ?? null}
+          layered={layers.open}
         />
         <GapDivider
           gapKey={key}

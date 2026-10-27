@@ -1,4 +1,4 @@
-import type { Slide } from '@slider/shared';
+import type { Slide, SlideOperation } from '@slider/shared';
 import {
   memo,
   useCallback,
@@ -8,11 +8,12 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from 'react';
 import { accentColor } from '@/lib/accent';
-import { cn, Icon } from '@/ui';
+import { cn, ContextMenu, Icon, type MenuAction } from '@/ui';
 import { afterCommit, rafThrottle } from '@/lib/dom';
 import { wheelPixels } from '@/lib/wheel';
 import { smoothScroll } from '@/lib/motion';
@@ -24,26 +25,32 @@ import {
   bracketFor,
   edgeScrollSpeed,
   followScrollLeft,
+  insertionAt,
   layoutMinimap,
   MINIMAP_PAD,
   minimapAsTrack,
+  movedOrder,
   scrollLeftForBracket,
   THUMB_GAP,
   THUMB_H,
 } from './lib/minimap';
 import { createClickGuard } from './lib/click-guard';
 import type { TrackLayout } from './lib/timeline-layout';
+import { useEditing } from '../editing/editing-context';
 import { useFrameAspects } from '../state/frame-format';
 import { useRevisionData } from '../state/revision-data';
 import { useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
+import { useViewerToast } from '../state/viewer-toast';
 import { isModKey } from '@/lib/keyboard';
 
 /** A pointer that moves this far after pressing drags the bracket instead of clicking. */
 const DRAG_SLOP = 4;
 /** The bracket stands this far out around the thumbnails it frames. */
 const BRACKET_OUTSET = 3;
+/** On an editable deck the bracket is grabbed this close to its left or right edge. */
+const BRACKET_EDGE = 8;
 /** Width of the "Gelöscht (n)" entry after the last thumbnail (Figma D2). */
 const DELETED_W = 112;
 const DELETED_W_NARROW = 72;
@@ -64,7 +71,17 @@ interface MinimapProps {
  * moves with the split handle, right under the track.
  */
 export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
-  const { slides, gapThreads, threads } = useViewerData();
+  const { slides: deckSlides, gapThreads, threads } = useViewerData();
+  const editing = useEditing();
+  const toast = useViewerToast();
+  // The order of a dropped slide, until the slides come back from the server in it.
+  const [pendingOrder, setPendingOrder] = useState<readonly string[] | null>(null);
+  const slides = useMemo(() => {
+    if (!pendingOrder) return deckSlides;
+    const byId = new Map(deckSlides.map((slide) => [slide.id, slide]));
+    const ordered = pendingOrder.flatMap((id) => byId.get(id) ?? []);
+    return ordered.length === deckSlides.length ? ordered : deckSlides;
+  }, [deckSlides, pendingOrder]);
   // From the comments already here: current after every own action and live event, without
   // downloading the whole slide list again for it.
   const openCounts = useMemo(() => openCountBySlide(threads), [threads]);
@@ -186,6 +203,124 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
     [clickGuard, dispatch, registry],
   );
 
+  // ── Changing the deck's slides (editable decks, BER-181) ──
+  /** File positions (hidden slides included) by slide id. */
+  const fileIndex = useMemo(
+    () => new Map((editing.state?.slides ?? []).map((slide) => [slide.slideId, slide.index])),
+    [editing.state],
+  );
+  const applyTo = (slideId: string, operation: (slideIndex: number) => SlideOperation) => {
+    const index = fileIndex.get(slideId);
+    return index === undefined ? Promise.resolve(false) : editing.apply([operation(index)]);
+  };
+  /** Moves the slide at `from` in front of the one at `insertion` (row positions). */
+  const moveSlide = async (from: number, insertion: number) => {
+    const order = movedOrder(slides, from, insertion);
+    const slide = slides[from];
+    const index = slide && fileIndex.get(slide.id);
+    const next = slides[insertion];
+    const target = next ? fileIndex.get(next.id) : editing.state?.slides.length;
+    if (!order || !slide || index === undefined || target === undefined) return;
+    setPendingOrder(order.map((item) => item.id));
+    await editing.apply([
+      { type: 'moveSlide', slideIndex: index, to: target > index ? target - 1 : target },
+    ]);
+    setPendingOrder(null);
+  };
+
+  // Right click on a thumbnail: hide, delete (moving is by drag).
+  const [menu, setMenu] = useState<{ x: number; y: number; slideId: string } | null>(null);
+  const openMenu = useCallback((slideId: string, event: ReactMouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    let { clientX: x, clientY: y } = event;
+    // From the keyboard (⇧F10, the menu key) it opens on the thumbnail.
+    if (x === 0 && y === 0) {
+      const box = event.currentTarget.getBoundingClientRect();
+      x = box.left + box.width / 2;
+      y = box.top + box.height / 2;
+    }
+    setMenu({ x, y, slideId });
+  }, []);
+  const menuIndex = menu ? slides.findIndex((slide) => slide.id === menu.slideId) : -1;
+  const menuSlide = slides[menuIndex];
+  const busy = editing.busy ? 'Die letzte Änderung läuft noch.' : null;
+  const menuActions: MenuAction[] = menuSlide
+    ? [
+        {
+          label: menuSlide.hidden ? 'Folie einblenden' : 'Folie ausblenden',
+          icon: menuSlide.hidden ? 'visibility' : 'visibilityOff',
+          disabled: !!busy,
+          title: busy ?? undefined,
+          onSelect: () =>
+            void applyTo(menuSlide.id, (slideIndex) => ({
+              type: 'setSlideHidden',
+              slideIndex,
+              hidden: !menuSlide.hidden,
+            })),
+        },
+        {
+          label: 'Folie löschen',
+          icon: 'delete',
+          tone: 'danger',
+          disabled: !!busy || slides.length <= 1,
+          title: busy ?? (slides.length <= 1 ? 'Die letzte Folie bleibt.' : undefined),
+          onSelect: () =>
+            void applyTo(menuSlide.id, (slideIndex) => ({ type: 'deleteSlide', slideIndex })).then(
+              (ok) => ok && toast('Folie gelöscht'),
+            ),
+        },
+      ]
+    : [];
+
+  // On an editable deck a thumbnail dragged sideways moves its slide; the bracket lying over the
+  // thumbnails is then grabbed at its edges.
+  const canReorder = editing.available && !editing.busy;
+  const slideDragRef = useRef<{
+    pointerId: number;
+    slideId: string;
+    startX: number;
+    /** The row's scroll at the press: the thumbnail follows the pointer when the row scrolls. */
+    startScroll: number;
+    clientX: number;
+    active: boolean;
+  }>(null);
+  const [slideDrag, setSlideDrag] = useState<{
+    slideId: string;
+    dx: number;
+    insertion: number;
+  } | null>(null);
+  const pressSlide = useCallback(
+    (slideId: string, event: ReactPointerEvent<HTMLElement>) => {
+      if (event.pointerType === 'touch' || event.button !== 0) return;
+      // At the bracket's edges the row's own handler grabs the bracket.
+      if (onBracketEdge(bracketRef.current, event.clientX)) return;
+      event.stopPropagation();
+      clickGuard.reset();
+      slideDragRef.current = {
+        pointerId: event.pointerId,
+        slideId,
+        startX: event.clientX,
+        startScroll: listRef.current?.scrollLeft ?? 0,
+        clientX: event.clientX,
+        active: false,
+      };
+    },
+    [clickGuard],
+  );
+  /** How far the dragged thumbnail is off its place, and where its middle would drop it. */
+  const slideDragAt = (drag: NonNullable<typeof slideDragRef.current>) => {
+    const list = listRef.current;
+    const from = slides.findIndex((slide) => slide.id === drag.slideId);
+    const box = mini?.slides[from];
+    if (!list || !mini || !box) return null;
+    const dx = drag.clientX - drag.startX + list.scrollLeft - drag.startScroll;
+    return { from, dx, insertion: insertionAt(mini.slides, box.x + box.w / 2 + dx) };
+  };
+  const showSlideDrag = (drag: NonNullable<typeof slideDragRef.current>) => {
+    const at = slideDragAt(drag);
+    if (at) setSlideDrag({ slideId: drag.slideId, dx: at.dx, insertion: at.insertion });
+  };
+
   // Dragging the bracket scrolls the track. Mouse and pen only: touch pans the row natively.
   // The pointer counts as inside the row, so the bracket never leaves the visible part of it.
   const contentX = (clientX: number) => {
@@ -200,6 +335,9 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
     const box = bracket.getBoundingClientRect();
     return clientX >= box.left && clientX <= box.right;
   };
+  /** Where a press grabs the bracket: anywhere on it, or only at its edges while thumbnails move slides. */
+  const grabsBracket = (clientX: number) =>
+    canReorder ? onBracketEdge(bracketRef.current, clientX) : overBracket(clientX);
   const dragTo = (clientX: number) => {
     const drag = dragRef.current;
     const scroller = scrollerRef.current;
@@ -219,15 +357,18 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
   // A row that scrolls (long deck) scrolls along while the bracket is held near its edges.
   const [dragging, setDragging] = useState(false);
   const autoScrollStep = useEffectEvent(() => {
-    const drag = dragRef.current;
+    const slideDrag = slideDragRef.current?.active ? slideDragRef.current : null;
+    const drag = slideDrag ?? (dragRef.current?.active ? dragRef.current : null);
     const list = listRef.current;
-    if (!drag?.active || !list) return;
+    if (!drag || !list) return;
     const max = list.scrollWidth - list.clientWidth;
     const speed = edgeScrollSpeed(drag.clientX, list.getBoundingClientRect());
     if (speed === 0 || max <= 1) return;
     const before = list.scrollLeft;
     list.scrollLeft = Math.min(Math.max(before + speed, 0), max);
-    if (list.scrollLeft !== before) dragTo(drag.clientX);
+    if (list.scrollLeft === before) return;
+    if (slideDrag) showSlideDrag(slideDrag);
+    else dragTo(drag.clientX);
   });
   useEffect(() => {
     if (!dragging) return;
@@ -242,7 +383,7 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
     clickGuard.reset();
     const bracket = bracketRef.current;
     if (event.pointerType === 'touch' || event.button !== 0 || !bracket) return;
-    if (!overBracket(event.clientX)) return;
+    if (!grabsBracket(event.clientX)) return;
     const box = bracket.getBoundingClientRect();
     const centre = contentX((box.left + box.right) / 2);
     dragRef.current = {
@@ -257,8 +398,23 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
     const drag = dragRef.current;
     const scroller = scrollerRef.current;
     const list = event.currentTarget;
+    const slideDrag = slideDragRef.current;
+    if (slideDrag) {
+      if (slideDrag.pointerId !== event.pointerId) return;
+      if (!slideDrag.active) {
+        if (Math.abs(event.clientX - slideDrag.startX) < DRAG_SLOP) return;
+        slideDrag.active = true;
+        list.setPointerCapture(event.pointerId);
+        setGrab(list, 'drag');
+        setDragging(true);
+      }
+      slideDrag.clientX = event.clientX;
+      showSlideDrag(slideDrag);
+      return;
+    }
     if (!drag) {
-      if (event.pointerType !== 'touch') setGrab(list, overBracket(event.clientX) ? 'hover' : null);
+      if (event.pointerType !== 'touch')
+        setGrab(list, grabsBracket(event.clientX) ? 'hover' : null);
       return;
     }
     if (drag.pointerId !== event.pointerId || !scroller || !layout || !miniTrack) return;
@@ -273,16 +429,43 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
     dragTo(event.clientX);
   };
   const onPointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const slideDrag = slideDragRef.current;
+    if (slideDrag?.pointerId === event.pointerId) {
+      slideDragRef.current = null;
+      setDragging(false);
+      setSlideDrag(null);
+      setGrab(event.currentTarget, null);
+      if (!slideDrag.active) return;
+      clickGuard.armAfterDrag();
+      slideDrag.clientX = event.clientX;
+      const at = slideDragAt(slideDrag);
+      if (event.type === 'pointerup' && at) void moveSlide(at.from, at.insertion);
+      return;
+    }
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     if (drag.active) clickGuard.armAfterDrag();
     dragRef.current = null;
     setDragging(false);
-    setGrab(event.currentTarget, overBracket(event.clientX) ? 'hover' : null);
+    setGrab(event.currentTarget, grabsBracket(event.clientX) ? 'hover' : null);
     placeBracket(true);
   };
 
   const activeIndex = activeSlideId ? slides.findIndex((slide) => slide.id === activeSlideId) : -1;
+  // While a slide is dragged the others make room: each slides to where the drop would put it.
+  const dragFrom = slideDrag ? slides.findIndex((slide) => slide.id === slideDrag.slideId) : -1;
+  const preview =
+    slideDrag && mini && dragFrom !== -1 ? movedOrder(slides, dragFrom, slideDrag.insertion) : null;
+  const previewX = new Map<string, number>();
+  if (preview && mini) {
+    let x = 0;
+    for (const slide of preview) {
+      previewX.set(slide.id, x);
+      x += (mini.slides[slides.indexOf(slide)]?.w ?? 0) + THUMB_GAP;
+    }
+  }
+  // Only around a drag: a resize must not lag behind the bracket.
+  const animate = slideDrag !== null || pendingOrder !== null;
 
   return (
     // Its bracket moves with every frame of a sideways scroll: no reason to re-route the lines.
@@ -303,7 +486,8 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
           // A press that leaves the row before it became a drag (not captured yet): its release
           // never reaches the row, and a later hover must not drag the bracket.
           if (dragRef.current && !dragRef.current.active) dragRef.current = null;
-          if (!dragRef.current) setGrab(event.currentTarget, null);
+          if (slideDragRef.current && !slideDragRef.current.active) slideDragRef.current = null;
+          if (!dragRef.current && !slideDragRef.current) setGrab(event.currentTarget, null);
         }}
       >
         {mini && (
@@ -322,7 +506,10 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
                   key={slide.id}
                   slide={slide}
                   index={index}
-                  x={MINIMAP_PAD + box.x}
+                  x={
+                    MINIMAP_PAD +
+                    (slide.id === slideDrag?.slideId ? box.x : (previewX.get(slide.id) ?? box.x))
+                  }
                   top={(rowH - mini.h) / 2}
                   w={box.w}
                   h={mini.h}
@@ -330,7 +517,11 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
                   openCount={openCounts.get(slide.id) ?? 0}
                   gapColor={gapColor}
                   badge={showChanges ? (badges.get(slide.id) ?? null) : null}
+                  dragOffset={slideDrag?.slideId === slide.id ? slideDrag.dx : null}
+                  animate={animate}
                   onSelect={select}
+                  onPress={canReorder ? pressSlide : undefined}
+                  onMenu={editing.available ? openMenu : undefined}
                 />
               );
             })}
@@ -365,6 +556,7 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
                   <span className="text-fg-subtle tabular-nums">({deletedSlides.length})</span>
                   {!narrow && <Icon name="chevronRight" size={14} className="-mr-1 shrink-0" />}
                 </button>
+                <BracketDim x={MINIMAP_PAD + mini.contentW + THUMB_GAP} />
               </li>
             )}
           </ol>
@@ -373,9 +565,9 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
           ref={bracketRef}
           aria-hidden
           data-minimap-bracket
-          // A window onto the deck: clear inside, everything outside dimmed by the shadow's spread
-          // (the row's overflow clips it), still readable.
-          className="pointer-events-none absolute top-0 left-0 border-[1.5px] border-fg-muted shadow-[0_0_0_1px_rgb(0_0_0/0.5),0_0_12px_var(--color-hairline),0_0_0_9999px_var(--color-well-dark)] will-change-transform"
+          // A window onto the deck: clear inside, the thumbnails outside dimmed (`BracketDim`),
+          // still readable. Only they: the gaps stay clear, connector lines show through them.
+          className="pointer-events-none absolute top-0 left-0 border-[1.5px] border-fg-muted shadow-[0_0_0_1px_rgb(0_0_0/0.5),0_0_12px_var(--color-hairline)] will-change-transform"
           style={{
             // Concentric with the thumbnails it frames.
             borderRadius: `calc(var(--radius-thumb) + ${BRACKET_OUTSET}px)`,
@@ -384,6 +576,14 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
           }}
         />
       </div>
+      {menu && menuSlide && (
+        <ContextMenu
+          label={`Aktionen für ${slideLabel(menuIndex)}`}
+          actions={menuActions}
+          at={{ x: menu.x, y: menu.y }}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </nav>
   );
 }
@@ -430,12 +630,44 @@ function positionBracket({
           list.scrollWidth - list.clientWidth,
         )
       : null;
+  const from = MINIMAP_PAD + left - BRACKET_OUTSET;
+  const to = from + width + 2 * BRACKET_OUTSET;
   return () => {
     bracket.hidden = all;
-    bracket.style.transform = `translateX(${MINIMAP_PAD + left - BRACKET_OUTSET}px)`;
+    bracket.style.transform = `translateX(${from}px)`;
     bracket.style.width = `${width + 2 * BRACKET_OUTSET}px`;
+    // The window's edges for `BracketDim`; the whole deck in view dims nothing.
+    list.style.setProperty('--bracket-from', `${all ? -DIM_ALL : from}px`);
+    list.style.setProperty('--bracket-to', `${all ? DIM_ALL : to}px`);
     if (next !== null && Math.abs(next - rowLeft) >= 1) list.scrollLeft = next;
   };
+}
+
+/** Bracket edges far enough out that nothing in the row lies outside the window. */
+const DIM_ALL = 1e6;
+
+/**
+ * Dims what of a thumbnail (at `x` in the row) lies outside the bracket, as the bracket's
+ * window would: a gradient from the edges `positionBracket` sets on the row, so a scroll moves
+ * it without a render. Until they are set the gradient is invalid and nothing is dimmed.
+ */
+function BracketDim({ x }: { x: number }) {
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute inset-0 rounded-thumb"
+      style={{
+        background: `linear-gradient(to right, var(--color-well-dark) calc(var(--bracket-from) - ${x}px), transparent calc(var(--bracket-from) - ${x}px) calc(var(--bracket-to) - ${x}px), var(--color-well-dark) calc(var(--bracket-to) - ${x}px))`,
+      }}
+    />
+  );
+}
+
+/** The pointer is at the bracket's left or right edge. */
+function onBracketEdge(bracket: HTMLElement | null, clientX: number): boolean {
+  if (!bracket || bracket.hidden) return false;
+  const box = bracket.getBoundingClientRect();
+  return Math.min(Math.abs(clientX - box.left), Math.abs(clientX - box.right)) <= BRACKET_EDGE;
 }
 
 function setGrab(list: HTMLElement, state: 'hover' | 'drag' | null) {
@@ -457,7 +689,15 @@ interface ThumbnailProps {
   gapColor: string | null;
   /** Change of the latest revision while changes are shown (Figma D2). */
   badge: SlideBadge | null;
+  /** Pointer offset while the thumbnail is dragged to another place, else `null`. */
+  dragOffset: number | null;
+  /** Glides to a new place (around a drag) instead of jumping. */
+  animate: boolean;
   onSelect: (slideId: string) => void;
+  /** A press that may become a drag moving the slide (editable decks). */
+  onPress?: (slideId: string, event: ReactPointerEvent<HTMLElement>) => void;
+  /** Right click: the slide's menu (editable decks); without it the browser's shows. */
+  onMenu?: (slideId: string, event: ReactMouseEvent<HTMLElement>) => void;
 }
 
 const Thumbnail = memo(function Thumbnail({
@@ -471,23 +711,48 @@ const Thumbnail = memo(function Thumbnail({
   openCount: count,
   gapColor,
   badge,
+  dragOffset,
+  animate,
   onSelect,
+  onPress,
+  onMenu,
 }: ThumbnailProps) {
+  const dragged = dragOffset !== null;
   const label = `${slideLabel(index)}${slide.title ? `: ${slide.title}` : ''}${
     count ? ` – ${count} offene${count === 1 ? 'r' : ''} Kommentar${count === 1 ? '' : 'e'}` : ''
   }${badge ? ` – ${badge.description}` : ''}`;
   return (
-    <li data-thumb={slide.id} className="absolute" style={{ left: x, top, width: w, height: h }}>
+    <li
+      data-thumb={slide.id}
+      className={cn(
+        'absolute',
+        dragged
+          ? 'z-10'
+          : animate &&
+              'transition-[left,transform] duration-200 ease-out motion-reduce:transition-none',
+      )}
+      style={{
+        left: x,
+        top,
+        width: w,
+        height: h,
+        transform: dragged ? `translateX(${dragOffset}px)` : undefined,
+      }}
+    >
       <button
         type="button"
         onClick={() => onSelect(slide.id)}
+        onPointerDown={onPress && ((event) => onPress(slide.id, event))}
+        onContextMenu={onMenu && ((event) => onMenu(slide.id, event))}
         aria-label={label}
         aria-current={isActive ? 'true' : undefined}
-        title={label}
+        title={dragged ? undefined : label}
         className={cn(
           'relative block size-full overflow-hidden rounded-thumb bg-placeholder transition-shadow focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-white',
           'hover:shadow-[0_0_0_2px_var(--color-fg-faint)]',
+          onPress && 'cursor-grab',
           slide.hidden && 'opacity-40',
+          dragged && 'shadow-[0_0_0_2px_var(--color-fg-muted),0_8px_24px_rgb(0_0_0/0.5)]',
         )}
       >
         <img
@@ -516,6 +781,7 @@ const Thumbnail = memo(function Thumbnail({
           </span>
         )}
       </button>
+      <BracketDim x={x + (dragOffset ?? 0)} />
       {gapColor && (
         <span
           aria-hidden

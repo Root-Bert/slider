@@ -82,6 +82,11 @@ export interface Config {
    */
   libreOfficeTimeoutMs?: number;
   /**
+   * `LIBREOFFICE_WORKERS`: LibreOffices kept running to draw edited slides (`office-pool.ts`) –
+   * each a few hundred MB, busy on one core while it draws. `0`: every drawing starts its own.
+   */
+  libreOfficeWorkers?: number;
+  /**
    * `PDF_TIMEOUT_MS`: how long reading one PDF (and drawing its slide images) may take before it
    * is cut off, plus a second per page. A PDF that takes longer fails its import.
    */
@@ -91,6 +96,19 @@ export interface Config {
    * (~1 CPU core and up to 1 GB RAM). Imports of one deck always run one after another.
    */
   importWorkers?: number;
+  /** Stock photos from Unsplash; `null` (or absent) until UNSPLASH_ACCESS_KEY is set. */
+  unsplash?: UnsplashConfig | null;
+  /**
+   * `AI_ALLOW_INTERNAL_URLS`: a workspace's OpenAI-compatible AI service may sit on an internal
+   * address or plain http – a local Ollama or vLLM. Off by default: the server would otherwise
+   * reach into its own network for whoever administers a workspace.
+   */
+  aiAllowInternalUrls?: boolean;
+}
+
+export interface UnsplashConfig {
+  /** The application's Access Key – only ever used by the server, which searches for everyone. */
+  accessKey: string;
 }
 
 export interface RetentionConfig {
@@ -307,8 +325,11 @@ const envSchema = z.object({
   STRIPE_PRICE_ID: z.string().optional(),
   LIBREOFFICE_PATH: z.string().min(1).optional(),
   LIBREOFFICE_TIMEOUT_MS: z.coerce.number().int().min(10_000).default(LIBREOFFICE_TIMEOUT_MS),
+  LIBREOFFICE_WORKERS: z.coerce.number().int().min(0).max(32).default(2),
   PDF_TIMEOUT_MS: z.coerce.number().int().min(10_000).default(PDF_TIMEOUT_MS),
   IMPORT_WORKERS: z.coerce.number().int().min(1).max(16).default(1),
+  UNSPLASH_ACCESS_KEY: z.string().min(10).optional(),
+  AI_ALLOW_INTERNAL_URLS: booleanEnv.optional(),
 });
 
 /** Env value → limit: unset keeps the default, `0` means unlimited (`null`). */
@@ -547,8 +568,11 @@ export function loadConfig(
       ? path.resolve(REPO_ROOT, expandHome(parsed.LIBREOFFICE_PATH))
       : null,
     libreOfficeTimeoutMs: parsed.LIBREOFFICE_TIMEOUT_MS,
+    libreOfficeWorkers: parsed.LIBREOFFICE_WORKERS,
     pdfTimeoutMs: parsed.PDF_TIMEOUT_MS,
     importWorkers: parsed.IMPORT_WORKERS,
+    unsplash: parsed.UNSPLASH_ACCESS_KEY ? { accessKey: parsed.UNSPLASH_ACCESS_KEY } : null,
+    aiAllowInternalUrls: parsed.AI_ALLOW_INTERNAL_URLS ?? false,
   };
 }
 

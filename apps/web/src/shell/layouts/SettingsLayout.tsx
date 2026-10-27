@@ -1,9 +1,11 @@
 import type { ReactNode } from 'react';
 import type { To } from 'react-router';
-import { cn, PageHeader, Toast, type ToastMessage } from '@/ui';
+import { cn, PageHeader, Toast, type IconName, type ToastMessage } from '@/ui';
 import { LegalLinks } from '@/features/legal';
+import { routes } from '@/lib/routes';
 import { AppHeader } from '../AppHeader';
 import { LogoHeader } from './LogoHeader';
+import { SectionNav } from './SectionNav';
 
 export interface SettingsLayoutProps {
   /** Document title (`<title>`), e.g. "Einstellungen | Slider". */
@@ -23,6 +25,13 @@ export interface SettingsLayoutProps {
   truncate?: boolean;
   /** `app`: the member area's `AppHeader`. `logo`: only the logo (setup, before any login). */
   header?: 'app' | 'logo';
+  /**
+   * Its sections at the side (from `xl` on), each to jump to – every `id` that of an element
+   * wrapping the section (`SectionNav`).
+   */
+  nav?: readonly { id: string; title: string; icon: IconName }[];
+  /** Where the logo leads; the reviews by default. */
+  logoLink?: { to: string; label: string };
   /** The page's toast (from `useToast`), rendered at the bottom. */
   toast?: ToastMessage | null;
   /** The sections, stacked with 24px gaps in a 720px column. */
@@ -44,6 +53,8 @@ export function SettingsLayout({
   width = 'default',
   truncate = true,
   header = 'app',
+  nav,
+  logoLink = { to: routes.reviews(), label: 'Slider – Reviews' },
   toast,
   children,
 }: SettingsLayoutProps) {
@@ -51,7 +62,12 @@ export function SettingsLayout({
   return (
     <div className={logoOnly ? 'dot-grid flex min-h-full flex-col' : 'dot-grid min-h-full'}>
       <title>{docTitle}</title>
-      {logoOnly ? <LogoHeader /> : <AppHeader />}
+      {logoOnly ? (
+        // Home from here too: signed out, the reviews send to the login.
+        <LogoHeader logoLink={logoLink} />
+      ) : (
+        <AppHeader logoLink={logoLink} />
+      )}
       <main
         className={cn(
           'flex justify-center px-4 pt-2 pb-16',
@@ -73,7 +89,17 @@ export function SettingsLayout({
             actions={actions}
             truncate={truncate}
           />
-          {children}
+          {nav ? (
+            <div className="relative flex flex-col gap-6">
+              {/* Beside the column, where the wide screen has room; out of the flow. */}
+              <div className="absolute inset-y-0 right-full mr-12 hidden w-44 xl:block">
+                <SectionNav sections={nav} />
+              </div>
+              {children}
+            </div>
+          ) : (
+            children
+          )}
           <LegalLinks className="pt-4" />
         </div>
       </main>

@@ -97,13 +97,17 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
                   : 'sm:w-1/2',
             gap,
           ),
-          style: {
-            transition: [
-              `width ${PICKER_EXPAND_MS}ms var(--ease-sheet)`,
-              `padding ${PICKER_EXPAND_MS}ms var(--ease-sheet)`,
-              aside ? 'opacity 120ms ease-out' : `opacity 180ms ease-out 200ms`,
-            ].join(', '),
-          },
+          // Only once a picker has opened: on the first load the sources come in as their
+          // queries answer, and the slots should just take their widths, not slide there.
+          style: hasPicked
+            ? {
+                transition: [
+                  `width ${PICKER_EXPAND_MS}ms var(--ease-sheet)`,
+                  `padding ${PICKER_EXPAND_MS}ms var(--ease-sheet)`,
+                  aside ? 'opacity 120ms ease-out' : `opacity 180ms ease-out 200ms`,
+                ].join(', '),
+              }
+            : undefined,
         }
       : { className: 'flex w-full flex-col' };
   };

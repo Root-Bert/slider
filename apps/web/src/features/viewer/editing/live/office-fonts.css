@@ -1,0 +1,1031 @@
+/* The live editor's fonts (fonts.ts `officeFontFaces()`; office-fonts.test.ts keeps them equal). */
+@font-face {
+  font-family: 'Slider Carlito';
+  src: url('/fonts/office/Carlito-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 75%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Carlito';
+  src: url('/fonts/office/Carlito-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 75%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Carlito';
+  src: url('/fonts/office/Carlito-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 75%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Carlito';
+  src: url('/fonts/office/Carlito-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 75%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Caladea';
+  src: url('/fonts/office/Caladea-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 95%;
+  descent-override: 22.2%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Caladea';
+  src: url('/fonts/office/Caladea-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 95%;
+  descent-override: 22.2%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Caladea';
+  src: url('/fonts/office/Caladea-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 95%;
+  descent-override: 22.2%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Caladea';
+  src: url('/fonts/office/Caladea-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 95%;
+  descent-override: 22.2%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Liberation Sans';
+  src: url('/fonts/office/LiberationSans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 90.5273%;
+  descent-override: 21.1914%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Liberation Sans';
+  src: url('/fonts/office/LiberationSans-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 90.5273%;
+  descent-override: 21.1914%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Liberation Sans';
+  src: url('/fonts/office/LiberationSans-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 90.5273%;
+  descent-override: 21.1914%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Liberation Sans';
+  src: url('/fonts/office/LiberationSans-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 90.5273%;
+  descent-override: 21.1914%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Liberation Serif';
+  src: url('/fonts/office/LiberationSerif-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 89.1113%;
+  descent-override: 21.6309%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Liberation Serif';
+  src: url('/fonts/office/LiberationSerif-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 89.1113%;
+  descent-override: 21.6309%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Liberation Serif';
+  src: url('/fonts/office/LiberationSerif-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 89.1113%;
+  descent-override: 21.6309%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Liberation Serif';
+  src: url('/fonts/office/LiberationSerif-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 89.1113%;
+  descent-override: 21.6309%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Liberation Mono';
+  src: url('/fonts/office/LiberationMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 83.252%;
+  descent-override: 30.0293%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Liberation Mono';
+  src: url('/fonts/office/LiberationMono-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 83.252%;
+  descent-override: 30.0293%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Liberation Mono';
+  src: url('/fonts/office/LiberationMono-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 83.252%;
+  descent-override: 30.0293%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Liberation Mono';
+  src: url('/fonts/office/LiberationMono-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 83.252%;
+  descent-override: 30.0293%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider DejaVu Sans';
+  src: url('/fonts/office/DejaVuSans.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 92.8223%;
+  descent-override: 23.584%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider DejaVu Sans';
+  src: url('/fonts/office/DejaVuSans-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 92.8223%;
+  descent-override: 23.584%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider DejaVu Sans';
+  src: url('/fonts/office/DejaVuSans-Oblique.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 92.8223%;
+  descent-override: 23.584%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider DejaVu Sans';
+  src: url('/fonts/office/DejaVuSans-BoldOblique.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 92.8223%;
+  descent-override: 23.584%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider OpenSymbol';
+  src: url('/fonts/office/opens___.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 69.3359%;
+  descent-override: 21.582%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Roboto';
+  src: url('/fonts/office/Roboto-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 92.7734%;
+  descent-override: 24.4141%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Roboto';
+  src: url('/fonts/office/Roboto-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 92.7734%;
+  descent-override: 24.4141%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Roboto';
+  src: url('/fonts/office/Roboto-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 92.7734%;
+  descent-override: 24.4141%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Roboto';
+  src: url('/fonts/office/Roboto-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 92.7734%;
+  descent-override: 24.4141%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Open Sans';
+  src: url('/fonts/office/OpenSans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 106.8848%;
+  descent-override: 29.2969%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Open Sans';
+  src: url('/fonts/office/OpenSans-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 106.8848%;
+  descent-override: 29.2969%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Open Sans';
+  src: url('/fonts/office/OpenSans-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 106.8848%;
+  descent-override: 29.2969%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Open Sans';
+  src: url('/fonts/office/OpenSans-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 106.8848%;
+  descent-override: 29.2969%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Noto Sans';
+  src: url('/fonts/office/NotoSans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 106.9%;
+  descent-override: 29.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Noto Sans';
+  src: url('/fonts/office/NotoSans-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 106.9%;
+  descent-override: 29.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Noto Sans';
+  src: url('/fonts/office/NotoSans-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 106.9%;
+  descent-override: 29.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Noto Sans';
+  src: url('/fonts/office/NotoSans-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 106.9%;
+  descent-override: 29.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Montserrat';
+  src: url('/fonts/office/Montserrat-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 96.8%;
+  descent-override: 25.1%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Montserrat';
+  src: url('/fonts/office/Montserrat-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 96.8%;
+  descent-override: 25.1%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Montserrat';
+  src: url('/fonts/office/Montserrat-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 96.8%;
+  descent-override: 25.1%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Montserrat';
+  src: url('/fonts/office/Montserrat-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 96.8%;
+  descent-override: 25.1%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Inter';
+  src: url('/fonts/office/Inter-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 96.875%;
+  descent-override: 24.1211%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Inter';
+  src: url('/fonts/office/Inter-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 96.875%;
+  descent-override: 24.1211%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Inter';
+  src: url('/fonts/office/Inter-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 96.875%;
+  descent-override: 24.1211%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Inter';
+  src: url('/fonts/office/Inter-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 96.875%;
+  descent-override: 24.1211%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Lato';
+  src: url('/fonts/office/Lato-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 98.7%;
+  descent-override: 21.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Lato';
+  src: url('/fonts/office/Lato-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 98.7%;
+  descent-override: 21.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Lato';
+  src: url('/fonts/office/Lato-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 98.7%;
+  descent-override: 21.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Lato';
+  src: url('/fonts/office/Lato-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 98.7%;
+  descent-override: 21.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Poppins';
+  src: url('/fonts/office/Poppins-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 105%;
+  descent-override: 35%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Poppins';
+  src: url('/fonts/office/Poppins-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 105%;
+  descent-override: 35%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Poppins';
+  src: url('/fonts/office/Poppins-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 105%;
+  descent-override: 35%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Poppins';
+  src: url('/fonts/office/Poppins-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 105%;
+  descent-override: 35%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Roboto Condensed';
+  src: url('/fonts/office/RobotoCondensed-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 92.7734%;
+  descent-override: 24.4141%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Roboto Condensed';
+  src: url('/fonts/office/RobotoCondensed-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 92.7734%;
+  descent-override: 24.4141%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Roboto Condensed';
+  src: url('/fonts/office/RobotoCondensed-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 92.7734%;
+  descent-override: 24.4141%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Roboto Condensed';
+  src: url('/fonts/office/RobotoCondensed-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 92.7734%;
+  descent-override: 24.4141%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Oswald';
+  src: url('/fonts/office/Oswald-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 119.3%;
+  descent-override: 28.9%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Oswald';
+  src: url('/fonts/office/Oswald-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 119.3%;
+  descent-override: 28.9%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Raleway';
+  src: url('/fonts/office/Raleway-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 94%;
+  descent-override: 23.4%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Raleway';
+  src: url('/fonts/office/Raleway-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 94%;
+  descent-override: 23.4%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Raleway';
+  src: url('/fonts/office/Raleway-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 94%;
+  descent-override: 23.4%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Raleway';
+  src: url('/fonts/office/Raleway-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 94%;
+  descent-override: 23.4%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Nunito';
+  src: url('/fonts/office/Nunito-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 101.1%;
+  descent-override: 35.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Nunito';
+  src: url('/fonts/office/Nunito-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 101.1%;
+  descent-override: 35.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Nunito';
+  src: url('/fonts/office/Nunito-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 101.1%;
+  descent-override: 35.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Nunito';
+  src: url('/fonts/office/Nunito-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 101.1%;
+  descent-override: 35.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Ubuntu';
+  src: url('/fonts/office/Ubuntu-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 93.2%;
+  descent-override: 18.9%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Ubuntu';
+  src: url('/fonts/office/Ubuntu-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 93.2%;
+  descent-override: 18.9%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Ubuntu';
+  src: url('/fonts/office/Ubuntu-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 93.2%;
+  descent-override: 18.9%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Ubuntu';
+  src: url('/fonts/office/Ubuntu-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 93.2%;
+  descent-override: 18.9%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Rubik';
+  src: url('/fonts/office/Rubik-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 93.5%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Rubik';
+  src: url('/fonts/office/Rubik-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 93.5%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Rubik';
+  src: url('/fonts/office/Rubik-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 93.5%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Rubik';
+  src: url('/fonts/office/Rubik-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 93.5%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Work Sans';
+  src: url('/fonts/office/WorkSans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 93%;
+  descent-override: 24.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Work Sans';
+  src: url('/fonts/office/WorkSans-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 93%;
+  descent-override: 24.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Work Sans';
+  src: url('/fonts/office/WorkSans-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 93%;
+  descent-override: 24.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Work Sans';
+  src: url('/fonts/office/WorkSans-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 93%;
+  descent-override: 24.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider PT Sans';
+  src: url('/fonts/office/PTSans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 101.8%;
+  descent-override: 27.6%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider PT Sans';
+  src: url('/fonts/office/PTSans-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 101.8%;
+  descent-override: 27.6%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider PT Sans';
+  src: url('/fonts/office/PTSans-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 101.8%;
+  descent-override: 27.6%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider PT Sans';
+  src: url('/fonts/office/PTSans-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 101.8%;
+  descent-override: 27.6%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Playfair Display';
+  src: url('/fonts/office/PlayfairDisplay-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 108.2%;
+  descent-override: 25.1%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Playfair Display';
+  src: url('/fonts/office/PlayfairDisplay-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 108.2%;
+  descent-override: 25.1%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Playfair Display';
+  src: url('/fonts/office/PlayfairDisplay-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 108.2%;
+  descent-override: 25.1%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Playfair Display';
+  src: url('/fonts/office/PlayfairDisplay-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 108.2%;
+  descent-override: 25.1%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Merriweather';
+  src: url('/fonts/office/Merriweather-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 98.4%;
+  descent-override: 27.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Merriweather';
+  src: url('/fonts/office/Merriweather-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 98.4%;
+  descent-override: 27.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Merriweather';
+  src: url('/fonts/office/Merriweather-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 98.4%;
+  descent-override: 27.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Merriweather';
+  src: url('/fonts/office/Merriweather-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 98.4%;
+  descent-override: 27.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Lora';
+  src: url('/fonts/office/Lora-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100.6%;
+  descent-override: 27.4%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Lora';
+  src: url('/fonts/office/Lora-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100.6%;
+  descent-override: 27.4%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Lora';
+  src: url('/fonts/office/Lora-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 100.6%;
+  descent-override: 27.4%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Lora';
+  src: url('/fonts/office/Lora-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 100.6%;
+  descent-override: 27.4%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Noto Serif';
+  src: url('/fonts/office/NotoSerif-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 106.9%;
+  descent-override: 29.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Noto Serif';
+  src: url('/fonts/office/NotoSerif-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 106.9%;
+  descent-override: 29.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Noto Serif';
+  src: url('/fonts/office/NotoSerif-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 106.9%;
+  descent-override: 29.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Noto Serif';
+  src: url('/fonts/office/NotoSerif-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 106.9%;
+  descent-override: 29.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Roboto Mono';
+  src: url('/fonts/office/RobotoMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 104.7852%;
+  descent-override: 27.0996%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Roboto Mono';
+  src: url('/fonts/office/RobotoMono-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 104.7852%;
+  descent-override: 27.0996%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Roboto Mono';
+  src: url('/fonts/office/RobotoMono-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 104.7852%;
+  descent-override: 27.0996%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Roboto Mono';
+  src: url('/fonts/office/RobotoMono-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 104.7852%;
+  descent-override: 27.0996%;
+  line-gap-override: 0%;
+}

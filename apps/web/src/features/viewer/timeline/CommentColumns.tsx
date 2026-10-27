@@ -9,6 +9,7 @@ import { followConnectors } from '../connectors/hooks/useConnectorLayout';
 import { bandCapacity, brickLayout, planBands } from '../connectors/lib/card-layout';
 import {
   countLeftExits,
+  fadesDone,
   gapKey,
   sortThreadsByAnchor,
   sortThreadsClockwise,
@@ -24,7 +25,7 @@ import {
 } from './lib/timeline-layout';
 import { useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
-import { useViewerDispatch, useViewerState } from '../state/viewer-state';
+import { useHoveredThreadId, useViewerDispatch, useViewerState } from '../state/viewer-state';
 import { CommentBubble } from '../comments/CommentBubble';
 import { CommentCard, type CardEmphasis } from '../comments/CommentCard';
 import { CompactCard } from '../comments/CompactCard';
@@ -247,7 +248,6 @@ function BrickCards({
   const listRef = useRef<HTMLUListElement>(null);
   const [heights, setHeights] = useState<ReadonlyMap<string, number>>(new Map());
   const placedRef = useRef<ReadonlyMap<string, Placed>>(new Map());
-  const cardProps = useCardProps();
 
   useLayoutEffect(() => {
     const list = listRef.current;
@@ -329,7 +329,6 @@ function BrickCards({
     <ul ref={listRef} data-brick-list className="relative" style={{ height: layout.height }}>
       {ordered.map((thread, index) => {
         const place = layout.cards[index]!;
-        const props = cardProps(thread);
         return (
           <li
             key={thread.id}
@@ -340,17 +339,37 @@ function BrickCards({
             className="absolute"
             style={{ left: place.left, top: place.top, width: place.width }}
           >
-            {compact ? (
-              <CompactCard thread={thread} deckId={props.deckId} emphasis={props.emphasis} />
-            ) : (
-              <CommentCard thread={thread} {...props} />
-            )}
+            <BrickCard thread={thread} compact={compact} />
           </li>
         );
       })}
     </ul>
   );
 }
+
+/**
+ * One card of the brick list. It reads the emphasis itself, so hovering re-renders the cards
+ * only – not the list, whose glide effect reads the layout after every render.
+ */
+const BrickCard = memo(function BrickCard({
+  thread,
+  compact,
+}: {
+  thread: Thread;
+  compact: boolean;
+}) {
+  const props = useCardProps()(thread);
+  return compact ? (
+    <CompactCard
+      thread={thread}
+      deckId={props.deckId}
+      emphasis={props.emphasis}
+      fadeDone={props.fadeDone}
+    />
+  ) : (
+    <CommentCard thread={thread} {...props} />
+  );
+});
 
 /** Phones: the slide's cards stacked at full column width (no connector lines there). */
 function StackedCards({ slide, threads }: { slide: Slide; threads: Thread[] }) {
@@ -410,10 +429,11 @@ const GapColumn = memo(function GapColumn({
   );
 });
 
-/** Props every card gets from the viewer state (emphasis, permissions, gap location). */
+/** Props every card gets from the viewer state (emphasis, permissions, gap location, fading). */
 function useCardProps() {
   const { deck, canComment, slideIndex } = useViewerData();
-  const { focusedThreadId, hoveredThreadId, draft } = useViewerState();
+  const { focusedThreadId, draft, statusFilter } = useViewerState();
+  const hoveredThreadId = useHoveredThreadId();
   const indexOf = (slideId: string) => slideIndex.get(slideId);
 
   const emphasisOf = (thread: Thread): CardEmphasis => {
@@ -427,6 +447,7 @@ function useCardProps() {
     emphasis: emphasisOf(thread),
     canResolve: canComment,
     location: thread.root.anchor.type === 'gap' ? gapLabel(thread.root.anchor, indexOf) : undefined,
+    fadeDone: fadesDone(statusFilter),
   });
 }
 

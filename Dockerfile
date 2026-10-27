@@ -26,6 +26,7 @@ COPY apps/web/package.json apps/web/
 COPY apps/site/package.json apps/site/
 COPY packages/shared/package.json packages/shared/
 COPY packages/pptx/package.json packages/pptx/
+COPY packages/odp/package.json packages/odp/
 
 # ── Build the web app (tsc + Vite run on Node, like in CI) ───────────────────────────────────
 FROM --platform=$BUILDPLATFORM oven/bun:${BUN_VERSION}-slim AS web
@@ -36,6 +37,7 @@ RUN bun install --frozen-lockfile
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY packages/pptx packages/pptx
+COPY packages/odp packages/odp
 COPY apps/web apps/web
 RUN cd apps/web && bun run build
 
@@ -58,13 +60,20 @@ ENV NODE_ENV=production \
 # Office ones (Carlito ≙ Calibri, Caladea ≙ Cambria, Liberation ≙ Arial/Times/Courier) so text
 # wraps where PowerPoint wraps it. Costs roughly 450–550 MB of image size (Impress; Writer and
 # Calc add some more); without it uploads fall back to the built-in SVG preview and Word, Excel
-# and text files are refused. The `soffice` binary is found on the PATH.
+# and text files are refused. The `soffice` binary is found on the PATH. Its Python script
+# provider runs the render pool's script inside the LibreOffices kept running for the editor
+# (`office-worker.py`, LIBREOFFICE_WORKERS).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      libreoffice-impress libreoffice-writer libreoffice-calc \
+      libreoffice-impress libreoffice-writer libreoffice-calc libreoffice-script-provider-python \
       fonts-liberation fonts-crosextra-carlito fonts-crosextra-caladea fonts-dejavu \
-      tini \
+      fontconfig tini \
  && rm -rf /var/lib/apt/lists/*
+
+# The most used Google Fonts, drawn as themselves (scripts/google-fonts.py; the browser has the
+# same faces in apps/web/public/fonts/office). About 16 MB.
+COPY fonts/google /usr/share/fonts/truetype/google
+RUN fc-cache -f
 
 # package.json files and node_modules (workspace symlinks included).
 COPY --from=api-deps /app ./
@@ -73,6 +82,8 @@ COPY packages/shared/src packages/shared/src
 COPY packages/shared/tsconfig.json packages/shared/
 COPY packages/pptx/src packages/pptx/src
 COPY packages/pptx/tsconfig.json packages/pptx/
+COPY packages/odp/src packages/odp/src
+COPY packages/odp/tsconfig.json packages/odp/
 COPY apps/api/tsconfig.json apps/api/
 COPY apps/api/drizzle apps/api/drizzle
 COPY apps/api/src apps/api/src

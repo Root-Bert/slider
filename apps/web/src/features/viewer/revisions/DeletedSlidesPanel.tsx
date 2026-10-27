@@ -86,7 +86,7 @@ function DeletedSlideItem({ slide, threads }: { slide: DeletedSlide; threads: Th
           className="relative overflow-hidden rounded-control bg-placeholder ring-hairline"
           style={{ aspectRatio: slide.aspectRatio }}
         >
-          {/* The ~370 px preview: the 640 px thumbnail is sharp there, the 2400 px image is waste. */}
+          {/* The ~370 px preview: the 640 px thumbnail is sharp there, the 3840 px image is waste. */}
           {slide.filesDeleted || failed ? (
             <DeletedVersionImage />
           ) : (

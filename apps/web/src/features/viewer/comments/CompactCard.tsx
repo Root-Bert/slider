@@ -16,14 +16,17 @@ export const CompactCard = memo(function CompactCard({
   thread,
   deckId,
   emphasis,
+  fadeDone,
 }: {
   thread: Thread;
   deckId: string;
   emphasis: CardEmphasis;
+  fadeDone: boolean;
 }) {
   const dispatch = useViewerDispatch();
   const { root, replies } = thread;
   const highlighted = emphasis === 'focused' || emphasis === 'hovered';
+  const faded = fadeDone && root.status === 'done';
   const text = commentPreview(root);
   const removed = isRemovedInSource(root);
   const menu = useCommentMenu({
@@ -40,8 +43,8 @@ export const CompactCard = memo(function CompactCard({
       data-hover-thread={thread.id}
       className={cn(
         'relative transition-opacity duration-200',
-        (emphasis === 'dimmed' || root.status === 'done') && 'opacity-45',
-        emphasis === 'dimmed' && root.status === 'done' && 'opacity-30',
+        (emphasis === 'dimmed' || faded) && 'opacity-45',
+        emphasis === 'dimmed' && faded && 'opacity-30',
       )}
       style={{ '--card-accent': accentColor(root.author.color) } as CSSProperties}
       onContextMenu={menu.onContextMenu}

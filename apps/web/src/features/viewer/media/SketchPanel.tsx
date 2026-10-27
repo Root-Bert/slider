@@ -38,6 +38,8 @@ interface SketchPanelProps {
    */
   onChange: (sketch: Sketch | null) => void;
   autoFocus?: boolean;
+  /** Its own voice memo recorder. Off in the composer: there the mic sits beside the note. */
+  withMemo?: boolean;
   /** Sending and cancelling the comment, also right from the big view. */
   actions?: SketchActions;
 }
@@ -75,6 +77,7 @@ export function SketchPanel({
   aspect,
   onChange,
   autoFocus = false,
+  withMemo = true,
   actions,
 }: SketchPanelProps) {
   const editor = useSheetEditor();
@@ -243,7 +246,9 @@ export function SketchPanel({
       // In a reply <Dialog> its own focus effect runs while the dialog is still closed: the
       // dialog focuses it once open.
       data-autofocus={autoFocus || undefined}
-      aria-label="Bild zeichnen – ⌘Z: rückgängig"
+      // The composer's Tab goes on from here to the next kind while nothing is drawn.
+      data-sketch
+      aria-label="Skizze zeichnen – ⌘Z: rückgängig"
       onKeyDown={onKeyDown}
       className="flex flex-col gap-2 rounded-control outline-none"
     >
@@ -281,12 +286,14 @@ export function SketchPanel({
       )}
 
       {/* Talking while drawing: the memo records on while the pen moves. */}
-      <RecorderPanel
-        kind="audio"
-        deckId={deckId}
-        onChange={setMemo}
-        onRecordingChange={setMemoRecording}
-      />
+      {withMemo && (
+        <RecorderPanel
+          kind="audio"
+          deckId={deckId}
+          onChange={setMemo}
+          onRecordingChange={setMemoRecording}
+        />
+      )}
       {memoRecording && inked && (
         <p role="status" className="text-caption text-fg-subtle">
           Beende erst die Aufnahme – dann kannst du senden.
@@ -338,7 +345,7 @@ function SketchFullscreen({
     <dialog
       ref={ref}
       tabIndex={-1}
-      aria-label="Bild zeichnen"
+      aria-label="Skizze zeichnen"
       onClose={(event) => {
         // Not the reply dialog around it: its `onClose` would otherwise see this one close.
         event.stopPropagation();
@@ -354,7 +361,7 @@ function SketchFullscreen({
           style={{ width: `min(80vw, calc(min(80dvh, 100dvh - 160px) * ${aspect}))` }}
         >
           <header className="flex w-full items-center justify-between gap-4">
-            <h2 className="text-sm font-medium text-fg">Bild zeichnen</h2>
+            <h2 className="text-sm font-medium text-fg">Skizze zeichnen</h2>
             {actions ? (
               <div className="flex items-center gap-1">{actions}</div>
             ) : (

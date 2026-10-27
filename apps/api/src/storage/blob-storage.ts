@@ -8,6 +8,8 @@ export interface BlobStorage {
   get(key: string): Promise<Uint8Array<ArrayBuffer> | null>;
   /** Size in bytes; `null` when the key does not exist. */
   size(key: string): Promise<number | null>;
+  /** When the blob was last written; `null` when the key does not exist. */
+  modifiedAt(key: string): Promise<Date | null>;
   /**
    * Streams the blob, or only the inclusive byte range – so serving a range of a long recording
    * reads just those bytes, never the whole file. `null` when the key does not exist.
@@ -45,6 +47,9 @@ export class InvalidBlobKeyError extends Error {
   }
 }
 
+/** What a revision's original is stored as. */
+export type DeckFileExtension = 'pptx' | 'pdf' | 'odp';
+
 const CONTENT_TYPES: Record<string, string> = {
   svg: 'image/svg+xml',
   png: 'image/png',
@@ -52,10 +57,14 @@ const CONTENT_TYPES: Record<string, string> = {
   jpeg: 'image/jpeg',
   webp: 'image/webp',
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  odp: 'application/vnd.oasis.opendocument.presentation',
+  gif: 'image/gif',
   pdf: 'application/pdf',
   webm: 'video/webm',
   mp4: 'video/mp4',
   ogg: 'audio/ogg',
+  ttf: 'font/ttf',
+  otf: 'font/otf',
 };
 
 export function contentTypeForKey(key: string): string {
@@ -71,19 +80,59 @@ export function contentTypeForKey(key: string): string {
 export const blobKeys = {
   deckPrefix: (deckId: string) => `decks/${deckId}/`,
   revisionPrefix: (deckId: string, revisionId: string) => `decks/${deckId}/${revisionId}/`,
-  /** The revision's original: a PowerPoint, or a PDF review deck. */
-  pptx: (deckId: string, revisionId: string, extension: 'pptx' | 'pdf' = 'pptx') =>
+  /**
+   * The revision's original: a PowerPoint, a PDF review deck or an ODP. An edited ODP's working
+   * copy and its undo snapshots live here too (BER-180).
+   */
+  pptx: (deckId: string, revisionId: string, extension: DeckFileExtension = 'pptx') =>
     `decks/${deckId}/${revisionId}/source-${crypto.randomUUID()}.${extension}`,
   slideRenderPrefix: (deckId: string, revisionId: string) =>
     `decks/${deckId}/${revisionId}/slides/`,
   slideRender: (deckId: string, revisionId: string, extension: string) =>
     `decks/${deckId}/${revisionId}/slides/${crypto.randomUUID()}.${extension}`,
+  /**
+   * A slide drawn with one text left out, which the editor types over; named by what it shows
+   * (`OdpDocument.blankText`), so an equal picture is drawn once.
+   */
+  slideBackground: (deckId: string, revisionId: string, fingerprint: string) =>
+    `decks/${deckId}/${revisionId}/backgrounds/${fingerprint}.jpg`,
+  /**
+   * An element's cutout for the live editor (`OdpDocument.toCutoutBytes`): its area and outline
+   * as masks, and where on the slide they go (`json`); named by what they show.
+   */
+  elementCutout: (
+    deckId: string,
+    revisionId: string,
+    fingerprint: string,
+    part: 'fill' | 'stroke' | 'above' | 'box',
+  ) =>
+    `decks/${deckId}/${revisionId}/cutouts/${fingerprint}-${part}.${part === 'box' ? 'json' : 'png'}`,
+  /**
+   * A part of a slide taken apart for the layers view (`OdpDocument.toLayerBytes`): the slide
+   * without its elements, or an element alone and where it goes (`json`) – named by what it shows,
+   * wherever the element lies in the stack.
+   */
+  slideLayer: (
+    deckId: string,
+    revisionId: string,
+    fingerprint: string,
+    part: 'background' | 'image' | 'box',
+  ) =>
+    `decks/${deckId}/${revisionId}/layers/${fingerprint}-${part}.${
+      part === 'background' ? 'jpg' : part === 'box' ? 'json' : 'png'
+    }`,
+  /** A picture uploaded for the editor; `imageId` is `<uuid>.<extension>` (BER-181). */
+  editImage: (deckId: string, imageId: string) => `decks/${deckId}/edit-images/${imageId}`,
+  editImages: (deckId: string) => `decks/${deckId}/edit-images/`,
   /** In the media store; same deck prefix, so deleting a deck clears its recordings too. */
   media: (deckId: string, mediaId: string, extension: string) =>
     `decks/${deckId}/media/${mediaId}.${extension}`,
   workspacePrefix: (workspaceId: string) => `workspaces/${workspaceId}/`,
   workspaceLogo: (workspaceId: string, extension: string) =>
     `workspaces/${workspaceId}/logo-${crypto.randomUUID()}.${extension}`,
+  /** A face of a font the workspace uploaded (`workspace_fonts`). */
+  workspaceFont: (workspaceId: string, fontId: string, extension: 'ttf' | 'otf') =>
+    `workspaces/${workspaceId}/fonts/${fontId}.${extension}`,
   demoAsset: (fileName: string) => `demo/${crypto.randomUUID()}/${fileName}`,
 };
 

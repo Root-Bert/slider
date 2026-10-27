@@ -97,6 +97,10 @@ export class EncryptedBlobStorage implements BlobStorage {
     }
   }
 
+  async modifiedAt(key: string): Promise<Date | null> {
+    return this.inner.modifiedAt(key);
+  }
+
   async stream(
     key: string,
     range?: { start: number; end: number },

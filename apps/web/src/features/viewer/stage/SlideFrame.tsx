@@ -4,9 +4,11 @@ import {
   MIN_DRAG_DISTANCE,
   rectCenter,
   rectFromPoints,
-  rectShapeRefAt,
+  shapeRefForRect,
   type AccentColor,
+  type Anchor,
   type Point,
+  type Rect,
   type Shape,
   type Slide,
 } from '@slider/shared';
@@ -19,12 +21,18 @@ import { slideLabel } from '../comments/lib/labels';
 import { visibilityChange, type SlideBadge } from '../revisions/lib/revision-changes';
 import { LiveSlidePresence } from '../live/LiveSlidePresence';
 import { ChangeBadge } from '../revisions/ChangeBadge';
+import { draftHasContent } from '../state/draft-reducer';
 import { useStageRegistry } from '../state/stage-registry';
 import { useViewerDispatch, type Draft, type Tool } from '../state/viewer-state';
+import { EditLayer } from '../editing/EditLayer';
+import { LayerStage } from '../editing/layers/LayerStage';
+import { LiveLayer } from '../editing/live/LiveLayer';
+import { PhotoPreviewLayer } from '../editing/photos/PhotoPreviewLayer';
 import { AnnotationLayer } from './AnnotationLayer';
 import { useSlideContextMenu } from './hooks/useSlideContextMenu';
 import { boxAnchor } from './lib/box-anchor';
 import { DrawingSurface } from './DrawingSurface';
+import { FindOutline } from './FindOutline';
 import { GuideLayer } from './GuideLayer';
 import { RectFrame } from './RectFrame';
 import { ShapeOutline } from './ShapeOutline';
@@ -49,6 +57,8 @@ interface SlideFrameProps {
   emphasisId: string | null;
   /** The draft – only set when it is on this slide. */
   draft: Draft | null;
+  /** Done threads' marks step back – not while only done ones are shown. */
+  fadeDone: boolean;
   /** Picked tool, `null` when not drawing or not allowed to comment. */
   tool: Tool | null;
   /** Pointer mode (no tool picked, may comment): a click on the slide starts a comment. */
@@ -64,6 +74,8 @@ interface SlideFrameProps {
   showGuides: boolean;
   /** Zoom inside this slide (pinch past the largest slides) – only set when it is this slide's. */
   zoom: SlideZoom | null;
+  /** „Ebenen“ is on: the slide shows taken apart in 3D instead of its picture. */
+  layered?: boolean;
 }
 
 /**
@@ -88,6 +100,7 @@ export const SlideFrame = memo(function SlideFrame({
   threads,
   emphasisId,
   draft,
+  fadeDone,
   tool,
   canSelect,
   color,
@@ -96,12 +109,15 @@ export const SlideFrame = memo(function SlideFrame({
   boxMode,
   showGuides,
   zoom,
+  layered = false,
 }: SlideFrameProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const dispatch = useViewerDispatch();
-  const [loaded, setLoaded] = useState(false);
+  // 'cached': the browser had the image already (scrolled back, remounted) – shown at once, no fade.
+  const [loaded, setLoaded] = useState<false | 'fade' | 'cached'>(false);
   const label = slideLabel(index);
   const small = w < THUMB_MAX_W;
+  const stage = layered && !small;
   const src = small ? slide.thumbnailUrl : slide.imageUrl;
   const zoomed = zoom && !small ? zoom : null;
   // Filling a frame of another shape: cropped even unzoomed.
@@ -120,7 +136,7 @@ export const SlideFrame = memo(function SlideFrame({
   // Every slide takes the picked tool – not only the active one.
   const drawing = tool !== null;
   const textBox = draft?.textBox ?? null;
-  const boxes = boxMode && !small;
+  const boxes = boxMode && !small && !stage;
   const selecting = canSelect && !drawing && !small;
   // The box under the pointer: in box mode what a click comments on.
   const [hoveredShape, setHoveredShape] = useState<Shape | null>(null);
@@ -164,16 +180,7 @@ export const SlideFrame = memo(function SlideFrame({
     setDrag(null);
     if (!dragRect) return;
     skipClick.current = true;
-    dispatch({ type: 'activeSlideChanged', slideId: slide.id });
-    dispatch({
-      type: 'anchorPlaced',
-      slideId: slide.id,
-      anchor: {
-        type: 'rect',
-        rect: dragRect,
-        shapeRef: boxes ? rectShapeRefAt(slide.shapes, dragRect) : null,
-      },
-    });
+    commentOn(dragRect, boxes ? hitTestShapes(slide.shapes, rectCenter(dragRect)) : null);
   };
 
   const activate = (event: MouseEvent) => {
@@ -181,20 +188,24 @@ export const SlideFrame = memo(function SlideFrame({
       skipClick.current = false;
       return;
     }
-    // No scrolling: the slide is in view already, and the comment goes where the click was.
-    dispatch({ type: 'activeSlideChanged', slideId: slide.id });
-    if (!selecting || !boxRef.current) return;
+    if (!boxRef.current) return;
     const point = toSlidePoint(event, boxRef.current);
-    const shape = boxes ? hitTestShapes(slide.shapes, point) : null;
-    dispatch({
-      type: 'anchorPlaced',
-      slideId: slide.id,
-      anchor: shape
-        ? boxAnchor(shape)
-        : // Outside box mode (or beside every box) the comment sits where the click was.
-          { type: 'point', point, shapeRef: null },
-    });
+    commentAt(point, boxes ? hitTestShapes(slide.shapes, point) : null);
   };
+  // A comment started on the slide – flat or taken apart (`LayerStage`), the same way: the slide
+  // becomes the active one (no scrolling: it is in view, the comment goes where it was made).
+  const startComment = (anchor: Anchor) => {
+    dispatch({ type: 'activeSlideChanged', slideId: slide.id });
+    if (selecting) dispatch({ type: 'anchorPlaced', slideId: slide.id, anchor });
+  };
+  // A click: on the box `shape` (box mode) it comments on the whole box, else where it was.
+  const commentAt = (point: Point, shape: Shape | null) =>
+    startComment(shape ? boxAnchor(shape) : { type: 'point', point, shapeRef: null });
+  // An area dragged: in box mode bound to the box `shape`, else free.
+  const commentOn = (rect: Rect, shape: Shape | null) =>
+    startComment({ type: 'rect', rect, shapeRef: shape ? shapeRefForRect(shape, rect) : null });
+  const shapeById = (id: string | null) =>
+    (id && slide.shapes.find((shape) => shape.id === id)) || null;
   const draftShapeId =
     draft?.anchor.type === 'rect' || draft?.anchor.type === 'point'
       ? (draft.anchor.shapeRef?.shapeId ?? null)
@@ -229,11 +240,48 @@ export const SlideFrame = memo(function SlideFrame({
         // The wheel moves the part a cropped slide shows (`useTimelineWheel`).
         data-slide-cover={cropped && !small ? `${cover.x},${cover.y}` : undefined}
       >
+        {/* Taken apart, the slide floats in its frame, from the front too: the tools over it are
+            off, the stage takes the pointer – comments on its planes, a double click to edit. */}
+        {stage && (
+          <LayerStage
+            slideId={slide.id}
+            active={isActive}
+            src={src}
+            w={w}
+            h={h}
+            color={accentColor(color)}
+            boxes={boxMode}
+            // In box mode on the box of the layer it was made on: it shows on that plane.
+            onComment={(point, box) => commentAt(point, shapeById(box))}
+            onCommentArea={(rect, box) => commentOn(rect, shapeById(box))}
+            // The comment its two clicks started goes – one already written stays.
+            onEdit={() => {
+              if (draft && !draftHasContent(draft)) dispatch({ type: 'draftCancelled' });
+            }}
+            marks={{
+              threads,
+              shapes: slide.shapes,
+              draft: draft?.anchor ?? null,
+              render: (onPlane, withDraft) => (
+                <AnnotationLayer
+                  slide={slide}
+                  threads={onPlane}
+                  emphasisId={emphasisId}
+                  draft={withDraft ? draft : null}
+                  fadeDone={fadeDone}
+                  still
+                />
+              ),
+            }}
+          />
+        )}
         <div
           ref={boxRef}
           data-slide-box={slide.id}
           className={cn(
             view ? 'absolute' : 'relative size-full',
+            // The stage under it takes the pointer: only pins and the like keep theirs.
+            stage && 'pointer-events-none',
             !drawing && pointerTarget && 'cursor-pointer',
             selecting && !boxes && 'cursor-crosshair',
           )}
@@ -253,6 +301,8 @@ export const SlideFrame = memo(function SlideFrame({
           <div
             className={cn(
               'absolute inset-0 overflow-hidden bg-placeholder',
+              // Taken apart in 3D: the stage below shows it.
+              stage && 'invisible',
               // Cropped, the frame rounds the corners – the slide's own are out of view.
               !view && (small ? 'rounded-thumb' : 'rounded-panel'),
               !loaded && !failed && 'skeleton',
@@ -273,19 +323,30 @@ export const SlideFrame = memo(function SlideFrame({
                 src={src}
                 {...slideSrcSet(slide, view ? zoomedBox(view, w, h, cover).width : w)}
                 alt={slide.title ?? label}
-                loading="lazy"
+                // No `loading="lazy"`: the timeline only mounts slides near the viewport, and lazy
+                // would wait until one scrolls in.
+                ref={(img) => {
+                  if (img?.complete && img.naturalWidth > 0) setLoaded((l) => l || 'cached');
+                }}
                 decoding="async"
                 draggable={false}
-                onLoad={() => setLoaded(true)}
+                onLoad={() => setLoaded((l) => l || 'fade')}
                 onError={() => setFailedSrc(src)}
                 className={cn(
-                  'size-full object-contain transition-opacity duration-300 select-none',
+                  'size-full object-contain select-none',
+                  loaded !== 'cached' && 'transition-opacity duration-300',
                   loaded ? 'opacity-100' : 'opacity-0',
                   slide.hidden && 'opacity-40',
                 )}
               />
             )}
           </div>
+          {!small && !stage && (
+            <LiveLayer slideId={slide.id} src={src} rounded={view ? '' : 'rounded-panel'} />
+          )}
+          {!small && !stage && (
+            <PhotoPreviewLayer slideId={slide.id} src={src} rounded={view ? '' : 'rounded-panel'} />
+          )}
           {((slide.hidden && w >= 200) || visibility || badge) && (
             // Top left (Figma D2). No z-index: pins and annotations (rendered after it) stay on top
             // and clickable – the status banners take their own room above the track.
@@ -330,23 +391,33 @@ export const SlideFrame = memo(function SlideFrame({
               )}
             </div>
           )}
-          {w >= 120 && <LiveSlidePresence slideId={slide.id} small={small} />}
-          {showGuides && !small && <GuideLayer slide={slide} />}
-          <AnnotationLayer
-            slide={slide}
-            threads={threads}
-            emphasisId={emphasisId}
-            draft={draft}
-            boxes={boxes}
-            selecting={selecting}
-            // The eraser wipes over drawings, so it stays on top of them.
-            aboveTools={drawing && tool !== 'eraser'}
-          />
+          {w >= 120 && !stage && <LiveSlidePresence slideId={slide.id} small={small} />}
+          {showGuides && !small && !stage && <GuideLayer slide={slide} />}
+          {!stage && (
+            <AnnotationLayer
+              slide={slide}
+              threads={threads}
+              emphasisId={emphasisId}
+              draft={draft}
+              fadeDone={fadeDone}
+              boxes={boxes}
+              selecting={selecting}
+              // The eraser wipes over drawings, so it stays on top of them.
+              aboveTools={drawing && tool !== 'eraser'}
+            />
+          )}
+          {!small && !stage && <EditLayer slideId={slide.id} color={accentColor(color)} />}
           {dragRect && <RectFrame rect={dragRect} color={accentColor(color)} dashed />}
           {pointerTarget && (
-            <ShapeOutline shape={pointerTarget} variant="target" color={accentColor(color)} />
+            <ShapeOutline
+              shape={pointerTarget}
+              variant="target"
+              color={accentColor(color)}
+              padded
+            />
           )}
-          {drawing && (
+          {!small && <FindOutline slideId={slide.id} />}
+          {drawing && !stage && (
             <DrawingSurface
               slide={slide}
               boxRef={boxRef}

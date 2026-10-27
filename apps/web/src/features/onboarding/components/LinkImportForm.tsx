@@ -46,9 +46,9 @@ export function LinkImportForm({
           type="url"
           size="lg"
           icon="link"
-          aria-label={label ? undefined : 'PowerPoint-Link'}
+          aria-label={label ? undefined : 'Link zur Präsentation'}
           aria-labelledby={label ? labelId : undefined}
-          placeholder="PowerPoint-Link einfügen…"
+          placeholder="Link zur Präsentation einfügen…"
           autoComplete="off"
           spellCheck={false}
           value={url}

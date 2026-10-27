@@ -339,7 +339,7 @@ shell/          AppHeader, CenteredMessage, layouts/ (SettingsLayout, CenteredLa
 ui/             design-system primitives; never imports features or shell/
   brand/        provider and app marks (Google, Microsoft, Passkey, PowerPoint)
   hooks/        generic UI hooks (useDismiss, useToast, useCopyToClipboard, useMediaQuery,
-                useFullscreen)
+                useFullscreen, useDebounced)
 lib/            pure, app-wide code: api-client, api/ (query hooks per domain, one barrel
                 api/index.ts), routes (typed URL builders), return-to, format, dom, motion,
                 accent, palette, platform, passkeys, deck-labels, last-visits,
@@ -358,7 +358,7 @@ features/<f>/   <Page>.tsx at the root, components/, hooks/, lib/, index.ts (pub
 - Tests sit next to the module (`foo.ts` → `foo.test.ts`); component tests are `*.test.tsx`
   and run in happy-dom.
 - The viewer is the one large feature and is split by sub-domain (`comments`, `connectors`,
-  `controls`, `import`, `live`, `media`, `revisions`, `stage`, `state`, `timeline`), each with
+  `controls`, `find`, `import`, `live`, `media`, `revisions`, `stage`, `state`, `timeline`), each with
   its own `hooks/` and `lib/` where needed.
 
 ## 12. Guards and migration status

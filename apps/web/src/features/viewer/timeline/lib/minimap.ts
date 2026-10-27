@@ -145,3 +145,23 @@ export function edgeScrollSpeed(
         : 0;
   return Math.round(clamp(depth, -1, 1) * maxSpeed);
 }
+
+/**
+ * Where a thumbnail dragged to row x `x` goes in: before the first thumbnail whose middle lies
+ * right of it (0 … the number of thumbnails).
+ */
+export function insertionAt(slides: readonly { x: number; w: number }[], x: number): number {
+  const index = slides.findIndex((slide) => x < slide.x + slide.w / 2);
+  return index === -1 ? slides.length : index;
+}
+
+/**
+ * The order after moving item `from` in front of item `insertion` (counted with it) – `null` when
+ * that leaves it where it is.
+ */
+export function movedOrder<T>(items: readonly T[], from: number, insertion: number): T[] | null {
+  if (insertion === from || insertion === from + 1) return null;
+  const next = items.filter((_, index) => index !== from);
+  next.splice(insertion > from ? insertion - 1 : insertion, 0, items[from] as T);
+  return next;
+}

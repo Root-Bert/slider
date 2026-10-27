@@ -37,6 +37,13 @@ interface RecorderPanelProps {
   autoStart?: boolean;
   /** Take the keyboard on opening: Space and ↵ work right away. */
   autoFocus?: boolean;
+  /**
+   * The big start button. Off where the start sits beside the note field, as the comment's mic
+   * does: that one counts `startRequest` up.
+   */
+  startButton?: boolean;
+  /** Raised by one to start recording from outside (see `startButton`). */
+  startRequest?: number;
 }
 
 const NO_SCREEN = 'Bildschirm teilen geht in diesem Browser nicht';
@@ -89,6 +96,8 @@ function RecorderBody({
   onRecordingChange,
   autoStart = false,
   autoFocus = false,
+  startButton = true,
+  startRequest = 0,
   source,
   onSourceChange,
 }: RecorderPanelProps & {
@@ -109,6 +118,20 @@ function RecorderBody({
   useEffect(() => {
     if (autoFocus) rootRef.current?.focus({ preventScroll: true });
   }, [autoFocus]);
+
+  const startFromOutside = useEffectEvent(() => {
+    if (state.status !== 'idle' && state.status !== 'ready') return;
+    // The panel takes the keyboard: Space pauses, ↵ stops, as after its own button.
+    rootRef.current?.focus({ preventScroll: true });
+    void start();
+  });
+  // Only requests made after mounting: a new picture source remounts the body.
+  const seenRequest = useRef(startRequest);
+  useEffect(() => {
+    if (startRequest === seenRequest.current) return;
+    seenRequest.current = startRequest;
+    startFromOutside();
+  }, [startRequest]);
 
   // Starting and stopping swap the buttons: the one that had the focus is disabled, then gone,
   // and the focus would drop to <body> – where Space and ↵ no longer reach the panel. So it moves
@@ -160,6 +183,8 @@ function RecorderBody({
       ref={rootRef}
       role="group"
       tabIndex={-1}
+      // The composer's Tab goes on from here to the next kind while nothing is recorded.
+      data-recorder
       // In a reply <Dialog> its own focus effect runs while the dialog is still closed: the
       // dialog focuses it once open.
       data-autofocus={autoFocus || undefined}
@@ -258,6 +283,13 @@ function RecorderBody({
             {formatDuration(elapsedMs)} / {formatDuration(MAX_MEDIA_DURATION_MS)}
           </span>
         </div>
+      ) : !startButton ? (
+        state.status === 'requesting' && (
+          <p role="status" className="flex items-center gap-2 text-caption text-fg-subtle">
+            <Spinner size={14} />
+            {requestingLabel(kind, source)}
+          </p>
+        )
       ) : (
         <Button
           ref={recordButtonRef}
@@ -276,13 +308,7 @@ function RecorderBody({
               className="text-danger"
             />
           )}
-          {state.status === 'requesting'
-            ? kind === 'audio'
-              ? 'Zugriff auf Mikrofon …'
-              : source === 'camera'
-                ? 'Zugriff auf Kamera …'
-                : 'Bildschirm auswählen …'
-            : 'Aufnahme starten'}
+          {state.status === 'requesting' ? requestingLabel(kind, source) : 'Aufnahme starten'}
           {state.status !== 'requesting' && <Kbd className="-mr-1">Leertaste</Kbd>}
         </Button>
       )}
@@ -290,6 +316,11 @@ function RecorderBody({
       <StorageHint deckId={deckId} />
     </div>
   );
+}
+
+function requestingLabel(kind: MediaKind, source: VideoSource) {
+  if (kind === 'audio') return 'Zugriff auf Mikrofon …';
+  return source === 'camera' ? 'Zugriff auf Kamera …' : 'Bildschirm auswählen …';
 }
 
 // Anchored right and clipped: in a narrow panel the oldest bars drop off instead of running under the time.

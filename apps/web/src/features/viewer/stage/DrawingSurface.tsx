@@ -72,8 +72,9 @@ function segmentDistance(p: Point, a: Point, b: Point): number {
 }
 
 /**
- * The eraser: pressing or wiping over one's own freehand, arrow or marker drawing removes it. Each of
- * those strokes is a comment of its own, so the whole comment goes.
+ * The eraser: pressing or wiping over one's own freehand, arrow or marker drawing removes it. Each
+ * drawing is a comment of its own – a freehand one all the strokes drawn in a row – so the whole
+ * comment goes.
  */
 function EraserSurface({ boxRef, threads }: Pick<DrawingSurfaceProps, 'boxRef' | 'threads'>) {
   const { deck, viewer } = useViewerData();

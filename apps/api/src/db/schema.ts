@@ -14,11 +14,16 @@ import {
   unique,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import type {
   AccentColor,
+  AiProposalStatus,
+  AiProvider,
   Anchor,
+  DeckEditSource,
   DowngradeReason,
   Author,
+  CommentReactionKind,
   CommentSource,
   CommentStatus,
   DeckSource,
@@ -29,7 +34,9 @@ import type {
   RevisionTrigger,
   Shape,
   SlideDiffStatus,
+  SlideOperation,
   SlideRenderer,
+  StockPhoto,
   Stroke,
   SyncErrorCode,
   SyncSummary,
@@ -69,6 +76,11 @@ export interface DeckSyncStateRow {
    * do not download it again until there is room for that many bytes.
    */
   storageBlocked?: { token: string; bytes: number } | null;
+  /**
+   * The cloud's file changed while the deck has edits not saved yet (BER-180): its token. The
+   * new version is not imported over the edits; saving decides. Cleared by saving.
+   */
+  cloudChangedToken?: string | null;
 }
 
 /** `decks.files_bytes`: what a review's files take up in blob storage, by kind. */
@@ -386,6 +398,20 @@ export const workspaces = pgTable('workspaces', {
    * still leave. Nothing is deleted for it.
    */
   blockedAt: timestamptz('blocked_at'),
+  /**
+   * The Anthropic API key of the workspace's AI (BER-183): sealed, never sent to a browser.
+   * Set and removed by admins; every member's AI requests run on it.
+   */
+  aiApiKey: encryptedText('workspaces', 'ai_api_key'),
+  /** `sk-ant-…AbCd` – what the settings show of the key. */
+  aiKeyHint: text('ai_key_hint'),
+  aiKeySetById: text('ai_key_set_by_id').references((): AnyPgColumn => users.id, {
+    onDelete: 'set null',
+  }),
+  aiKeySetByName: text('ai_key_set_by_name'),
+  aiKeySetAt: timestamptz('ai_key_set_at'),
+  /** Why Anthropic refused the key last (removed, no credit, …); `null` while it works. */
+  aiKeyError: text('ai_key_error'),
 });
 
 /** Stripe events already handled – webhooks arrive at least once, some twice (BER-152). */
@@ -435,6 +461,76 @@ export const workspaceMembers = pgTable(
     index('workspace_members_user_idx').on(t.userId),
   ],
 );
+
+/**
+ * A font a workspace uploaded – one face (family, weight, italic) each. Slides of its decks are
+ * drawn in it: LibreOffice gets it embedded in the file or in a font folder of its own, the live
+ * editor loads it. The bytes live in the blob store; the metrics are LibreOffice's (hhea).
+ */
+export const workspaceFonts = pgTable(
+  'workspace_fonts',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    /** The family a deck names it by (the file's typographic family). */
+    family: text('family').notNull(),
+    weight: integer('weight').notNull(),
+    italic: boolean('italic').notNull(),
+    format: text('format').$type<'ttf' | 'otf'>().notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    upm: integer('upm').notNull(),
+    ascent: integer('ascent').notNull(),
+    descent: integer('descent').notNull(),
+    storageKey: text('storage_key').notNull(),
+    uploadedById: text('uploaded_by_id').references(() => users.id, { onDelete: 'set null' }),
+    /**
+     * The deck (its title then) the face was taken from, as the file brought it; `null`: uploaded.
+     * Encrypted at rest, like the deck's title.
+     */
+    sourceFile: encryptedText('workspace_fonts', 'source_file'),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex('workspace_fonts_face_idx').on(t.workspaceId, t.family, t.weight, t.italic)],
+);
+export type WorkspaceFontRow = typeof workspaceFonts.$inferSelect;
+
+/**
+ * The API keys of a workspace's AI: its admins store several – Anthropic, OpenAI, Gemini or a
+ * service speaking OpenAI's API – and set one active; every member's AI requests run on that one,
+ * with its model. Keys are sealed and never sent to a browser.
+ */
+export const workspaceAiKeys = pgTable(
+  'workspace_ai_keys',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    provider: text('provider').$type<AiProvider>().notNull(),
+    /** The service's address – only for `custom`. */
+    baseUrl: text('base_url'),
+    apiKey: encryptedText('workspace_ai_keys', 'api_key').notNull(),
+    /** `sk-…AbCd` – what the settings show of the key. */
+    hint: text('hint').notNull(),
+    model: text('model').notNull(),
+    active: boolean('active').notNull().default(false),
+    setById: text('set_by_id').references((): AnyPgColumn => users.id, { onDelete: 'set null' }),
+    setByName: text('set_by_name'),
+    setAt: timestamptz('set_at').notNull(),
+    /** Why the provider refused the key last (removed, no credit, …); `null` while it works. */
+    error: text('error'),
+  },
+  (t) => [
+    index('workspace_ai_keys_workspace_idx').on(t.workspaceId),
+    // One active key per workspace at most.
+    uniqueIndex('workspace_ai_keys_active_idx')
+      .on(t.workspaceId)
+      .where(sql`${t.active}`),
+  ],
+);
+export type WorkspaceAiKeyRow = typeof workspaceAiKeys.$inferSelect;
 
 /**
  * People an admin removed from a workspace: they don't come back by domain (`joinByDomain`),
@@ -597,9 +693,18 @@ export const decks = pgTable(
      * owner and the workspace admins; `null` = every member of the workspace may.
      */
     restrictedAt: timestamptz('restricted_at'),
+    /**
+     * When its oldest picture of the editor still kept was stored (`decks/<id>/edit-images/`);
+     * `null` = none. The hourly job removes old ones (`services/old-edit-images`) by this, without
+     * looking at every deck.
+     */
+    editImagesSince: timestamptz('edit_images_since'),
   },
   (t) => [
     index('decks_owner_updated_idx').on(t.ownerId, t.updatedAt),
+    index('decks_edit_images_since_idx')
+      .on(t.editImagesSince)
+      .where(sql`${t.editImagesSince} is not null`),
     index('decks_workspace_updated_idx').on(t.workspaceId, t.updatedAt),
     index('decks_microsoft_connection_idx').on(t.microsoftConnectionId),
     index('decks_nextcloud_connection_idx').on(t.nextcloudConnectionId),
@@ -707,6 +812,13 @@ export const revisions = pgTable(
      * held.
      */
     reservedBytes: integer('reserved_bytes'),
+    /**
+     * Edits made in Slider on top of the revision's file (BER-180), see `deck_edits`: the one
+     * the revision shows now (`pptx_key` is its file) – 0 = the file as it came …
+     */
+    editSeq: integer('edit_seq').notNull().default(0),
+    /** … and the one last saved back to the deck's cloud (0 = nothing saved since it came). */
+    savedSeq: integer('saved_seq').notNull().default(0),
   },
   (t) => [
     unique('revisions_deck_number_unique').on(t.deckId, t.number),
@@ -721,9 +833,14 @@ export const slides = pgTable(
     deckId: text('deck_id')
       .notNull()
       .references(() => decks.id, { onDelete: 'cascade' }),
+    /**
+     * `revisionId:xml:id` of its `draw:page` once an edit in Slider removed or added it (BER-183):
+     * the slide a page coming back (undo, redo) is, comments and all.
+     */
+    pageId: text('page_id'),
     createdAt: createdAt(),
   },
-  (t) => [index('slides_deck_idx').on(t.deckId)],
+  (t) => [index('slides_deck_idx').on(t.deckId), index('slides_page_idx').on(t.deckId, t.pageId)],
 );
 
 export const slideVersions = pgTable(
@@ -786,6 +903,119 @@ export const slideVersions = pgTable(
   ],
 );
 
+/**
+ * The edit history of a revision edited in Slider (BER-180): one file snapshot per step, so undo
+ * and redo give back exactly the file of that step. `seq` 0 is the file as it came; the
+ * revision's `edit_seq` says which step it shows. A new edit after an undo drops the steps
+ * beyond it.
+ */
+export const deckEdits = pgTable(
+  'deck_edits',
+  {
+    id: text('id').primaryKey(),
+    deckId: text('deck_id')
+      .notNull()
+      .references(() => decks.id, { onDelete: 'cascade' }),
+    revisionId: text('revision_id')
+      .notNull()
+      .references(() => revisions.id, { onDelete: 'cascade' }),
+    seq: integer('seq').notNull(),
+    /** The whole file after this step. */
+    fileKey: text('file_key').notNull(),
+    operations: encryptedJsonList<SlideOperation>('deck_edits', 'operations').notNull(),
+    source: text('source').$type<DeckEditSource>().notNull(),
+    authorId: text('author_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+  },
+  (t) => [unique('deck_edits_revision_seq_unique').on(t.revisionId, t.seq)],
+);
+
+/**
+ * A slide the AI changed, by its page id (`xml:id` of its `draw:page`, which stays with it when
+ * slides move): rewritten or added (its XML before and after), moved, or removed.
+ */
+export interface AiSlideChange {
+  pageId: string;
+  /** 0-based position afterwards (before, if removed) – for the order of the list. */
+  index: number;
+  /** Its `draw:page` XML; `null` where it is not there (added: before, removed: after). */
+  before: string | null;
+  after: string | null;
+  /** Its 0-based positions; slides not in the change keep their order around them. */
+  beforeIndex: number | null;
+  afterIndex: number | null;
+  /** The styles the AI added (all of them, on every change). */
+  styles: string[];
+  /**
+   * Pictures `after` shows that are not in the file before: from the comment thread (`mediaId`)
+   * or stock photos (`imageId`, an edit picture of the deck) – put into the file on applying.
+   */
+  pictures?: ({ path: string; mediaId: string } | { path: string; imageId: string })[];
+  /** The stock photo the AI put on this slide, and its other choices. */
+  stock?: AiStockPhotos;
+}
+
+/** A stock photo as stored: with the address that reports it as used to Unsplash. */
+export interface StockPhotoRecord extends StockPhoto {
+  downloadLocation: string;
+}
+
+/** The AI's stock photo on a slide (see `services/stock-photos`). */
+export interface AiStockPhotos {
+  /** Its path in the file now, and its edit picture (to put it in again). */
+  path: string;
+  imageId: string;
+  /** The frame's id, if the editor knows it, and its width / height (every choice is cut to it). */
+  elementId: string | null;
+  aspect: number | null;
+  chosenId: string;
+  /** The AI's choice first. */
+  candidates: StockPhotoRecord[];
+  /** Photos already reported to Unsplash as used. */
+  reported: string[];
+}
+
+/**
+ * What the AI did, asked from a comment (BER-183): it rewrites slides of the deck's ODP and
+ * applies them right away as an edit step; the change can be taken back and applied again.
+ */
+export const aiProposals = pgTable(
+  'ai_proposals',
+  {
+    id: text('id').primaryKey(),
+    deckId: text('deck_id')
+      .notNull()
+      .references(() => decks.id, { onDelete: 'cascade' }),
+    revisionId: text('revision_id')
+      .notNull()
+      .references(() => revisions.id, { onDelete: 'cascade' }),
+    slideId: text('slide_id')
+      .notNull()
+      .references(() => slides.id, { onDelete: 'cascade' }),
+    /** The comment that asked for it (⌘↵); its thread is the conversation with the AI. */
+    commentId: text('comment_id').references((): AnyPgColumn => comments.id, {
+      onDelete: 'cascade',
+    }),
+    prompt: encryptedText('ai_proposals', 'prompt').notNull(),
+    status: text('status').$type<AiProposalStatus>().notNull(),
+    /** The edit step the proposal was made on. */
+    baseSeq: integer('base_seq').notNull(),
+    summary: encryptedText('ai_proposals', 'summary'),
+    error: text('error'),
+    /** The edit step that applied it. */
+    appliedSeq: integer('applied_seq'),
+    /** The slides it rewrote – taking it back puts `before` again, applying again `after`. */
+    changes: encryptedJsonList<AiSlideChange>('ai_proposals', 'changes').notNull().default([]),
+    createdById: text('created_by_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    index('ai_proposals_deck_idx').on(t.deckId, t.createdAt),
+    index('ai_proposals_comment_idx').on(t.commentId),
+  ],
+);
+
 export const comments = pgTable(
   'comments',
   {
@@ -822,6 +1052,31 @@ export const comments = pgTable(
     index('comments_parent_idx').on(t.parentId),
     // Deleting slides cascades here row by row; also comment counts per slide.
     index('comments_slide_idx').on(t.slideId),
+  ],
+);
+
+/**
+ * Reactions to comments (👍 / 👎 / egal): one per account and comment. They go with the comment
+ * and with the account – unlike comments, a deleted account leaves no anonymous reactions behind.
+ */
+export const commentReactions = pgTable(
+  'comment_reactions',
+  {
+    commentId: text('comment_id')
+      .notNull()
+      .references(() => comments.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Snapshot of the author at reaction time, like `comments.author`. */
+    author: jsonb('author').$type<Author>().notNull(),
+    kind: text('kind').$type<CommentReactionKind>().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.commentId, t.userId] }),
+    // Account deletion and export find someone's reactions.
+    index('comment_reactions_user_idx').on(t.userId),
   ],
 );
 
@@ -935,4 +1190,5 @@ export type SlideVersionRow = typeof slideVersions.$inferSelect;
 export type { SlideRenderer };
 export type CommentRow = typeof comments.$inferSelect;
 export type NewCommentRow = typeof comments.$inferInsert;
+export type CommentReactionRow = typeof commentReactions.$inferSelect;
 export type MediaRow = typeof media.$inferSelect;

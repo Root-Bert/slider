@@ -453,6 +453,110 @@ export function layoutBlobConnectors(
   return routed.map((line) => ({ id: line.id, points: polyline(line) }));
 }
 
+/** Lines of one group whose runs lie this close side by side merge into one. */
+const BUNDLE_DISTANCE = 12;
+/** A merged run gathers lines from at most this far apart. */
+const BUNDLE_SPAN = 40;
+
+interface Run {
+  points: Px[];
+  /** Index of the run's first point. */
+  index: number;
+  /** The run's constant coordinate and its extent along the other axis. */
+  value: number;
+  from: number;
+  to: number;
+  /** First and last runs end at the mark or the card: they never move. */
+  pinned: boolean;
+}
+
+/**
+ * Lines of one group (one colour) running side by side a few pixels apart merge into one: their
+ * parallel runs move onto the longest one's coordinate, so they share a trunk and branch off
+ * where their routes part. Ends at marks and cards stay where they are.
+ */
+export function bundleConnectors(
+  connectors: readonly Connector[],
+  groupOf: (id: string) => string,
+): Connector[] {
+  const lines = connectors.map((connector) => ({
+    id: connector.id,
+    points: connector.points.map((point) => ({ ...point })),
+  }));
+  const groups = new Map<string, typeof lines>();
+  for (const line of lines) {
+    const key = groupOf(line.id);
+    groups.set(key, [...(groups.get(key) ?? []), line]);
+  }
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    for (let pass = 0; pass < 4; pass++) {
+      const moved = snapRuns(group, 'x') + snapRuns(group, 'y');
+      for (const line of group) line.points = dedupe(line.points);
+      if (moved === 0) break;
+    }
+  }
+  return lines;
+}
+
+/**
+ * Moves close parallel runs (vertical ones for `x`, horizontal ones for `y`) onto one
+ * coordinate; returns how many moved.
+ */
+function snapRuns(lines: readonly { points: Px[] }[], axis: 'x' | 'y'): number {
+  const along = axis === 'x' ? 'y' : 'x';
+  const runs: Run[] = [];
+  for (const { points } of lines)
+    for (let index = 0; index + 1 < points.length; index++) {
+      const a = points[index]!;
+      const b = points[index + 1]!;
+      if (Math.abs(a[axis] - b[axis]) > 0.5) continue;
+      runs.push({
+        points,
+        index,
+        value: a[axis],
+        from: Math.min(a[along], b[along]),
+        to: Math.max(a[along], b[along]),
+        pinned: index === 0 || index + 2 === points.length,
+      });
+    }
+
+  // Runs of different lines join when they lie close and overlap for at least half the shorter.
+  const parent = runs.map((_, index) => index);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i]!)));
+  for (let i = 0; i < runs.length; i++)
+    for (let j = i + 1; j < runs.length; j++) {
+      const a = runs[i]!;
+      const b = runs[j]!;
+      if (a.points === b.points || Math.abs(a.value - b.value) > BUNDLE_DISTANCE) continue;
+      const overlap = Math.min(a.to, b.to) - Math.max(a.from, b.from);
+      if (overlap > 0.5 && overlap >= Math.min(a.to - a.from, b.to - b.from) / 2)
+        parent[find(i)] = find(j);
+    }
+  const clusters = new Map<number, Run[]>();
+  runs.forEach((run, i) => clusters.set(find(i), [...(clusters.get(find(i)) ?? []), run]));
+
+  let moved = 0;
+  for (const cluster of clusters.values()) {
+    if (cluster.length < 2) continue;
+    const values = cluster.map((run) => run.value);
+    if (Math.max(...values) - Math.min(...values) > BUNDLE_SPAN) continue;
+    const pinned = [...new Set(cluster.filter((run) => run.pinned).map((run) => run.value))];
+    // Two fixed ends that differ cannot share a run.
+    if (pinned.length > 1) continue;
+    const value =
+      pinned[0] ??
+      cluster.reduce((best, run) => (run.to - run.from > best.to - best.from ? run : best)).value;
+    for (const run of cluster) {
+      if (Math.abs(run.value - value) < 0.5) continue;
+      run.points[run.index]![axis] = value;
+      run.points[run.index + 1]![axis] = value;
+      moved++;
+    }
+  }
+  return moved;
+}
+
 function polyline(line: Routed): Px[] {
   const { start, laneX, busY, busEndX, target } = line;
   const points: Px[] = [

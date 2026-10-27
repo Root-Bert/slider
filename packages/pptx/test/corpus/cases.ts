@@ -32,7 +32,7 @@ import {
 /**
  * The BER-106 test corpus: one entry per change a reviewer can make to a deck between two
  * uploads. `bun run corpus` writes `decks/<id>/v1.pptx`, `v2.pptx` and `expected.json`;
- * `corpus.test.ts` checks them. See README.md.
+ * These fixtures are for manual investigation; see README.md.
  */
 
 export const CORPUS_DIR = fileURLToPath(new URL('./decks/', import.meta.url));

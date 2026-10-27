@@ -122,6 +122,7 @@ describe('setup page before the first account', () => {
       value: null,
       set: false,
     });
+    expect(body.settings?.features).toEqual({ payments: false, stockPhotos: false });
   });
 
   it('saves logins encrypted, never returns secrets and restarts', async () => {

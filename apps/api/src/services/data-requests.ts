@@ -8,6 +8,7 @@ import { ApiError, notFound } from '../http/errors';
 import { inviteMail, type MailMessage } from '../mail/mailer';
 import { deleteAccount, type Successors } from './account-deletion';
 import { normalizeEmail } from './accounts';
+import { maskEmail } from './workspaces/invites';
 
 /**
  * Data requests without login (BER-146). Anyone may ask for a copy of the data stored about an
@@ -173,7 +174,8 @@ export async function sendMail(deps: AppDeps, message: MailMessage): Promise<boo
     await deps.mailer.send(message);
     return true;
   } catch (error) {
-    deps.log.warn(`Mail to ${message.to} failed: ${String(error)}`);
+    // Masked: the log keeps no stranger's full address.
+    deps.log.warn(`Mail to ${maskEmail(message.to)} failed: ${String(error)}`);
     return false;
   }
 }

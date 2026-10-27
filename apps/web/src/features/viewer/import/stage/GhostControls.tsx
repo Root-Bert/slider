@@ -1,5 +1,6 @@
 import type { Slide } from '@slider/shared';
 import type { StatusFilter } from '@/lib/preferences/work-preferences';
+import { statusSegments } from '../../comments/lib/status-segments';
 import type { StatusCounts } from '../../comments/lib/comment-selectors';
 import { cn, GlassPanel, Icon, IconButton, SegmentedControl, Toolbar, ToolbarDivider } from '@/ui';
 import { CONTROLS_DELAY } from '../lib/import-skeleton';
@@ -39,9 +40,9 @@ const rise = (index: number) => ({
 });
 
 /**
- * The controls row as the viewer will open it, pill for pill and in the same states – tool bar,
- * comment filter, deck pill – built from the same parts, so the stage fades into the real row
- * without a seam. Nothing here is interactive (the stage makes it `inert`). What only the deck's
+ * The controls row as the viewer will open it, pill for pill and in the same states – tool bar;
+ * comment filter and deck pill on the right – built from the same parts, so the stage fades into
+ * the real row without a seam. Nothing here is interactive (the stage makes it `inert`). What only the deck's
  * data can tell – slide count, comment counts, hidden slides – comes in as it is known.
  */
 export function GhostControls({
@@ -61,7 +62,7 @@ export function GhostControls({
             <IconButton key={icon} icon={icon} label="" title={false} size="sm" />
           ))}
           <ToolbarDivider />
-          <IconButton icon="gridView" label="" title={false} size="sm" active={setup.boxMode} />
+          <IconButton icon="boxSelect" label="" title={false} size="sm" active={setup.boxMode} />
           <IconButton icon="guides" label="" title={false} size="sm" active={setup.showGuides} />
           {/* Known only once the viewer's data is in: it pops in while the stage settles. */}
           {(setup.opening?.hiddenSlideCount ?? 0) > 0 && (
@@ -84,22 +85,16 @@ export function GhostControls({
           Nur ansehen
         </GlassPanel>
       )}
-      <GlassPanel
-        className="scrollbar-none flex max-w-full min-w-0 items-center gap-3 overflow-x-auto p-1"
-        style={rise(1)}
-      >
-        <SegmentedControl<StatusFilter>
-          label=""
-          value={setup.statusFilter}
-          onChange={noop}
-          segments={[
-            { value: 'all', label: 'Alle', icon: 'chatBubble', count: counts?.all },
-            { value: 'open', label: 'Offen', icon: 'radioButtonUnchecked', count: counts?.open },
-            { value: 'done', label: 'Erledigt', icon: 'checkCircleOutline', count: counts?.done },
-          ]}
-        />
-      </GlassPanel>
-      <div className="ml-auto flex shrink-0 items-center gap-2.5" style={rise(2)}>
+      <div className="ml-auto flex shrink-0 items-center gap-2.5" style={rise(1)}>
+        <GlassPanel className="scrollbar-none flex max-w-full min-w-0 items-center gap-3 overflow-x-auto p-1">
+          <SegmentedControl<StatusFilter>
+            label=""
+            iconOnly
+            value={setup.statusFilter}
+            onChange={noop}
+            segments={statusSegments(counts)}
+          />
+        </GlassPanel>
         <Toolbar role={false} className="shrink-0">
           {setup.canUpload && <IconButton icon="upload" label="" title={false} size="sm" />}
           <IconButton

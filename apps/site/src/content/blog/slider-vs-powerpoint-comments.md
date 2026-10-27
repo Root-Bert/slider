@@ -15,8 +15,6 @@ shortAnswer:
     - Invite reviewers by mail or link, no file access needed
     - Comments are matched across new versions
 faq:
-  - q: Can I import my existing PowerPoint comments?
-    a: Yes. Slider imports modern and older PowerPoint comments, marks them with a P and lets you reply in the app. Your original file stays untouched.
   - q: Do reviewers need a Slider account?
     a: Yes, a free one. You invite them to your workspace by mail or link as reviewers, so they can view and comment but not change your decks.
   - q: Is Slider free?
@@ -42,8 +40,8 @@ Most teams start with what is already there: comments right inside PowerPoint. T
 
 ## When PowerPoint comments are enough
 
-If one or two people leave a few notes in the same file and nobody outside your company needs to look, built-in comments are quick and free. They live inside the .pptx, so they travel with it.
+If one or two people leave a few notes in the same file and nobody outside your company needs to look, built-in comments are quick and free. They live inside the file, so they travel with it.
 
 ## When Slider saves a round
 
-As soon as feedback comes from several people, or from someone without access to your OneDrive, Slider keeps it in one place. Everyone sees each comment on the spot it is about, can answer by voice or video, and when you upload version 4, comments follow the slides they belong to.
+As soon as feedback comes from several people, or from someone without access to your cloud folder, Slider keeps it in one place. Everyone sees each comment on the spot it is about, can answer by voice or video, and when you upload version 4, comments follow the slides they belong to.

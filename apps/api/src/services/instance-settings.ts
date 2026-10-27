@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
@@ -163,6 +163,24 @@ function digestsMatch(expected: string, given: string): boolean {
 
 export function setupTokenMatches(dataDir: string, given: string | undefined): boolean {
   const expected = readSetupToken(dataDir);
+  if (!expected || !given) return false;
+  return digestsMatch(expected, given);
+}
+
+/**
+ * The setup grant: what a browser that typed in the right setup token keeps (`auth/instance-gate`).
+ * Until the instance is claimed, only such a browser may sign in or up. Derived from the current
+ * token, so it ends with it – used up by the claim, or replaced on a new start.
+ */
+export function setupGrant(secret: string, dataDir: string): string | null {
+  const token = readSetupToken(dataDir);
+  return token
+    ? createHmac('sha256', secret).update(`setup-grant:${token}`).digest('base64url')
+    : null;
+}
+
+export function setupGrantMatches(secret: string, dataDir: string, given: string | undefined) {
+  const expected = setupGrant(secret, dataDir);
   if (!expected || !given) return false;
   return digestsMatch(expected, given);
 }

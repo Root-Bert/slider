@@ -4,9 +4,9 @@ import { SETUP_TOKEN_HEADER, type SetupStatus } from '@slider/shared';
 import { apiRequest } from '@/lib/api-client';
 import { routes } from '@/lib/routes';
 import { SettingsLayout } from '@/shell/layouts/SettingsLayout';
-import { Button, Notice, Spinner, useToast } from '@/ui';
+import { Button, ButtonLink, Notice, Spinner, useToast } from '@/ui';
 import { NotAuthorized } from './components/NotAuthorized';
-import { SetupForm } from './components/SetupForm';
+import { SetupForm, type SetupTab } from './components/SetupForm';
 import { storedSetupToken, storeSetupToken } from './lib/setup-form';
 
 /**
@@ -19,6 +19,7 @@ import { storedSetupToken, storeSetupToken } from './lib/setup-form';
 export function Component() {
   const [token, setToken] = useState(storedSetupToken);
   const [toast, showToast] = useToast();
+  const [tab, setTab] = useState<SetupTab>('settings');
   // The query function reads the token from here, so a newly typed one is sent on the refetch.
   const tokenRef = useRef(token);
   const headers: Record<string, string> = token ? { [SETUP_TOKEN_HEADER]: token } : {};
@@ -51,8 +52,28 @@ export function Component() {
       header="logo"
       docTitle="Einrichtung | Slider"
       title="Slider einrichten"
-      subtitle="Anmeldung, E-Mail-Versand, wer ein Konto anlegen darf, Impressum und Datenschutz."
-      back={{ to: routes.preferences(), label: 'Zurück zu den Einstellungen' }}
+      subtitle={status.data?.settings ? SUBTITLES[tab] : SUBTITLES.settings}
+      back={{ to: routes.reviews() }}
+      // The instance admin is in the instance's own pages: home is its dashboard.
+      logoLink={
+        status.data?.claimed && status.data.authorized
+          ? { to: routes.instance(), label: 'Instanz-Dashboard' }
+          : undefined
+      }
+      actions={
+        status.data?.claimed &&
+        status.data.authorized && (
+          <ButtonLink
+            to={routes.instance()}
+            variant="secondary"
+            size="sm"
+            icon="manageAccounts"
+            iconSize={16}
+          >
+            Instanz-Dashboard
+          </ButtonLink>
+        )
+      }
       truncate={false}
       toast={toast}
     >
@@ -72,6 +93,8 @@ export function Component() {
             settings={status.data.settings}
             headers={headers}
             onNotify={showToast}
+            tab={tab}
+            onTabChange={setTab}
           />
         </div>
       ) : status.isError ? (
@@ -89,3 +112,9 @@ export function Component() {
     </SettingsLayout>
   );
 }
+
+/** Under the title: what the open tab holds. */
+const SUBTITLES: Record<SetupTab, string> = {
+  settings: 'Anmeldung, E-Mail-Versand, wer ein Konto anlegen darf, Impressum und Datenschutz.',
+  env: 'Was die .env des Servers festlegt – nur dort änderbar, danach Slider neu starten.',
+};

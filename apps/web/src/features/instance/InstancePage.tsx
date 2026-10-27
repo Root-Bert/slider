@@ -73,7 +73,8 @@ export function Component() {
       docTitle="Instanz | Slider"
       title="Instanz"
       subtitle={window.location.host}
-      back={{ to: routes.reviews(), label: 'Zu den Reviews' }}
+      back={{ to: routes.reviews() }}
+      logoLink={{ to: routes.instance(), label: 'Instanz-Dashboard' }}
       width="wide"
       toast={toast}
       actions={
@@ -85,7 +86,7 @@ export function Component() {
             icon="settings"
             iconSize={16}
           >
-            Einstellungen
+            Instanz-Einstellungen
           </ButtonLink>
         )
       }

@@ -1,6 +1,7 @@
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { PptxError } from '@slider/pptx';
 import { ApiError, notAPowerPoint } from '../http/errors';
+import { isOdpBytes } from '@slider/odp';
 import { isPdfBytes } from '../sources/safe-fetch';
 import {
   ConversionAborted,
@@ -10,6 +11,7 @@ import {
   type DocumentToPdf,
   type OfficeDocumentKind,
 } from './libreoffice';
+import { prepareOdp } from './odp-deck';
 import { markPdfMaker } from './pdf-maker';
 
 /*
@@ -20,7 +22,7 @@ import { markPdfMaker } from './pdf-maker';
  */
 
 export const UNSUPPORTED_FILE_MESSAGE =
-  'Diese Datei kann Slider nicht öffnen. Es gehen PowerPoint, PDF, Bilder, Word, Excel und Text.';
+  'Diese Datei kann Slider nicht öffnen. Es gehen PowerPoint, ODP, PDF, Bilder, Word, Excel und Text.';
 
 /** Without LibreOffice a server reads PowerPoints, PDFs and pictures only. */
 const NO_LIBREOFFICE_MESSAGE =
@@ -92,6 +94,8 @@ export async function toDeckBytes(
   if (isPdfBytes(bytes)) return bytes;
   // A broken PowerPoint is told by the import, with what is wrong with it.
   if (extension === 'pptx') return bytes;
+  // An ODP stays an ODP – a deck that can be edited in Slider (BER-177).
+  if (extension === 'odp' || isOdpBytes(bytes)) return prepareOdp(bytes);
   // A document goes by its name, before its first bytes are taken for a picture's.
   if (isDocumentKind(extension)) return documentToDeck(bytes, extension, documentPdf);
   if (isImageBytes(bytes)) {

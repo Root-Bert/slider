@@ -116,6 +116,8 @@ interface Connection {
   dropPeers: ReturnType<typeof setTimeout> | null;
   heartbeat: ReturnType<typeof setInterval>;
   onComments: () => void;
+  /** The deck was edited, or an AI proposal changed (BER-180, BER-183). */
+  onDeckChange: (change: 'slides' | 'proposals') => void;
   closed: boolean;
   /** The tab is hidden: the stream is let go until it shows again (`suspend`). */
   suspended: boolean;
@@ -126,7 +128,11 @@ const isHidden = () => typeof document !== 'undefined' && document.hidden;
 let current: Connection | null = null;
 
 /** Opens the deck's stream; returns the function that closes it. */
-export function connectLive(deckId: string, onComments: () => void): () => void {
+export function connectLive(
+  deckId: string,
+  onComments: () => void,
+  onDeckChange: (change: 'slides' | 'proposals') => void = () => undefined,
+): () => void {
   // `encodeURIComponent` leaves `.`/`..` alone, and the browser would resolve them out of the
   // path (`/decks/../live`) – like `apiRequest`, such an id never reaches the server.
   // (`encodeURIComponent` escapes tabs and newlines, which URL parsing would strip – `.\t.` –
@@ -150,6 +156,7 @@ export function connectLive(deckId: string, onComments: () => void): () => void 
       flush(connection);
     }, LIVE_HEARTBEAT_MS),
     onComments,
+    onDeckChange,
     closed: false,
     suspended: isHidden(),
   };
@@ -307,6 +314,10 @@ function handle(connection: Connection, event: LiveEvent) {
     }
     case 'comments':
       connection.onComments();
+      return;
+    case 'slides':
+    case 'proposals':
+      connection.onDeckChange(event.type);
       return;
   }
 }

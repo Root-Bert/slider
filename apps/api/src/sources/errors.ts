@@ -39,14 +39,14 @@ export const microsoftNotConfigured = () =>
   new ApiError(
     401,
     'microsoft_not_configured',
-    'Die Microsoft-Anmeldung ist auf diesem Server nicht eingerichtet. Trage MS_CLIENT_ID und MS_CLIENT_SECRET (und optional MS_TENANT) in die .env im Projektordner ein und starte die API neu – oder lade die Datei als PPTX hoch.',
+    'Die Microsoft-Anmeldung ist auf diesem Server nicht eingerichtet. Trage MS_CLIENT_ID und MS_CLIENT_SECRET (und optional MS_TENANT) in die .env im Projektordner ein und starte die API neu – oder lade die Datei hoch.',
   );
 
 export const microsoftConsentRequired = () =>
   new ApiError(
     403,
     'microsoft_consent_required',
-    'Deine Organisation erlaubt Slider noch keinen Zugriff auf Dateien. Eine Administratorin oder ein Administrator muss Slider einmalig freigeben (Admin-Zustimmung). Bis dahin kannst du die Datei als PPTX hochladen.',
+    'Deine Organisation erlaubt Slider noch keinen Zugriff auf Dateien. Eine Administratorin oder ein Administrator muss Slider einmalig freigeben (Admin-Zustimmung). Bis dahin kannst du die Datei hochladen.',
   );
 
 export const sourceForbidden = (

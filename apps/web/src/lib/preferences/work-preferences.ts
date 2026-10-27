@@ -1,7 +1,10 @@
 import { readJson, writeJson } from '../storage';
 
-/** Status filter of the comment list ("Offen", "Alle", "Erledigt"). */
-export type StatusFilter = 'all' | 'open' | 'done';
+/**
+ * Status filter of the comment list ("Alle", "Offen", "KI" – threads the AI edited, "Erledigt"),
+ * or "Ausgeblendet": no comments at all – the slides alone, to just look at them.
+ */
+export type StatusFilter = 'hidden' | 'all' | 'open' | 'ai' | 'done';
 
 /**
  * "Arbeiten" on `/konto`: how a deck opens. Per-browser, like the split and box mode – the
@@ -18,6 +21,10 @@ export interface WorkPreferences {
   statusFilter: StatusFilter;
   /** Folienübersicht (minimap) hidden when a deck opens – shown by default; its button still toggles it. */
   hideMinimap: boolean;
+  /** Editing: picking an element too small to work on zooms in on it, letting go zooms back – on by default. */
+  autoZoom: boolean;
+  /** Opening a comment on a small box zooms its slide in on it, closing it zooms back – on by default. */
+  commentZoom: boolean;
 }
 
 const STORAGE_KEY = 'slider.workPreferences.v1';
@@ -28,9 +35,11 @@ export const DEFAULT_WORK_PREFERENCES: WorkPreferences = {
   showChanges: false,
   statusFilter: 'open',
   hideMinimap: false,
+  autoZoom: true,
+  commentZoom: true,
 };
 
-const STATUS_FILTERS: readonly StatusFilter[] = ['open', 'all', 'done'];
+const STATUS_FILTERS: readonly StatusFilter[] = ['open', 'all', 'done', 'hidden'];
 
 /** Each field on its own: a missing or invalid one takes its default. */
 function parseWorkPreferences(value: unknown): WorkPreferences {
@@ -56,6 +65,12 @@ function parseWorkPreferences(value: unknown): WorkPreferences {
       typeof stored.hideMinimap === 'boolean'
         ? stored.hideMinimap
         : DEFAULT_WORK_PREFERENCES.hideMinimap,
+    autoZoom:
+      typeof stored.autoZoom === 'boolean' ? stored.autoZoom : DEFAULT_WORK_PREFERENCES.autoZoom,
+    commentZoom:
+      typeof stored.commentZoom === 'boolean'
+        ? stored.commentZoom
+        : DEFAULT_WORK_PREFERENCES.commentZoom,
   };
 }
 

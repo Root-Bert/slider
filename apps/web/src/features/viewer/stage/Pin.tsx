@@ -17,6 +17,8 @@ interface PinProps {
   onContextMenu?: (event: MouseEvent) => void;
   /** One's own pin: dragging it moves the comment. */
   drag?: PointDragOptions;
+  /** The AI is working on the thread: Slider's slides deal through the dot and a ring pings out. */
+  aiWorking?: boolean;
   className?: string;
 }
 
@@ -31,7 +33,16 @@ const NO_DRAG: PointDragOptions = {
  * comments imported from PowerPoint add a small orange "P" badge (F1), Google comments Google Slides' mark. Positioned in percent of
  * the slide box.
  */
-export function Pin({ comment, at, state, onActivate, onContextMenu, drag, className }: PinProps) {
+export function Pin({
+  comment,
+  at,
+  state,
+  onActivate,
+  onContextMenu,
+  drag,
+  aiWorking,
+  className,
+}: PinProps) {
   const { pointerProps, wasDragged } = usePointDrag(drag ?? NO_DRAG);
   const fromPowerPoint = comment.source === 'pptx';
   const removed = isRemovedInSource(comment);
@@ -63,9 +74,18 @@ export function Pin({ comment, at, state, onActivate, onContextMenu, drag, class
       style={{ left: `${at.x * 100}%`, top: `${at.y * 100}%` }}
     >
       <span
-        className={cn('size-3.5 rounded-full', PIN_DOT_RING)}
+        className={cn('relative size-3.5 rounded-full', PIN_DOT_RING)}
         style={{ backgroundColor: accentColor(comment.author.color) }}
-      />
+      >
+        {aiWorking && (
+          // Slider's mark, its two slides dealt through again and again.
+          <span aria-hidden className="absolute inset-[3px] overflow-hidden">
+            <span className="ai-deal absolute" />
+            <span className="ai-deal absolute" />
+          </span>
+        )}
+        {aiWorking && <span aria-hidden className="ai-ping absolute inset-0 rounded-full" />}
+      </span>
       {fromPowerPoint && (
         // Small "P" badge: still recognisable as a PowerPoint comment, in the author's colour.
         <span

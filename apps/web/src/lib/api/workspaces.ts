@@ -1,4 +1,5 @@
 import type {
+  Author,
   CreatedWorkspaceInvite,
   CreateWorkspaceInviteInput,
   JoinPreview,
@@ -9,8 +10,11 @@ import type {
   WorkspaceInvite,
   WorkspaceMember,
   WorkspaceRole,
+  WorkspaceFont,
+  WorkspaceFontUpload,
   WorkspaceSso,
 } from '@slider/shared';
+import { WORKSPACE_PRESENCE_POLL_MS } from '@slider/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, apiRequest } from '../api-client';
 import { queryKeys, workspaceKeys } from './keys';
@@ -60,6 +64,55 @@ export function useWorkspaceLogo(workspaceId: string) {
       return apiRequest<Workspace>(`/workspaces/${workspaceId}/logo`, { method: 'PUT', body });
     },
     onSuccess: () => reloadMe(),
+  });
+}
+
+// ── Fonts ──────────────────────────────────────────────────────────────────
+
+/** Any deck's editor state (`queryKeys.edit`): it carries the workspace's fonts. */
+const isEditState = ({ queryKey }: { queryKey: readonly unknown[] }) =>
+  queryKey[0] === 'decks' && queryKey[2] === 'edit';
+
+/** The workspace's own fonts: its decks are drawn in them. */
+export const useWorkspaceFonts = (workspaceId: string) =>
+  useQuery({
+    queryKey: workspaceKeys.fonts(workspaceId),
+    queryFn: () => api.get<WorkspaceFont[]>(`/workspaces/${workspaceId}/fonts`),
+  });
+
+/** Members and admins: TTF or OTF files, or zips of them; a face uploaded again is replaced. */
+export function useUploadWorkspaceFonts(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (files: readonly File[]) => {
+      const body = new FormData();
+      for (const file of files) body.append('files', file);
+      return apiRequest<WorkspaceFontUpload>(`/workspaces/${workspaceId}/fonts`, {
+        method: 'POST',
+        body,
+      });
+    },
+    onSuccess: (upload) => {
+      queryClient.setQueryData(workspaceKeys.fonts(workspaceId), upload.fonts);
+      // The editor offers them and draws in them.
+      void queryClient.invalidateQueries({ predicate: isEditState });
+    },
+  });
+}
+
+/** Members and admins: every face of a family. */
+export function useRemoveWorkspaceFontFamily(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (family: string) =>
+      apiRequest<WorkspaceFont[]>(
+        `/workspaces/${workspaceId}/fonts?family=${encodeURIComponent(family)}`,
+        { method: 'DELETE' },
+      ),
+    onSuccess: (fonts) => {
+      queryClient.setQueryData(workspaceKeys.fonts(workspaceId), fonts);
+      void queryClient.invalidateQueries({ predicate: isEditState });
+    },
   });
 }
 
@@ -129,6 +182,21 @@ export const useMembers = (workspaceId: string) =>
   useQuery({
     queryKey: workspaceKeys.members(workspaceId),
     queryFn: () => api.get<WorkspaceMember[]>(`/workspaces/${workspaceId}/members`),
+  });
+
+/**
+ * The other members online right now. Polling is the heartbeat that keeps the viewer online for
+ * the others too – only while the tab is visible (React Query pauses it in the background), so a
+ * forgotten tab goes offline after a while. `null`: nobody to ask about (no workspace).
+ */
+export const useOnlineMembers = (workspaceId: string | null) =>
+  useQuery({
+    queryKey: workspaceKeys.online(workspaceId ?? ''),
+    queryFn: () => api.post<Author[]>(`/workspaces/${workspaceId}/presence`),
+    enabled: workspaceId !== null,
+    refetchInterval: WORKSPACE_PRESENCE_POLL_MS,
+    // A failed heartbeat is retried by the next one.
+    retry: false,
   });
 
 export function useUpdateMemberRole(workspaceId: string) {

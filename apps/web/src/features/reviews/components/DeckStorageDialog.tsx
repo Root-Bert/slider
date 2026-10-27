@@ -21,7 +21,7 @@ import { DECK_PANEL, type DeckPanelKind, type DeckPanelSlot } from '../lib/deck-
 import { DeckPanelFrame } from './DeckPanelFrame';
 
 const BREAKDOWN: { key: keyof DeckStorage['breakdown']; label: string }[] = [
-  { key: 'originals', label: 'PowerPoint-Dateien' },
+  { key: 'originals', label: 'Originaldateien' },
   { key: 'slideImages', label: 'Folienbilder' },
   { key: 'media', label: 'Aufnahmen und Bilder in Kommentaren' },
   { key: 'other', label: 'Sonstiges' },
@@ -71,7 +71,7 @@ export function DeckStorageDialog({
               <strong className="font-medium text-fg">
                 {formatFileSize(data.reclaimableBytes)}
               </strong>{' '}
-              frei. Endgültig entfernt werden die PowerPoint-Dateien und Folienbilder von{' '}
+              frei. Endgültig entfernt werden die Originaldateien und Folienbilder von{' '}
               {pluralize(data.olderVersionCount, 'älteren Version', 'älteren Versionen')}.
             </span>
             <span>

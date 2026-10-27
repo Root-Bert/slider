@@ -14,10 +14,11 @@ import { decryptToken } from '../src/auth/token-crypto';
 import { signInWithIdentity } from '../src/services/accounts';
 import type { Config, OidcConfig } from '../src/config';
 import { microsoftConnections, sessions, userIdentities, users } from '../src/db/schema';
-import { ensureSetupToken } from '../src/services/instance-settings';
+import { ensureSetupToken, setupGrant } from '../src/services/instance-settings';
 import { purgeStaleRows } from '../src/services/retention';
 import type { FetchLike } from '../src/sources/safe-fetch';
 import {
+  cookiePair,
   createReadyDeck,
   createTestContext,
   fakeJwt,
@@ -202,6 +203,7 @@ describe('GET /api/auth/providers', () => {
       devLogin: false,
       signup: 'domains',
       needsSetup: false,
+      setupPending: false,
       nextcloudAnyServer: false,
       googleDrive: false,
       sso: false,
@@ -483,18 +485,23 @@ describe('Microsoft login', () => {
 
   it('the first login creates a normal account – never instance admin – and stores the Graph token', async () => {
     const idp = fakeMicrosoft();
-    await msContext(idp, { auth: { ...authConfig().auth!, signup: 'open' } });
+    const dataDir = await mkdtemp(path.join(tmpdir(), 'slider-auth-ms-'));
+    await msContext(idp, { dataDir, auth: { ...authConfig().auth!, signup: 'open' } });
+    ensureSetupToken(dataDir);
+    // Unclaimed: signed in from the browser that typed in the setup token.
+    const grant = `slider_setup=${setupGrant(ctx.deps.config.secret, dataDir)}`;
     const { deckId } = await createReadyDeck(ctx);
 
-    const start = await ctx.request('/api/auth/microsoft/login');
+    const start = await ctx.request('/api/auth/microsoft/login', { cookie: grant });
     expect(location(start).searchParams.get('scope')).toBe(
       'openid profile email offline_access User.Read Files.Read.All',
     );
     expect(location(start).searchParams.get('nonce')).toMatch(/^[\w-]{43}$/);
 
-    const res = await redirectLogin('microsoft', idp, { returnTo: '/' });
+    const res = await redirectLogin('microsoft', idp, { returnTo: '/', cookie: grant });
     expect(res.headers.get('location')).toBe('http://localhost:5173/');
     const cookie = sessionCookieFrom(res) ?? '';
+    await rm(dataDir, { recursive: true, force: true });
     const { body } = await me(cookie);
     expect(body.user).toMatchObject({
       email: 'robert.hofmann@example.org',
@@ -559,7 +566,11 @@ describe('Microsoft login', () => {
       preferred_username: undefined,
       email: 'robert@example.org',
     });
-    await msContext(idp, { auth: { ...authConfig().auth!, signup: 'open' } });
+    await msContext(
+      idp,
+      { auth: { ...authConfig().auth!, signup: 'open' } },
+      { instanceAdmin: true },
+    );
     await finishBootstrap();
     expect((await redirectLogin('microsoft', idp)).headers.get('location')).toMatch(
       /error=email_unverified/,
@@ -568,12 +579,27 @@ describe('Microsoft login', () => {
 });
 
 describe('first logins of an unclaimed instance', () => {
+  let instanceDir: string | null = null;
+  let setupToken = '';
+  afterEach(async () => {
+    if (instanceDir) await rm(instanceDir, { recursive: true, force: true });
+    instanceDir = null;
+  });
   const oidcInstance = async (idp: FakeIdp, config: Partial<Config> = {}, auth = {}) => {
+    instanceDir = await mkdtemp(path.join(tmpdir(), 'slider-auth-unclaimed-'));
     ctx = await createTestContext({
-      config: { ...config, ...authConfig({ oidc: OIDC, ...auth }) },
+      config: { dataDir: instanceDir, ...config, ...authConfig({ oidc: OIDC, ...auth }) },
       fetch: idp.fetch,
+      instance: { env: {}, restart: null },
     });
+    setupToken = ensureSetupToken(instanceDir);
   };
+  /** This browser typed in the setup token on `/einrichtung`: the cookie it got for that. */
+  const setupGrant = async () =>
+    cookiePair(
+      await ctx.request('/api/setup', { headers: { [SETUP_TOKEN_HEADER]: setupToken } }),
+      'slider_setup',
+    );
   const identities = () => ctx.deps.db.select().from(userIdentities);
   const admins = () => ctx.deps.db.select().from(users).where(eq(users.isInstanceAdmin, true));
 
@@ -585,15 +611,57 @@ describe('first logins of an unclaimed instance', () => {
   ])('signing in never makes anyone instance admin (%s, production)', async (_, auth, email) => {
     const idp = fakeOidc({ email });
     await oidcInstance(idp, { env: 'production' }, auth);
-    const cookie = sessionCookieFrom(await redirectLogin('oidc', idp)) ?? '';
+    const grant = await setupGrant();
+    const cookie = sessionCookieFrom(await redirectLogin('oidc', idp, { cookie: grant })) ?? '';
     expect((await me(cookie)).body.user).toMatchObject({ email, isInstanceAdmin: false });
     expect(await admins()).toEqual([]);
   });
 
-  it('lets anyone sign up while there is no admin, even under SIGNUP=invite or domains', async () => {
+  it('nobody signs in or up without the setup token typed in this browser', async () => {
+    const idp = fakeOidc();
+    await oidcInstance(idp, { env: 'production' }, { signup: 'open' });
+    const providers = async (cookie = '') =>
+      authProvidersSchema.parse(
+        await (await ctx.request('/api/auth/providers', { cookie })).json(),
+      );
+    expect((await providers()).setupPending).toBe(true);
+
+    // Login buttons and callbacks lead to the setup page; calls get `instance_unclaimed`.
+    for (const cookie of ['', 'slider_setup=forged']) {
+      const start = await ctx.request('/api/auth/oidc/login?returnTo=%2F', { cookie });
+      expect(start.status).toBe(302);
+      expect(start.headers.get('location')).toBe('http://localhost:5173/einrichtung');
+      const callback = await ctx.request('/api/auth/oidc/callback?state=x&code=y', { cookie });
+      expect(callback.headers.get('location')).toBe('http://localhost:5173/einrichtung');
+      expect(sessionCookieFrom(callback)).toBeNull();
+    }
+    const email = await ctx.request('/api/auth/email/start', {
+      method: 'POST',
+      json: { email: 'x@gmail.com' },
+    });
+    expect(email.status).toBe(403);
+    expect(await email.json()).toMatchObject({ error: { code: 'instance_unclaimed' } });
+    const passkey = await ctx.request('/api/auth/passkey/options', { method: 'POST' });
+    expect(passkey.status).toBe(403);
+    expect(await identities()).toEqual([]);
+
+    // A wrong token grants nothing.
+    const wrong = await ctx.request('/api/setup', { headers: { [SETUP_TOKEN_HEADER]: 'wrong' } });
+    expect(cookiePair(wrong, 'slider_setup')).toBe('');
+
+    const grant = await setupGrant();
+    expect(grant).toMatch(/^slider_setup=/);
+    expect((await providers(grant)).setupPending).toBe(false);
+    expect(sessionCookieFrom(await redirectLogin('oidc', idp, { cookie: grant }))).toBeTruthy();
+    expect(await admins()).toEqual([]);
+  });
+
+  it('with the setup grant, whoever typed in the token signs up even under SIGNUP=invite or domains', async () => {
     const idp = fakeOidc({ sub: 'x', email: 'x@gmail.com' });
     await oidcInstance(idp, { env: 'production' });
-    expect(sessionCookieFrom(await redirectLogin('oidc', idp))).toBeTruthy();
+    expect(
+      sessionCookieFrom(await redirectLogin('oidc', idp, { cookie: await setupGrant() })),
+    ).toBeTruthy();
 
     await ctx.cleanup();
     await oidcInstance(
@@ -601,7 +669,9 @@ describe('first logins of an unclaimed instance', () => {
       { env: 'production' },
       { signup: 'domains', signupDomains: ['firma.de'] },
     );
-    expect(sessionCookieFrom(await redirectLogin('oidc', idp))).toBeTruthy();
+    expect(
+      sessionCookieFrom(await redirectLogin('oidc', idp, { cookie: await setupGrant() })),
+    ).toBeTruthy();
     expect(await admins()).toEqual([]);
   });
 
@@ -640,6 +710,14 @@ describe('first logins of an unclaimed instance', () => {
       token = ensureSetupToken(dataDir);
     };
     afterEach(() => rm(dataDir, { recursive: true, force: true }));
+    /** Signs in in the browser that typed in the setup token. */
+    const grantedLogin = async (idp: FakeIdp) => {
+      const grant = cookiePair(
+        await ctx.request('/api/setup', { headers: { [SETUP_TOKEN_HEADER]: token } }),
+        'slider_setup',
+      );
+      return sessionCookieFrom(await redirectLogin('oidc', idp, { cookie: grant })) ?? '';
+    };
 
     const claim = (cookie: string, given = token) =>
       ctx.request('/api/setup/claim', {
@@ -655,7 +733,7 @@ describe('first logins of an unclaimed instance', () => {
     it('signed in, every route but login, /me and the setup page is closed until the claim', async () => {
       const idp = fakeOidc();
       await tokenInstance(idp);
-      const cookie = sessionCookieFrom(await redirectLogin('oidc', idp)) ?? '';
+      const cookie = await grantedLogin(idp);
       expect((await me(cookie)).body).toMatchObject({
         instanceClaimed: false,
         user: { email: 'anna@firma.de', isInstanceAdmin: false },
@@ -697,9 +775,9 @@ describe('first logins of an unclaimed instance', () => {
     it('once someone claimed, nobody is asked again – and SIGNUP applies again', async () => {
       const idp = fakeOidc();
       await tokenInstance(idp);
-      const anna = sessionCookieFrom(await redirectLogin('oidc', idp)) ?? '';
+      const anna = await grantedLogin(idp);
       idp.claims = { ...idp.claims, sub: 'bert', email: 'bert@firma.de', name: 'Bert' };
-      const bert = sessionCookieFrom(await redirectLogin('oidc', idp)) ?? '';
+      const bert = await grantedLogin(idp);
       await blocked(await ctx.request('/api/decks', { cookie: bert }));
 
       expect((await claim(anna)).status).toBe(200);
@@ -736,7 +814,9 @@ describe('first logins of an unclaimed instance', () => {
       { env: 'production', webOrigin: 'https://slider.firma.de' },
       { signup: 'open' },
     );
-    const start = await ctx.request('/api/auth/oidc/login?returnTo=%2F');
+    const grant = await setupGrant();
+    expect(grant).toMatch(/^__Host-slider_setup=/);
+    const start = await ctx.request('/api/auth/oidc/login?returnTo=%2F', { cookie: grant });
     const stateHeader = start.headers.get('set-cookie') ?? '';
     expect(stateHeader).toMatch(/^__Host-slider_oidc=/);
     expect(stateHeader).toMatch(/Path=\/;/);
@@ -748,7 +828,7 @@ describe('first logins of an unclaimed instance', () => {
     const callback = (cookie: string) =>
       ctx.request(
         `/api/auth/oidc/callback?state=${authorize.searchParams.get('state')}&code=the-code`,
-        { cookie },
+        { cookie: `${cookie}; ${grant}` },
       );
 
     // A genuinely signed state cookie under the plain name – what `Domain=.firma.de` could plant.

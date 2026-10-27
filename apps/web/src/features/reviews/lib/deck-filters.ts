@@ -1,4 +1,4 @@
-import type { Deck } from '@slider/shared';
+import { searchFold, type Deck } from '@slider/shared';
 
 export const REVIEW_TABS = ['all', 'open', 'archive'] as const;
 export type ReviewTab = (typeof REVIEW_TABS)[number];
@@ -69,9 +69,6 @@ export function countByTab(
   return { all: count('all'), open: count('open'), archive: count('archive') };
 }
 
-const normalize = (text: string) =>
-  text.toLocaleLowerCase('de').normalize('NFKD').replace(/\p{M}/gu, '');
-
 export function selectDecks(
   decks: readonly Deck[],
   {
@@ -81,6 +78,7 @@ export function selectDecks(
     folder = '*',
     openedAt = neverOpened,
     isPinned = nonePinned,
+    contentMatches,
   }: {
     tab: ReviewTab;
     folder?: FolderScope;
@@ -89,14 +87,21 @@ export function selectDecks(
     openedAt?: OpenedAt;
     /** Pinned decks come first under every sort, sorted among themselves. */
     isPinned?: (deckId: string) => boolean;
+    /** Decks whose slides or comments contain the query (BER-175): they match like a title. */
+    contentMatches?: ReadonlySet<string>;
   },
 ): Deck[] {
-  const needle = normalize(query.trim());
+  const needle = searchFold(query.trim());
   const bySort = comparators(openedAt)[sort];
   return decks
     .filter((deck) => inFolder(deck, tabScope(tab, folder)))
     .filter(TAB_PREDICATES[tab])
-    .filter((deck) => needle === '' || normalize(deck.title).includes(needle))
+    .filter(
+      (deck) =>
+        needle === '' ||
+        searchFold(deck.title).includes(needle) ||
+        contentMatches?.has(deck.id) === true,
+    )
     .sort((a, b) => Number(isPinned(b.id)) - Number(isPinned(a.id)) || bySort(a, b));
 }
 

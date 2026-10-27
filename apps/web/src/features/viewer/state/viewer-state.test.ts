@@ -68,6 +68,17 @@ describe('viewerReducer', () => {
     expect(initial.statusFilter).toBe('open');
   });
 
+  it('hidden comments come back once one is written or a thread is opened', () => {
+    const hidden: ViewerAction = { type: 'statusFilterChanged', filter: 'hidden' };
+    expect(run(hidden).statusFilter).toBe('hidden');
+    expect(run(hidden, { type: 'draftSubmitted' }).statusFilter).toBe('open');
+    const focused = run(hidden, { type: 'threadFocused', threadId: 't1', openPanel: true });
+    expect(focused.statusFilter).toBe('all');
+    // Any other filter stays as it is.
+    const done = run({ type: 'statusFilterChanged', filter: 'done' }, { type: 'draftSubmitted' });
+    expect(done.statusFilter).toBe('done');
+  });
+
   it('hides slides hidden in PowerPoint by default; H shows them', () => {
     expect(initial.showHiddenSlides).toBe(false);
     expect(run({ type: 'showHiddenSlidesToggled' }).showHiddenSlides).toBe(true);
@@ -359,10 +370,7 @@ describe('viewerReducer', () => {
     });
 
     it('closes the panel of a thread deleted meanwhile, keeps it while the thread is there', () => {
-      const open = run(
-        { type: 'threadFocused', threadId: 't1', openPanel: true },
-        { type: 'threadHovered', threadId: 't1' },
-      );
+      const open = run({ type: 'threadFocused', threadId: 't1', openPanel: true });
       expect(
         viewerReducer(open, { type: 'threadsReplaced', threadIds: new Set(['t1', 't2']) }),
       ).toBe(open);
@@ -370,7 +378,6 @@ describe('viewerReducer', () => {
       expect(gone).toMatchObject({
         threadPanelOpen: false,
         focusedThreadId: null,
-        hoveredThreadId: null,
         editingCommentId: null,
       });
     });
@@ -383,6 +390,47 @@ describe('viewerReducer', () => {
       expect(state).toMatchObject({ deletedPanelOpen: true, threadPanelOpen: false });
       state = viewerReducer(state, { type: 'threadFocused', threadId: 't2', openPanel: true });
       expect(state).toMatchObject({ deletedPanelOpen: false, threadPanelOpen: true });
+    });
+
+    it('shares the right side with the layers panel – the layers mode stays on without it', () => {
+      let state = run(
+        { type: 'threadFocused', threadId: 't1', openPanel: true },
+        { type: 'layersSet', open: true },
+      );
+      // The mode on opens no panel: the thread stays.
+      expect(state).toMatchObject({
+        layersOpen: true,
+        layersPanelOpen: false,
+        threadPanelOpen: true,
+      });
+      state = viewerReducer(state, { type: 'layersPanelSet', open: true });
+      expect(state).toMatchObject({
+        layersOpen: true,
+        layersPanelOpen: true,
+        threadPanelOpen: false,
+        focusedThreadId: null,
+      });
+      state = viewerReducer(state, { type: 'deletedPanelSet', open: true });
+      expect(state).toMatchObject({
+        layersOpen: true,
+        layersPanelOpen: false,
+        deletedPanelOpen: true,
+      });
+      state = viewerReducer(state, { type: 'layersPanelSet', open: true });
+      expect(state).toMatchObject({ layersPanelOpen: true, deletedPanelOpen: false });
+      state = viewerReducer(state, { type: 'threadFocused', threadId: 't2', openPanel: true });
+      expect(state).toMatchObject({
+        layersOpen: true,
+        layersPanelOpen: false,
+        threadPanelOpen: true,
+      });
+      state = viewerReducer(state, { type: 'layersPanelSet', open: false });
+      expect(state).toBe(state);
+      state = viewerReducer(state, { type: 'layersSet', open: false });
+      expect(state).toMatchObject({ layersOpen: false, layersPanelOpen: false });
+      // Without the mode, no panel.
+      expect(viewerReducer(initial, { type: 'layersPanelSet', open: true })).toBe(initial);
+      expect(viewerReducer(initial, { type: 'layersSet', open: false })).toBe(initial);
     });
 
     it('closing the deleted slides when they are closed already changes nothing', () => {

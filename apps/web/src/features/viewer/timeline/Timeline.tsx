@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type MouseEvent,
   type ReactNode,
 } from 'react';
@@ -61,10 +62,24 @@ const sameRange = (a: Range, b: Range) => a.first === b.first && a.last === b.la
  * handle sets the slide height – the track is always exactly as tall as the slides, and the
  * minimap, controls row and comment area move with it.
  */
-export function Timeline({ controls }: { controls: ReactNode }) {
+export function Timeline({
+  controls,
+  findSlotRef,
+}: {
+  controls: ReactNode;
+  /** Gets the split handle's spot, where the find bar docks (`null` while there is no handle). */
+  findSlotRef?: (slot: HTMLElement | null) => void;
+}) {
   const { slides, slideIndex } = useViewerData();
-  const { split, activeSlideId, tool, threadPanelOpen, deletedPanelOpen, showMinimap } =
-    useViewerState();
+  const {
+    split,
+    activeSlideId,
+    tool,
+    threadPanelOpen,
+    deletedPanelOpen,
+    layersPanelOpen,
+    showMinimap,
+  } = useViewerState();
   const { deletedSlides } = useRevisionData();
   const hasDeleted = deletedSlides.length > 0;
   const dispatch = useViewerDispatch();
@@ -252,10 +267,18 @@ export function Timeline({ controls }: { controls: ReactNode }) {
           narrow && 'snap-x snap-mandatory [scroll-padding-inline:16px]',
         )}
       >
-        {/* The dot grid lives on the content, so it scrolls (and pans) with the cards. */}
+        {/* The dot grid lives on the content, so it scrolls (and pans) with the cards. With a
+            side panel open the content runs on by the panel's room (12 + 400 + 12 gap), so the
+            last slides can scroll clear of it – `revealSlide` already aims that far. */}
         <div
-          className="dot-grid relative min-h-full min-w-full"
-          style={{ width: layout?.contentW }}
+          className={cn(
+            'dot-grid relative min-h-full min-w-full',
+            layout && 'w-(--content-w)',
+            layout &&
+              (threadPanelOpen || deletedPanelOpen || layersPanelOpen) &&
+              'md:w-[calc(var(--content-w)+424px)]',
+          )}
+          style={layout ? ({ '--content-w': `${layout.contentW}px` } as CSSProperties) : undefined}
         >
           {/* Connector lines: in the content, so they scroll sideways with slides and cards in
               the same frame; sticky, so vertically they stay with the header's marks. */}
@@ -290,7 +313,7 @@ export function Timeline({ controls }: { controls: ReactNode }) {
             data-connector-occluder
             className={cn(
               'sticky left-0 z-(--z-chrome) w-[100cqw] pt-2 pb-2 transition-[padding] duration-300 @container',
-              (threadPanelOpen || deletedPanelOpen) && 'md:pr-[412px]',
+              (threadPanelOpen || deletedPanelOpen || layersPanelOpen) && 'md:pr-[412px]',
             )}
             style={{ top: TRACK_PAD_TOP + (slideH ?? 0) }}
           >
@@ -313,7 +336,11 @@ export function Timeline({ controls }: { controls: ReactNode }) {
                 controls, so where they would overlap on a narrow band the controls win. */}
             <div className="relative px-4 pt-2">
               {geometry && slideH && !narrow && (
-                <div className="absolute inset-x-0 top-2 bottom-0 flex items-center justify-center">
+                // The find bar morphs out of the handle and takes its place while open.
+                <div
+                  ref={findSlotRef}
+                  className="absolute inset-x-0 top-2 bottom-0 flex items-center justify-center [&:has([data-find-bar])>[data-split-handle]]:invisible"
+                >
                   <SplitHandle
                     geometry={geometry}
                     slideH={slideH}

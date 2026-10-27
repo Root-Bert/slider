@@ -15,9 +15,9 @@ import {
 } from '../db/schema';
 import { ApiError, notFound } from '../http/errors';
 import { toDeckBytes } from '../import/any-file';
+import { deckFileExtension } from '../import/odp-deck';
 import { pdfMakerOf } from '../import/pdf-maker';
 import { sha256Hex } from '../import/common';
-import { isPdfBytes } from '../sources/safe-fetch';
 import type { DocumentToPdf } from '../import/libreoffice';
 import type { ImportJob, JobQueue } from '../import/queue';
 import type { Logger } from '../logger';
@@ -137,13 +137,16 @@ export class SyncService {
         }
         const { deck, current } = await this.load(deckId);
         // A deck stays what it came as: its versions are compared slide by slide.
-        if (current?.pptxKey && current.pptxKey.endsWith('.pdf') !== isPdfBytes(bytes)) {
+        const kind = current?.pptxKey?.slice(current.pptxKey.lastIndexOf('.') + 1);
+        if (kind && kind !== deckFileExtension(bytes)) {
           throw new ApiError(
             400,
             'not_a_powerpoint',
-            current.pptxKey.endsWith('.pdf')
+            kind === 'pdf'
               ? 'Diese Präsentation kam als PDF – bitte auch die neue Version als PDF hochladen.'
-              : 'Diese Präsentation kam als PowerPoint – bitte auch die neue Version als .pptx hochladen.',
+              : kind === 'odp'
+                ? 'Diese Präsentation kam als ODP – bitte auch die neue Version als .odp hochladen.'
+                : 'Diese Präsentation kam als PowerPoint – bitte auch die neue Version als .pptx hochladen.',
           );
         }
         if (current && sourceSha === (await this.revisionSha(current))) {
@@ -290,6 +293,17 @@ export class SyncService {
         bookkeeping.lastContentCheckAt = now.toISOString();
       }
 
+      // Edits made in Slider and not saved yet (BER-180): a new version from the cloud must not
+      // replace them. The editor tells that the cloud changed; saving decides.
+      if (current.editSeq !== current.savedSeq && (baseline === null || token !== baseline)) {
+        await mergeSyncState(this.deps.db, deckId, {
+          ...healthyCheck(now, new Date(now.getTime() + this.pollMs)),
+          ...bookkeeping,
+          cloudChangedToken: token,
+        });
+        return { status: 'unchanged' };
+      }
+
       if (baseline !== null && token === baseline) {
         await mergeSyncState(this.deps.db, deckId, {
           ...healthyCheck(now, new Date(now.getTime() + this.pollMs)),
@@ -415,7 +429,7 @@ export class SyncService {
   ): Promise<SyncResult> {
     const { db, storage, clock, queue } = this.deps;
     const revisionId = crypto.randomUUID();
-    const pptxKey = blobKeys.pptx(deck.id, revisionId, isPdfBytes(bytes) ? 'pdf' : 'pptx');
+    const pptxKey = blobKeys.pptx(deck.id, revisionId, deckFileExtension(bytes));
     const now = clock.now();
     await storage.put(pptxKey, bytes);
     let stale: SyncResult | null = null;

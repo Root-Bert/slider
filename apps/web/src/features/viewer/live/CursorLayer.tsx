@@ -31,7 +31,7 @@ export function CursorLayer() {
   const registry = useStageRegistry();
   const overrides = useColorOverrides();
   const { peers } = useLiveSnapshot();
-  const { threadPanelOpen, deletedPanelOpen } = useViewerState();
+  const { threadPanelOpen, deletedPanelOpen, layersPanelOpen } = useViewerState();
   const elements = useRef(new Map<string, HTMLDivElement>());
   const wakeRef = useRef<(() => void) | null>(null);
 
@@ -135,7 +135,7 @@ export function CursorLayer() {
   // A peer moved, came or left; a side panel opened or closed (it hides cursors under it).
   useEffect(() => {
     wakeRef.current?.();
-  }, [peers, threadPanelOpen, deletedPanelOpen]);
+  }, [peers, threadPanelOpen, deletedPanelOpen, layersPanelOpen]);
 
   if (!hasOthers) return null;
   return (

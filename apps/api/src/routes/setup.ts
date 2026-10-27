@@ -11,6 +11,7 @@ import {
   type SetupKey,
   type SetupStatus,
 } from '@slider/shared';
+import { grantSetup } from '../auth/instance-gate';
 import { optionalViewerMiddleware, unauthorized, type OptionalViewerEnv } from '../auth/viewer';
 import {
   GOOGLE_CALLBACK_PATH,
@@ -71,7 +72,11 @@ export function setupRoutes(deps: AppDeps) {
       c.header('Retry-After', String(retryAfterS));
       throw tooManyAttempts();
     }
-    if (setupTokenMatches(deps.config.dataDir, given)) return true;
+    if (setupTokenMatches(deps.config.dataDir, given)) {
+      // This browser may now sign in (or up) to claim the instance (`auth/instance-gate`).
+      grantSetup(c, deps);
+      return true;
+    }
     failures.add(client);
     deps.log.warn(`Wrong setup token from ${client}`);
     return false;
@@ -162,6 +167,10 @@ export function setupRoutes(deps: AppDeps) {
               nextcloud: new URL(NEXTCLOUD_CALLBACK_PATH, url).toString(),
             },
             fields,
+            features: {
+              payments: deps.config.billing !== null,
+              stockPhotos: Boolean(deps.config.unsplash),
+            },
           },
         });
       })

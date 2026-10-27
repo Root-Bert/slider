@@ -102,7 +102,9 @@ export async function getWorkspaceSso(
 
 /**
  * `PUT /workspaces/:id/sso` (admins): saves the provider after its discovery document answered.
- * A domain proven before stays proven – the provider may change, the domain's owner did not.
+ * Another provider (issuer or client) needs its own secret and a new DNS proof: the proof says
+ * who runs the domain vouches for this provider – else any admin could point the login at their
+ * own provider and sign into every account at the domain. The stored secret never goes to it.
  */
 export async function saveWorkspaceSso(
   deps: SsoDeps,
@@ -121,9 +123,11 @@ export async function saveWorkspaceSso(
     );
   }
   const existing = await ssoRow(deps, workspaceId);
-  const clientSecret = input.clientSecret ?? existing?.clientSecret;
-  if (!clientSecret) throw badRequest('Bitte das Client Secret angeben.');
   const issuer = input.issuer.replace(/\/+$/, '');
+  const sameProvider =
+    existing !== null && existing.issuer === issuer && existing.clientId === input.clientId;
+  const clientSecret = input.clientSecret ?? (sameProvider ? existing.clientSecret : undefined);
+  if (!clientSecret) throw badRequest('Bitte das Client Secret angeben.');
   const row = { issuer, clientId: input.clientId, clientSecret };
   try {
     // Discovery only: the issuer answers and names itself the same.
@@ -148,7 +152,18 @@ export async function saveWorkspaceSso(
       createdAt: now,
       updatedAt: now,
     })
-    .onConflictDoUpdate({ target: workspaceSso.workspaceId, set: { ...row, updatedAt: now } });
+    .onConflictDoUpdate({
+      target: workspaceSso.workspaceId,
+      set: sameProvider
+        ? { ...row, updatedAt: now }
+        : {
+            ...row,
+            verifyToken: randomBytes(18).toString('base64url'),
+            verifiedDomain: null,
+            verifiedAt: null,
+            updatedAt: now,
+          },
+    });
   return getWorkspaceSso(deps, userId, workspaceId);
 }
 

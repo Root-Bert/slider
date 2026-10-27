@@ -11,6 +11,7 @@ import { SESSION_MAX_AGE_MS } from '../auth/session';
 import type { AppDeps } from '../deps';
 import { retryBlobDeletions } from './blob-deletions';
 import { sweepDowngrades } from './downgrade';
+import { sweepOldEditImages } from './old-edit-images';
 import { DAY_MS, INVITE_KEEP_DAYS } from './retention-rules';
 import { sweepUnusedAccounts } from './unused-accounts';
 import { sweepUnusedDecks } from './unused-decks';
@@ -84,6 +85,7 @@ export async function enforceRetention(deps: AppDeps): Promise<void> {
     sweepUnusedDecks,
     sweepUnusedAccounts,
     retryBlobDeletions,
+    sweepOldEditImages,
     // Not a deletion deadline, but the same hourly rhythm: paid workspaces without payment.
     sweepDowngrades,
   ] as const;

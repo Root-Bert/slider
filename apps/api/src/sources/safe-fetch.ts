@@ -180,6 +180,22 @@ const preferIpv4 = (addresses: readonly { address: string }[]) =>
 
 const isRedirect = (status: number) => status >= 300 && status < 400 && status !== 304;
 
+/**
+ * `url` and `init` sent to one of the checked `addresses` where `fetch` can pin (Bun's own,
+ * unless `pin` says otherwise) – else as they are.
+ */
+export function pinnedToChecked(
+  url: URL,
+  addresses: readonly { address: string }[],
+  init: RequestInit,
+  fetch: FetchLike,
+  pin?: boolean,
+): { url: URL; init: RequestInit } {
+  const pinning = pin ?? (runsOnBun && fetch === globalThis.fetch);
+  if (!pinning || isIP(url.hostname.replace(/^\[|\]$/g, ''))) return { url, init };
+  return pinnedRequest(url, preferIpv4(addresses), init);
+}
+
 /** One request without following redirects, after checking the target address. */
 export async function fetchHop(
   url: URL,
@@ -189,10 +205,7 @@ export async function fetchHop(
   let request = { url, init };
   if (!trusted?.(url)) {
     const addresses = await assertPublicHttpsUrl(url, lookupAll);
-    const pinning = pin ?? (runsOnBun && fetch === globalThis.fetch);
-    if (pinning && !isIP(url.hostname.replace(/^\[|\]$/g, ''))) {
-      request = pinnedRequest(url, preferIpv4(addresses), init);
-    }
+    request = pinnedToChecked(url, addresses, init, fetch, pin);
   }
   try {
     return await fetch(request.url, {

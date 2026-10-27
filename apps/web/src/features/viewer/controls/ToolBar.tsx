@@ -1,4 +1,6 @@
 import { cn, GlassPanel, Icon, IconButton, type IconName, Toolbar, ToolbarDivider } from '@/ui';
+import { EditActions } from '../editing/EditActions';
+import { useEditing } from '../editing/editing-context';
 import { useRevisionData } from '../state/revision-data';
 import { useViewerData } from '../state/viewer-data';
 import {
@@ -64,6 +66,7 @@ function ToolButtons() {
   // Lit while box mode applies – also while ⌥ flips it on for a moment.
   const boxes = isBoxModeActive(state);
   const dispatch = useViewerDispatch();
+  const editing = useEditing();
 
   return (
     <Toolbar
@@ -97,8 +100,44 @@ function ToolButtons() {
         />
       ))}
       <ToolbarDivider />
+      {/* Another mode next to box mode: outline the slide's elements and change them. */}
+      {editing.available && (
+        <IconButton
+          icon="editor"
+          label="Bearbeiten"
+          title={
+            editing.active
+              ? 'Bearbeiten beenden (E)'
+              : 'Bearbeiten (E): Texte direkt auf der Folie, Formen und Bilder'
+          }
+          aria-keyshortcuts="E"
+          size="sm"
+          active={editing.active}
+          aria-pressed={editing.active}
+          onClick={() => editing.setActive(!editing.active)}
+        />
+      )}
+      {/* The slides taken apart in 3D: what lies over what, restacked there. The list (⇧L) opens
+          on asking, or on a layer clicked in box mode. */}
+      {editing.available && (
+        <IconButton
+          icon="layers"
+          label="Ebenen"
+          title={
+            editing.layers
+              ? 'Ebenen beenden (L) – Liste: ⇧L'
+              : 'Ebenen (L): die Folien in 3D aufgefächert, Ebenen umsortieren – mit Liste: ⇧L'
+          }
+          aria-keyshortcuts="L Shift+L"
+          size="sm"
+          active={editing.layers}
+          aria-pressed={editing.layers}
+          onClick={() => editing.setLayers(!editing.layers)}
+        />
+      )}
+      <EditActions />
       <IconButton
-        icon="gridView"
+        icon="boxSelect"
         label="Box-Modus"
         title={`Box-Modus ${boxMode ? 'aus' : 'an'} (B) – ⌥ halten wechselt kurz`}
         aria-keyshortcuts="B"

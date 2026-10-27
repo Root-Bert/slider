@@ -33,6 +33,10 @@ interface SegmentedControlProps<T extends string> {
    * skipped), so the arrows never reach page shortcuts behind it. Disabled tabs stay visible.
    */
   mode?: 'radio' | 'tabs';
+  /** Full width, the segments grow to share it (the composer's kinds, flush with its field). */
+  fill?: boolean;
+  /** Icon and count only: the label becomes the segment's accessible name and tooltip. */
+  iconOnly?: boolean;
   className?: string;
 }
 
@@ -61,6 +65,8 @@ export function SegmentedControl<T extends string>({
   tone = 'neutral',
   track = 'none',
   mode = 'radio',
+  fill = false,
+  iconOnly = false,
   className,
 }: SegmentedControlProps<T>) {
   const tabs = mode === 'tabs';
@@ -106,7 +112,8 @@ export function SegmentedControl<T extends string>({
       onKeyDown={onKeyDown}
       className={cn(
         'flex items-center',
-        track === 'soft' ? cn('w-fit', trackClasses[size], trackTone[tone]) : 'gap-1',
+        track === 'soft' ? cn(!fill && 'w-fit', trackClasses[size], trackTone[tone]) : 'gap-1',
+        fill && 'w-full',
         className,
       )}
     >
@@ -124,6 +131,8 @@ export function SegmentedControl<T extends string>({
           onClick={() => onChange(segment.value)}
           role={tabs ? 'tab' : 'radio'}
           tabIndex={segment.value === focusable ? 0 : -1}
+          fill={fill}
+          iconOnly={iconOnly}
         >
           {segment.label}
         </FilterChip>
@@ -147,6 +156,10 @@ interface FilterChipProps {
   tabIndex?: number | undefined;
   /** Identifies the chip for roving focus (`data-segment`). */
   value?: string | undefined;
+  /** Grows into a full-width `SegmentedControl`, its content centred. */
+  fill?: boolean | undefined;
+  /** Hides the label: it names the chip (`aria-label`) and is its tooltip unless `title` is set. */
+  iconOnly?: boolean | undefined;
 }
 
 const sizeClasses: Record<SegmentSize, string> = {
@@ -186,6 +199,8 @@ export function FilterChip({
   tone = 'neutral',
   tabIndex,
   value,
+  fill = false,
+  iconOnly = false,
 }: FilterChipProps) {
   const tab = role === 'tab';
   const states = toneClasses[tone];
@@ -198,7 +213,8 @@ export function FilterChip({
       aria-disabled={tab && disabled ? true : undefined}
       disabled={tab ? undefined : disabled}
       tabIndex={tab && disabled ? -1 : tabIndex}
-      title={title}
+      aria-label={iconOnly ? children : undefined}
+      title={iconOnly ? (title ?? children) : title}
       data-segment={value}
       onClick={() => {
         if (!disabled) onClick();
@@ -206,6 +222,7 @@ export function FilterChip({
       className={cn(
         'inline-flex shrink-0 items-center whitespace-nowrap transition-colors',
         sizeClasses[size],
+        fill && 'flex-auto justify-center',
         disabled
           ? 'cursor-not-allowed text-fg-muted opacity-40'
           : selected
@@ -214,7 +231,7 @@ export function FilterChip({
       )}
     >
       {icon && <Icon name={icon} size={ICON_PX[size]} />}
-      {children}
+      {!iconOnly && children}
       {count !== undefined && (
         <span className={cn('text-xs font-medium', selected ? 'text-fg-muted' : 'text-fg-subtle')}>
           {count}

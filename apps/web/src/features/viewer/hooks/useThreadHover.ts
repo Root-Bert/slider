@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useViewerDispatch } from '../state/viewer-state';
+import { useSetHoveredThread } from '../state/viewer-state';
 
 /** Every element that belongs to a thread (card, pin, frame, drawing, gap marker) carries its id. */
 const HOVER_THREAD_ATTR = 'data-hover-thread';
@@ -14,7 +14,7 @@ const HOVER_THREAD_ATTR = 'data-hover-thread';
  * forces a layout every frame of the drag. It catches up on release.
  */
 export function useThreadHover() {
-  const dispatch = useViewerDispatch();
+  const setHovered = useSetHoveredThread();
 
   useEffect(() => {
     let pointer: { x: number; y: number } | null = null;
@@ -28,7 +28,7 @@ export function useThreadHover() {
             .elementFromPoint(pointer.x, pointer.y)
             ?.closest<HTMLElement | SVGElement>(`[${HOVER_THREAD_ATTR}]`)
         : null;
-      dispatch({ type: 'threadHovered', threadId: owner?.getAttribute(HOVER_THREAD_ATTR) ?? null });
+      setHovered(owner?.getAttribute(HOVER_THREAD_ATTR) ?? null);
     };
     const schedule = () => {
       if (!frame) frame = requestAnimationFrame(update);
@@ -80,5 +80,5 @@ export function useThreadHover() {
       window.removeEventListener('resize', refresh);
       cancelAnimationFrame(frame);
     };
-  }, [dispatch]);
+  }, [setHovered]);
 }

@@ -98,7 +98,7 @@ export function SketchReplyDialog({
           }}
         />
         <NoteField
-          label="Notiz zum Bild"
+          label="Notiz zur Skizze"
           value={note}
           onChange={setNote}
           onSend={send}

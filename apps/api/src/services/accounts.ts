@@ -259,8 +259,8 @@ async function signUpAllowed(
 ): Promise<{ viaInvite: boolean } | null> {
   const signup = await maySignUp(deps, email, true, input.inviteToken, vouchesForDomain(input));
   if (signup.allowed) return { viaInvite: signup.viaInvite };
-  // No instance admin yet: anyone may sign up – the new account can't do anything before it
-  // enters the setup token (`auth/instance-gate`), and the first one to do so is admin.
+  // No instance admin yet: only the browser that typed in the setup token gets here
+  // (`auth/instance-gate`) – its account signs up whatever SIGNUP says, to claim the instance.
   if (deps.config.auth.devLogin || (await instanceClaimed(deps.db))) return null;
   deps.log.info(`Sign-up of ${email} on an unclaimed instance (SIGNUP=${deps.config.auth.signup})`);
   return { viaInvite: false };
@@ -409,7 +409,8 @@ export type UnlinkResult = { ok: true } | { ok: false; error: 'not_found' | 'las
  * identity remains: passkeys don't count, they only sign into an account that has a login. Under
  * the same per-account lock as {@link deletePasskey}, so two unlinks at once can't both see the
  * other as the remaining one. The Microsoft file access stays; it is disconnected on its own
- * (`DELETE /me/microsoft/:id`). Sessions don't record their login, so they stay too.
+ * (`DELETE /me/microsoft/:id`). Sessions don't record their login: the route ends every other
+ * one (`endOtherSessions`).
  */
 export async function unlinkIdentity(
   deps: Pick<AppDeps, 'db'>,

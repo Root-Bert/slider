@@ -28,7 +28,7 @@ export function importActivityLabel(state: ImportState): string {
     case 'rendering':
       return 'Folien werden gerendert';
     case 'comments':
-      return 'PowerPoint-Kommentare werden importiert';
+      return 'Kommentare aus der Datei werden importiert';
   }
 }
 

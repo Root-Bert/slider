@@ -15,6 +15,8 @@ import { useRestoreFocus } from '../hooks/useRestoreFocus';
 import { ReplyComposer } from './ReplyComposer';
 import { ResolveButton } from './ResolveButton';
 import { ThreadMessage } from './ThreadMessage';
+import { AiProposalCard } from './AiProposalCard';
+import { useCommentProposals } from './hooks/useCommentProposals';
 import { VIEW_ONLY_HINT } from './lib/view-only';
 
 /** Thread side panel (B4) – a bottom sheet on phones. */
@@ -35,6 +37,7 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
   const historyRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const [showAll, setShowAll] = useState(false);
+  const proposalsOf = useCommentProposals(deck.id);
   const { root, replies } = thread;
   const { hidden, visible } = collapseReplies(replies, showAll);
   const deletedSlide = deletedSlides.find((slide) => slide.slideId === root.slideId);
@@ -107,6 +110,9 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
         className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-5 pt-3.5 pb-4"
       >
         <ThreadMessage comment={root} deckId={deck.id} isRoot onDeleted={close} />
+        {proposalsOf(root.id).map((proposal) => (
+          <AiProposalCard key={proposal.id} proposal={proposal} className="mt-2 ml-[39px]" />
+        ))}
         {hidden > 0 && (
           <div className="mt-2.5 flex items-center gap-1.5 pl-[26px]">
             <Button
@@ -129,8 +135,11 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
               className="absolute inset-y-0 left-[25px] w-0.5 rounded-full bg-surface-3"
             />
             {visible.map((reply) => (
-              <li key={reply.id}>
+              <li key={reply.id} className="flex flex-col gap-2">
                 <ThreadMessage comment={reply} deckId={deck.id} isRoot={false} />
+                {proposalsOf(reply.id).map((proposal) => (
+                  <AiProposalCard key={proposal.id} proposal={proposal} />
+                ))}
               </li>
             ))}
           </ol>

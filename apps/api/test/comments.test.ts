@@ -6,7 +6,7 @@ import {
   type CreateCommentInput,
   type Stroke,
 } from '@slider/shared';
-import { comments, workspaceMembers } from '../src/db/schema';
+import { commentReactions, comments, workspaceMembers } from '../src/db/schema';
 import { externalAuthor } from '../src/authors';
 import { MAX_JSON_BODY_BYTES } from '../src/http/validate';
 import {
@@ -621,6 +621,59 @@ describe('updating and deleting', () => {
     });
   });
 
+  it('draws on a bare freehand drawing: its strokes make one drawing', async () => {
+    const pen = (x: number) =>
+      ({
+        tool: 'pen',
+        color: 'yellow',
+        points: [
+          { x, y: 0.1 },
+          { x: x + 0.1, y: 0.2 },
+        ],
+      }) satisfies Stroke;
+    const arrow = { ...pen(0.5), tool: 'arrow' } satisfies Stroke;
+    const anchor = (w: number) =>
+      ({ type: 'rect', rect: { x: 0.1, y: 0.1, w, h: 0.1 }, shapeRef: null }) as const;
+    const bare = await create({
+      slideId: slide(0),
+      body: '',
+      anchor: anchor(0.1),
+      strokes: [pen(0.1)],
+    });
+    const commented = await create({
+      slideId: slide(0),
+      body: 'Hier',
+      anchor: anchor(0.1),
+      strokes: [pen(0.1)],
+    });
+    const arrowed = await create({
+      slideId: slide(0),
+      body: '',
+      anchor: anchor(0.1),
+      strokes: [arrow],
+    });
+    const patch = (id: string, strokes: Stroke[], cookie?: string) =>
+      ctx.request(`/api/comments/${id}`, {
+        method: 'PATCH',
+        json: { addStrokes: { strokes, rect: anchor(0.3).rect } },
+        cookie,
+      });
+
+    expect((await patch(bare.id, [pen(0.3)], await asMember('Mia'))).status).toBe(403);
+    // Commented on, or arrows and markers: they stay as they are.
+    expect((await patch(commented.id, [pen(0.3)])).status).toBe(400);
+    expect((await patch(arrowed.id, [pen(0.3)])).status).toBe(400);
+    expect((await patch(bare.id, [arrow])).status).toBe(400);
+
+    const res = await patch(bare.id, [pen(0.3)]);
+    expect(res.status).toBe(200);
+    expect(commentSchema.parse(await res.json())).toMatchObject({
+      body: '',
+      strokes: [pen(0.1), pen(0.3)],
+      anchor: anchor(0.3),
+    });
+  });
+
   it('returns 404 for unknown comments', async () => {
     expect((await ctx.request('/api/comments/nope', { method: 'DELETE' })).status).toBe(404);
   });
@@ -652,6 +705,59 @@ describe('viewers only look', () => {
       await ctx.request(`/api/decks/${deck.deckId}`, { cookie: viewer })
     ).json()) as { permissions: unknown };
     expect(deckRes.permissions).toEqual({ canManage: false, canComment: false });
+  });
+});
+
+describe('reactions (👍 / 👎 / egal)', () => {
+  const react = (commentId: string, kind: string | null, cookie?: string) =>
+    ctx.request(`/api/comments/${commentId}/reaction`, { method: 'PUT', json: { kind }, cookie });
+  const listed = async (commentId: string) =>
+    commentSchema
+      .array()
+      .parse(await (await ctx.request(`/api/decks/${deck.deckId}/comments`)).json())
+      .find((c) => c.id === commentId);
+
+  it('keeps one reaction per person: reacting again changes it, null takes it back', async () => {
+    const root = await create(pinComment(slide(0)));
+    const ada = await asMember('Ada Lovelace');
+    expect((await react(root.id, 'up')).status).toBe(200);
+    const res = await react(root.id, 'neutral', ada);
+    expect(res.status).toBe(200);
+    expect(commentSchema.parse(await res.json()).reactions).toMatchObject([
+      { kind: 'up', author: { name: 'Robert Hofmann' } },
+      { kind: 'neutral', author: { name: 'Ada Lovelace' } },
+    ]);
+
+    await react(root.id, 'down');
+    expect((await listed(root.id))?.reactions?.map((r) => r.kind).sort()).toEqual([
+      'down',
+      'neutral',
+    ]);
+    await react(root.id, null, ada);
+    expect((await listed(root.id))?.reactions).toMatchObject([
+      { kind: 'down', author: { name: 'Robert Hofmann' } },
+    ]);
+  });
+
+  it('works on replies too and goes with the comment', async () => {
+    const root = await create(pinComment(slide(0)));
+    const reply = await create({
+      ...pinComment(slide(0), 'Ja'),
+      parentId: root.id,
+      anchor: { type: 'slide' },
+    });
+    await react(reply.id, 'up');
+    expect((await listed(reply.id))?.reactions).toHaveLength(1);
+    await ctx.request(`/api/comments/${root.id}`, { method: 'DELETE' });
+    expect(await ctx.deps.db.select().from(commentReactions)).toEqual([]);
+  });
+
+  it('refuses unknown kinds, unknown comments and viewers', async () => {
+    const root = await create(pinComment(slide(0)));
+    expect((await react(root.id, 'love')).status).toBe(400);
+    expect((await react('nope', 'up')).status).toBe(404);
+    const viewer = await asMember('Gesa Teil', 'viewer');
+    expect((await react(root.id, 'up', viewer)).status).toBe(403);
   });
 });
 

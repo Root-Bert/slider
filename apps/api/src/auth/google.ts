@@ -71,7 +71,7 @@ export const googleNotConfigured = () =>
   new ApiError(
     503,
     'google_not_configured',
-    'Google Drive ist auf diesem Server nicht eingerichtet. Trage GOOGLE_CLIENT_ID und GOOGLE_CLIENT_SECRET ein – oder lade die Datei als PPTX hoch.',
+    'Google Drive ist auf diesem Server nicht eingerichtet. Trage GOOGLE_CLIENT_ID und GOOGLE_CLIENT_SECRET ein – oder lade die Datei hoch.',
   );
 
 export const googleAppRejected = () =>

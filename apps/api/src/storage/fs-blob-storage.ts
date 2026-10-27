@@ -73,6 +73,16 @@ export class FsBlobStorage implements BlobStorage {
     }
   }
 
+  async modifiedAt(key: string): Promise<Date | null> {
+    try {
+      const info = await stat(this.resolve(key));
+      return info.isFile() ? info.mtime : null;
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+  }
+
   async stream(
     key: string,
     range?: { start: number; end: number },

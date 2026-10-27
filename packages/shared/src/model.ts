@@ -385,6 +385,21 @@ export const commentImageSchema = z.object({
 });
 export type CommentImage = z.infer<typeof commentImageSchema>;
 
+/**
+ * How someone reacts to a comment: thumbs up, thumbs down or „egal“ (`neutral`). One reaction
+ * per person and comment; reacting again changes it.
+ */
+export const COMMENT_REACTIONS = ['up', 'down', 'neutral'] as const;
+export const commentReactionKindSchema = z.enum(COMMENT_REACTIONS);
+export type CommentReactionKind = z.infer<typeof commentReactionKindSchema>;
+
+export const commentReactionSchema = z.object({
+  kind: commentReactionKindSchema,
+  /** Snapshot of who reacted, as for comments. */
+  author: authorSchema,
+});
+export type CommentReaction = z.infer<typeof commentReactionSchema>;
+
 export const commentSchema = z.object({
   id: z.string(),
   deckId: z.string(),
@@ -402,6 +417,8 @@ export const commentSchema = z.object({
    * memo recorded while drawing) or pasted / picked ones.
    */
   images: z.array(commentImageSchema).optional(),
+  /** Reactions to it (👍 / 👎 / egal), oldest first. */
+  reactions: z.array(commentReactionSchema).optional(),
   status: commentStatusSchema,
   resolvedBy: z.string().nullable(),
   resolvedAt: z.iso.datetime().nullable(),

@@ -15,7 +15,7 @@ import {
 } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { sha256Hex } from '../import/common';
-import { isPdfBytes } from '../sources/safe-fetch';
+import { deckFileExtension } from '../import/odp-deck';
 import { pdfMakerOf } from '../import/pdf-maker';
 import { blobKeys, fileUrl } from '../storage/blob-storage';
 import { deckBlobs, deleteBlobs } from './blob-deletions';
@@ -275,7 +275,7 @@ export async function createDeckFromFile(
 ): Promise<Deck> {
   const deckId = crypto.randomUUID();
   const revisionId = crypto.randomUUID();
-  const pptxKey = blobKeys.pptx(deckId, revisionId, isPdfBytes(file.bytes) ? 'pdf' : 'pptx');
+  const pptxKey = blobKeys.pptx(deckId, revisionId, deckFileExtension(file.bytes));
   const now = deps.clock.now();
 
   await deps.storage.put(pptxKey, file.bytes);

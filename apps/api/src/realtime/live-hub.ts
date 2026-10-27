@@ -245,6 +245,16 @@ export class LiveHub {
     this.broadcast(deckId, { type: 'comments' });
   }
 
+  /** The deck was edited (BER-180): everyone there refetches its slides and edit state. */
+  slidesChanged(deckId: string): void {
+    this.broadcast(deckId, { type: 'slides' });
+  }
+
+  /** An AI proposal of the deck changed (BER-183). */
+  proposalsChanged(deckId: string): void {
+    this.broadcast(deckId, { type: 'proposals' });
+  }
+
   /**
    * Changes with {@link commentsChanged}: the refetches one change sets off may share one query,
    * but never one that started before the change. Kept per deck only while it has connections

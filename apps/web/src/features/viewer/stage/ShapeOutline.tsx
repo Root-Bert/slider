@@ -10,15 +10,21 @@ interface ShapeOutlineProps {
   variant: 'faint' | 'target' | 'emphasis';
   /** CSS colour for `target`/`emphasis`. */
   color?: string;
+  /** Box mode: drawn a little outside the shape, so the outline does not sit on its edge. */
+  padded?: boolean;
 }
+
+/** How far a `padded` outline stands off the shape, in px. */
+const PAD = 3;
 
 /**
  * The outline of a PowerPoint shape (text box, picture, …) on the slide image, positioned in
  * percent of the slide box. Comments attach to these shapes (BER-98), which the raster image
  * itself does not show. Never a pointer target.
  */
-export function ShapeOutline({ shape, variant, color }: ShapeOutlineProps) {
+export function ShapeOutline({ shape, variant, color, padded }: ShapeOutlineProps) {
   const { bbox } = shape;
+  const pad = padded ? PAD : 0;
   return (
     <div
       aria-hidden
@@ -30,10 +36,10 @@ export function ShapeOutline({ shape, variant, color }: ShapeOutlineProps) {
           : 'border-[1.5px]',
       )}
       style={{
-        left: `${bbox.x * 100}%`,
-        top: `${bbox.y * 100}%`,
-        width: `${bbox.w * 100}%`,
-        height: `${bbox.h * 100}%`,
+        left: `calc(${bbox.x * 100}% - ${pad}px)`,
+        top: `calc(${bbox.y * 100}% - ${pad}px)`,
+        width: `calc(${bbox.w * 100}% + ${2 * pad}px)`,
+        height: `calc(${bbox.h * 100}% + ${2 * pad}px)`,
         borderColor: variant === 'faint' ? undefined : color,
         backgroundColor:
           variant === 'faint' || !color

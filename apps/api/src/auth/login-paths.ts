@@ -13,3 +13,13 @@ export function loginPath(returnTo?: string, error?: LoginError): string {
 
 /** `/login?error=…` (with `returnTo` unless it is the default). */
 export const loginErrorPath = (error: LoginError, returnTo?: string) => loginPath(returnTo, error);
+
+/**
+ * `/login?confirm=nextcloud`: a new account through the organisation's Nextcloud, its confirmation
+ * mailed (`services/nextcloud-signup`) – the page says to look in the mailbox.
+ */
+export function nextcloudConfirmPath(returnTo?: string): string {
+  const query = new URLSearchParams({ confirm: 'nextcloud' });
+  if (returnTo && returnTo !== DEFAULT_LOGIN_RETURN_TO) query.set('returnTo', returnTo);
+  return `/login?${query.toString()}`;
+}

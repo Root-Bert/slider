@@ -26,7 +26,8 @@ import type { RemoteFile, SourceAdapter, SourceContext } from './source-adapter'
  *
  * App passwords from Login Flow v2 have no scopes – whoever holds one may delete every file of
  * that person. So the client that carries one only knows reading methods; anything else throws
- * before a request leaves the server. Writing back (BER-118) is a deliberate change here.
+ * before a request leaves the server. The one write is {@link NextcloudClient.upload}: a deck
+ * edited in Slider saved back over its own file (BER-182), never over a newer version.
  */
 
 export const NEXTCLOUD_READ_METHODS: ReadonlySet<string> = new Set([
@@ -360,6 +361,34 @@ export class NextcloudClient {
     if (response.ok || response.status === 207) return response;
     await response.body?.cancel();
     throw statusError(response.status);
+  }
+
+  /**
+   * Saves a deck edited in Slider over its file (BER-182) – the client's only write. `PUT` with
+   * `If-Match`, so a version saved in Nextcloud meanwhile is never overwritten unasked: then
+   * `null`. Else the file's new ETag.
+   */
+  async upload(
+    path: string,
+    bytes: Uint8Array,
+    mediaType: string,
+    ifMatch: string | null,
+  ): Promise<string | null> {
+    const { server, loginName, appPassword } = this.credentials;
+    const auth = Buffer.from(`${loginName}:${appPassword}`).toString('base64');
+    const response = await fetchHop(new URL(server + this.davPath(path)), this.http, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': mediaType,
+        ...(ifMatch ? { 'If-Match': ifMatch } : {}),
+      },
+      body: bytes as Uint8Array<ArrayBuffer>,
+    });
+    await response.body?.cancel();
+    if (response.status === 412) return null;
+    if (!response.ok) throw statusError(response.status);
+    return response.headers.get('etag') ?? response.headers.get('oc-etag') ?? '';
   }
 
   private async text(response: Response): Promise<string> {
@@ -703,6 +732,33 @@ export class NextcloudAdapter implements SourceAdapter {
     return this.withClient(link.base, context, async (client) =>
       client.download((await findById(client, link.fileId!)).entry.path),
     );
+  }
+
+  /**
+   * Saves bytes over a linked file (BER-182): the new ETag, `null` when the file changed since
+   * `ifMatch`. Public shares cannot be written.
+   */
+  async upload(
+    file: RemoteFile,
+    bytes: Uint8Array,
+    mediaType: string,
+    ifMatch: string | null,
+    context: SourceContext,
+  ): Promise<string | null> {
+    const link = refLink(file.ref);
+    if (!link.fileId) {
+      throw new ApiError(
+        400,
+        'bad_request',
+        'In eine öffentliche Freigabe kann Slider nicht speichern.',
+      );
+    }
+    return this.withClient(link.base, context, async (client) => {
+      const { entry } = await findById(client, link.fileId!);
+      const etag = await client.upload(entry.path, bytes, mediaType, ifMatch);
+      // Nextcloud does not always answer with the ETag: then it is read again.
+      return etag === '' ? (await findById(client, link.fileId!)).etag : etag;
+    });
   }
 
   /** The file's ETag; public shares: HTTP ETag/Last-Modified, `''` → compare the content. */

@@ -1,5 +1,7 @@
 import type { ParsedSlide } from '@slider/pptx';
+import { isOdpBytes } from '@slider/odp';
 import { isPdfBytes } from '../sources/safe-fetch';
+import { openOdpDeck } from './odp-deck';
 import { runPdfTask } from './pdf-jobs';
 import { PAGE_PATH } from './pdf-pages';
 import type { OpenPptx, PptxDocument } from './pptx';
@@ -18,9 +20,9 @@ const EMU_PER_POINT = 12_700;
 /** Whether a parsed slide is a page of a PDF – it has no PowerPoint slide id. */
 export const isPdfPage = (slide: Pick<ParsedSlide, 'path'>) => slide.path.startsWith(PAGE_PATH);
 
-/** The original of a revision opened for the import: a PPTX by `openPptx`, a PDF here. */
+/** The original of a revision opened for the import: a PPTX by `openPptx`, a PDF or ODP here. */
 export const openDeckFile = (openPptx: OpenPptx, bytes: Uint8Array): Promise<PptxDocument> =>
-  isPdfBytes(bytes) ? openPdfDeck(bytes) : openPptx(bytes);
+  isPdfBytes(bytes) ? openPdfDeck(bytes) : isOdpBytes(bytes) ? openOdpDeck(bytes) : openPptx(bytes);
 
 /**
  * A PDF as the import reads a PowerPoint: its pages as slides with their boxes. Read in a worker

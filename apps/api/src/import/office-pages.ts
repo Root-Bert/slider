@@ -1,14 +1,17 @@
 import type { ParsedSlide } from '@slider/pptx';
+import type { Database } from '../db/client';
 import type { DeckRow, RevisionRow, SlideRenderer } from '../db/schema';
 import type { Logger } from '../logger';
 import { isGraphRef, OFFICE_FILE_TOO_BIG, OfficePdfError } from '../sources/microsoft-graph';
 import { withDeckConnection, type ConnectionLookup } from '../sources/connections';
+import { isOdpBytes } from '@slider/odp';
 import { isPdfBytes } from '../sources/safe-fetch';
 import type { SourceAdapters } from '../sources/source-adapter';
 import { blobKeys, type BlobStorage } from '../storage/blob-storage';
-import { ConversionAborted, type PptxToPdf } from './libreoffice';
+import { ConversionAborted, deckFonts, type PptxToPdf } from './libreoffice';
 import { PAGE_IMAGE_WIDTH, PageCountMismatch, rasterizePdf } from './pdf-pages';
 import { svgThumbnail } from './svg-thumbnail';
+import { drawingFonts } from '../services/workspace-fonts';
 
 type PdfRenderer = Exclude<SlideRenderer, 'svg'>;
 
@@ -142,6 +145,13 @@ export interface SlidePagesDeps {
   /** LibreOffice's PDF of any PPTX; `null`/absent when LibreOffice is not installed. */
   libreOfficePdf?: PptxToPdf | null;
   log: Logger;
+  /** With it, LibreOffice draws in the workspace's own fonts. */
+  db?: Database;
+  /**
+   * Takes the fonts an ODP brings along into its workspace's own (`adoptDeckFonts`), before
+   * LibreOffice draws it – so it is drawn in them already the first time.
+   */
+  adoptFonts?: (deck: DeckRow, file: Uint8Array) => Promise<unknown>;
 }
 
 /**
@@ -184,7 +194,8 @@ export async function renderSlidePages(
   // by whoever made the PDF of a converted file.
   if (isPdfBytes(pptx)) {
     candidates.push({ renderer: revision.pdfRenderer ?? 'pdf', pdf: async () => pptx });
-  } else if (officePdf) {
+  } else if (officePdf && !isOdpBytes(pptx)) {
+    // An ODP is edited in Slider: the linked file's PDF would show the cloud's version, not ours.
     candidates.push({
       renderer: 'office',
       pdf: async () => {
@@ -202,7 +213,20 @@ export async function renderSlidePages(
       renderer: 'libreoffice',
       pdf: async () => {
         try {
-          return await libreOfficePdf(pptx);
+          if (deps.adoptFonts && isOdpBytes(pptx)) {
+            await deps
+              .adoptFonts(deck, pptx)
+              .catch((error: unknown) =>
+                deps.log.warn(`Taking the fonts deck ${deck.id} brings along failed`, error),
+              );
+          }
+          // Only the faces the deck names are read.
+          const fonts = deps.db
+            ? await (
+                await drawingFonts({ ...deps, db: deps.db }, deck.workspaceId)
+              ).faces(await deckFonts(pptx))
+            : [];
+          return await libreOfficePdf(pptx, { fonts });
         } catch (error) {
           // Shutdown: no SVG fallback – the import or re-render resumes on the next start.
           if (error instanceof ConversionAborted) throw error;

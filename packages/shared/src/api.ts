@@ -2,9 +2,11 @@ import { z } from 'zod';
 import {
   accentColorSchema,
   anchorSchema,
+  commentReactionKindSchema,
   commentStatusSchema,
   MAX_MEDIA_PEAKS,
   mediaKindSchema,
+  pathStrokeSchema,
   pointSchema,
   rectSchema,
   shapeRefSchema,
@@ -43,6 +45,7 @@ import type { DomainWorkspace, MeLimits, MeUser, PendingInvite, Workspace } from
  * | POST   | /decks/:deckId/comments                | CreateCommentInput         | Comment (201)         |
  * | PATCH  | /comments/:commentId                   | UpdateCommentInput         | Comment               |
  * | DELETE | /comments/:commentId                   |                            | 204                   |
+ * | PUT    | /comments/:commentId/reaction          | SetCommentReactionInput    | Comment               |
  * | POST   | /decks/:deckId/media-comments (multipart `file` and/or `image` + `comment` JSON) | CreateMediaCommentInput | Comment (201) |
  * | GET    | /decks/:deckId/media-usage             |                            | MediaUsage            |
  * | GET    | /media/:mediaId                        | (Range supported)          | audio/video/PNG bytes |
@@ -163,6 +166,10 @@ export const ERROR_CODES = [
   'plan_over_limit',
   /** Older versions' files can't be deleted while a version is imported or rendered. */
   'storage_busy',
+  /** The cloud's file changed since the edited deck was opened or saved (BER-182): overwrite? */
+  'edit_conflict',
+  /** The workspace has no (working) Anthropic API key for its AI (BER-183). */
+  'ai_not_configured',
   /**
    * No instance admin yet: a signed-in account has to enter the setup token from the server log
    * first (`POST /setup/claim`); until then every other route answers with this (403).
@@ -178,6 +185,8 @@ export const ERROR_CODES = [
   'workspace_blocked',
   /** The instance admin blocked the account (BER-167): it can't sign in. */
   'account_blocked',
+  /** Deleting the account needs a fresh sign-in: sign out and in again first. */
+  'reauth_required',
   'internal',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -370,12 +379,15 @@ export type DeckFolderInput = z.infer<typeof deckFolderInputSchema>;
 /** Longest comment text; the comment fields stop there too. */
 export const MAX_COMMENT_BODY_LENGTH = 10_000;
 
+/** Strokes one comment can carry – also a freehand drawing drawn on stroke by stroke. */
+export const MAX_DRAWING_STROKES = 50;
+
 export const createCommentInputSchema = z.object({
   slideId: z.string().nullable(),
   parentId: z.string().nullable().default(null),
   body: z.string().trim().max(MAX_COMMENT_BODY_LENGTH),
   anchor: anchorSchema,
-  strokes: z.array(strokeSchema).max(50).default([]),
+  strokes: z.array(strokeSchema).max(MAX_DRAWING_STROKES).default([]),
 });
 export type CreateCommentInput = z.input<typeof createCommentInputSchema>;
 
@@ -462,9 +474,23 @@ export const updateCommentInputSchema = z
      * where its point goes when its box was that drawing or text, else `null` (the anchor stays).
      */
     removeMarks: z.object({ pin: pointSchema.nullable() }),
+    /**
+     * Adds freehand strokes to one's own bare freehand drawing – drawn on without a comment in
+     * between, they make one drawing. `rect`: the bounds of all its strokes, the new anchor box.
+     */
+    addStrokes: z.object({
+      strokes: z.array(pathStrokeSchema).min(1).max(MAX_DRAWING_STROKES),
+      rect: rectSchema,
+    }),
   })
   .partial();
 export type UpdateCommentInput = z.infer<typeof updateCommentInputSchema>;
+
+/** One's own reaction to a comment; `null` takes it back. */
+export const setCommentReactionInputSchema = z.object({
+  kind: commentReactionKindSchema.nullable(),
+});
+export type SetCommentReactionInput = z.infer<typeof setCommentReactionInputSchema>;
 
 /** Convenience aliases so consumers import everything from one place. */
 export type DeckResponse = Deck;

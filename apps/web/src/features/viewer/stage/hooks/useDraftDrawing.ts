@@ -1,24 +1,38 @@
 import {
   distance,
+  MAX_DRAWING_STROKES,
   MIN_DRAG_DISTANCE,
   type AccentColor,
+  type Comment,
   type PathStroke,
   type Slide,
 } from '@slider/shared';
-import { useRef, useState, type PointerEvent, type RefObject } from 'react';
-import { useCreateComment } from '@/lib/api';
+import { useEffect, useRef, useState, type PointerEvent, type RefObject } from 'react';
+import { useCreateComment, useUpdateComment } from '@/lib/api';
 import { toSlidePoint } from '../../lib/geometry';
 import { appendPoint, isShapeTool, strokesBounds } from '../lib/stroke-path';
 import { useViewerData } from '../../state/viewer-data';
-import { useViewerDispatch, type PenTool } from '../../state/viewer-state';
+import { useViewerDispatch, useViewerState, type PenTool } from '../../state/viewer-state';
 import { useViewerToast } from '../../state/viewer-toast';
 
 const MAX_POINTS = 2000;
 
+/** Freehand strokes drawn one after another: one drawing (one comment). */
+interface FreehandGroup {
+  slideId: string;
+  strokes: PathStroke[];
+  /** Its comment once stored; `null` while the first stroke is still saving. */
+  commentId: string | null;
+  /** The saves so far, one after another – each stroke is added to what the one before stored. */
+  saved: Promise<void>;
+}
+
 /**
  * Turns pointer input on a slide into strokes (BER-98, BER-99): shapes span the dragged box, the
  * other pens draw one stroke per press. Freehand, arrow and marker strokes are saved right away as
- * bare drawings – a click on their badge (or typing right away) adds the comment; shapes open the composer. Works
+ * bare drawings – a click on their badge (or typing right away) adds the comment; shapes open the composer.
+ * Freehand strokes drawn on, without a comment in between, join the drawing before: one drawing;
+ * arrows and markers stay one each. Works
  * for mouse, pen and touch. Pins, boxes and text on the slide come from the pointer itself (`SlideFrame`).
  */
 export function useDraftDrawing({
@@ -33,43 +47,92 @@ export function useDraftDrawing({
   color: AccentColor;
 }) {
   const dispatch = useViewerDispatch();
+  const { draft, lastDrawing } = useViewerState();
   const { deck } = useViewerData();
   const createComment = useCreateComment(deck.id);
+  const updateComment = useUpdateComment(deck.id);
   const showToast = useViewerToast();
   const [stroke, setStroke] = useState<PathStroke | null>(null);
   // Saved strokes stay on screen until the stored drawing replaces them.
   const [saving, setSaving] = useState<PathStroke[]>([]);
   // The pointer drawing the stroke: a second finger neither restarts nor bends it.
   const pointerRef = useRef<number | null>(null);
+  const groupRef = useRef<FreehandGroup | null>(null);
 
-  const save = (saved: PathStroke) => {
-    const rect = strokesBounds([saved]);
+  // Another tool, or the pen picked anew, starts a new drawing.
+  useEffect(() => {
+    groupRef.current = null;
+  }, [tool]);
+
+  /** The freehand drawing a new freehand stroke joins: still bare and the latest one drawn. */
+  const openGroup = () => {
+    const group = groupRef.current;
+    if (!group || group.slideId !== slide.id || draft) return null;
+    if (group.strokes.length >= MAX_DRAWING_STROKES) return null;
+    // Commented on (or left for another drawing) once it was stored: done.
+    if (group.commentId !== null && lastDrawing?.commentId !== group.commentId) return null;
+    return group;
+  };
+
+  // Typing right away comments on it (`useViewerShortcuts`).
+  const saved = (comment: Comment) =>
+    dispatch({
+      type: 'drawingSaved',
+      slideId: slide.id,
+      commentId: comment.id,
+      anchor: comment.anchor,
+      strokes: comment.strokes,
+    });
+
+  const save = (stroke: PathStroke) => {
+    const group =
+      stroke.tool === 'pen'
+        ? (openGroup() ?? {
+            slideId: slide.id,
+            strokes: [],
+            commentId: null,
+            saved: Promise.resolve(),
+          })
+        : null;
+    const strokes = [...(group?.strokes ?? []), stroke];
+    const rect = strokesBounds(strokes);
     if (!rect) return;
-    setSaving((current) => [...current, saved]);
+    setSaving((current) => [...current, stroke]);
     // Per stroke through the promise: `mutate`'s own callbacks run only for the latest call, so a
     // stroke drawn while the one before is still saving would leave that one's preview behind.
-    createComment
-      .mutateAsync({
-        slideId: slide.id,
-        parentId: null,
-        body: '',
-        anchor: { type: 'rect', rect, shapeRef: null },
-        strokes: [saved],
-      })
-      .then(
-        // Typing right away comments on it (`useViewerShortcuts`).
-        (comment) =>
-          dispatch({
-            type: 'drawingSaved',
+    const store = () =>
+      group?.commentId
+        ? updateComment.mutateAsync({
+            commentId: group.commentId,
+            addStrokes: { strokes: [stroke], rect },
+          })
+        : createComment.mutateAsync({
             slideId: slide.id,
-            commentId: comment.id,
-            anchor: comment.anchor,
-            strokes: comment.strokes,
-          }),
-        // The stroke leaves the slide – say why, instead of letting it vanish.
-        (error: Error) => showToast(error.message, 'danger'),
+            parentId: null,
+            body: '',
+            anchor: { type: 'rect', rect, shapeRef: null },
+            strokes: [stroke],
+          });
+    const done = (group?.saved ?? Promise.resolve())
+      .then(store)
+      .then(
+        (comment) => {
+          if (group) group.commentId = comment.id;
+          saved(comment);
+        },
+        // The stroke leaves the slide – say why, instead of letting it vanish. The next one
+        // starts a drawing of its own.
+        (error: Error) => {
+          if (groupRef.current === group) groupRef.current = null;
+          showToast(error.message, 'danger');
+        },
       )
-      .finally(() => setSaving((current) => current.filter((item) => item !== saved)));
+      .finally(() => setSaving((current) => current.filter((item) => item !== stroke)));
+    if (group) {
+      group.strokes = strokes;
+      group.saved = done;
+      groupRef.current = group;
+    }
   };
 
   const pointOf = (event: PointerEvent) =>

@@ -9,6 +9,7 @@ import {
   type ThreadFilter,
 } from '../lib/comment-selectors';
 import { useViewerData } from '../../state/viewer-data';
+import { useAiThreads } from './useAiThreads';
 import { useViewerState } from '../../state/viewer-state';
 
 export interface VisibleThreads {
@@ -30,13 +31,14 @@ export interface VisibleThreads {
 const EMPTY: Thread[] = [];
 
 /**
- * Applies the comment filter bar (status) and the avatar filter (your avatar:
+ * Applies the comment filter bar (status, or the threads the AI edited) and the avatar filter (your avatar:
  * threads that @mention you; someone else's: threads they wrote in) to the deck's threads.
  * A thread being replied to stays listed, whatever its status now (`useKeepThreadListed`).
  */
 export function useCommentThreads(): VisibleThreads {
   const { threads, threadsBySlide, gapThreads, slides, slideIndex, mentionedThreadIds, viewer } =
     useViewerData();
+  const { edited: aiThreadIds } = useAiThreads();
   const { statusFilter, personFilter, composingThreads } = useViewerState();
   const keep = useMemo(() => new Set(composingThreads.keys()), [composingThreads]);
 
@@ -51,8 +53,8 @@ export function useCommentThreads(): VisibleThreads {
   }, [personFilter, viewer.author.id, mentionedThreadIds, threads]);
 
   const filter = useMemo<ThreadFilter>(
-    () => ({ status: statusFilter, threadIds, keep }),
-    [statusFilter, threadIds, keep],
+    () => ({ status: statusFilter, threadIds, aiThreadIds, keep }),
+    [statusFilter, threadIds, aiThreadIds, keep],
   );
 
   // Gap threads sit under their divider – except those in front of the first slide (where they
@@ -98,8 +100,8 @@ export function useCommentThreads(): VisibleThreads {
   }, [gapThreads, filter]);
 
   const counts = useMemo(
-    () => deckStatusCounts(threads, slides, slideIndex, threadIds),
-    [threads, slides, slideIndex, threadIds],
+    () => deckStatusCounts(threads, slides, slideIndex, threadIds, aiThreadIds),
+    [threads, slides, slideIndex, threadIds, aiThreadIds],
   );
 
   return { filter, bySlide, marksBySlide, byGap, counts };

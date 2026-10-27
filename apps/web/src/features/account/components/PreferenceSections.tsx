@@ -76,7 +76,7 @@ export function WorkSection() {
           className="pb-3"
           label="Hilfslinien zeigen"
           icon="guides"
-          description="PowerPoint-Hilfslinien und Boxen, die darüber ragen (G)"
+          description="Hilfslinien der Präsentation und Boxen, die darüber ragen (G)"
           checked={preferences.showGuides}
           onChange={(showGuides) => update({ showGuides })}
         />
@@ -84,15 +84,15 @@ export function WorkSection() {
           className="py-3"
           label="Ausgeblendete Folien zeigen"
           icon="visibilityOff"
-          description="Folien, die in PowerPoint ausgeblendet sind, samt ihren Kommentaren (H)"
+          description="Folien, die in der Präsentation ausgeblendet sind, samt ihren Kommentaren (H)"
           checked={preferences.showHiddenSlides}
           onChange={(showHiddenSlides) => update({ showHiddenSlides })}
         />
         <Toggle
           className="py-3"
           label="Box-Modus"
-          icon="gridView"
-          description="Ein Klick kommentiert die PowerPoint-Box unter dem Zeiger (B)"
+          icon="boxSelect"
+          description="Ein Klick kommentiert die Box unter dem Zeiger (B)"
           checked={boxMode}
           onChange={(on) => {
             setBoxMode(on);
@@ -115,6 +115,22 @@ export function WorkSection() {
           checked={preferences.hideMinimap}
           onChange={(hideMinimap) => update({ hideMinimap })}
         />
+        <Toggle
+          className="py-3"
+          label="Kleine Elemente heranzoomen"
+          icon="openInFull"
+          description="Beim Bearbeiten zoomt die Folie an zu kleine Elemente heran und danach wieder heraus"
+          checked={preferences.autoZoom}
+          onChange={(autoZoom) => update({ autoZoom })}
+        />
+        <Toggle
+          className="py-3"
+          label="An Kommentare heranzoomen"
+          icon="openInFull"
+          description="Ein geöffneter Kommentar zu einer kleinen Markierung zoomt die Folie heran, beim Schließen wieder heraus"
+          checked={preferences.commentZoom}
+          onChange={(commentZoom) => update({ commentZoom })}
+        />
         <div className="flex items-center justify-between gap-4 pt-3">
           {/* Laid out like a `Toggle` row with its icon. */}
           <span className="flex min-w-0 items-center gap-3">
@@ -131,6 +147,7 @@ export function WorkSection() {
             segments={[
               { value: 'open', label: 'Offen' },
               { value: 'all', label: 'Alle' },
+              { value: 'hidden', label: 'Keine' },
             ]}
           />
         </div>

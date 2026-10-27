@@ -192,6 +192,26 @@
   --animate-roll-down: roll-down 240ms var(--ease-exit) forwards;
   /* A star slowly brightening and fading (welcome page); delays vary per star. */
   --animate-twinkle: twinkle 5s ease-in-out infinite;
+  /* A font card's satellite drifting to and fro on its orbit, slowly (duration and delay are
+     set per card); its halo breathing. */
+  --animate-orbit-drift: orbit-drift 28s ease-in-out infinite alternate;
+  --animate-halo-breathe: halo-breathe 7s ease-in-out infinite;
+  /* Picking a reaction (👍 / 👎 / egal), calm and once: the thumb lifts with sparks, the thumb
+     down sinks a little, „egal“ (abstaining) breathes in while its bar draws level; a soft ring
+     in its colour goes out. */
+  --animate-reaction-up: reaction-up 900ms var(--ease-settle);
+  --animate-reaction-sparks: reaction-sparks 900ms var(--ease-settle) both;
+  --animate-reaction-down: reaction-down 900ms var(--ease-settle);
+  --animate-reaction-neutral: reaction-neutral 1000ms var(--ease-symmetric);
+  --animate-reaction-level: reaction-level 1000ms var(--ease-settle) both;
+  --animate-reaction-ring: reaction-ring 900ms var(--ease-settle) forwards;
+  /* The review's find bar growing out of the split handle's line (BER-176), and shrinking back
+     into it; the line itself fades into the bar on the way. */
+  /* Separate keyframes each way: the same name, merely reversed, would not run again. */
+  --animate-morph-out-of-handle: morph-out-of-handle 280ms var(--ease-emphasized);
+  --animate-morph-into-handle: morph-into-handle 200ms var(--ease-exit) forwards;
+  --animate-handle-fade-out: handle-fade-out 280ms ease-out forwards;
+  --animate-handle-fade-in: handle-fade-in 200ms ease-in forwards;
 
   @keyframes fade-in {
     from {
@@ -265,6 +285,111 @@
     }
     to {
       background-position: 400px 0;
+    }
+  }
+  /* clip-path, so the glass keeps its blur: from the handle's 112 × 3 line (w-28) to the pill. */
+  @keyframes morph-out-of-handle {
+    from {
+      clip-path: inset(calc(50% - 1.5px) calc(50% - 56px) round 1.5px);
+    }
+    to {
+      clip-path: inset(0 round var(--radius-panel));
+    }
+  }
+  @keyframes morph-into-handle {
+    from {
+      clip-path: inset(0 round var(--radius-panel));
+    }
+    to {
+      clip-path: inset(calc(50% - 1.5px) calc(50% - 56px) round 1.5px);
+    }
+  }
+  @keyframes handle-fade-out {
+    from {
+      opacity: 1;
+    }
+    60%,
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes handle-fade-in {
+    from,
+    40% {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes reaction-up {
+    35% {
+      transform: translateY(-2px) scale(1.15) rotate(-10deg);
+    }
+    70% {
+      transform: translateY(0) scale(1.02) rotate(1deg);
+    }
+  }
+  @keyframes reaction-sparks {
+    0%,
+    25% {
+      opacity: 0;
+      transform: scale(0.4);
+    }
+    65% {
+      opacity: 1;
+      transform: scale(1.08);
+    }
+  }
+  @keyframes reaction-down {
+    35% {
+      transform: translateY(2px) scale(1.05, 0.94) rotate(-4deg);
+    }
+    70% {
+      transform: translateY(0) rotate(1.5deg);
+    }
+  }
+  @keyframes reaction-neutral {
+    35% {
+      transform: scale(0.9);
+    }
+    70% {
+      transform: scale(1.04);
+    }
+  }
+  @keyframes reaction-level {
+    0%,
+    20% {
+      transform: scaleX(0.2);
+    }
+  }
+  @keyframes reaction-ring {
+    from {
+      opacity: 0.45;
+      transform: scale(0.6);
+    }
+    to {
+      opacity: 0;
+      transform: scale(1.6);
+    }
+  }
+  @keyframes orbit-drift {
+    from {
+      rotate: -6deg;
+    }
+    to {
+      rotate: 6deg;
+    }
+  }
+  @keyframes halo-breathe {
+    0%,
+    100% {
+      opacity: 0.12;
+      scale: 1;
+    }
+    50% {
+      opacity: 0.22;
+      scale: 1.35;
     }
   }
   @keyframes twinkle {
@@ -377,15 +502,40 @@
     );
 }
 
+/* A font's type specimen on the workspace page: a quiet surface under a soft light from the top
+   left. */
+@utility specimen-surface {
+  background-color: var(--color-placeholder);
+  background-image: radial-gradient(
+    ellipse 80% 90% at 0% 0%,
+    rgb(255 255 255 / 0.06),
+    transparent 70%
+  );
+}
+
+/* A font's specimen card on the workspace page: the featured card's space – a soft light from the
+   top left over a faint dot grid, a touch lighter than the page so the card doesn't read as a
+   hole in it; the card draws its stars and orbit on top. */
+@utility specimen-sky {
+  background-color: var(--color-canvas);
+  background-image:
+    radial-gradient(ellipse 75% 85% at 0% 0%, rgb(255 255 255 / 0.09), transparent 70%),
+    linear-gradient(rgb(255 255 255 / 0.025), rgb(255 255 255 / 0.025)),
+    radial-gradient(rgb(255 255 255 / 0.045) 1px, transparent 1.2px);
+  background-size:
+    auto,
+    auto,
+    16px 16px;
+}
+
 /* The upload zone of "Neue Review": the website's sage horizon below, fading out towards the
    dashed edge. */
 @utility drop-glow {
-  background-image:
-    radial-gradient(
-      ellipse 75% 70% at 50% 115%,
-      color-mix(in srgb, var(--color-sage) 18%, transparent),
-      transparent 70%
-    );
+  background-image: radial-gradient(
+    ellipse 75% 70% at 50% 115%,
+    color-mix(in srgb, var(--color-sage) 18%, transparent),
+    transparent 70%
+  );
 }
 
 /* Fades its content out towards the left and right edge (the featured card's transit map). */
@@ -412,6 +562,228 @@
   mask:
     linear-gradient(#000 0 0) content-box exclude,
     linear-gradient(#000 0 0);
+}
+
+/* The AI at work on a thread (BER-183): a light runs round the card's rim like a comet, its
+   sage trail fading behind a white head (`ai-rim`), and glows softly under the glass
+   (`ai-glow`). Without motion: a faint, still rim. */
+@property --ai-sweep {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+@keyframes ai-sweep {
+  to {
+    --ai-sweep: 360deg;
+  }
+}
+@utility ai-rim {
+  padding: 1.5px;
+  /* Fades to sage and white at zero alpha, not `transparent` (black at zero alpha): Safari would
+     otherwise darken the light's edges into a black seam. */
+  background: conic-gradient(
+    from var(--ai-sweep),
+    rgb(from var(--color-sage) r g b / 0) 0deg 190deg,
+    color-mix(in srgb, var(--color-sage) 35%, transparent) 290deg,
+    var(--color-sage) 340deg,
+    #fff 358deg,
+    rgb(255 255 255 / 0) 360deg
+  );
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  animation: ai-sweep 2.4s linear infinite;
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    background: color-mix(in srgb, var(--color-sage) 45%, transparent);
+  }
+}
+@utility ai-glow {
+  background: conic-gradient(
+    from var(--ai-sweep),
+    rgb(from var(--color-sage) r g b / 0) 0deg 220deg,
+    color-mix(in srgb, var(--color-sage) 45%, transparent) 330deg,
+    rgb(255 255 255 / 0.5) 358deg,
+    rgb(255 255 255 / 0) 360deg
+  );
+  filter: blur(16px);
+  animation: ai-sweep 2.4s linear infinite;
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    background: color-mix(in srgb, var(--color-sage) 12%, transparent);
+  }
+}
+
+/* … and on the slide the AI reads the marked area (`AiScan`): a sage light sweeps across it on
+   the card's beat, a shimmer of dots lights up where it passes, and corner brackets close in like
+   a viewfinder focusing. In the pin's dot Slider's two slides deal through (`ai-deal`) and a ring pings
+   out of it (`ai-ping`). Without motion: a faint tint, the brackets in place, the mark still. */
+@property --ai-focus {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: -3px;
+}
+@keyframes ai-scan {
+  from {
+    transform: translateX(-100%);
+  }
+  65%,
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes ai-breathe {
+  50% {
+    opacity: 0.45;
+  }
+}
+@keyframes ai-focus {
+  from {
+    --ai-focus: -9px;
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  55%,
+  to {
+    --ai-focus: -4px;
+    opacity: 1;
+  }
+}
+@utility ai-scan-tint {
+  background: color-mix(in srgb, var(--color-sage) 10%, transparent);
+  animation: ai-breathe 2.4s ease-in-out infinite;
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+@utility ai-scan-wash {
+  /* Zero-alpha sage, not `transparent`: Safari would darken the band's edges (see `ai-rim`). */
+  background: linear-gradient(
+    105deg,
+    rgb(from var(--color-sage) r g b / 0) 30%,
+    color-mix(in srgb, var(--color-sage) 28%, transparent) 45%,
+    rgb(255 255 255 / 0.35) 50%,
+    color-mix(in srgb, var(--color-sage) 28%, transparent) 55%,
+    rgb(from var(--color-sage) r g b / 0) 70%
+  );
+  animation: ai-scan 2.4s var(--ease-symmetric) infinite;
+  @media (prefers-reduced-motion: reduce) {
+    display: none;
+  }
+}
+@utility ai-scan-wash-bright {
+  background: linear-gradient(
+    105deg,
+    rgb(255 255 255 / 0) 25%,
+    var(--color-sage) 42%,
+    #fff 50%,
+    var(--color-sage) 58%,
+    rgb(255 255 255 / 0) 75%
+  );
+}
+@utility ai-scan-dots {
+  mask: radial-gradient(circle, #000 0.9px, transparent 1.4px) 0 0 / 6px 6px;
+}
+@utility ai-scan-corner {
+  width: clamp(6px, 18%, 14px);
+  height: clamp(6px, 18%, 14px);
+  border-color: #fff;
+  filter: drop-shadow(0 0 3px var(--color-sage));
+  animation: ai-focus 2.4s var(--ease-symmetric) infinite alternate;
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+@utility ai-scan-corner-tl {
+  top: var(--ai-focus);
+  left: var(--ai-focus);
+  border-width: 2px 0 0 2px;
+  border-top-left-radius: 6px;
+}
+@utility ai-scan-corner-tr {
+  top: var(--ai-focus);
+  right: var(--ai-focus);
+  border-width: 2px 2px 0 0;
+  border-top-right-radius: 6px;
+}
+@utility ai-scan-corner-br {
+  bottom: var(--ai-focus);
+  right: var(--ai-focus);
+  border-width: 0 2px 2px 0;
+  border-bottom-right-radius: 6px;
+}
+@utility ai-scan-corner-bl {
+  bottom: var(--ai-focus);
+  left: var(--ai-focus);
+  border-width: 0 0 2px 2px;
+  border-bottom-left-radius: 6px;
+}
+/* Slider's mark dealt in a loop: the front slide slides out to the right, the back one steps up
+   to the front and a new one fades in behind – two slides, half a beat apart. The one stepping
+   up is the one on top. */
+@keyframes ai-deal {
+  from {
+    transform: none;
+    opacity: 0;
+    z-index: 0;
+  }
+  10%,
+  40% {
+    transform: none;
+    opacity: 0.45;
+    z-index: 0;
+  }
+  50%,
+  88% {
+    transform: translate(43%, -67%);
+    opacity: 1;
+    z-index: 1;
+  }
+  to {
+    transform: translate(110%, -67%);
+    opacity: 0;
+    z-index: 1;
+  }
+}
+@utility ai-deal {
+  left: 0;
+  bottom: 0;
+  width: 70%;
+  height: 60%;
+  border-radius: 1.5px;
+  background: #fff;
+  animation: ai-deal 2.4s var(--ease-symmetric) infinite;
+  &:last-child {
+    animation-delay: -1.2s;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    opacity: 0.45;
+    &:last-child {
+      transform: translate(43%, -67%);
+      opacity: 1;
+    }
+  }
+}
+@keyframes ai-ping {
+  from {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  70%,
+  to {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+@utility ai-ping {
+  box-shadow: 0 0 0 1.5px var(--color-sage);
+  animation: ai-ping 2.4s var(--ease-settle) infinite;
+  @media (prefers-reduced-motion: reduce) {
+    display: none;
+  }
 }
 
 /* A line drawn in like the comment connectors (`comments-draw`); needs `pathLength={1}`. */
@@ -454,6 +826,7 @@
     --z-popover-anchor: 51;
     --z-toast: 55;
     --z-stage: 60;
+    --z-presentation: 70;
   }
 
   html,
@@ -517,6 +890,39 @@
 ::view-transition-new(root) {
   animation: page-in 520ms var(--ease-emphasized) 100ms both;
 }
+/* Between a workspace's views ("Reviews" ⇄ "Workspace", WorkspaceViews): the two labels morph
+   into each other – size, colour, place – while the page below only crossfades. */
+:root[data-transition='workspace-view']::view-transition-old(root),
+:root[data-transition='workspace-view']::view-transition-new(root) {
+  animation: 240ms var(--ease-symmetric) both;
+  animation-name: view-fade-out;
+}
+:root[data-transition='workspace-view']::view-transition-new(root) {
+  animation-name: view-fade-in;
+}
+::view-transition-group(workspace-view-reviews),
+::view-transition-group(workspace-view-material) {
+  animation-duration: 420ms;
+  animation-timing-function: var(--ease-emphasized);
+}
+::view-transition-old(workspace-view-reviews),
+::view-transition-new(workspace-view-reviews),
+::view-transition-old(workspace-view-material),
+::view-transition-new(workspace-view-material) {
+  height: 100%;
+  animation-duration: 420ms;
+  animation-timing-function: var(--ease-emphasized);
+}
+@keyframes view-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes view-fade-in {
+  from {
+    opacity: 0;
+  }
+}
 @keyframes page-out {
   to {
     opacity: 0;
@@ -531,7 +937,12 @@
 }
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-old(root),
-  ::view-transition-new(root) {
+  ::view-transition-new(root),
+  :root[data-transition='workspace-view']::view-transition-old(root),
+  :root[data-transition='workspace-view']::view-transition-new(root),
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
     animation-duration: 0.01ms;
   }
 }

@@ -1,5 +1,5 @@
 import { useId, useState } from 'react';
-import type { LegalTexts } from '@slider/shared';
+import type { LegalTexts, SetupStatus } from '@slider/shared';
 import { useLegalTexts, useSaveLegalTexts } from '@/lib/api';
 import { routes } from '@/lib/routes';
 import {
@@ -11,67 +11,102 @@ import {
   TextLink,
   type ShowToast,
 } from '@/ui';
+import { GapList } from './GapList';
+import { fillTemplate } from './lib/legal-template';
+import { TemplateFiller } from './TemplateFiller';
 import privacyTemplate from './templates/datenschutz.md?raw';
 import imprintTemplate from './templates/impressum.md?raw';
 
+type Settings = NonNullable<SetupStatus['settings']>;
+
 const FIELDS = [
-  { kind: 'imprint', label: 'Impressum', template: imprintTemplate, to: routes.imprint() },
+  { kind: 'imprint', label: 'Impressum', to: routes.imprint() },
   {
     kind: 'privacy',
     label: 'Datenschutzerklärung',
-    template: privacyTemplate,
     to: routes.privacy(),
   },
 ] as const;
 
 /**
  * Instance admin, on `/einrichtung`: writes imprint and privacy policy (BER-141), shown at
- * `/impressum` and `/datenschutz` and linked under every public page and mail. The templates fit
- * a setup like slider.bertro.dev (Hetzner, Cloudflare, Brevo, Microsoft, Google): fill in the
- * `[…]` and drop what this instance doesn't use.
+ * `/impressum` and `/datenschutz` and linked under every public page and mail. The templates are
+ * filled in a form – the operator's details once, what this instance uses switched on from its
+ * settings – and what is left as `[…]` is set gap by gap.
  */
-export function LegalTextsSection({ onNotify }: { onNotify: ShowToast }) {
+export function LegalTextsSection({
+  settings,
+  onNotify,
+}: {
+  settings?: Settings | undefined;
+  onNotify: ShowToast;
+}) {
   const stored = useLegalTexts();
   return (
     <Section
       title="Impressum & Datenschutz"
-      description="Erscheinen unter /impressum und /datenschutz und werden auf der Anmeldeseite, in den Einstellungen und unter jeder Mail verlinkt. Die Vorlagen passen zu einer Instanz mit Hetzner, Cloudflare, Brevo, Microsoft- und Google-Anmeldung: Platzhalter in [eckigen Klammern] ausfüllen, Nicht-Zutreffendes streichen."
+      description="Erscheinen unter /impressum und /datenschutz und werden auf der Anmeldeseite, in den Einstellungen und unter jeder Mail verlinkt. Die Vorlagen füllst du in einem Formular aus – was diese Instanz nutzt, ist schon eingestellt. Bitte vor dem Veröffentlichen lesen und prüfen."
     >
       {stored.isPending ? (
         <Spinner size={20} className="text-fg-subtle" />
       ) : stored.isError ? (
         <ErrorText>{stored.error.message}</ErrorText>
       ) : (
-        <LegalTextsEditor stored={stored.data} onNotify={onNotify} />
+        <LegalTextsEditor stored={stored.data} settings={settings} onNotify={onNotify} />
       )}
     </Section>
   );
 }
 
 /** Starts from the saved texts; after saving, they are the new saved ones. */
-function LegalTextsEditor({ stored, onNotify }: { stored: LegalTexts; onNotify: ShowToast }) {
+function LegalTextsEditor({
+  stored,
+  settings,
+  onNotify,
+}: {
+  stored: LegalTexts;
+  settings: Settings | undefined;
+  onNotify: ShowToast;
+}) {
   const save = useSaveLegalTexts();
   const [draft, setDraft] = useState<LegalTexts>(stored);
+  const empty = !draft.imprint?.trim() && !draft.privacy?.trim();
+  const [filling, setFilling] = useState(empty);
   const changed =
     (draft.privacy ?? '') !== (stored.privacy ?? '') ||
     (draft.imprint ?? '') !== (stored.imprint ?? '');
-  const placeholders = [draft.imprint, draft.privacy].some((text) => text?.includes('['));
 
   return (
     <>
+      {filling ? (
+        <TemplateFiller
+          settings={settings}
+          replaces={!empty}
+          onClose={() => setFilling(false)}
+          onFill={(values, options) => {
+            setDraft({
+              imprint: fillTemplate(imprintTemplate, values, options),
+              privacy: fillTemplate(privacyTemplate, values, options),
+            });
+            setFilling(false);
+          }}
+        />
+      ) : (
+        <div>
+          <Button variant="secondary" size="sm" icon="article" onClick={() => setFilling(true)}>
+            Vorlagen ausfüllen
+          </Button>
+        </div>
+      )}
       {FIELDS.map((field) => (
         <LegalField
           key={field.kind}
           label={field.label}
           value={draft[field.kind] ?? ''}
-          onChange={(text) => setDraft({ ...draft, [field.kind]: text })}
-          onTemplate={() => setDraft({ ...draft, [field.kind]: field.template })}
+          onChange={(text) => setDraft((current) => ({ ...current, [field.kind]: text }))}
           viewTo={stored[field.kind] ? field.to : null}
         />
       ))}
-      {placeholders && (
-        <p className="text-xs text-warning">Noch Platzhalter in [eckigen Klammern] übrig.</p>
-      )}
       {save.error && <ErrorText>{save.error.message}</ErrorText>}
       <div>
         <Button
@@ -93,13 +128,11 @@ function LegalField({
   label,
   value,
   onChange,
-  onTemplate,
   viewTo,
 }: {
   label: string;
   value: string;
   onChange: (text: string) => void;
-  onTemplate: () => void;
   viewTo: string | null;
 }) {
   const id = useId();
@@ -109,10 +142,11 @@ function LegalField({
         <label htmlFor={id} className="text-xs font-medium text-fg">
           {label}
         </label>
-        <span className="flex gap-3 text-xs">
-          {!value.trim() && <TextLink onClick={onTemplate}>Vorlage einfügen</TextLink>}
-          {viewTo && <TextLink to={viewTo}>Ansehen</TextLink>}
-        </span>
+        {viewTo && (
+          <TextLink to={viewTo} className="text-xs">
+            Ansehen
+          </TextLink>
+        )}
       </div>
       <div className="field-well focus-field rounded-control px-3.5 py-2">
         <AutosizeTextarea
@@ -125,6 +159,7 @@ function LegalField({
           onChange={(event) => onChange(event.target.value)}
         />
       </div>
+      <GapList text={value} onChange={onChange} />
     </div>
   );
 }

@@ -3,11 +3,15 @@ import type { createCommentInputSchema } from '@slider/shared';
 import {
   isDrawing,
   isTextStroke,
+  MAX_DRAWING_STROKES,
   moveDrawing,
   type Anchor,
   type Comment,
+  type CommentReaction,
+  type CommentReactionKind,
   type Point,
   type Rect,
+  type Stroke,
   type UpdateCommentInput,
   type Viewer,
 } from '@slider/shared';
@@ -16,6 +20,7 @@ import { deckAccess, requireDeckAccess } from '../auth/access';
 import { displayAuthor } from '../authors';
 import type { Executor } from '../db/client';
 import {
+  commentReactions,
   comments,
   deletedPptxComments,
   media as mediaRows,
@@ -34,12 +39,14 @@ import {
   type CommentAttachments,
 } from './media';
 import { isSlideInCurrentRevision } from './slides';
+import { reportChosenPhotosLater } from './stock-photos';
 
 type CreateCommentData = z.output<typeof createCommentInputSchema>;
 
 export function toCommentDto(
   row: CommentRow,
   { media, images }: CommentAttachments = { media: null, images: [] },
+  reactions: CommentReaction[] = [],
 ): Comment {
   return {
     id: row.id,
@@ -52,6 +59,7 @@ export function toCommentDto(
     strokes: row.strokes,
     media,
     images,
+    reactions,
     status: row.status,
     resolvedBy: row.resolvedBy,
     resolvedAt: row.resolvedAt?.toISOString() ?? null,
@@ -100,13 +108,68 @@ async function loadComments(db: Executor, deckId: string): Promise<Comment[]> {
   return withMedia(db, rows);
 }
 
-/** DTOs with their recordings attached. */
+/** DTOs with their recordings, images and reactions attached. */
 export async function withMedia(db: Executor, rows: readonly CommentRow[]): Promise<Comment[]> {
-  const media = await mediaByComment(
-    db,
-    rows.map((row) => row.id),
+  const ids = rows.map((row) => row.id);
+  const [media, reactions] = await Promise.all([
+    mediaByComment(db, ids),
+    reactionsByComment(db, ids),
+  ]);
+  return rows.map((row) => toCommentDto(row, media.get(row.id), reactions.get(row.id)));
+}
+
+/** Reactions to the given comments, by comment id, oldest first. */
+async function reactionsByComment(
+  db: Executor,
+  commentIds: readonly string[],
+): Promise<Map<string, CommentReaction[]>> {
+  const byComment = new Map<string, CommentReaction[]>();
+  if (commentIds.length === 0) return byComment;
+  const rows = await db
+    .select()
+    .from(commentReactions)
+    .where(inArray(commentReactions.commentId, [...commentIds]))
+    .orderBy(asc(commentReactions.createdAt), asc(commentReactions.userId));
+  for (const row of rows) {
+    const list = byComment.get(row.commentId) ?? [];
+    list.push({ kind: row.kind, author: displayAuthor(row.author) });
+    byComment.set(row.commentId, list);
+  }
+  return byComment;
+}
+
+/**
+ * Sets the viewer's reaction to a comment (👍 / 👎 / egal) or, with `null`, takes it back. Anyone
+ * who may comment may react – also to comments from PowerPoint or Google, the reaction stays in
+ * Slider.
+ */
+export async function setReaction(
+  deps: AppDeps,
+  viewer: Viewer,
+  commentId: string,
+  kind: CommentReactionKind | null,
+): Promise<Comment> {
+  const comment = await loadComment(deps, commentId);
+  await requireDeckAccess(deps, viewer, comment.deckId, 'comment');
+  const own = and(
+    eq(commentReactions.commentId, commentId),
+    eq(commentReactions.userId, viewer.author.id),
   );
-  return rows.map((row) => toCommentDto(row, media.get(row.id)));
+  if (kind === null) {
+    await deps.db.delete(commentReactions).where(own);
+  } else {
+    const now = deps.clock.now();
+    await deps.db
+      .insert(commentReactions)
+      .values({ commentId, userId: viewer.author.id, author: viewer.author, kind, createdAt: now })
+      .onConflictDoUpdate({
+        target: [commentReactions.commentId, commentReactions.userId],
+        set: { kind, author: viewer.author, createdAt: now },
+      });
+  }
+  deps.live?.commentsChanged(comment.deckId);
+  const [dto] = await withMedia(deps.db, [comment]);
+  return dto!;
 }
 
 export async function createComment(
@@ -244,7 +307,8 @@ export async function updateComment(
     input.textBox !== undefined ||
     input.anchor !== undefined ||
     input.move !== undefined ||
-    input.removeMarks !== undefined
+    input.removeMarks !== undefined ||
+    input.addStrokes !== undefined
   ) {
     if (comment.source === 'pptx')
       throw forbidden('Kommentare aus PowerPoint können nicht bearbeitet werden.');
@@ -261,7 +325,9 @@ export async function updateComment(
         ? moveDrawingOf(comment, input.move)
         : input.removeMarks
           ? await removeMarks(deps.db, comment, input.removeMarks.pin)
-          : {};
+          : input.addStrokes
+            ? addStrokes(comment, input.addStrokes)
+            : {};
   // Without text, a drawing, recording or image must remain as the comment's content – as when
   // it was written.
   if (
@@ -292,6 +358,12 @@ export async function updateComment(
   if (!row) throw notFound('Diesen Kommentar gibt es nicht (mehr).');
   await touchDeck(deps.db, comment.deckId, now);
   deps.live?.commentsChanged(comment.deckId);
+  if (statusChange.status === 'done') {
+    // Done: the photos the AI put in for this thread are the ones people keep.
+    reportChosenPhotosLater(deps, comment.deckId, {
+      rootCommentId: comment.parentId ?? comment.id,
+    });
+  }
   const [dto] = await withMedia(deps.db, [row]);
   return dto!;
 }
@@ -362,6 +434,32 @@ function moveDrawingOf(
     throw badRequest('Dieser Kommentar lässt sich nicht verschieben.');
   const { anchor, strokes } = moveDrawing(comment, dx, dy);
   return { anchor, strokes };
+}
+
+/**
+ * Draws on a bare freehand drawing: strokes drawn one after another without a comment in between
+ * make one drawing. Arrows and markers stay one stroke each.
+ */
+function addStrokes(
+  comment: CommentRow,
+  { strokes, rect }: NonNullable<UpdateCommentInput['addStrokes']>,
+): Pick<CommentRow, 'anchor' | 'strokes'> {
+  const freehand = (stroke: Stroke) => stroke.tool === 'pen';
+  if (
+    comment.parentId !== null ||
+    comment.body !== '' ||
+    comment.anchor.type !== 'rect' ||
+    comment.strokes.length === 0 ||
+    !comment.strokes.every(freehand) ||
+    !strokes.every(freehand)
+  )
+    throw badRequest('Nur an eine Freihand-Zeichnung ohne Kommentar lässt sich weiterzeichnen.');
+  if (comment.strokes.length + strokes.length > MAX_DRAWING_STROKES)
+    throw badRequest('Diese Zeichnung hat schon so viele Striche, wie eine haben kann.');
+  return {
+    anchor: { ...comment.anchor, rect },
+    strokes: [...comment.strokes, ...strokes],
+  };
 }
 
 /**
