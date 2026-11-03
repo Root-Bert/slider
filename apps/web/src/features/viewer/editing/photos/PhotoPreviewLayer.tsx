@@ -1,13 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
+import { whenPictureShown } from '../../stage/shown-pictures';
+import { useEditing } from '../editing-context';
 import { cn } from '@/ui';
 import { photoPreviews, usePhotoPreview } from './photo-previews';
 
-/** A change that left the slide's picture as it was: the photo shows no longer than this. */
-const SAME_PICTURE_MS = 1500;
-
 /**
  * A stock photo shown in its frame while the slide is drawn anew (see `photo-previews`): over
- * the slide's picture `src` until a new one has loaded after the change settled.
+ * the slide's picture `src` until the slide's newest picture is on screen after the change settled.
  */
 export function PhotoPreviewLayer({
   slideId,
@@ -19,30 +18,15 @@ export function PhotoPreviewLayer({
   rounded: string;
 }) {
   const preview = usePhotoPreview(slideId);
-  // The slide's picture when the photo first showed: the one to wait past.
-  const [base, setBase] = useState<{ key: number; src: string } | null>(null);
+  const editing = useEditing();
   const key = preview?.key;
-  if (key !== undefined && base?.key !== key) setBase({ key, src });
-  const settled = preview?.settled ?? false;
-  const waitingPast = base?.key === key ? base?.src : undefined;
-
+  // Settled, and the slide's picture fetched after it: shown until that one is on screen – in
+  // the frame `SwapImage` shows it, never on a timer.
+  const settled = (preview?.settled ?? false) && editing.slidePicturesReady;
   useEffect(() => {
-    if (key === undefined || !settled || waitingPast === undefined) return;
-    if (src === waitingPast) {
-      const timer = window.setTimeout(() => photoPreviews.clear(slideId, key), SAME_PICTURE_MS);
-      return () => window.clearTimeout(timer);
-    }
-    // The new picture: the photo goes once it has loaded, so the old one never flashes up.
-    let cancelled = false;
-    const image = new Image();
-    image.onload = image.onerror = () => {
-      if (!cancelled) photoPreviews.clear(slideId, key);
-    };
-    image.src = src;
-    return () => {
-      cancelled = true;
-    };
-  }, [slideId, key, settled, src, waitingPast]);
+    if (key === undefined || !settled) return;
+    return whenPictureShown(src, () => photoPreviews.clear(slideId, key));
+  }, [slideId, key, settled, src]);
 
   if (!preview) return null;
   const { rect } = preview;

@@ -45,6 +45,8 @@ export async function listSlides(db: Executor, deck: DeckRow): Promise<Slide[]> 
     position: version.position,
     title: version.title,
     hidden: version.hidden,
+    variantOf: version.variantOf,
+    transition: version.transition,
     aspectRatio: version.aspectRatio,
     imageUrl: fileUrl(version.imageKey),
     thumbnailUrl: fileUrl(version.thumbnailKey),

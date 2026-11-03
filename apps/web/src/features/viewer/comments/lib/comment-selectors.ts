@@ -1,9 +1,9 @@
 import {
+  commentWords,
   isPathStroke,
   isTextStroke,
   resolveRectAnchor,
   resolveShapeRef,
-  type Anchor,
   type Author,
   type Comment,
   type Point,
@@ -268,6 +268,27 @@ export function gapThreadsByGap(
 }
 
 /**
+ * The listed threads in deck order: slide by slide, each slide's threads followed by those in
+ * the gap after it (gap threads in front of the first slide are already in its list).
+ */
+export function threadsInDeckOrder(
+  slides: SlideOrder,
+  bySlide: ReadonlyMap<string, readonly Thread[]>,
+  byGap: ReadonlyMap<string, readonly Thread[]>,
+): Thread[] {
+  return slides.flatMap((slide, index) => [
+    ...(bySlide.get(slide.id) ?? []),
+    ...(byGap.get(gapKey(slide.id, slides[index + 1]?.id ?? null)) ?? []),
+  ]);
+}
+
+/** The thread after `currentId` in `ordered`, from the start again after the last; `null` if none. */
+export function nextThread(ordered: readonly Thread[], currentId: string | null): Thread | null {
+  const index = ordered.findIndex((thread) => thread.id === currentId);
+  return ordered[(index + 1) % ordered.length] ?? null;
+}
+
+/**
  * Threads per slide a later revision deleted ("Gelöschte Folien"; every deleted slide gets an
  * entry). A gap comment stays on the track while one neighbour is shown (`placeGap`); with
  * both gone it is listed under the deleted one before the gap, else the one after it.
@@ -317,9 +338,6 @@ export function anchorRect(
       return null;
   }
 }
-
-export const isOnSlideAnchor = (anchor: Anchor) =>
-  anchor.type === 'point' || anchor.type === 'rect';
 
 /** Left-to-right order of the anchors, so cards line up under their marks and lines cross less. */
 export function sortThreadsByAnchor(
@@ -504,6 +522,13 @@ export function isImplicitFrame(comment: Pick<Comment, 'anchor' | 'strokes'>): b
 export const textAnnotation = (comment: Pick<Comment, 'strokes'>) =>
   comment.strokes.find(isTextStroke) ?? null;
 
+/**
+ * The comment says what the AI should do: its text, its sticker's text (a sticker is a comment) or
+ * its recording, once transcribed – what ✨, ⌘↵ and „An die KI geben“ need.
+ */
+export const asksInWords = (comment: Comment) =>
+  commentWords(comment) !== '' || !!comment.media?.transcript?.trim();
+
 /** True when the body only consists of a drawing (shown as "✏️ Markierung"). */
 export const isStrokeOnly = (comment: Comment) =>
   comment.body.trim() === '' && comment.strokes.length > 0;
@@ -530,13 +555,16 @@ const MEDIA_NOUNS = { audio: 'Sprachkommentar', video: 'Videokommentar' } as con
 
 /**
  * One line of text for a comment in tight spots (compact cards, tooltips): the body, else the
- * "🎙 Sprachkommentar | 0:42" for recordings, else the drawing label.
+ * transcript (its summary where there is one) or "🎙 Sprachkommentar | 0:42" for recordings, else the drawing label.
  */
 export function commentPreview(comment: Comment): string {
   if (comment.body.trim()) return comment.body;
   const { media } = comment;
   if (media) {
-    return `${MEDIA_ICONS[media.kind]} ${MEDIA_NOUNS[media.kind]} | ${formatDuration(media.durationMs)}`;
+    const said = media.transcriptSummary ?? media.transcript;
+    return said
+      ? `${MEDIA_ICONS[media.kind]} ${said}`
+      : `${MEDIA_ICONS[media.kind]} ${MEDIA_NOUNS[media.kind]} | ${formatDuration(media.durationMs)}`;
   }
   return isStrokeOnly(comment) ? strokeOnlyLabel(comment) : comment.body;
 }

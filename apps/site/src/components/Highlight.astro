@@ -12,12 +12,12 @@ interface Props {
   class?: string;
 }
 
-const { by, accent = 'var(--color-sage)', class: className } = Astro.props;
+const { by, accent = 'var(--color-accent-blue)', class: className } = Astro.props;
 const handles = ['top-0 left-0', 'top-0 right-0', 'bottom-0 left-0', 'bottom-0 right-0'];
 ---
 
 <span
-  class:list={['relative inline-block px-[0.18em] pb-[0.04em] whitespace-nowrap text-white', className]}
+  class:list={['relative inline-block px-[0.18em] pb-[0.04em] whitespace-nowrap text-fg', className]}
   style={`--hl: ${accent}`}
   data-highlight
 >

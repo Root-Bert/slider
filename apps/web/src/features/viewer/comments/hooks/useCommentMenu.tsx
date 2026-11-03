@@ -1,10 +1,13 @@
 import type { Comment } from '@slider/shared';
 import { useCallback, useState, type MouseEvent } from 'react';
-import { isPendingComment } from '@/lib/api/comment-cache';
+import { isPendingComment } from '@/lib/api/comment-outbox';
 import { useDeleteComment, useUpdateComment } from '@/lib/api';
 import { Button, ConfirmDialog, ContextMenu, type MenuAction } from '@/ui';
 import { useViewerData } from '../../state/viewer-data';
 import { useViewerToast } from '../../state/viewer-toast';
+import { useAskAi } from '../../editing/hooks/useAskAi';
+import { useCommentProposals } from './useCommentProposals';
+import { asksInWords } from '../lib/comment-selectors';
 import { reactionMenuActions, useCommentReaction } from './useCommentReaction';
 
 interface CommentMenuOptions {
@@ -18,10 +21,10 @@ interface CommentMenuOptions {
 }
 
 /**
- * Actions of one comment – Erledigen / Wieder öffnen (roots), 👍 / 👎 / egal, Bearbeiten and Löschen – for the
- * ⋯ menu and a right click at the pointer, with the delete confirmation. Mirrors the API: own
- * Slider comments can be edited, own comments and, for deck managers, any can be deleted.
- * Shift + right click keeps the browser's own menu.
+ * Actions of one comment – Erledigen / Wieder öffnen (roots), 👍 / 👎 / egal, An die KI geben,
+ * Bearbeiten and Löschen – for the ⋯ menu and a right click at the pointer, with the delete
+ * confirmation. Mirrors the API: own Slider comments can be edited, own comments and, for deck
+ * managers, any can be deleted. Shift + right click keeps the browser's own menu.
  */
 export function useCommentMenu({ comment, deckId, isRoot, onEdit, onDeleted }: CommentMenuOptions) {
   const { viewer, canComment, canManage } = useViewerData();
@@ -29,6 +32,8 @@ export function useCommentMenu({ comment, deckId, isRoot, onEdit, onDeleted }: C
   const update = useUpdateComment(deckId);
   const remove = useDeleteComment(deckId);
   const reaction = useCommentReaction(comment);
+  const ai = useAskAi();
+  const proposalsOf = useCommentProposals(deckId);
   const [contextAt, setContextAt] = useState<{ x: number; y: number } | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const closeContext = useCallback(() => setContextAt(null), []);
@@ -36,34 +41,42 @@ export function useCommentMenu({ comment, deckId, isRoot, onEdit, onDeleted }: C
   const own = comment.author.id === viewer.author.id;
   const done = comment.status === 'done';
   const actions: MenuAction[] = [];
-  // Not saved yet: no actions until the server confirms it.
-  if (!isPendingComment(comment)) {
-    if (isRoot && canComment)
-      actions.push({
-        label: done ? 'Wieder öffnen' : 'Erledigt',
-        icon: done ? 'undo' : 'check',
-        // The toggle is optimistic: if it fails it flips back, so say why.
-        onSelect: () =>
-          void update
-            .mutateAsync({ commentId: comment.id, status: done ? 'open' : 'done' })
-            .catch((error: Error) => showToast(error.message, 'danger')),
-      });
-    actions.push(...reactionMenuActions(reaction));
-    if (own && canComment && comment.source === 'app')
-      actions.push({ label: 'Bearbeiten', icon: 'edit', onSelect: onEdit });
-    if ((own && canComment) || canManage)
-      actions.push({
-        label: 'Löschen',
-        icon: 'delete',
-        tone: 'danger',
-        onSelect: () => {
-          // Opened again, the dialog starts without the last attempt's error. Reset on open, not
-          // on close: a delete still running when it closed keeps its `onDeleted`.
-          if (!remove.isPending) remove.reset();
-          setConfirmingDelete(true);
-        },
-      });
-  }
+  // Not saved yet (written offline, on its way): changed and deleted all the same – queued after
+  // it, or folded into it (`comment-outbox.ts`); only the AI waits until it is saved.
+  if (isRoot && canComment)
+    actions.push({
+      label: done ? 'Wieder öffnen' : 'Erledigt',
+      icon: done ? 'undo' : 'check',
+      // The toggle is optimistic: if it fails it flips back, so say why.
+      onSelect: () =>
+        void update
+          .mutateAsync({ commentId: comment.id, status: done ? 'open' : 'done' })
+          .catch((error: Error) => showToast(error.message, 'danger')),
+    });
+  actions.push(...reactionMenuActions(reaction));
+  // A comment already sent – or one the AI failed on – given to the AI afterwards, as ⌘↵ would;
+  // not while it is at work on it already.
+  const aiAtWork = proposalsOf(comment.id).some((proposal) => proposal.status === 'running');
+  if (ai.available && asksInWords(comment) && !aiAtWork && !isPendingComment(comment))
+    actions.push({
+      label: 'An die KI geben',
+      icon: 'autoAwesome',
+      onSelect: () => ai.ask(comment, { justSent: false }),
+    });
+  if (own && canComment && comment.source === 'app')
+    actions.push({ label: 'Bearbeiten', icon: 'edit', onSelect: onEdit });
+  if ((own && canComment) || canManage)
+    actions.push({
+      label: 'Löschen',
+      icon: 'delete',
+      tone: 'danger',
+      onSelect: () => {
+        // Opened again, the dialog starts without the last attempt's error. Reset on open, not
+        // on close: a delete still running when it closed keeps its `onDeleted`.
+        if (!remove.isPending) remove.reset();
+        setConfirmingDelete(true);
+      },
+    });
 
   // A root with a drawing or text on the slide can lose just the comment: the marks stay.
   const canKeepDrawing = isRoot && comment.strokes.length > 0;
@@ -108,6 +121,7 @@ export function useCommentMenu({ comment, deckId, isRoot, onEdit, onDeleted }: C
               : 'Das lässt sich nicht rückgängig machen.'
         }
         confirmLabel="Löschen"
+        confirmIcon="delete"
         onConfirm={() => confirmDelete(false)}
         pending={remove.isPending && !remove.variables?.keepDrawing}
         confirmDisabled={remove.isPending}

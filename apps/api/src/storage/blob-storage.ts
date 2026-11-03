@@ -58,6 +58,8 @@ const CONTENT_TYPES: Record<string, string> = {
   webp: 'image/webp',
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   odp: 'application/vnd.oasis.opendocument.presentation',
+  otp: 'application/vnd.oasis.opendocument.presentation-template',
+  potx: 'application/vnd.openxmlformats-officedocument.presentationml.template',
   gif: 'image/gif',
   pdf: 'application/pdf',
   webm: 'video/webm',
@@ -91,22 +93,11 @@ export const blobKeys = {
   slideRender: (deckId: string, revisionId: string, extension: string) =>
     `decks/${deckId}/${revisionId}/slides/${crypto.randomUUID()}.${extension}`,
   /**
-   * A slide drawn with one text left out, which the editor types over; named by what it shows
-   * (`OdpDocument.blankText`), so an equal picture is drawn once.
+   * A slide drawn with one element left out – what a frosted element blurs (`backdrops`); named
+   * by what it shows (`OdpDocument.blankElement`), so an equal picture is drawn once.
    */
   slideBackground: (deckId: string, revisionId: string, fingerprint: string) =>
     `decks/${deckId}/${revisionId}/backgrounds/${fingerprint}.jpg`,
-  /**
-   * An element's cutout for the live editor (`OdpDocument.toCutoutBytes`): its area and outline
-   * as masks, and where on the slide they go (`json`); named by what they show.
-   */
-  elementCutout: (
-    deckId: string,
-    revisionId: string,
-    fingerprint: string,
-    part: 'fill' | 'stroke' | 'above' | 'box',
-  ) =>
-    `decks/${deckId}/${revisionId}/cutouts/${fingerprint}-${part}.${part === 'box' ? 'json' : 'png'}`,
   /**
    * A part of a slide taken apart for the layers view (`OdpDocument.toLayerBytes`): the slide
    * without its elements, or an element alone and where it goes (`json`) – named by what it shows,
@@ -133,6 +124,19 @@ export const blobKeys = {
   /** A face of a font the workspace uploaded (`workspace_fonts`). */
   workspaceFont: (workspaceId: string, fontId: string, extension: 'ttf' | 'otf') =>
     `workspaces/${workspaceId}/fonts/${fontId}.${extension}`,
+  /** An uploaded design's files (`workspace_masters`): the file and its layout pictures. */
+  workspaceMasterPrefix: (workspaceId: string, masterId: string) =>
+    `workspaces/${workspaceId}/masters/${masterId}/`,
+  workspaceMasterFile: (workspaceId: string, masterId: string, extension: 'potx' | 'otp') =>
+    `workspaces/${workspaceId}/masters/${masterId}/design.${extension}`,
+  /**
+   * The pictures of a deck's own layouts (`getDeckLayouts`), drawn once per design of its file
+   * (`designFingerprint`), with the list of them.
+   */
+  deckLayoutsPrefix: (deckId: string, fingerprint: string) =>
+    `decks/${deckId}/layouts/${fingerprint}/`,
+  workspaceMasterLayout: (workspaceId: string, masterId: string, extension: string) =>
+    `workspaces/${workspaceId}/masters/${masterId}/${crypto.randomUUID()}.${extension}`,
   demoAsset: (fileName: string) => `demo/${crypto.randomUUID()}/${fileName}`,
 };
 

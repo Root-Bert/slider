@@ -1,8 +1,10 @@
-import type { Comment } from '@slider/shared';
+import type { Comment, CommentMedia } from '@slider/shared';
 import { useEffect, useRef, useState } from 'react';
-import { cn, IconButton } from '@/ui';
+import { useRetryTranscript } from '@/lib/api';
+import { cn, Icon, IconButton } from '@/ui';
 import { formatDuration } from '@/lib/format';
 import { MEDIA_LABELS } from './lib/recording';
+import { useViewerToast } from '../state/viewer-toast';
 import { Waveform } from './Waveform';
 
 /**
@@ -110,7 +112,61 @@ export function VideoPlayer({ src, className }: { src: string; className?: strin
   );
 }
 
-/** A comment's recording (BER-116). Renders nothing for text comments. */
+/**
+ * The transcript under a recording: its summary once the comment went to the AI, else three
+ * lines – the whole transcript on demand.
+ */
+function Transcript({ text, summary }: { text: string; summary: string | null }) {
+  const [open, setOpen] = useState(false);
+  const more = summary ? true : text.length > 160;
+  return (
+    <div className="relative z-10 flex flex-col items-start gap-0.5">
+      <p
+        className={cn(
+          'text-[12px] leading-[17px] break-words whitespace-pre-wrap text-fg-muted',
+          !open && !summary && 'line-clamp-3',
+        )}
+      >
+        <Icon
+          name={summary && !open ? 'autoAwesome' : 'notes'}
+          size={13}
+          className="mr-1 inline -translate-y-px text-fg-subtle"
+        />
+        {open || !summary ? text : summary}
+      </p>
+      {more && (
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          className="text-[11px] text-fg-subtle hover:text-fg"
+        >
+          {open ? (summary ? 'Zusammenfassung' : 'Weniger') : 'Ganzes Transkript'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** While the server transcribes, or when it could not: a line, and another try. */
+function TranscriptStatus({ comment, media }: { comment: Comment; media: CommentMedia }) {
+  const retry = useRetryTranscript(comment.deckId);
+  const toast = useViewerToast();
+  if (media.transcriptStatus === 'pending' || retry.isPending) {
+    return <p className="text-[11px] text-fg-subtle italic">Transkript wird erstellt …</p>;
+  }
+  if (media.transcriptStatus !== 'failed') return null;
+  return (
+    <button
+      type="button"
+      onClick={() => retry.mutate(media.id, { onError: (error) => toast(error.message, 'danger') })}
+      className="relative z-10 w-fit text-[11px] text-fg-subtle underline underline-offset-2 hover:text-fg"
+    >
+      Kein Transkript – erneut versuchen
+    </button>
+  );
+}
+
+/** A comment's recording with its transcript (BER-116). Renders nothing for text comments. */
 export function CommentMediaView({ comment }: { comment: Comment }) {
   const { media } = comment;
   if (!media) return null;
@@ -120,6 +176,11 @@ export function CommentMediaView({ comment }: { comment: Comment }) {
         <AudioPlayer src={media.url} durationMs={media.durationMs} peaks={media.peaks} />
       ) : (
         <VideoPlayer src={media.url} />
+      )}
+      {media.transcript ? (
+        <Transcript text={media.transcript} summary={media.transcriptSummary} />
+      ) : (
+        <TranscriptStatus comment={comment} media={media} />
       )}
     </div>
   );

@@ -22,10 +22,10 @@ export function LogoHeader({
           aria-label={logoLink.label}
           className="transition-opacity hover:opacity-80"
         >
-          <Logo />
+          <Logo tone="mono" />
         </Link>
       ) : (
-        <Logo />
+        <Logo tone="mono" />
       )}
       {end}
     </header>

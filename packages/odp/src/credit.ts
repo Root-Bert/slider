@@ -1,4 +1,4 @@
-import type { ImageCredit } from '@slider/shared';
+import type { ImageCredit, PhotoProvider } from '@slider/shared';
 import {
   attr,
   buildPart,
@@ -20,11 +20,23 @@ import {
  * picture wherever the file goes – and Slider reads it back to show the credit.
  */
 
-const LINK = String.raw`(https://unsplash\.com/[^\s)]+)`;
-const CREDIT = new RegExp(String.raw`^Foto von (.+) \(${LINK}\) auf Unsplash \(${LINK}\)$`);
+/** Each photo service by the name its credits carry, and the host its links lead to. */
+const SOURCES = {
+  unsplash: { name: 'Unsplash', host: String.raw`unsplash\.com` },
+  pexels: { name: 'Pexels', host: String.raw`(?:www\.)?pexels\.com` },
+} as const satisfies Record<PhotoProvider, { name: string; host: string }>;
+
+const CREDITS = Object.entries(SOURCES).map(([source, { name, host }]) => {
+  const link = String.raw`(https://${host}/[^\s)]+)`;
+  return {
+    source: source as PhotoProvider,
+    pattern: new RegExp(String.raw`^Foto von (.+) \(${link}\) auf ${name} \(${link}\)$`),
+  };
+});
+const isCredit = (text: string) => CREDITS.some(({ pattern }) => pattern.test(text));
 
 export const creditText = (credit: ImageCredit): string =>
-  `Foto von ${credit.name} (${credit.profileUrl}) auf Unsplash (${credit.photoUrl})`;
+  `Foto von ${credit.name} (${credit.profileUrl}) auf ${SOURCES[credit.source ?? 'unsplash'].name} (${credit.photoUrl})`;
 
 const descriptionsOf = (frame: XmlNode) =>
   childrenOf(frame).filter((child) => tagOf(child) === 'svg:desc');
@@ -37,8 +49,14 @@ const textIn = (node: XmlNode) =>
 /** The stock photo credit of a picture frame, if it has one. */
 export function readCredit(frame: XmlNode): ImageCredit | null {
   for (const description of descriptionsOf(frame)) {
-    const match = CREDIT.exec(textIn(description).trim());
-    if (match) return { name: match[1]!, profileUrl: match[2]!, photoUrl: match[3]! };
+    const text = textIn(description).trim();
+    for (const { source, pattern } of CREDITS) {
+      const match = pattern.exec(text);
+      if (!match) continue;
+      const credit = { name: match[1]!, profileUrl: match[2]!, photoUrl: match[3]! };
+      // Unsplash's credits stay as they were before there were others.
+      return source === 'unsplash' ? credit : { ...credit, source };
+    }
   }
   return null;
 }
@@ -50,7 +68,7 @@ export function readCredit(frame: XmlNode): ImageCredit | null {
  */
 export function writeCredit(frame: XmlNode, credit: ImageCredit | null): void {
   for (const description of descriptionsOf(frame)) {
-    if (credit || CREDIT.test(textIn(description).trim())) removeChild(frame, description);
+    if (credit || isCredit(textIn(description).trim())) removeChild(frame, description);
   }
   if (!credit) return;
   const children = childrenOf(frame);

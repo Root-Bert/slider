@@ -2,6 +2,7 @@ import { MAX_COMMENT_BODY_LENGTH, type Comment } from '@slider/shared';
 import { isApplePlatform } from '@/lib/platform';
 import { Avatar, cn, ErrorText, IconButton } from '@/ui';
 import { AttachedImages, AttachImageButton } from '../media/AttachedImages';
+import { VoiceMemoBar } from '../media/VoiceMemoBar';
 import { MediaReplyButtons } from './MediaTabs';
 import { useMentions } from './hooks/useMentions';
 import { useReplyDraft } from './hooks/useReplyDraft';
@@ -55,9 +56,23 @@ export function ReplyComposer({
     />
   );
   const field = (
-    <div className="relative min-w-0 flex-1">
-      <MentionMenu mentions={mentions} />
-      {textarea}
+    <div className="relative flex min-w-0 flex-1 flex-col gap-1.5">
+      {draft.voice.on && (
+        <VoiceMemoBar
+          onChange={draft.voice.onChange}
+          onRecordingChange={draft.voice.onRecordingChange}
+          onDiscard={draft.voice.discard}
+          onSend={(options) => submit(undefined, options)}
+          disabled={draft.uploading}
+        />
+      )}
+      {/* The memo is the reply: no note beside it. */}
+      {!draft.voice.on && (
+        <>
+          <MentionMenu mentions={mentions} />
+          {textarea}
+        </>
+      )}
       <AttachedImages attachments={draft.images.attachments} onRemove={draft.images.remove} />
     </div>
   );
@@ -140,7 +155,7 @@ export function ReplyComposer({
         <div className="field-well focus-field flex min-h-10 min-w-0 flex-1 items-end gap-0.5 rounded-control py-1.5 pr-1 pl-3.5">
           <div className="min-w-0 flex-1 py-[5px]">{field}</div>
           {attach}
-          <MediaReplyButtons root={root} />
+          <MediaReplyButtons root={root} voice={draft.voice} />
         </div>
         {askAi('sm', 'mb-1')}
         <IconButton

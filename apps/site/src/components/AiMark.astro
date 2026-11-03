@@ -1,0 +1,25 @@
+---
+import { LogoMark } from '@/ui/Logo';
+
+/** Slider's own AI has no name and no face: it speaks with the app icon's mark on Slider orange, in an avatar's circle. */
+interface Props {
+  size?: number;
+}
+
+const { size = 24 } = Astro.props;
+---
+
+<span class="ai-mark" style={`--s: ${size}px`} aria-hidden="true"><LogoMark width={Math.round(size * 0.66)} tone="onOrange" /></span>
+
+<style>
+  .ai-mark {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    width: var(--s);
+    height: var(--s);
+    border-radius: 50%;
+    background: var(--color-logo);
+    box-shadow: 0 0 0 1.5px rgb(255 255 255 / 0.9);
+  }
+</style>

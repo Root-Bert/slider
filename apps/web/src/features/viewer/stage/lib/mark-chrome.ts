@@ -12,6 +12,13 @@ export const HANDLE_CLASS = 'absolute size-3 touch-none rounded-mark bg-white';
 /** Accent edge around a {@link HANDLE_CLASS} handle. */
 export const handleRing = (color: string): string => `0 0 0 1.5px ${color}`;
 
+/**
+ * The faint fill of a box on the slide under the pointer or a comment's (`ShapeOutline`), also of
+ * an element under the pointer while editing – the same in review and edit mode.
+ */
+export const markTint = (color: string, percent = 10): string =>
+  `color-mix(in srgb, ${color} ${percent}%, transparent)`;
+
 /** Halo around a lit (emphasised or dragged) frame on the slide. */
 export const frameHalo = (color: string): string =>
   `0 0 0 3px color-mix(in srgb, ${color} 30%, transparent)`;

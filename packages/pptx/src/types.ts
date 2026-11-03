@@ -1,4 +1,4 @@
-import type { Guide, Point, Rect } from '@slider/shared';
+import type { Guide, Point, Rect, SlideTransition } from '@slider/shared';
 
 /**
  * Public result types of the PPTX parser (BER-93, BER-112, BER-113).
@@ -50,6 +50,8 @@ export interface ParsedSlide {
   background: string | null;
   /** Drawing guides shown on the slide: the presentation's, its master's and its layout's. */
   guides: Guide[];
+  /** How it comes in when presenting (ODP slides); `null`: one Slider does not play. */
+  transition?: SlideTransition | null;
 }
 
 export type ParsedShapeKind = 'text' | 'picture' | 'table' | 'connector' | 'other';
@@ -73,6 +75,10 @@ export interface ParsedShape {
   placeholder: string | null;
   /** Tables only: cell texts row by row (`text` holds the same, tab/newline separated). */
   tableRows?: string[][];
+  /** Turned clockwise by this many degrees around the box's centre (ODP elements). */
+  rotation?: number;
+  /** Tilted in depth, degrees (ODP elements, `setTilt`). */
+  tilt?: { x: number; y: number };
 }
 
 export interface ParsedParagraph {

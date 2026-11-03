@@ -3,7 +3,6 @@ import { PptxError } from '@slider/pptx';
 import { ConversionAborted } from './libreoffice';
 import {
   PageCountMismatch,
-  type CutoutImages,
   type LayerImages,
   type PageImages,
   type PagePicture,
@@ -29,8 +28,8 @@ export const PDF_PAGE_ALLOWANCE_MS = 1_000;
 
 /**
  * PDFs read at once, across imports, syncs and re-renders: each is a thread busy on a CPU core
- * with a page's canvas in memory. The rest wait their turn, in order of arrival; the deadline
- * starts with the run, not the wait.
+ * with a page's canvas in memory. The rest wait their turn – re-renders and syncs after imports,
+ * else in order of arrival; the deadline starts with the run, not the wait.
  */
 export const MAX_PARALLEL_PDF_JOBS = 2;
 /**
@@ -56,16 +55,13 @@ export class PdfTimedOut extends Error {
 export type PdfTask =
   | { kind: 'deck'; bytes: Uint8Array }
   | { kind: 'pages'; bytes: Uint8Array; expectedPages?: number; picture?: PagePicture }
-  | { kind: 'cutout'; bytes: Uint8Array }
-  | { kind: 'layers'; bytes: Uint8Array; background: boolean };
+  | { kind: 'layers'; bytes: Uint8Array; background: boolean; width?: number };
 
 type PdfResult<T extends PdfTask> = T extends { kind: 'deck' }
   ? PdfDeckData
-  : T extends { kind: 'cutout' }
-    ? CutoutImages
-    : T extends { kind: 'layers' }
-      ? LayerImages
-      : number;
+  : T extends { kind: 'layers' }
+    ? LayerImages
+    : number;
 
 export type OnPdfPage = (page: PageImages, index: number) => Promise<void>;
 
@@ -88,6 +84,8 @@ export type ToPdfWorker =
       picture?: PagePicture;
       /** Layers: the first page is the slide without its elements. */
       background?: boolean;
+      /** Layers: drawn this wide (px) instead of `LAYER_IMAGE_WIDTH`. */
+      width?: number;
     }
   /** The page sent last is stored: draw the next one. */
   | { type: 'next' };
@@ -97,7 +95,7 @@ export type FromPdfWorker =
   /** The PDF is open and has this many pages: the deadline grows by their allowance. */
   | { type: 'opened'; pages: number }
   | { type: 'page'; index: number; image: Uint8Array; thumbnail: Uint8Array }
-  | { type: 'done'; result: PdfDeckData | CutoutImages | LayerImages | number }
+  | { type: 'done'; result: PdfDeckData | LayerImages | number }
   | { type: 'error'; error: WorkerError };
 
 export const toWorkerError = (error: unknown): WorkerError => {
@@ -157,9 +155,6 @@ const running = new Map<Worker, () => void>();
 /** Set by {@link stopPdfJobs}: the process is going down. */
 let stopping = false;
 
-/** PDF workers running at this moment – for tests. */
-export const runningPdfJobs = (): number => running.size;
-
 /**
  * Terminates every running PDF worker – for shutdown and the restart after `/einrichtung`. They
  * and any PDF started afterwards end in {@link ConversionAborted}, like a LibreOffice run, so
@@ -171,23 +166,26 @@ export function stopPdfJobs(): void {
   for (const worker of warm.splice(0)) void worker.terminate();
 }
 
-/** Undoes {@link stopPdfJobs} – for tests; a real server never comes back from it. */
-export function resumePdfJobs(): void {
-  stopping = false;
-}
-
-/** Runs work in one of `limit` slots; the rest wait their turn, in order of arrival. */
+/**
+ * Runs work in one of `limit` slots; the rest wait their turn – `background` work after all the
+ * other, else in order of arrival.
+ */
 function slots(limit: number) {
   let active = 0;
   const waiting: (() => void)[] = [];
-  return async <T>(work: () => Promise<T>): Promise<T> => {
+  const waitingBackground: (() => void)[] = [];
+  return async <T>(work: () => Promise<T>, background = false): Promise<T> => {
     if (active < limit) active += 1;
-    else await new Promise<void>((resolve) => waiting.push(resolve));
+    else {
+      await new Promise<void>((resolve) =>
+        (background ? waitingBackground : waiting).push(resolve),
+      );
+    }
     try {
       return await work();
     } finally {
       // The slot goes straight to the next one waiting, else it is free again.
-      const next = waiting.shift();
+      const next = waiting.shift() ?? waitingBackground.shift();
       if (next) next();
       else active -= 1;
     }
@@ -255,7 +253,14 @@ export function warmPdfWorker(): void {
 export function runPdfTask<T extends PdfTask>(
   task: T,
   onPage?: OnPdfPage,
-  { interactive = false }: { interactive?: boolean } = {},
+  {
+    interactive = false,
+    background = false,
+  }: {
+    interactive?: boolean;
+    /** Nobody waits for it (a re-render, a sync): it waits for the other jobs of its line. */
+    background?: boolean;
+  } = {},
 ): Promise<PdfResult<T>> {
   return (interactive ? inInteractiveSlot : inPdfSlot)(async () => {
     const { inProcess, timeoutMs, workerUrl } = settings;
@@ -264,21 +269,19 @@ export function runPdfTask<T extends PdfTask>(
       ? await runInProcess(task, onPage)
       : await runInWorker(task, onPage, timeoutMs, workerUrl, interactive);
     return result as PdfResult<T>;
-  });
+  }, background);
 }
 
 async function runInProcess(
   task: PdfTask,
   onPage?: OnPdfPage,
-): Promise<PdfDeckData | CutoutImages | LayerImages | number> {
+): Promise<PdfDeckData | LayerImages | number> {
   // Loaded only here: in production pdf.js never comes onto the main thread.
-  const { drawCutoutPages, drawLayerPages, drawPdfPages, readPdfDeck } =
-    await import('./pdf-render');
+  const { drawLayerPages, drawPdfPages, readPdfDeck } = await import('./pdf-render');
   // pdf.js takes ownership of (detaches) the buffer it is given.
   const bytes = task.bytes.slice();
   if (task.kind === 'deck') return readPdfDeck(bytes);
-  if (task.kind === 'cutout') return drawCutoutPages(bytes);
-  if (task.kind === 'layers') return drawLayerPages(bytes, task.background);
+  if (task.kind === 'layers') return drawLayerPages(bytes, task.background, task.width);
   return drawPdfPages(bytes, onPage ?? (async () => {}), {
     expectedPages: task.expectedPages,
     picture: task.picture,
@@ -297,7 +300,7 @@ function runInWorker(
   timeoutMs: number,
   workerUrl: URL,
   reuse = false,
-): Promise<PdfDeckData | CutoutImages | LayerImages | number> {
+): Promise<PdfDeckData | LayerImages | number> {
   return new Promise((resolve, reject) => {
     const worker = takeWorker(workerUrl, reuse);
     let settled = false;
@@ -305,10 +308,7 @@ function runInWorker(
     let remaining = timeoutMs;
     let since = Date.now();
     // Settles only once the thread is gone: its slot is not free while it still burns a core.
-    const finish = (
-      error: Error | null,
-      result?: PdfDeckData | CutoutImages | LayerImages | number,
-    ) => {
+    const finish = (error: Error | null, result?: PdfDeckData | LayerImages | number) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -374,6 +374,7 @@ function runInWorker(
         bytes,
         expectedPages: task.kind === 'pages' ? task.expectedPages : undefined,
         background: task.kind === 'layers' ? task.background : undefined,
+        width: task.kind === 'layers' ? task.width : undefined,
         picture: task.kind === 'pages' ? task.picture : undefined,
       } satisfies ToPdfWorker,
       [bytes.buffer],

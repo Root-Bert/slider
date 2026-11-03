@@ -91,90 +91,86 @@ async function odpWith(
   return zip.generateAsync({ type: 'uint8array' });
 }
 
-describe('font licence and coverage', () => {
-  it('reads what a font may be used for', () => {
-    expect(fontEmbedding(lato())).toBe('installable');
-    expect(fontEmbedding(withFsType(lato(), 0x0008))).toBe('editable');
-    expect(fontEmbedding(withFsType(lato(), 0x0004))).toBe('preview');
-    expect(fontEmbedding(withFsType(lato(), 0x0002))).toBe('restricted');
-    // The least restrictive bit counts.
-    expect(fontEmbedding(withFsType(lato(), 0x000c))).toBe('editable');
-    expect(fontEmbedding(new Uint8Array(8))).toBe('restricted');
-  });
-
-  it('tells a whole font from one without the characters', () => {
-    expect(fontCovers(lato(), 'Aaßä€0')).toBe(true);
-    expect(fontCovers(lato(), '中')).toBe(false);
-    expect(fontCovers(withoutUnicode(lato()), 'A')).toBe(false);
-    expect(fontCovers(new Uint8Array(8), 'A')).toBe(false);
-  });
+const deckOf = (ctx: { workspaceId: string; ownerId: string }) => ({
+  workspaceId: ctx.workspaceId,
+  ownerId: ctx.ownerId,
+  title: 'Quartalsbericht',
 });
 
 describe('adoptDeckFonts', () => {
-  const deckOf = (ctx: { workspaceId: string; ownerId: string }) => ({
-    workspaceId: ctx.workspaceId,
-    ownerId: ctx.ownerId,
-    title: 'Quartalsbericht',
-  });
-
-  it('takes a whole, freely usable font an ODP brings along into the workspace', async () => {
-    const ctx = await createTestContext();
-    try {
-      const bytes = await odpWith([{ family: 'Lota', bytes: lota() }]);
-      expect(await adoptDeckFonts(ctx.deps, deckOf(ctx), bytes)).toEqual(['Lota']);
-      const rows = await ctx.deps.db
-        .select()
-        .from(workspaceFonts)
-        .where(eq(workspaceFonts.workspaceId, ctx.workspaceId));
-      expect(rows).toEqual([
-        expect.objectContaining({
-          family: 'Lota',
-          weight: 400,
-          italic: false,
-          sourceFile: 'Quartalsbericht',
-          uploadedById: ctx.ownerId,
-        }),
-      ]);
-      expect(await ctx.deps.storage.get(rows[0]!.storageKey)).toEqual(lota());
-      // Imported again: the family is the workspace's already.
-      expect(await adoptDeckFonts(ctx.deps, deckOf(ctx), bytes)).toEqual([]);
-    } finally {
-      await ctx.cleanup();
+  it('takes only whole, freely usable fonts an ODP brings along into the workspace, never replacing a family it has', async () => {
+    {
+      expect(fontEmbedding(lato())).toBe('installable');
+      expect(fontEmbedding(withFsType(lato(), 0x0008))).toBe('editable');
+      expect(fontEmbedding(withFsType(lato(), 0x0004))).toBe('preview');
+      expect(fontEmbedding(withFsType(lato(), 0x0002))).toBe('restricted');
+      // The least restrictive bit counts.
+      expect(fontEmbedding(withFsType(lato(), 0x000c))).toBe('editable');
+      expect(fontEmbedding(new Uint8Array(8))).toBe('restricted');
     }
-  });
-
-  it('leaves fonts the file may not share, subsets, Slider’s own, misnamed and unused ones', async () => {
-    const ctx = await createTestContext();
-    try {
-      const bytes = await odpWith([
-        { family: 'Lota', bytes: withFsType(lota(), 0x0008) },
-        { family: 'Lota', bytes: withoutUnicode(lota()) },
-        { family: 'Lato', bytes: lato() },
-        { family: 'Nicht Lota', bytes: lota() },
-      ]);
-      expect(await adoptDeckFonts(ctx.deps, deckOf(ctx), bytes)).toEqual([]);
-      expect(await adoptDeckFonts(ctx.deps, deckOf(ctx), lato())).toEqual([]);
-      const asian = await odpWith([{ family: 'Lota', bytes: lota() }], { script: 'asian' });
-      expect(await adoptDeckFonts(ctx.deps, deckOf(ctx), asian)).toEqual([]);
-      expect(await ctx.deps.db.select().from(workspaceFonts)).toEqual([]);
-    } finally {
-      await ctx.cleanup();
+    {
+      expect(fontCovers(lato(), 'Aaßä€0')).toBe(true);
+      expect(fontCovers(lato(), '中')).toBe(false);
+      expect(fontCovers(withoutUnicode(lato()), 'A')).toBe(false);
+      expect(fontCovers(new Uint8Array(8), 'A')).toBe(false);
     }
-  });
-
-  it('never replaces a family the workspace has', async () => {
-    const ctx = await createTestContext();
-    try {
-      const uploaded = await uploadWorkspaceFonts(ctx.deps, ctx.ownerId, ctx.workspaceId, [
-        { name: 'Lota-Bold.ttf', bytes: lota() },
-      ]);
-      const bytes = await odpWith([{ family: 'Lota', bytes: lota() }]);
-      expect(await adoptDeckFonts(ctx.deps, deckOf(ctx), bytes)).toEqual([]);
-      const rows = await ctx.deps.db.select().from(workspaceFonts);
-      expect(rows.map((row) => row.id)).toEqual(uploaded.fonts.map((font) => font.id));
-      expect(rows[0]?.sourceFile).toBeNull();
-    } finally {
-      await ctx.cleanup();
+    {
+      const ctx = await createTestContext();
+      try {
+        const bytes = await odpWith([{ family: 'Lota', bytes: lota() }]);
+        expect(await adoptDeckFonts(ctx.deps, deckOf(ctx), bytes)).toEqual(['Lota']);
+        const rows = await ctx.deps.db
+          .select()
+          .from(workspaceFonts)
+          .where(eq(workspaceFonts.workspaceId, ctx.workspaceId));
+        expect(rows).toEqual([
+          expect.objectContaining({
+            family: 'Lota',
+            weight: 400,
+            italic: false,
+            sourceFile: 'Quartalsbericht',
+            uploadedById: ctx.ownerId,
+          }),
+        ]);
+        expect(await ctx.deps.storage.get(rows[0]!.storageKey)).toEqual(lota());
+        // Imported again: the family is the workspace's already.
+        expect(await adoptDeckFonts(ctx.deps, deckOf(ctx), bytes)).toEqual([]);
+      } finally {
+        await ctx.cleanup();
+      }
+    }
+    {
+      const ctx = await createTestContext();
+      try {
+        const bytes = await odpWith([
+          { family: 'Lota', bytes: withFsType(lota(), 0x0008) },
+          { family: 'Lota', bytes: withoutUnicode(lota()) },
+          { family: 'Lato', bytes: lato() },
+          { family: 'Nicht Lota', bytes: lota() },
+        ]);
+        expect(await adoptDeckFonts(ctx.deps, deckOf(ctx), bytes)).toEqual([]);
+        expect(await adoptDeckFonts(ctx.deps, deckOf(ctx), lato())).toEqual([]);
+        const asian = await odpWith([{ family: 'Lota', bytes: lota() }], { script: 'asian' });
+        expect(await adoptDeckFonts(ctx.deps, deckOf(ctx), asian)).toEqual([]);
+        expect(await ctx.deps.db.select().from(workspaceFonts)).toEqual([]);
+      } finally {
+        await ctx.cleanup();
+      }
+    }
+    {
+      const ctx = await createTestContext();
+      try {
+        const uploaded = await uploadWorkspaceFonts(ctx.deps, ctx.ownerId, ctx.workspaceId, [
+          { name: 'Lota-Bold.ttf', bytes: lota() },
+        ]);
+        const bytes = await odpWith([{ family: 'Lota', bytes: lota() }]);
+        expect(await adoptDeckFonts(ctx.deps, deckOf(ctx), bytes)).toEqual([]);
+        const rows = await ctx.deps.db.select().from(workspaceFonts);
+        expect(rows.map((row) => row.id)).toEqual(uploaded.fonts.map((font) => font.id));
+        expect(rows[0]?.sourceFile).toBeNull();
+      } finally {
+        await ctx.cleanup();
+      }
     }
   });
 });

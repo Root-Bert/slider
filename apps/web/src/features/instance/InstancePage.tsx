@@ -4,6 +4,7 @@ import { accentColor } from '@/lib/accent';
 import { routes } from '@/lib/routes';
 import {
   timelineQuery,
+  useInstanceAiUsage,
   useInstanceHistory,
   useInstanceOverview,
   useInstanceTimeline,
@@ -14,6 +15,7 @@ import { ButtonLink, ErrorText, LoadingState, Notice, SegmentedControl, useToast
 import { DirectoryCard } from './components/DirectoryCard';
 import { GrowthChart } from './components/GrowthChart';
 import { HistoryStrip } from './components/HistoryStrip';
+import { AiUsageSection } from './components/AiUsageSection';
 import { ActivityCard, LargestCard, StatusCard, StorageCard } from './components/InsightCards';
 import { KpiTile } from './components/KpiTile';
 import { useSidewaysWheel } from './hooks/useSidewaysWheel';
@@ -48,10 +50,9 @@ export function Component() {
   // Following the time, the numbers keep up by themselves: a new account shows within moments.
   const refresh = { refetchInterval: view.live ? LIVE_REFRESH_MS : (false as const) };
   const overview = useInstanceOverview(refresh);
-  const timeline = useInstanceTimeline(
-    useThrottled(timelineQuery(view.interval, view.end), WINDOW_THROTTLE_MS),
-    refresh,
-  );
+  const windowQuery = useThrottled(timelineQuery(view.interval, view.end), WINDOW_THROTTLE_MS);
+  const timeline = useInstanceTimeline(windowQuery, refresh);
+  const aiUsage = useInstanceAiUsage(windowQuery, refresh);
   // Over the chart, the line goes along with the fingers.
   const chartRef = useSidewaysWheel<HTMLDivElement>((px, width) =>
     view.pan((px / width) * view.windowMs),
@@ -74,7 +75,6 @@ export function Component() {
       title="Instanz"
       subtitle={window.location.host}
       back={{ to: routes.reviews() }}
-      logoLink={{ to: routes.instance(), label: 'Instanz-Dashboard' }}
       width="wide"
       toast={toast}
       actions={
@@ -132,7 +132,7 @@ export function Component() {
                   trend={trend('workspaces')}
                 />
                 <KpiTile
-                  label="Reviews"
+                  label="Präsentationen"
                   value={formatCount(data.decks)}
                   delta={added('decks')}
                   trend={trend('decks')}
@@ -169,6 +169,12 @@ export function Component() {
                 <StatusCard overview={data} />
                 <LargestCard overview={data} />
               </div>
+              {aiUsage.data && (
+                <AiUsageSection
+                  usage={aiUsage.data}
+                  phrase={view.live ? intervalPhrase(view.interval) : 'im Zeitraum'}
+                />
+              )}
             </div>
           )}
           <DirectoryCard plans={data?.plans ?? false} userId={user.id} onNotify={showToast} />

@@ -14,8 +14,6 @@ export const THEME = {
   hairlineStrong: 0.16,
   /** White alpha of the `dot-grid` dots (`--color-dot`). */
   dot: 0.14,
-  /** Fill opacity of the back slide in the Slider mark (`ui/Logo.tsx`). */
-  logoBackOpacity: 0.45,
   /** `--font-sans`. */
   fontSans: "'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif",
 } as const;

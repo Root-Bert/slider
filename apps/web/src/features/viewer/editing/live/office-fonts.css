@@ -1029,3 +1029,2393 @@
   descent-override: 27.0996%;
   line-gap-override: 0%;
 }
+@font-face {
+  font-family: 'Slider Source Sans 3';
+  src: url('/fonts/office/SourceSans3-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 102.4%;
+  descent-override: 40%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Source Sans 3';
+  src: url('/fonts/office/SourceSans3-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 102.4%;
+  descent-override: 40%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Source Sans 3';
+  src: url('/fonts/office/SourceSans3-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 102.4%;
+  descent-override: 40%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Source Sans 3';
+  src: url('/fonts/office/SourceSans3-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 102.4%;
+  descent-override: 40%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Nunito Sans';
+  src: url('/fonts/office/NunitoSans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 101.1%;
+  descent-override: 35.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Nunito Sans';
+  src: url('/fonts/office/NunitoSans-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 101.1%;
+  descent-override: 35.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Nunito Sans';
+  src: url('/fonts/office/NunitoSans-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 101.1%;
+  descent-override: 35.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Nunito Sans';
+  src: url('/fonts/office/NunitoSans-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 101.1%;
+  descent-override: 35.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Fira Sans';
+  src: url('/fonts/office/FiraSans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 93.5%;
+  descent-override: 26.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Fira Sans';
+  src: url('/fonts/office/FiraSans-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 93.5%;
+  descent-override: 26.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Fira Sans';
+  src: url('/fonts/office/FiraSans-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 93.5%;
+  descent-override: 26.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Fira Sans';
+  src: url('/fonts/office/FiraSans-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 93.5%;
+  descent-override: 26.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Barlow';
+  src: url('/fonts/office/Barlow-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100%;
+  descent-override: 20%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Barlow';
+  src: url('/fonts/office/Barlow-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100%;
+  descent-override: 20%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Barlow';
+  src: url('/fonts/office/Barlow-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 100%;
+  descent-override: 20%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Barlow';
+  src: url('/fonts/office/Barlow-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 100%;
+  descent-override: 20%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Barlow Condensed';
+  src: url('/fonts/office/BarlowCondensed-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100%;
+  descent-override: 20%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Barlow Condensed';
+  src: url('/fonts/office/BarlowCondensed-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100%;
+  descent-override: 20%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Barlow Condensed';
+  src: url('/fonts/office/BarlowCondensed-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 100%;
+  descent-override: 20%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Barlow Condensed';
+  src: url('/fonts/office/BarlowCondensed-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 100%;
+  descent-override: 20%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider DM Sans';
+  src: url('/fonts/office/DMSans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 99.2%;
+  descent-override: 31%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider DM Sans';
+  src: url('/fonts/office/DMSans-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 99.2%;
+  descent-override: 31%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider DM Sans';
+  src: url('/fonts/office/DMSans-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 99.2%;
+  descent-override: 31%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider DM Sans';
+  src: url('/fonts/office/DMSans-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 99.2%;
+  descent-override: 31%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Manrope';
+  src: url('/fonts/office/Manrope-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 106.6%;
+  descent-override: 30%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Manrope';
+  src: url('/fonts/office/Manrope-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 106.6%;
+  descent-override: 30%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider IBM Plex Sans';
+  src: url('/fonts/office/IBMPlexSans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 102.5%;
+  descent-override: 27.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider IBM Plex Sans';
+  src: url('/fonts/office/IBMPlexSans-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 102.5%;
+  descent-override: 27.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider IBM Plex Sans';
+  src: url('/fonts/office/IBMPlexSans-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 102.5%;
+  descent-override: 27.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider IBM Plex Sans';
+  src: url('/fonts/office/IBMPlexSans-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 102.5%;
+  descent-override: 27.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Karla';
+  src: url('/fonts/office/Karla-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 91.7%;
+  descent-override: 25.2%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Karla';
+  src: url('/fonts/office/Karla-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 91.7%;
+  descent-override: 25.2%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Karla';
+  src: url('/fonts/office/Karla-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 91.7%;
+  descent-override: 25.2%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Karla';
+  src: url('/fonts/office/Karla-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 91.7%;
+  descent-override: 25.2%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Titillium Web';
+  src: url('/fonts/office/TitilliumWeb-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 113.3%;
+  descent-override: 38.8%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Titillium Web';
+  src: url('/fonts/office/TitilliumWeb-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 113.3%;
+  descent-override: 38.8%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Titillium Web';
+  src: url('/fonts/office/TitilliumWeb-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 113.3%;
+  descent-override: 38.8%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Titillium Web';
+  src: url('/fonts/office/TitilliumWeb-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 113.3%;
+  descent-override: 38.8%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Josefin Sans';
+  src: url('/fonts/office/JosefinSans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 75%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Josefin Sans';
+  src: url('/fonts/office/JosefinSans-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 75%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Josefin Sans';
+  src: url('/fonts/office/JosefinSans-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 75%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Josefin Sans';
+  src: url('/fonts/office/JosefinSans-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 75%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Libre Franklin';
+  src: url('/fonts/office/LibreFranklin-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 96.6%;
+  descent-override: 24.6%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Libre Franklin';
+  src: url('/fonts/office/LibreFranklin-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 96.6%;
+  descent-override: 24.6%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Libre Franklin';
+  src: url('/fonts/office/LibreFranklin-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 96.6%;
+  descent-override: 24.6%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Libre Franklin';
+  src: url('/fonts/office/LibreFranklin-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 96.6%;
+  descent-override: 24.6%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Mulish';
+  src: url('/fonts/office/Mulish-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100.5%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Mulish';
+  src: url('/fonts/office/Mulish-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100.5%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Mulish';
+  src: url('/fonts/office/Mulish-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 100.5%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Mulish';
+  src: url('/fonts/office/Mulish-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 100.5%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Quicksand';
+  src: url('/fonts/office/Quicksand-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Quicksand';
+  src: url('/fonts/office/Quicksand-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Archivo';
+  src: url('/fonts/office/Archivo-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 87.8%;
+  descent-override: 21%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Archivo';
+  src: url('/fonts/office/Archivo-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 87.8%;
+  descent-override: 21%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Archivo';
+  src: url('/fonts/office/Archivo-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 87.8%;
+  descent-override: 21%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Archivo';
+  src: url('/fonts/office/Archivo-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 87.8%;
+  descent-override: 21%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Space Grotesk';
+  src: url('/fonts/office/SpaceGrotesk-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 98.4%;
+  descent-override: 29.2%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Space Grotesk';
+  src: url('/fonts/office/SpaceGrotesk-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 98.4%;
+  descent-override: 29.2%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Outfit';
+  src: url('/fonts/office/Outfit-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100%;
+  descent-override: 26%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Outfit';
+  src: url('/fonts/office/Outfit-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100%;
+  descent-override: 26%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Plus Jakarta Sans';
+  src: url('/fonts/office/PlusJakartaSans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 103.8%;
+  descent-override: 22.2%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Plus Jakarta Sans';
+  src: url('/fonts/office/PlusJakartaSans-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 103.8%;
+  descent-override: 22.2%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Plus Jakarta Sans';
+  src: url('/fonts/office/PlusJakartaSans-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 103.8%;
+  descent-override: 22.2%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Plus Jakarta Sans';
+  src: url('/fonts/office/PlusJakartaSans-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 103.8%;
+  descent-override: 22.2%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Lexend';
+  src: url('/fonts/office/Lexend-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Lexend';
+  src: url('/fonts/office/Lexend-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Figtree';
+  src: url('/fonts/office/Figtree-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 95%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Figtree';
+  src: url('/fonts/office/Figtree-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 95%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Figtree';
+  src: url('/fonts/office/Figtree-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 95%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Figtree';
+  src: url('/fonts/office/Figtree-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 95%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Red Hat Display';
+  src: url('/fonts/office/RedHatDisplay-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 101.8%;
+  descent-override: 30.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Red Hat Display';
+  src: url('/fonts/office/RedHatDisplay-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 101.8%;
+  descent-override: 30.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Red Hat Display';
+  src: url('/fonts/office/RedHatDisplay-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 101.8%;
+  descent-override: 30.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Red Hat Display';
+  src: url('/fonts/office/RedHatDisplay-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 101.8%;
+  descent-override: 30.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Sora';
+  src: url('/fonts/office/Sora-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 97%;
+  descent-override: 29%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Sora';
+  src: url('/fonts/office/Sora-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 97%;
+  descent-override: 29%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Urbanist';
+  src: url('/fonts/office/Urbanist-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 95%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Urbanist';
+  src: url('/fonts/office/Urbanist-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 95%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Urbanist';
+  src: url('/fonts/office/Urbanist-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 95%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Urbanist';
+  src: url('/fonts/office/Urbanist-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 95%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Public Sans';
+  src: url('/fonts/office/PublicSans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 95%;
+  descent-override: 22.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Public Sans';
+  src: url('/fonts/office/PublicSans-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 95%;
+  descent-override: 22.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Public Sans';
+  src: url('/fonts/office/PublicSans-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 95%;
+  descent-override: 22.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Public Sans';
+  src: url('/fonts/office/PublicSans-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 95%;
+  descent-override: 22.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Jost';
+  src: url('/fonts/office/Jost-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 107%;
+  descent-override: 37.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Jost';
+  src: url('/fonts/office/Jost-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 107%;
+  descent-override: 37.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Jost';
+  src: url('/fonts/office/Jost-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 107%;
+  descent-override: 37.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Jost';
+  src: url('/fonts/office/Jost-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 107%;
+  descent-override: 37.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Be Vietnam Pro';
+  src: url('/fonts/office/BeVietnamPro-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100%;
+  descent-override: 26.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Be Vietnam Pro';
+  src: url('/fonts/office/BeVietnamPro-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100%;
+  descent-override: 26.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Be Vietnam Pro';
+  src: url('/fonts/office/BeVietnamPro-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 100%;
+  descent-override: 26.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Be Vietnam Pro';
+  src: url('/fonts/office/BeVietnamPro-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 100%;
+  descent-override: 26.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Hanken Grotesk';
+  src: url('/fonts/office/HankenGrotesk-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100%;
+  descent-override: 30.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Hanken Grotesk';
+  src: url('/fonts/office/HankenGrotesk-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100%;
+  descent-override: 30.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Hanken Grotesk';
+  src: url('/fonts/office/HankenGrotesk-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 100%;
+  descent-override: 30.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Hanken Grotesk';
+  src: url('/fonts/office/HankenGrotesk-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 100%;
+  descent-override: 30.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Geist';
+  src: url('/fonts/office/Geist-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100.5%;
+  descent-override: 29.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Geist';
+  src: url('/fonts/office/Geist-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100.5%;
+  descent-override: 29.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Geist';
+  src: url('/fonts/office/Geist-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 100.5%;
+  descent-override: 29.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Geist';
+  src: url('/fonts/office/Geist-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 100.5%;
+  descent-override: 29.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Bricolage Grotesque';
+  src: url('/fonts/office/BricolageGrotesque-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 93%;
+  descent-override: 27%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Bricolage Grotesque';
+  src: url('/fonts/office/BricolageGrotesque-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 93%;
+  descent-override: 27%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Instrument Sans';
+  src: url('/fonts/office/InstrumentSans-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 97%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Instrument Sans';
+  src: url('/fonts/office/InstrumentSans-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 97%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Instrument Sans';
+  src: url('/fonts/office/InstrumentSans-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 97%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Instrument Sans';
+  src: url('/fonts/office/InstrumentSans-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 97%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Cabin';
+  src: url('/fonts/office/Cabin-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 96.5%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Cabin';
+  src: url('/fonts/office/Cabin-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 96.5%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Cabin';
+  src: url('/fonts/office/Cabin-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 96.5%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Cabin';
+  src: url('/fonts/office/Cabin-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 96.5%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Exo 2';
+  src: url('/fonts/office/Exo2-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 99.9%;
+  descent-override: 20.1%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Exo 2';
+  src: url('/fonts/office/Exo2-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 99.9%;
+  descent-override: 20.1%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Exo 2';
+  src: url('/fonts/office/Exo2-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 99.9%;
+  descent-override: 20.1%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Exo 2';
+  src: url('/fonts/office/Exo2-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 99.9%;
+  descent-override: 20.1%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Kanit';
+  src: url('/fonts/office/Kanit-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 110%;
+  descent-override: 39.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Kanit';
+  src: url('/fonts/office/Kanit-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 110%;
+  descent-override: 39.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Kanit';
+  src: url('/fonts/office/Kanit-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 110%;
+  descent-override: 39.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Kanit';
+  src: url('/fonts/office/Kanit-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 110%;
+  descent-override: 39.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Asap';
+  src: url('/fonts/office/Asap-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 93.4%;
+  descent-override: 21.2%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Asap';
+  src: url('/fonts/office/Asap-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 93.4%;
+  descent-override: 21.2%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Asap';
+  src: url('/fonts/office/Asap-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 93.4%;
+  descent-override: 21.2%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Asap';
+  src: url('/fonts/office/Asap-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 93.4%;
+  descent-override: 21.2%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Bebas Neue';
+  src: url('/fonts/office/BebasNeue-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 90%;
+  descent-override: 30%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Anton';
+  src: url('/fonts/office/Anton-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 117.627%;
+  descent-override: 32.9102%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Archivo Black';
+  src: url('/fonts/office/ArchivoBlack-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 87.8%;
+  descent-override: 21%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Fjalla One';
+  src: url('/fonts/office/FjallaOne-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100.8789%;
+  descent-override: 24.8047%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Teko';
+  src: url('/fonts/office/Teko-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 95.8%;
+  descent-override: 47.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Teko';
+  src: url('/fonts/office/Teko-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 95.8%;
+  descent-override: 47.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Dosis';
+  src: url('/fonts/office/Dosis-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 102.7%;
+  descent-override: 23.7%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Dosis';
+  src: url('/fonts/office/Dosis-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 102.7%;
+  descent-override: 23.7%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Comfortaa';
+  src: url('/fonts/office/Comfortaa-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 88.1%;
+  descent-override: 23.4%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Comfortaa';
+  src: url('/fonts/office/Comfortaa-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 88.1%;
+  descent-override: 23.4%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Varela Round';
+  src: url('/fonts/office/VarelaRound-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 91.8%;
+  descent-override: 28.6%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Fredoka';
+  src: url('/fonts/office/Fredoka-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 97.4%;
+  descent-override: 23.6%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Fredoka';
+  src: url('/fonts/office/Fredoka-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 97.4%;
+  descent-override: 23.6%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Righteous';
+  src: url('/fonts/office/Righteous-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 98.4863%;
+  descent-override: 25.6836%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Source Serif 4';
+  src: url('/fonts/office/SourceSerif4-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 103.6%;
+  descent-override: 33.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Source Serif 4';
+  src: url('/fonts/office/SourceSerif4-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 103.6%;
+  descent-override: 33.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Source Serif 4';
+  src: url('/fonts/office/SourceSerif4-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 103.6%;
+  descent-override: 33.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Source Serif 4';
+  src: url('/fonts/office/SourceSerif4-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 103.6%;
+  descent-override: 33.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider PT Serif';
+  src: url('/fonts/office/PTSerif-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 103.9%;
+  descent-override: 28.6%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider PT Serif';
+  src: url('/fonts/office/PTSerif-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 103.9%;
+  descent-override: 28.6%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider PT Serif';
+  src: url('/fonts/office/PTSerif-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 103.9%;
+  descent-override: 28.6%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider PT Serif';
+  src: url('/fonts/office/PTSerif-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 103.9%;
+  descent-override: 28.6%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Libre Baskerville';
+  src: url('/fonts/office/LibreBaskerville-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 97%;
+  descent-override: 27%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Libre Baskerville';
+  src: url('/fonts/office/LibreBaskerville-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 97%;
+  descent-override: 27%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Libre Baskerville';
+  src: url('/fonts/office/LibreBaskerville-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 97%;
+  descent-override: 27%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Libre Baskerville';
+  src: url('/fonts/office/LibreBaskerville-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 97%;
+  descent-override: 27%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider EB Garamond';
+  src: url('/fonts/office/EBGaramond-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100.7%;
+  descent-override: 29.8%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider EB Garamond';
+  src: url('/fonts/office/EBGaramond-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100.7%;
+  descent-override: 29.8%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider EB Garamond';
+  src: url('/fonts/office/EBGaramond-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 100.7%;
+  descent-override: 29.8%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider EB Garamond';
+  src: url('/fonts/office/EBGaramond-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 100.7%;
+  descent-override: 29.8%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Cormorant Garamond';
+  src: url('/fonts/office/CormorantGaramond-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 92.4%;
+  descent-override: 28.7%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Cormorant Garamond';
+  src: url('/fonts/office/CormorantGaramond-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 92.4%;
+  descent-override: 28.7%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Cormorant Garamond';
+  src: url('/fonts/office/CormorantGaramond-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 92.4%;
+  descent-override: 28.7%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Cormorant Garamond';
+  src: url('/fonts/office/CormorantGaramond-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 92.4%;
+  descent-override: 28.7%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Crimson Pro';
+  src: url('/fonts/office/CrimsonPro-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 89.6484%;
+  descent-override: 21.4844%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Crimson Pro';
+  src: url('/fonts/office/CrimsonPro-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 89.6484%;
+  descent-override: 21.4844%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Crimson Pro';
+  src: url('/fonts/office/CrimsonPro-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 89.6484%;
+  descent-override: 21.4844%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Crimson Pro';
+  src: url('/fonts/office/CrimsonPro-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 89.6484%;
+  descent-override: 21.4844%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Bitter';
+  src: url('/fonts/office/Bitter-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 93.5%;
+  descent-override: 26.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Bitter';
+  src: url('/fonts/office/Bitter-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 93.5%;
+  descent-override: 26.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Bitter';
+  src: url('/fonts/office/Bitter-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 93.5%;
+  descent-override: 26.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Bitter';
+  src: url('/fonts/office/Bitter-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 93.5%;
+  descent-override: 26.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Roboto Slab';
+  src: url('/fonts/office/RobotoSlab-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 104.7852%;
+  descent-override: 27.0996%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Roboto Slab';
+  src: url('/fonts/office/RobotoSlab-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 104.7852%;
+  descent-override: 27.0996%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Zilla Slab';
+  src: url('/fonts/office/ZillaSlab-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 94.4%;
+  descent-override: 25.6%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Zilla Slab';
+  src: url('/fonts/office/ZillaSlab-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 94.4%;
+  descent-override: 25.6%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Zilla Slab';
+  src: url('/fonts/office/ZillaSlab-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 94.4%;
+  descent-override: 25.6%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Zilla Slab';
+  src: url('/fonts/office/ZillaSlab-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 94.4%;
+  descent-override: 25.6%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Arvo';
+  src: url('/fonts/office/Arvo-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 96.0938%;
+  descent-override: 24.707%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Arvo';
+  src: url('/fonts/office/Arvo-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 96.0938%;
+  descent-override: 24.707%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Arvo';
+  src: url('/fonts/office/Arvo-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 96.0938%;
+  descent-override: 24.707%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Arvo';
+  src: url('/fonts/office/Arvo-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 96.0938%;
+  descent-override: 24.707%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider DM Serif Display';
+  src: url('/fonts/office/DMSerifDisplay-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 103.6%;
+  descent-override: 33.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider DM Serif Display';
+  src: url('/fonts/office/DMSerifDisplay-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 103.6%;
+  descent-override: 33.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Spectral';
+  src: url('/fonts/office/Spectral-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 105.9%;
+  descent-override: 46.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Spectral';
+  src: url('/fonts/office/Spectral-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 105.9%;
+  descent-override: 46.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Spectral';
+  src: url('/fonts/office/Spectral-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 105.9%;
+  descent-override: 46.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Spectral';
+  src: url('/fonts/office/Spectral-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 105.9%;
+  descent-override: 46.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Alegreya';
+  src: url('/fonts/office/Alegreya-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 101.6%;
+  descent-override: 34.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Alegreya';
+  src: url('/fonts/office/Alegreya-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 101.6%;
+  descent-override: 34.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Alegreya';
+  src: url('/fonts/office/Alegreya-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 101.6%;
+  descent-override: 34.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Alegreya';
+  src: url('/fonts/office/Alegreya-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 101.6%;
+  descent-override: 34.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Vollkorn';
+  src: url('/fonts/office/Vollkorn-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 95.2%;
+  descent-override: 44.1%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Vollkorn';
+  src: url('/fonts/office/Vollkorn-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 95.2%;
+  descent-override: 44.1%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Vollkorn';
+  src: url('/fonts/office/Vollkorn-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 95.2%;
+  descent-override: 44.1%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Vollkorn';
+  src: url('/fonts/office/Vollkorn-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 95.2%;
+  descent-override: 44.1%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Literata';
+  src: url('/fonts/office/Literata-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 117.7%;
+  descent-override: 30.8%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Literata';
+  src: url('/fonts/office/Literata-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 117.7%;
+  descent-override: 30.8%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Literata';
+  src: url('/fonts/office/Literata-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 117.7%;
+  descent-override: 30.8%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Literata';
+  src: url('/fonts/office/Literata-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 117.7%;
+  descent-override: 30.8%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Fraunces';
+  src: url('/fonts/office/Fraunces-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 97.8%;
+  descent-override: 25.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Fraunces';
+  src: url('/fonts/office/Fraunces-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 97.8%;
+  descent-override: 25.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Fraunces';
+  src: url('/fonts/office/Fraunces-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 97.8%;
+  descent-override: 25.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Fraunces';
+  src: url('/fonts/office/Fraunces-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 97.8%;
+  descent-override: 25.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Newsreader';
+  src: url('/fonts/office/Newsreader-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 73.5%;
+  descent-override: 26.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Newsreader';
+  src: url('/fonts/office/Newsreader-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 73.5%;
+  descent-override: 26.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Newsreader';
+  src: url('/fonts/office/Newsreader-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 73.5%;
+  descent-override: 26.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Newsreader';
+  src: url('/fonts/office/Newsreader-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 73.5%;
+  descent-override: 26.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Frank Ruhl Libre';
+  src: url('/fonts/office/FrankRuhlLibre-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 95.7%;
+  descent-override: 33.4%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Frank Ruhl Libre';
+  src: url('/fonts/office/FrankRuhlLibre-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 95.7%;
+  descent-override: 33.4%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Abril Fatface';
+  src: url('/fonts/office/AbrilFatface-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 105.8%;
+  descent-override: 29.1%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Cinzel';
+  src: url('/fonts/office/Cinzel-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 97.6%;
+  descent-override: 37.2%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Cinzel';
+  src: url('/fonts/office/Cinzel-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 97.6%;
+  descent-override: 37.2%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Instrument Serif';
+  src: url('/fonts/office/InstrumentSerif-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 99%;
+  descent-override: 31%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Instrument Serif';
+  src: url('/fonts/office/InstrumentSerif-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 99%;
+  descent-override: 31%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Source Code Pro';
+  src: url('/fonts/office/SourceCodePro-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 98.4%;
+  descent-override: 27.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Source Code Pro';
+  src: url('/fonts/office/SourceCodePro-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 98.4%;
+  descent-override: 27.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Source Code Pro';
+  src: url('/fonts/office/SourceCodePro-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 98.4%;
+  descent-override: 27.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Source Code Pro';
+  src: url('/fonts/office/SourceCodePro-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 98.4%;
+  descent-override: 27.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Fira Code';
+  src: url('/fonts/office/FiraCode-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 99%;
+  descent-override: 32.2%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Fira Code';
+  src: url('/fonts/office/FiraCode-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 99%;
+  descent-override: 32.2%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider JetBrains Mono';
+  src: url('/fonts/office/JetBrainsMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 102%;
+  descent-override: 30%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider JetBrains Mono';
+  src: url('/fonts/office/JetBrainsMono-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 102%;
+  descent-override: 30%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider JetBrains Mono';
+  src: url('/fonts/office/JetBrainsMono-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 102%;
+  descent-override: 30%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider JetBrains Mono';
+  src: url('/fonts/office/JetBrainsMono-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 102%;
+  descent-override: 30%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider IBM Plex Mono';
+  src: url('/fonts/office/IBMPlexMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 102.5%;
+  descent-override: 27.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider IBM Plex Mono';
+  src: url('/fonts/office/IBMPlexMono-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 102.5%;
+  descent-override: 27.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider IBM Plex Mono';
+  src: url('/fonts/office/IBMPlexMono-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 102.5%;
+  descent-override: 27.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider IBM Plex Mono';
+  src: url('/fonts/office/IBMPlexMono-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 102.5%;
+  descent-override: 27.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Space Mono';
+  src: url('/fonts/office/SpaceMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 112%;
+  descent-override: 36.1%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Space Mono';
+  src: url('/fonts/office/SpaceMono-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 112%;
+  descent-override: 36.1%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Space Mono';
+  src: url('/fonts/office/SpaceMono-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 112%;
+  descent-override: 36.1%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Space Mono';
+  src: url('/fonts/office/SpaceMono-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+  ascent-override: 112%;
+  descent-override: 36.1%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Inconsolata';
+  src: url('/fonts/office/Inconsolata-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 85.9%;
+  descent-override: 19%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Inconsolata';
+  src: url('/fonts/office/Inconsolata-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 85.9%;
+  descent-override: 19%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Dancing Script';
+  src: url('/fonts/office/DancingScript-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 92%;
+  descent-override: 28%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Dancing Script';
+  src: url('/fonts/office/DancingScript-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 92%;
+  descent-override: 28%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Caveat';
+  src: url('/fonts/office/Caveat-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 96%;
+  descent-override: 30%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Caveat';
+  src: url('/fonts/office/Caveat-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 96%;
+  descent-override: 30%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Pacifico';
+  src: url('/fonts/office/Pacifico-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 130.3%;
+  descent-override: 45.3%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Lobster';
+  src: url('/fonts/office/Lobster-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 100%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Permanent Marker';
+  src: url('/fonts/office/PermanentMarker-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 110.9375%;
+  descent-override: 31.7383%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Indie Flower';
+  src: url('/fonts/office/IndieFlower-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 97.0703%;
+  descent-override: 48.8281%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Great Vibes';
+  src: url('/fonts/office/GreatVibes-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 85.1%;
+  descent-override: 40.1%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Amatic SC';
+  src: url('/fonts/office/AmaticSC-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 101.6%;
+  descent-override: 24.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Amatic SC';
+  src: url('/fonts/office/AmaticSC-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 101.6%;
+  descent-override: 24.5%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'Slider Satisfy';
+  src: url('/fonts/office/Satisfy-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  ascent-override: 93.457%;
+  descent-override: 48.9258%;
+  line-gap-override: 0%;
+}

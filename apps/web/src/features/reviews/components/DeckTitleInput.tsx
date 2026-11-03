@@ -76,7 +76,7 @@ export function DeckTitleInput({
       onContextMenu={(event) => event.stopPropagation()}
       readOnly={update.isPending}
       maxLength={MAX_TITLE_LENGTH}
-      aria-label="Name der Review"
+      aria-label="Name der Präsentation"
       className={cn(
         '-mx-1 w-full min-w-0 rounded-badge bg-surface-1 px-1 text-fg',
         'ring-2 ring-mention outline-none',

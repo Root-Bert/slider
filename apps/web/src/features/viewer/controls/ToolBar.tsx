@@ -1,4 +1,15 @@
-import { cn, GlassPanel, Icon, IconButton, type IconName, Toolbar, ToolbarDivider } from '@/ui';
+import {
+  cn,
+  GlassPanel,
+  Icon,
+  IconButton,
+  type IconName,
+  SegmentedControl,
+  Toolbar,
+  ToolbarDivider,
+} from '@/ui';
+import { guideOverflows } from '@slider/shared';
+import { useEffect, useMemo } from 'react';
 import { EditActions } from '../editing/EditActions';
 import { useEditing } from '../editing/editing-context';
 import { useRevisionData } from '../state/revision-data';
@@ -10,20 +21,39 @@ import {
   useViewerState,
 } from '../state/viewer-state';
 import { VIEW_ONLY_HINT } from '../comments/lib/view-only';
+import { useLayoutGuides, useTemplate } from '../template/useTemplate';
 
 /** The drawing tools, right next to the pointer. Boxes are the pointer's (drag). */
 const PEN_TOOLS: { tool: Tool; icon: IconName; label: string }[] = [
   { tool: 'pen', icon: 'gesture', label: 'Freihand' },
   { tool: 'arrow', icon: 'arrow', label: 'Pfeil' },
   { tool: 'highlighter', icon: 'marker', label: 'Marker' },
-  { tool: 'eraser', icon: 'eraser', label: 'Radierer: Freihand und Marker wegwischen' },
+  { tool: 'eraser', icon: 'eraser', label: 'Radierer' },
 ];
 
 /**
- * Tool bar at the left of the controls row (Figma D1): pointer (the default – pins, boxes and
- * text on the slide), freehand, arrow, marker and the eraser, and the switch for the PowerPoint boxes comments
- * attach to, for the guides, for the slides hidden in PowerPoint and for the change markers of the latest
- * version – a compact pill as tall as the filter pill.
+ * Reviewing (comments and drawings), editing the slides, or adding to them – editing with what is
+ * there held still – the tools after the switch follow it.
+ */
+type Mode = 'review' | 'edit' | 'add';
+
+const MODES = [
+  { value: 'review', label: 'Besprechen', icon: 'chatBubble', title: 'Besprechen (R)' },
+  { value: 'edit', label: 'Bearbeiten', icon: 'editor', title: 'Bearbeiten (E)' },
+  {
+    value: 'add',
+    label: 'Hinzufügen',
+    icon: 'editorAdd',
+    title: 'Hinzufügen (A) – Bestehendes bleibt, wo es ist',
+  },
+] as const;
+
+/**
+ * Tool bar at the left of the controls row (Figma D1), a compact pill as tall as the filter pill.
+ * Far left the switch between reviewing and editing, the two main modes. Then the tools of the mode: reviewing – pointer (pins, boxes and text on the slide), freehand,
+ * arrow, marker, eraser; editing – undo and redo (picking and drawing a frame need no tool). Then how the slides are shown, in either mode: the PowerPoint boxes
+ * comments attach to, the layers in 3D, the guides, the slides hidden in PowerPoint and the change
+ * markers of the latest version.
  */
 export function ToolBar({ className }: { className?: string }) {
   const { canComment } = useViewerData();
@@ -58,8 +88,9 @@ export function ToolBar({ className }: { className?: string }) {
  */
 function ToolButtons() {
   const state = useViewerState();
-  const { tool, boxMode, showGuides, showHiddenSlides, showChanges } = state;
+  const { showGuides, showLayoutGrid, showHiddenSlides, showChanges } = state;
   const { hiddenSlideCount } = useViewerData();
+  const guidesCrossed = useGuidesCrossed();
   const { revisionNumber, badges } = useRevisionData();
   // Only when the latest version actually added, changed or moved slides.
   const hasChanges = revisionNumber > 1 && badges.size > 0;
@@ -67,6 +98,13 @@ function ToolButtons() {
   const boxes = isBoxModeActive(state);
   const dispatch = useViewerDispatch();
   const editing = useEditing();
+  const mode: Mode = !editing.active ? 'review' : editing.adding ? 'add' : 'edit';
+  // A template being designed opens in editing: designing is editing.
+  const isTemplate = useTemplate().template !== null;
+  const { setActive } = editing;
+  useEffect(() => {
+    if (isTemplate) setActive(true);
+  }, [isTemplate, setActive]);
 
   return (
     <Toolbar
@@ -74,14 +112,133 @@ function ToolButtons() {
       // A click keeps the focus off the button, so Tab goes on stepping through the tools.
       onMouseDown={(event) => event.preventDefault()}
     >
+      {/* The modes, always first: the tools after them follow the mode. */}
+      {editing.available && (
+        <>
+          <SegmentedControl
+            label="Modus (R Besprechen, E Bearbeiten, A Hinzufügen)"
+            segments={MODES}
+            iconOnly
+            value={mode}
+            onChange={(next) =>
+              next === 'add' ? editing.setAdding() : editing.setActive(next === 'edit')
+            }
+          />
+          <ToolbarDivider />
+        </>
+      )}
+      {mode === 'review' ? <ReviewTools /> : <EditTools />}
+      <ToolbarDivider />
+      {/* How the slides are shown – the same in either mode. */}
+      <div role="group" aria-label="Ansicht" className="flex items-center gap-1">
+        <IconButton
+          icon="gridViewFill"
+          label="Box-Modus"
+          title="Box-Modus (B)"
+          aria-keyshortcuts="B"
+          size="sm"
+          active={boxes}
+          aria-pressed={boxes}
+          onClick={() => dispatch({ type: 'boxModeToggled' })}
+        />
+        {/* The slides taken apart in 3D: what lies over what – commented on while reviewing,
+            picked and restacked while editing. The list (⇧L) opens on asking, or on a layer
+            picked. */}
+        {editing.available && (
+          <IconButton
+            icon="layers"
+            label="Ebenen"
+            title="Ebenen (L)"
+            aria-keyshortcuts="L Shift+L"
+            size="sm"
+            active={editing.layers}
+            aria-pressed={editing.layers}
+            onClick={() => editing.setLayers(!editing.layers)}
+          />
+        )}
+        <IconButton
+          icon="guides"
+          label="Hilfslinien"
+          title={
+            guidesCrossed
+              ? 'Hilfslinien (G) – eine Box ragt über die Hilfslinien'
+              : 'Hilfslinien (G)'
+          }
+          aria-keyshortcuts="G"
+          size="sm"
+          // Lit, softly pulsing, while a box on this slide sticks out over the guides – also
+          // with the guides hidden.
+          className={guidesCrossed ? 'guide-alert' : undefined}
+          active={showGuides}
+          aria-pressed={showGuides}
+          onClick={() => dispatch({ type: 'showGuidesToggled' })}
+        />
+        {/* The layout grid, as in Figma (H) – a template's own, a presentation's from its
+            template; a template's columns and rows set in the side panel (⇧H). */}
+        <IconButton
+          icon="layoutGrid"
+          label="Layout-Ansicht"
+          title="Layout-Ansicht (H)"
+          aria-keyshortcuts={isTemplate ? 'H Shift+H' : 'H'}
+          size="sm"
+          active={showLayoutGrid}
+          aria-pressed={showLayoutGrid}
+          onClick={() => dispatch({ type: 'layoutGridToggled' })}
+        />
+        {hiddenSlideCount > 0 && (
+          <IconButton
+            icon={showHiddenSlides ? 'visibility' : 'visibilityOff'}
+            label={`Ausgeblendete Folien zeigen (${hiddenSlideCount})`}
+            title="Ausgeblendete Folien"
+            size="sm"
+            active={showHiddenSlides}
+            aria-pressed={showHiddenSlides}
+            onClick={() => dispatch({ type: 'showHiddenSlidesToggled' })}
+          />
+        )}
+        {/* The "Neu" / "Geändert" / "Verschoben" chips of the latest version (Figma D2); off unless set on in /konto. */}
+        {hasChanges && (
+          <IconButton
+            icon="difference"
+            label="Änderungshinweise"
+            size="sm"
+            active={showChanges}
+            aria-pressed={showChanges}
+            onClick={() => dispatch({ type: 'showChangesSet', show: !showChanges })}
+          />
+        )}
+      </div>
+      {editing.available && <EditActions />}
+    </Toolbar>
+  );
+}
+
+/**
+ * Whether a box on the slide shown sticks out over its guides (`GuideLayer` outlines them) – the
+ * template's layout guides while one is designed, as there.
+ */
+function useGuidesCrossed(): boolean {
+  const { slides, slideIndex } = useViewerData();
+  const { activeSlideId } = useViewerState();
+  const slide = activeSlideId ? slides[slideIndex.get(activeSlideId) ?? -1] : undefined;
+  const layoutGuides = useLayoutGuides(activeSlideId ?? '')?.guides;
+  const guides = layoutGuides ?? slide?.guides;
+  return useMemo(
+    () => !!slide && !!guides && guideOverflows(slide.shapes, guides).length > 0,
+    [slide, guides],
+  );
+}
+
+/** Reviewing: comment on the slide, or draw on it. */
+function ReviewTools() {
+  const { tool } = useViewerState();
+  const dispatch = useViewerDispatch();
+  return (
+    <>
       {/* The default: click the slide to comment – on a PowerPoint box in box mode. */}
       <IconButton
         icon="cursorBox"
-        label={
-          boxes
-            ? 'Zeiger: Box anklicken und kommentieren'
-            : 'Zeiger: Stelle anklicken und kommentieren'
-        }
+        label="Zeiger"
         size="sm"
         active={tool === null}
         aria-pressed={tool === null}
@@ -99,91 +256,55 @@ function ToolButtons() {
           onClick={() => dispatch({ type: 'toolSelected', tool: option.tool })}
         />
       ))}
-      <ToolbarDivider />
-      {/* Another mode next to box mode: outline the slide's elements and change them. */}
-      {editing.available && (
-        <IconButton
-          icon="editor"
-          label="Bearbeiten"
-          title={
-            editing.active
-              ? 'Bearbeiten beenden (E)'
-              : 'Bearbeiten (E): Texte direkt auf der Folie, Formen und Bilder'
-          }
-          aria-keyshortcuts="E"
-          size="sm"
-          active={editing.active}
-          aria-pressed={editing.active}
-          onClick={() => editing.setActive(!editing.active)}
-        />
+    </>
+  );
+}
+
+/**
+ * Editing: undo and redo – picking needs no tool (dragging on the free slide draws a frame for a
+ * new text, shape, line or picture); designing a template, setting its guides (Tab switches).
+ */
+function EditTools() {
+  const editing = useEditing();
+  const { template } = useTemplate();
+  // In 3D, layers are picked and restacked; guides are set on the flat slide.
+  const flat = !editing.layers;
+  return (
+    <>
+      {/* No pointer: picking is all there is (a frame drawn on the free slide fills it with a
+          text, shape, line or picture). Designing a template, its guides are a tool of their own. */}
+      {template && (
+        <>
+          <IconButton
+            icon="guideAdd"
+            label="Hilfslinien setzen"
+            size="sm"
+            disabled={!flat}
+            active={editing.tool === 'guides'}
+            aria-pressed={editing.tool === 'guides'}
+            onClick={() => editing.setTool(editing.tool === 'guides' ? 'select' : 'guides')}
+          />
+          <ToolbarDivider />
+        </>
       )}
-      {/* The slides taken apart in 3D: what lies over what, restacked there. The list (⇧L) opens
-          on asking, or on a layer clicked in box mode. */}
-      {editing.available && (
-        <IconButton
-          icon="layers"
-          label="Ebenen"
-          title={
-            editing.layers
-              ? 'Ebenen beenden (L) – Liste: ⇧L'
-              : 'Ebenen (L): die Folien in 3D aufgefächert, Ebenen umsortieren – mit Liste: ⇧L'
-          }
-          aria-keyshortcuts="L Shift+L"
-          size="sm"
-          active={editing.layers}
-          aria-pressed={editing.layers}
-          onClick={() => editing.setLayers(!editing.layers)}
-        />
-      )}
-      <EditActions />
       <IconButton
-        icon="boxSelect"
-        label="Box-Modus"
-        title={`Box-Modus ${boxMode ? 'aus' : 'an'} (B) – ⌥ halten wechselt kurz`}
-        aria-keyshortcuts="B"
+        icon="undo"
+        label="Rückgängig"
+        title="Rückgängig (⌘Z)"
+        aria-keyshortcuts="Meta+Z"
         size="sm"
-        active={boxes}
-        aria-pressed={boxes}
-        onClick={() => dispatch({ type: 'boxModeToggled' })}
+        disabled={!editing.canUndo}
+        onClick={editing.undo}
       />
       <IconButton
-        icon="guides"
-        label="Hilfslinien zeigen"
-        title={showGuides ? 'Hilfslinien ausblenden (G)' : 'Hilfslinien zeigen (G)'}
-        aria-keyshortcuts="G"
+        icon="redo"
+        label="Wiederholen"
+        title="Wiederholen (⇧⌘Z)"
+        aria-keyshortcuts="Meta+Shift+Z"
         size="sm"
-        active={showGuides}
-        aria-pressed={showGuides}
-        onClick={() => dispatch({ type: 'showGuidesToggled' })}
+        disabled={!editing.canRedo}
+        onClick={editing.redo}
       />
-      {hiddenSlideCount > 0 && (
-        <IconButton
-          icon={showHiddenSlides ? 'visibility' : 'visibilityOff'}
-          label={`Ausgeblendete Folien zeigen (${hiddenSlideCount})`}
-          title={
-            showHiddenSlides
-              ? 'Ausgeblendete Folien verbergen (H)'
-              : `${hiddenSlideCount === 1 ? '1 ausgeblendete Folie' : `${hiddenSlideCount} ausgeblendete Folien`} zeigen (H)`
-          }
-          aria-keyshortcuts="H"
-          size="sm"
-          active={showHiddenSlides}
-          aria-pressed={showHiddenSlides}
-          onClick={() => dispatch({ type: 'showHiddenSlidesToggled' })}
-        />
-      )}
-      {/* The "Neu" / "Geändert" / "Verschoben" chips of the latest version (Figma D2); off unless set on in /konto. */}
-      {hasChanges && (
-        <IconButton
-          icon="difference"
-          label="Änderungshinweise zeigen"
-          title={`Änderungshinweise der Version ${revisionNumber} ${showChanges ? 'ausblenden' : 'zeigen'}`}
-          size="sm"
-          active={showChanges}
-          aria-pressed={showChanges}
-          onClick={() => dispatch({ type: 'showChangesSet', show: !showChanges })}
-        />
-      )}
-    </Toolbar>
+    </>
   );
 }

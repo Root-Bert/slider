@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import type { GoogleConnection, MicrosoftConnection, NextcloudConnection } from '@slider/shared';
 import { providerLoginUrl } from '@/features/auth';
@@ -52,12 +52,10 @@ const microsoftConnectUrl = (connectionId?: string) =>
     ACCOUNT_PAGE,
   );
 
-/** "3 Reviews synchronisieren darüber". */
+/** "3 Reviews damit verknüpft". */
 function syncedReviewsCopy(count: number): string {
-  if (count === 0) return 'Keine Review synchronisiert darüber';
-  return count === 1
-    ? '1 Review synchronisiert darüber'
-    : `${count} Reviews synchronisieren darüber`;
+  if (count === 0) return 'Keine Präsentation damit verknüpft';
+  return count === 1 ? '1 Präsentation damit verknüpft' : `${count} Präsentationen damit verknüpft`;
 }
 
 /** `a, b oder c`. */
@@ -150,7 +148,7 @@ export function StorageSection({
   return (
     <Section
       title="Speicherorte"
-      description="Von hier liest Slider deine Präsentationen und hält die Reviews dazu aktuell."
+      description="Von hier holt Slider deine Präsentationen."
       aside={<Menu {...connectMenu} className="shrink-0 max-sm:hidden" />}
     >
       {errors.map((error) => (
@@ -174,121 +172,44 @@ export function StorageSection({
       ) : (
         <RowList>
           {microsoftList.map((connection) => (
-            <ListRow
+            <StorageRow
               key={connection.id}
-              textGap="tight"
-              leading={
-                <IconTile tone="inherit">
-                  <MicrosoftMark size={18} />
-                </IconTile>
-              }
+              mark={<MicrosoftMark size={18} />}
               title={microsoftLabel(connection)}
-              badge={
-                connection.needsReconnect && <Badge tone="warning">Anmeldung abgelaufen</Badge>
-              }
+              menuLabel={microsoftLabel(connection)}
               subtitle={`OneDrive & SharePoint | ${syncedReviewsCopy(connection.deckCount)}`}
-              trailing={
-                <>
-                  {connection.needsReconnect && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => window.location.assign(microsoftConnectUrl(connection.id))}
-                    >
-                      Neu verbinden
-                    </Button>
-                  )}
-                  <Menu
-                    label={`Aktionen für ${microsoftLabel(connection)}`}
-                    actions={[
-                      {
-                        label: 'Trennen',
-                        icon: 'delete',
-                        tone: 'danger',
-                        onSelect: () => setDisconnecting({ kind: 'microsoft', connection }),
-                      },
-                    ]}
-                  />
-                </>
-              }
+              expired="Anmeldung abgelaufen"
+              needsReconnect={connection.needsReconnect}
+              onReconnect={() => window.location.assign(microsoftConnectUrl(connection.id))}
+              onDisconnect={() => setDisconnecting({ kind: 'microsoft', connection })}
             />
           ))}
           {googleList.map((connection) => (
-            <ListRow
+            <StorageRow
               key={connection.id}
-              textGap="tight"
-              leading={
-                <IconTile tone="inherit">
-                  <GoogleMark size={18} />
-                </IconTile>
-              }
+              mark={<GoogleMark size={18} />}
               title={googleLabel(connection)}
-              badge={connection.needsReconnect && <Badge tone="warning">Verbindung getrennt</Badge>}
+              menuLabel={googleLabel(connection)}
               subtitle={`Google Drive | ${syncedReviewsCopy(connection.deckCount)}`}
-              trailing={
-                <>
-                  {connection.needsReconnect && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() =>
-                        window.location.assign(googleDriveConnectUrl(ACCOUNT_PAGE, connection.id))
-                      }
-                    >
-                      Neu verbinden
-                    </Button>
-                  )}
-                  <Menu
-                    label={`Aktionen für ${googleLabel(connection)}`}
-                    actions={[
-                      {
-                        label: 'Trennen',
-                        icon: 'delete',
-                        tone: 'danger',
-                        onSelect: () => setDisconnecting({ kind: 'google', connection }),
-                      },
-                    ]}
-                  />
-                </>
+              expired="Verbindung getrennt"
+              needsReconnect={connection.needsReconnect}
+              onReconnect={() =>
+                window.location.assign(googleDriveConnectUrl(ACCOUNT_PAGE, connection.id))
               }
+              onDisconnect={() => setDisconnecting({ kind: 'google', connection })}
             />
           ))}
           {nextcloudList.map((connection) => (
-            <ListRow
+            <StorageRow
               key={connection.id}
-              textGap="tight"
-              leading={
-                <IconTile tone="inherit">
-                  <NextcloudMark size={18} />
-                </IconTile>
-              }
+              mark={<NextcloudMark size={18} />}
               title={connection.account}
-              badge={connection.needsReconnect && <Badge tone="warning">Verbindung getrennt</Badge>}
+              menuLabel={nextcloudHost(connection.server)}
               subtitle={`Nextcloud (${nextcloudHost(connection.server)}) | ${syncedReviewsCopy(connection.deckCount)}`}
-              trailing={
-                <>
-                  {connection.needsReconnect && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => openNextcloud(connection.server)}
-                    >
-                      Neu verbinden
-                    </Button>
-                  )}
-                  <Menu
-                    label={`Aktionen für ${nextcloudHost(connection.server)}`}
-                    actions={[
-                      {
-                        label: 'Trennen',
-                        icon: 'delete',
-                        tone: 'danger',
-                        onSelect: () => setDisconnecting({ kind: 'nextcloud', connection }),
-                      },
-                    ]}
-                  />
-                </>
-              }
+              expired="Verbindung getrennt"
+              needsReconnect={connection.needsReconnect}
+              onReconnect={() => openNextcloud(connection.server)}
+              onDisconnect={() => setDisconnecting({ kind: 'nextcloud', connection })}
             />
           ))}
         </RowList>
@@ -299,7 +220,7 @@ export function StorageSection({
           Präsentationen, die du verknüpfst, sehen alle Mitglieder des Workspace – Slider liest die
           Datei mit deinem Konto, Freigaben in OneDrive, SharePoint, Nextcloud oder Google Drive
           gelten in Slider nicht. Wenn nur bestimmte Personen sie sehen sollen, schränke den Zugriff
-          per Rechtsklick auf die Review ein („Zugriff einschränken …“).
+          per Rechtsklick auf die Präsentation ein („Zugriff einschränken …“).
         </Notice>
       )}
       {/* On a phone below the list, full width: beside the heading it squeezes the text. */}
@@ -353,6 +274,58 @@ export function StorageSection({
   );
 }
 
+/** One connected account: its mark, where it reads from, "Neu verbinden" when expired, "Trennen". */
+function StorageRow({
+  mark,
+  title,
+  menuLabel,
+  subtitle,
+  expired,
+  needsReconnect,
+  onReconnect,
+  onDisconnect,
+}: {
+  mark: ReactNode;
+  title: string;
+  /** Names the account in its ⋯ menu's label. */
+  menuLabel: string;
+  subtitle: string;
+  /** The badge while `needsReconnect`. */
+  expired: string;
+  needsReconnect: boolean;
+  onReconnect: () => void;
+  onDisconnect: () => void;
+}) {
+  return (
+    <ListRow
+      textGap="tight"
+      leading={<IconTile tone="inherit">{mark}</IconTile>}
+      title={title}
+      badge={needsReconnect && <Badge tone="warning">{expired}</Badge>}
+      subtitle={subtitle}
+      trailing={
+        <>
+          {needsReconnect && (
+            <Button variant="secondary" size="sm" onClick={onReconnect}>
+              Neu verbinden
+            </Button>
+          )}
+          <Menu
+            label={`Aktionen für ${menuLabel}`}
+            actions={[{ label: 'Trennen', icon: 'delete', tone: 'danger', onSelect: onDisconnect }]}
+          />
+        </>
+      }
+    />
+  );
+}
+
+/** What disconnecting means for the reviews linked through the account, until `until`. */
+const linkedConsequence = (reviews: number, until: string) =>
+  reviews === 0
+    ? 'Gerade ist keine Präsentation damit verknüpft.'
+    : `${reviews === 1 ? '1 Präsentation kann' : `${reviews} Präsentationen können`} dann keine neuen Versionen mehr holen, bis ${until}.`;
+
 function DisconnectMicrosoftDialog({
   connection,
   onClose,
@@ -364,11 +337,10 @@ function DisconnectMicrosoftDialog({
 }) {
   const disconnect = useDisconnectMicrosoft();
   const label = microsoftLabel(connection);
-  const reviews = connection.deckCount;
-  const consequence =
-    reviews === 0
-      ? 'Gerade synchronisiert keine Review darüber.'
-      : `${reviews === 1 ? '1 Review wird' : `${reviews} Reviews werden`} dann nicht mehr automatisch aktualisiert, bis ein anderes deiner Microsoft-Konten Zugriff hat oder du dieses wieder verbindest.`;
+  const consequence = linkedConsequence(
+    connection.deckCount,
+    'ein anderes deiner Microsoft-Konten Zugriff hat oder du dieses wieder verbindest',
+  );
   return (
     <ConfirmDialog
       onClose={onClose}
@@ -401,11 +373,7 @@ function DisconnectNextcloudDialog({
 }) {
   const disconnect = useDisconnectNextcloud();
   const host = nextcloudHost(connection.server);
-  const reviews = connection.deckCount;
-  const consequence =
-    reviews === 0
-      ? 'Gerade synchronisiert keine Review darüber.'
-      : `${reviews === 1 ? '1 Review wird' : `${reviews} Reviews werden`} dann nicht mehr automatisch aktualisiert, bis du die Nextcloud wieder verbindest.`;
+  const consequence = linkedConsequence(connection.deckCount, 'du die Nextcloud wieder verbindest');
   return (
     <ConfirmDialog
       onClose={onClose}
@@ -442,11 +410,7 @@ function DisconnectGoogleDialog({
 }) {
   const disconnect = useDisconnectGoogle();
   const label = googleLabel(connection);
-  const reviews = connection.deckCount;
-  const consequence =
-    reviews === 0
-      ? 'Gerade synchronisiert keine Review darüber.'
-      : `${reviews === 1 ? '1 Review wird' : `${reviews} Reviews werden`} dann nicht mehr automatisch aktualisiert, bis du Google Drive wieder verbindest.`;
+  const consequence = linkedConsequence(connection.deckCount, 'du Google Drive wieder verbindest');
   return (
     <ConfirmDialog
       onClose={onClose}

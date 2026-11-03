@@ -77,7 +77,6 @@ export default defineConfig({
         SLIDER_SECRET: randomBytes(32).toString('base64url'),
         WEB_ORIGIN,
         AUTH_DEV_LOGIN: 'true',
-        SYNC_POLL_INTERVAL_MS: '0',
         // Deterministic and fast: the built-in SVG preview, even where LibreOffice is installed.
         LIBREOFFICE_PATH: '/nonexistent/soffice',
         ...(BUNDLE ? { WEB_DIST_DIR: 'apps/web/dist' } : {}),

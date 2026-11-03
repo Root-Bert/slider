@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import {
@@ -23,7 +23,7 @@ import {
   stripEmpty,
   withStoredSettings,
 } from '../config';
-import { passkeys } from '../db/schema';
+import { integrationKeys, passkeys } from '../db/schema';
 import type { AppDeps, InstanceControl } from '../deps';
 import { ApiError, badRequest, forbidden, notFound } from '../http/errors';
 import { clientAddress, rateLimit } from '../http/rate-limit';
@@ -138,7 +138,21 @@ export function setupRoutes(deps: AppDeps) {
         c.header('Cache-Control', 'no-store');
         if (!status.authorized) return c.json(status);
 
-        const stored = await readStoredSettings(deps.db, deps.config.secret, deps.log);
+        const [stored, instancePhotos] = await Promise.all([
+          readStoredSettings(deps.db, deps.config.secret, deps.log),
+          // The legal templates' Unsplash: the server's key, or one the instance stored.
+          deps.db
+            .select({ id: integrationKeys.id })
+            .from(integrationKeys)
+            .where(
+              and(
+                isNull(integrationKeys.workspaceId),
+                eq(integrationKeys.kind, 'photos'),
+                eq(integrationKeys.provider, 'unsplash'),
+              ),
+            )
+            .limit(1),
+        ]);
         const fromEnv = stripEmpty(env);
         const fields = Object.fromEntries(
           SETUP_KEYS.map((key): [SetupKey, SetupField] => {
@@ -169,7 +183,7 @@ export function setupRoutes(deps: AppDeps) {
             fields,
             features: {
               payments: deps.config.billing !== null,
-              stockPhotos: Boolean(deps.config.unsplash),
+              stockPhotos: Boolean(deps.config.unsplash) || instancePhotos.length > 0,
             },
           },
         });

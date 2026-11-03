@@ -15,10 +15,10 @@ export function BlockedWorkspace({ workspace, userId }: { workspace: Workspace; 
       docTitle={`${workspace.name} | Slider`}
       title={workspace.name}
       leading={<WorkspaceMark name={workspace.name} logoUrl={workspace.logoUrl} size={40} />}
-      back={{ to: routes.reviews(), label: 'Zur Übersicht' }}
+      back={{ to: routes.reviews(), label: 'Zu den Präsentationen' }}
     >
       <Notice tone="warning" variant="tinted" icon="lock" title="Dieser Workspace ist gesperrt">
-        Die Person, die Slider hier betreibt, hat ihn gesperrt. Seine Reviews lassen sich gerade
+        Die Person, die Slider hier betreibt, hat ihn gesperrt. Seine Präsentationen lassen sich gerade
         nicht öffnen, gelöscht wurde nichts. Wende dich an sie, wenn du glaubst, dass das ein Irrtum
         ist.
       </Notice>

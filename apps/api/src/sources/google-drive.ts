@@ -20,6 +20,8 @@ import {
   isPdfBytes,
   deckFileName,
   isDeckBytes,
+  PDF_MIME,
+  PPTX_MIME,
   readBodyCapped,
   redirectTarget,
   safeFetch,
@@ -36,9 +38,6 @@ import type { RemoteFile, SourceAdapter, SourceContext } from './source-adapter'
  * Google Slides files are exported as PowerPoint (and as PDF for the slide images); `.pptx`
  * files kept in Drive are downloaded as they are.
  */
-
-export const PPTX_MIME =
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 
 const DRIVE_API = 'https://www.googleapis.com/drive/v3/files';
 const SLIDES_API = 'https://slides.googleapis.com/v1/presentations';
@@ -139,7 +138,6 @@ function refLink(ref: string): GoogleLink {
   return link;
 }
 
-const PDF_MIME = 'application/pdf';
 const isPdfFile = (file: Pick<DriveFile, 'mimeType' | 'name'>) =>
   file.mimeType === PDF_MIME || /\.pdf$/i.test(file.name);
 /** Google Docs, Sheets and Drawings: exported as Google's PDF, which becomes the deck. */
@@ -231,16 +229,15 @@ class DriveClient {
     const fileUrl = new URL(`${DRIVE_API}/${encodeURIComponent(fileId)}`);
     fileUrl.searchParams.set('fields', 'owners(displayName),lastModifyingUser(displayName)');
     fileUrl.searchParams.set('supportsAllDrives', 'true');
-    const file = await this.json<{
-      owners?: Person[];
-      lastModifyingUser?: Person;
-    }>(fileUrl);
     const revisionsUrl = new URL(`${DRIVE_API}/${encodeURIComponent(fileId)}/revisions`);
     revisionsUrl.searchParams.set('fields', 'revisions(lastModifyingUser(displayName))');
     revisionsUrl.searchParams.set('pageSize', '1000');
-    const { revisions } = await this.json<{ revisions?: { lastModifyingUser?: Person }[] }>(
-      revisionsUrl,
-    ).catch(() => ({ revisions: [] }));
+    const [file, { revisions }] = await Promise.all([
+      this.json<{ owners?: Person[]; lastModifyingUser?: Person }>(fileUrl),
+      this.json<{ revisions?: { lastModifyingUser?: Person }[] }>(revisionsUrl).catch(() => ({
+        revisions: [],
+      })),
+    ]);
     return [
       file.lastModifyingUser?.displayName,
       // Oldest first in Google's answer.
@@ -299,7 +296,7 @@ class DriveClient {
 
   /** Google's own PDF of a Google Slides file. */
   async pdf(file: DriveFile): Promise<Uint8Array> {
-    const bytes = await this.export(file, 'application/pdf');
+    const bytes = await this.export(file, PDF_MIME);
     if (!isPdfBytes(bytes)) throw sourceUnreachable('Google hat kein PDF geliefert.');
     return bytes;
   }
@@ -487,9 +484,11 @@ export class GoogleDriveAdapter implements SourceAdapter {
     if (!link.slides) return null;
     try {
       return await this.withClient(context, async (client) => {
-        // The Slides API may not be enabled in the server's Google project: comments still work.
-        const slideIds = await client.slideIds(link.fileId).catch(() => null);
-        const comments = await client.comments(link.fileId);
+        const [slideIds, comments] = await Promise.all([
+          // The Slides API may not be enabled in the server's Google project: comments still work.
+          client.slideIds(link.fileId).catch(() => null),
+          client.comments(link.fileId),
+        ]);
         return toSlidesExtras(slideIds, comments);
       });
     } catch (error) {
@@ -557,9 +556,9 @@ export class GoogleDriveAdapter implements SourceAdapter {
       throw googleLoginRequired(returnTo, link.fileId);
     }
     const bytes = await readBodyCapped(response, this.http.maxBytes);
-    // A Google Slides export is a deck; any other public file the import turns into one.
-    if (link.slides && !isDeckBytes(bytes)) throw notAPowerPoint(LINK_NOT_A_POWERPOINT_MESSAGE);
     const deck = isDeckBytes(bytes);
+    // A Google Slides export is a deck; any other public file the import turns into one.
+    if (link.slides && !deck) throw notAPowerPoint(LINK_NOT_A_POWERPOINT_MESSAGE);
     const pdf = isPdfBytes(bytes);
     const named = /filename\*=UTF-8''([^;]+)/i.exec(
       response.headers.get('content-disposition') ?? '',

@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { cn } from './cn';
+import { useFocusLoop } from './hooks/useFocusLoop';
 import { IconButton } from './IconButton';
 
 export interface DialogProps {
@@ -31,6 +32,8 @@ export function Dialog({
   const descriptionId = useId();
   // Where the press started: a text selection dragged out of a field ends on the backdrop too.
   const pressedBackdrop = useRef(false);
+  // Round in the dialog – the browser's own trap would Tab out into its address bar.
+  useFocusLoop(ref, open);
 
   useEffect(() => {
     const dialog = ref.current;

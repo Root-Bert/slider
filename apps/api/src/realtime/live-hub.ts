@@ -1,4 +1,4 @@
-import type { Author, LiveEvent, LivePeer, LivePresenceInput } from '@slider/shared';
+import type { Author, LiveEvent, LivePeer, LivePresenceInput, LiveStep } from '@slider/shared';
 
 type Send = (event: LiveEvent) => void;
 /** Ends the connection's stream (the browser then reconnects, or not, if access is gone). */
@@ -75,6 +75,10 @@ export class LiveHub {
   /** Comment changes over all decks; only ever grows. */
   private commentChanges = 0;
   private sweeper: ReturnType<typeof setInterval> | null = null;
+  /** Told when a connection goes (by its secret key): what it held goes with it. */
+  private readonly leaveListeners = new Set<(key: string) => void>();
+  /** Told on shutdown: what is kept beside the connections goes too. */
+  private readonly closeListeners = new Set<() => void>();
   readonly heartbeatMs: number;
   readonly accessCheckMs: number;
 
@@ -114,6 +118,9 @@ export class LiveHub {
       activeSlideId: null,
       cursor: null,
       focusedThreadId: null,
+      textCaret: null,
+      picked: null,
+      drag: null,
       send,
       close,
       lastSeen: this.now(),
@@ -190,6 +197,36 @@ export class LiveHub {
     if (this.connections.size === 0) this.stopSweeper();
     connection.close?.();
     this.broadcast(connection.deckId, { type: 'leave', connectionId });
+    for (const listener of this.leaveListeners) listener(key);
+  }
+
+  /** Calls `listener` on shutdown ({@link closeAll}); returns the unsubscribe. */
+  onClose(listener: () => void): () => void {
+    this.closeListeners.add(listener);
+    return () => this.closeListeners.delete(listener);
+  }
+
+  /** Calls `listener` with the secret key of every connection that goes; returns the unsubscribe. */
+  onLeave(listener: (key: string) => void): () => void {
+    this.leaveListeners.add(listener);
+    return () => this.leaveListeners.delete(listener);
+  }
+
+  /** The open connection with this secret key: its deck and who it is (`null` when gone). */
+  connectionOf(key: string): { deckId: string; author: Author; connectionId: string } | null {
+    const connection = this.connections.get(key);
+    return connection
+      ? {
+          deckId: connection.deckId,
+          author: connection.author,
+          connectionId: connection.connectionId,
+        }
+      : null;
+  }
+
+  /** Sends an event to the connections with these secret keys (those still open). */
+  sendTo(keys: Iterable<string>, event: LiveEvent): void {
+    for (const key of keys) this.connections.get(key)?.send(event);
   }
 
   /**
@@ -210,6 +247,7 @@ export class LiveHub {
     this.commentGenerations.clear();
     this.stopSweeper();
     for (const connection of all) connection.close?.();
+    for (const listener of [...this.closeListeners]) listener();
   }
 
   /**
@@ -223,13 +261,19 @@ export class LiveHub {
     if (
       connection.activeSlideId === input.activeSlideId &&
       connection.focusedThreadId === input.focusedThreadId &&
-      JSON.stringify(connection.cursor) === JSON.stringify(input.cursor)
+      JSON.stringify(connection.cursor) === JSON.stringify(input.cursor) &&
+      JSON.stringify(connection.textCaret) === JSON.stringify(input.textCaret) &&
+      connection.picked === input.picked &&
+      JSON.stringify(connection.drag) === JSON.stringify(input.drag)
     ) {
       return true;
     }
     connection.activeSlideId = input.activeSlideId;
     connection.cursor = input.cursor;
     connection.focusedThreadId = input.focusedThreadId;
+    connection.textCaret = input.textCaret;
+    connection.picked = input.picked;
+    connection.drag = input.drag;
     this.broadcast(
       connection.deckId,
       { type: 'peer', peer: toPeer(connection) },
@@ -245,9 +289,12 @@ export class LiveHub {
     this.broadcast(deckId, { type: 'comments' });
   }
 
-  /** The deck was edited (BER-180): everyone there refetches its slides and edit state. */
-  slidesChanged(deckId: string): void {
-    this.broadcast(deckId, { type: 'slides' });
+  /**
+   * The deck was edited (BER-180): everyone there refetches its slides and edit state – a new
+   * step's operations along (`step`), so editors show it at once.
+   */
+  slidesChanged(deckId: string, step?: LiveStep): void {
+    this.broadcast(deckId, step ? { type: 'slides', step } : { type: 'slides' });
   }
 
   /** An AI proposal of the deck changed (BER-183). */
@@ -315,4 +362,16 @@ const toPeer = ({
   activeSlideId,
   cursor,
   focusedThreadId,
-}: LivePeer): LivePeer => ({ connectionId, author, activeSlideId, cursor, focusedThreadId });
+  textCaret,
+  picked,
+  drag,
+}: LivePeer): LivePeer => ({
+  connectionId,
+  author,
+  activeSlideId,
+  cursor,
+  focusedThreadId,
+  textCaret,
+  picked,
+  drag,
+});

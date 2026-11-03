@@ -2,7 +2,7 @@ import type { DeckSync, SyncError, SyncSummary } from '@slider/shared';
 import type { DeckRow } from '../db/schema';
 import { loginUrlOfDeck } from '../sync/errors';
 
-/** Link imports are kept up to date automatically; uploads are not (BER-107). */
+/** Link imports can pull a newer file from their source by hand; uploads cannot (BER-107). */
 export const isSyncEnabled = (deck: Pick<DeckRow, 'source' | 'sourceRef'>): boolean =>
   deck.source !== 'upload' && deck.sourceRef !== null;
 
@@ -29,13 +29,13 @@ export function toDeckSync(row: DeckRow, input: DeckSyncInput): DeckSync {
           : {}),
       }
     : null;
-  const pendingSince = input.pendingRevisionAt?.toISOString() ?? state.pending?.firstSeenAt ?? null;
+  const pendingSince = input.pendingRevisionAt?.toISOString() ?? null;
   return {
     enabled: isSyncEnabled(row),
     lastCheckedAt: state.lastCheckedAt ?? null,
     lastSyncAt: state.lastSyncAt ?? null,
     lastSyncError,
-    pending: input.pendingRevisionAt !== null || Boolean(state.pending),
+    pending: input.pendingRevisionAt !== null,
     pendingSince,
     latestSummary: input.summary,
   };

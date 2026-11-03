@@ -58,7 +58,7 @@ export function WorkspacesTable({ plans, onNotify }: { plans: boolean; onNotify:
 const COLUMNS = {
   name: { label: 'Workspace' },
   members: { label: 'Personen', numeric: true },
-  decks: { label: 'Reviews', numeric: true },
+  decks: { label: 'Präsentationen', numeric: true },
   storage: { label: 'Speicher', numeric: true },
   plan: { label: 'Plan' },
   created: { label: 'Seit', className: 'max-md:hidden' },
@@ -75,7 +75,7 @@ const CONFIRM_COPY: Record<Kind, (name: string) => Omit<ConfirmedAction, 'run'>>
   block: (name) => ({
     title: `„${name}“ sperren?`,
     description:
-      'Niemand öffnet dann ihre Reviews, niemand tritt bei, ihr Firmen-Login ist aus. Mitglieder sehen, dass sie gesperrt ist, und können austreten. Gelöscht wird nichts, Entsperren stellt alles wieder her.',
+      'Niemand öffnet dann ihre Präsentationen, niemand tritt bei, ihr Firmen-Login ist aus. Mitglieder sehen, dass sie gesperrt ist, und können austreten. Gelöscht wird nichts, Entsperren stellt alles wieder her.',
     confirmLabel: 'Sperren',
     tone: 'danger',
     done: `„${name}“ ist gesperrt`,

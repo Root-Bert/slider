@@ -3,6 +3,7 @@ import { useSlideLayers } from '@/lib/api';
 import type { SlideLayers } from '@slider/shared';
 import { useViewerData } from '../../state/viewer-data';
 import { useEditing } from '../editing-context';
+import { layerFrames } from '../live/layer-frames';
 
 export type LayerPicture = SlideLayers['layers'][number];
 
@@ -23,6 +24,9 @@ export function useLayerPictures(slideId: string | null, priority: BackgroundPri
     pictures: query.data
       ? new Map(query.data.layers.map((layer) => [layer.elementId, layer]))
       : NO_PICTURES,
+    /** The edit step they were drawn at – an earlier one's until the current one's come. */
+    seq: query.data?.seq,
+    frames: slideId ? layerFrames(query.data, editing.state, slideId) : undefined,
     /** The slide without its elements; `null` until drawn. */
     background: query.data?.background ?? null,
     drawing: query.isFetching,

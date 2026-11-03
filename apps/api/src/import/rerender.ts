@@ -84,7 +84,10 @@ export async function rerenderRevision(
   if (!sameSlides) return skipped('slides of the file do not match the revision');
 
   await deleteUnusedRenders(deps, deckId, id);
-  const rendered = await renderSlidePages(deps, deck, revision, bytes, parsed);
+  // Nobody waits for it: an upload's conversion goes first.
+  const rendered = await renderSlidePages(deps, deck, revision, bytes, parsed, {
+    priority: 'background',
+  });
   if (rendered.renderer === null) return skipped('no renderer available');
   await db
     .update(revisions)

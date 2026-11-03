@@ -9,6 +9,7 @@ import { isPdfBytes } from '../sources/safe-fetch';
 import type { SourceAdapters } from '../sources/source-adapter';
 import { blobKeys, type BlobStorage } from '../storage/blob-storage';
 import { ConversionAborted, deckFonts, type PptxToPdf } from './libreoffice';
+import type { PoolPriority } from './office-pool';
 import { PAGE_IMAGE_WIDTH, PageCountMismatch, rasterizePdf } from './pdf-pages';
 import { svgThumbnail } from './svg-thumbnail';
 import { drawingFonts } from '../services/workspace-fonts';
@@ -185,6 +186,14 @@ export async function renderSlidePages(
   revision: RevisionRow,
   pptx: Uint8Array,
   slides: readonly ParsedSlide[],
+  {
+    priority,
+    onPage,
+  }: {
+    priority?: PoolPriority;
+    /** After each page drawn and stored: how many are, of the visible slides. */
+    onPage?: (done: number) => Promise<void>;
+  } = {},
 ): Promise<SlidePages> {
   const none = slides.map(() => null);
   const candidates: { renderer: PdfRenderer; pdf: () => Promise<Uint8Array | null> }[] = [];
@@ -226,7 +235,7 @@ export async function renderSlidePages(
                 await drawingFonts({ ...deps, db: deps.db }, deck.workspaceId)
               ).faces(await deckFonts(pptx))
             : [];
-          return await libreOfficePdf(pptx, { fonts });
+          return await libreOfficePdf(pptx, { fonts, priority });
         } catch (error) {
           // Shutdown: no SVG fallback – the import or re-render resumes on the next start.
           if (error instanceof ConversionAborted) throw error;
@@ -254,8 +263,9 @@ export async function renderSlidePages(
           pages.push(page);
           await deps.storage.put(page.imageKey, images.image);
           await deps.storage.put(page.thumbnailKey, images.thumbnail);
+          await onPage?.(pages.length);
         },
-        { expectedPages: visible },
+        { expectedPages: visible, background: priority === 'background' },
       );
     } catch (error) {
       await deleteStoredPages(deps.storage, pages);

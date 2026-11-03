@@ -1,10 +1,12 @@
+import type { LiveTexts } from '../realtime/live-texts';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { ImportState } from '@slider/shared';
-import { MAX_SLIDES, PptxError, svgForRenderHash } from '@slider/pptx';
+import { MAX_SLIDES, PptxError, svgForRenderHash, type ParsedSlide } from '@slider/pptx';
 import type { Clock } from '../clock';
 import type { Database, Executor } from '../db/client';
 import { decks, revisions, slides, slideVersions } from '../db/schema';
 import type { Logger } from '../logger';
+import { linkDeckMaster } from '../services/workspace-masters';
 import { remeasureDeck } from '../services/workspace-storage';
 import { blobKeys, type BlobStorage } from '../storage/blob-storage';
 import { importSyncRevision } from '../sync/sync-import';
@@ -12,6 +14,7 @@ import { beginImportAttempt, endImportAttempt, ImportCrashLoop, importsStopping 
 import { deleteOrphanSlides, FINGERPRINT_VERSION, sha256Hex, toShape } from './common';
 import { ConversionAborted, type PptxToPdf } from './libreoffice';
 import {
+  hasPdfRenderer,
   renderSlidePages,
   slideRenderer,
   storeSlideRender,
@@ -20,7 +23,7 @@ import {
 } from './office-pages';
 import { isPdfPage, openDeckFile } from './pdf-deck';
 import { PdfTimedOut } from './pdf-jobs';
-import type { OpenPptx } from './pptx';
+import type { OpenPptx, PptxDocument } from './pptx';
 import { upsertPptxComments, type ImportedSlide } from './pptx-comments';
 import type { ImportJob } from './queue';
 import type { RenderProgress } from './render-progress';
@@ -46,10 +49,10 @@ export interface ImportDeps {
   slidesExtras?: SlidesExtrasReader;
   /** Progress of background re-renders, shown by `GET /decks/:id/status`. */
   renderProgress?: RenderProgress;
-  /** `SYNC_POLL_INTERVAL_MS`: the base of the backoff after a failed sync import. */
-  syncPollMs?: number;
   /** Fonts an ODP brings along become its workspace's (see {@link SlidePagesDeps}). */
   adoptFonts?: SlidePagesDeps['adoptFonts'];
+  /** Texts typed in together: a synced revision is written into them. */
+  liveTexts?: LiveTexts;
 }
 
 const PPTX_ERROR_MESSAGES: Record<PptxError['code'], string> = {
@@ -196,35 +199,53 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
         aspectRatio,
         shapes,
         guides: parsed.guides,
+        transition: parsed.transition ?? null,
       })),
     );
   });
   await storage.deletePrefix(blobKeys.slideRenderPrefix(deckId, revisionId)).catch(() => {});
 
   const total = planned.length;
-  await running({ status: 'running', step: 'rendering', progress: { done: 0, total } });
-  const rendered = await renderSlidePages(
-    deps,
-    deck,
-    revision,
-    bytes,
-    planned.map(({ parsed }) => parsed),
-  );
+  // Progress counts drawn pages, then stored slides – it never goes back.
+  let shown = 0;
+  const progress = async (done: number) => {
+    if (done < shown) return;
+    shown = done;
+    await running({ status: 'running', step: 'rendering', progress: { done, total } });
+  };
+  await progress(0);
+  const parsedSlides = planned.map(({ parsed }) => parsed);
+  // The SVGs' hashes (what slide matching compares, BER-108) are worked out meanwhile: the PDF
+  // is drawn by LibreOffice and the PDF worker, not on this thread.
+  const hashing = { stopped: false };
+  const hashes = hasPdfRenderer(deps, deck)
+    ? renderHashes(document, parsedSlides, hashing)
+    : null;
+  hashes?.catch(() => {});
+  const rendered = await renderSlidePages(deps, deck, revision, bytes, parsedSlides, {
+    onPage: (done) => progress(Math.min(done, total - 1)),
+  }).catch((error: unknown) => {
+    // The import stops here: no SVG of the slides left is needed any more.
+    hashing.stopped = true;
+    throw error;
+  });
   await db
     .update(revisions)
     .set({ officeFailure: rendered.officeFailure })
     .where(eq(revisions.id, revisionId));
+  const known = await hashes;
   for (const [done, slide] of planned.entries()) {
-    await running({ status: 'running', step: 'rendering', progress: { done, total } });
-    // The SVG is rendered either way: its hash is what slide matching compares (BER-108).
-    const svg = await document.renderSlideSvg(slide.parsed);
+    await progress(done);
     const page = rendered.pages[done] ?? null;
-    const keys = await storeSlideRender(storage, deckId, revisionId, svg, page);
+    const hash = known?.[done];
+    // The SVG only where it is needed: its hash still missing, or no page to show instead.
+    const svg = hash === undefined || !page ? await document.renderSlideSvg(slide.parsed) : null;
+    const keys = await storeSlideRender(storage, deckId, revisionId, svg ?? '', page);
     await db
       .update(slideVersions)
       .set({
         ...keys,
-        renderHash: sha256Hex(svgForRenderHash(svg)),
+        renderHash: hash ?? sha256Hex(svgForRenderHash(svg!)),
         renderer: slideRenderer(rendered, page),
       })
       .where(eq(slideVersions.id, slide.versionId));
@@ -261,7 +282,25 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
     }
   });
 
+  // The workspace's design it is built on, for the editor's layouts; a guess, so never fatal.
+  await linkDeckMaster(db, deck, bytes).catch((error: unknown) =>
+    deps.log.warn(`Could not look for the design of deck ${deckId}`, error),
+  );
   await setImportState(deps, deckId, { status: 'ready' }, { touch: true });
+}
+
+/** Each slide's render hash, one SVG at a time – they inline their pictures, so can be large. */
+async function renderHashes(
+  document: PptxDocument,
+  slides: readonly ParsedSlide[],
+  hashing: { stopped: boolean },
+): Promise<string[]> {
+  const hashes: string[] = [];
+  for (const slide of slides) {
+    if (hashing.stopped) break;
+    hashes.push(sha256Hex(svgForRenderHash(await document.renderSlideSvg(slide))));
+  }
+  return hashes;
 }
 
 /**

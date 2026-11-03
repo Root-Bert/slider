@@ -69,7 +69,7 @@ export function WorkSection() {
   return (
     <Section
       title="Arbeiten"
-      description="So öffnet sich jede Review. Gilt für diesen Browser – in der Review selbst kannst du alles weiterhin umschalten."
+      description="So öffnet sich jede Präsentation. Gilt für diesen Browser – in der Präsentation selbst kannst du alles weiterhin umschalten."
     >
       <div className="flex flex-col divide-y divide-hairline">
         <Toggle
@@ -84,14 +84,14 @@ export function WorkSection() {
           className="py-3"
           label="Ausgeblendete Folien zeigen"
           icon="visibilityOff"
-          description="Folien, die in der Präsentation ausgeblendet sind, samt ihren Kommentaren (H)"
+          description="Folien, die in der Präsentation ausgeblendet sind, samt ihren Kommentaren"
           checked={preferences.showHiddenSlides}
           onChange={(showHiddenSlides) => update({ showHiddenSlides })}
         />
         <Toggle
           className="py-3"
           label="Box-Modus"
-          icon="boxSelect"
+          icon="gridViewFill"
           description="Ein Klick kommentiert die Box unter dem Zeiger (B)"
           checked={boxMode}
           onChange={(on) => {

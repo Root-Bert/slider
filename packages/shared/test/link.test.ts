@@ -6,9 +6,10 @@ import {
   parseShareLink,
   withoutCredentials,
 } from '../src/link';
+import { stockLink } from '../src/editing';
 
 describe('parseShareLink (BER-92 link types)', () => {
-  it.each([
+  const recognised: [string, string][] = [
     ['https://1drv.ms/p/c/abc123/EaB3kQ', 'onedrive'],
     ['https://onedrive.live.com/edit?id=ABC!123&resid=ABC!123', 'onedrive'],
     ['https://contoso.sharepoint.com/:p:/s/strategie/EaB3kQxyz', 'sharepoint'],
@@ -31,11 +32,8 @@ describe('parseShareLink (BER-92 link types)', () => {
     ['https://cloud.example.de/apps/files/files/4711?dir=/Decks&openfile=true', 'nextcloud'],
     ['https://cloud.example.de/apps/files/?dir=/Decks&fileid=4711', 'nextcloud'],
     ['https://example.com/s/deck.pptx', 'url'], // a file name, not a share token
-  ])('recognises %s as %s', (url, kind) => {
-    expect(parseShareLink(url)?.kind).toBe(kind);
-  });
-
-  it.each([
+  ];
+  const rejected = [
     'not a url',
     'http://1drv.ms/p/c/abc', // no TLS
     'https://contoso.sharepoint.com/sites/team', // a site, no file
@@ -51,8 +49,13 @@ describe('parseShareLink (BER-92 link types)', () => {
     'http://cloud.example.de/s/Ab3dEf9GhJkLmNo', // no TLS
     'https://cloud.example.de/f/abc', // file ids are numbers
     'https://cloud.example.de/apps/files/?dir=/Decks', // a folder
-  ])('rejects %s', (url) => {
-    expect(parseShareLink(url)).toBeNull();
+  ];
+
+  it('recognises each kind of share link and rejects everything else', () => {
+    for (const [url, kind] of recognised) expect(parseShareLink(url)?.kind, url).toBe(kind);
+    for (const url of rejected) expect(parseShareLink(url), url).toBeNull();
+    // Surrounding whitespace from copy & paste is tolerated.
+    expect(parseShareLink('  https://1drv.ms/p/c/abc  \n')?.host).toBe('1drv.ms');
   });
 
   it('takes plain http only from the organisation’s own Nextcloud', () => {
@@ -71,50 +74,49 @@ describe('parseShareLink (BER-92 link types)', () => {
     expect(
       parseShareLink('http://cloud.intranet:8080/s/Ab3dEf9GhJkLmNo', { trustedNextcloud: null }),
     ).toBeNull();
-  });
-
-  it('lets the browser through any http link that looks like Nextcloud – the server decides', () => {
-    const options = { allowHttpNextcloud: true };
-    expect(parseShareLink('http://cloud.intranet:8080/s/Ab3dEf9GhJkLmNo', options)?.kind).toBe(
+    // The browser lets any http link that looks like Nextcloud through – the server decides.
+    const loose = { allowHttpNextcloud: true };
+    expect(parseShareLink('http://cloud.intranet:8080/s/Ab3dEf9GhJkLmNo', loose)?.kind).toBe(
       'nextcloud',
     );
-    expect(parseShareLink('http://cloud.intranet/apps/files/files/4711', options)?.kind).toBe(
+    expect(parseShareLink('http://cloud.intranet/apps/files/files/4711', loose)?.kind).toBe(
       'nextcloud',
     );
     // Everything else stays https-only.
-    expect(parseShareLink('http://example.com/deck.pptx', options)).toBeNull();
-    expect(parseShareLink('http://1drv.ms/p/c/abc', options)).toBeNull();
+    expect(parseShareLink('http://example.com/deck.pptx', loose)).toBeNull();
+    expect(parseShareLink('http://1drv.ms/p/c/abc', loose)).toBeNull();
   });
 
-  it.each([
-    'https://user:secret@example.com/deck.pptx',
-    'https://user@example.com/deck.pptx',
-    'https://:secret@example.com/deck.pptx',
-    'https://robert:pw@cloud.example.de/s/Ab3dEf9GhJkLmNo',
-    'https://a:b@contoso.sharepoint.com/:p:/s/strategie/EaB3kQxyz',
-    'https://a:b@1drv.ms/p/c/abc',
-    'https://a:b@docs.google.com/presentation/d/1AbCdEfGhIjKlMnOp/edit',
-  ])('refuses %s: the user name or password would be stored and shown', (url) => {
-    expect(parseShareLink(url)).toBeNull();
-    expect(linkHasCredentials(url)).toBe(true);
-  });
-
-  it('refuses credentials in http Nextcloud links too', () => {
+  it('refuses links with a user name or password – they would be stored and shown', () => {
+    // A photo credit from someone's edit step links nowhere but https.
+    expect(stockLink('javascript:alert(1)', 'pexels')).toBe('https://www.pexels.com/');
+    expect(stockLink('https://unsplash.com/@a')).toBe(
+      'https://unsplash.com/@a?utm_source=Slider&utm_medium=referral',
+    );
+    for (const url of [
+      'https://user:secret@example.com/deck.pptx',
+      'https://user@example.com/deck.pptx',
+      'https://:secret@example.com/deck.pptx',
+      'https://robert:pw@cloud.example.de/s/Ab3dEf9GhJkLmNo',
+      'https://a:b@contoso.sharepoint.com/:p:/s/strategie/EaB3kQxyz',
+      'https://a:b@1drv.ms/p/c/abc',
+      'https://a:b@docs.google.com/presentation/d/1AbCdEfGhIjKlMnOp/edit',
+    ]) {
+      expect(parseShareLink(url), url).toBeNull();
+      expect(linkHasCredentials(url), url).toBe(true);
+    }
+    // In http Nextcloud links too.
     const url = 'http://admin:pw@cloud.intranet:8080/nextcloud/s/Ab3dEf9GhJkLmNo';
     const trustedNextcloud = 'http://cloud.intranet:8080/nextcloud';
     expect(parseShareLink(url, { trustedNextcloud })).toBeNull();
     expect(parseShareLink(url, { allowHttpNextcloud: true })).toBeNull();
     expect(linkHasCredentials(url)).toBe(true);
-  });
-
-  it('sees no credentials in ordinary links or text', () => {
+    // Ordinary links or text have none.
     expect(linkHasCredentials('https://example.com/deck.pptx')).toBe(false);
     expect(linkHasCredentials('https://example.com/user:pw/deck.pptx')).toBe(false);
     expect(linkHasCredentials('https://example.com/deck.pptx?login=a@b')).toBe(false);
     expect(linkHasCredentials('not a url')).toBe(false);
-  });
-
-  it('drops the user name and password of a stored link for showing it', () => {
+    // A stored link is shown without them.
     expect(withoutCredentials('https://a:b@cloud.example.com/s/Ab3dEf9GhJkLmNo')).toBe(
       'https://cloud.example.com/s/Ab3dEf9GhJkLmNo',
     );
@@ -125,10 +127,6 @@ describe('parseShareLink (BER-92 link types)', () => {
       'https://1drv.ms/p/c/abc123/EaB3kQ',
     );
     expect(withoutCredentials('not a url')).toBe('not a url');
-  });
-
-  it('tolerates surrounding whitespace from copy & paste', () => {
-    expect(parseShareLink('  https://1drv.ms/p/c/abc  \n')?.host).toBe('1drv.ms');
   });
 
   it('takes Nextcloud links apart, keeping the path Nextcloud runs under', () => {
@@ -149,23 +147,24 @@ describe('parseShareLink (BER-92 link types)', () => {
 describe('parseGoogleLink (BER-119)', () => {
   const ID = '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789';
 
-  it.each([
-    [`https://docs.google.com/presentation/d/${ID}/edit?usp=sharing`, true],
-    [`https://docs.google.com/presentation/d/${ID}`, true],
-    [`https://docs.google.com/presentation/u/0/d/${ID}/edit#slide=id.p`, true],
-    [`https://drive.google.com/file/d/${ID}/view?usp=drive_link`, false],
-    [`https://drive.google.com/open?id=${ID}`, false],
-  ])('reads %s', (url, slides) => {
-    expect(parseGoogleLink(new URL(url))).toEqual({ fileId: ID, slides });
-    expect(parseShareLink(url)?.kind).toBe('google');
-  });
-
-  it.each([
-    'https://docs.google.com/presentation/d/e/2PACX-1vT/pub',
-    `https://docs.google.com/document/d/${ID}/edit`,
-    'https://drive.google.com/drive/folders/abc',
-    `http://docs.google.com/presentation/d/${ID}/edit`,
-  ])('ignores %s', (url) => {
-    expect(parseShareLink(url)?.kind).not.toBe('google');
+  it('reads Slides and Drive links and ignores other Google links', () => {
+    for (const [url, slides] of [
+      [`https://docs.google.com/presentation/d/${ID}/edit?usp=sharing`, true],
+      [`https://docs.google.com/presentation/d/${ID}`, true],
+      [`https://docs.google.com/presentation/u/0/d/${ID}/edit#slide=id.p`, true],
+      [`https://drive.google.com/file/d/${ID}/view?usp=drive_link`, false],
+      [`https://drive.google.com/open?id=${ID}`, false],
+    ] as const) {
+      expect(parseGoogleLink(new URL(url))).toEqual({ fileId: ID, slides });
+      expect(parseShareLink(url)?.kind).toBe('google');
+    }
+    for (const url of [
+      'https://docs.google.com/presentation/d/e/2PACX-1vT/pub',
+      `https://docs.google.com/document/d/${ID}/edit`,
+      'https://drive.google.com/drive/folders/abc',
+      `http://docs.google.com/presentation/d/${ID}/edit`,
+    ]) {
+      expect(parseShareLink(url)?.kind, url).not.toBe('google');
+    }
   });
 });

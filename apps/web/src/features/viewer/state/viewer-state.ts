@@ -25,6 +25,28 @@ export const ViewerSetHoverContext = createContext<((threadId: string | null) =>
 export const isBoxModeActive = (state: Pick<ViewerState, 'boxMode' | 'boxModeFlipped'>) =>
   state.boxMode !== state.boxModeFlipped;
 
+/**
+ * One of the right side panels is open: a thread, deleted slides, layers, a background, layout,
+ * sharing.
+ */
+export const isSidePanelOpen = (
+  state: Pick<
+    ViewerState,
+    | 'threadPanelOpen'
+    | 'deletedPanelOpen'
+    | 'layersPanelOpen'
+    | 'backgroundPanelPageId'
+    | 'layoutGridPanelOpen'
+    | 'sharePanelOpen'
+  >,
+) =>
+  state.threadPanelOpen ||
+  state.deletedPanelOpen ||
+  state.layersPanelOpen ||
+  state.backgroundPanelPageId !== null ||
+  state.layoutGridPanelOpen ||
+  state.sharePanelOpen;
+
 export function useViewerState(): ViewerState {
   const state = useContext(ViewerStateContext);
   if (!state) throw new Error('useViewerState must be used inside <ViewerStoreProvider>');

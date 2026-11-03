@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import { declaredSize, inflateEntry } from '@slider/shared';
 import { PptxError } from './types';
 import { attr, children, parseXml, XmlSyntaxError, type XmlElement } from './xml';
 
@@ -50,72 +51,9 @@ class InflateBudget {
   }
 }
 
-/** Size the zip's central directory declares for an entry (JSZip keeps it internally). */
-const declaredSize = (entry: JSZip.JSZipObject): number =>
-  (entry as unknown as { _data?: { uncompressedSize?: number } })._data?.uncompressedSize ?? 0;
-
-interface JSZipStream {
-  on(event: 'data', listener: (chunk: Uint8Array) => void): JSZipStream;
-  on(event: 'error', listener: (error: Error) => void): JSZipStream;
-  on(event: 'end', listener: () => void): JSZipStream;
-  pause(): JSZipStream;
-  resume(): JSZipStream;
-}
-
-/**
- * Inflates one entry with a hard byte budget: at most its declared size and at most `cap`.
- * The stream is stopped the moment the budget is passed, so a forged size header can never make
- * us inflate more than the declared total (zip bomb with patched headers).
- */
-function inflate(path: string, entry: JSZip.JSZipObject, cap: number): Promise<Uint8Array> {
-  const declared = declaredSize(entry);
-  if (declared > cap) {
-    return Promise.reject(new PptxError('corrupt', `${path} is too large.`));
-  }
-  return new Promise((resolve, reject) => {
-    const chunks: Uint8Array[] = [];
-    let length = 0;
-    let settled = false;
-    const fail = (message: string) => {
-      if (settled) return;
-      settled = true;
-      chunks.length = 0;
-      reject(new PptxError('corrupt', message));
-    };
-    // `internalStream` is public JSZip API (3.x) but missing from its type definitions.
-    const stream = (
-      entry as unknown as { internalStream(type: 'uint8array'): JSZipStream }
-    ).internalStream('uint8array');
-    stream
-      .on('data', (chunk: Uint8Array) => {
-        if (settled) return;
-        length += chunk.length;
-        if (length > declared) {
-          stream.pause();
-          fail(`${path} unpacks to more data than the file declares.`);
-          return;
-        }
-        chunks.push(chunk);
-      })
-      .on('error', (error: Error) => fail(`${path} cannot be unpacked: ${error.message}`))
-      .on('end', () => {
-        if (settled) return;
-        if (length !== declared) {
-          fail(`${path} unpacks to a different size than the file declares.`);
-          return;
-        }
-        settled = true;
-        const out = new Uint8Array(length);
-        let offset = 0;
-        for (const chunk of chunks) {
-          out.set(chunk, offset);
-          offset += chunk.length;
-        }
-        resolve(out);
-      })
-      .resume();
-  });
-}
+/** Inflates one entry within `cap` and its declared size (`inflateEntry`). */
+const inflate = (path: string, entry: JSZip.JSZipObject, cap: number): Promise<Uint8Array> =>
+  inflateEntry(path, entry, cap, (message) => new PptxError('corrupt', message));
 
 /** Relationship type URIs used by the parser. */
 export const REL = {
@@ -232,8 +170,7 @@ export class Archive {
     const entry = this.zip.file(path);
     let element: XmlElement | null = null;
     if (entry) {
-      const bytes = await this.inflate(path, entry, MAX_XML_PART, true);
-      const source = new TextDecoder('utf-8').decode(bytes).replace(/^\uFEFF/, '');
+      const source = await this.decodeXml(path, entry);
       try {
         element = parseXml(source);
       } catch (error) {
@@ -245,6 +182,17 @@ export class Archive {
     }
     if (options.retain !== false) this.xmlCache.set(path, element);
     return element;
+  }
+
+  /** An XML part as text, without its byte order mark; `null` if the part does not exist. */
+  async readText(path: string): Promise<string | null> {
+    const entry = this.zip.file(path);
+    return entry ? this.decodeXml(path, entry) : null;
+  }
+
+  private async decodeXml(path: string, entry: JSZip.JSZipObject): Promise<string> {
+    const bytes = await this.inflate(path, entry, MAX_XML_PART, true);
+    return new TextDecoder('utf-8').decode(bytes).replace(/^\uFEFF/, '');
   }
 
   /** Relationships of a part (from its `_rels/*.rels` sibling); empty if there are none. */
@@ -290,6 +238,20 @@ export class Archive {
         target: attr(element, 'Target') ?? '',
       }));
       this.zip.file(relsPath, relationshipsXml(kept));
+    }
+    return this.zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+  }
+
+  /**
+   * The package re-zipped with `parts` written over (or added to) what it has – for a copy built
+   * from it, such as {@link masterDeck}'s slide per layout. Call it on a package already rid of
+   * its external links.
+   */
+  async withParts(parts: Readonly<Record<string, string>>): Promise<Uint8Array> {
+    for (const [path, content] of Object.entries(parts)) {
+      this.zip.file(path, content);
+      this.xmlCache.delete(path);
+      this.relsCache.clear();
     }
     return this.zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
   }

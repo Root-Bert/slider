@@ -264,9 +264,9 @@ export function LeaveSection({ workspace, userId }: { workspace: Workspace; user
               (unter {usageLink}), dann kannst du ihn verlassen.
             </>
           ) : mustHandOver ? (
-            'Du verlierst den Zugriff auf die Reviews dieses Workspace. Als einziger Admin übergibst du ihn beim Verlassen an ein anderes Mitglied – danach kannst du einen neuen eigenen gründen.'
+            'Du verlierst den Zugriff auf die Präsentationen dieses Workspace. Als einziger Admin übergibst du ihn beim Verlassen an ein anderes Mitglied – danach kannst du einen neuen eigenen gründen.'
           ) : (
-            'Du verlierst den Zugriff auf die Reviews dieses Workspace. Deine Kommentare bleiben hier; was mit deinen Reviews passiert, zeigt der nächste Schritt.'
+            'Du verlierst den Zugriff auf die Präsentationen dieses Workspace. Deine Kommentare bleiben hier; was mit deinen Präsentationen passiert, zeigt der nächste Schritt.'
           )}
         </span>
       }
@@ -360,7 +360,7 @@ export function DeleteSection({ workspace }: { workspace: Workspace }) {
         <span id={descriptionId}>
           {blocked
             ? `Solange das Abo läuft, kann nur ${payer} den Workspace löschen – dabei wird das Abo gekündigt.`
-            : 'Löscht den Workspace mit allen Reviews, Kommentaren, Aufnahmen und Einladungen. Das lässt sich nicht rückgängig machen.'}
+            : 'Löscht den Workspace mit allen Präsentationen, Kommentaren, Aufnahmen und Einladungen. Das lässt sich nicht rückgängig machen.'}
         </span>
       }
       aside={
@@ -381,7 +381,7 @@ export function DeleteSection({ workspace }: { workspace: Workspace }) {
         title={`„${workspace.name}“ endgültig löschen?`}
         description={
           <>
-            Alle Reviews, Kommentare und Mitgliedschaften gehen verloren.
+            Alle Präsentationen, Kommentare und Mitgliedschaften gehen verloren.
             {paid && ' Das laufende Abo wird dabei gekündigt.'} Tippe zur Bestätigung den Namen des
             Workspace ein.
           </>

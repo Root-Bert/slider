@@ -1,5 +1,4 @@
 import { COMMENT_REACTIONS, type Comment, type CommentReactionKind } from '@slider/shared';
-import { isPendingComment } from '@/lib/api/comment-cache';
 import { useReactToComment } from '@/lib/api';
 import type { MenuAction } from '@/ui';
 import { ReactionGlyph } from '../ReactionGlyph';
@@ -18,7 +17,8 @@ export function useCommentReaction(comment: Comment) {
   const react = useReactToComment(deck.id, viewer.author);
   const reactions = comment.reactions ?? [];
   const mine = reactions.find((reaction) => reaction.author.id === viewer.author.id)?.kind ?? null;
-  const canReact = canComment && !isPendingComment(comment);
+  // Also on one not saved yet: sent after it.
+  const canReact = canComment;
   const toggle = (kind: CommentReactionKind) =>
     react.mutate(
       { commentId: comment.id, kind: mine === kind ? null : kind },

@@ -11,7 +11,7 @@ import {
 import { accentAlpha, accentColor } from '@/lib/accent';
 import { cn, Icon } from '@/ui';
 import { FRAME_ATTR, resized, useRectEdit, type RectCorner } from './hooks/useRectEdit';
-import { focusCommentField } from '../comments/lib/composer-focus';
+import { focusCommentField, SEND_TO_AI } from '../comments/lib/composer-focus';
 import {
   MIN_TEXT_WIDTH,
   normalizeTextRect,
@@ -19,10 +19,11 @@ import {
   TEXT_BOX_RADIUS,
   TEXT_CLASS,
 } from './lib/text-box';
-import { HANDLE_CLASS, handleRing, NAME_TAG_CLASS } from './lib/mark-chrome';
+import { NAME_TAG_CLASS } from './lib/mark-chrome';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, type TextBoxDraft, type TextBoxPatch } from '../state/viewer-state';
 import { CORNERS } from './corners';
+import { CornerBrackets } from './CornerBrackets';
 import { isModEnter, isModKey } from '@/lib/keyboard';
 
 /*
@@ -44,11 +45,21 @@ const textSurface = (color: AuthorColor): CSSProperties => ({
   backgroundColor: `color-mix(in srgb, var(--color-glass-solid) ${percent(TEXT_BOX_LOOK.fillAlpha)}, transparent)`,
 });
 
-/** Lifted off the slide while emphasised or dragged; a soft edge and shadow at rest. */
-const textShadow = (color: AuthorColor, lit: boolean): string =>
-  lit
-    ? `0 0 0 2px ${accentColor(color)}, var(--shadow-mark)`
-    : `0 0 0 1px ${accentAlpha(color, Math.round(TEXT_BOX_LOOK.edgeAlpha * 100))}, 0 1px 4px var(--color-well-dark)`;
+/**
+ * Lifted off the slide while emphasised or dragged; a soft edge and shadow at rest. With its resize
+ * brackets (`CornerBrackets`) their line is its edge.
+ */
+const textShadow = (color: AuthorColor, lit: boolean, bracketed = false): string =>
+  bracketed
+    ? 'var(--shadow-mark)'
+    : lit
+      ? `0 0 0 2px ${accentColor(color)}, var(--shadow-mark)`
+      : `0 0 0 1px ${accentAlpha(color, Math.round(TEXT_BOX_LOOK.edgeAlpha * 100))}, 0 1px 4px var(--color-well-dark)`;
+
+/** Every corner of a text box resizes. */
+const ALL_CORNERS = CORNERS.map(({ corner }) => corner);
+/** The comment's pin sits on the top left corner: no bracket under it. */
+const PINNED_CORNERS = ALL_CORNERS.filter((corner) => corner !== 'nw');
 
 const boxPosition = (x: number, y: number, fontSize: number): CSSProperties => ({
   left: `${x * 100}%`,
@@ -75,6 +86,8 @@ interface TextMarkProps {
   onPreview?: (rect: Rect | null) => void;
   /** A double click on the box (the Bild sheet: edit the text). */
   onDoubleClick?: () => void;
+  /** The comment's pin sits on its top left corner (on the slide): that corner has no bracket. */
+  pinOnCorner?: boolean;
 }
 
 /** Smallest text box a resize leaves. */
@@ -92,6 +105,7 @@ export function TextMark({
   onPlace,
   onPreview,
   onDoubleClick,
+  pinOnCorner = false,
 }: TextMarkProps) {
   const ref = useRef<HTMLButtonElement>(null);
   const editable = interactive && onPlace !== undefined;
@@ -117,6 +131,7 @@ export function TextMark({
   );
   const box = edit.rect;
   const preview = edit.dragging;
+  const bracketed = editable && (emphasized || preview);
 
   return (
     <button
@@ -155,23 +170,20 @@ export function TextMark({
         width: `${box.w * 100}%`,
         minHeight: `${box.h * 100}%`,
         opacity,
-        boxShadow: textShadow(stroke.color, emphasized || preview),
+        boxShadow: textShadow(stroke.color, emphasized || preview, bracketed),
       }}
     >
       {stroke.text}
-      {editable &&
-        (emphasized || preview) &&
-        // Resize handles on all four corners, like every other box.
-        CORNERS.map(({ corner, className: position }) => (
-          <span
-            key={corner}
-            role="presentation"
-            title="Größe ändern"
-            {...edit.cornerProps(corner)}
-            className={cn(HANDLE_CLASS, position)}
-            style={{ boxShadow: handleRing(accentColor(stroke.color)) }}
-          />
-        ))}
+      {bracketed && (
+        // Resized by its corners as a picked element is while editing.
+        <CornerBrackets
+          frameRef={ref}
+          color={accentColor(stroke.color)}
+          corners={pinOnCorner ? PINNED_CORNERS : ALL_CORNERS}
+          halo
+          grip={edit.cornerProps}
+        />
+      )}
     </button>
   );
 }
@@ -215,8 +227,8 @@ type Drag =
 /**
  * A text box typed into directly on the slide (or the Bild sheet). It grows with its text (to the
  * right edge, then it wraps), moves by its edge or name tag and resizes by its corner handles.
- * ↵ / Tab = on to the comment (`onLeave`), ⇧↵ = new line, ⌘↵ / Ctrl↵ sends (through the
- * composer), Esc cancels (global shortcut, or `onEscape`).
+ * ↵ / Tab = on to the comment (`onLeave`), ⇧↵ = new line, ⌘↵ / Ctrl↵ sends and asks the AI
+ * (through the composer, `SEND_TO_AI`), Esc cancels (global shortcut, or `onEscape`).
  */
 export function TextBoxField({
   box,
@@ -354,7 +366,8 @@ export function TextBoxField({
           maxWidth: `${(1 - box.x) * 100}%`,
           minWidth: `min(${MIN_TEXT_WIDTH * 100}cqw, ${(1 - box.x) * 100}%)`,
           minHeight: `${box.minHeight * 100}%`,
-          boxShadow: `0 0 0 2px ${color}, 0 0 0 5px ${accentAlpha(author.color, 25)}`,
+          // Its edge is the line of its resize brackets.
+          boxShadow: 'var(--shadow-mark)',
         }}
         onClick={(event) => event.stopPropagation()}
       >
@@ -398,8 +411,11 @@ export function TextBoxField({
                 return;
               }
               if (isModEnter(event)) {
+                // Sends and asks the AI, as ⌘↵ in the comment field: a sticker is a comment.
                 event.preventDefault();
-                document.querySelector<HTMLFormElement>('form[data-composer]')?.requestSubmit();
+                document
+                  .querySelector<HTMLFormElement>('form[data-composer]')
+                  ?.dispatchEvent(new Event(SEND_TO_AI));
               }
               // ↵ and Tab jump to the composer's comment field (Shift+Tab there comes back);
               // ⇧↵ is a new line.
@@ -432,18 +448,17 @@ export function TextBoxField({
           <Icon name="moreHoriz" size="xs" className="rotate-90" />
           {author.name.split(' ')[0]}
         </span>
-        {/* Resize handles on all four corners, like every other box. */}
-        {CORNERS.map(({ corner, className: position }) => (
-          <span
-            key={corner}
-            role="presentation"
-            title="Größe ändern"
-            onPointerDown={(event) => startDrag(event, corner)}
-            {...dragHandlers}
-            className={cn(HANDLE_CLASS, position)}
-            style={{ boxShadow: handleRing(color) }}
-          />
-        ))}
+        {/* Resized by its corners as a picked element is while editing. */}
+        <CornerBrackets
+          frameRef={boxRef}
+          color={color}
+          corners={ALL_CORNERS}
+          halo
+          grip={(corner) => ({
+            onPointerDown: (event) => startDrag(event, corner),
+            ...dragHandlers,
+          })}
+        />
       </div>
     </div>
   );

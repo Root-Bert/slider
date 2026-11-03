@@ -37,7 +37,7 @@ describe('withoutExternalLinks', () => {
     );
   });
 
-  it('sees through XML and zip tricks', async () => {
+  it('sees through XML and zip tricks and refuses what is not a readable package', async () => {
     const input = await deckWith(
       // Entity-encoded mode, a `>` inside the target, a lower-case mode with a URL target,
       // a scheme-less network path and a prefixed element.
@@ -60,9 +60,7 @@ describe('withoutExternalLinks', () => {
     const output = await withoutExternalLinks(await zip.generateAsync({ type: 'uint8array' }));
     expect(await relsOf(output)).not.toMatch(/10\.0\.0\.5|rId9[2-9]/);
     expect(await relsOf(output, 'ppt/slides/_RELS/slide2.xml.RELS')).not.toMatch(/10\.0\.0\.5/);
-  });
 
-  it('refuses what is not a readable package', async () => {
     await expect(withoutExternalLinks(new Uint8Array([1, 2, 3]))).rejects.toBeInstanceOf(PptxError);
     const broken = await deckWith('<Relationship');
     await expect(withoutExternalLinks(broken)).rejects.toBeInstanceOf(PptxError);

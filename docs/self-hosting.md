@@ -104,6 +104,32 @@ in der Datei), und ein Foto wird Unsplash einmal als verwendet gemeldet – sofo
 im Editor nimmt, bei der KI, wenn der Kommentar erledigt ist oder die Datei Slider verlässt.
 Datenschutzerklärung: „Vorlagen ausfüllen“ nimmt den Absatz „Fotosuche“ auf, sobald der Key gesetzt ist.
 
+## Freistellen (optional)
+
+Die KI kann den Hintergrund von Bildern entfernen (Personen, Produkte, Logos). Das macht
+[rembg](https://github.com/danielgatis/rembg) mit dem offenen Modell IS-Net auf dem eigenen
+Server, kein Bild verlässt ihn. Starten mit `docker compose --profile rembg up -d` und in
+`.env` `REMBG_URL=http://rembg:7000` setzen. Der Container braucht bis zu 2 GB RAM und 2 Kerne
+(so begrenzt), ein Bild dauert je nach Server einige Sekunden; Slider schickt eins nach dem
+anderen. Ohne `REMBG_URL` bietet Slider der KI das Werkzeug nicht an.
+
+## Sprache zu Text (optional)
+
+Statt eines Anbieters kann der eigene Server Aufnahmen in Text umwandeln: Whisper large-v3-turbo
+(offenes Modell, rund 100 Sprachen, Deutsch und Englisch sehr gut) über faster-whisper. Keine
+Aufnahme verlässt den Server, ein API-Key ist nicht nötig. Starten mit
+`docker compose --profile stt up -d` (der erste Build lädt das Modell, ~1,6 GB) und in `.env`
+`SPEECH_URL=http://stt:8000/v1` setzen, dann `docker compose up -d slider`.
+
+Der Container braucht etwa 2 GB RAM (auf 3 GB begrenzt) und bis zu 4 Kerne. Ohne Grafikkarte
+dauert eine Aufnahme etwa drei Viertel ihrer Länge (gemessen: 90 Sekunden in 66 auf 4 Kernen
+eines Apple M4, ältere Server-CPUs eher länger); Slider schickt eine nach der anderen. Der eigene Server gilt überall, wo kein Key für Sprache zu Text aktiv ist – in der
+Einrichtung unter „Integrationen“ steht dann „Auf diesem Server“. Ein aktiver Key (Instanz oder
+Workspace) geht vor.
+
+Anderes Modell: `docker compose build --build-arg WHISPER_MODEL=large-v3 stt` (genauer,
+doppelt so langsam, ~4 GB RAM) und `SPEECH_MODEL=whisper-large-v3` in `.env`.
+
 ## Schlüssel sichern
 
 Slider verschlüsselt Inhalte (Dateien, Kommentare, Folientexte) mit `SLIDER_DATA_KEY`. Ohne ihn
@@ -198,13 +224,17 @@ Vorher ein Backup ziehen: Migrationen lassen sich nicht zurückdrehen.
   ```
 
   Ohne `DATABASE_URL` nutzt Slider die eingebettete Datenbank in `/data/db`. Der Proxy sollte
-  HTTP/2 sprechen; nginx braucht außerdem `client_max_body_size 200m;`.
+  HTTP/2 sprechen. Große Dateien (ab 64 MB) lädt Slider in Teilen zu 32 MB hoch, kleinere in
+  einer Anfrage (ein Kommentar mit zehn Bildern bis gut 100 MB): nginx braucht deshalb
+  `client_max_body_size 128m;` (Caddy hat kein Limit).
 
 - **Ohne Docker:** `bun install --frozen-lockfile && bun run build`, dann `bun run start`.
 - **Cloudflare:** DNS-Record erst „Nur DNS“, bis Caddy das Zertifikat hat, dann Proxy an und
   SSL-Modus „Vollständig (streng)“. In `deploy/.env` die Zeile `TRUSTED_PROXIES=…`
-  einkommentieren, sonst teilen sich alle Besucher ein Rate-Limit. Der Free-Plan erlaubt nur
-  100 MB pro Upload: dann `MAX_UPLOAD_BYTES=94371840` und `MAX_MEDIA_BYTES=94371840` setzen.
+  einkommentieren, sonst teilen sich alle Besucher ein Rate-Limit. Der Free-Plan nimmt höchstens
+  100 MB pro Anfrage an; Präsentationen und Aufnahmen lädt Slider ab 64 MB in Teilen zu 32 MB
+  hoch (tus), der Proxy (orange Wolke) kann also an bleiben. Ein abgebrochener Upload geht beim
+  nächsten Versuch mit derselben Datei weiter, auch nach einem Neuladen der Seite.
 - **Mehrere Apps auf einem Server:** Ein gemeinsamer Caddy aus `deploy/proxy/` übernimmt 80/443
   (`cp .env.example .env`, `cp examples/slider.caddy sites/`, Domain eintragen,
   `docker compose up -d`). In `deploy/.env` dann
@@ -241,12 +271,18 @@ gehen auch auf der Einrichtungsseite.
 | `CONTACT_EMAIL`                                                   | nein              | Empfänger des Kontaktformulars der Produkt-Website.                                            |
 | `SESSION_TTL_DAYS`                                                | nein              | Login-Dauer ohne Nutzung in Tagen, Standard 30.                                                |
 | `INVITE_RATE_LIMIT`                                               | nein              | Anfragen pro Minute und IP auf Einladungslinks, Standard 30.                                   |
-| `MAX_UPLOAD_BYTES`, `MAX_MEDIA_BYTES`                             | nein              | Größte PowerPoint (Standard 200 MB) und Aufnahme (100 MB).                                     |
-| `SYNC_POLL_INTERVAL_MS`, `SYNC_DEBOUNCE_MS`                       | nein              | Abgleich verknüpfter Dateien, Standard je 1 Minute, `0` = aus.                                 |
+| `MAX_UPLOAD_BYTES`, `MAX_MEDIA_BYTES`                             | nein              | Größte Präsentation und Aufnahme (Standard je 512 MB). Pro 512-MB-Upload ~1–1,5 GB RAM.        |
 | `LIBREOFFICE_PATH`, `LIBREOFFICE_TIMEOUT_MS`                      | nein              | `soffice` für Folienbilder (im Image enthalten); Zeitlimit, Standard 2 Minuten.                |
 | `LIBREOFFICE_WORKERS`                                             | nein              | Dauerhaft laufende LibreOffices für den Editor, Standard 2 (je ~300 MB), `0` = aus.            |
 | `PDF_TIMEOUT_MS`                                                  | nein              | Zeitlimit für das Lesen eines PDFs, Standard 2 Minuten plus 1 Sekunde pro Seite.               |
 | `UNSPLASH_ACCESS_KEY`                                             | nein              | Fotosuche im Editor und Fotos der KI: Access Key einer Unsplash-App.                           |
+| `ANTHROPIC_API_KEY`                                               | nein (Seite)      | KI-Key der Instanz, beim Start einmal übernommen; danach unter „Integrationen“.                |
+| `MISTRAL_API_KEY`, `BFL_API_KEY`                                  | nein (Seite)      | Sprache zu Text (Mistral) und Bilder (Black Forest Labs), einmal übernommen wie der KI-Key.    |
+| `AI_ALLOW_INTERNAL_URLS`                                          | nein              | `true`: OpenAI-kompatibler Dienst der Instanz darf intern/http sein (Ollama, vLLM).            |
+| `REMBG_URL`                                                       | nein              | Freistellen durch die KI: Adresse von rembg, z. B. `http://rembg:7000`.                        |
+| `REMBG_MODEL`                                                     | nein              | Modell von rembg, Standard `isnet-general-use`.                                                |
+| `SPEECH_URL`                                                      | nein              | Sprache zu Text auf dem eigenen Server: Adresse von deploy/stt, z. B. `http://stt:8000/v1`.    |
+| `SPEECH_MODEL`                                                    | nein              | Modell von deploy/stt, Standard `whisper-large-v3-turbo`.                                      |
 | `IMPORT_WORKERS`                                                  | nein              | Gleichzeitige Importe, Standard 1 (je ~1 Kern, 1 GB RAM).                                      |
 | `PLAN_FREE_MAX_MEMBERS`, `PLAN_FREE_MAX_DECKS`                    | nein              | Grenzen pro Workspace, Standard unbegrenzt.                                                    |
 | `PLAN_FREE_MAX_STORAGE_BYTES`                                     | nein              | Speicher pro Workspace, Standard unbegrenzt (früher `MEDIA_QUOTA_BYTES`).                      |

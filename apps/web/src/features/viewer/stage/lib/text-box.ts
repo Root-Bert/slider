@@ -112,9 +112,10 @@ export function textStrokeFromDraft(box: TextBoxDraft, color: AccentColor): Text
 }
 
 /**
- * What the composer sends for a draft. The body is always the composer's comment – text on the
- * slide is stored apart from it. With a text box, the box is the anchor (the connector line starts
- * there); an empty box is dropped.
+ * What the composer sends for a draft. The body is the composer's comment – text on the slide is
+ * stored apart from it; without a comment the sticker's text is the body (as the API does), so a
+ * sticker is a comment like any other – counted, listed, given to the AI. With a text box, the box
+ * is the anchor (the connector line starts there); an empty box is dropped.
  */
 export function draftSubmission(
   draft: Draft,
@@ -126,7 +127,7 @@ export function draftSubmission(
   if (textStroke) {
     const { x, y, w, h } = textStroke;
     return {
-      body: comment,
+      body: comment || textStroke.text,
       anchor: { type: 'rect', rect: { x, y, w, h }, shapeRef: null },
       strokes: [...draft.strokes, textStroke],
     };

@@ -21,31 +21,35 @@ describe.skipIf(!url)('Postgres server (TEST_DATABASE_URL)', () => {
   });
   afterAll(() => handle?.close());
 
-  it('migrates and answers queries', async () => {
-    const result = await handle.db.execute(sql`select 1 as one`);
-    expect(result).toBeTruthy();
-  });
+  it('migrates and runs the same queries as PGlite: upsert, count, transactions', async () => {
+    {
+      const result = await handle.db.execute(sql`select 1 as one`);
+      expect(result).toBeTruthy();
+    }
+    {
+      const email = `pg-test-${crypto.randomUUID()}@example.com`;
+      const user = await upsertUser(handle.db, { name: 'Test', email });
+      const again = await upsertUser(handle.db, { name: 'Renamed', email, color: 'blue' });
+      expect(again.id).toBe(user.id);
+      expect(again.name).toBe('Renamed');
+      expect(again.createdAt).toBeInstanceOf(Date);
 
-  it('runs the same queries as PGlite: upsert, count, transactions', async () => {
-    const email = `pg-test-${crypto.randomUUID()}@example.com`;
-    const user = await upsertUser(handle.db, { name: 'Test', email });
-    const again = await upsertUser(handle.db, { name: 'Renamed', email, color: 'blue' });
-    expect(again.id).toBe(user.id);
-    expect(again.name).toBe('Renamed');
-    expect(again.createdAt).toBeInstanceOf(Date);
+      const [row] = await handle.db
+        .select({ n: count() })
+        .from(users)
+        .where(eq(users.email, email));
+      expect(row?.n).toBe(1);
 
-    const [row] = await handle.db.select({ n: count() }).from(users).where(eq(users.email, email));
-    expect(row?.n).toBe(1);
+      await expect(
+        handle.db.transaction(async (tx) => {
+          await tx.update(users).set({ name: 'Rolled back' }).where(eq(users.id, user.id));
+          throw new Error('rollback');
+        }),
+      ).rejects.toThrow('rollback');
+      const [after] = await handle.db.select().from(users).where(eq(users.id, user.id));
+      expect(after?.name).toBe('Renamed');
 
-    await expect(
-      handle.db.transaction(async (tx) => {
-        await tx.update(users).set({ name: 'Rolled back' }).where(eq(users.id, user.id));
-        throw new Error('rollback');
-      }),
-    ).rejects.toThrow('rollback');
-    const [after] = await handle.db.select().from(users).where(eq(users.id, user.id));
-    expect(after?.name).toBe('Renamed');
-
-    await handle.db.delete(users).where(eq(users.id, user.id));
+      await handle.db.delete(users).where(eq(users.id, user.id));
+    }
   });
 });

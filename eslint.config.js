@@ -53,6 +53,16 @@ export default tseslint.config(
       'react-refresh/only-export-components': ['warn', { allowExportNames: ['Component'] }],
     },
   },
+  // The service worker: a plain script of its own, run by the browser beside the app.
+  {
+    files: ['apps/web/public/sw.js'],
+    languageOptions: { globals: globals.serviceworker },
+  },
+  // The theme set before the first paint: a plain browser script of its own.
+  {
+    files: ['apps/web/public/theme-init.js'],
+    languageOptions: { globals: globals.browser },
+  },
   // Import boundaries of the web app (apps/web/design-system.md §11).
   {
     files: ['apps/web/src/features/**/*.{ts,tsx}'],

@@ -12,11 +12,11 @@ import { isModKey } from '@/lib/keyboard';
 import { cn, Icon, IconButton, Toolbar, ToolbarDivider } from '@/ui';
 import { useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
-import { useViewerState } from '../state/viewer-state';
+import { isSidePanelOpen, useViewerState } from '../state/viewer-state';
 import { useFindJump } from './hooks/useFindJump';
 import { findCounter, findHits, type FindHit } from './lib/find-hits';
 
-const INPUT_LABEL = 'In dieser Review suchen';
+const INPUT_LABEL = 'In dieser Präsentation suchen';
 
 /**
  * In-review search (BER-176): ⌘F / Ctrl F opens this bar instead of the browser's find. It
@@ -29,7 +29,7 @@ const INPUT_LABEL = 'In dieser Review suchen';
  */
 export function FindBar({ slot = null }: { slot?: HTMLElement | null }) {
   const { slides, slideIndex, threads } = useViewerData();
-  const { threadPanelOpen, deletedPanelOpen, layersPanelOpen } = useViewerState();
+  const sidePanelOpen = isSidePanelOpen(useViewerState());
   const registry = useStageRegistry();
   const jump = useFindJump();
   // `closing`: still shown while it morphs back into the split handle.
@@ -140,7 +140,6 @@ export function FindBar({ slot = null }: { slot?: HTMLElement | null }) {
   };
 
   if (!open) return null;
-  const sidePanelOpen = threadPanelOpen || deletedPanelOpen || layersPanelOpen;
   const none = hits.length === 0;
   const closing = phase === 'closing';
 
@@ -152,8 +151,8 @@ export function FindBar({ slot = null }: { slot?: HTMLElement | null }) {
       onKeyDown={onBarKeyDown}
       className={cn(
         slot
-          ? // Over the controls row, whose controls it may cover on a narrow band.
-            'absolute z-(--z-raised) w-[min(380px,calc(100%-2rem))]'
+          ? // Over the controls row, in the gap its controls leave in the middle (`useHandleRoom`).
+            'absolute z-(--z-raised) w-[min(380px,calc(100%-3.5rem))]'
           : // Above a phone's bottom sheet (same layer, later in the page); left of the side
             // panel from tablet up, like the avatars at the bottom.
             cn(

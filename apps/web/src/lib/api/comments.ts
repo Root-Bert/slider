@@ -1,31 +1,51 @@
-import {
-  isTextStroke,
-  moveDrawing,
-  type Author,
-  type Comment,
-  type CommentReactionKind,
-  type CreateCommentInput,
-  type UpdateCommentInput,
+import type {
+  Author,
+  Comment,
+  CommentReactionKind,
+  CreateCommentInput,
+  MeResponse,
+  UpdateCommentInput,
 } from '@slider/shared';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { useCallback, useSyncExternalStore } from 'react';
 import { api } from '../api-client';
-import { confirmComment, keepPending, pendingReply, withReaction } from './comment-cache';
+import { newCommentId, pendingComment, withQueued, withUpdate } from './comment-cache';
+import {
+  commentOutbox,
+  type CommentAction,
+  type CommentOutcome,
+  type QueuedMedia,
+} from './comment-outbox';
 import { queryKeys } from './keys';
 
+/*
+ * Every change to comments goes through the comment outbox (`comment-outbox.ts`): shown at once
+ * over the server's list, sent in the order made, kept in the browser while the server is out of
+ * reach and sent once it is back. The mutations wait for the server's answer while it answers –
+ * the AI is asked on the saved comment, a refusal is said where it was made – and go on at once
+ * (`{ sent: false }`, the change shown pending) while it does not. `networkMode: 'always'`: the
+ * outbox decides what waits for a connection, not TanStack Query (it would hold them unsent).
+ */
+
 /**
- * Comments of a deck. Changes by others arrive live (BER-104, the viewer's live stream refetches);
- * `live` says the stream is up – polling is then only a slow safety net.
+ * Comments of a deck – with what is queued here laid over them (`withQueued`). Changes by others
+ * arrive live (BER-104, the viewer's live stream refetches); `live` says the stream is up –
+ * polling is then only a slow safety net.
  */
 export function useComments(deckId: string, enabled = true, live = false) {
-  const queryClient = useQueryClient();
-  const key = queryKeys.comments(deckId);
+  const outbox = commentOutbox();
+  const queued = useSyncExternalStore(
+    outbox.subscribe,
+    () => outbox.queued(deckId),
+    () => outbox.queued(deckId),
+  );
+  const select = useCallback((list: Comment[]) => withQueued(list, queued), [queued]);
   return useQuery({
-    queryKey: key,
-    queryFn: async () => {
-      const fresh = await api.get<Comment[]>(`/decks/${deckId}/comments`);
-      // Replies posted while this was loading: keep their placeholders (`useCreateReply`).
-      return keepPending(queryClient.getQueryData<Comment[]>(key), fresh);
-    },
+    queryKey: queryKeys.comments(deckId),
+    // A stored answer as it is: the query tells it by identity (`isStoredAnswer`) – with
+    // comments of its own already, it keeps those rather than take an older list.
+    queryFn: () => api.get<Comment[]>(`/decks/${deckId}/comments`),
+    select,
     enabled,
     refetchInterval: live ? 120_000 : 15_000,
   });
@@ -38,206 +58,201 @@ export function useComments(deckId: string, enabled = true, live = false) {
  */
 export function useInvalidateDeckFeedback(deckId: string) {
   const queryClient = useQueryClient();
-  return () =>
-    Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.comments(deckId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.deck(deckId), exact: true }),
-    ]);
+  return () => invalidateDeckFeedback(queryClient, deckId);
 }
 
-export function useCreateComment(deckId: string) {
+const invalidateDeckFeedback = (client: QueryClient, deckId: string) =>
+  Promise.all([
+    client.invalidateQueries({ queryKey: queryKeys.comments(deckId) }),
+    client.invalidateQueries({ queryKey: queryKeys.deck(deckId), exact: true }),
+  ]);
+
+/**
+ * The server took `action`: its answer goes into the query cache, which the outbox lays what is
+ * still queued over. Once nothing of the deck is left to send (`settled`), its comments and the
+ * deck are asked for anew – a recording or a delete changes the storage used too.
+ */
+export function storeCommentAnswer(
+  client: QueryClient,
+  deckId: string,
+  action: CommentAction,
+  answer: Comment | null,
+  settled = true,
+): void {
+  client.setQueryData<Comment[]>(queryKeys.comments(deckId), (current) => {
+    if (!current) return current;
+    if (action.type === 'delete') {
+      return current.flatMap((comment) => {
+        if (comment.parentId === action.commentId) return [];
+        if (comment.id !== action.commentId) return [comment];
+        return action.keepDrawing ? [{ ...comment, body: '', media: null, images: [] }] : [];
+      });
+    }
+    if (!answer) return current;
+    return current.some((comment) => comment.id === answer.id)
+      ? current.map((comment) => (comment.id === answer.id ? answer : comment))
+      : [...current, answer];
+  });
+  if (!settled) return;
+  void invalidateDeckFeedback(client, deckId);
+  if (action.type === 'delete' || (action.type === 'create' && action.media))
+    void client.invalidateQueries({ queryKey: [...queryKeys.deck(deckId), 'media-usage'] });
+}
+
+/** The deck's comments as shown: the cache with what is queued laid over it. */
+function shownComments(client: QueryClient, deckId: string): Comment[] {
+  return withQueued(
+    client.getQueryData<Comment[]>(queryKeys.comments(deckId)) ?? [],
+    commentOutbox().queued(deckId),
+  );
+}
+
+/**
+ * Queues an action of the signed-in account on the deck's comments; resolves with what became of
+ * it: the server's answer (in the cache), or held for later (shown pending meanwhile).
+ */
+function useSendComment(deckId: string) {
   const queryClient = useQueryClient();
-  const invalidate = useInvalidateDeckFeedback(deckId);
+  return async (
+    action: CommentAction,
+    options?: { shown?: boolean; userId?: string },
+  ): Promise<CommentOutcome> => {
+    const userId =
+      options?.userId ?? queryClient.getQueryData<MeResponse>(queryKeys.me)?.user?.id ?? 'me';
+    const outcome = await commentOutbox().enqueue(deckId, userId, action, options).done;
+    // Stored by the outbox already (`installEditOutbox`), refetched once the deck has nothing left
+    // to send – here again for an outbox without the app's query cache (tests), not refetched.
+    if (outcome.sent) storeCommentAnswer(queryClient, deckId, action, outcome.answer, false);
+    return outcome;
+  };
+}
+
+/**
+ * A new comment (root or reply, text or marks): saved when the server answers, the saved one
+ * returned. Held for later (no connection), it goes on at once with the comment as it will be –
+ * shown pending until it is saved. `shown`: shown at once (a reply), not only once it is held –
+ * a new comment's draft shows it until then.
+ */
+export function useCreateComment(deckId: string, author: Author, { shown = false } = {}) {
+  const send = useSendComment(deckId);
   return useMutation({
-    mutationFn: (input: CreateCommentInput) =>
-      api.post<Comment>(`/decks/${deckId}/comments`, input),
-    onSuccess: (comment) => {
-      // The live stream's refetch may have brought it in already.
-      queryClient.setQueryData<Comment[]>(queryKeys.comments(deckId), (current = []) => [
-        ...current.filter((existing) => existing.id !== comment.id),
-        comment,
-      ]);
-      void invalidate();
+    networkMode: 'always',
+    mutationFn: async (input: CreateCommentInput) => {
+      const withId = { ...input, id: input.id ?? newCommentId() };
+      const comment = pendingComment(withId, deckId, author);
+      const outcome = await send(
+        { type: 'create', comment, input: withId },
+        { shown, userId: author.id },
+      );
+      return (outcome.sent ? outcome.answer : null) ?? comment;
     },
   });
 }
 
 /**
- * Posts a reply with an optimistic placeholder, so it shows in the thread immediately. Errors
- * remove only the placeholder (polling may have changed the list meanwhile).
+ * A reply: shown in the thread at once (pending until saved), so the field clears right away. A
+ * refusal says why where it was sent.
  */
 export function useCreateReply(deckId: string, author: Author) {
-  const queryClient = useQueryClient();
-  const invalidate = useInvalidateDeckFeedback(deckId);
-  const key = queryKeys.comments(deckId);
-  const drop = (id: string) =>
-    queryClient.setQueryData<Comment[]>(key, (current = []) =>
-      current.filter((comment) => comment.id !== id),
-    );
+  const create = useCreateComment(deckId, author, { shown: true });
   return useMutation({
+    networkMode: 'always',
     mutationFn: ({ input }: { input: CreateCommentInput; root: Comment }) =>
-      api.post<Comment>(`/decks/${deckId}/comments`, input),
-    onMutate: async ({ input, root }) => {
-      await queryClient.cancelQueries({ queryKey: key });
-      const pending = pendingReply(input, root, author);
-      queryClient.setQueryData<Comment[]>(key, (current = []) => [...current, pending]);
-      return { tempId: pending.id };
-    },
-    onSuccess: (saved, _variables, context) => {
-      queryClient.setQueryData<Comment[]>(key, (current = []) =>
-        confirmComment(current, context.tempId, saved),
-      );
-    },
-    onError: (_error, _variables, context) => {
-      if (context) drop(context.tempId);
-    },
-    onSettled: invalidate,
+      create.mutateAsync(input),
   });
 }
 
-/** The comment as the server will return it after `input` (mirrors `updateComment`). */
-function withUpdate(
-  comment: Comment,
-  { textBox, anchor: box, move, removeMarks, addStrokes, ...input }: UpdateCommentInput,
-): Comment {
-  if (move) return { ...moveDrawing(comment, move.dx, move.dy), ...input };
-  const current = comment.anchor;
-  if (addStrokes && current.type === 'rect')
-    return {
+/**
+ * A media comment written offline (a recording, pictures): kept with its files in the browser and
+ * sent once the server can be reached – shown pending at once, playable from what was recorded.
+ */
+export function useQueueMediaComment(deckId: string, author: Author) {
+  const send = useSendComment(deckId);
+  return async (input: CreateCommentInput, media: QueuedMedia): Promise<Comment> => {
+    const withId = { ...input, id: input.id ?? newCommentId() };
+    const comment = pendingComment(withId, deckId, author);
+    const { recording } = media;
+    const shown: Comment = {
       ...comment,
-      ...input,
-      strokes: [...comment.strokes, ...addStrokes.strokes],
-      anchor: { ...current, rect: addStrokes.rect },
+      media: recording && {
+        id: `${withId.id}-recording`,
+        kind: recording.kind,
+        url: URL.createObjectURL(recording.blob),
+        mimeType: recording.mimeType,
+        sizeBytes: recording.blob.size,
+        durationMs: recording.durationMs,
+        peaks: recording.peaks,
+        transcript: null,
+        transcriptStatus: 'none',
+        transcriptSummary: null,
+      },
+      images: media.images.map((image, index) => ({
+        id: `${withId.id}-image-${index}`,
+        url: URL.createObjectURL(image),
+        mimeType: image.type || 'image/png',
+        sizeBytes: image.size,
+      })),
     };
-  if (removeMarks) {
-    const { pin } = removeMarks;
-    const anchor =
-      pin && current.type === 'rect'
-        ? { type: 'point' as const, point: pin, shapeRef: current.shapeRef }
-        : current;
-    return { ...comment, ...input, strokes: [], anchor };
-  }
-  // A box moved without resizing takes its drawing along (like the API).
-  if (
-    box &&
-    current.type === 'rect' &&
-    Math.abs(box.rect.w - current.rect.w) < 1e-6 &&
-    Math.abs(box.rect.h - current.rect.h) < 1e-6
-  ) {
-    const { strokes } = moveDrawing(
-      comment,
-      box.rect.x - current.rect.x,
-      box.rect.y - current.rect.y,
+    const outcome = await send(
+      { type: 'create', comment: shown, input: withId, media },
+      { userId: author.id },
     );
-    return { ...comment, ...input, anchor: box, strokes };
-  }
-  const next = { ...comment, ...input, ...(box ? { anchor: box } : {}) };
-  const text = textBox && comment.strokes.find(isTextStroke);
-  if (!textBox || !text) return next;
-  const { anchor } = comment;
-  const followsText =
-    anchor.type === 'rect' &&
-    (['x', 'y', 'w', 'h'] as const).every((key) => Math.abs(anchor.rect[key] - text[key]) < 1e-6);
-  return {
-    ...next,
-    strokes: comment.strokes.map((stroke) => (stroke === text ? { ...text, ...textBox } : stroke)),
-    anchor: followsText ? { ...anchor, rect: textBox } : anchor,
+    return (outcome.sent ? outcome.answer : null) ?? shown;
   };
 }
 
 export function useUpdateComment(deckId: string) {
   const queryClient = useQueryClient();
-  const invalidate = useInvalidateDeckFeedback(deckId);
+  const send = useSendComment(deckId);
   return useMutation({
-    mutationFn: ({ commentId, ...input }: UpdateCommentInput & { commentId: string }) =>
-      api.patch<Comment>(`/comments/${commentId}`, input),
-    // Optimistic: status toggles must feel instant.
-    onMutate: async ({ commentId, ...input }) => {
-      const key = queryKeys.comments(deckId);
-      await queryClient.cancelQueries({ queryKey: key });
-      const previous = queryClient
-        .getQueryData<Comment[]>(key)
-        ?.find((comment) => comment.id === commentId);
-      queryClient.setQueryData<Comment[]>(key, (current = []) =>
-        current.map((comment) => (comment.id === commentId ? withUpdate(comment, input) : comment)),
-      );
-      return { previous };
+    networkMode: 'always',
+    // Shown at once (status toggles must feel instant); a refusal takes it back by itself.
+    mutationFn: async ({ commentId, ...input }: UpdateCommentInput & { commentId: string }) => {
+      const before = shownComments(queryClient, deckId).find((comment) => comment.id === commentId);
+      const outcome = await send({ type: 'update', commentId, input });
+      if (outcome.sent && outcome.answer) return outcome.answer;
+      // Held for later: the comment as it will be.
+      if (!before) throw new Error('Diesen Kommentar gibt es nicht (mehr).');
+      return withUpdate(before, input);
     },
-    // Roll back only this comment: other optimistic updates running meanwhile stay.
-    onError: (_error, { commentId }, context) => {
-      const previous = context?.previous;
-      if (!previous) return;
-      queryClient.setQueryData<Comment[]>(queryKeys.comments(deckId), (current = []) =>
-        current.map((comment) => (comment.id === commentId ? previous : comment)),
-      );
-    },
-    onSettled: invalidate,
   });
 }
 
 /**
- * Sets one's own reaction to a comment (👍 / 👎 / egal), `null` takes it back. Optimistic like
- * status toggles; a failure restores the comment as it was.
+ * Sets one's own reaction to a comment (👍 / 👎 / egal), `null` takes it back. Shown at once like
+ * status toggles; a refusal takes it back.
  */
 export function useReactToComment(deckId: string, author: Author) {
-  const queryClient = useQueryClient();
-  const key = queryKeys.comments(deckId);
+  const send = useSendComment(deckId);
   return useMutation({
+    networkMode: 'always',
     mutationFn: ({ commentId, kind }: { commentId: string; kind: CommentReactionKind | null }) =>
-      api.put<Comment>(`/comments/${commentId}/reaction`, { kind }),
-    onMutate: async ({ commentId, kind }) => {
-      await queryClient.cancelQueries({ queryKey: key });
-      const previous = queryClient
-        .getQueryData<Comment[]>(key)
-        ?.find((comment) => comment.id === commentId);
-      queryClient.setQueryData<Comment[]>(key, (current = []) =>
-        current.map((comment) =>
-          comment.id === commentId ? withReaction(comment, author, kind) : comment,
-        ),
-      );
-      return { previous };
-    },
-    onError: (_error, { commentId }, context) => {
-      const previous = context?.previous;
-      if (!previous) return;
-      queryClient.setQueryData<Comment[]>(key, (current = []) =>
-        current.map((comment) => (comment.id === commentId ? previous : comment)),
-      );
-    },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
+      send({ type: 'react', commentId, kind, author }, { userId: author.id }),
   });
 }
 
 /** Deletes a drawing the eraser touched: it leaves the slide at once, and comes back on errors. */
 export function useEraseDrawing(deckId: string) {
-  const queryClient = useQueryClient();
-  const invalidate = useInvalidateDeckFeedback(deckId);
-  const key = queryKeys.comments(deckId);
+  const send = useSendComment(deckId);
   return useMutation({
-    mutationFn: (commentId: string) => api.delete(`/comments/${commentId}`),
-    onMutate: async (commentId) => {
-      await queryClient.cancelQueries({ queryKey: key });
-      const previous = queryClient
-        .getQueryData<Comment[]>(key)
-        ?.find((comment) => comment.id === commentId);
-      queryClient.setQueryData<Comment[]>(key, (current = []) =>
-        current.filter((comment) => comment.id !== commentId),
-      );
-      return { previous };
-    },
-    onError: (_error, _commentId, context) => {
-      const previous = context?.previous;
-      if (previous)
-        queryClient.setQueryData<Comment[]>(key, (current = []) => [...current, previous]);
-    },
-    onSettled: invalidate,
+    networkMode: 'always',
+    mutationFn: (commentId: string) => send({ type: 'delete', commentId }),
+  });
+}
+
+/** Makes a recording's transcript anew (it failed); the result arrives with the live comments. */
+export function useRetryTranscript(deckId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (mediaId: string) => api.post(`/media/${mediaId}/transcript`),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.comments(deckId) }),
   });
 }
 
 export function useDeleteComment(deckId: string) {
-  const queryClient = useQueryClient();
-  const invalidate = useInvalidateDeckFeedback(deckId);
+  const send = useSendComment(deckId);
   return useMutation({
+    networkMode: 'always',
     /** `keepDrawing`: only the comment goes, its drawing / text on the slide stays. */
     mutationFn: ({
       commentId,
@@ -245,11 +260,6 @@ export function useDeleteComment(deckId: string) {
     }: {
       commentId: string;
       keepDrawing?: boolean;
-    }) => api.delete(`/comments/${commentId}${keepDrawing ? '?keep=drawing' : ''}`),
-    onSuccess: async () => {
-      // Deleting a voice or video comment (or a thread with some) frees recording storage.
-      void queryClient.invalidateQueries({ queryKey: [...queryKeys.deck(deckId), 'media-usage'] });
-      await invalidate();
-    },
+    }) => send({ type: 'delete', commentId, keepDrawing }),
   });
 }

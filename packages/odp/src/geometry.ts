@@ -1,5 +1,5 @@
 import { cm, lengthToCm } from './units';
-import { attr, childrenOf, setAttr, tagOf, type XmlNode } from './xml';
+import { attr, childrenOf, removeAttr, setAttr, tagOf, type XmlNode } from './xml';
 
 /** A box in centimetres on the page. */
 export interface CmBox {
@@ -10,6 +10,13 @@ export interface CmBox {
 }
 
 const LINE_TAGS = new Set(['draw:line', 'draw:connector', 'draw:measure']);
+
+/** A point turned by `angle` (radians) around the origin – ODF's way: counter-clockwise on a y-down page. */
+function rotated(point: { x: number; y: number }, angle: number): { x: number; y: number } {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  return { x: point.x * cos + point.y * sin, y: -point.x * sin + point.y * cos };
+}
 
 /** Applies `draw:transform` (rotate, translate, scale; skew is ignored) to a point. */
 function transformPoint(
@@ -22,10 +29,7 @@ function transformPoint(
     const values = (args ?? '').trim().split(/[\s,]+/);
     if (kind === 'rotate') {
       const angle = Number(values[0]) || 0;
-      // ODF rotates counter-clockwise on a y-down page.
-      const cos = Math.cos(angle);
-      const sin = Math.sin(angle);
-      [x, y] = [x * cos + y * sin, -x * sin + y * cos];
+      ({ x, y } = rotated({ x, y }, angle));
     } else if (kind === 'translate') {
       x += lengthToCm(values[0]) ?? 0;
       y += lengthToCm(values[1] ?? '0') ?? 0;
@@ -127,9 +131,136 @@ export function shift(node: XmlNode, dx: number, dy: number): void {
   shiftLength(node, 'svg:y', dy);
 }
 
+/**
+ * Moves an element by `dx`/`dy` centimetres wherever its place is kept: a turned (transformed)
+ * shape by one more `translate` at the end of its `draw:transform`, else as `shift` does.
+ */
+export function moveBy(node: XmlNode, dx: number, dy: number): void {
+  const tag = tagOf(node);
+  if (tag === 'draw:g') {
+    for (const child of childrenOf(node)) if (tagOf(child)) moveBy(child, dx, dy);
+    return;
+  }
+  const transform = attr(node, 'draw:transform');
+  if (transform && !(tag && LINE_TAGS.has(tag))) {
+    setAttr(node, 'draw:transform', `${transform} translate (${cm(dx)} ${cm(dy)})`);
+    return;
+  }
+  shift(node, dx, dy);
+}
+
 export function setBox(node: XmlNode, box: CmBox): void {
   setAttr(node, 'svg:x', cm(box.x));
   setAttr(node, 'svg:y', cm(box.y));
   setAttr(node, 'svg:width', cm(Math.max(0.01, box.w)));
   setAttr(node, 'svg:height', cm(Math.max(0.01, box.h)));
+}
+
+/** An element as the editor moves, sizes and turns it: its box before the turn, and the turn. */
+export interface Frame {
+  box: CmBox;
+  /** Degrees clockwise as seen, around the box's centre, 0 ≤ rotation < 360. */
+  rotation: number;
+}
+
+/** Below this (degrees) a turn is none. */
+const NO_TURN = 0.01;
+
+const normalized = (degrees: number): number => {
+  const turn = ((degrees % 360) + 360) % 360;
+  return turn < NO_TURN || 360 - turn < NO_TURN ? 0 : Number(turn.toFixed(4));
+};
+
+/**
+ * `draw:transform` as LibreOffice writes a turned shape – `rotate (a) translate (x y)`, maybe
+ * after a `skewX` of nothing – as its angle (radians) and offset (cm); `null` for anything else.
+ */
+function turnOf(transform: string): { angle: number; x: number; y: number } | null {
+  let angle = 0;
+  // Summed moves; `moved` once there is one (TS narrows a `let … | null` to `null` in the loop).
+  let moved = false;
+  let dx = 0;
+  let dy = 0;
+  const steps = [...transform.matchAll(/(\w+)\s*\(([^)]*)\)/g)];
+  const rest = transform.replace(/(\w+)\s*\(([^)]*)\)/g, '').trim();
+  if (rest) return null;
+  for (const [, kind, args] of steps) {
+    const values = (args ?? '').trim().split(/[\s,]+/);
+    // Only further moves after the move (`moveBy` adds one each time).
+    if (moved && kind !== 'translate') return null;
+    if (kind === 'skewX' || kind === 'skewY') {
+      if (Math.abs(Number(values[0]) || 0) > 1e-9) return null;
+    } else if (kind === 'rotate') {
+      angle += Number(values[0]) || 0;
+    } else if (kind === 'translate') {
+      const x = lengthToCm(values[0]);
+      const y = lengthToCm(values[1] ?? '0');
+      if (x == null || y == null) return null;
+      moved = true;
+      dx += x;
+      dy += y;
+    } else return null;
+  }
+  return moved ? { angle, x: dx, y: dy } : null;
+}
+
+/**
+ * The element's frame when the editor can move it: placed plainly, or a shape only turned (not
+ * skewed or scaled); `null` otherwise. Groups and lines are never turned.
+ */
+export function frameOf(node: XmlNode): Frame | null {
+  const tag = tagOf(node);
+  const transform = attr(node, 'draw:transform');
+  // A group: the box round its parts, each of which has a place (a turned one too).
+  if (tag === 'draw:g') {
+    const box = groupPlaced(node) ? boxOf(node) : null;
+    return box && { box, rotation: 0 };
+  }
+  if (!transform || (tag && LINE_TAGS.has(tag))) {
+    const box = hasPlainGeometry(node) ? boxOf(node) : null;
+    return box && { box, rotation: 0 };
+  }
+  const w = lengthToCm(attr(node, 'svg:width'));
+  const h = lengthToCm(attr(node, 'svg:height'));
+  const turn = turnOf(transform);
+  if (w == null || h == null || !turn) return null;
+  const centre = rotated({ x: w / 2, y: h / 2 }, turn.angle);
+  return {
+    box: { x: centre.x + turn.x - w / 2, y: centre.y + turn.y - h / 2, w, h },
+    rotation: normalized((-turn.angle * 180) / Math.PI),
+  };
+}
+
+/** Whether every part of a group has a place `frameOf` reads (groups in it too). */
+function groupPlaced(node: XmlNode): boolean {
+  const children = childrenOf(node).filter((child) => tagOf(child));
+  return (
+    children.length > 0 &&
+    children.every((child) => (tagOf(child) === 'draw:g' ? groupPlaced(child) : frameOf(child)))
+  );
+}
+
+/** Places a shape (not a group or line) by its frame: a turn as `draw:transform`, else plainly. */
+export function setFrame(node: XmlNode, { box, rotation }: Frame): void {
+  const turn = normalized(rotation);
+  if (turn === 0) {
+    removeAttr(node, 'draw:transform');
+    setBox(node, box);
+    return;
+  }
+  const w = Math.max(0.01, box.w);
+  const h = Math.max(0.01, box.h);
+  const angle = (-turn * Math.PI) / 180;
+  const centre = rotated({ x: w / 2, y: h / 2 }, angle);
+  const x = box.x + w / 2 - centre.x;
+  const y = box.y + h / 2 - centre.y;
+  removeAttr(node, 'svg:x');
+  removeAttr(node, 'svg:y');
+  setAttr(node, 'svg:width', cm(w));
+  setAttr(node, 'svg:height', cm(h));
+  setAttr(
+    node,
+    'draw:transform',
+    `rotate (${Number(angle.toFixed(10))}) translate (${cm(x)} ${cm(y)})`,
+  );
 }

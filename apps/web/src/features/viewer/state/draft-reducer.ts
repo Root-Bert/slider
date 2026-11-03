@@ -42,14 +42,20 @@ export function draftHasContent(draft: Draft | null): boolean {
 /**
  * The action would start another draft – or drop the text written on the slide – while the open
  * one has content: it is ignored (the click only makes its slide active), and the composer is
- * nudged to say why. Sending or discarding it first is up to the person.
+ * nudged to say why. Sending or discarding it first is up to the person. Never a box for the AI:
+ * whatever takes its place sends it first (`AiBoxComposer`, as it closes).
  */
 export function keepsDraft(draft: Draft | null, action: ViewerAction): boolean {
-  if (!draft || !draftHasContent(draft)) return false;
+  if (!draft || draft.aiBox !== undefined || !draftHasContent(draft)) return false;
   switch (action.type) {
     case 'anchorPlaced':
-      // On the same slide the mark moves – unless that would drop a text box with text in it.
-      return draft.slideId !== action.slideId || !!draft.textBox?.text.trim();
+      // On the same slide the mark moves – unless that would drop a text box with text in it, or
+      // turn a comment into a box for the AI.
+      return (
+        draft.slideId !== action.slideId ||
+        !!draft.textBox?.text.trim() ||
+        action.aiBox !== undefined
+      );
     case 'textBoxPlaced':
     case 'strokeAdded':
       return draft.slideId !== action.slideId;
@@ -69,8 +75,9 @@ export function draftReducer(draft: Draft | null, action: ViewerAction): Draft |
       return !draft || !!draft.held === action.held ? draft : { ...draft, held: action.held };
     case 'anchorPlaced':
       // Placing a mark on another slide starts over; on the same slide the drawing is kept
-      // (a text box makes way – the mark is the anchor now).
-      if (draft?.slideId === action.slideId)
+      // (a text box makes way – the mark is the anchor now). A box for the AI moves as itself;
+      // another one (or a comment in its place) starts over – nothing of the one before in it.
+      if (draft?.slideId === action.slideId && draft.aiBox === action.aiBox)
         return { ...draft, anchor: action.anchor, anchorFromStrokes: false, textBox: null };
       return {
         slideId: action.slideId,
@@ -80,9 +87,11 @@ export function draftReducer(draft: Draft | null, action: ViewerAction): Draft |
         undone: [],
         textBox: null,
         commentId: null,
+        ...(action.aiBox === undefined ? {} : { aiBox: action.aiBox }),
+        ...(action.aiThreadId === undefined ? {} : { aiThreadId: action.aiThreadId }),
       };
     case 'textBoxPlaced': {
-      const same = draft?.slideId === action.slideId ? draft : null;
+      const same = draft?.slideId === action.slideId && draft.aiBox === undefined ? draft : null;
       const textBox: TextBoxDraft = {
         ...action.box,
         text: action.text ?? same?.textBox?.text ?? '',
@@ -122,7 +131,7 @@ export function draftReducer(draft: Draft | null, action: ViewerAction): Draft |
     }
     case 'strokeAdded': {
       const base: Draft =
-        draft?.slideId === action.slideId
+        draft?.slideId === action.slideId && draft.aiBox === undefined
           ? draft
           : {
               slideId: action.slideId,

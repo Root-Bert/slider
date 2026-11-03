@@ -1,208 +1,644 @@
-import type { EditableElement } from '@slider/shared';
+import type { EditableElement, FrameShape, Rect } from '@slider/shared';
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
-import { flushSync } from 'react-dom';
-import { accentAlpha } from '@/lib/accent';
-import { useUploadEditImage } from '@/lib/api';
-import { AutosizeTextarea, Avatar, Button, cn, Icon, IconButton, useIsNarrow } from '@/ui';
+import { createPortal, flushSync } from 'react-dom';
+import { useRemoveBackground, useUploadEditImage } from '@/lib/api';
+import { tabStep } from '@/lib/dom';
+import { OFFLINE_HINT } from '@/lib/offline';
+import {
+  AutosizeTextarea,
+  Avatar,
+  Button,
+  cn,
+  DeleteButton,
+  Icon,
+  IconButton,
+  useIsNarrow,
+  type IconName,
+} from '@/ui';
 import { useFloatingFollow } from '../comments/hooks/useFloatingFollow';
-import { denormalizeRect, placePopover, type Placement } from '../lib/geometry';
+import { usePushAside } from '../hooks/usePushAside';
+import { denormalizeRect, placeBelowOrAbove, placePopover, type Placement } from '../lib/geometry';
 import { useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerToast } from '../state/viewer-toast';
 import { useEditing } from './editing-context';
-import { elementLabel } from './lib/element-label';
+import { usePreviewOf } from './preview-store';
+import { elementLabel, lockButton, lockOperations } from './lib/element-label';
+import { seenOnPlane } from './layers/seen-on-plane';
 import { PhotoCredit } from './photos/PhotoCredit';
+import { GenerateImage } from './photos/GenerateImage';
+import { photoSearchTakesTab } from './photos/photo-search-tab';
 import { StockPhotoSearch } from './photos/StockPhotoSearch';
-import { keepFocus, TEXT_TOOLBAR_ATTR } from './live/model';
-import { StyleControls } from './StyleControls';
+import { typedAhead } from './typed-ahead';
+import { KIND_TABS, setPickedTab, usePickedTab, type PanelTab } from './panel-tab';
+import { canMove, keepFocus, TEXT_TOOLBAR_ATTR } from './live/model';
+import { FillControls } from './fills/FillControls';
+import { EffectControls } from './fills/EffectControls';
+import { BorderControls, CornerControls, HeadControls, TextControls } from './StyleControls';
 import { useAutoZoom } from './useAutoZoom';
+import { PlaceholderControl } from '../template/PlaceholderControl';
+import { ArrangeControls } from './ArrangeControls';
+import { ImageFitControls } from './ImageFitControls';
+import { useShownBox } from './hooks/useMoveElements';
+import { shownRect, unionRect } from './lib/group-layout';
+import { ShapeButtons, type FrameKind } from './InsertFrameChooser';
+import { ElementThumb } from './compose/SlideCompositor';
 
 const IMAGE_TYPES = 'image/png,image/jpeg,image/gif,image/webp';
 
+const TABS: { id: PanelTab; icon: IconName; label: string }[] = [
+  { id: 'text', icon: 'textFields', label: 'Text' },
+  { id: 'fill', icon: 'formatColorFill', label: 'Aussehen' },
+  { id: 'image', icon: 'image', label: 'Bild' },
+  { id: 'arrange', icon: 'alignCenter', label: 'Anordnen' },
+];
+
+/** The tabs an element has: what can be changed on it. */
+function tabsOf(element: EditableElement): PanelTab[] {
+  return TABS.map((tab) => tab.id).filter((id) => {
+    if (id === 'text') return element.paragraphs !== null;
+    if (id === 'fill') return element.look !== null;
+    // Locked, it stays where it is.
+    if (id === 'arrange') return canMove(element);
+    return element.kind === 'image';
+  });
+}
+
 /**
- * The panel beside the picked element while editing (BER-181), placed and styled like the
- * comment composer beside its mark: font, size, B/I/U, colour and alignment of a text, fill and
- * border of a shape, the text of one that cannot be typed on the slide, swapping a picture,
- * deleting. It follows the element while the stage scrolls, resizes or the element is dragged.
+ * Two things show for the picked element while editing (BER-181): under it (over it when there is
+ * no room) a small row of what can be changed on it – the text, the fill and border, the
+ * picture –, and beside it the panel with that one part, like the comment composer beside its
+ * mark; with no room beside it (a wide element), at the top right where the comment panel opens
+ * (`SidePanel`). Both follow the element while the stage scrolls, resizes or the element is
+ * dragged; the panel can be pushed aside by its name. The part stays picked for the next element
+ * that has it.
  */
 export function FormatBar() {
   const editing = useEditing();
+  const tab = usePickedTab();
   useAutoZoom();
-  const element = editing.active && !editing.layers ? editing.selectedElement : null;
+  const picked = editing.active ? editing.selectedElement : null;
+  // In the layers view only once opened (a double click): a click picks the layer, for its list.
+  const element = picked && (!editing.layers || editing.opened === picked.id) ? picked : null;
   const slideId = editing.selection?.slideId;
+  // Elements picked together: the same panel, for all of them – what they share (`group`).
+  const group = editing.active && !editing.layers ? editing.group : null;
+  const members = group
+    ? editing.elementsOf(group.slideId).filter((item) => group.elementIds.includes(item.id))
+    : [];
+  if (group && members.length > 1) {
+    return (
+      <FormatBarView
+        key={`group:${group.elementIds.join(',')}`}
+        element={members.find((item) => item.movable) ?? members[0]!}
+        slideId={group.slideId}
+        group={members}
+        tab={tab}
+        onTab={setPickedTab}
+      />
+    );
+  }
   if (!element || !slideId) return null;
   // Remounted per element: a text field's draft does not carry over.
-  return <FormatBarView key={element.id} element={element} slideId={slideId} />;
+  return (
+    <FormatBarView
+      key={element.id}
+      element={element}
+      slideId={slideId}
+      tab={tab}
+      onTab={setPickedTab}
+    />
+  );
 }
 
-function FormatBarView({ element, slideId }: { element: EditableElement; slideId: string }) {
+/**
+ * While a drawn frame waits for its kind (`KindChooser`): the panel the kind picked there opens
+ * with, where it will be – shown, not used yet. A click on it takes that kind (`onTake`), typing
+ * on the kind fills it (`typed`, a picture's search). „Auswählen“ shows the panel of the elements
+ * it would pick (`group`, or the one alone on its part picked last); „Form“ offers the shapes on
+ * top, one taken at once (`onShape`).
+ */
+export function FramePanelPreview({
+  element,
+  group,
+  slideId,
+  kind,
+  rect,
+  typed,
+  onTake,
+  onShape,
+  onShapeShown,
+}: {
+  element: EditableElement;
+  /** „Auswählen“ of several elements: theirs. */
+  group?: readonly EditableElement[];
+  slideId: string;
+  kind: FrameKind;
+  /** The frame: the panel goes beside it. */
+  rect: Rect;
+  typed: string;
+  onTake: () => void;
+  onShape?: (shape: FrameShape) => void;
+  /** The shape under the pointer or Tab in „Form“'s panel – the frame shows it meanwhile. */
+  onShapeShown?: (shape: FrameShape | null) => void;
+}) {
+  const picked = usePickedTab();
+  const tab = kind === 'select' ? (group ? 'arrange' : picked) : KIND_TABS[kind];
+  return createPortal(
+    <FormatBarView
+      key={element.id}
+      element={element}
+      group={group}
+      slideId={slideId}
+      tab={tab}
+      onTab={() => {}}
+      framePreview={{ typed, rect, onTake, onShape, onShapeShown }}
+    />,
+    document.body,
+  );
+}
+
+/** A drawn frame's kind chooser (`KindChooser`), while one is open – only ever one. */
+const frameChooser = () => document.querySelector<HTMLElement>('[data-frame-chooser]');
+
+function FormatBarView({
+  element,
+  slideId,
+  tab,
+  onTab,
+  framePreview,
+  group,
+}: {
+  /** Of elements picked together: the one leading a drag of them (`ElementPreview.group`). */
+  element: EditableElement;
+  slideId: string;
+  /** Elements picked together: the panel is theirs, it follows the box round them. */
+  group?: readonly EditableElement[];
+  tab: PanelTab;
+  onTab: (tab: PanelTab) => void;
+  /** Only shown, for a frame not filled yet (`FramePanelPreview`). */
+  framePreview?: {
+    typed: string;
+    rect: Rect;
+    onTake: () => void;
+    onShape?: (shape: FrameShape) => void;
+    onShapeShown?: (shape: FrameShape | null) => void;
+  };
+}) {
   const editing = useEditing();
-  const { viewer, slideIndex } = useViewerData();
+  const { viewer } = useViewerData();
   const registry = useStageRegistry();
   const narrow = useIsNarrow();
   const [large, setLarge] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState<Placement | null>(null);
-  const preview = editing.preview?.elementId === element.id ? editing.preview.rect : null;
-  const height = element.live?.autoGrow ? editing.heightOf(element.id) : null;
-  const rect = preview ?? (height === null ? element.bbox : { ...element.bbox, h: height });
+  const [tabsPlace, setTabsPlace] = useState<Placement | null>(null);
+  const dragged = usePreviewOf(element.id);
+  const shownBox = useShownBox();
+  const aspect = editing.pageSize.width / editing.pageSize.height;
+  const around = group
+    ? unionRect(
+        group.map((item) =>
+          shownRect({ bbox: shownBox(item), rotation: item.rotation, tilt: item.tilt }, aspect),
+        ),
+      )
+    : null;
+  // A frame's preview goes beside the frame (it may be larger than what it encloses).
+  const rect = framePreview
+    ? framePreview.rect
+    : around
+      ? // Dragged together: as far as they have moved.
+        {
+          ...around,
+          x: around.x + (dragged?.group?.dx ?? 0),
+          y: around.y + (dragged?.group?.dy ?? 0),
+        }
+      : (dragged?.rect ?? shownBox(element));
+  const label = group ? `${group.length} Elemente` : elementLabel(element);
+  // The element last copied: the handle shows it (not in a frame's preview).
+  const clip = framePreview ? null : editing.clipboard;
   const { x, y, w, h } = rect;
+  const layers = editing.layers;
+  // Pushed aside by its name, while it is open.
+  const { pushed, handle } = usePushAside();
+  const inFrame = !!framePreview;
 
   useLayoutEffect(() => {
     const panel = ref.current;
     const slide = registry.getSlideElement(slideId);
     if (narrow || !panel || !slide) return;
+    // In the layers view at its plane, as seen in 3D (`LayerStage`) – it follows a turn.
+    const plane = () =>
+      document.querySelector<HTMLElement>(
+        `[data-layer-stage="${CSS.escape(slideId)}"] [data-layer="${CSS.escape(element.id)}"]`,
+      );
     const placeNow = () => {
-      const target = denormalizeRect({ x, y, w, h }, slide.getBoundingClientRect());
-      const next = placePopover(
-        target,
-        { width: panel.offsetWidth, height: panel.offsetHeight },
-        { width: window.innerWidth, height: window.innerHeight },
-      );
-      setPlace((current) =>
-        current &&
-        current.left === next.left &&
-        current.top === next.top &&
-        current.side === next.side
-          ? current
-          : next,
-      );
+      const on = layers ? plane() : null;
+      // On its plane: its own box as seen, cut to what of the slide shows (zoomed in, the frame).
+      const frame = slide.closest('[data-slide-frame]') ?? slide;
+      const target =
+        (on && seenOnPlane(on, { x, y, w, h }, frame.getBoundingClientRect())) ??
+        denormalizeRect({ x, y, w, h }, slide.getBoundingClientRect());
+      const viewport = { width: window.innerWidth, height: window.innerHeight };
+      const row = tabsRef.current;
+      const rowSize = row ? { width: row.offsetWidth, height: row.offsetHeight } : null;
+      const rowAt = rowSize ? placeBelowOrAbove(target, rowSize, viewport) : null;
+      // The row under (or over) the element – its parts, or a new frame's kinds (`KindChooser`) –
+      // is often wider than it: the panel goes beside both, never over the row.
+      const chooser = inFrame ? frameChooser() : null;
+      const rowBox = chooser
+        ? chooser.getBoundingClientRect()
+        : rowAt && rowSize
+          ? {
+              left: rowAt.left,
+              top: rowAt.top,
+              right: rowAt.left + rowSize.width,
+              bottom: rowAt.top + rowSize.height,
+            }
+          : null;
+      const around = rowBox
+        ? {
+            left: Math.min(target.left, rowBox.left),
+            top: Math.min(target.top, rowBox.top),
+            right: Math.max(target.right, rowBox.right),
+            bottom: Math.max(target.bottom, rowBox.bottom),
+          }
+        : target;
+      // Beside them; no room there, at the top right where the comment panel opens.
+      const size = { width: panel.offsetWidth, height: panel.offsetHeight };
+      const besides = placePopover(around, size, viewport);
+      const next: Placement =
+        besides.side === 'below'
+          ? { left: viewport.width - size.width - 12, top: 12, side: 'right' }
+          : besides;
+      const same = (a: Placement | null, b: Placement | null) =>
+        !!a && !!b && a.left === b.left && a.top === b.top && a.side === b.side;
+      setPlace((current) => (same(current, next) ? current : next));
+      setTabsPlace((current) => (same(current, rowAt) ? current : rowAt));
     };
-    // Re-placed before the frame paints, so the panel does not trail its element.
+    // Re-placed before the frame paints, so panel and row do not trail their element.
     const placeAgain = () => flushSync(placeNow);
     placeNow();
     const observer = new ResizeObserver(placeAgain);
     observer.observe(panel);
     observer.observe(slide);
+    if (tabsRef.current) observer.observe(tabsRef.current);
+    // A new frame's kinds row changes size: the panel moves aside with it.
+    const chooser = inFrame ? frameChooser() : null;
+    if (chooser) observer.observe(chooser);
     window.addEventListener('scroll', placeAgain, { capture: true, passive: true });
     window.addEventListener('resize', placeAgain);
+    // The planes turn and spread without a resize: followed frame by frame.
+    let frame = 0;
+    const follow = () => {
+      placeNow();
+      frame = requestAnimationFrame(follow);
+    };
+    if (layers) frame = requestAnimationFrame(follow);
     return () => {
+      cancelAnimationFrame(frame);
       observer.disconnect();
       window.removeEventListener('scroll', placeAgain, { capture: true });
       window.removeEventListener('resize', placeAgain);
     };
-  }, [registry, slideId, narrow, x, y, w, h]);
+  }, [registry, slideId, element.id, layers, narrow, inFrame, x, y, w, h]);
   // Floats after its element, like the composer after its mark.
   useFloatingFollow(ref, narrow ? null : place);
+  useFloatingFollow(tabsRef, narrow ? null : tabsPlace);
 
   const live = element.live;
+  const tabs: PanelTab[] = group
+    ? group.some((item) => item.locked)
+      ? []
+      : ['arrange']
+    : tabsOf(element);
+  // Locked in place (all picked together): unlocked by the same button.
+  const locked = (group ?? [element]).every((item) => item.locked);
+  // The tab picked before, if this element has it – else its first.
+  const shown = tabs.includes(tab) ? tab : tabs[0];
   const { author } = viewer;
-  const index = slideIndex.get(slideId);
-  return (
-    <div
-      ref={ref}
-      role="dialog"
-      aria-label={`${elementLabel(element)} bearbeiten`}
-      data-format-bar=""
-      {...{ [TEXT_TOOLBAR_ATTR]: '' }}
-      onMouseDown={keepFocus}
-      className={cn(
-        'glass-elevated fixed z-(--z-popover) flex animate-pop-in flex-col gap-3 rounded-panel p-3',
-        large ? 'w-[min(720px,calc(100vw-24px))]' : 'w-[min(360px,calc(100vw-24px))]',
-        narrow && 'inset-x-3 bottom-24 w-auto',
-      )}
-      style={
-        {
-          ...(narrow ? {} : { left: place?.left ?? 0, top: place?.top ?? 0 }),
-          visibility: narrow || place ? 'visible' : 'hidden',
-          boxShadow: `inset 0 0 0 1px ${accentAlpha(author.color, 90)}, 0 0 32px ${accentAlpha(author.color, 35)}, var(--shadow-float)`,
-        } as CSSProperties
-      }
-    >
-      <header className="flex items-center gap-2">
-        <Avatar author={author} size={24} />
-        <div className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-xs font-medium text-fg">{elementLabel(element)}</span>
-          <span className="truncate text-caption text-fg-subtle">
-            {index === undefined ? 'Bearbeiten' : `Bearbeiten | Folie ${index + 1}`}
-          </span>
-        </div>
-        <DeleteButton
-          disabled={editing.busy}
-          onDelete={() => void editing.apply([{ type: 'deleteElement', elementId: element.id }])}
-        />
-        <IconButton
-          icon={large ? 'closeFullscreen' : 'openInFull'}
-          label={large ? 'Verkleinern' : 'Vergrößern'}
-          size="sm"
-          active={large}
-          onClick={() => setLarge((open) => !open)}
-        />
-        <IconButton
-          icon="close"
-          label="Fertig (Esc, ⌘↵)"
-          size="sm"
-          onClick={() => editing.select(null)}
-        />
-      </header>
-      {live && <StyleControls element={element} live={live} />}
-      {!live && element.paragraphs !== null && <PlainText element={element} />}
-      {element.kind === 'image' && <SwapImage element={element} slideId={slideId} large={large} />}
+
+  // Tab / ⇧Tab steps through the parts, round and round – instead of the editing tools
+  // (`EditingProvider`): while nothing has the focus, once the pointer was used.
+  useEffect(() => {
+    if (tabs.length < 2 || framePreview) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const step = tabStep(event);
+      if (!step || photoSearchTakesTab(event)) return;
+      const next = tabs[(tabs.indexOf(shown ?? tabs[0]!) + step + tabs.length) % tabs.length];
+      if (!next) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onTab(next);
+    };
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
+  });
+
+  const tabRow = tabs.length > 1 && (
+    <div role="tablist" aria-label="Was bearbeiten" data-panel-tabs="" className="flex gap-1">
+      {TABS.filter((item) => tabs.includes(item.id)).map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          role="tab"
+          aria-selected={shown === item.id}
+          title={item.label}
+          // „Text“ taken again on a text that is picked: typing in it starts (at its end).
+          onClick={() => {
+            if (item.id === 'text' && shown === 'text' && live && !group && !framePreview) {
+              if (editing.textEditing !== element.id) {
+                editing.startText({ slideId, elementId: element.id });
+              }
+            } else onTab(item.id);
+          }}
+          className={cn(
+            'flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-control-sm px-2.5 text-xs font-medium whitespace-nowrap',
+            narrow && 'flex-1',
+            shown === item.id
+              ? 'bg-selected text-fg'
+              : 'text-fg-muted hover:bg-hover hover:text-fg',
+          )}
+        >
+          <Icon name={item.icon} size={16} />
+          <span className={cn(narrow && shown !== item.id && 'sr-only')}>{item.label}</span>
+        </button>
+      ))}
     </div>
+  );
+  return (
+    <>
+      {!narrow && tabRow && !framePreview && (
+        <div
+          ref={tabsRef}
+          data-format-tabs=""
+          {...{ [TEXT_TOOLBAR_ATTR]: '' }}
+          onMouseDown={keepFocus}
+          className="glass-elevated fixed z-(--z-popover) animate-pop-in rounded-panel p-1"
+          style={{
+            left: tabsPlace?.left ?? 0,
+            top: tabsPlace?.top ?? 0,
+            visibility: tabsPlace ? 'visible' : 'hidden',
+          }}
+        >
+          {tabRow}
+        </div>
+      )}
+      <div
+        ref={ref}
+        role="dialog"
+        aria-label={`${label} bearbeiten`}
+        data-format-bar=""
+        {...{ [TEXT_TOOLBAR_ATTR]: '' }}
+        onMouseDown={keepFocus}
+        // A preview: the first click takes the kind, then the panel is the element's own.
+        onPointerDown={
+          framePreview
+            ? (event) => {
+                event.preventDefault();
+                framePreview.onTake();
+              }
+            : undefined
+        }
+        className={cn(
+          'glass-elevated fixed z-(--z-popover) flex animate-pop-in flex-col gap-3 rounded-panel p-3',
+          framePreview && 'cursor-pointer',
+          large ? 'w-[min(720px,calc(100vw-24px))]' : 'w-[min(360px,calc(100vw-24px))]',
+          narrow && 'inset-x-3 bottom-24 w-auto',
+        )}
+        style={
+          {
+            ...(narrow
+              ? {}
+              : {
+                  left: place?.left ?? 0,
+                  top: place?.top ?? 0,
+                  marginLeft: pushed.x,
+                  marginTop: pushed.y,
+                }),
+            visibility: narrow || place ? 'visible' : 'hidden',
+          } as CSSProperties
+        }
+      >
+        <header className="flex items-center gap-2">
+          <Avatar author={author} size={24} />
+          {/* Its name and the indicator after it push the panel aside; the avatar does not. */}
+          <span
+            {...(!narrow && handle)}
+            title={narrow ? undefined : 'Verschieben'}
+            className={cn(
+              'flex min-w-0 flex-1 items-center gap-1 self-stretch',
+              !narrow && 'cursor-grab touch-none select-none active:cursor-grabbing',
+            )}
+          >
+            {clip ? (
+              // Something copied: the handle is the clipboard – the last copy, a click puts it in.
+              <span
+                key={clip.id}
+                title={`Zwischenablage: ${elementLabel(clip)}`}
+                className="flex min-w-0 animate-pop-in items-center gap-1.5 motion-reduce:animate-none"
+              >
+                <Icon name="contentPaste" size={14} className="shrink-0 text-fg-subtle" />
+                <button
+                  type="button"
+                  aria-label={`Einfügen: ${elementLabel(clip)} (⌘V)`}
+                  data-clipboard=""
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={() => editing.pasteCopied()}
+                  className="flex shrink-0 cursor-pointer items-center justify-center rounded-thumb bg-white/90 p-0.5 ring-1 ring-white/20 transition-shadow duration-150 hover:ring-white/60"
+                >
+                  <ElementThumb
+                    element={clip}
+                    size={20}
+                    fallback={<Icon name="contentCopy" size={14} className="text-fg-subtle" />}
+                  />
+                </button>
+                <span className="min-w-0 truncate text-xs font-medium text-fg">{label}</span>
+              </span>
+            ) : (
+              <span className="min-w-0 truncate text-xs font-medium text-fg">{label}</span>
+            )}
+            {!narrow && <Icon name="dragIndicator" size={14} className="shrink-0 text-fg-subtle" />}
+          </span>
+          {!framePreview && (
+            <>
+              {group ? (
+                <IconButton
+                  icon="group"
+                  label="Gruppieren"
+                  title="Gruppieren (⌘G)"
+                  size="sm"
+                  disabled={editing.busy}
+                  onClick={() => editing.groupPicked()}
+                />
+              ) : (
+                element.kind === 'group' &&
+                element.members && (
+                  <IconButton
+                    icon="ungroup"
+                    label="Gruppierung aufheben"
+                    title="Gruppierung aufheben (⇧⌘G)"
+                    size="sm"
+                    disabled={editing.busy}
+                    onClick={() => editing.ungroupPicked()}
+                  />
+                )
+              )}
+              <IconButton
+                {...lockButton(locked)}
+                size="sm"
+                active={locked}
+                disabled={editing.busy}
+                onClick={() => void editing.apply(lockOperations(group ?? [element]))}
+              />
+              <DeleteButton
+                disabled={editing.busy}
+                onDelete={() =>
+                  void editing
+                    .apply(
+                      (group ?? [element]).map((item) => ({
+                        type: 'deleteElement' as const,
+                        elementId: item.id,
+                      })),
+                    )
+                    .then((ok) => ok && group && editing.select(null))
+                }
+              />
+              <IconButton
+                icon={large ? 'closeFullscreen' : 'openInFull'}
+                label={large ? 'Verkleinern' : 'Vergrößern'}
+                size="sm"
+                active={large}
+                onClick={() => setLarge((open) => !open)}
+              />
+              <IconButton
+                icon="close"
+                label="Fertig (Esc, ⌘↵)"
+                size="sm"
+                onClick={() => editing.select(null)}
+              />
+            </>
+          )}
+        </header>
+        {/* „Form“: the shapes, each taken at once – the rest of the panel opens the chooser's. */}
+        {framePreview?.onShape && (
+          <div
+            role="group"
+            aria-label="Form wählen"
+            data-frame-shapes=""
+            className="grid grid-cols-9 gap-0.5"
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <ShapeButtons onPick={framePreview.onShape} onShow={framePreview.onShapeShown} />
+          </div>
+        )}
+        {/* A preview's controls are shown, not used: the panel itself takes the click. */}
+        <div inert={!!framePreview} className="flex flex-col gap-3">
+          {!group && <PlaceholderControl element={element} />}
+          {shown === 'text' && live && <TextControls element={element} live={live} />}
+          {shown === 'text' && live && <FitHeight element={element} />}
+          {shown === 'text' && !live && <PlainText element={element} />}
+          {/* A line has no area: its line and its heads. */}
+          {shown === 'fill' && element.look && !element.line && (
+            <FillControls key={element.id} element={element} />
+          )}
+          {shown === 'fill' && element.look && (
+            <BorderControls element={element} look={element.look} />
+          )}
+          {shown === 'fill' && element.line && (
+            <HeadControls element={element} heads={element.line.heads} />
+          )}
+          {shown === 'fill' && element.cornerRadius !== undefined && (
+            <CornerControls element={element} radius={element.cornerRadius} />
+          )}
+          {shown === 'fill' && element.look && !element.line && (
+            <EffectControls key={`effects:${element.id}`} element={element} />
+          )}
+          {shown === 'image' && (
+            <SwapImage
+              element={element}
+              slideId={slideId}
+              large={large}
+              previewQuery={framePreview?.typed}
+            />
+          )}
+          {shown === 'arrange' && (
+            <ArrangeControls slideId={slideId} elements={group ?? [element]} />
+          )}
+          {narrow && !framePreview && tabRow}
+        </div>
+      </div>
+    </>
   );
 }
 
-/** How long the armed delete button waits for its second click. */
-const ARMED_MS = 3000;
+/** A height off by less than this (of the slide) is the text's: nothing to fit. */
+const FIT_TOLERANCE = 0.003;
 
 /**
- * Deleting takes two clicks: the first turns the button red and wide („Löschen“), the second
- * deletes. Left alone it goes back after a moment.
+ * A text box or shape whose height is not its text's – higher, or lower (one growing with its
+ * text LibreOffice draws as high as it anyway, other programs may not): „Höhe an Text anpassen“
+ * sets the height LibreOffice lays the text out in, padding in (`TextSizeMeasure`, as the
+ * corner's double click fits it). Fitted, it is gone.
  */
-function DeleteButton({ disabled, onDelete }: { disabled: boolean; onDelete: () => void }) {
-  const [armed, setArmed] = useState(false);
-  useEffect(() => {
-    if (!armed) return;
-    const timer = window.setTimeout(() => setArmed(false), ARMED_MS);
-    return () => window.clearTimeout(timer);
-  }, [armed]);
+function FitHeight({ element }: { element: EditableElement }) {
+  const editing = useEditing();
+  const height = editing.textHeightOf(element.id);
+  if (height === null || !element.resizable) return null;
+  const off = height - element.bbox.h;
+  if (Math.abs(off) < FIT_TOLERANCE) return null;
+  const cm = Math.abs(off) * editing.pageSize.height;
   return (
-    <button
-      type="button"
-      aria-label={armed ? 'Wirklich löschen' : 'Löschen'}
-      title={armed ? 'Noch einmal klicken zum Löschen' : 'Löschen'}
-      disabled={disabled}
-      onClick={() => {
-        if (armed) onDelete();
-        else setArmed(true);
-      }}
-      // Armed it is the comment dialog's „Löschen“ (Button `danger`, `sm`).
-      className={cn(
-        'flex h-8 shrink-0 items-center overflow-hidden rounded-control-sm text-body font-medium transition-[background-color,color,padding] duration-200 disabled:pointer-events-none disabled:opacity-40',
-        armed
-          ? 'bg-danger/15 px-3 text-danger hover:bg-danger/25'
-          : 'px-[7px] text-fg-muted hover:bg-hover hover:text-fg',
-      )}
+    <Button
+      size="sm"
+      variant="secondary"
+      icon="expandAll"
+      disabled={editing.busy}
+      title={`Der Rahmen ist ${cm.toFixed(1).replace('.', ',')} cm ${off > 0 ? 'niedriger' : 'höher'} als sein Text.`}
+      onClick={() =>
+        void editing.apply([
+          { type: 'setBox', elementId: element.id, box: { ...element.bbox, h: height } },
+        ])
+      }
     >
-      <Icon name="delete" size={18} />
-      <span
-        className={cn(
-          'whitespace-nowrap transition-[max-width,opacity,margin] duration-200',
-          armed ? 'ml-1.5 max-w-20 opacity-100' : 'max-w-0 opacity-0',
-        )}
-      >
-        Löschen
-      </span>
-    </button>
+      Höhe an Text anpassen
+    </Button>
   );
 }
 
 /**
  * A picture's own controls: another picture from a file, or a stock photo searched right here
- * (when the server has Unsplash) – and whose photo it is, when it is one.
+ * (when the server has Unsplash), its background removed (when the server has rembg) – and whose
+ * photo it is, when it is one.
  */
 function SwapImage({
   element,
   slideId,
   large,
+  previewQuery,
 }: {
   element: EditableElement;
   slideId: string;
   large: boolean;
+  /** A frame's preview (`FramePanelPreview`): what was typed on its kind, searched already. */
+  previewQuery?: string;
 }) {
   const editing = useEditing();
-  const [searching, setSearching] = useState(false);
   const stock = editing.state?.stockPhotos ?? false;
+  const generation = editing.state?.imageGeneration ?? false;
+  const cutOut = editing.state?.cutOut ?? false;
+  // Typed into the new frame (`useInsertFrame`): the search goes on with it – without a photo
+  // service the description of a picture to generate.
+  const [ahead] = useState(() => typedAhead.peek(element.id));
+  useEffect(() => void typedAhead.take(element.id), [element.id]);
+  // The search is open from the start, with photos at random – the editor's keys stay its own
+  // until it is opened by hand (`StockPhotoSearch`); its button folds it away, as „Generieren“
+  // its description.
+  const [open, setOpen] = useState<'search' | 'generate' | null>(
+    stock ? 'search' : (ahead || previewQuery !== undefined) && generation ? 'generate' : null,
+  );
+  const [searchedByHand, setSearchedByHand] = useState(Boolean(ahead));
   const { deck } = useViewerData();
   const toast = useViewerToast();
   const upload = useUploadEditImage(deck.id);
@@ -217,6 +653,22 @@ function SwapImage({
       toast(error instanceof Error ? error.message : 'Das Bild ging nicht hoch.', 'danger');
     }
   };
+  const removeBackground = useRemoveBackground(deck.id);
+  const freeUp = async () => {
+    try {
+      const image = await removeBackground.mutateAsync(element.id);
+      await editing.apply([
+        { type: 'replaceImage', elementId: element.id, imageId: image.imageId },
+      ]);
+    } catch (error) {
+      toast(
+        error instanceof Error ? error.message : 'Der Hintergrund ließ sich nicht entfernen.',
+        'danger',
+      );
+    }
+  };
+  const shown = editing.offline ? null : open;
+  const toggle = (what: 'search' | 'generate') => setOpen((now) => (now === what ? null : what));
   return (
     <>
       <input
@@ -234,37 +686,95 @@ function SwapImage({
         <Button
           size="sm"
           variant="secondary"
-          icon={stock ? 'upload' : 'image'}
+          icon={stock || generation ? 'upload' : 'image'}
           loading={upload.isPending}
-          title="Das neue Bild wird in den Rahmen eingepasst."
+          disabled={editing.offline}
+          title={editing.offline ? OFFLINE_HINT : 'Das neue Bild wird in den Rahmen eingepasst.'}
           onClick={() => fileRef.current?.click()}
           className="flex-1"
         >
-          {stock ? 'Datei' : 'Bild tauschen'}
+          {stock || generation ? 'Datei' : 'Bild tauschen'}
         </Button>
         {stock && (
           <Button
             size="sm"
-            variant={searching ? 'primary' : 'secondary'}
+            variant={shown === 'search' ? 'primary' : 'secondary'}
             icon="search"
-            aria-expanded={searching}
-            title="Ein Foto suchen – es wird auf den Rahmen zugeschnitten."
-            onClick={() => setSearching((open) => !open)}
+            aria-expanded={shown === 'search'}
+            disabled={editing.offline}
+            title={
+              editing.offline
+                ? OFFLINE_HINT
+                : 'Ein Foto suchen – es wird auf den Rahmen zugeschnitten.'
+            }
+            onClick={() => {
+              setSearchedByHand(true);
+              toggle('search');
+            }}
             className="flex-1"
           >
             Foto suchen
           </Button>
         )}
+        {generation && (
+          <Button
+            size="sm"
+            variant={shown === 'generate' ? 'primary' : 'secondary'}
+            icon="autoAwesome"
+            aria-expanded={shown === 'generate'}
+            disabled={editing.offline}
+            title={
+              editing.offline
+                ? OFFLINE_HINT
+                : 'Ein Bild aus einer Beschreibung erzeugen – passend zum Rahmen.'
+            }
+            onClick={() => toggle('generate')}
+            className="flex-1"
+          >
+            Generieren
+          </Button>
+        )}
       </div>
-      {searching && (
+      {cutOut && (
+        <Button
+          size="sm"
+          variant="secondary"
+          icon="autoFixHigh"
+          loading={removeBackground.isPending}
+          // The server cuts out the picture it has: edits still on their way first.
+          disabled={editing.offline || editing.pending > 0}
+          title={
+            editing.offline
+              ? OFFLINE_HINT
+              : 'Den Hintergrund des Bilds durchsichtig machen – rückgängig mit ⌘Z.'
+          }
+          onClick={() => void freeUp()}
+        >
+          {removeBackground.isPending ? 'Wird freigestellt …' : 'Hintergrund entfernen'}
+        </Button>
+      )}
+      {element.picture && (
+        <ImageFitControls element={element} picture={element.picture} slideId={slideId} />
+      )}
+      {stock && shown === 'search' && (
         <StockPhotoSearch
           element={element}
           slideId={slideId}
           large={large}
-          onPicked={() => setSearching(false)}
+          autoFocus={searchedByHand}
+          initialQuery={ahead}
+          query={previewQuery}
+          onPicked={() => setOpen(null)}
         />
       )}
-      {element.credit && !searching && <PhotoCredit credit={element.credit} />}
+      {generation && shown === 'generate' && (
+        <GenerateImage
+          element={element}
+          initialPrompt={stock ? '' : ahead}
+          prompt={stock ? undefined : previewQuery}
+        />
+      )}
+      {element.credit && <PhotoCredit credit={element.credit} />}
     </>
   );
 }

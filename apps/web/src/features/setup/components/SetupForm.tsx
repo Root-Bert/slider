@@ -13,11 +13,17 @@ import {
 } from '@slider/shared';
 import { routes } from '@/lib/routes';
 import { apiRequest } from '@/lib/api-client';
-import { workspaceKeys } from '@/lib/api';
-import { LegalTextsSection } from '@/features/legal';
+import { queryKeys, workspaceKeys } from '@/lib/api';
+import {
+  LEGAL_LABELS,
+  LegalTextsSection,
+  useLegalTextsDraft,
+  type LegalKind,
+} from '@/features/legal';
 import {
   Badge,
   Button,
+  ConfirmDialog,
   GlassPanel,
   Icon,
   Notice,
@@ -29,7 +35,6 @@ import {
   TextField,
   TextLink,
   useCopyToClipboard,
-  type ShowToast,
 } from '@/ui';
 import {
   collectChanges,
@@ -43,6 +48,7 @@ import {
   type SmtpParts,
 } from '../lib/setup-form';
 import { Code } from './Code';
+import { IntegrationsTab } from './IntegrationsTab';
 import { SectionNav } from '@/shell/layouts/SectionNav';
 
 type Settings = NonNullable<SetupStatus['settings']>;
@@ -87,7 +93,10 @@ const ENV_CARDS: { title: string; keys: SetupKey[] }[] = [
   { title: 'Ungenutzte Daten löschen', keys: ['DELETE_UNUSED'] },
 ];
 
-export type SetupTab = 'settings' | 'env';
+export type SetupTab = 'settings' | 'integrations' | 'env';
+
+/** `unreachable`: saved, but the restarted server didn't answer in time (or `/setup` didn't load). */
+type Phase = 'edit' | 'restarting' | 'saved' | 'unreachable';
 
 /** The groups of the settings tab, in order – headings and the nav at the side. */
 const GROUPS = {
@@ -101,10 +110,11 @@ const GROUPS = {
 const NAV_SECTIONS = Object.values(GROUPS);
 
 /**
- * Two tabs, switched in a pill like the review's comment filter. „Einstellungen“: what is set
+ * Three tabs, switched in a pill like the review's comment filter. „Einstellungen“: what is set
  * here, in groups – login, access, mail, privacy, legal texts. Every card says whether it is set
- * up and where from; a card whose values all come from the environment only says so, single
- * values from there are locked in place. „Umgebungsvariablen“: everything the server's environment
+ * up and where from; values from the environment don't show here – a card points to them.
+ * „Integrationen“: the AI's models, speech to text and photos for every workspace, saved on their
+ * own (`IntegrationsTab`). „Umgebungsvariablen“: everything the server's environment
  * sets – the address, and each setting it fixes – read-only. Imprint and privacy policy live in
  * the database and save on their own. From `xl` on, a nav at the side follows the groups of the
  * settings. The tab is the page's: its subtitle says what the tab holds.
@@ -113,14 +123,12 @@ export function SetupForm({
   status,
   settings,
   headers,
-  onNotify,
   tab,
   onTabChange,
 }: {
   status: SetupStatus;
   settings: Settings;
   headers: Record<string, string>;
-  onNotify: ShowToast;
   tab: SetupTab;
   onTabChange: (tab: SetupTab) => void;
 }) {
@@ -130,9 +138,19 @@ export function SetupForm({
   // Filled with the saved server, port and user; the password stays empty ("keep").
   const [smtp, setSmtp] = useState<SmtpParts>(() => smtpParts(fields.SMTP_URL.value));
   const [removed, setRemoved] = useState<ReadonlySet<SetupKey>>(new Set());
-  // `unreachable`: saved, but the restarted server didn't answer in time (or `/setup` didn't load).
-  const [phase, setPhase] = useState<'edit' | 'restarting' | 'saved' | 'unreachable'>('edit');
+  const [phase, setPhase] = useState<Phase>('edit');
+  // What the last save sent: whether the notice after it speaks of a restart.
+  const [saved, setSaved] = useState<SavedChanges>({ values: {}, legal: [] });
+  // Imprint and privacy policy: only the claimed instance's admin writes them (`PUT /legal`).
+  const legal = useLegalTextsDraft();
+  const legalChanged = status.claimed ? legal.changedKinds : [];
 
+  // Drops everything typed or removed: the form shows what `from` holds.
+  const startFrom = (from: Settings['fields']) => {
+    setDraft(initialDraft(from));
+    setSmtp(smtpParts(from.SMTP_URL.value));
+    setRemoved(new Set());
+  };
   const set = (key: SetupKey) => (value: string) => setDraft((d) => ({ ...d, [key]: value }));
   const setSmtpPart = (part: keyof SmtpParts) => (value: string) =>
     setSmtp((current) => ({ ...current, [part]: value }));
@@ -168,21 +186,18 @@ export function SetupForm({
       setPhase('unreachable');
       return;
     }
-    await queryClient.invalidateQueries({ queryKey: ['setup'] });
+    await queryClient.invalidateQueries({ queryKey: queryKeys.setup });
     await queryClient.invalidateQueries({ queryKey: workspaceKeys.providers });
     // "Übernommen" only once the restarted server answered `/setup` too.
-    if (queryClient.getQueryState(['setup'])?.status === 'error') {
+    if (queryClient.getQueryState(queryKeys.setup)?.status === 'error') {
       setPhase('unreachable');
       return;
     }
     // The form stays mounted across the refetch: start over from what the server now has, or
     // removed values would still show (and be sent again with the next save).
-    const fresh = queryClient.getQueryData<SetupStatus>(['setup'])?.settings;
-    if (fresh) {
-      setDraft(initialDraft(fresh.fields));
-      setSmtp(smtpParts(fresh.fields.SMTP_URL.value));
-    }
-    setRemoved(new Set());
+    const fresh = queryClient.getQueryData<SetupStatus>(queryKeys.setup)?.settings;
+    if (fresh) startFrom(fresh.fields);
+    else setRemoved(new Set());
     setPhase('saved');
   };
 
@@ -192,17 +207,67 @@ export function SetupForm({
   // A saved password belongs to its user: another user needs its own.
   const smtpNeedsPassword = savedSmtp !== null && smtp.user.trim() !== savedSmtp.user;
 
-  const submit = () => {
+  const values = collectChanges(fields, draft, removed);
+  if (!smtpFromEnv && !smtpRemoved) {
+    // Server, port and user come back as saved: send the mail server only when it changed. An
+    // empty password keeps the saved one (the API puts it back for the same user).
+    const next = smtpUrl(smtp);
+    if (next !== (fields.SMTP_URL.value ?? '')) values.SMTP_URL = next || null;
+  }
+  const settingsChanged = Object.keys(values).length > 0;
+  const changed = settingsChanged || legalChanged.length > 0;
+  const busy = save.isPending || legal.saving || phase === 'restarting';
+  const pending: SavedChanges = { values, legal: legalChanged };
+  // „Speichern“ first lists what changed; the dialog's button saves.
+  const [confirming, setConfirming] = useState(false);
+
+  // Back to what the server runs with: drops everything typed, removed or filled in since.
+  const reset = () => {
+    startFrom(fields);
+    legal.reset();
     setPhase('edit');
-    const values = collectChanges(fields, draft, removed);
-    if (!smtpFromEnv && !smtpRemoved) {
-      // Server, port and user come back as saved: send the mail server only when it changed. An
-      // empty password keeps the saved one (the API puts it back for the same user).
-      const next = smtpUrl(smtp);
-      if (next !== (fields.SMTP_URL.value ?? '')) values.SMTP_URL = next || null;
-    }
-    save.mutate(values);
   };
+
+  // The legal texts first: they save without a restart; the settings restart the server.
+  const submit = async () => {
+    setConfirming(false);
+    if (!changed || busy) return;
+    setPhase('edit');
+    setSaved({ values: settingsChanged ? values : {}, legal: legalChanged });
+    if (legalChanged.length > 0) {
+      try {
+        await legal.commit();
+      } catch {
+        // Shown below the form (`legal.error`).
+        return;
+      }
+    }
+    if (settingsChanged) save.mutate(values);
+    else setPhase('saved');
+  };
+  const saveButton = (className?: string) => (
+    <Button
+      type="submit"
+      disabled={!changed}
+      title={changed ? undefined : 'Nichts geändert'}
+      loading={busy}
+      className={className}
+    >
+      Speichern
+    </Button>
+  );
+  const resetButton = (className?: string) => (
+    <Button
+      variant="secondary"
+      icon="undo"
+      disabled={!changed || busy}
+      title={changed ? 'Zurück zu dem, womit Slider gerade läuft' : 'Nichts geändert'}
+      onClick={reset}
+      className={className}
+    >
+      Zurücksetzen
+    </Button>
+  );
 
   const field = (key: SetupKey, props: FieldProps = {}) => (
     <SetupTextField
@@ -246,24 +311,34 @@ export function SetupForm({
   };
 
   const signup = (draft.SIGNUP || 'open') as SignupMode;
-  // On unless switched off – the server defaults to on, too.
-  const deleteUnused = ['false', '0'].includes(draft.DELETE_UNUSED) ? 'false' : 'true';
+  const deleteUnused = deleteUnusedValue(draft.DELETE_UNUSED);
   const envKeys = SETUP_KEYS.filter((key) => fields[key].source === 'env');
   const showEnv = () => onTabChange('env');
-  // A card set entirely in the environment has nothing to change here: it only says so.
-  const fromEnv = (keys: SetupKey[], body: ReactNode) =>
-    keys.every((key) => fields[key].source === 'env') ? <FromEnv onShow={showEnv} /> : body;
+  // Values from the environment show only in their tab: a card set entirely there only says so,
+  // one set partly there keeps its other fields and points to the rest.
+  const fromEnv = (keys: SetupKey[], body: ReactNode) => {
+    const env = keys.filter((key) => fields[key].source === 'env');
+    if (env.length === 0) return body;
+    if (env.length === keys.length) return <FromEnv onShow={showEnv} />;
+    return (
+      <>
+        {body}
+        <FromEnv partly onShow={showEnv} />
+      </>
+    );
+  };
 
   return (
     <div className="flex flex-col gap-8">
       <GlassPanel className="scrollbar-none flex max-w-full min-w-0 items-center self-start overflow-x-auto p-1">
         <SegmentedControl<SetupTab>
-          label="Einstellungen oder Umgebungsvariablen"
+          label="Einstellungen, Integrationen oder Umgebungsvariablen"
           mode="tabs"
           value={tab}
           onChange={onTabChange}
           segments={[
             { value: 'settings', label: 'Einstellungen', icon: 'settings' },
+            { value: 'integrations', label: 'Integrationen', icon: 'link' },
             // The address always comes from there.
             { value: 'env', label: 'Umgebungsvariablen', icon: 'lock', count: envKeys.length + 1 },
           ]}
@@ -271,18 +346,28 @@ export function SetupForm({
       </GlassPanel>
       {tab === 'env' ? (
         <EnvTab settings={settings} />
+      ) : tab === 'integrations' ? (
+        <IntegrationsTab />
       ) : (
         // The draft lives in this component, not the form: switching tabs keeps what was typed.
         <form
           className="relative flex flex-col gap-10"
           onSubmit={(event) => {
             event.preventDefault();
-            submit();
+            if (changed && !busy) setConfirming(true);
           }}
         >
           {/* Beside the 720px column, where the wide screen has room; out of the flow. */}
           <div className="absolute inset-y-0 right-full mr-12 hidden w-44 xl:block">
             <SectionNav sections={NAV_SECTIONS} />
+          </div>
+          {/* Across from the nav: one „Speichern“ for the whole page, always in reach. */}
+          <div className="absolute inset-y-0 left-full ml-12 hidden w-44 xl:block">
+            <div className="sticky top-8 flex flex-col gap-3">
+              {resetButton('w-full')}
+              {saveButton('w-full')}
+              <SaveState phase={phase} />
+            </div>
           </div>
           {!status.claimed && status.loginConfigured && (
             <Notice tone="info" title="Noch kein Admin">
@@ -374,20 +459,26 @@ export function SetupForm({
               description="Gilt für alle ohne Einladung. Eingeladene Personen dürfen immer."
               aside={fields.SIGNUP.source === 'env' ? <EnvBadge /> : undefined}
             >
-              {fields.SIGNUP.source === 'env' ? (
-                <LockedField label="Neue Konten" value={SIGNUP_LABELS[signup] ?? signup} />
-              ) : (
-                <label className="flex flex-col gap-1.5 text-xs text-fg-subtle">
-                  Neue Konten
-                  <Select<SignupMode>
-                    value={signup}
-                    onChange={set('SIGNUP')}
-                    options={SIGNUP_MODES.map((value) => ({ value, label: SIGNUP_LABELS[value] }))}
-                  />
-                </label>
+              {fromEnv(
+                signup === 'domains' ? ['SIGNUP', 'SIGNUP_DOMAINS'] : ['SIGNUP'],
+                <>
+                  {fields.SIGNUP.source !== 'env' && (
+                    <label className="flex flex-col gap-1.5 text-xs text-fg-subtle">
+                      Neue Konten
+                      <Select<SignupMode>
+                        value={signup}
+                        onChange={set('SIGNUP')}
+                        options={SIGNUP_MODES.map((value) => ({
+                          value,
+                          label: SIGNUP_LABELS[value],
+                        }))}
+                      />
+                    </label>
+                  )}
+                  {signup === 'domains' &&
+                    field('SIGNUP_DOMAINS', { placeholder: 'firma.de, firma.com' })}
+                </>,
               )}
-              {signup === 'domains' &&
-                field('SIGNUP_DOMAINS', { placeholder: 'firma.de, firma.com' })}
               <p className="text-xs text-fg-subtle">{SIGNUP_HINTS[signup]}</p>
             </Section>
           </Group>
@@ -420,14 +511,7 @@ export function SetupForm({
               {fromEnv(
                 MAIL_KEYS,
                 <>
-                  {smtpFromEnv ? (
-                    <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
-                      <LockedField label="SMTP-Server" value={smtp.host || '–'} />
-                      <LockedField label="Port" value={smtp.port} />
-                      <LockedField label="Benutzer" value={smtp.user || '–'} />
-                      <LockedField label="Passwort" value="••••••••" />
-                    </div>
-                  ) : (
+                  {smtpFromEnv ? null : (
                     <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
                       <TextField
                         label="SMTP-Server"
@@ -485,12 +569,8 @@ export function SetupForm({
               description="Konten und Präsentationen, die 18 Monate niemand genutzt hat, werden gelöscht. Die Frist zählt frühestens ab dem Einschalten, vorher wird nichts gelöscht."
               aside={fields.DELETE_UNUSED.source === 'env' ? <EnvBadge /> : undefined}
             >
-              {fields.DELETE_UNUSED.source === 'env' ? (
-                <LockedField
-                  label="Automatisch löschen"
-                  value={DELETE_UNUSED_LABELS[deleteUnused]}
-                />
-              ) : (
+              {fromEnv(
+                ['DELETE_UNUSED'],
                 <label className="flex flex-col gap-1.5 text-xs text-fg-subtle">
                   Automatisch löschen
                   <Select<'true' | 'false'>
@@ -501,7 +581,7 @@ export function SetupForm({
                       label: DELETE_UNUSED_LABELS[value],
                     }))}
                   />
-                </label>
+                </label>,
               )}
               {deleteUnused === 'true' && (
                 <p className="text-xs text-fg-subtle">
@@ -515,7 +595,7 @@ export function SetupForm({
           <Group {...GROUPS.legal} description="Werden für sich gespeichert, ohne Neustart.">
             {/* Authorized and claimed: the signed-in instance admin, whom `PUT /legal` requires. */}
             {status.claimed ? (
-              <LegalTextsSection settings={settings} onNotify={onNotify} />
+              <LegalTextsSection legal={legal} settings={settings} />
             ) : (
               <Section
                 title="Impressum & Datenschutz"
@@ -526,13 +606,20 @@ export function SetupForm({
             )}
           </Group>
 
+          {legal.error && (
+            <Notice tone="danger" role="alert">
+              {legal.error.message}
+            </Notice>
+          )}
           {save.isError && (
             <Notice tone="danger" role="alert">
               {save.error.message}
             </Notice>
           )}
           {/* The result sits next to the button that was pressed, at the bottom of a long form. */}
-          {phase === 'saved' && <Saved status={status} manual={settings.restart === 'manual'} />}
+          {phase === 'saved' && (
+            <Saved status={status} manual={settings.restart === 'manual'} changes={saved} />
+          )}
           {phase === 'unreachable' && (
             <Notice
               tone="warning"
@@ -548,27 +635,48 @@ export function SetupForm({
               erreichbar. Prüfe das Server-Log, zum Beispiel mit <Code>docker logs slider</Code>.
             </Notice>
           )}
-          <div className="flex flex-wrap items-center justify-end gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-3 xl:hidden">
             {phase === 'restarting' && (
               <span className="flex items-center gap-2 text-body text-fg-subtle">
                 <Spinner size="md" /> Slider startet neu …
               </span>
             )}
-            <Button type="submit" loading={save.isPending || phase === 'restarting'}>
-              Speichern
-            </Button>
+            {resetButton()}
+            {saveButton()}
           </div>
+          {confirming && (
+            <ConfirmDialog
+              tone="primary"
+              title="Änderungen speichern?"
+              description={
+                settingsChanged
+                  ? settings.restart === 'manual'
+                    ? 'Danach musst du den Slider-Server neu starten, damit sie gelten.'
+                    : 'Slider startet danach kurz neu.'
+                  : undefined
+              }
+              confirmLabel="Speichern"
+              onConfirm={() => void submit()}
+              onClose={() => setConfirming(false)}
+            >
+              <ChangeList changes={pending} />
+            </ConfirmDialog>
+          )}
         </form>
       )}
     </div>
   );
 }
 
-/** In place of a card's fields when all of them come from the environment. */
-function FromEnv({ onShow }: { onShow: () => void }) {
+/**
+ * In place of a card's fields that come from the environment – all of them, or `partly` below the
+ * ones still set here.
+ */
+function FromEnv({ partly, onShow }: { partly?: boolean; onShow: () => void }) {
   return (
     <p className="text-body text-fg-subtle">
-      Steht komplett in der <Code>.env</Code> des Servers und ist nur dort änderbar.{' '}
+      {partly ? 'Weitere Werte stehen' : 'Steht komplett'} in der <Code>.env</Code> des Servers und
+      {partly ? ' sind' : ' ist'} nur dort änderbar.{' '}
       <TextLink variant="inline" weight="medium" onClick={onShow}>
         Werte ansehen
       </TextLink>
@@ -590,9 +698,7 @@ function EnvTab({ settings }: { settings: Settings }) {
     const value = fields[key].value ?? '';
     if (isSecretKey(key) && key !== 'SMTP_URL') return '••••••••';
     if (key === 'SIGNUP') return SIGNUP_LABELS[value as SignupMode] ?? value;
-    if (key === 'DELETE_UNUSED') {
-      return DELETE_UNUSED_LABELS[['false', '0'].includes(value) ? 'false' : 'true'];
-    }
+    if (key === 'DELETE_UNUSED') return DELETE_UNUSED_LABELS[deleteUnusedValue(value)];
     return value || '–';
   };
 
@@ -630,6 +736,9 @@ function EnvTab({ settings }: { settings: Settings }) {
     </div>
   );
 }
+
+/** On unless switched off – the server defaults to on, too. */
+const deleteUnusedValue = (value: string) => (['false', '0'].includes(value) ? 'false' : 'true');
 
 const DELETE_UNUSED_LABELS = {
   false: 'Aus',
@@ -723,9 +832,7 @@ function LockedField({
 
 interface FieldProps {
   secret?: boolean;
-  type?: string;
   placeholder?: string;
-  autoComplete?: string;
   hint?: string;
   className?: string;
 }
@@ -737,8 +844,9 @@ function SetupTextField({
   onChange,
   removed,
   secret,
+  placeholder,
   hint,
-  ...props
+  className,
 }: FieldProps & {
   label: string;
   field: SetupField;
@@ -746,30 +854,21 @@ function SetupTextField({
   onChange: (value: string) => void;
   removed: boolean;
 }) {
-  if (field.source === 'env') {
-    return (
-      <LockedField
-        label={label}
-        value={secret ? '••••••••' : (field.value ?? '')}
-        className={props.className}
-      />
-    );
-  }
+  // Shown in the environment's tab, not here (see `fromEnv`).
+  if (field.source === 'env') return null;
   return (
     <TextField
       label={label}
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      type={secret ? 'password' : props.type}
-      autoComplete={secret ? 'new-password' : (props.autoComplete ?? 'off')}
+      type={secret ? 'password' : undefined}
+      autoComplete={secret ? 'new-password' : 'off'}
       placeholder={
-        secret && field.set && !removed
-          ? 'Gespeichert – leer lassen zum Behalten'
-          : props.placeholder
+        secret && field.set && !removed ? 'Gespeichert – leer lassen zum Behalten' : placeholder
       }
       hint={removed ? 'Wird beim Speichern entfernt' : hint}
       disabled={removed}
-      className={props.className}
+      className={className}
     />
   );
 }
@@ -795,8 +894,68 @@ function RedirectUri({ uri }: { uri: string }) {
   );
 }
 
-function Saved({ status, manual }: { status: SetupStatus; manual: boolean }) {
-  if (manual) {
+/** What one save sent: settings (restart) and legal texts (none). */
+interface SavedChanges {
+  values: SaveSetupInput['values'];
+  legal: LegalKind[];
+}
+
+/** Beside the side's „Speichern“: what the save is doing, in short – the details are below. */
+function SaveState({ phase }: { phase: Phase }) {
+  if (phase === 'restarting') {
+    return (
+      <span className="flex items-center gap-2 text-xs text-fg-subtle">
+        <Spinner size="sm" /> Slider startet neu …
+      </span>
+    );
+  }
+  if (phase === 'saved') {
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-fg-subtle">
+        <Icon name="check" size={14} /> Gespeichert
+      </span>
+    );
+  }
+  return null;
+}
+
+/** The saved changes, per card: „Microsoft: Client-ID, Mandant“, „Mailserver: entfernt“. */
+function ChangeList({ changes: { values, legal } }: { changes: SavedChanges }) {
+  const cards = ENV_CARDS.map((card) => ({
+    title: card.title,
+    keys: card.keys.filter((key) => key in values),
+  })).filter((card) => card.keys.length > 0);
+  if (cards.length === 0 && legal.length === 0) return null;
+  return (
+    <ul className="list-disc pl-5 text-body text-fg">
+      {cards.map(({ title, keys }) => (
+        <li key={title}>
+          {title}:{' '}
+          {keys.every((key) => values[key] === null)
+            ? 'entfernt'
+            : keys
+                .map((key) => (values[key] === null ? `${LABELS[key]} entfernt` : LABELS[key]))
+                .join(', ')}
+        </li>
+      ))}
+      {legal.length > 0 && (
+        <li>Rechtliches: {legal.map((kind) => LEGAL_LABELS[kind]).join(', ')}</li>
+      )}
+    </ul>
+  );
+}
+
+function Saved({
+  status,
+  manual,
+  changes,
+}: {
+  status: SetupStatus;
+  manual: boolean;
+  changes: SavedChanges;
+}) {
+  const restarted = Object.keys(changes.values).length > 0;
+  if (manual && restarted) {
     return (
       <Notice tone="warning" role="status">
         Gespeichert. Starte den Slider-Server neu, damit die Änderungen gelten.
@@ -805,14 +964,14 @@ function Saved({ status, manual }: { status: SetupStatus; manual: boolean }) {
   }
   return (
     <Notice tone="success" role="status">
-      Gespeichert und übernommen.{' '}
+      {restarted ? 'Gespeichert und übernommen.' : 'Gespeichert.'}
       {!status.claimed && status.loginConfigured && (
-        <>
+        <p className="mt-1">
           Melde dich jetzt an und gib danach den Setup-Token noch einmal ein, um Admin zu werden:{' '}
           <TextLink href={routes.login(SETUP_PATH)} variant="inline" weight="medium">
             Zur Anmeldung
           </TextLink>
-        </>
+        </p>
       )}
     </Notice>
   );

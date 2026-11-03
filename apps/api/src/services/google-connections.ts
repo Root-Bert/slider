@@ -75,7 +75,6 @@ export async function disconnectGoogle(
     await tx.delete(googleConnections).where(eq(googleConnections.id, row.id));
     for (const deck of affected) {
       await mergeSyncState(tx, deck.id, {
-        pending: null,
         lastSyncError: { code: 'auth_required', message: SYNC_MESSAGES.google_auth_required, at },
       });
     }

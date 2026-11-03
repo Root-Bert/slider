@@ -2,6 +2,8 @@
 import '~/styles/site.css';
 import Footer from '~/components/Footer.astro';
 import Header, { type SitePage } from '~/components/Header.astro';
+import LiveComments from '~/components/live/LiveComments.astro';
+import { LANGS, localPage, t, type Lang } from '~/i18n';
 import { asset } from '~/lib/links';
 
 interface Props {
@@ -9,49 +11,74 @@ interface Props {
   title?: string;
   description?: string;
   current?: SitePage;
-  /** The footer CTA closes every page except where a page has its own ending. */
-  footer?: boolean;
+  lang?: Lang;
+  /**
+   * The page's path without language (`''`, `'pricing'`) when it exists in every language: the
+   * footer switches between them, search engines get the alternates, and a first visit to the
+   * English page follows the browser's language. Blog and legal pages have one language only.
+   */
+  translated?: string;
 }
 
-const {
-  title,
-  description = 'Slider puts feedback where it belongs: right on the slide. Link your presentation, invite your team and see every opinion in context, live.',
-  current,
-  footer = true,
-} = Astro.props;
-const fullTitle = title ? `${title} | Slider` : 'Slider | Get your ideas across';
+const { title, description, current, lang = 'en', translated } = Astro.props;
+const words = t(lang);
+const fullTitle = title ? `${title} | Slider` : words.meta.title;
 const canonical = new URL(Astro.url.pathname, Astro.site);
-/** The share preview (1200 × 630): the homepage hero, rendered from the site itself. */
+/** The share preview (1200 × 630), rendered from the site itself. */
 const ogImage = new URL(asset('og.png'), Astro.site);
+const versions =
+  translated === undefined ? [] : LANGS.map((l) => ({ lang: l, href: localPage(l, translated) }));
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang={lang}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="dark" />
-    <meta name="theme-color" content="#000000" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f4f4f5" media="(prefers-color-scheme: light)" />
     <title>{fullTitle}</title>
-    <meta name="description" content={description} />
+    <meta name="description" content={description ?? words.meta.description} />
     <link rel="canonical" href={canonical} />
-    <link rel="icon" href={asset('favicon.svg')} type="image/svg+xml" />
+    {versions.map((v) => <link rel="alternate" hreflang={v.lang} href={new URL(v.href, Astro.site)} />)}
+    {versions.length > 0 && <link rel="alternate" hreflang="x-default" href={new URL(versions[0]!.href, Astro.site)} />}
+    <link rel="icon" href={`${asset('favicon.svg')}?v=3`} type="image/svg+xml" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content={fullTitle} />
-    <meta property="og:description" content={description} />
+    <meta property="og:description" content={description ?? words.meta.description} />
     <meta property="og:url" content={canonical} />
     <meta property="og:site_name" content="Slider" />
     <meta property="og:image" content={ogImage} />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Slider: Get your ideas across. A slide with reviewers' cursors and a voice comment." />
     <meta name="twitter:card" content="summary_large_image" />
     <!--
-      Before the first paint: entrances start hidden right away (no flash, then jump), and show
-      anyway should the motion script never run.
+      Before the first paint: the system's light or dark (the app's light tokens sit under
+      data-theme="light"), the language a first visit asked for, and entrances hidden right away
+      (shown anyway should the motion script never run).
     -->
-    <script is:inline>
-      document.documentElement.classList.add('js');
+    <script is:inline define:vars={{ lang, versions }}>
+      const root = document.documentElement;
+      const light = matchMedia('(prefers-color-scheme: light)');
+      const theme = () => (light.matches ? (root.dataset.theme = 'light') : delete root.dataset.theme);
+      theme();
+      light.addEventListener('change', theme);
+
+      if (lang === 'en' && versions.length) {
+        let wanted = null;
+        try {
+          wanted = localStorage.getItem('slider-lang');
+        } catch {}
+        if (!wanted) {
+          const codes = (navigator.languages || [navigator.language]).map((l) => l.slice(0, 2));
+          wanted = codes.find((c) => versions.some((v) => v.lang === c)) || 'en';
+        }
+        const target = versions.find((v) => v.lang === wanted);
+        if (target && wanted !== 'en') location.replace(target.href + location.hash);
+      }
+
+      root.classList.add('js');
       setTimeout(() => {
         if (window.__sliderMotion) return;
         document.querySelectorAll('[data-section]').forEach((s) => s.classList.add('is-in'));
@@ -61,18 +88,16 @@ const ogImage = new URL(asset('og.png'), Astro.site);
       import '~/scripts/motion';
     </script>
   </head>
-  <body class="dot-grid">
-    <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-(--z-toast) focus:rounded-control focus:bg-primary focus:px-3 focus:py-2 focus:text-on-primary">Skip to content</a>
-    <!--
-      Cursors, glows and name tags may reach past the screen: cut here, so a phone never scrolls
-      sideways. Not on <body> – its overflow goes to the viewport, where iOS ignores it.
-    -->
+  <body>
+    <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-(--z-toast) focus:rounded-control focus:bg-primary focus:px-3 focus:py-2 focus:text-on-primary">{words.nav.skip}</a>
+    <!-- Cursors and comments may reach past the screen: cut here, so a phone never scrolls sideways. -->
     <div class="overflow-x-clip">
-      <Header current={current} />
-      <main id="main">
+      <Header current={current} lang={lang} />
+      <main id="main" data-live="main">
         <slot />
       </main>
-      {footer && <Footer />}
+      <Footer lang={lang} versions={versions} />
     </div>
+    <LiveComments lang={lang} />
   </body>
 </html>

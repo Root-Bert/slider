@@ -9,7 +9,7 @@ import { DeckAccessDialog } from './DeckAccessDialog';
 import { DeckStorageDialog } from './DeckStorageDialog';
 import { DeleteDeckDialog } from './DeleteDeckDialog';
 import { MoveDecksDialog } from './MoveDecksDialog';
-import { movedMessage } from '../hooks/useMoveDecks';
+import { movedMessage } from '../lib/bulk-messages';
 import type { DeckPanelSlot } from '../lib/deck-panel';
 
 interface DeckActionsProps {

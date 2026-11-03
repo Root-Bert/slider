@@ -7,7 +7,7 @@ import { isGoneError } from './status';
 
 const IMPORT_POLL_MS = 1000;
 const IMPORT_STALLED_AFTER_MS = 120_000;
-const IMPORT_STALLED_POLL_MS = 10_000;
+const IMPORT_STALLED_POLL_MS = 3000;
 const isImporting = (deck: Deck | undefined) =>
   deck?.import.status === 'queued' || deck?.import.status === 'running';
 
@@ -15,8 +15,9 @@ const isImporting = (deck: Deck | undefined) =>
 export type ImportStall = { state: string; since: number } | null;
 
 /**
- * Poll interval while imports run: `fastMs`, or every 10 s once their state hasn't moved for two
- * minutes (a stuck worker would otherwise be asked forever). `state`: the running imports as a
+ * Poll interval while imports run: `fastMs`, or every 3 s once their state hasn't moved for two
+ * minutes (a stuck worker would otherwise be asked every second forever) – a slow step's end is
+ * still seen within moments. `state`: the running imports as a
  * string, `null` when none runs (polling stops). Updates `stall` (kept per hook).
  */
 export function importPollInterval(
@@ -72,12 +73,16 @@ export function useDeck(deckId: string) {
   });
 }
 
-export function useUpdateDeck(deckId: string) {
+export function useUpdateDeck(deckId: string, scope?: string) {
   const queryClient = useQueryClient();
   return useMutation({
+    ...(scope && { scope: { id: scope } }),
     mutationFn: (input: UpdateDeckInput) => api.patch<Deck>(`/decks/${deckId}`, input),
     onSuccess: (deck) => {
-      queryClient.setQueryData(queryKeys.deck(deckId), deck);
+      // In line with other changes (`scope`): only what this one set, not their state before.
+      queryClient.setQueryData<Deck>(queryKeys.deck(deckId), (current) =>
+        scope && current ? { ...current, title: deck.title, updatedAt: deck.updatedAt } : deck,
+      );
       void queryClient.invalidateQueries({ queryKey: queryKeys.deckLists });
     },
   });

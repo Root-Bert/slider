@@ -4,6 +4,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 import type { LegalTexts } from '@slider/shared';
 import { LegalTextsSection } from './LegalTextsSection';
+import { useLegalTextsDraft } from './lib/legal-draft';
 
 const saved: LegalTexts[] = [];
 vi.mock('@/lib/api', () => ({
@@ -15,14 +16,25 @@ vi.mock('@/lib/api', () => ({
   useSaveLegalTexts: () => ({
     isPending: false,
     error: null,
-    mutate: (texts: LegalTexts) => saved.push(texts),
+    mutateAsync: async (texts: LegalTexts) => saved.push(texts),
   }),
 }));
 
+/** The setup page's „Speichern“ stands for the page's own button. */
+function Page() {
+  const legal = useLegalTextsDraft();
+  return (
+    <>
+      <LegalTextsSection legal={legal} />
+      <button type="button" onClick={() => void legal.commit()}>
+        Speichern
+      </button>
+    </>
+  );
+}
+
 function setup() {
-  const router = createMemoryRouter([
-    { path: '/', element: <LegalTextsSection onNotify={() => {}} /> },
-  ]);
+  const router = createMemoryRouter([{ path: '/', element: <Page /> }]);
   render(<RouterProvider router={router} />);
 }
 

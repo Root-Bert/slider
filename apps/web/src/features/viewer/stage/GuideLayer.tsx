@@ -1,4 +1,4 @@
-import { guideOverflows, type Slide } from '@slider/shared';
+import { guideOverflows, type Guide, type Slide } from '@slider/shared';
 import { useMemo } from 'react';
 import { GUIDE_COLORS } from '@/lib/palette';
 import { cn } from '@/ui';
@@ -9,10 +9,12 @@ const { guide: GUIDE_COLOR, overflow: OVERFLOW_COLOR } = GUIDE_COLORS;
 /**
  * "Hilfslinien zeigen": PowerPoint's drawing guides over the slide image, and the boxes that
  * stick out over the outer guides (the margins) – outlined, with the part beyond the guide
- * hatched. A chip in the top right corner sums it up. Never a pointer target.
+ * hatched; the guides button in the tool bar glows while any does (`ToolBar`). Never a pointer
+ * target. `guides` instead of the slide's own: a template being designed keeps its guides itself
+ * (`Deck.template`).
  */
-export function GuideLayer({ slide }: { slide: Slide }) {
-  const guides = useMemo(() => slide.guides ?? [], [slide.guides]);
+export function GuideLayer({ slide, guides: own }: { slide: Slide; guides?: readonly Guide[] }) {
+  const guides = useMemo(() => own ?? slide.guides ?? [], [own, slide.guides]);
   const overflows = useMemo(() => guideOverflows(slide.shapes, guides), [slide.shapes, guides]);
 
   return (
@@ -51,23 +53,6 @@ export function GuideLayer({ slide }: { slide: Slide }) {
           ))}
         </div>
       ))}
-      <span
-        className={cn(
-          'absolute top-3 right-3 rounded-full px-2 py-0.5 text-caption leading-tight font-medium',
-          'shadow-mark',
-          // On the red: white, as on every status fill; otherwise the dark chip over the slide.
-          overflows.length > 0 ? 'text-white backdrop-blur' : 'glass-dark text-fg',
-        )}
-        style={overflows.length > 0 ? { backgroundColor: OVERFLOW_COLOR } : undefined}
-      >
-        {guides.length === 0
-          ? 'Keine Hilfslinien'
-          : overflows.length === 0
-            ? 'Alles innerhalb der Hilfslinien'
-            : overflows.length === 1
-              ? '1 Box ragt über die Hilfslinien'
-              : `${overflows.length} Boxen ragen über die Hilfslinien`}
-      </span>
     </div>
   );
 }

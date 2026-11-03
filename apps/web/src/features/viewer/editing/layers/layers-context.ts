@@ -1,7 +1,7 @@
 import type { Restacking } from './layer-order';
 import { createContext, use } from 'react';
 
-/** How the slides are turned (degrees): `FRONT` as they are – so when the layers open – or tilted. */
+/** How the slides are turned (degrees): `FRONT` as they are, or tilted – so when the layers open. */
 export interface LayerView {
   pitch: number;
   yaw: number;
@@ -9,9 +9,9 @@ export interface LayerView {
 export const TILTED: LayerView = { pitch: 18, yaw: -38 };
 export const FRONT: LayerView = { pitch: 0, yaw: 0 };
 export const isFront = (view: LayerView) => view.pitch === 0 && view.yaw === 0;
-/** How far the planes stand apart: 1 a stack as deep as the slide is wide (`LayerStage`) – up to 1.4 times that; half way when the layers open. */
-export const MAX_SPREAD = 1.4;
-export const DEFAULT_SPREAD = MAX_SPREAD / 2;
+/** How far the planes stand apart: 1 a stack as deep as the slide is wide (`LayerStage`) – up to 6 times that; 0.7 when the layers open. */
+export const MAX_SPREAD = 6;
+export const DEFAULT_SPREAD = 0.7;
 
 /**
  * „Ebenen“ (L), shared by the slides turned 3D on the track (`LayerStage`, every one in view)
@@ -29,15 +29,20 @@ export interface Layers {
   slideId: string | null;
   /** A slide's element ids, bottom first. */
   orderOf: (slideId: string) => string[];
+  /** How the active slide is turned (the panel's switch); every slide turns on its own. */
   view: LayerView;
   setView: (view: LayerView) => void;
+  viewOf: (slideId: string) => LayerView;
+  setViewOf: (slideId: string, view: LayerView) => void;
   /** ⇧ is held: dragging turns the slides. */
   turnKey: boolean;
   /** How far the planes stand apart, 0 (flat) – 1. */
   spread: number;
   setSpread: (spread: number) => void;
-  hovered: string | null;
-  setHovered: (id: string | null) => void;
+  /** Element IDs can repeat on different slides. */
+  hovered: { slideId: string; elementId: string } | null;
+  /** A slide only clears its own hover. */
+  setHovered: (slideId: string, id: string | null) => void;
   /** The elements picked, on one slide – the last picked last (the editor's selection). */
   picked: { slideId: string; ids: readonly string[] } | null;
   /**
@@ -63,6 +68,8 @@ const CLOSED: Layers = {
   orderOf: () => [],
   view: FRONT,
   setView: () => {},
+  viewOf: () => FRONT,
+  setViewOf: () => {},
   turnKey: false,
   spread: DEFAULT_SPREAD,
   setSpread: () => {},

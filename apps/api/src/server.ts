@@ -1,6 +1,8 @@
 import { serve } from '@hono/node-server';
 import { openPptx } from '@slider/pptx';
 import { createApp } from './app';
+import { LiveTexts } from './realtime/live-texts';
+import { BackgroundWork } from './background-work';
 import { StripeBilling } from './billing/stripe-billing';
 import { MicrosoftTokens } from './auth/microsoft';
 import { GoogleTokens } from './auth/google';
@@ -21,7 +23,13 @@ import {
   findSoffice,
   stopRunningConversions,
 } from './import/libreoffice';
-import { importJobKey, importJobPriority, InProcessQueue, type ImportJob } from './import/queue';
+import {
+  importJobKey,
+  importJobPriority,
+  InProcessQueue,
+  isUrgentImportJob,
+  type ImportJob,
+} from './import/queue';
 import { RenderProgress } from './import/render-progress';
 import { scheduleFileAuthorBackfill } from './import/file-author-backfill';
 import { scheduleRerenderBackfill } from './import/rerender';
@@ -42,7 +50,7 @@ import { FsBlobStorage } from './storage/fs-blob-storage';
 import type { AppDeps } from './deps';
 import { deckFontAdopter } from './services/deck-fonts';
 import { RetentionSweeper } from './services/retention';
-import { SyncScheduler } from './sync/scheduler';
+import { resumeTranscripts } from './services/transcripts';
 import { SyncService } from './sync/sync-service';
 
 /** Exit code that asks `supervisor.ts` to start the server again (settings were saved); same there. */
@@ -157,6 +165,9 @@ async function main(): Promise<void> {
   // … one of them started ahead, so the first edit finds pdf.js loaded.
   if (officePool) warmPdfWorker();
   const renderProgress = new RenderProgress();
+  // Live before the imports: a synced revision is written into the texts typed in together.
+  const live = new LiveHub();
+  const liveTexts = new LiveTexts(live);
   const queue: InProcessQueue<ImportJob> = new InProcessQueue<ImportJob>(
     (job) =>
       importDeck(
@@ -170,7 +181,7 @@ async function main(): Promise<void> {
           libreOfficePdf,
           slidesExtras,
           renderProgress,
-          syncPollMs: config.sync.pollIntervalMs,
+          liveTexts,
           // Fonts an ODP brings along become its workspace's, before it is drawn.
           adoptFonts: deckFontAdopter({
             db,
@@ -185,7 +196,12 @@ async function main(): Promise<void> {
         job,
       ),
     log,
-    { priority: importJobPriority, key: importJobKey, concurrency: config.importWorkers },
+    {
+      priority: importJobPriority,
+      key: importJobKey,
+      urgent: isUrgentImportJob,
+      concurrency: config.importWorkers,
+    },
   );
   for (const job of await findInterruptedImports(db)) {
     log.info(`Resuming interrupted ${job.kind ?? 'initial'} import of deck ${job.deckId}`);
@@ -221,7 +237,7 @@ async function main(): Promise<void> {
     connections: microsoft,
     documentPdf,
   });
-  const live = new LiveHub();
+  const background = new BackgroundWork();
   const deps: AppDeps = {
     config,
     db,
@@ -242,6 +258,8 @@ async function main(): Promise<void> {
     billing: config.billing ? new StripeBilling(config.billing) : null,
     mailer,
     live,
+    liveTexts,
+    background,
     ownerId: owner?.id ?? null,
     instance: {
       env,
@@ -251,12 +269,11 @@ async function main(): Promise<void> {
   };
   const app = createApp(deps);
   await announceSetup(config, db, log);
-  const scheduler = new SyncScheduler({ db, clock, log, sync, config });
-  if (config.sync.pollIntervalMs > 0) scheduler.start();
-  else log.info('Automatic updates of linked decks are off (SYNC_POLL_INTERVAL_MS=0).');
   // Deletion deadlines (BER-143, BER-147): unused accounts and decks, old invites, sessions.
   const sweeper = new RetentionSweeper(deps);
   sweeper.start();
+  // Recordings a stopped server left without their transcript.
+  await resumeTranscripts(deps);
   const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
     log.info(
       `Slider API listening on http://localhost:${info.port} (data: ${config.dataDir}, media: ${config.media.dir})`,
@@ -268,7 +285,6 @@ async function main(): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     log.info(`${signal} received, shutting down…`);
-    scheduler.stop();
     sweeper.stop();
     // LibreOffice runs in its own process group and would outlive this process.
     stopRunningConversions();
@@ -287,9 +303,10 @@ async function main(): Promise<void> {
       if (exiting) return;
       exiting = true;
       // Interrupted imports are picked up again on the next start. PGlite must be closed cleanly
-      // or it runs crash recovery on the next start – but never wait for it forever.
+      // or it runs crash recovery on the next start – after the work behind answers that still
+      // writes to it (an edit's sharper pictures) – but never wait for it forever.
       await Promise.race([
-        imports
+        Promise.all([imports, background.idle()])
           .then(() => database.close())
           .catch((error: unknown) => log.error('Closing the database failed', error)),
         new Promise((resolve) => setTimeout(resolve, 3_000).unref()),

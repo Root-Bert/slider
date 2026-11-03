@@ -75,7 +75,13 @@ export async function sweepUnusedDecks(
     .innerJoin(users, eq(users.id, decks.ownerId))
     .innerJoin(workspaces, eq(workspaces.id, decks.workspaceId))
     // As ISO text: postgres-js can't send a `Date` in a raw `sql` template.
-    .where(sql`${lastUse} <= ${unusedSince.toISOString()}::timestamptz`);
+    // Templates being designed belong to the library, not to someone's unused reviews.
+    .where(
+      and(
+        eq(decks.isTemplate, false),
+        sql`${lastUse} <= ${unusedSince.toISOString()}::timestamptz`,
+      ),
+    );
 
   for (const { deck, lastUse: usedAt, ownerEmail, workspace } of candidates) {
     // Reminders from before the deck was used again don't count.

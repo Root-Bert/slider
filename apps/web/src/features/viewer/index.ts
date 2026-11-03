@@ -10,3 +10,5 @@ export {
   type Thread,
 } from './comments/lib/comment-selectors';
 export { cssFamily, officeFontStyles, registerOfficeFonts } from './editing/live/fonts';
+// The editor's outbox: installed with the app, it sends unsent edits whichever page is open.
+export { editsUnsentBeforeSignOut, installEditOutbox } from './editing/edit-outbox-app';

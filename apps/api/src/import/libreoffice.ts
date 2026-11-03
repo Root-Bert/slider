@@ -1,9 +1,9 @@
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
-import { rmSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { access, constants, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { OdpDocument, isOdpBytes, type EmbeddedFont } from '@slider/odp';
 import { withoutExternalLinks } from '@slider/pptx';
 import JSZip from 'jszip';
@@ -25,6 +25,8 @@ export type PptxToPdf = ((
   options?: {
     /** The workspace's own fonts: drawn in them where the deck names them. */
     fonts?: readonly EmbeddedFont[];
+    /** `background` (a re-render, a sync) waits for every `interactive` conversion (an upload). */
+    priority?: PoolPriority;
   },
 ) => Promise<Uint8Array>) & {
   pages?: (
@@ -84,9 +86,6 @@ export function fontSubstituteFor(
     return substitute && substitute !== family ? substitute : null;
   };
 }
-
-/** {@link fontSubstituteFor} a workspace without fonts of its own. */
-export const fontSubstitute = fontSubstituteFor();
 
 /**
  * An ODP as an edit is drawn: without links, and its fonts named by what LibreOffice's
@@ -303,29 +302,30 @@ export function stopRunningConversions(): void {
 /**
  * Conversions that run at once, across every converter: uploads, links, picks and syncs convert
  * right in their request, besides the import queue – each run is a whole LibreOffice (hundreds
- * of MB, a CPU core). The rest wait their turn, in order of arrival; the timeout starts with the
- * run, not the wait.
+ * of MB, a CPU core). The rest wait their turn: what someone waits for (`interactive`) first,
+ * else in order of arrival; the timeout starts with the run, not the wait.
  */
 export const MAX_PARALLEL_CONVERSIONS = 2;
 let activeConversions = 0;
-const waitingConversions: (() => void)[] = [];
+const waitingConversions: Record<PoolPriority, (() => void)[]> = {
+  interactive: [],
+  background: [],
+};
 
-async function inConversionSlot<T>(work: () => Promise<T>): Promise<T> {
+async function inConversionSlot<T>(
+  work: () => Promise<T>,
+  priority: PoolPriority = 'interactive',
+): Promise<T> {
   if (activeConversions < MAX_PARALLEL_CONVERSIONS) activeConversions += 1;
-  else await new Promise<void>((resolve) => waitingConversions.push(resolve));
+  else await new Promise<void>((resolve) => waitingConversions[priority].push(resolve));
   try {
     return await work();
   } finally {
     // The slot goes straight to the next one waiting, else it is free again.
-    const next = waitingConversions.shift();
+    const next = waitingConversions.interactive.shift() ?? waitingConversions.background.shift();
     if (next) next();
     else activeConversions -= 1;
   }
-}
-
-/** Undoes {@link stopRunningConversions} – for tests; a real server never comes back from it. */
-export function resumeConversions(): void {
-  stopping = false;
 }
 
 export interface FindSofficeOptions {
@@ -391,12 +391,19 @@ export interface LibreOfficeOptions {
  */
 export function createLibreOfficePdf(options: LibreOfficeOptions): PptxToPdf {
   const convert = converter(options);
-  const toPdf: PptxToPdf = async (pptx, { fonts = [] } = {}) =>
+  const toPdf: PptxToPdf = async (pptx, { fonts = [], priority } = {}) =>
     // LibreOffice loads linked pictures, media and OLE links while it draws the PDF: an
     // uploaded deck must not make the server fetch internal URLs or read local files.
     isOdpBytes(pptx)
-      ? convert(await withoutOdpLinks(pptx), 'odp', ODP_IMPORT_FILTER, 'pdf', fonts)
-      : convert(await withoutExternalLinks(pptx), 'pptx', PPTX_IMPORT_FILTER, 'pdf', fonts);
+      ? convert(await withoutOdpLinks(pptx), 'odp', ODP_IMPORT_FILTER, 'pdf', fonts, priority)
+      : convert(
+          await withoutExternalLinks(pptx),
+          'pptx',
+          PPTX_IMPORT_FILTER,
+          'pdf',
+          fonts,
+          priority,
+        );
   toPdf.pages = async (deck, pages, { priority, key, prepared = false, fonts = [] } = {}) => {
     if (!isOdpBytes(deck)) throw new ConversionFailed('Only ODP decks are drawn page by page');
     const odp = prepared ? deck : await odpForDrawing(deck, fonts);
@@ -415,7 +422,7 @@ export function createLibreOfficePdf(options: LibreOfficeOptions): PptxToPdf {
         if (!(error instanceof PoolUnavailable)) throw error;
       }
     }
-    return convert(odp, 'odp', ODP_IMPORT_FILTER, pdfOfPages(pages));
+    return convert(odp, 'odp', ODP_IMPORT_FILTER, pdfOfPages(pages), [], priority);
   };
   toPdf.promote = (key) => options.pool?.promote(key);
   return toPdf;
@@ -458,8 +465,9 @@ function converter({
     filter: string,
     target = 'pdf',
     own: readonly EmbeddedFont[] = [],
+    priority?: PoolPriority,
   ): Promise<Uint8Array> =>
-    inConversionSlot(() => convertOnce(bytes, extension, filter, target, own));
+    inConversionSlot(() => convertOnce(bytes, extension, filter, target, own), priority);
 
   async function convertOnce(
     bytes: Uint8Array,
@@ -479,7 +487,7 @@ function converter({
       // The workspace's fonts the deck names: in a font folder of this run (fontconfig).
       const named = new Set(fonts.map((font) => font.toLowerCase()));
       const used = own.filter((font) => named.has(font.family.toLowerCase()));
-      const env = used.length > 0 ? await fontFolder(dir, used) : undefined;
+      const env = await fontFolder(dir, used);
       // … and those the file brings along: neither is replaced.
       const embedded = extension === 'odp' ? await embeddedFonts(bytes) : [];
       await writeFile(
@@ -526,15 +534,31 @@ function converter({
 }
 
 /**
- * Puts fonts into `dir/fonts` and returns the environment that has LibreOffice's fontconfig find
- * them beside the system's fonts – for this run only.
+ * The Google Fonts of the checkout (`fonts/google`, scripts/google-fonts.py) when LibreOffice is
+ * not run from the Docker image, which installs them for the system: without them a local
+ * LibreOffice draws Inter – a new deck's font – in Liberation Sans while the browser draws it in
+ * Inter, and the text jumps when it is clicked into. Missing in the image (not copied to /app).
  */
-async function fontFolder(dir: string, fonts: readonly EmbeddedFont[]): Promise<NodeJS.ProcessEnv> {
-  const folder = path.join(dir, 'fonts');
-  await mkdir(folder);
-  await Promise.all(
-    fonts.map((font, i) => writeFile(path.join(folder, `font-${i}.${font.format}`), font.bytes)),
-  );
+const BUNDLED_FONTS = fileURLToPath(new URL('../../../../fonts/google', import.meta.url));
+const bundledFontFolders: readonly string[] = existsSync(BUNDLED_FONTS) ? [BUNDLED_FONTS] : [];
+/**
+ * Where fontconfig keeps what it read of the checkout's fonts from run to run: a few hundred
+ * files, read afresh by every run, cost a fresh LibreOffice most of a second. The image's
+ * fonts are cached when it is built (`fc-cache`), so only a local LibreOffice needs it.
+ */
+const SHARED_FONT_CACHE = path.join(tmpdir(), 'slider-fontconfig');
+
+/**
+ * The environment that has LibreOffice's fontconfig find `folders` and the checkout's Google
+ * Fonts beside the system's fonts (`dir/fonts.conf`); `undefined` when there are none.
+ */
+export async function fontconfigEnv(
+  dir: string,
+  folders: readonly string[] = [],
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<NodeJS.ProcessEnv | undefined> {
+  const all = [...bundledFontFolders, ...folders];
+  if (all.length === 0) return undefined;
   const escape = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const config = path.join(dir, 'fonts.conf');
   await writeFile(
@@ -543,12 +567,29 @@ async function fontFolder(dir: string, fonts: readonly EmbeddedFont[]): Promise<
 <!DOCTYPE fontconfig SYSTEM "fonts.dtd">
 <fontconfig>
   <include ignore_missing="yes">/etc/fonts/fonts.conf</include>
-  <dir>${escape(folder)}</dir>
-  <cachedir>${escape(path.join(dir, 'fontcache'))}</cachedir>
+${all.map((folder) => `  <dir>${escape(folder)}</dir>`).join('\n')}
+${bundledFontFolders.length > 0 ? `  <cachedir>${escape(SHARED_FONT_CACHE)}</cachedir>\n` : ''}  <cachedir>${escape(path.join(dir, 'fontcache'))}</cachedir>
 </fontconfig>
 `,
   );
-  return { ...process.env, FONTCONFIG_FILE: config };
+  return { ...env, FONTCONFIG_FILE: config };
+}
+
+/**
+ * Puts the workspace's fonts into `dir/fonts` and returns the environment that has
+ * LibreOffice's fontconfig find them – for this run only ({@link fontconfigEnv}).
+ */
+async function fontFolder(
+  dir: string,
+  fonts: readonly EmbeddedFont[],
+): Promise<NodeJS.ProcessEnv | undefined> {
+  if (fonts.length === 0) return fontconfigEnv(dir);
+  const folder = path.join(dir, 'fonts');
+  await mkdir(folder);
+  await Promise.all(
+    fonts.map((font, i) => writeFile(path.join(folder, `font-${i}.${font.format}`), font.bytes)),
+  );
+  return fontconfigEnv(dir, [folder]);
 }
 
 function run(

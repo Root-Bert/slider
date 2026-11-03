@@ -5,9 +5,22 @@ export const routes = {
   /** Redirects to the last used workspace (or the onboarding without one). */
   reviews: () => '/',
   workspace: (workspaceId: string) => `/w/${workspaceId}`,
-  /** "Workspace" next to "Reviews": the workspace's material, for now its fonts. */
-  workspaceMaterial: (workspaceId: string) => `/w/${workspaceId}/material`,
+  /**
+   * "Bibliothek" next to "Projekte": the workspace's material – fonts, slide masters – with the
+   * filter shown as `?filter=` (none: the one last shown).
+   */
+  workspaceMaterial: (workspaceId: string, filter?: string) =>
+    filter
+      ? `/w/${workspaceId}/material?filter=${encodeURIComponent(filter)}`
+      : `/w/${workspaceId}/material`,
+  /** „Neues Asset“: a template to design in the editor, or templates and fonts to upload. */
+  newMaterial: (workspaceId: string) => `/w/${workspaceId}/material/neu`,
+  /** One uploaded design with all its layouts. */
+  workspaceMaster: (workspaceId: string, masterId: string) =>
+    `/w/${workspaceId}/material/vorlagen/${masterId}`,
   workspaceSettings: (workspaceId: string) => `/w/${workspaceId}/einstellungen`,
+  /** The settings' second tab, „Integrationen“: the workspace's AI – keys, model, its name (admins). */
+  workspaceIntegrations: (workspaceId: string) => `/w/${workspaceId}/einstellungen/integrationen`,
   /** The invitations on the settings page (BER-130). */
   workspaceInvites: (workspaceId: string) => `/w/${workspaceId}/einstellungen#einladen`,
   /** The workspace the new deck goes into rides along as `?workspace=`. */
@@ -38,9 +51,6 @@ export const routes = {
   /** Same page as the login – the first login creates the account (BER-130). */
   register: () => '/registrieren',
 };
-
-/** Absolute URL for sharing. */
-export const absoluteUrl = (path: string) => new URL(path, window.location.origin).toString();
 
 /** The current location as a `returnTo` value. */
 export const currentPath = () =>

@@ -1,19 +1,10 @@
-import {
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type MouseEvent,
-} from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { useNavigate } from 'react-router';
 import type { Deck, DeckFolder } from '@slider/shared';
 import { routes } from '@/lib/routes';
-import { AppHeader } from '@/shell/AppHeader';
 import { isContentQuery, useDeckSearch, useDecks, useFolders } from '@/lib/api';
-import { useMarqueeSelect } from '@/lib/marquee-select';
-import { useMultiSelect } from '@/lib/multi-select';
+import { useCollectionSelection } from '@/lib/collection-selection';
+import { isOnControl } from '@/lib/marquee-select';
 import { useAccount } from '@/features/auth';
 import {
   canCreateDecks,
@@ -21,14 +12,16 @@ import {
   formatDeckUsage,
   newReviewBlockedMessage,
   useWorkspace,
+  ViewSearch,
   WorkspaceViews,
 } from '@/features/workspaces';
-import { accentColor, isLightAccent } from '@/lib/accent';
+import { selectionStyle } from '@/lib/accent';
 import {
   Button,
   ContextMenu,
   Icon,
   PageHeader,
+  SelectionBar,
   TextLink,
   Toast,
   useDebounced,
@@ -37,17 +30,16 @@ import {
 } from '@/ui';
 import { DeleteFolderDialog } from './components/DeleteFolderDialog';
 import { DeckCollection, DeckCollectionSkeleton, type DeckView } from './components/DeckCollection';
-import { DeckSearch } from './components/DeckSearch';
 import { EmptyState } from './components/EmptyState';
 import { FolderNameDialog } from './components/FolderNameDialog';
 import { FolderTiles } from './components/FolderTiles';
 import { NoResults } from './components/NoResults';
 import { ReviewsToolbar } from './components/ReviewsToolbar';
-import { SelectionBar } from './components/SelectionBar';
 import { useBulkDeckActions } from './hooks/useBulkDeckActions';
 import { useDeckContextMenu } from './hooks/useDeckContextMenu';
 import { useFolderDialog } from './hooks/useFolderDialog';
-import { movedMessage, useMoveDecks } from './hooks/useMoveDecks';
+import { useMoveDecks } from './hooks/useMoveDecks';
+import { movedMessage } from './lib/bulk-messages';
 import { useOpenFolder } from './hooks/useOpenFolder';
 import { useStoredChoice } from './hooks/useStoredChoice';
 import {
@@ -70,7 +62,7 @@ const NO_DECKS: readonly Deck[] = [];
 const NO_FOLDERS: readonly DeckFolder[] = [];
 
 /**
- * G1 "Reviews" – every deck of one workspace, whoever added it (BER-121, BER-129).
+ * G1 "Projekte" – every deck of one workspace, whoever added it (BER-121, BER-129).
  */
 export function Component() {
   const navigate = useNavigate();
@@ -134,18 +126,16 @@ export function Component() {
   const inScope = decks.filter((deck) => inFolder(deck, folder));
 
   // Multi-select: ⌘/Shift-click, ⌘A or a selection box dragged over empty space.
-  const selection = useMultiSelect(visible.map((deck) => deck.id));
+  const pageRef = useRef<HTMLDivElement>(null);
+  const selection = useCollectionSelection(
+    pageRef,
+    visible.map((deck) => deck.id),
+  );
   const selectedDecks = visible.filter((deck) => selection.selected.has(deck.id));
   const bulk = useBulkDeckActions(selectedDecks, {
     workspaceId: workspace.id,
     onNotify: showToast,
     onDone: selection.clear,
-  });
-  const pageRef = useRef<HTMLDivElement>(null);
-  const marqueeBoxRef = useRef<HTMLDivElement>(null);
-  const marquee = useMarqueeSelect(pageRef, marqueeBoxRef, {
-    attribute: 'data-deck-id',
-    ...selection.marquee,
   });
   const [selectionMenuAt, setSelectionMenuAt] = useState<{ x: number; y: number } | null>(null);
 
@@ -166,9 +156,7 @@ export function Component() {
   const pageMenu = useDeckContextMenu();
   const onPageContextMenu = (event: MouseEvent) => {
     if (event.defaultPrevented) return;
-    if ((event.target as Element).closest('a, button, input, textarea, select, [role="menu"]')) {
-      return;
-    }
+    if (isOnControl(event.target)) return;
     pageMenu.onContextMenu(event);
   };
   const pageActions: MenuAction[] = [
@@ -180,7 +168,7 @@ export function Component() {
             onSelect: folderDialog.openCreate,
           } satisfies MenuAction,
           {
-            label: 'Neue Review',
+            label: 'Neue Präsentation',
             icon: 'add',
             onSelect: () => void navigate(routes.newReview(workspace.id)),
             disabled: Boolean(blocked),
@@ -219,19 +207,11 @@ export function Component() {
       // sideways (clip, not hidden – no scroll container, sticky bars keep working).
       className="dot-grid relative min-h-full overflow-x-clip"
       // Selection in the viewer's own reviewer colour, like their comments (BER-99).
-      style={
-        {
-          '--selection': accentColor(user.color),
-          '--on-selection': isLightAccent(user.color)
-            ? 'var(--color-on-primary)'
-            : 'var(--color-primary-hover)',
-        } as CSSProperties
-      }
+      style={selectionStyle(user.color)}
       onContextMenu={onPageContextMenu}
-      onMouseDown={marquee.onMouseDown}
+      onMouseDown={selection.onMouseDown}
     >
-      <title>{`Reviews | ${workspace.name} | Slider`}</title>
-      <AppHeader />
+      <title>{`Präsentationen | ${workspace.name} | Slider`}</title>
 
       <main className="flex flex-col gap-6 px-4 pt-2 pb-16 md:px-14">
         <PageHeader
@@ -241,7 +221,7 @@ export function Component() {
           title={
             openFolder ? (
               <>
-                <TextLink onClick={() => openFolderById(null)}>Reviews</TextLink>
+                <TextLink onClick={() => openFolderById(null)}>Präsentationen</TextLink>
                 <Icon name="chevronRight" size={24} className="shrink-0 text-fg-subtle" />
                 <span className="truncate">{openFolder.name}</span>
               </>
@@ -268,14 +248,20 @@ export function Component() {
 
         {selectedDecks.length > 0 ? (
           <SelectionBar
+            label="Ausgewählte Präsentationen"
             count={selectedDecks.length}
             actions={bulk.actions}
             onClear={selection.clear}
+            // Sticks to the top while scrolling: the actions stay reachable in a long selection.
+            className="sticky top-3 z-(--z-chrome) flex-wrap"
           />
         ) : (
           <ReviewsToolbar
             search={
-              <DeckSearch
+              <ViewSearch
+                label="Präsentationen durchsuchen"
+                contentLabel="Auch Folien und Kommentare durchsuchen"
+                contentPlaceholder="Namen, Folien, Kommentare…"
                 value={query}
                 onChange={setQuery}
                 content={searchContent}
@@ -296,13 +282,13 @@ export function Component() {
                   variant="secondary"
                   size="toolbar"
                   icon="add"
-                  aria-label="Neue Review"
+                  aria-label="Neue Präsentation"
                   disabled={Boolean(blocked)}
                   title={blocked ?? undefined}
                   aria-describedby={blocked ? limitNoticeId : undefined}
                   onClick={goToNew}
                 >
-                  <span className="max-sm:hidden">Neue Review</span>
+                  <span className="max-sm:hidden">Neue Präsentation</span>
                 </Button>
               )
             }
@@ -326,14 +312,14 @@ export function Component() {
           />
         )}
 
-        <section aria-label="Reviews" aria-busy={decksQuery.isPending}>
+        <section aria-label="Präsentationen" aria-busy={decksQuery.isPending}>
           {decksQuery.isPending ? (
             <DeckCollectionSkeleton view={view} />
           ) : decksQuery.isLoadingError ? (
             // Only without any list: a failed background refetch (a deploy, a blip) keeps the
             // loaded decks on screen instead of swapping them for the error.
             <EmptyState
-              title="Reviews konnten nicht geladen werden"
+              title="Präsentationen konnten nicht geladen werden"
               message={decksQuery.error.message}
               action={
                 <Button
@@ -355,8 +341,8 @@ export function Component() {
               title="Der Ordner ist leer"
               message={
                 mayCreate
-                  ? 'Ziehe Reviews in der Übersicht auf den Ordner oder nutze „Verschieben …“ im Menü einer Review.'
-                  : 'Hier wurden noch keine Reviews einsortiert.'
+                  ? 'Ziehe Präsentationen in der Übersicht auf den Ordner oder nutze „Verschieben …“ im Menü einer Präsentation.'
+                  : 'Hier wurden noch keine Präsentationen einsortiert.'
               }
             />
           ) : visible.length === 0 &&
@@ -385,7 +371,7 @@ export function Component() {
 
       {pageMenu.contextAt && (
         <ContextMenu
-          label="Aktionen für die Übersicht"
+          label="Aktionen für die Präsentationen"
           actions={pageActions}
           at={pageMenu.contextAt}
           onClose={pageMenu.onContextClose}
@@ -393,7 +379,7 @@ export function Component() {
       )}
       {selectionMenuAt && selectedDecks.length > 0 && (
         <ContextMenu
-          label={`Aktionen für ${selectedDecks.length} ausgewählte Reviews`}
+          label={`Aktionen für ${selectedDecks.length} ausgewählte Präsentationen`}
           actions={bulk.actions}
           at={selectionMenuAt}
           onClose={() => setSelectionMenuAt(null)}
@@ -422,14 +408,7 @@ export function Component() {
           }}
         />
       )}
-      {marquee.active && (
-        <div
-          ref={marqueeBoxRef}
-          data-selection-box
-          aria-hidden
-          className="pointer-events-none absolute z-(--z-panel) rounded-mark border border-(--selection) bg-(--selection)/15"
-        />
-      )}
+      {selection.box}
       <Toast toast={toast} />
     </div>
   );

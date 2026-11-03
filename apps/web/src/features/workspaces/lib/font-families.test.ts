@@ -22,7 +22,7 @@ const face = (
 });
 
 describe('groupFamilies', () => {
-  it('groups faces by family, in the usual order, and adds up their size', () => {
+  it('groups faces by family, in the usual order, adds up their size and names the source review', () => {
     const [inter, lora] = groupFamilies([
       face('Inter', 700, true),
       face('Lora', 400, false, 50),
@@ -32,22 +32,16 @@ describe('groupFamilies', () => {
     expect(inter?.faces.map(faceLabel)).toEqual(['Normal', 'Fett', 'Fett kursiv']);
     expect(inter?.sizeBytes).toBe(300);
     expect(lora).toMatchObject({ family: 'Lora', sizeBytes: 50 });
-  });
-
-  it('names the review a family was taken from', () => {
-    const [oswald, inter] = groupFamilies([
-      face('Oswald', 400, false, 100, 'Quartalsbericht'),
-      face('Inter', 400, false),
-    ]);
-    expect(oswald?.takenFrom).toBe('Quartalsbericht');
     expect(inter?.takenFrom).toBeNull();
+    const [oswald] = groupFamilies([face('Oswald', 400, false, 100, 'Quartalsbericht')]);
+    expect(oswald?.takenFrom).toBe('Quartalsbericht');
   });
 });
 
 describe('sliderFamilies', () => {
   const families = sliderFamilies();
 
-  it("lists Slider's fonts with the Office fonts they stand in for, not the symbol font", () => {
+  it("lists Slider's fonts with the Office fonts they stand in for and their own faces, not the symbol font", () => {
     expect(families.find((family) => family.family === 'Carlito')).toMatchObject({
       source: 'slider',
       css: '"Slider Carlito"',
@@ -55,9 +49,6 @@ describe('sliderFamilies', () => {
       standsIn: ['Calibri', 'Calibri Light'],
     });
     expect(families.some((family) => family.family === 'OpenSymbol')).toBe(false);
-  });
-
-  it('has only the faces with files of their own', () => {
     const oswald = families.find((family) => family.family === 'Oswald');
     expect(oswald?.faces.map(faceLabel)).toEqual(['Normal', 'Fett']);
   });

@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useColorOverrides } from '../hooks/useColorOverrides';
 import { withColorOverride } from '../lib/color-overrides';
 import { useStageRegistry } from '../state/stage-registry';
-import { useViewerState } from '../state/viewer-state';
+import { isSidePanelOpen, useViewerState } from '../state/viewer-state';
 import { LiveCursor } from './LiveCursor';
 import { getLiveSnapshot, lastMoved, useLiveSnapshot } from './lib/live-store';
 
@@ -31,7 +31,7 @@ export function CursorLayer() {
   const registry = useStageRegistry();
   const overrides = useColorOverrides();
   const { peers } = useLiveSnapshot();
-  const { threadPanelOpen, deletedPanelOpen, layersPanelOpen } = useViewerState();
+  const sidePanelOpen = isSidePanelOpen(useViewerState());
   const elements = useRef(new Map<string, HTMLDivElement>());
   const wakeRef = useRef<(() => void) | null>(null);
 
@@ -135,7 +135,7 @@ export function CursorLayer() {
   // A peer moved, came or left; a side panel opened or closed (it hides cursors under it).
   useEffect(() => {
     wakeRef.current?.();
-  }, [peers, threadPanelOpen, deletedPanelOpen, layersPanelOpen]);
+  }, [peers, sidePanelOpen]);
 
   if (!hasOthers) return null;
   return (

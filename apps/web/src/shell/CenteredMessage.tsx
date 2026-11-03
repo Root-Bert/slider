@@ -20,10 +20,10 @@ export function CenteredMessage({
         illustration={
           <Link
             to={routes.reviews()}
-            aria-label="Zur Übersicht"
+            aria-label="Zu den Präsentationen"
             className="transition-opacity hover:opacity-80"
           >
-            <Logo />
+            <Logo tone="mono" />
           </Link>
         }
         title={title}

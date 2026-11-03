@@ -11,6 +11,16 @@ test('comment, reply and resolve – all of it survives a reload', async ({ page
   await page.getByRole('img', { name: 'Umsatz nach Region' }).click({ position: { x: 30, y: 30 } });
   const composer = page.getByRole('combobox', { name: 'Kommentar', exact: true });
   await expect(composer).toBeVisible();
+  // Löschen at the top right throws the draft away; a second click starts a fresh one.
+  await composer.fill('E2E: verworfen');
+  await shot(page, 'comment-composer');
+  await page.getByRole('button', { name: 'Entwurf löschen' }).click();
+  // The first click only turns it red; the second throws the draft away.
+  await expect(composer).toBeVisible();
+  await page.getByRole('button', { name: 'Wirklich: Entwurf löschen' }).click();
+  await expect(composer).toBeHidden();
+  await page.getByRole('img', { name: 'Umsatz nach Region' }).click({ position: { x: 30, y: 30 } });
+  await expect(composer).toHaveValue('');
   await composer.fill(text);
   await page.getByRole('button', { name: /^Senden/ }).click();
   await expect(composer).toBeHidden();

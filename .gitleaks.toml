@@ -8,3 +8,11 @@ useDefault = true
 description = "Env placeholders in docs and examples"
 regexTarget = "secret"
 regexes = ['''^[A-Z][A-Z0-9_]*=''', '''^<[^>]*>?$''']
+
+# These literal credentials only exercise mocked integrations; keep every other test value scanned.
+[[allowlists]]
+description = "Literal dummy credentials used with mocked integration services"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''(^|/)apps/api/test/integrations\.test\.ts$''']
+regexes = ['''^(unsplash-env-12345678|unsplash-key-12345678|anything-1234)$''']

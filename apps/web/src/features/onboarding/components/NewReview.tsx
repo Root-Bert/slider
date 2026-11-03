@@ -7,8 +7,16 @@ import { LoginErrorBanner } from '@/features/auth';
 import { rememberWorkspace, WorkspaceMark } from '@/features/workspaces';
 import { GOOGLE_RETURN_PARAMS, useGooglePick } from '@/features/google';
 import { NextcloudBrowser } from '@/features/nextcloud';
-import { useAuthProviders, useMe, useNextcloudConnections, useNextcloudSettings } from '@/lib/api';
-import { cn, Divider, NextcloudMark, PageHeader } from '@/ui';
+import {
+  useAuthProviders,
+  useCreateBlankDeck,
+  useMe,
+  useNextcloudConnections,
+  useNextcloudSettings,
+  useWorkspaceMasters,
+} from '@/lib/api';
+import { cn, NextcloudMark, PageHeader } from '@/ui';
+import { BlankDeckCard } from './BlankDeckCard';
 import { LinkImportForm } from './LinkImportForm';
 import { NoAccessCard } from './NoAccessCard';
 import { OneDriveAccountChooser } from './OneDriveAccountChooser';
@@ -36,6 +44,13 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
   const link = useLinkImport(workspace.id, openDeck);
   const upload = useDeckUpload(workspace.id, openDeck);
   const picker = useOneDrivePicker(workspace.id, openDeck);
+  // Start from scratch: an empty presentation, straight into the editor.
+  const blank = useCreateBlankDeck(workspace.id);
+  // …or on one of the workspace's slide masters – only an ODP design can be built on.
+  const masters = useWorkspaceMasters(workspace.id).data?.filter((m) => m.format === 'odp') ?? [];
+  const [chosenMaster, setChosenMaster] = useState('');
+  // A design removed meanwhile falls back to none.
+  const masterId = masters.some((m) => m.id === chosenMaster) ? chosenMaster : '';
   const { data: me } = useMe();
   const providers = useAuthProviders();
   // The picker needs this server's Microsoft app (the same one the login uses).
@@ -166,7 +181,7 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
 
   return (
     <div className="dot-grid flex min-h-full flex-col">
-      <title>Neue Review | Slider</title>
+      <title>Neue Präsentation | Slider</title>
       <AppHeader />
 
       {connectError && (
@@ -195,7 +210,7 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
             // Like the settings pages: mark and title over the column, no subtitle. The workspace's
             // mark, as on its settings: the review goes there.
             <PageHeader
-              title="Neue Review"
+              title="Neue Präsentation"
               leading={
                 <WorkspaceMark name={workspace.name} logoUrl={workspace.logoUrl} size={32} />
               }
@@ -203,8 +218,23 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
             />
           )}
           <div className="flex flex-col gap-3">
-            {/* First, so it opens up right under the heading. Also while `me` still loads: back
-                from the Microsoft consent it opens right away. */}
+            {/* Start from scratch, the featured way in; then the ways to bring a deck along. Both
+                step aside while a picker is open. */}
+            {!link.noAccess && !picking && (
+              <div {...riseIn(0)} className={cn(riseIn(0).className, 'flex flex-col gap-8 pb-2')}>
+                <BlankDeckCard
+                  onCreate={() => blank.mutate(masterId || undefined, { onSuccess: openDeck })}
+                  pending={blank.isPending}
+                  error={blank.error?.message ?? null}
+                  masters={masters}
+                  masterId={masterId}
+                  onMasterChange={setChosenMaster}
+                />
+                <h2 className="text-base font-medium text-fg">Präsentation importieren</h2>
+              </div>
+            )}
+            {/* Opens up right under the heading (the rest steps aside). Also while `me` still
+                loads: back from the Microsoft consent it opens right away. */}
             {!link.noAccess && shownSources > 0 && (
               <div className="flex flex-col items-start gap-3 sm:flex-row sm:gap-0">
                 {showPicker && (
@@ -260,9 +290,6 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
                 )}
               </div>
             )}
-            {!link.noAccess && shownSources > 0 && !picking && (
-              <Divider label="oder" labelPosition="start" {...riseIn(0)} />
-            )}
             <OneDriveAccountChooser {...picker.chooser} />
 
             {!picking && (
@@ -275,7 +302,6 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
                   error={link.error}
                   pending={link.pending}
                   emphasis={link.noAccess ? 'secondary' : 'primary'}
-                  label={link.noAccess ? undefined : 'Link einfügen'}
                 />
               </div>
             )}

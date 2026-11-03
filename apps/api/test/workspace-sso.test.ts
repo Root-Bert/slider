@@ -152,7 +152,7 @@ const me = async (cookie: string) =>
   (await (await ctx.request('/api/me', { cookie })).json()) as MeResponse;
 
 describe('company login per workspace (BER-162)', () => {
-  it('is set up by an admin: discovery checked, secret kept back, domain proven by DNS', async () => {
+  it('is set up by an admin: discovery checked, secret kept back, domain proven by DNS, per provider', async () => {
     const idp = fakeIdp();
     await context(idp);
     const admin = await companyAdmin();
@@ -224,93 +224,9 @@ describe('company login per workspace (BER-162)', () => {
     // Saving again without a secret keeps it, and the proof stays.
     const again = await saveSso(admin.workspaceId, admin.cookie, { clientSecret: undefined });
     expect(workspaceSsoSchema.parse(await again.json())).toMatchObject({ active: true });
-  });
 
-  it('signs a new colleague up and into the workspace, then in again as the same account', async () => {
-    const idp = fakeIdp();
-    await context(idp);
-    const admin = await activeSso();
-
-    const { authorize, callback } = await ssoLogin(idp, 'Ben@Firma.de', '/decks');
-    expect(authorize.origin + authorize.pathname).toBe(`${ISSUER}/protocol/openid-connect/auth`);
-    expect(Object.fromEntries(authorize.searchParams)).toMatchObject({
-      client_id: 'slider-client',
-      redirect_uri: REDIRECT_URI,
-      code_challenge_method: 'S256',
-    });
-    expect(callback.headers.get('location')).toBe('http://localhost:5173/decks');
-    const cookie = sessionCookieFrom(callback) ?? '';
-    const body = await me(cookie);
-    expect(body.user).toMatchObject({ email: 'ben@firma.de', name: 'Ben Krause' });
-    // In the company's workspace, no own one founded.
-    expect(body.workspaces).toEqual([
-      expect.objectContaining({ id: admin.workspaceId, role: 'member' }),
-    ]);
-    const identities = await ctx.deps.db
-      .select()
-      .from(userIdentities)
-      .where(eq(userIdentities.userId, body.user!.id));
-    expect(identities).toEqual([
-      expect.objectContaining({ provider: 'sso', subject: `${admin.workspaceId}:kc-ben` }),
-    ]);
-
-    const again = await ssoLogin(idp);
-    expect((await me(sessionCookieFrom(again.callback) ?? '')).user?.id).toBe(body.user?.id);
-  });
-
-  it('signs into an existing account at the domain that signs in another way, and links to it', async () => {
-    const idp = fakeIdp({ sub: 'kc-anna', email: 'anna@firma.de', name: 'Anna' });
-    await context(idp);
-    const admin = await activeSso();
-    await ctx.deps.db.insert(userIdentities).values({
-      provider: 'google',
-      subject: 'google-anna',
-      userId: admin.user.id,
-      email: 'anna@firma.de',
-    });
-
-    const { callback } = await ssoLogin(idp, 'anna@firma.de');
-    expect((await me(sessionCookieFrom(callback) ?? '')).user?.id).toBe(admin.user.id);
-    const providers = await ctx.deps.db
-      .select({ provider: userIdentities.provider })
-      .from(userIdentities)
-      .where(eq(userIdentities.userId, admin.user.id));
-    expect(providers.map((row) => row.provider).sort()).toEqual(['google', 'sso']);
-  });
-
-  it('refuses addresses outside the domain and logins after the domain changed', async () => {
-    const idp = fakeIdp({ email: 'mallory@elsewhere.de' });
-    await context(idp);
-    const admin = await activeSso();
-
-    const outside = await ssoLogin(idp);
-    expect(outside.callback.headers.get('location')).toContain('/login?error=sso_domain');
-    expect(sessionCookieFrom(outside.callback)).toBeNull();
-
-    // Private again: the proof was for the domain, the login is off.
-    await ctx.request(`/api/workspaces/${admin.workspaceId}/domain`, {
-      method: 'PUT',
-      cookie: admin.cookie,
-      json: { enabled: false },
-    });
-    const found = await ctx.request('/api/auth/sso/discover', {
-      method: 'POST',
-      json: { email: 'ben@firma.de' },
-    });
-    expect(found.status).toBe(404);
-    const direct = await ctx.request(`/api/auth/sso/login?workspace=${admin.workspaceId}`);
-    expect(direct.headers.get('location')).toContain('/login?error=sso_unavailable');
-    expect(
-      authProvidersSchema.parse(await (await ctx.request('/api/auth/providers')).json()).sso,
-    ).toBe(false);
-  });
-
-  it('needs a new secret and a new DNS proof for another provider', async () => {
-    const idp = fakeIdp();
-    await context(idp);
-    const admin = await activeSso();
-    const oldRecord = txt['_slider-sso.firma.de']![0]![0]!;
-
+    // Another provider needs a new secret and a new DNS proof.
+    const oldRecord = saved.dnsRecord!.value;
     // The stored secret never goes to another client.
     const noSecret = await saveSso(admin.workspaceId, admin.cookie, {
       clientId: 'other-client',
@@ -340,9 +256,94 @@ describe('company login per workspace (BER-162)', () => {
       cookie: admin.cookie,
     });
     expect(stale.status).toBe(400);
+
+    // Admins can delete it.
+    const deleted = await ctx.request(`/api/workspaces/${admin.workspaceId}/sso`, {
+      method: 'DELETE',
+      cookie: admin.cookie,
+    });
+    expect(deleted.status).toBe(204);
+    expect(
+      await ctx.deps.db
+        .select()
+        .from(workspaceSso)
+        .where(and(eq(workspaceSso.workspaceId, admin.workspaceId))),
+    ).toEqual([]);
   });
 
-  it('is for admins of paid workspaces on the hosted instance, with a public https issuer', async () => {
+  it('signs colleagues in, links existing accounts, refuses other domains and a closed domain', async () => {
+    const idp = fakeIdp();
+    await context(idp);
+    const admin = await activeSso();
+
+    const { authorize, callback } = await ssoLogin(idp, 'Ben@Firma.de', '/decks');
+    expect(authorize.origin + authorize.pathname).toBe(`${ISSUER}/protocol/openid-connect/auth`);
+    expect(Object.fromEntries(authorize.searchParams)).toMatchObject({
+      client_id: 'slider-client',
+      redirect_uri: REDIRECT_URI,
+      code_challenge_method: 'S256',
+    });
+    expect(callback.headers.get('location')).toBe('http://localhost:5173/decks');
+    const cookie = sessionCookieFrom(callback) ?? '';
+    const body = await me(cookie);
+    expect(body.user).toMatchObject({ email: 'ben@firma.de', name: 'Ben Krause' });
+    // In the company's workspace, no own one founded.
+    expect(body.workspaces).toEqual([
+      expect.objectContaining({ id: admin.workspaceId, role: 'member' }),
+    ]);
+    const identities = await ctx.deps.db
+      .select()
+      .from(userIdentities)
+      .where(eq(userIdentities.userId, body.user!.id));
+    expect(identities).toEqual([
+      expect.objectContaining({ provider: 'sso', subject: `${admin.workspaceId}:kc-ben` }),
+    ]);
+
+    const again = await ssoLogin(idp);
+    expect((await me(sessionCookieFrom(again.callback) ?? '')).user?.id).toBe(body.user?.id);
+
+    // An existing account at the domain that signs in another way is linked to.
+    idp.claims = { ...idp.claims, sub: 'kc-anna', email: 'anna@firma.de', name: 'Anna' };
+    await ctx.deps.db.insert(userIdentities).values({
+      provider: 'google',
+      subject: 'google-anna',
+      userId: admin.user.id,
+      email: 'anna@firma.de',
+    });
+
+    const anna = await ssoLogin(idp, 'anna@firma.de');
+    expect((await me(sessionCookieFrom(anna.callback) ?? '')).user?.id).toBe(admin.user.id);
+    const providers = await ctx.deps.db
+      .select({ provider: userIdentities.provider })
+      .from(userIdentities)
+      .where(eq(userIdentities.userId, admin.user.id));
+    expect(providers.map((row) => row.provider).sort()).toEqual(['google', 'sso']);
+
+    // Addresses outside the domain are refused.
+    idp.claims = { ...idp.claims, sub: 'kc-mallory', email: 'mallory@elsewhere.de' };
+    const outside = await ssoLogin(idp);
+    expect(outside.callback.headers.get('location')).toContain('/login?error=sso_domain');
+    expect(sessionCookieFrom(outside.callback)).toBeNull();
+
+    // Private again: the proof was for the domain, the login is off.
+    await ctx.request(`/api/workspaces/${admin.workspaceId}/domain`, {
+      method: 'PUT',
+      cookie: admin.cookie,
+      json: { enabled: false },
+    });
+    const found = await ctx.request('/api/auth/sso/discover', {
+      method: 'POST',
+      json: { email: 'ben@firma.de' },
+    });
+    expect(found.status).toBe(404);
+    const direct = await ctx.request(`/api/auth/sso/login?workspace=${admin.workspaceId}`);
+    expect(direct.headers.get('location')).toContain('/login?error=sso_unavailable');
+    expect(
+      authProvidersSchema.parse(await (await ctx.request('/api/auth/providers')).json()).sso,
+    ).toBe(false);
+  });
+
+  it('is for admins of paid workspaces on the hosted instance, with a public https issuer, never internal', async () => {
     const idp = fakeIdp();
     await context(idp);
     const admin = await companyAdmin('free');
@@ -373,10 +374,10 @@ describe('company login per workspace (BER-162)', () => {
         .status,
     ).toBe(400);
     expect(await ctx.deps.db.select().from(workspaceSso)).toEqual([]);
-  });
 
-  it('never calls internal addresses', async () => {
-    const idp = fakeIdp();
+    // Never calls internal addresses.
+    await ctx.cleanup();
+    idp.requests.length = 0;
     txt = {};
     ctx = await createTestContext({
       config: { auth: { ...testConfig().auth, devLogin: false, signup: 'company' } },
@@ -384,8 +385,8 @@ describe('company login per workspace (BER-162)', () => {
       lookup: async () => [{ address: '10.0.0.5' }],
       instanceAdmin: true,
     });
-    const admin = await companyAdmin();
-    expect((await saveSso(admin.workspaceId, admin.cookie)).status).toBe(400);
+    const internal = await companyAdmin();
+    expect((await saveSso(internal.workspaceId, internal.cookie)).status).toBe(400);
     expect(idp.requests).toEqual([]);
   });
 
@@ -410,22 +411,5 @@ describe('company login per workspace (BER-162)', () => {
     // Links from before the rename to Workspace still carry `?organisation=`.
     const old = await ctx.request(`/api/auth/sso/login?organisation=${admin.workspaceId}`);
     expect(old.headers.get('location')).toContain(`${ISSUER}/protocol/openid-connect/auth`);
-  });
-
-  it('is gone with its workspace, and admins can delete it', async () => {
-    const idp = fakeIdp();
-    await context(idp);
-    const admin = await activeSso();
-    const res = await ctx.request(`/api/workspaces/${admin.workspaceId}/sso`, {
-      method: 'DELETE',
-      cookie: admin.cookie,
-    });
-    expect(res.status).toBe(204);
-    expect(
-      await ctx.deps.db
-        .select()
-        .from(workspaceSso)
-        .where(and(eq(workspaceSso.workspaceId, admin.workspaceId))),
-    ).toEqual([]);
   });
 });

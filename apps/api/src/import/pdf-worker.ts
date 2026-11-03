@@ -1,6 +1,6 @@
 import { parentPort } from 'node:worker_threads';
 import { toWorkerError, type FromPdfWorker, type ToPdfWorker } from './pdf-jobs';
-import { drawCutoutPages, drawLayerPages, drawPdfPages, readPdfDeck } from './pdf-render';
+import { drawLayerPages, drawPdfPages, readPdfDeck } from './pdf-render';
 
 /*
  * The PDF worker (`pdf-jobs.ts` starts one per PDF): reads the PDF it is sent and answers with
@@ -31,8 +31,8 @@ port.on('message', (message: ToPdfWorker) => {
 function run(task: ToPdfWorker & { type: 'run' }) {
   const onOpened = (pages: number) => send({ type: 'opened', pages });
   if (task.kind === 'deck') return readPdfDeck(task.bytes, onOpened);
-  if (task.kind === 'cutout') return drawCutoutPages(task.bytes);
-  if (task.kind === 'layers') return drawLayerPages(task.bytes, task.background ?? true);
+  if (task.kind === 'layers')
+    return drawLayerPages(task.bytes, task.background ?? true, task.width);
   return drawPdfPages(
     task.bytes,
     async (page, index) => {

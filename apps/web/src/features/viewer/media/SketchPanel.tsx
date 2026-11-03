@@ -53,15 +53,11 @@ export interface SketchActions {
 
 /** The slide's tool bar: pointer (drag = box, typing writes into it), pens, eraser. */
 const TOOLS: { tool: SheetTool; icon: IconName; label: string }[] = [
-  {
-    tool: null,
-    icon: 'cursor',
-    label: 'Zeiger: ziehen = Box (Tippen schreibt hinein), Doppelklick = Text, Klick wählt aus',
-  },
+  { tool: null, icon: 'cursor', label: 'Zeiger' },
   { tool: 'pen', icon: 'gesture', label: 'Freihand' },
   { tool: 'arrow', icon: 'arrow', label: 'Pfeil' },
   { tool: 'highlighter', icon: 'marker', label: 'Marker' },
-  { tool: 'eraser', icon: 'eraser', label: 'Radierer: Striche und Boxen wegwischen' },
+  { tool: 'eraser', icon: 'eraser', label: 'Radierer' },
 ];
 
 /**

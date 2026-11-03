@@ -1,12 +1,14 @@
 import { memo, type CSSProperties } from 'react';
 import { accentColor } from '@/lib/accent';
-import { Avatar, cn, Icon } from '@/ui';
+import { Avatar, cn, Icon, selectedOutlineClass } from '@/ui';
 import { commentPreview, isRemovedInSource, type Thread } from './lib/comment-selectors';
 import { LiveThreadMarker } from '../live/LiveThreadMarker';
 import { useViewerDispatch } from '../state/viewer-state';
 import type { CardEmphasis } from './CommentCard';
 import { useCommentMenu } from './hooks/useCommentMenu';
+import { useCommentSelection } from './comment-selection';
 import { removedInSourceLabel } from './lib/labels';
+import { isPendingComment } from '@/lib/api/comment-outbox';
 
 /**
  * Compact B1 card for narrow comment columns (small slides): avatar, author and two
@@ -24,6 +26,8 @@ export const CompactCard = memo(function CompactCard({
   fadeDone: boolean;
 }) {
   const dispatch = useViewerDispatch();
+  const selection = useCommentSelection();
+  const selected = selection.selected.has(thread.id);
   const { root, replies } = thread;
   const highlighted = emphasis === 'focused' || emphasis === 'hovered';
   const faded = fadeDone && root.status === 'done';
@@ -41,8 +45,13 @@ export const CompactCard = memo(function CompactCard({
     <article
       data-comment-card={thread.id}
       data-hover-thread={thread.id}
+      data-selected={selected || undefined}
+      // Not saved yet (written offline): dimmed like a reply on its way.
+      aria-busy={isPendingComment(root) || undefined}
+      onContextMenuCapture={(event) => selection.onContextMenuCapture(thread.id, event)}
       className={cn(
         'relative transition-opacity duration-200',
+        isPendingComment(root) && 'opacity-60',
         (emphasis === 'dimmed' || faded) && 'opacity-45',
         emphasis === 'dimmed' && faded && 'opacity-30',
       )}
@@ -53,7 +62,10 @@ export const CompactCard = memo(function CompactCard({
       <LiveThreadMarker threadId={thread.id} />
       <button
         type="button"
-        onClick={() => dispatch({ type: 'threadFocused', threadId: thread.id, openPanel: true })}
+        onClick={(event) => {
+          if (selection.onModifiedClick(thread.id, event)) return;
+          dispatch({ type: 'threadFocused', threadId: thread.id, openPanel: true });
+        }}
         aria-label={`Thread von ${root.author.name} öffnen`}
         title={
           [text, removed && removedInSourceLabel(root.source)].filter(Boolean).join(' | ') ||
@@ -63,6 +75,7 @@ export const CompactCard = memo(function CompactCard({
           'glass flex w-full flex-col gap-1 rounded-panel p-2 text-left transition-[background-color,box-shadow] duration-200 hover:bg-glass-hover',
           highlighted &&
             'shadow-[inset_0_0_0_1px_var(--card-accent),0_0_16px_color-mix(in_srgb,var(--card-accent)_50%,transparent)]!',
+          selected && selectedOutlineClass,
         )}
       >
         <span className="flex min-w-0 items-center gap-1.5">

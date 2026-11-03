@@ -32,7 +32,7 @@ export interface CardLayout {
   height: number;
 }
 
-export const CARD_MAX_WIDTH = 280;
+export const CARD_MAX_WIDTH = 360;
 export const CARD_MIN_WIDTH = 220;
 /** Gutter between first-row cards – room for the second-row card's line. */
 const GUTTER = 96;
@@ -68,6 +68,17 @@ function grid(perRow: number, width: number) {
   const secondRowLeft = (k: number) => firstRowLeft(k) + cardWidth + gutter / 2 - ENTRY_X;
   const fitsSecondRow = (k: number) => secondRowLeft(k) + cardWidth <= width;
   return { cardWidth, firstRowLeft, secondRowLeft, fitsSecondRow };
+}
+
+/**
+ * Width all `count` cards take in one band at full card width and gutters: what a column grows
+ * to when there is room beside its slide (an even count ends on a second-row card).
+ */
+export function naturalWidth(count: number): number {
+  if (count <= 1) return CARD_MAX_WIDTH;
+  const perRow = Math.ceil(count / 2);
+  const firstRow = perRow * CARD_MAX_WIDTH + (perRow - 1) * GUTTER;
+  return count % 2 === 0 ? firstRow + GUTTER / 2 - ENTRY_X + CARD_MAX_WIDTH : firstRow;
 }
 
 /** Cards one band holds with `perRow` first-row cards. */

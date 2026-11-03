@@ -14,9 +14,25 @@ interface WaveformProps {
   className?: string;
 }
 
+/** Fewest bars drawn: a short take (a peak per 100 ms) is stretched to them, not drawn as dashes. */
+const MIN_BARS = 40;
+
+/** A short take's peaks spread over `MIN_BARS`, each bar between its two neighbours. */
+function stretchPeaks(peaks: readonly number[], bars = MIN_BARS): readonly number[] {
+  if (peaks.length === 0) return FLAT;
+  if (peaks.length >= bars) return peaks;
+  if (peaks.length === 1) return Array.from({ length: bars }, () => peaks[0]!);
+  return Array.from({ length: bars }, (_, index) => {
+    const at = (index * (peaks.length - 1)) / (bars - 1);
+    const from = Math.floor(at);
+    const to = Math.min(peaks.length - 1, from + 1);
+    return peaks[from]! + (peaks[to]! - peaks[from]!) * (at - from);
+  });
+}
+
 /** Audio waveform as bars (Figma Desktop-7 voice note); doubles as the seek bar. */
 export function Waveform({ peaks, progress = 0, onSeek, label, className }: WaveformProps) {
-  const bars = peaks.length > 0 ? peaks : FLAT;
+  const bars = stretchPeaks(peaks);
   const seek = (event: PointerEvent<HTMLDivElement>) => {
     if (!onSeek) return;
     const box = event.currentTarget.getBoundingClientRect();

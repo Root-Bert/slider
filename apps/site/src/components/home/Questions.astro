@@ -1,0 +1,419 @@
+---
+import { Avatar } from '@/ui/Avatar';
+import AiMark from '../AiMark.astro';
+import Credit from '../Credit.astro';
+import { t, type Lang } from '~/i18n';
+import { PHOTOS, photoSrcset, photoUrl, type PhotoName } from '~/lib/photos';
+import { person, type PersonName } from '~/lib/people';
+
+/**
+ * The questions everyone has, as a stack of slides: someone asks on each, the AI answers. Drag the
+ * top one aside (or use the arrows) and it slides under the stack, the way Slider's logo stacks
+ * two slides. Each slide wears one of the reviewers' colours and one office dog.
+ */
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const q = t(lang).questions;
+const looks: { bg: string; ink: string; photo: PhotoName }[] = [
+  { bg: 'var(--color-accent-blue)', ink: '#fff', photo: 'collie' },
+  { bg: 'var(--color-accent-yellow)', ink: '#000', photo: 'pom' },
+  { bg: 'var(--color-accent-violet)', ink: '#000', photo: 'reader' },
+  { bg: 'var(--color-accent-green)', ink: '#000', photo: 'corgi' },
+  { bg: 'var(--color-accent-cyan)', ink: '#000', photo: 'forest' },
+  { bg: '#fff', ink: '#000', photo: 'rottweiler' },
+];
+const total = q.cards.length;
+const two = (n: number) => String(n).padStart(2, '0');
+---
+
+<section class="qs" data-section data-live="questions">
+  <div class="qs-head">
+    <h2 data-reveal>{q.title}</h2>
+    <div class="qs-nav" data-reveal style="--i: 1">
+      <span class="qs-hint">{q.hint}</span>
+      <span class="qs-count" aria-live="polite"><b data-qs-at>01</b> / {two(total)}</span>
+      <button type="button" data-qs-prev aria-label={q.prev}>
+        <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20 11H7.8l5.6-5.6L12 4l-8 8 8 8 1.4-1.4L7.8 13H20Z"></path></svg>
+      </button>
+      <button type="button" data-qs-next aria-label={q.next}>
+        <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 13h12.2l-5.6 5.6L12 20l8-8-8-8-1.4 1.4 5.6 5.6H4Z"></path></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="qs-stack" data-qs tabindex="0" role="group" aria-roledescription="carousel" aria-label={q.title} data-reveal style="--i: 2">
+    {
+      q.cards.map((card, i) => {
+        const look = looks[i % looks.length]!;
+        const photo = PHOTOS[look.photo];
+        return (
+          <article
+            class="qs-card"
+            data-qs-card
+            data-d={i}
+            aria-hidden={i === 0 ? undefined : 'true'}
+            style={`--d: ${i}; --bg: ${look.bg}; --ink: ${look.ink}; --photo-bg: ${photo.color}`}
+          >
+            <div class="qs-text">
+              <p class="qs-by">
+                <Avatar author={person(card.by as PersonName)} size={28} nativeTitle={false} />
+                {card.by}
+              </p>
+              <h3>{card.q}</h3>
+              <p class="qs-answer">
+                <AiMark size={24} />
+                <span>{card.a}</span>
+              </p>
+            </div>
+            <figure class="qs-photo">
+              <img
+                src={photoUrl(photo, 640, 4 / 5)}
+                srcset={photoSrcset(photo, 640, 4 / 5)}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                draggable="false"
+              />
+              <Credit photo={photo} lang={lang} class="qs-credit" />
+            </figure>
+          </article>
+        );
+      })
+    }
+  </div>
+</section>
+
+<style>
+  .qs {
+    /* The stack fits the screen's height too: a slide is never cut off below. */
+    --w: min(1120px, calc((100svh - 300px) * 16 / 9));
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 140px 32px 0;
+  }
+  .qs-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px 32px;
+    max-width: var(--w);
+    margin: 0 auto;
+  }
+  .qs-head h2 {
+    font-size: clamp(44px, 6vw, 96px);
+    font-weight: 800;
+    line-height: 0.95;
+    letter-spacing: -0.05em;
+  }
+  .qs-nav {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-bottom: 6px;
+  }
+  .qs-hint {
+    margin-right: 14px;
+    font-size: 15px;
+    color: var(--color-fg-subtle);
+  }
+  .qs-count {
+    min-width: 64px;
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-fg-subtle);
+  }
+  .qs-count b {
+    font-weight: 600;
+    color: var(--color-fg);
+  }
+  .qs-nav button {
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    color: var(--color-fg);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+    cursor: pointer;
+    transition:
+      background-color 150ms,
+      box-shadow 150ms;
+  }
+  .qs-nav button:hover {
+    background: var(--color-surface-2);
+    box-shadow: inset 0 0 0 1px var(--color-fg-subtle);
+  }
+
+  /* ── The stack: the slides behind peek out down and to the left, like the logo ──────────── */
+  .qs-stack {
+    --step: clamp(10px, 1.8vw, 22px);
+    position: relative;
+    display: grid;
+    max-width: var(--w);
+    margin: 40px auto 0;
+    padding: 0 0 calc(var(--step) * 2) calc(var(--step) * 2);
+    outline: none;
+    touch-action: pan-y;
+    user-select: none;
+  }
+  .qs-stack:focus-visible .qs-card[data-d='0'] {
+    outline: 3px solid var(--color-fg);
+    outline-offset: 4px;
+  }
+  .qs-card {
+    grid-area: 1 / 1;
+    position: relative;
+    z-index: calc(10 - var(--d));
+    display: grid;
+    grid-template-columns: 56fr 44fr;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    border-radius: clamp(16px, 2vw, 28px);
+    background: var(--bg);
+    color: var(--ink);
+    container-type: inline-size;
+    translate: calc(var(--d) * var(--step) * -1) calc(var(--d) * var(--step));
+    box-shadow: 0 30px 80px -40px rgb(0 0 0 / 0.5);
+    transition:
+      translate 650ms var(--ease-emphasized),
+      rotate 650ms var(--ease-emphasized),
+      opacity 400ms ease;
+  }
+  .qs-card[data-d='0'] {
+    cursor: grab;
+  }
+  .qs-card.is-dragging {
+    cursor: grabbing;
+    transition: none;
+  }
+  /* Deeper than three: tucked away. Behind the top one only the colour shows. */
+  .qs-card:not([data-d='0'], [data-d='1'], [data-d='2']) {
+    opacity: 0;
+  }
+  .qs-card > * {
+    transition: opacity 300ms ease;
+  }
+  .qs-card:not([data-d='0']) > * {
+    opacity: 0;
+  }
+  /* Pulling the top one aside shows the next. */
+  .qs-stack.is-pulling .qs-card[data-d='1'] > * {
+    opacity: 1;
+  }
+
+  .qs-text {
+    display: flex;
+    flex-direction: column;
+    padding: 5cqw 4.5cqw 4.5cqw 5cqw;
+  }
+  .qs-by {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: max(14px, 1.5cqw);
+    font-weight: 600;
+  }
+  .qs-by :global(> *:first-child),
+  .qs-answer :global(> *:first-child) {
+    flex: none;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px var(--ink);
+  }
+  .qs-text h3 {
+    margin-top: 2.6cqw;
+    font-size: 5.6cqw;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.045em;
+    text-wrap: balance;
+  }
+  .qs-answer {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-top: auto;
+    max-width: 36em;
+    font-size: max(15px, 1.75cqw);
+    line-height: 1.42;
+  }
+  .qs-answer span {
+    opacity: 0.86;
+  }
+  .qs-photo {
+    position: relative;
+    margin: 0;
+    background: var(--photo-bg);
+  }
+  .qs-photo img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    pointer-events: none;
+  }
+  .qs-photo :global(.qs-credit) {
+    position: absolute;
+    right: 12px;
+    bottom: 10px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: rgb(0 0 0 / 0.45);
+    color: rgb(255 255 255 / 0.85);
+    backdrop-filter: blur(8px);
+  }
+  .qs-photo :global(.qs-credit a:hover) {
+    color: #fff;
+  }
+
+  @media (max-width: 767px) {
+    .qs {
+      --w: 100%;
+      padding: 96px 16px 0;
+    }
+    .qs-hint {
+      display: none;
+    }
+    .qs-stack {
+      margin-top: 28px;
+    }
+    .qs-card {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto 1fr;
+      aspect-ratio: 4 / 5;
+    }
+    .qs-photo {
+      order: -1;
+      height: 42cqw;
+    }
+    .qs-text {
+      padding: 6cqw;
+    }
+    .qs-text h3 {
+      margin-top: 4cqw;
+      font-size: 9.4cqw;
+    }
+    .qs-answer {
+      font-size: 15px;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .qs-card {
+      transition: opacity 200ms linear;
+    }
+  }
+</style>
+
+<script>
+  /*
+   * The stack keeps an order; a card's depth `--d` places it. The top card follows the pointer
+   * and, let go far or fast enough, flies off and slides under the others. Arrows do the same.
+   */
+  for (const stack of document.querySelectorAll<HTMLElement>('[data-qs]')) {
+    const section = stack.closest('section')!;
+    const cards = [...stack.querySelectorAll<HTMLElement>('[data-qs-card]')];
+    const at = section.querySelector<HTMLElement>('[data-qs-at]')!;
+    const order = cards.map((_, i) => i);
+    const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let busy = false;
+
+    const layout = () => {
+      order.forEach((card, depth) => {
+        const node = cards[card]!;
+        node.dataset.d = String(depth);
+        node.style.setProperty('--d', String(depth));
+        if (depth === 0) node.removeAttribute('aria-hidden');
+        else node.setAttribute('aria-hidden', 'true');
+      });
+      at.textContent = String(order[0]! + 1).padStart(2, '0');
+    };
+
+    /** Throws the top card out to one side; it lands at the bottom of the stack. */
+    const next = (direction = -1, dy = 0) => {
+      if (busy) return;
+      busy = true;
+      const top = cards[order[0]!]!;
+      const width = top.offsetWidth;
+      top.classList.remove('is-dragging');
+      top.style.translate = `${direction * width * 1.15}px ${dy}px`;
+      top.style.rotate = `${direction * 14}deg`;
+      setTimeout(
+        () => {
+          order.push(order.shift()!);
+          top.style.translate = '';
+          top.style.rotate = '';
+          layout();
+          busy = false;
+        },
+        still ? 0 : 280,
+      );
+    };
+
+    /** Brings the bottom card back on top, in from the left. */
+    const prev = () => {
+      if (busy) return;
+      busy = true;
+      const card = cards[order.at(-1)!]!;
+      card.style.transition = 'none';
+      card.style.translate = `${-card.offsetWidth * 1.15}px 0px`;
+      card.style.rotate = '-14deg';
+      order.unshift(order.pop()!);
+      layout();
+      void card.offsetWidth;
+      card.style.transition = '';
+      card.style.translate = '';
+      card.style.rotate = '';
+      setTimeout(() => (busy = false), still ? 0 : 300);
+    };
+
+    section.querySelector('[data-qs-next]')!.addEventListener('click', () => next());
+    section.querySelector('[data-qs-prev]')!.addEventListener('click', prev);
+    stack.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowRight') next();
+      else if (event.key === 'ArrowLeft') prev();
+      else return;
+      event.preventDefault();
+    });
+
+    let drag: { id: number; x: number; y: number; t: number; card: HTMLElement } | null = null;
+    stack.addEventListener('pointerdown', (event) => {
+      const card = cards[order[0]!]!;
+      if (busy || event.button !== 0 || !card.contains(event.target as Node)) return;
+      if ((event.target as Element).closest('a')) return;
+      drag = { id: event.pointerId, x: event.clientX, y: event.clientY, t: performance.now(), card };
+      card.setPointerCapture(event.pointerId);
+      card.classList.add('is-dragging');
+      stack.classList.add('is-pulling');
+    });
+    stack.addEventListener('pointermove', (event) => {
+      if (!drag || event.pointerId !== drag.id) return;
+      const dx = event.clientX - drag.x;
+      const dy = (event.clientY - drag.y) * 0.35;
+      drag.card.style.translate = `${dx}px ${dy}px`;
+      drag.card.style.rotate = `${dx / 28}deg`;
+    });
+    const release = (event: PointerEvent) => {
+      if (!drag || event.pointerId !== drag.id) return;
+      const { card, x, y, t } = drag;
+      drag = null;
+      stack.classList.remove('is-pulling');
+      const dx = event.clientX - x;
+      const speed = Math.abs(dx) / Math.max(1, performance.now() - t);
+      if (Math.abs(dx) > card.offsetWidth * 0.2 || (speed > 0.6 && Math.abs(dx) > 30)) {
+        next(Math.sign(dx), (event.clientY - y) * 0.35);
+      } else {
+        card.classList.remove('is-dragging');
+        card.style.translate = '';
+        card.style.rotate = '';
+      }
+    };
+    stack.addEventListener('pointerup', release);
+    stack.addEventListener('pointercancel', release);
+
+    layout();
+  }
+</script>

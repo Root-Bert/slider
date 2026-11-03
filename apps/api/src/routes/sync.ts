@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { createMiddleware } from 'hono/factory';
-import type { RerenderResult } from '@slider/shared';
+import type { RerenderResult, Viewer } from '@slider/shared';
 import { deckAccess, requireDeckAccess } from '../auth/access';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import type { AppDeps } from '../deps';
@@ -17,9 +17,34 @@ import {
   listDeletedSlides,
   listRevisions,
 } from '../services/revisions';
-import { listSlideVersions } from '../services/slide-versions';
 
 const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
+
+/** Only the owner sends a new version, only of an uploaded deck that is imported. */
+export async function assertNewVersionAllowed(deps: AppDeps, viewer: Viewer, deckId: string) {
+  const deck = await requireDeckAccess(deps, viewer, deckId, 'own');
+  if (isSyncEnabled(deck)) {
+    throw badRequest(
+      'Diese Präsentation wird automatisch aus ihrer Quelle aktualisiert – eine neue Version kommt von dort.',
+    );
+  }
+  if (deck.importState.status !== 'ready') {
+    throw badRequest('Die Präsentation wird gerade noch importiert.');
+  }
+}
+
+/**
+ * A new version of a deck from an uploaded file – one request or in parts (`deck-tus.ts`): a
+ * PowerPoint or a PDF as it is, any other file becomes a PDF.
+ */
+export async function importNewVersion(
+  deps: AppDeps,
+  deckId: string,
+  file: { fileName: string; original: Uint8Array },
+) {
+  const bytes = await toDeckBytes(file.fileName, file.original, deps.documentPdf);
+  return deps.sync.importUpload(deckId, bytes, sha256Hex(file.original));
+}
 
 /** Versions and automatic updates of a deck (BER-107, BER-108, BER-109 API). */
 export function syncRoutes(deps: AppDeps) {
@@ -68,7 +93,7 @@ export function syncRoutes(deps: AppDeps) {
           throw badRequest('Die Präsentation wird gerade noch importiert.');
         }
         if (isSyncEnabled(deck)) {
-          const sync = await deps.sync.checkDeck(deck.id, { manual: true });
+          const sync = await deps.sync.checkDeck(deck.id);
           if (sync.status === 'updated' || sync.status === 'queued') {
             const renderedAt = deps.rendering?.progress.renderedAt(deck.id) ?? null;
             return c.json({ status: 'newVersion', renderedAt } satisfies RerenderResult, 202);
@@ -107,16 +132,7 @@ export function syncRoutes(deps: AppDeps) {
         viewer,
         // Before a single byte is buffered: only the owner, only for an uploaded, imported deck.
         createMiddleware<ViewerEnv>(async (c, next) => {
-          const deckId = c.req.param('deckId') ?? '';
-          const deck = await requireDeckAccess(deps, c.var.viewer, deckId, 'own');
-          if (isSyncEnabled(deck)) {
-            throw badRequest(
-              'Diese Präsentation wird automatisch aus ihrer Quelle aktualisiert – eine neue Version kommt von dort.',
-            );
-          }
-          if (deck.importState.status !== 'ready') {
-            throw badRequest('Die Präsentation wird gerade noch importiert.');
-          }
+          await assertNewVersionAllowed(deps, c.var.viewer, c.req.param('deckId') ?? '');
           await next();
         }),
         imports,
@@ -136,10 +152,8 @@ export function syncRoutes(deps: AppDeps) {
           }
           if (file.size > maxBytes) throw fileTooLarge(maxBytes);
           if (file.size === 0) throw badRequest('Die Datei ist leer.');
-          // A PowerPoint or a PDF as it is; any other file becomes a PDF.
           const original = new Uint8Array(await file.arrayBuffer());
-          const bytes = await toDeckBytes(file.name, original, deps.documentPdf);
-          return c.json(await deps.sync.importUpload(deckId, bytes, sha256Hex(original)));
+          return c.json(await importNewVersion(deps, deckId, { fileName: file.name, original }));
         },
       )
 
@@ -151,12 +165,6 @@ export function syncRoutes(deps: AppDeps) {
       .get('/decks/:deckId/deleted-slides', viewer, async (c) => {
         const deck = await requireDeckAccess(deps, c.var.viewer, c.req.param('deckId'), 'view');
         return c.json(await listDeletedSlides(deps.db, deck));
-      })
-
-      /** One slide in every revision, for "Alt/Neu" on a comment (BER-109). */
-      .get('/decks/:deckId/slides/:slideId/versions', viewer, async (c) => {
-        const deck = await requireDeckAccess(deps, c.var.viewer, c.req.param('deckId'), 'view');
-        return c.json(await listSlideVersions(deps.db, deck, c.req.param('slideId')));
       })
   );
 }

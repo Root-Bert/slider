@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent } from 'react';
-import { isTypingTarget, pointerUsed, watchPointer } from '@/lib/dom';
+import { isTypingTarget, tabStep, watchPointer } from '@/lib/dom';
 import { useGoToSlide } from './useGoToSlide';
 import { useStartComment } from './useStartComment';
 import { useViewerData } from '../state/viewer-data';
@@ -9,8 +9,8 @@ import { isModKey } from '@/lib/keyboard';
 /**
  * Global keyboard shortcuts of the viewer:
  * ←/→ previous/next slide, Home/End first/last, F fullscreen, P presentation, B PowerPoint boxes on/off,
- * G PowerPoint guides on/off, C comments on the active slide (in box mode on the box under the pointer), typing right after a drawing comments on it, Tab / ⇧Tab next/previous tool (while nothing is focused, once the pointer was used),
- * ⌘Z / ⇧⌘Z undo/redo while drawing, ⌘↵ sends the draft, Esc cancels the draft → drops the tool → closes the thread (or the deleted slides or the layers panel) → leaves the layers.
+ * G PowerPoint guides on/off, S „Exportieren“, H the hidden slides on/off (in a template its layout grid, ⇧H the grid's panel), C comments on the active slide (in box mode on the box under the pointer), K hides the comments or brings them back, typing right after a drawing comments on it, Tab / ⇧Tab next/previous tool (while nothing is focused, once the pointer was used),
+ * ⌘Z / ⇧⌘Z undo/redo while drawing, ⌘↵ sends the draft (on a selected thread it asks the AI: `useAskAiShortcut`), Esc cancels the draft → drops the tool → closes the thread (or the deleted slides, the layers panel, a background, the layout view or „Exportieren“) → leaves the layers.
  */
 export function useViewerShortcuts({
   onToggleFullscreen,
@@ -19,7 +19,7 @@ export function useViewerShortcuts({
   onToggleFullscreen: () => void;
   onPresent: () => void;
 }) {
-  const { slides, slideIndex, canComment } = useViewerData();
+  const { deck, slides, slideIndex, canComment } = useViewerData();
   const {
     activeSlideId,
     draft,
@@ -29,6 +29,9 @@ export function useViewerShortcuts({
     deletedPanelOpen,
     layersOpen,
     layersPanelOpen,
+    backgroundPanelPageId,
+    layoutGridPanelOpen,
+    sharePanelOpen,
   } = useViewerState();
   const dispatch = useViewerDispatch();
   const goTo = useGoToSlide();
@@ -49,6 +52,9 @@ export function useViewerShortcuts({
       else if (threadPanelOpen) dispatch({ type: 'threadPanelClosed' });
       else if (deletedPanelOpen) dispatch({ type: 'deletedPanelSet', open: false });
       else if (layersPanelOpen) dispatch({ type: 'layersPanelSet', open: false });
+      else if (backgroundPanelPageId) dispatch({ type: 'backgroundPanelSet', pageId: null });
+      else if (layoutGridPanelOpen) dispatch({ type: 'layoutGridPanelSet', open: false });
+      else if (sharePanelOpen) dispatch({ type: 'sharePanelSet', open: false });
       else if (layersOpen) dispatch({ type: 'layersSet', open: false });
       else return;
       event.preventDefault();
@@ -84,11 +90,11 @@ export function useViewerShortcuts({
     // Before the pointer was used at all this session, Tab is plain focus order: keyboard-only visitors start
     // on the skip link ("Zu den Bedienelementen") instead of being caught in the tools.
     if (event.key === 'Tab') {
-      const unfocused = event.target === document.body || event.target === document.documentElement;
-      if (!canComment || draft || !unfocused || !pointerUsed()) return;
+      const step = tabStep(event);
+      if (!canComment || draft || !step) return;
       event.preventDefault();
       // `toolSelected` toggles: picking the current tool again would drop it.
-      const next = cycleTool(tool, event.shiftKey ? -1 : 1);
+      const next = cycleTool(tool, step);
       dispatch({ type: 'toolSelected', tool: next ?? tool });
       return;
     }
@@ -124,9 +130,21 @@ export function useViewerShortcuts({
       case 'G':
         dispatch({ type: 'showGuidesToggled' });
         break;
+      case 's':
+      case 'S':
+        dispatch({ type: 'sharePanelSet', open: !sharePanelOpen });
+        break;
       case 'h':
       case 'H':
-        dispatch({ type: 'showHiddenSlidesToggled' });
+        // The layout view, in a template and a presentation alike; a template's grid is set in
+        // its panel (⇧H). Hidden slides keep their button and the setting in /konto.
+        if (event.shiftKey && deck.template)
+          dispatch({ type: 'layoutGridPanelSet', open: !layoutGridPanelOpen });
+        else dispatch({ type: 'layoutGridToggled' });
+        break;
+      case 'k':
+      case 'K':
+        dispatch({ type: 'commentsToggled' });
         break;
       case 'c':
       case 'C':

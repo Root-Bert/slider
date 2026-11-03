@@ -5,7 +5,7 @@ import type {
   Workspace,
   WorkspaceInvite,
 } from '@slider/shared';
-import { formatDateTime } from '@/lib/format';
+import { formatDateTime, isEmailAddress } from '@/lib/format';
 import { useCreateWorkspaceInvite, useRevokeWorkspaceInvite, useWorkspaceInvites } from '@/lib/api';
 import {
   Badge,
@@ -34,7 +34,6 @@ import {
 import { LOCKED_MESSAGE, seatsLine, seatState } from '../lib/plan';
 
 const ROLE_OPTIONS = INVITE_ROLES.map((role) => ({ value: role, label: ROLE_LABELS[role] }));
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** The first row of the members card: invite by e-mail or create a link, one role for both. */
 export function InviteForm({ workspace, onNotify }: { workspace: Workspace; onNotify: ShowToast }) {
@@ -43,7 +42,7 @@ export function InviteForm({ workspace, onNotify }: { workspace: Workspace; onNo
   const [role, setRole] = useState<InviteRole>('member');
   const [emailTouched, setEmailTouched] = useState(false);
   const [created, setCreated] = useState<CreatedWorkspaceInvite | null>(null);
-  const emailValid = EMAIL_PATTERN.test(email.trim());
+  const emailValid = isEmailAddress(email);
   const seats = seatState(workspace.usage);
   const seatsHint = seatsLine(workspace.usage);
   // Over the plan's limits (BER-155): no invitations at all until it is back within them.

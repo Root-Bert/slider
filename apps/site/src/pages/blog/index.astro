@@ -1,12 +1,8 @@
 ---
-import BlogOrbit from '~/components/blog/BlogOrbit.astro';
 import Cover from '~/components/blog/Cover.astro';
 import PostCard from '~/components/blog/PostCard.astro';
 import PostMeta from '~/components/blog/PostMeta.astro';
 import { publishedPosts } from '~/components/blog/posts';
-import Highlight from '~/components/Highlight.astro';
-import SectionMark from '~/components/SectionMark.astro';
-import Starfield from '~/components/Starfield.astro';
 import Base from '~/layouts/Base.astro';
 import { CONTACT_URL, page } from '~/lib/links';
 
@@ -20,7 +16,6 @@ const filters = [
   ['update', 'Updates'],
   ['guide', 'Guides'],
 ] as const;
-const words = (text: string) => text.split(' ');
 ---
 
 <Base
@@ -28,88 +23,72 @@ const words = (text: string) => text.split(' ');
   title="Blog"
   description="How Slider compares to the tools you know, how teams review their decks and what we shipped this month."
 >
-  <section class="relative isolate px-4 pt-20 pb-12 md:px-16 md:pt-30" data-section>
-    <BlogOrbit corner="right" />
-    <Starfield src="blog/hero-starfield.svg" />
-    <SectionMark label="Blog | Comparisons, stories and updates" accent="var(--color-accent-cyan)" />
-    <h1 class="mt-6 text-[30px] sm:text-[40px] leading-[1.12] font-bold tracking-[-0.03em] text-fg md:text-[64px]">
-      {words('Notes on').map((word, i) => <span class="inline-block" data-reveal style={`--i: ${i}`}>{word}&nbsp;</span>)}
-      <Highlight by="Rose"><span class="inline-block" data-reveal style="--i: 2">getting ideas across.</span></Highlight>
-    </h1>
-    <p class="mt-6 max-w-[620px] text-[17px] leading-[1.55] text-fg-muted md:text-[19px]" data-reveal style="--i: 4">
+  <section class="bl" data-section>
+    <p class="bl-kind" data-reveal>Blog</p>
+    <h1 class="bl-title" data-reveal style="--i: 1">Notes on getting ideas across.</h1>
+    <p class="bl-sub" data-reveal style="--i: 2">
       How Slider compares to the tools you know, how teams review their decks and what we shipped this month.
     </p>
-    <div class="mt-6 flex flex-col gap-4 pt-4 lg:flex-row lg:items-center" data-reveal style="--i: 6">
-      <div class="flex flex-wrap gap-2" role="group" aria-label="Filter articles">
+    <div class="bl-tools" data-reveal style="--i: 3">
+      <div class="bl-filters" role="group" aria-label="Filter articles">
         {
           filters.map(([key, label]) => (
-            <button
-              type="button"
-              data-filter={key}
-              aria-pressed={key === 'all' ? 'true' : 'false'}
-              class="rounded-full px-4 py-2 text-sm font-medium text-fg-muted ring-hairline glass-control transition-colors hover:text-fg aria-pressed:bg-selected aria-pressed:text-fg"
-            >
+            <button type="button" data-filter={key} aria-pressed={key === 'all' ? 'true' : 'false'}>
               {label}
             </button>
           ))
         }
       </div>
-      <label class="flex h-10 w-full items-center gap-2.5 rounded-full px-4 text-fg-subtle ring-hairline glass-control focus-field lg:ml-auto lg:w-[280px]">
-        <span aria-hidden="true" class="text-[15px]">⌕</span>
+      <label class="bl-search focus-field">
+        <span aria-hidden="true">⌕</span>
         <span class="sr-only">Search articles</span>
-        <input
-          type="search"
-          data-search
-          placeholder="Search articles"
-          class="w-full bg-transparent text-sm text-fg outline-none placeholder:text-fg-subtle"
-        />
+        <input type="search" data-search placeholder="Search articles" />
       </label>
     </div>
   </section>
 
   {
     featured && (
-      <section class="px-4 md:px-16" data-section>
+      <section class="bl" data-section>
         <a
           href={page(`blog/${featured.id}`)}
-          class="group flex flex-col overflow-hidden rounded-[20px] bg-glass shadow-[0_0_60px_rgb(255_255_255/0.06)] ring-hairline transition-colors hover:bg-glass-hover lg:flex-row"
+          class="bl-featured"
           data-reveal
           data-post
           data-tag={featured.data.tag.toLowerCase().replace(/\s+/g, '-')}
           data-text={`${featured.data.title} ${featured.data.description}`.toLowerCase()}
         >
-          <Cover post={featured} size="wide" class="h-[260px]! shrink-0 lg:h-[400px]! lg:w-[720px]" />
-          <div class="flex flex-1 flex-col justify-center gap-5 p-6 md:p-12">
+          <Cover post={featured} size="wide" />
+          <div class="bl-featured-text">
             <PostMeta post={featured} />
-            <h2 class="text-[26px] leading-[1.18] font-bold tracking-[-0.02em] text-fg md:text-[34px]">{featured.data.title}</h2>
-            <p class="text-base leading-[1.55] text-fg-muted">{featured.data.description}</p>
-            <span class="text-[15px] font-semibold whitespace-pre text-fg">{featured.data.tag === 'Comparison' ? 'Read the comparison' : 'Read the article'}  →</span>
+            <h2>{featured.data.title}</h2>
+            <p>{featured.data.description}</p>
+            <span class="bl-more">{featured.data.tag === 'Comparison' ? 'Read the comparison' : 'Read the article'} <span aria-hidden="true">→</span></span>
           </div>
         </a>
       </section>
     )
   }
 
-  <section class="relative isolate px-4 pt-12 md:px-16" data-section>
-    <Starfield src="blog/posts-starfield.svg" />
-    <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+  <section class="bl" data-section>
+    <div class="bl-grid">
       {rest.map((post, i) => <PostCard post={post} index={i} />)}
       <a
         href={`${CONTACT_URL}?subject=${encodeURIComponent('Our Slider story')}`}
-        class="flex flex-col overflow-hidden rounded-[20px] border border-dashed border-hairline-strong bg-glass transition-colors hover:bg-glass-hover"
+        class="bl-open"
         data-reveal
         data-post
         data-tag="customer-story"
         data-text="your team's story could be next using slider for your reviews? tell us how, and we will write it up together."
         style={`--i: ${rest.length}`}
       >
-        <div class="relative isolate flex h-[220px] items-center justify-center overflow-hidden bg-surface-1" aria-hidden="true">
-          <img src={`${page('blog/glow-green.svg')}`} alt="" class="pointer-events-none absolute -z-10 h-[140%] w-[120%] max-w-none" />
-          <span class="text-[150px] leading-none font-black text-sage [text-shadow:0_0_30px_rgb(143_203_155/0.4)]">“</span>
+        <div class="bl-open-slide" aria-hidden="true">
+          <span class="bl-open-quote">“</span>
+          <span class="bub-cursor bl-open-you"><span>You?</span></span>
         </div>
-        <div class="flex flex-col gap-3 px-6 pt-6 pb-7">
+        <div class="flex flex-col gap-3 pt-5">
           <div class="flex items-center gap-2.5">
-            <span class="inline-flex items-center rounded-badge bg-sage/15 px-2 py-[3px] text-caption font-medium tracking-wide uppercase text-sage uppercase">Customer story</span>
+            <span class="text-caption font-medium tracking-wide uppercase text-fg-muted">Customer story</span>
             <span class="text-xs tabular-nums text-fg-subtle">Open call</span>
           </div>
           <h3 class="text-xl leading-[1.3] font-semibold tracking-[-0.01em] text-fg">Your team's story could be next</h3>
@@ -119,8 +98,191 @@ const words = (text: string) => text.split(' ');
     </div>
     <p class="mt-10 hidden text-center text-sm text-fg-subtle" data-empty>No articles match yet.</p>
   </section>
-
 </Base>
+
+<style>
+  .bl {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 0 32px;
+  }
+  .bl:first-of-type {
+    padding-top: 120px;
+  }
+  .bl-kind {
+    font-size: 17px;
+    font-weight: 500;
+    color: var(--color-fg-muted);
+  }
+  .bl-title {
+    max-width: 10em;
+    margin-top: 20px;
+    font-size: clamp(44px, 5.6vw, 92px);
+    font-weight: 800;
+    line-height: 0.95;
+    letter-spacing: -0.05em;
+    text-wrap: balance;
+  }
+  .bl-sub {
+    max-width: 32em;
+    margin-top: 28px;
+    font-size: 19px;
+    line-height: 1.5;
+    color: var(--color-fg-muted);
+  }
+  .bl-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px;
+    margin: 48px 0 56px;
+  }
+  .bl-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .bl-filters button {
+    height: 40px;
+    padding: 0 16px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-fg-muted);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+    transition:
+      color 150ms,
+      background-color 150ms;
+  }
+  .bl-filters button:hover {
+    color: var(--color-fg);
+  }
+  .bl-filters button[aria-pressed='true'] {
+    background: var(--color-accent-blue);
+    color: #fff;
+    box-shadow: none;
+  }
+  .bl-search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 280px;
+    height: 40px;
+    margin-left: auto;
+    padding: 0 16px;
+    border-radius: 999px;
+    color: var(--color-fg-subtle);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .bl-search input {
+    width: 100%;
+    background: transparent;
+    font-size: 14px;
+    color: var(--color-fg);
+    outline: none;
+  }
+  .bl-search input::placeholder {
+    color: var(--color-fg-subtle);
+  }
+
+  .bl-featured {
+    display: grid;
+    grid-template-columns: 7fr 5fr;
+    align-items: center;
+    gap: 56px;
+  }
+  .bl-featured-text {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .bl-featured h2 {
+    font-size: clamp(28px, 2.8vw, 44px);
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: -0.04em;
+    text-wrap: balance;
+  }
+  .bl-featured p {
+    font-size: 17px;
+    line-height: 1.55;
+    color: var(--color-fg-muted);
+  }
+  .bl-more {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--color-accent-blue);
+  }
+  .bl-more span {
+    display: inline-block;
+    transition: translate 200ms var(--ease-emphasized);
+  }
+  .bl-featured:hover .bl-more span {
+    translate: 3px 0;
+  }
+
+  .bl-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 56px 32px;
+    margin-top: 96px;
+  }
+  /* The open call: an empty slide waiting for your story, your cursor already on it. */
+  .bl-open-slide {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 16 / 10;
+    margin: 0 0 10px 10px;
+    border: 2px dashed var(--color-hairline-strong);
+    border-radius: 20px;
+    transition: border-color 150ms;
+  }
+  .bl-open:hover .bl-open-slide {
+    border-color: var(--color-accent-blue);
+  }
+  .bl-open-quote {
+    font-size: 150px;
+    font-weight: 800;
+    line-height: 0.6;
+    padding-top: 0.25em;
+    color: var(--color-fg-faint);
+  }
+  .bl-open-you {
+    --c: var(--color-accent-blue);
+    --ink: #fff;
+    position: absolute;
+    top: 58%;
+    left: 60%;
+  }
+
+  @media (max-width: 1023px) {
+    .bl-featured {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 28px;
+    }
+    .bl-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 767px) {
+    .bl {
+      padding: 0 16px;
+    }
+    .bl:first-of-type {
+      padding-top: 72px;
+    }
+    .bl-search {
+      width: 100%;
+      margin-left: 0;
+    }
+    .bl-grid {
+      grid-template-columns: minmax(0, 1fr);
+      margin-top: 72px;
+    }
+  }
+</style>
 
 <script>
   // Filter chips + search over the cards (all posts are on this one page).

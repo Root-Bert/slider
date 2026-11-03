@@ -26,7 +26,8 @@ export function NoteField({
   return (
     <>
       <div className="field-well focus-field flex items-end gap-1 rounded-control-sm py-2 pr-1.5 pl-3">
-        <div className="min-w-0 flex-1">
+        {/* Centred on the paperclip while one line; taller, it fills the field and the clip stays at the bottom. */}
+        <div className="min-w-0 flex-1 self-center">
           <AutosizeTextarea
             aria-label={label}
             maxLength={MAX_COMMENT_BODY_LENGTH}

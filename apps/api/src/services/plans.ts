@@ -26,7 +26,7 @@ export interface PlanLimits {
 export const GIGABYTE = 1024 ** 3;
 
 export const DEFAULT_PLAN_LIMITS: Record<PlanId, PlanLimits> = {
-  free: { maxMembers: 5, maxDecks: 3, maxStorageBytes: 2 * GIGABYTE },
+  free: { maxMembers: 5, maxDecks: null, maxStorageBytes: 2 * GIGABYTE },
   paid: { maxMembers: 100, maxDecks: null, maxStorageBytes: 100 * GIGABYTE },
 };
 
@@ -57,14 +57,14 @@ export const workspaceFullMessage = () =>
 export const seatsFullMessage = (max: number) =>
   `Der Workspace hat bereits ${max} von ${max} Plätzen belegt.`;
 export const decksFullMessage = (max: number) =>
-  `Im Free-Plan ${max === 1 ? 'ist eine Review' : `sind ${max} Reviews`} pro Workspace möglich. Lösche eine, um Platz zu schaffen.`;
+  `Im Free-Plan ${max === 1 ? 'ist eine Präsentation' : `sind ${max} Präsentationen`} pro Workspace möglich. Lösche eine, um Platz zu schaffen.`;
 
 /** `2 GB`, `1,5 GB` – German number format. */
 export const formatGigabytes = (bytes: number) =>
   `${(bytes / GIGABYTE).toLocaleString('de-DE', { maximumFractionDigits: 1 })} GB`;
 
 export const storageFullMessage = (max: number) =>
-  `Der Speicher des Workspace ist voll (${formatGigabytes(max)}). Lösche Reviews, ältere Versionen oder Aufnahmen, um Platz zu schaffen.`;
+  `Der Speicher des Workspace ist voll (${formatGigabytes(max)}). Lösche Präsentationen, ältere Versionen oder Aufnahmen, um Platz zu schaffen.`;
 
 /** What is over the plan's limits, e.g. `["7 von 5 Personen"]`; empty when everything fits. */
 export function overLimitParts(usage: WorkspaceUsage): string[] {
@@ -72,7 +72,7 @@ export function overLimitParts(usage: WorkspaceUsage): string[] {
   if (usage.maxMembers !== null && usage.seatsUsed > usage.maxMembers)
     parts.push(`${usage.seatsUsed} von ${usage.maxMembers} Personen`);
   if (usage.maxDecks !== null && usage.decks > usage.maxDecks)
-    parts.push(`${usage.decks} von ${usage.maxDecks} Reviews`);
+    parts.push(`${usage.decks} von ${usage.maxDecks} Präsentationen`);
   if (usage.maxStorageBytes !== null && usage.storageBytes > usage.maxStorageBytes)
     parts.push(
       `${formatGigabytes(usage.storageBytes)} von ${formatGigabytes(usage.maxStorageBytes)} Speicher`,
@@ -87,7 +87,7 @@ export const planOverLimit = (usage: WorkspaceUsage) =>
   new ApiError(
     403,
     'plan_over_limit',
-    `Der Workspace liegt über dem Limit seines Plans (${overLimitParts(usage).join(', ')}). Lesen, Löschen und Exportieren gehen weiter, Neues erst wieder, wenn alles ins Limit passt: Personen entfernen, Einladungen zurückziehen, Reviews oder Aufnahmen löschen – oder auf den Paid-Plan upgraden.`,
+    `Der Workspace liegt über dem Limit seines Plans (${overLimitParts(usage).join(', ')}). Lesen, Löschen und Exportieren gehen weiter, Neues erst wieder, wenn alles ins Limit passt: Personen entfernen, Einladungen zurückziehen, Präsentationen oder Aufnahmen löschen – oder auf den Paid-Plan upgraden.`,
   );
 
 // ── Counting ────────────────────────────────────────────────────────────────
@@ -122,7 +122,7 @@ async function pendingSeatCounts(
   return new Map(rows.map((row) => [row.id, Number(row.count)]));
 }
 
-/** Rows of `table` per workspace – members or decks. */
+/** Rows of `table` per workspace – members or decks (templates being designed don't count). */
 export async function countBy(
   db: Executor,
   table: typeof decks | typeof workspaceMembers,
@@ -132,7 +132,12 @@ export async function countBy(
   const rows = await db
     .select({ id: table.workspaceId, count: count() })
     .from(table)
-    .where(inArray(table.workspaceId, workspaceIds))
+    .where(
+      and(
+        inArray(table.workspaceId, workspaceIds),
+        table === decks ? eq(decks.isTemplate, false) : undefined,
+      ),
+    )
     .groupBy(table.workspaceId);
   return new Map(rows.map((row) => [row.id, row.count]));
 }

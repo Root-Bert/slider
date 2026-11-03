@@ -45,11 +45,6 @@ export interface ConnectorRequest {
   exit?: Exit | undefined;
   /** Entry point at the top edge of the card; ignored in blob mode. */
   target: Px;
-  /**
-   * Fixed vertical lane right of the slide (gap comments run down the divider line). The line
-   * starts on it, so it takes no lane of its own.
-   */
-  fixedLaneX?: number | undefined;
   /** The card sits in a lower band: run down this side's margin, turn in above `bandTop`. */
   margin?: { side: Side; bandTop: number } | undefined;
 }
@@ -166,7 +161,6 @@ function withLanes(
   corridor: { left: number; right: number },
 ): Routed[] {
   const routed: Routed[] = [];
-  const fixed = requests.filter((request) => request.fixedLaneX !== undefined);
   const exitOf = ({ exit, start, anchor }: ConnectorRequest): Exit =>
     exit === 'down'
       ? start.down
@@ -175,32 +169,20 @@ function withLanes(
       : (exit ?? exitSide(anchor, slide));
   // Downward lines are their own lane, straight below the mark.
   requests
-    .filter((request) => request.fixedLaneX === undefined && exitOf(request) === 'down')
+    .filter((request) => exitOf(request) === 'down')
     .sort((a, b) => a.start.down!.x - b.start.down!.x)
     .forEach((request, index) => {
       routed.push(base(request, 'down', request.start.down!, request.start.down!.x, index));
     });
   for (const side of ['left', 'right'] as const) {
     const group = requests
-      .filter((request) => request.fixedLaneX === undefined && exitOf(request) === side)
+      .filter((request) => exitOf(request) === side)
       .sort((a, b) => a.start[side].y - b.start[side].y);
     const lanes = assignLanes(side, group.length, slide, corridor);
     group.forEach((request, index) => {
-      routed.push(
-        base(
-          request,
-          side,
-          request.start[side],
-          lanes[index]!,
-          side === 'right' ? index + fixed.length : index,
-        ),
-      );
+      routed.push(base(request, side, request.start[side], lanes[index]!, index));
     });
   }
-  // Fixed lanes (the divider) lie outside every right lane.
-  fixed.forEach((request, index) => {
-    routed.push(base(request, 'right', request.start.right, request.fixedLaneX!, index));
-  });
   return routed;
 }
 
@@ -454,11 +436,13 @@ export function layoutBlobConnectors(
 }
 
 /** Lines of one group whose runs lie this close side by side merge into one. */
-const BUNDLE_DISTANCE = 12;
+const BUNDLE_DISTANCE = 16;
 /** A merged run gathers lines from at most this far apart. */
 const BUNDLE_SPAN = 40;
 
 interface Run {
+  /** Index of the run's line. */
+  line: number;
   points: Px[];
   /** Index of the run's first point. */
   index: number;
@@ -466,6 +450,8 @@ interface Run {
   value: number;
   from: number;
   to: number;
+  /** Direction along the other axis: +1 down or right, -1 up or left. */
+  sign: number;
   /** First and last runs end at the mark or the card: they never move. */
   pinned: boolean;
 }
@@ -473,11 +459,14 @@ interface Run {
 /**
  * Lines of one group (one colour) running side by side a few pixels apart merge into one: their
  * parallel runs move onto the longest one's coordinate, so they share a trunk and branch off
- * where their routes part. Ends at marks and cards stay where they are.
+ * where their routes part. A line's own short jog between two runs heading the same way (a step
+ * from its lane into a margin) is straightened too. Ends at marks and cards stay where they are,
+ * and no run moves onto one of `obstacles` (the cards).
  */
 export function bundleConnectors(
   connectors: readonly Connector[],
   groupOf: (id: string) => string,
+  obstacles: readonly Box[] = [],
 ): Connector[] {
   const lines = connectors.map((connector) => ({
     id: connector.id,
@@ -486,12 +475,13 @@ export function bundleConnectors(
   const groups = new Map<string, typeof lines>();
   for (const line of lines) {
     const key = groupOf(line.id);
-    groups.set(key, [...(groups.get(key) ?? []), line]);
+    const group = groups.get(key);
+    if (group) group.push(line);
+    else groups.set(key, [line]);
   }
   for (const group of groups.values()) {
-    if (group.length < 2) continue;
     for (let pass = 0; pass < 4; pass++) {
-      const moved = snapRuns(group, 'x') + snapRuns(group, 'y');
+      const moved = snapRuns(group, 'x', obstacles) + snapRuns(group, 'y', obstacles);
       for (const line of group) line.points = dedupe(line.points);
       if (moved === 0) break;
     }
@@ -503,39 +493,71 @@ export function bundleConnectors(
  * Moves close parallel runs (vertical ones for `x`, horizontal ones for `y`) onto one
  * coordinate; returns how many moved.
  */
-function snapRuns(lines: readonly { points: Px[] }[], axis: 'x' | 'y'): number {
+function snapRuns(
+  lines: readonly { points: Px[] }[],
+  axis: 'x' | 'y',
+  obstacles: readonly Box[],
+): number {
   const along = axis === 'x' ? 'y' : 'x';
   const runs: Run[] = [];
-  for (const { points } of lines)
+  lines.forEach(({ points }, line) => {
     for (let index = 0; index + 1 < points.length; index++) {
       const a = points[index]!;
       const b = points[index + 1]!;
       if (Math.abs(a[axis] - b[axis]) > 0.5) continue;
       runs.push({
+        line,
         points,
         index,
         value: a[axis],
         from: Math.min(a[along], b[along]),
         to: Math.max(a[along], b[along]),
+        sign: Math.sign(b[along] - a[along]),
         pinned: index === 0 || index + 2 === points.length,
       });
     }
+  });
 
-  // Runs of different lines join when they lie close and overlap for at least half the shorter.
   const parent = runs.map((_, index) => index);
   const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i]!)));
   for (let i = 0; i < runs.length; i++)
     for (let j = i + 1; j < runs.length; j++) {
       const a = runs[i]!;
       const b = runs[j]!;
-      if (a.points === b.points || Math.abs(a.value - b.value) > BUNDLE_DISTANCE) continue;
+      if (Math.abs(a.value - b.value) > BUNDLE_DISTANCE) continue;
+      if (a.line === b.line) {
+        // A short step between two runs heading the same way (not a U-turn) is straightened.
+        if (b.index === a.index + 2 && a.sign === b.sign) parent[find(i)] = find(j);
+        continue;
+      }
+      // Runs of different lines join when they overlap for at least half the shorter.
       const overlap = Math.min(a.to, b.to) - Math.max(a.from, b.from);
       if (overlap > 0.5 && overlap >= Math.min(a.to - a.from, b.to - b.from) / 2)
         parent[find(i)] = find(j);
     }
   const clusters = new Map<number, Run[]>();
-  runs.forEach((run, i) => clusters.set(find(i), [...(clusters.get(find(i)) ?? []), run]));
+  runs.forEach((run, i) => {
+    const root = find(i);
+    const cluster = clusters.get(root);
+    if (cluster) cluster.push(run);
+    else clusters.set(root, [run]);
+  });
 
+  // A run may not move onto a card, nor so far that a neighbouring segment turns back on itself.
+  const blocked = (run: Run, value: number) => {
+    const { points, index } = run;
+    const turnsBack = (fixed: Px | undefined) =>
+      !!fixed && Math.sign(run.value - fixed[axis]) * Math.sign(value - fixed[axis]) < 0;
+    return (
+      turnsBack(points[index - 1]) ||
+      turnsBack(points[index + 2]) ||
+      obstacles.some((box) =>
+        axis === 'x'
+          ? value > box.left && value < box.right && run.to > box.top && run.from < box.bottom
+          : value > box.top && value < box.bottom && run.to > box.left && run.from < box.right,
+      )
+    );
+  };
   let moved = 0;
   for (const cluster of clusters.values()) {
     if (cluster.length < 2) continue;
@@ -544,11 +566,14 @@ function snapRuns(lines: readonly { points: Px[] }[], axis: 'x' | 'y'): number {
     const pinned = [...new Set(cluster.filter((run) => run.pinned).map((run) => run.value))];
     // Two fixed ends that differ cannot share a run.
     if (pinned.length > 1) continue;
+    // Without a fixed end: where most of the cluster's length already runs.
+    const length = new Map<number, number>();
+    for (const run of cluster)
+      length.set(run.value, (length.get(run.value) ?? 0) + run.to - run.from);
     const value =
-      pinned[0] ??
-      cluster.reduce((best, run) => (run.to - run.from > best.to - best.from ? run : best)).value;
+      pinned[0] ?? [...length].reduce((best, entry) => (entry[1] > best[1] ? entry : best))[0];
     for (const run of cluster) {
-      if (Math.abs(run.value - value) < 0.5) continue;
+      if (Math.abs(run.value - value) < 0.5 || blocked(run, value)) continue;
       run.points[run.index]![axis] = value;
       run.points[run.index + 1]![axis] = value;
       moved++;

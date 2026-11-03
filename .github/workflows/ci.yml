@@ -1,27 +1,17 @@
 name: CI
 
-# Every pull request and push to main: lint, typecheck, the focused test suite on PGlite,
+# Every release and every manual run: lint, typecheck, the focused test suite on PGlite,
 # Postgres driver/migration checks, build, e2e, Caddyfiles, secret scan, and the container image built and
 # smoke-tested. No image is published: self-hosters build it from their checkout
 # (docs/self-hosting.md).
 #
-# Changes only to the website (apps/site, which deploy-website.yml checks and builds itself), to
-# the logo files (brand) or to Markdown no code reads start no run.
+# A release starts it by its tag, not by the release event: here the tag is pushed when the release
+# is created, in the public repository by publish.yml – whose release, made by release.yml with
+# the workflow token, would start no workflow. Pushes to main and pull requests start no run.
 
 on:
   push:
-    branches: [main]
-    paths-ignore:
-      - apps/site/**
-      - apps/web/design-system.md
-      - brand/**
-      - packages/pptx/test/corpus/README.md
-  pull_request:
-    paths-ignore:
-      - apps/site/**
-      - apps/web/design-system.md
-      - brand/**
-      - packages/pptx/test/corpus/README.md
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -154,7 +144,7 @@ jobs:
       - run: bunx vitest run --project api apps/api/test/postgres.test.ts --maxWorkers=2
 
   # Builds the Dockerfile for both platforms self-hosters run and starts each like a self-hoster
-  # would. amd64 on every push and PR. arm64 (e.g. Hetzner CAX) is built and run under QEMU, which
+  # would. amd64 on every run. arm64 (e.g. Hetzner CAX) is built and run under QEMU, which
   # takes long: only in the public repository, where every release lands as a commit and Actions
   # minutes are free, or on a manual run. Each architecture has its own build cache scope.
   image-smoke:

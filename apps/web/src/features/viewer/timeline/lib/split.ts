@@ -1,3 +1,4 @@
+import { clamp } from '@slider/shared';
 import { wheelPixels } from '@/lib/wheel';
 import { slideHeightAt, splitForHeight, type TrackGeometry } from './timeline-layout';
 
@@ -23,8 +24,6 @@ export const SPLIT_KEY_STEP_LARGE_PX = 96;
 /** Wheel pixels per e-fold of slide height; a single wheel notch is capped so mice don't jump. */
 const WHEEL_SENSITIVITY = 0.005;
 const WHEEL_MAX_DELTA = 50;
-
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 /** Dragging the handle by `dy` pixels (down = positive) from where the slides were `startH` tall. */
 export const dragSplit = (startH: number, dy: number, geo: TrackGeometry) =>

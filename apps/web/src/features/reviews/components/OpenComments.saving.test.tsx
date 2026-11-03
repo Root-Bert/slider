@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Comment } from '@slider/shared';
-import { api } from '@/lib/api-client';
+import { api, ApiError } from '@/lib/api-client';
 import { makeDeck, owner } from '../lib/deck-fixture';
 import { OpenCommentsButton } from './OpenComments';
 
@@ -61,8 +61,11 @@ describe('OpenCommentsButton saving', () => {
     await userEvent.click(second!);
     expect(screen.getByText('0 von 2 offen')).toBeTruthy();
 
-    await act(async () => failFirst(new Error('Zu viele Anfragen.')));
-    expect(onNotify).toHaveBeenCalledWith('Zu viele Anfragen.', 'danger');
+    // Refused for good (no rights any more); out of reach or busy it would stay, sent later.
+    await act(async () =>
+      failFirst(new ApiError(403, 'forbidden', 'Dafür fehlt dir die Berechtigung.')),
+    );
+    expect(onNotify).toHaveBeenCalledWith('Dafür fehlt dir die Berechtigung.', 'danger');
     expect(screen.getByText('Kommentar c1').className).not.toContain('line-through');
     expect(screen.getByText('Kommentar c2').className).toContain('line-through');
     client.clear();

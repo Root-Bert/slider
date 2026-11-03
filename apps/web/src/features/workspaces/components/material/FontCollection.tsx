@@ -1,6 +1,16 @@
 import { useEffect, useState, type CSSProperties, type MouseEvent } from 'react';
+import { selectableItemProps, type SelectableItems } from '@/lib/collection-selection';
 import { formatFileSize } from '@/lib/format';
-import { cn, ContextMenu, Icon, Menu, type MenuAction } from '@/ui';
+import {
+  cn,
+  collectionGridClass,
+  ContextMenu,
+  Menu,
+  SelectedMark,
+  selectedCardClass,
+  selectedRowClass,
+  type MenuAction,
+} from '@/ui';
 import {
   faceLabel,
   familyKey,
@@ -57,28 +67,16 @@ const facesLine = (family: FontFamily) =>
 const PANGRAM = 'Franz jagt im komplett verwahrlosten Taxi quer durch Bayern';
 
 // The reviews grid's columns and gaps, so both views of a workspace line up.
-const GRID_CLASSES =
-  'grid grid-cols-1 gap-x-14 gap-y-16 min-[700px]:grid-cols-2 min-[1200px]:grid-cols-3';
-
-/** Clicks on these keep their own meaning, even with a modifier key. */
-const OWN_CONTROLS = 'button, input, [role="menu"]';
-
-interface FontCollectionProps {
+interface FontCollectionProps extends SelectableItems {
   families: readonly FontFamily[];
   view: MaterialView;
   /** The actions of one family – its ⋯ menu and right click. */
   actionsFor: (family: FontFamily) => MenuAction[];
-  /** Part of the multi-selection, by `familyKey`. */
-  selected: ReadonlySet<string>;
-  /** ⌘/Ctrl/Shift-click on a family, or any click while some are selected; true when it changed the selection. */
-  onModifiedClick: (key: string, event: MouseEvent) => boolean;
-  /** The actions for the whole selection, on a right click on one of several selected. */
-  selectionActions: MenuAction[];
 }
 
 /**
  * The workspace's fonts as specimen posters (grid) or rows (list), like the reviews: selectable
- * with ⌘/Shift-click or a selection box (`data-font-key`), actions in a ⋯ menu and on right click.
+ * like them (`selectableItemProps`, by `familyKey`), actions in a ⋯ menu and on right click.
  */
 export function FontCollection({
   families,
@@ -86,7 +84,7 @@ export function FontCollection({
   actionsFor,
   selected,
   onModifiedClick,
-  selectionActions,
+  onSelectionMenu,
 }: FontCollectionProps) {
   const Item = view === 'grid' ? FontCard : FontRow;
   const [menu, setMenu] = useState<{
@@ -94,37 +92,29 @@ export function FontCollection({
     label: string;
     actions: MenuAction[];
   } | null>(null);
-  const onClickCapture = (key: string) => (event: MouseEvent) => {
-    if ((event.target as Element).closest(OWN_CONTROLS)) return;
-    if (onModifiedClick(key, event)) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-  };
-  // Shift + right click keeps the browser's own menu.
+  const selection = { selected, onModifiedClick, onSelectionMenu };
+  // Shift + right click keeps the browser's own menu; on one of several selected, the
+  // selection's menu has opened instead.
   const onContextMenu = (family: FontFamily) => (event: MouseEvent) => {
     if (event.shiftKey) return;
     event.preventDefault();
     const at = { x: event.clientX, y: event.clientY };
-    if (selected.size > 1 && selected.has(familyKey(family))) {
-      setMenu({ at, label: `Aktionen für ${selected.size} Schriften`, actions: selectionActions });
-    } else {
-      setMenu({ at, label: `Aktionen für „${family.family}“`, actions: actionsFor(family) });
-    }
+    setMenu({ at, label: `Aktionen für „${family.family}“`, actions: actionsFor(family) });
   };
   return (
     <>
       <ul
-        className={view === 'grid' ? GRID_CLASSES : 'glass flex flex-col gap-1 rounded-panel p-1.5'}
+        className={
+          view === 'grid' ? collectionGridClass : 'glass flex flex-col gap-1 rounded-panel p-1.5'
+        }
       >
         {families.map((family) => {
           const key = familyKey(family);
           return (
             <li
               key={key}
-              data-font-key={key}
               className="min-w-0"
-              onClickCapture={onClickCapture(key)}
+              {...selectableItemProps(key, selection)}
               onContextMenu={onContextMenu(family)}
             >
               <Item family={family} actions={actionsFor(family)} selected={selected.has(key)} />
@@ -167,20 +157,6 @@ function FontActions({
   );
 }
 
-/** Tick in the corner of a selected font, like a selected deck's. */
-function SelectedMark({ compact = false }: { compact?: boolean }) {
-  return (
-    <span
-      className={cn(
-        'absolute z-(--z-raised) flex items-center justify-center rounded-full bg-(--selection) text-(--on-selection) shadow-mark',
-        compact ? 'top-1 left-1 size-4' : 'top-2 left-2 size-6',
-      )}
-    >
-      <Icon name="check" size={compact ? 12 : 16} label="Ausgewählt" />
-    </span>
-  );
-}
-
 /**
  * Specimen card: a 16:9 frame like a deck's thumbnail with the family's poster. Hovered, it does what a deck card does: the frame steps
  * back with a ring and its halo (a blurred copy behind it) lights up.
@@ -211,7 +187,7 @@ function FontCard({ family, actions, selected }: FontItemProps) {
           className={cn(
             'relative aspect-video overflow-hidden rounded-panel ring-2 ring-transparent',
             'transition-[box-shadow,scale] duration-300 group-hover:scale-[0.97] group-hover:ring-fg',
-            selected && 'scale-[0.97] ring-(--selection)!',
+            selected && selectedCardClass,
           )}
         >
           <FontPoster family={family} near={near} />
@@ -247,7 +223,7 @@ function FontRow({ family, actions, selected }: FontItemProps) {
       ref={ref}
       className={cn(
         'group flex items-center gap-4 rounded-control-sm px-3 py-2.5 transition-colors hover:bg-surface-1',
-        selected && 'bg-(--selection)/15! ring-1 ring-(--selection)/60',
+        selected && selectedRowClass,
       )}
     >
       <span
@@ -298,7 +274,7 @@ export function FontCollectionSkeleton({ view }: { view: MaterialView }) {
     );
   }
   return (
-    <div className={GRID_CLASSES} aria-hidden>
+    <div className={collectionGridClass} aria-hidden>
       {items.map((index) => (
         <div key={index} className="flex flex-col gap-3">
           <div className="skeleton aspect-video rounded-control-sm" />

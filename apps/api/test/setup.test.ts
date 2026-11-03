@@ -89,17 +89,18 @@ async function claim(userId: string) {
   });
 }
 
-afterEach(async () => {
+async function teardown() {
   await ctx.cleanup();
   await rm(dataDir, { recursive: true, force: true });
-});
+}
+
+afterEach(teardown);
 
 describe('setup page before the first account', () => {
   beforeEach(() => setup());
 
-  it('shows nothing without the token from the log', async () => {
-    const { body } = await status();
-    expect(body).toEqual({
+  it('shows nothing without the token from the log, the fields and redirect URIs with it', async () => {
+    expect((await status()).body).toEqual({
       authorized: false,
       claimed: false,
       claimable: false,
@@ -107,9 +108,7 @@ describe('setup page before the first account', () => {
     });
     expect((await status({ [SETUP_TOKEN_HEADER]: 'wrong' })).body.authorized).toBe(false);
     expect((await save(LOGIN)).status).toBe(403);
-  });
 
-  it('shows the fields and redirect URIs with the token', async () => {
     const { body } = await status(withToken());
     expect(body.authorized).toBe(true);
     expect(body.settings?.url).toBe('http://localhost:5173');
@@ -123,9 +122,11 @@ describe('setup page before the first account', () => {
       set: false,
     });
     expect(body.settings?.features).toEqual({ payments: false, stockPhotos: false });
+    // The token file stays until the server sees the first account.
+    expect(readSetupToken(dataDir)).toBe(token);
   });
 
-  it('saves logins encrypted, never returns secrets and restarts', async () => {
+  it('saves logins encrypted, never returns secrets, restarts and removes values with null', async () => {
     const res = await save(LOGIN, withToken());
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ restart: 'automatic' });
@@ -146,6 +147,11 @@ describe('setup page before the first account', () => {
     });
 
     await vi.waitFor(() => expect(restart).toHaveBeenCalledOnce());
+
+    // null removes a value.
+    await save({ OIDC_LABEL: 'Firmen-Login' }, withToken());
+    await save({ OIDC_LABEL: null }, withToken());
+    expect(await readStoredSettings(ctx.deps.db, ctx.deps.config.secret)).toEqual(LOGIN);
   });
 
   it('needs a login first, and refuses invalid combinations', async () => {
@@ -194,16 +200,10 @@ describe('setup page before the first account', () => {
       expect(await stored()).toBe(other);
     }
   });
-
-  it('removes a value with null', async () => {
-    await save({ ...LOGIN, OIDC_LABEL: 'Firmen-Login' }, withToken());
-    await save({ OIDC_LABEL: null }, withToken());
-    expect(await readStoredSettings(ctx.deps.db, ctx.deps.config.secret)).toEqual(LOGIN);
-  });
 });
 
 describe('setup page and the environment', () => {
-  it('shows values from the environment read-only and refuses to change them', async () => {
+  it('shows values from the environment read-only, follows the restart mode, dev login and instance control', async () => {
     await setup({ ...LOGIN, SIGNUP: 'invite' });
     const fields = (await status(withToken())).body.settings?.fields;
     expect(fields?.MS_CLIENT_SECRET).toEqual({ source: 'env', value: null, set: true });
@@ -212,25 +212,36 @@ describe('setup page and the environment', () => {
     const res = await save({ SIGNUP: 'open' }, withToken());
     expect(res.status).toBe(400);
     expect(JSON.stringify(await res.json())).toMatch(/Umgebungsvariable gesetzt: SIGNUP/);
-  });
 
-  it('needs no admin address in production – BOOTSTRAP_EMAIL is no setting any more', async () => {
+    // No admin address in production – BOOTSTRAP_EMAIL is no setting any more.
+    await teardown();
     await setup({ NODE_ENV: 'production', SLIDER_URL: 'https://slider.firma.de' });
     expect((await save(LOGIN, withToken())).status).toBe(200);
     expect((await save({ BOOTSTRAP_EMAIL: 'robert@firma.de' }, withToken())).status).toBe(400);
     expect((await status(withToken())).body.settings?.fields).not.toHaveProperty('BOOTSTRAP_EMAIL');
-  });
 
-  it('reports a manual restart when no supervisor runs the server', async () => {
+    // Without a supervisor the restart is manual; without instance control there is no page.
+    await teardown();
     await setup({}, 'manual');
     expect((await status(withToken())).body.settings?.restart).toBe('manual');
+    await teardown();
+    await setup({}, 'none');
+    expect((await ctx.request('/api/setup')).status).toBe(404);
+
+    // Dev login: works with the token as before; the dev owner is no claimant.
+    await teardown();
+    await setup({}, 'supervised', true);
+    expect((await status()).body).toMatchObject({ authorized: false, claimable: false });
+    expect((await status(withToken())).body.authorized).toBe(true);
+    expect((await claimWith(withToken())).status).toBe(401);
+    expect(await adminFlag(ctx.ownerId)).toBe(false);
   });
 });
 
 describe('setup page after the first account', () => {
   beforeEach(() => setup());
 
-  it('belongs to the instance admin; the token no longer works', async () => {
+  it('belongs to the instance admin, with passkeys only too; the token no longer works', async () => {
     const admin = await signedInUser(ctx, { name: 'Robert', email: 'robert@firma.de' });
     const other = await signedInUser(ctx, { name: 'Anna', email: 'anna@firma.de' });
     await claim(admin.user.id);
@@ -243,11 +254,8 @@ describe('setup page after the first account', () => {
     expect((await status({}, admin.cookie)).body.authorized).toBe(true);
     // Once claimed, saving without a login is allowed (the admin may switch logins off and on).
     expect((await save({ SIGNUP: 'open' }, {}, admin.cookie)).status).toBe(200);
-  });
 
-  it('stays claimed when the admin signs in with passkeys only', async () => {
-    const admin = await signedInUser(ctx, { name: 'Robert', email: 'robert@firma.de' });
-    await claim(admin.user.id);
+    // Stays claimed when the admin signs in with passkeys only.
     await ctx.deps.db.delete(userIdentities);
     await ctx.deps.db.insert(passkeys).values({
       id: 'pk-1',
@@ -286,23 +294,12 @@ describe('setup page after the first account', () => {
     });
     expect((await save(removeAll, {}, admin.cookie)).status).toBe(200);
   });
-
-  it('keeps the token file until the server sees the first account', () => {
-    expect(readSetupToken(dataDir)).toBe(token);
-  });
-});
-
-describe('setup page without instance control', () => {
-  it('does not exist', async () => {
-    await setup({}, 'none');
-    expect((await ctx.request('/api/setup')).status).toBe(404);
-  });
 });
 
 describe('server start', () => {
   beforeEach(() => setup());
 
-  it('boots when a pair is split between the environment and the setup page', async () => {
+  it('boots when a pair is split between the environment and the setup page; BOOTSTRAP_EMAIL is only noted', async () => {
     await saveStoredSettings(
       ctx.deps.db,
       ctx.deps.config.secret,
@@ -320,9 +317,42 @@ describe('server start', () => {
     expect(boot.secret).toBe(ctx.deps.config.secret);
     const config = await loadInstanceConfig(env, boot, ctx.deps.db, silentLogger);
     expect(config.auth.oidc?.clientId).toBe('o-id');
+    await ctx.deps.db.delete(instanceSettings);
+
+    // BOOTSTRAP_EMAIL: one info line that it is ignored and how to claim instead.
+    const info = vi.fn<Logger['info']>();
+    const log = { ...silentLogger, info };
+    const bare = { SLIDER_SECRET: ctx.deps.config.secret };
+    const notices = () =>
+      info.mock.calls.filter(([message]) => String(message).includes('BOOTSTRAP_EMAIL'));
+
+    await loadInstanceConfig(bare, loadBootConfig(bare), ctx.deps.db, log);
+    expect(notices()).toEqual([]);
+
+    const withEmail = { ...bare, BOOTSTRAP_EMAIL: 'robert@firma.de' };
+    const emailConfig = await loadInstanceConfig(
+      withEmail,
+      loadBootConfig(withEmail),
+      ctx.deps.db,
+      log,
+    );
+    expect(emailConfig.auth).not.toHaveProperty('bootstrapEmails');
+    expect(notices()).toHaveLength(1);
+    expect(String(notices()[0]?.[0])).toMatch(
+      /BOOTSTRAP_EMAIL is ignored.*\/einrichtung.*setup token/,
+    );
+
+    // Saved by an older setup page: ignored the same way, and not read as a setting.
+    info.mockClear();
+    await ctx.deps.db
+      .insert(instanceSettings)
+      .values({ key: 'BOOTSTRAP_EMAIL', value: 'robert@firma.de', updatedAt: ctx.clock.now() });
+    await loadInstanceConfig(bare, loadBootConfig(bare), ctx.deps.db, log);
+    expect(notices()).toHaveLength(1);
+    expect(await readStoredSettings(ctx.deps.db, ctx.deps.config.secret)).toEqual({});
   });
 
-  it('logs the setup page and the token with dev login too – the token never in a URL', async () => {
+  it('logs the setup page and the token – never in a URL – and how to claim while unclaimed', async () => {
     const devDir = await mkdtemp(path.join(tmpdir(), 'slider-setup-dev-'));
     const info = vi.fn<Logger['info']>();
     try {
@@ -342,98 +372,67 @@ describe('server start', () => {
     } finally {
       await rm(devDir, { recursive: true, force: true });
     }
-  });
 
-  it.each([
-    [
-      'logins from the environment only',
-      { google: true },
-      /asks every account for the setup token/,
-      '   https://slider.firma.de\n',
-    ],
-    [
-      'no login yet',
-      { google: false },
-      /configure the login/,
-      '   https://slider.firma.de/einrichtung\n',
-    ],
-  ])('prints where and how to claim while unclaimed (%s)', async (_, { google }, steps, url) => {
-    const prodDir = await mkdtemp(path.join(tmpdir(), 'slider-setup-prod-'));
+    // Production: with logins from the environment only, or no login yet.
+    const cases: [boolean, RegExp, string][] = [
+      [true, /asks every account for the setup token/, '   https://slider.firma.de\n'],
+      [false, /configure the login/, '   https://slider.firma.de/einrichtung\n'],
+    ];
+    const prod: { dir: string; config: ReturnType<typeof testConfig> }[] = [];
     const warn = vi.fn<Logger['warn']>();
     try {
-      const config = testConfig({
-        env: 'production',
-        dataDir: prodDir,
-        webOrigin: 'https://slider.firma.de',
-        auth: {
-          ...testConfig().auth,
-          devLogin: false,
-          google: google
-            ? {
-                issuer: 'https://accounts.google.com',
-                clientId: 'g',
-                clientSecret: 's',
-                label: 'Weiter mit Google',
-                scopes: 'openid email profile',
-                redirectUri: 'https://slider.firma.de/api/auth/google/callback',
-              }
-            : null,
-        },
-      });
-      await announceSetup(config, ctx.deps.db, { ...silentLogger, warn });
-      const message = String(warn.mock.calls[0]?.[0]);
-      const prodToken = readSetupToken(prodDir) ?? '';
-      expect(message).toContain(url);
-      expect(message).toContain(`Setup token: ${prodToken}`);
-      expect(message).toMatch(steps);
-      expect(message).not.toContain('#token=');
-      expect(message).not.toMatch(new RegExp(`einrichtung\\S*${prodToken}`));
+      for (const [google, steps, url] of cases) {
+        const dir = await mkdtemp(path.join(tmpdir(), 'slider-setup-prod-'));
+        const config = testConfig({
+          env: 'production',
+          dataDir: dir,
+          webOrigin: 'https://slider.firma.de',
+          auth: {
+            ...testConfig().auth,
+            devLogin: false,
+            google: google
+              ? {
+                  issuer: 'https://accounts.google.com',
+                  clientId: 'g',
+                  clientSecret: 's',
+                  label: 'Weiter mit Google',
+                  scopes: 'openid email profile',
+                  redirectUri: 'https://slider.firma.de/api/auth/google/callback',
+                }
+              : null,
+          },
+        });
+        prod.push({ dir, config });
+        warn.mockClear();
+        await announceSetup(config, ctx.deps.db, { ...silentLogger, warn });
+        const message = String(warn.mock.calls[0]?.[0]);
+        const prodToken = readSetupToken(dir) ?? '';
+        expect(message).toContain(url);
+        expect(message).toContain(`Setup token: ${prodToken}`);
+        expect(message).toMatch(steps);
+        expect(message).not.toContain('#token=');
+        expect(message).not.toMatch(new RegExp(`einrichtung\\S*${prodToken}`));
+      }
 
       // Claimed: the token file goes, nothing more is printed.
       const admin = await signedInUser(ctx, { name: 'Robert', email: 'robert@firma.de' });
       await claim(admin.user.id);
-      warn.mockClear();
-      await announceSetup(config, ctx.deps.db, { ...silentLogger, warn });
-      expect(readSetupToken(prodDir)).toBeNull();
-      expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('Setup token'));
+      for (const { dir, config } of prod) {
+        warn.mockClear();
+        await announceSetup(config, ctx.deps.db, { ...silentLogger, warn });
+        expect(readSetupToken(dir)).toBeNull();
+        expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('Setup token'));
+      }
     } finally {
-      await rm(prodDir, { recursive: true, force: true });
+      for (const { dir } of prod) await rm(dir, { recursive: true, force: true });
     }
-  });
-
-  it('BOOTSTRAP_EMAIL: one info line that it is ignored and how to claim instead', async () => {
-    const info = vi.fn<Logger['info']>();
-    const log = { ...silentLogger, info };
-    const env = { SLIDER_SECRET: ctx.deps.config.secret };
-    const notices = () =>
-      info.mock.calls.filter(([message]) => String(message).includes('BOOTSTRAP_EMAIL'));
-
-    await loadInstanceConfig(env, loadBootConfig(env), ctx.deps.db, log);
-    expect(notices()).toEqual([]);
-
-    const withEmail = { ...env, BOOTSTRAP_EMAIL: 'robert@firma.de' };
-    const config = await loadInstanceConfig(withEmail, loadBootConfig(withEmail), ctx.deps.db, log);
-    expect(config.auth).not.toHaveProperty('bootstrapEmails');
-    expect(notices()).toHaveLength(1);
-    expect(String(notices()[0]?.[0])).toMatch(
-      /BOOTSTRAP_EMAIL is ignored.*\/einrichtung.*setup token/,
-    );
-
-    // Saved by an older setup page: ignored the same way, and not read as a setting.
-    info.mockClear();
-    await ctx.deps.db
-      .insert(instanceSettings)
-      .values({ key: 'BOOTSTRAP_EMAIL', value: 'robert@firma.de', updatedAt: ctx.clock.now() });
-    await loadInstanceConfig(env, loadBootConfig(env), ctx.deps.db, log);
-    expect(notices()).toHaveLength(1);
-    expect(await readStoredSettings(ctx.deps.db, ctx.deps.config.secret)).toEqual({});
   });
 });
 
 describe('claiming the instance with the setup token', () => {
   beforeEach(() => setup());
 
-  it('signing in alone grants nothing: the page asks the account for the token', async () => {
+  it('signing in alone grants nothing; a wrong token makes nobody admin, the right one does, once', async () => {
     const anna = await signedInUser(ctx, { name: 'Anna', email: 'anna@firma.de' });
     expect((await status({}, anna.cookie)).body).toEqual({
       authorized: false,
@@ -447,10 +446,11 @@ describe('claiming the instance with the setup token', () => {
     expect(res.status).toBe(403);
     expect(JSON.stringify(await res.json())).toMatch(/Setup-Token/);
     expect(await adminFlag(anna.user.id)).toBe(false);
-  });
 
-  it('a wrong token makes nobody admin; the right one does, once', async () => {
-    const anna = await signedInUser(ctx, { name: 'Anna', email: 'anna@firma.de' });
+    // Claiming needs a signed-in account.
+    expect((await claimWith(withToken())).status).toBe(401);
+    expect(readSetupToken(dataDir)).toBe(token);
+
     const max = await signedInUser(ctx, { name: 'Max', email: 'max@firma.de' });
 
     const wrong = await claimWith({ [SETUP_TOKEN_HEADER]: 'wrong' }, anna.cookie);
@@ -481,12 +481,14 @@ describe('claiming the instance with the setup token', () => {
     });
   });
 
-  it('needs a signed-in account', async () => {
-    expect((await claimWith(withToken())).status).toBe(401);
+  it('an account that is gone claims nothing; of two claims at once only one becomes admin', async () => {
+    expect(await claimInstance(ctx.deps, 'no-such-user', token)).toEqual({
+      ok: false,
+      error: 'invalid_token',
+    });
     expect(readSetupToken(dataDir)).toBe(token);
-  });
+    expect((await status(withToken())).body).toMatchObject({ authorized: true, claimed: false });
 
-  it('two claims at once: only one account becomes admin', async () => {
     const anna = await signedInUser(ctx, { name: 'Anna', email: 'anna@firma.de' });
     const max = await signedInUser(ctx, { name: 'Max', email: 'max@firma.de' });
     const results = await Promise.all([
@@ -498,16 +500,7 @@ describe('claiming the instance with the setup token', () => {
     expect(admins).toHaveLength(1);
   });
 
-  it('an account that is gone claims nothing and keeps the token valid', async () => {
-    expect(await claimInstance(ctx.deps, 'no-such-user', token)).toEqual({
-      ok: false,
-      error: 'invalid_token',
-    });
-    expect(readSetupToken(dataDir)).toBe(token);
-    expect((await status(withToken())).body).toMatchObject({ authorized: true, claimed: false });
-  });
-
-  it('takes over the decks and workspaces of the dev owner nobody can sign in as', async () => {
+  it('takes over the decks and workspaces of the dev owner nobody can sign in as, only those', async () => {
     const { deckId } = await createReadyDeck(ctx);
     const anna = await signedInUser(ctx, { name: 'Anna', email: 'anna@firma.de' });
     // Before the claim the account can't open anything (`instance_unclaimed`).
@@ -522,23 +515,27 @@ describe('claiming the instance with the setup token', () => {
       .where(eq(workspaceMembers.userId, anna.user.id));
     expect(membership).toMatchObject({ workspaceId: ctx.workspaceId, role: 'admin' });
     expect((await ctx.request(`/api/decks/${deckId}`, { cookie: anna.cookie })).status).toBe(200);
-  });
 
-  it('leaves a dev owner alone that has a login of its own', async () => {
-    const { deckId } = await createReadyDeck(ctx);
+    // A dev owner that has a login of its own is left alone.
+    await teardown();
+    await setup();
+    const own = await createReadyDeck(ctx);
     await ctx.deps.db.insert(userIdentities).values({
       provider: 'google',
       subject: 'robert',
       userId: ctx.ownerId,
       email: 'robert@example.org',
     });
-    const anna = await signedInUser(ctx, { name: 'Anna', email: 'anna@firma.de' });
-    expect((await claimWith(withToken(), anna.cookie)).status).toBe(200);
-    const [deck] = await ctx.deps.db.select().from(decks).where(eq(decks.id, deckId));
-    expect(deck?.ownerId).toBe(ctx.ownerId);
+    const other = await signedInUser(ctx, { name: 'Anna', email: 'anna@firma.de' });
+    expect((await claimWith(withToken(), other.cookie)).status).toBe(200);
+    const [kept] = await ctx.deps.db.select().from(decks).where(eq(decks.id, own.deckId));
+    expect(kept?.ownerId).toBe(ctx.ownerId);
   });
 
-  it(`rate-limits wrong tokens: after ${MAX_TOKEN_FAILURES}, even the right one waits`, async () => {
+  it(`rate-limits wrong tokens: after ${MAX_TOKEN_FAILURES}, even the right one waits – the right one alone never locks out`, async () => {
+    for (let i = 0; i < MAX_TOKEN_FAILURES + 5; i++) {
+      expect((await status(withToken())).body.authorized).toBe(true);
+    }
     const anna = await signedInUser(ctx, { name: 'Anna', email: 'anna@firma.de' });
     for (let i = 0; i < MAX_TOKEN_FAILURES; i++) {
       expect((await status({ [SETUP_TOKEN_HEADER]: `wrong-${i}` })).status).toBe(200);
@@ -551,22 +548,5 @@ describe('claiming the instance with the setup token', () => {
 
     ctx.clock.advance(16 * 60_000);
     expect((await claimWith(withToken(), anna.cookie)).status).toBe(200);
-  });
-
-  it('using the right token many times never locks anyone out', async () => {
-    for (let i = 0; i < MAX_TOKEN_FAILURES + 5; i++) {
-      expect((await status(withToken())).body.authorized).toBe(true);
-    }
-  });
-});
-
-describe('setup page with dev login', () => {
-  beforeEach(() => setup({}, 'supervised', true));
-
-  it('works with the token as before; the dev owner is no claimant', async () => {
-    expect((await status()).body).toMatchObject({ authorized: false, claimable: false });
-    expect((await status(withToken())).body.authorized).toBe(true);
-    expect((await claimWith(withToken())).status).toBe(401);
-    expect(await adminFlag(ctx.ownerId)).toBe(false);
   });
 });

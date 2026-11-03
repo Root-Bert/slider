@@ -42,6 +42,9 @@ function toClaimScreen(): void {
 
 const FALLBACK_MESSAGE = 'Etwas ist schiefgelaufen. Bitte versuche es erneut.';
 
+/** No answer at all (no connection, the request failed on the way): status 0. */
+export const unreachableError = () => new ApiError(0, 'internal', 'Keine Verbindung zum Server.');
+
 /**
  * An error without Slider's JSON body – it came from a reverse proxy in front of the API (an
  * HTML error page). Its status still says what happened: nginx answers an upload above its
@@ -75,6 +78,17 @@ async function toApiError(response: Response): Promise<ApiError> {
   return proxyError(response.status);
 }
 
+/** An error answer another library's request got (`tus-js-client`), read as `toApiError` does. */
+export function apiErrorFromText(status: number, text: string): ApiError {
+  try {
+    const body = JSON.parse(text) as Partial<ApiErrorBody>;
+    if (body.error) return fromBody(status, body.error);
+  } catch {
+    // Non-JSON error (proxy down, HTML error page) – fall through.
+  }
+  return status === 0 ? unreachableError() : proxyError(status);
+}
+
 /**
  * Ids from the address bar end up in API paths (`/d/:deckId` → `/decks/${deckId}`), and React
  * Router decodes `%2F` in params: `/d/..%2Fworkspaces%2Fx` would turn into `/api/workspaces/x`
@@ -96,10 +110,23 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
   body?: JsonBody | FormData;
 }
 
-export async function apiRequest<T>(
+/**
+ * Set by the service worker (`public/sw.js`) on an answer it gave from its store because the
+ * server could not be reached: an older answer, perhaps of an earlier step of the deck.
+ */
+export const STORED_ANSWER_HEADER = 'X-Slider-Offline';
+
+/** An answer and whether it came from the service worker's store (`STORED_ANSWER_HEADER`). */
+export interface ApiAnswer<T> {
+  data: T;
+  fromStore: boolean;
+}
+
+/** `apiRequest`, telling an answer the service worker gave from its store from the server's. */
+export async function apiRequestAnswer<T>(
   path: string,
   { body, headers, ...init }: RequestOptions = {},
-): Promise<T> {
+): Promise<ApiAnswer<T>> {
   checkPath(path);
   const isJson = body !== undefined && !(body instanceof FormData);
   let response: Response;
@@ -115,17 +142,37 @@ export async function apiRequest<T>(
       body: isJson ? JSON.stringify(body) : body,
     });
   } catch {
-    throw new ApiError(0, 'internal', 'Keine Verbindung zum Server.');
+    throw unreachableError();
   }
 
   if (!response.ok) throw await toApiError(response);
-  if (response.status === 204) return undefined as T;
+  const fromStore = response.headers.get(STORED_ANSWER_HEADER) === '1';
+  if (response.status === 204) return { data: undefined as T, fromStore };
   try {
-    return (await response.json()) as T;
+    return { data: (await response.json()) as T, fromStore };
   } catch {
     // A 2xx that isn't JSON: a proxy or the SPA fallback answered instead of the API.
     throw proxyError(response.status);
   }
+}
+
+/**
+ * The answers `apiRequest` got from the service worker's store, told by identity – the data
+ * itself, as a query function hands it on. A query that holds data already does not take one
+ * (`app/query-client.ts`, `keepNewerData`): the server out of reach for a moment, its stored
+ * answer may be older than what the query has – an edit's answer stored since, a live update.
+ * Only answers that are objects (lists, records) are told; a bare `null` or number is not.
+ */
+const storedAnswers = new WeakSet<object>();
+
+/** Whether `data` is an answer the service worker gave from its store (`apiRequest`). */
+export const isStoredAnswer = (data: unknown): boolean =>
+  typeof data === 'object' && data !== null && storedAnswers.has(data);
+
+export async function apiRequest<T>(path: string, options?: RequestOptions): Promise<T> {
+  const { data, fromStore } = await apiRequestAnswer<T>(path, options);
+  if (fromStore && typeof data === 'object' && data !== null) storedAnswers.add(data);
+  return data;
 }
 
 export const api = {
@@ -138,19 +185,47 @@ export const api = {
 };
 
 /**
+ * A file the API makes on asking (a PDF of a deck), saved by the browser under the name the
+ * answer gives – fetched first, so the page can show it is being made and say why it failed.
+ */
+export async function apiDownload(path: string, fallbackName: string): Promise<void> {
+  checkPath(path);
+  let response: Response;
+  try {
+    response = await fetch(`${API_PREFIX}${path}`, { credentials: 'same-origin' });
+  } catch {
+    throw unreachableError();
+  }
+  if (!response.ok) throw await toApiError(response);
+  const disposition = response.headers.get('Content-Disposition') ?? '';
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = encoded ? decodeURIComponent(encoded) : fallbackName;
+  // In the page while clicked, and the file kept a while: Safari reads it after the click.
+  link.hidden = true;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+/**
  * Upload with progress events – `fetch` cannot report upload progress yet, so this uses XHR.
- * Resolves with the parsed JSON body (BER-91: "Uploads bis 200 MB mit Fortschrittsanzeige").
+ * Resolves with the parsed JSON body (BER-91: uploads with a progress bar).
  */
 export function uploadWithProgress<T>(
   path: string,
   formData: FormData,
   onProgress: (fraction: number) => void,
   signal?: AbortSignal,
+  method: 'POST' | 'PUT' = 'POST',
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     checkPath(path);
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${API_PREFIX}${path}`);
+    xhr.open(method, `${API_PREFIX}${path}`);
     xhr.responseType = 'json';
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) onProgress(event.loaded / event.total);
@@ -163,7 +238,7 @@ export function uploadWithProgress<T>(
       const body = xhr.response as Partial<ApiErrorBody> | null;
       reject(body?.error ? fromBody(xhr.status, body.error) : proxyError(xhr.status));
     };
-    xhr.onerror = () => reject(new ApiError(0, 'internal', 'Keine Verbindung zum Server.'));
+    xhr.onerror = () => reject(unreachableError());
     const aborted = () => new DOMException('Upload abgebrochen', 'AbortError');
     xhr.onabort = () => reject(aborted());
     if (signal?.aborted) return reject(aborted());

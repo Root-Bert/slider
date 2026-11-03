@@ -21,7 +21,7 @@ const zero: SyncCounts = {
 };
 
 describe('formatSyncSummary', () => {
-  it('lists changes in a fixed order', () => {
+  it('lists changes in a fixed order, singular for one, and says so when nothing visible changed', () => {
     expect(
       formatSyncSummary({
         ...zero,
@@ -31,9 +31,6 @@ describe('formatSyncSummary', () => {
         commentsNew: 5,
       }),
     ).toBe('3 Folien geändert, 1 neu, 1 gelöscht, 5 neue Kommentare aus PowerPoint');
-  });
-
-  it('uses the singular for one', () => {
     expect(formatSyncSummary({ ...zero, slidesModified: 1 })).toBe('1 Folie geändert');
     expect(formatSyncSummary({ ...zero, commentsNew: 1, commentsRemoved: 1 })).toBe(
       '1 neuer Kommentar aus PowerPoint, 1 Kommentar in PowerPoint entfernt',
@@ -41,9 +38,6 @@ describe('formatSyncSummary', () => {
     expect(formatSyncSummary({ ...zero, slidesMoved: 2, commentsRemoved: 2 })).toBe(
       '2 verschoben, 2 Kommentare in PowerPoint entfernt',
     );
-  });
-
-  it('says so when nothing visible changed', () => {
     expect(formatSyncSummary(zero)).toBe('Keine sichtbaren Änderungen');
   });
 });
@@ -65,7 +59,7 @@ describe('sync contract', () => {
     latestSummary: summary,
   };
 
-  it('parses API payloads', () => {
+  it('parses API payloads and keeps the new fields optional on existing schemas', () => {
     expect(
       deckStatusSchema.parse({
         deckId: 'd1',
@@ -99,9 +93,7 @@ describe('sync contract', () => {
         summary,
       }).slides,
     ).toHaveLength(1);
-  });
 
-  it('keeps the new fields optional on existing schemas', () => {
     const deck = {
       id: 'd1',
       workspaceId: 'w1',

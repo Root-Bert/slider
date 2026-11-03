@@ -1,6 +1,6 @@
 import { OdpDocument, OdpError, isOdpBytes, type OdpSlide } from '@slider/odp';
 import { textHash, type ParsedShape, type ParsedShapeKind, type ParsedSlide } from '@slider/pptx';
-import type { EditableElementKind } from '@slider/shared';
+import type { EditableElementKind, Guide } from '@slider/shared';
 import { notAPowerPoint } from '../http/errors';
 import { isPdfBytes } from '../sources/safe-fetch';
 import type { DeckFileExtension } from '../storage/blob-storage';
@@ -28,6 +28,7 @@ const SHAPE_KIND: Record<EditableElementKind, ParsedShapeKind> = {
   image: 'picture',
   table: 'table',
   group: 'other',
+  line: 'other',
   other: 'other',
 };
 
@@ -67,10 +68,13 @@ export function odpShapes(slide: OdpSlide): ParsedShape[] {
       imagePath: null,
       fill: null,
       placeholder: element.role,
+      ...(element.rotation ? { rotation: element.rotation } : {}),
+      ...(element.tilt ? { tilt: { x: element.tilt.x, y: element.tilt.y } } : {}),
     }));
 }
 
-export function odpParsedSlide(slide: OdpSlide): ParsedSlide {
+/** `guides`: the slide's (`OdpDocument.slideGuides`) – its layout's, else the file's snap lines. */
+export function odpParsedSlide(slide: OdpSlide, guides: Guide[] = []): ParsedSlide {
   const shapes = odpShapes(slide);
   return {
     // No PowerPoint id: `PAGE_PATH` makes it a page that is matched by its content (`isPdfPage`).
@@ -86,7 +90,8 @@ export function odpParsedSlide(slide: OdpSlide): ParsedSlide {
     shapes,
     groups: [],
     background: null,
-    guides: [],
+    guides,
+    transition: slide.transition,
   };
 }
 
@@ -125,10 +130,11 @@ export async function openOdpDeck(bytes: Uint8Array): Promise<PptxDocument> {
   const size = document.pageSize();
   const width = 960;
   const height = Math.round((width * size.height) / size.width);
+  const guides = await document.slideGuides();
   return {
     presentation: {
       size: { cx: Math.round(size.width * EMU_PER_CM), cy: Math.round(size.height * EMU_PER_CM) },
-      slides: document.slides().map(odpParsedSlide),
+      slides: document.slides().map((slide, index) => odpParsedSlide(slide, guides[index])),
       sections: [],
       comments: [],
       author: null,

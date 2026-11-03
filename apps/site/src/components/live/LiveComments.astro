@@ -1,0 +1,426 @@
+---
+import { Icon } from '@/ui/Icon';
+import { t, type Lang } from '~/i18n';
+
+/**
+ * Live comments on every page: who else is here (pointers + a dock), and comments anyone can
+ * place anywhere – gone 30 s after the last time someone touched them. The server keeps nothing
+ * (apps/api `realtime/site-live.ts`). Plain DOM, no framework: the script connects only while the
+ * tab is visible and sends pointer moves only while someone else is on the page.
+ */
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const strings = t(lang).live;
+---
+
+<div class="live-root" data-live-root data-strings={JSON.stringify(strings)} hidden>
+  <div class="live-layer" data-live-layer aria-live="polite"></div>
+  <div class="live-dock" data-live-dock role="region" aria-label="Live">
+    <span class="live-faces" data-live-faces></span>
+    <span class="live-count" data-live-count></span>
+    <button type="button" class="live-add" data-live-add>
+      <Icon name="addComment" size={18} />
+      {strings.comment}
+    </button>
+  </div>
+  <div class="live-hint" data-live-hint hidden>{strings.place} <span class="live-hint-sep" aria-hidden="true">|</span> {strings.cancel}</div>
+</div>
+
+<script>
+  import { startLive } from '~/scripts/live';
+
+  const root = document.querySelector<HTMLElement>('[data-live-root]');
+  if (root) startLive(root);
+</script>
+
+<style is:global>
+  .live-root {
+    --live-blue: var(--color-accent-blue);
+  }
+  .live-layer {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 0;
+    height: 0;
+    z-index: 60;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  /* Bottom centre: the hero's tool bar has its controls on both sides. */
+  .live-dock {
+    position: fixed;
+    left: 50%;
+    bottom: 16px;
+    translate: -50% 0;
+    z-index: 70;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 6px 6px 8px;
+    border-radius: 999px;
+    background: var(--color-glass-elevated);
+    box-shadow:
+      0 0 0 1px var(--color-hairline-strong),
+      var(--shadow-float);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    animation: live-in 400ms var(--ease-emphasized) both;
+  }
+  .live-faces {
+    display: flex;
+  }
+  .live-faces > * + * {
+    margin-left: -6px;
+  }
+  .live-count {
+    font-size: 13px;
+    color: var(--color-fg-muted);
+    white-space: nowrap;
+  }
+  .live-add {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 34px;
+    padding: 0 10px 0 12px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-on-primary);
+    background: var(--color-primary);
+    cursor: pointer;
+  }
+  .live-placing .live-add {
+    outline: 2px solid var(--live-blue);
+    outline-offset: 2px;
+  }
+  .live-hint {
+    position: fixed;
+    left: 50%;
+    bottom: 68px;
+    translate: -50% 0;
+    z-index: 70;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 13px;
+    white-space: nowrap;
+    color: #fff;
+    background: var(--live-blue);
+    box-shadow: var(--shadow-float);
+  }
+  .live-placing,
+  .live-placing * {
+    cursor: crosshair !important;
+  }
+  /* Commenting is always on: free spots say so with a crosshair, links and fields keep theirs. */
+  @media (hover: hover) and (pointer: fine) {
+    .live-on main :where(:not(a, a *, button, button *, input, textarea, select, label, summary, summary *)) {
+      cursor: crosshair;
+    }
+  }
+  .live-drawing,
+  .live-drawing * {
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    cursor: crosshair !important;
+  }
+
+  /* The marked area's look is `.mark-box` (site.css); here only its place in a comment. */
+  .live-box {
+    top: 0;
+    left: 0;
+  }
+  .live-box.is-drawing {
+    z-index: 61;
+  }
+  .live-comment .live-box {
+    position: absolute;
+  }
+  .live-comment:has(.live-box) .live-card {
+    top: 0;
+    left: calc(var(--box-w, 0px) + 14px);
+  }
+  .live-comment.flip:has(.live-box) .live-card {
+    left: auto;
+    right: 14px;
+  }
+  .live-compose {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    padding: 4px 4px 4px 10px;
+    border-radius: 12px;
+    background: var(--color-surface-1);
+    box-shadow: inset 0 0 0 1px var(--color-hairline);
+    transition: box-shadow 150ms;
+  }
+  .live-compose:focus-within {
+    box-shadow: inset 0 0 0 1px var(--color-border-focus);
+  }
+  .live-compose .live-input,
+  .live-compose .live-input:focus {
+    padding: 5px 0;
+    background: none;
+    box-shadow: none;
+    border-radius: 0;
+  }
+  .live-compose .live-send {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: 50%;
+  }
+  .live-compose:has(.live-input:placeholder-shown) .live-send {
+    opacity: 0.35;
+  }
+  .live-foot {
+    font-size: 11px;
+    line-height: 1.35;
+    color: var(--color-fg-faint);
+  }
+
+  .live-face {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    font-size: 11px;
+    font-weight: 600;
+    box-shadow: 0 0 0 2px var(--color-glass-solid);
+    flex-shrink: 0;
+  }
+
+  /* A visitor's pointer: their speech bubble with their name (`.bub-cursor` in site.css). */
+  .live-cursor {
+    transition:
+      translate 120ms linear,
+      opacity 200ms;
+  }
+
+  /* Your own: fixed to the screen, above everything, the system arrow hidden. A bare bubble that
+     tells what a click does when it rests where a comment can start. */
+  .live-me {
+    position: fixed;
+    z-index: 9999;
+    transition: opacity 150ms;
+  }
+  .live-me > span {
+    min-width: 18px;
+    height: 18px;
+    padding: 0;
+    border-radius: 3px 9px 9px 9px;
+    transform-origin: 0 0;
+    transition:
+      scale 180ms var(--ease-emphasized),
+      padding 260ms var(--ease-emphasized),
+      height 260ms var(--ease-emphasized),
+      border-radius 260ms var(--ease-emphasized);
+  }
+  .live-say {
+    max-width: 0;
+    overflow: hidden;
+    font-style: normal;
+    opacity: 0;
+    transition:
+      max-width 300ms var(--ease-emphasized),
+      opacity 200ms;
+  }
+  .live-me.is-say > span {
+    height: 24px;
+    padding: 0 11px;
+    border-radius: 3px 12px 12px 12px;
+  }
+  .live-me.is-say .live-say {
+    max-width: 180px;
+    opacity: 1;
+  }
+  .live-me.is-over > span {
+    scale: 1.45;
+  }
+  .live-me.is-text,
+  .live-me.is-away {
+    opacity: 0;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    html.me-cursor,
+    html.me-cursor *:not(input, textarea, [contenteditable]) {
+      cursor: none !important;
+    }
+  }
+
+  /* A comment: the pin on its spot and the card beside it. */
+  .live-comment {
+    position: absolute;
+    top: 0;
+    left: 0;
+    animation: live-in 260ms var(--ease-emphasized) both;
+    transition: opacity 250ms;
+  }
+  .live-comment.is-gone {
+    opacity: 0;
+  }
+  .live-pin {
+    position: absolute;
+    top: -7px;
+    left: -7px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    box-shadow:
+      0 0 0 2px #fff,
+      var(--shadow-pin);
+  }
+  .live-card {
+    position: absolute;
+    top: -12px;
+    left: 16px;
+    width: 260px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px 12px;
+    border-radius: 14px;
+    overflow: hidden;
+    color: var(--color-fg);
+    background: var(--color-glass-elevated);
+    box-shadow:
+      0 0 0 1px var(--color-hairline-strong),
+      var(--shadow-float);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+  }
+  .live-comment.flip .live-card {
+    left: auto;
+    right: 16px;
+  }
+  .live-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .live-head .live-face {
+    width: 20px;
+    height: 20px;
+    font-size: 10px;
+    box-shadow: none;
+  }
+  .live-text {
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+  .live-reply {
+    display: flex;
+    gap: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--color-hairline);
+  }
+  .live-reply .live-face {
+    width: 18px;
+    height: 18px;
+    font-size: 9px;
+    box-shadow: none;
+    margin-top: 1px;
+  }
+  .live-reply b {
+    font-size: 12px;
+    font-weight: 500;
+    display: block;
+  }
+  .live-reply span {
+    color: var(--color-fg-muted);
+  }
+  .live-input {
+    width: 100%;
+    resize: none;
+    padding: 7px 10px;
+    border-radius: 10px;
+    font: inherit;
+    color: var(--color-fg);
+    background: var(--color-surface-1);
+    box-shadow: inset 0 0 0 1px var(--color-hairline);
+    outline: none;
+  }
+  .live-input:focus {
+    box-shadow: inset 0 0 0 1px var(--color-border-focus);
+  }
+  .live-name {
+    flex: 1;
+    min-width: 0;
+    padding: 2px 6px;
+    margin-left: -6px;
+    border-radius: 6px;
+    font: inherit;
+    color: var(--color-fg);
+    background: none;
+    outline: none;
+    transition: background-color 150ms;
+  }
+  .live-name:hover,
+  .live-name:focus {
+    background: var(--color-surface-2);
+  }
+  .live-send {
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-on-primary);
+    background: var(--color-primary);
+    cursor: pointer;
+  }
+  .live-card .live-input.is-reply {
+    display: none;
+  }
+  .live-card:hover .live-input.is-reply,
+  .live-card:focus-within .live-input.is-reply,
+  .live-input.is-reply:not(:placeholder-shown) {
+    display: block;
+  }
+  /* Time left: a thin line along the card's foot, running out. */
+  .live-time {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 2px;
+    width: 100%;
+    transform-origin: left;
+    opacity: 0.7;
+  }
+  @keyframes live-time {
+    from {
+      transform: scaleX(var(--from, 1));
+    }
+    to {
+      transform: scaleX(0);
+    }
+  }
+  @keyframes live-in {
+    from {
+      opacity: 0;
+      scale: 0.96;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .live-dock,
+    .live-comment {
+      animation: none;
+    }
+    .live-cursor {
+      transition: none;
+    }
+  }
+  @media (max-width: 560px) {
+    .live-card {
+      width: min(230px, calc(100vw - 64px));
+    }
+  }
+</style>

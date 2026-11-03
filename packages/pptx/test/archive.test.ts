@@ -11,20 +11,15 @@ import {
 } from '../src/archive';
 import { PptxError } from '../src/types';
 
-describe('relsPathOf', () => {
-  it('points at the _rels sibling of a part', () => {
+describe('part paths', () => {
+  it('points at the _rels sibling of a part, the root _rels folder at the top of the zip', () => {
     expect(relsPathOf('ppt/slides/slide1.xml')).toBe('ppt/slides/_rels/slide1.xml.rels');
     expect(relsPathOf('ppt/presentation.xml')).toBe('ppt/_rels/presentation.xml.rels');
-  });
-
-  it('uses the root _rels folder for parts at the top of the zip', () => {
     expect(relsPathOf('')).toBe('_rels/.rels');
     expect(relsPathOf('[Content_Types].xml')).toBe('_rels/[Content_Types].xml.rels');
   });
-});
 
-describe('resolvePartPath', () => {
-  it('resolves targets relative to the folder of the owning part', () => {
+  it('resolves targets relative to the owning part, a leading slash at the root, never above it', () => {
     expect(resolvePartPath('ppt/slides/slide1.xml', '../media/image1.png')).toBe(
       'ppt/media/image1.png',
     );
@@ -32,13 +27,7 @@ describe('resolvePartPath', () => {
       'ppt/slides/slide1.xml',
     );
     expect(resolvePartPath('ppt/slides/slide1.xml', './slide2.xml')).toBe('ppt/slides/slide2.xml');
-  });
-
-  it('treats a leading slash as the zip root', () => {
     expect(resolvePartPath('ppt/slides/slide1.xml', '/ppt/x.xml')).toBe('ppt/x.xml');
-  });
-
-  it('ignores empty segments and stops at the root', () => {
     expect(resolvePartPath('ppt/slides/slide1.xml', '..//../../a.xml')).toBe('a.xml');
     expect(resolvePartPath('', 'ppt/presentation.xml')).toBe('ppt/presentation.xml');
   });
@@ -65,8 +54,8 @@ describe('Archive', () => {
     'ppt/broken.xml': '<p:sld><p:cSld></p:sld>',
   };
 
-  it('reads parts as bytes and XML, null when missing', async () => {
-    const archive = await Archive.open(await zipOf(files));
+  it('reads parts as bytes and XML – null when missing, BOM stripped, cached, invalid XML corrupt', async () => {
+    const archive = await Archive.open(new Uint8Array(await zipOf(files)).buffer);
     expect(archive.has('ppt/media/image1.png')).toBe(true);
     expect(archive.has('ppt/media/image2.png')).toBe(false);
     expect(
@@ -74,17 +63,9 @@ describe('Archive', () => {
     ).toBe('png-bytes');
     expect(await archive.readBytes('nope')).toBeNull();
     expect(await archive.readXml('nope.xml')).toBeNull();
-  });
-
-  it('strips a byte order mark and caches parsed parts', async () => {
-    const archive = await Archive.open(await zipOf(files));
     const slide = await archive.readXml('ppt/slides/slide1.xml');
     expect(slide?.name).toBe('p:sld');
     expect(await archive.readXml('ppt/slides/slide1.xml')).toBe(slide);
-  });
-
-  it('reports invalid XML as corrupt', async () => {
-    const archive = await Archive.open(await zipOf(files));
     await expect(archive.readXml('ppt/broken.xml')).rejects.toMatchObject({
       name: 'PptxError',
       code: 'corrupt',
@@ -92,7 +73,7 @@ describe('Archive', () => {
     await expect(archive.readXml('ppt/broken.xml')).rejects.toBeInstanceOf(PptxError);
   });
 
-  it('resolves relationships and keeps external targets verbatim', async () => {
+  it('resolves relationships, keeps external targets verbatim and finds them by id and type', async () => {
     const archive = await Archive.open(await zipOf(files));
     expect(await archive.relationships('ppt/slides/slide1.xml')).toEqual([
       {
@@ -105,10 +86,7 @@ describe('Archive', () => {
       { id: 'rId3', type: REL.image, target: 'https://example.com/a.png', external: true },
     ]);
     expect(await archive.relationships('ppt/presentation.xml')).toEqual([]);
-  });
-
-  it('finds relationships by id and type, never external ones', async () => {
-    const archive = await Archive.open(await zipOf(files));
+    // By id and type, never external ones.
     expect((await archive.relationshipById('ppt/slides/slide1.xml', 'rId2'))?.target).toBe(
       'ppt/media/image1.png',
     );
@@ -116,11 +94,6 @@ describe('Archive', () => {
     expect(await archive.relationshipById('ppt/slides/slide1.xml', 'rId9')).toBeUndefined();
     const images = await archive.relationshipsOfType('ppt/slides/slide1.xml', REL.image);
     expect(images.map((rel) => rel.id)).toEqual(['rId2']);
-  });
-
-  it('accepts an ArrayBuffer', async () => {
-    const buffer = new Uint8Array(await zipOf(files)).buffer;
-    expect((await Archive.open(buffer)).has('ppt/slides/slide1.xml')).toBe(true);
   });
 
   it('rejects encrypted files and non-zips', async () => {
@@ -152,40 +125,26 @@ describe('Archive zip-bomb budget', () => {
     return forgeDeclaredSizes(packed, 1000);
   }
 
-  it('stops inflating an XML part that unpacks to more than it declares', async () => {
-    const archive = await Archive.open(await bomb('ppt/presentation.xml', 8 * 1024 ** 2));
-    await expect(archive.readXml('ppt/presentation.xml')).rejects.toMatchObject({
-      name: 'PptxError',
-      code: 'corrupt',
-    });
-  });
-
-  it('stops inflating a binary part that unpacks to more than it declares', async () => {
-    const archive = await Archive.open(await bomb('ppt/media/image1.png', 8 * 1024 ** 2));
-    await expect(archive.readBytes('ppt/media/image1.png')).rejects.toMatchObject({
-      name: 'PptxError',
-      code: 'corrupt',
-    });
-  });
-
-  it('rejects a part that declares more than the per-part cap without inflating it', async () => {
+  async function forged(content: string, declared: number): Promise<Archive> {
     const zip = new JSZip();
-    zip.file('ppt/presentation.xml', '<a/>');
+    zip.file('ppt/presentation.xml', content);
     const packed = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
-    const archive = await Archive.open(forgeDeclaredSizes(packed, MAX_XML_PART + 1));
-    await expect(archive.readXml('ppt/presentation.xml')).rejects.toMatchObject({
-      code: 'corrupt',
-    });
-  });
+    return Archive.open(forgeDeclaredSizes(packed, declared));
+  }
+  const corrupt = { name: 'PptxError', code: 'corrupt' };
 
-  it('rejects a part that unpacks to less than it declares', async () => {
-    const zip = new JSZip();
-    zip.file('ppt/presentation.xml', '<a>' + 'x'.repeat(100) + '</a>');
-    const packed = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
-    const archive = await Archive.open(forgeDeclaredSizes(packed, 5000));
-    await expect(archive.readXml('ppt/presentation.xml')).rejects.toMatchObject({
-      code: 'corrupt',
-    });
+  it('rejects parts whose inflated size differs from the declared one, or declares too much', async () => {
+    // Unpacking to more than declared stops inflating, XML and binary parts alike.
+    const xml = await Archive.open(await bomb('ppt/presentation.xml', 8 * 1024 ** 2));
+    await expect(xml.readXml('ppt/presentation.xml')).rejects.toMatchObject(corrupt);
+    const png = await Archive.open(await bomb('ppt/media/image1.png', 8 * 1024 ** 2));
+    await expect(png.readBytes('ppt/media/image1.png')).rejects.toMatchObject(corrupt);
+    // Declaring more than the per-part cap is refused without inflating.
+    const huge = await forged('<a/>', MAX_XML_PART + 1);
+    await expect(huge.readXml('ppt/presentation.xml')).rejects.toMatchObject(corrupt);
+    // Unpacking to less than declared is corrupt too.
+    const short = await forged('<a>' + 'x'.repeat(100) + '</a>', 5000);
+    await expect(short.readXml('ppt/presentation.xml')).rejects.toMatchObject(corrupt);
   });
 });
 
@@ -206,14 +165,6 @@ describe('Archive inflate budget (honest headers)', () => {
     for (const [path, content] of Object.entries(parts)) zip.file(path, content);
     return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
   }
-
-  it('refuses an XML part above the per-part cap even when its header is honest', async () => {
-    const upload = await deck({ 'ppt/slides/slide1.xml': xmlOf(MAX_XML_PART + 1) });
-    const archive = await Archive.open(upload);
-    await expect(archive.readXml('ppt/slides/slide1.xml')).rejects.toMatchObject({
-      code: 'corrupt',
-    });
-  });
 
   it('caps all XML of a small upload by its size, counting every part once', async () => {
     const upload = await deck({
@@ -247,19 +198,22 @@ describe('Archive inflate budget (honest headers)', () => {
     // Parses ~64 MiB of XML; slow when the whole suite runs in parallel.
   }, 30_000);
 
-  it('keeps reading a normal deck', async () => {
+  it('keeps reading a normal deck, refuses an honest part above the cap, drops DOMs read with retain: false', async () => {
     const archive = await Archive.open(
       await deck({ 'ppt/slides/slide1.xml': xmlOf(2 * MiB), 'ppt/media/image1.png': noise(MiB) }),
     );
     expect((await archive.readXml('ppt/slides/slide1.xml'))?.name).toBe('a');
     expect((await archive.readBytes('ppt/media/image1.png'))?.byteLength).toBe(MiB);
-  });
 
-  it('does not keep the DOM of a part read with retain: false', async () => {
-    const archive = await Archive.open(await deck({ 'ppt/slides/slide1.xml': '<a/>' }));
-    const first = await archive.readXml('ppt/slides/slide1.xml', { retain: false });
-    expect(await archive.readXml('ppt/slides/slide1.xml', { retain: false })).not.toBe(first);
-    const kept = await archive.readXml('ppt/slides/slide1.xml');
-    expect(await archive.readXml('ppt/slides/slide1.xml')).toBe(kept);
+    const big = await Archive.open(
+      await deck({ 'ppt/slides/slide1.xml': xmlOf(MAX_XML_PART + 1) }),
+    );
+    await expect(big.readXml('ppt/slides/slide1.xml')).rejects.toMatchObject({ code: 'corrupt' });
+
+    const small = await Archive.open(await deck({ 'ppt/slides/slide1.xml': '<a/>' }));
+    const first = await small.readXml('ppt/slides/slide1.xml', { retain: false });
+    expect(await small.readXml('ppt/slides/slide1.xml', { retain: false })).not.toBe(first);
+    const kept = await small.readXml('ppt/slides/slide1.xml');
+    expect(await small.readXml('ppt/slides/slide1.xml')).toBe(kept);
   });
 });

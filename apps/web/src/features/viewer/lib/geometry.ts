@@ -36,7 +36,39 @@ export interface Size {
 export interface Placement {
   left: number;
   top: number;
-  side: 'right' | 'left' | 'below';
+  side: 'right' | 'left' | 'below' | 'above';
+}
+
+/**
+ * Places a popover under a target box if it fits there, else over it – where there is more room
+ * when it fits neither (it then overlaps, clamped into the viewport) – centred on it, clamped
+ * into the viewport with a margin.
+ */
+export function placeBelowOrAbove(
+  target: { left: number; top: number; right: number; bottom: number },
+  popover: Size,
+  viewport: Size,
+  gap = 16,
+  margin = 12,
+): Placement {
+  const left = Math.max(
+    margin,
+    Math.min(
+      (target.left + target.right) / 2 - popover.width / 2,
+      viewport.width - popover.width - margin,
+    ),
+  );
+  const below = target.bottom + gap;
+  const above = target.top - gap - popover.height;
+  const fitsBelow = below + popover.height + margin <= viewport.height;
+  const fitsAbove = above >= margin;
+  const side =
+    fitsBelow || (!fitsAbove && viewport.height - target.bottom >= target.top) ? 'below' : 'above';
+  const top = Math.max(
+    margin,
+    Math.min(side === 'below' ? below : above, viewport.height - popover.height - margin),
+  );
+  return { left, top, side };
 }
 
 /**

@@ -2,7 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import type { Deck, DeckSearchResult } from '@slider/shared';
 import { routes } from '@/lib/routes';
-import { AvatarStack, cn, Icon, Tooltip, type ShowToast } from '@/ui';
+import {
+  AvatarStack,
+  cn,
+  Icon,
+  SelectedMark,
+  selectedCardClass,
+  selectedRowClass,
+  Tooltip,
+  type ShowToast,
+} from '@/ui';
 import { isImporting } from '@/lib/deck-labels';
 import { usePinnedDecks } from '../hooks/usePinnedDecks';
 import { useDeckContextMenu } from '../hooks/useDeckContextMenu';
@@ -82,20 +91,6 @@ export interface DeckItemProps {
 /** The deck's link: at the slide of its first search hit, if it has one. */
 const deckLink = (deck: Deck, searchHit: DeckSearchResult | undefined) =>
   routes.deck(deck.id, searchHit?.hits[0]?.slideId);
-
-/** Tick in the thumbnail corner of a selected deck. */
-function SelectedMark({ compact = false }: { compact?: boolean }) {
-  return (
-    <span
-      className={cn(
-        'absolute z-(--z-raised) flex items-center justify-center rounded-full bg-(--selection) text-(--on-selection) shadow-mark',
-        compact ? 'top-1 left-1 size-4' : 'top-2 left-2 size-6',
-      )}
-    >
-      <Icon name="check" size={compact ? 12 : 16} label="Ausgewählt" />
-    </span>
-  );
-}
 
 /**
  * The comments button and avatars: own controls above the stretched title link, so hovering
@@ -177,7 +172,7 @@ export function DeckCard({ deck, selected = false, onNotify, searchHit }: DeckIt
             'rounded-panel ring-2 ring-transparent transition-[box-shadow,scale] duration-300',
             'group-has-[[data-deck-hover]:hover]:scale-[0.97] group-has-[[data-deck-hover]:hover]:ring-fg',
             'group-has-[a:focus-visible]:ring-mention',
-            selected && 'scale-[0.97] ring-(--selection)!',
+            selected && selectedCardClass,
           )}
         >
           {selected && <SelectedMark />}
@@ -247,7 +242,7 @@ export function DeckRow({ deck, selected = false, onNotify, searchHit }: DeckIte
         // Only the stretched title link lights up the row – not the controls on top of it.
         'has-[[data-deck-hover]:hover]:bg-surface-1',
         'has-[a:focus-visible]:bg-surface-1 has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-mention',
-        selected && 'bg-(--selection)/15! ring-1 ring-(--selection)/60',
+        selected && selectedRowClass,
       )}
     >
       <div className="flex items-center gap-4">

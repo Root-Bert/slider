@@ -1,0 +1,1 @@
+ALTER TABLE "ai_proposals" ADD COLUMN "asks" boolean DEFAULT false NOT NULL;

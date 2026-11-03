@@ -11,18 +11,24 @@
 @source '../../../web/src/features/viewer/revisions/ChangeBadge.tsx';
 
 /*
- * Website-only tokens (Figma "Agent Website", Site Kit). The website's positive accent is a
- * pastel sage. The site's own accents are never red; app states (e.g. "deleted") keep the app's colours.
+ * Website-only tokens. The site wears the app's own look (canvas, Inter, the reviewers' accent
+ * colours on pins and avatars), so what you see here is what you get in Slider.
  */
 @theme {
-  --color-sage: #8fcb9b;
-  --color-sage-glow: rgb(143 203 155 / 0.55);
 
-  /* Headline scale: Inter Black, tight tracking. */
+  /* Headline scale: Inter, heavy, tight tracking. */
   --text-hero: 112px;
   --text-headline: 72px;
   --text-section: 56px;
   --text-lead: 18px;
+}
+
+/* Small quiet labels (footer headings, language links). */
+@utility label {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--color-fg-subtle);
 }
 
 @layer base {
@@ -144,4 +150,81 @@
   .js .is-in [data-drift] {
     animation: none;
   }
+}
+
+/*
+ * A marked area: 2px accent edge, light tint and halo, and the author's name in a speech bubble
+ * on top. Set `--c` (accent) and `--ink` (tag text). The live comments' boxes use it.
+ */
+.mark-box {
+  position: absolute;
+  border: 2px solid var(--c);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--c) 12%, transparent);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--c) 16%, transparent),
+    0 10px 30px color-mix(in srgb, var(--c) 22%, transparent);
+  pointer-events: none;
+}
+.mark-tag {
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: -2px;
+  padding: 2px 8px;
+  border-radius: 12px 12px 12px 3px;
+  background: var(--c);
+  color: var(--ink, #000);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+/* A new mark draws itself from its top-left corner. */
+.mark-box.is-new {
+  animation: mark-draw 420ms var(--ease-emphasized) both;
+}
+@keyframes mark-draw {
+  from {
+    clip-path: inset(-12px 100% 100% -12px);
+  }
+  to {
+    clip-path: inset(-40px -12px -12px -12px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mark-box.is-new {
+    animation: none;
+  }
+}
+
+/*
+ * A person's pointer on the website: a speech bubble in their colour whose sharp corner is the
+ * tip, with their name in it (Slider's comment pin, pointing). Your own is the bare bubble and
+ * says what a click does. Set `--c` and `--ink`; the element's top-left is the tip.
+ */
+.bub-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.bub-cursor > span {
+  display: inline-flex;
+  align-items: center;
+  min-width: 18px;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 3px 11px 11px 11px;
+  background: var(--c);
+  color: var(--ink, #fff);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+  box-shadow:
+    0 0 0 1.5px rgb(255 255 255 / 0.9),
+    0 4px 12px rgb(0 0 0 / 0.25);
 }

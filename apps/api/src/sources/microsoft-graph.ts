@@ -4,6 +4,7 @@ import { ApiError, notAPowerPoint } from '../http/errors';
 import { markPdfMaker } from '../import/pdf-maker';
 import { downloadPptx, type DirectUrlAdapter } from './direct-url';
 import {
+  LINK_IS_A_FOLDER_MESSAGE,
   microsoftLoginRequired,
   microsoftNotConfigured,
   sourceForbidden,
@@ -189,11 +190,16 @@ export class GraphClient {
   }
 
   /** One Graph request; a 401 (revoked or expired early) is retried once with a fresh token. */
-  private async call(path: string, context: SourceContext, resumeLink: string): Promise<Response> {
-    let response = await this.send(path, await this.requireToken(context, resumeLink));
+  private async call(
+    path: string,
+    context: SourceContext,
+    resumeLink: string,
+    request?: GraphRequest,
+  ): Promise<Response> {
+    let response = await this.send(path, await this.requireToken(context, resumeLink), request);
     if (response.status === 401) {
       await response.body?.cancel();
-      response = await this.send(path, await this.requireToken(context, resumeLink, true));
+      response = await this.send(path, await this.requireToken(context, resumeLink, true), request);
     }
     return response;
   }
@@ -215,8 +221,7 @@ export class GraphClient {
   }
 
   getItem(item: OneDriveItemId, context: SourceContext, resumeLink: string) {
-    const path = `drives/${encodeURIComponent(item.driveId)}/items/${encodeURIComponent(item.itemId)}`;
-    return this.get<DriveItem>(path, context, resumeLink);
+    return this.get<DriveItem>(driveItemPath(item), context, resumeLink);
   }
 
   getShare(sharingUrl: string, context: SourceContext) {
@@ -243,7 +248,7 @@ export class GraphClient {
 
   /** Graph item → {@link RemoteFile}; folders are rejected, any file goes (the import converts it). */
   toRemoteFile(item: DriveItem): RemoteFile {
-    if (!item.file) throw notAPowerPoint(FOLDER_MESSAGE);
+    if (!item.file) throw notAPowerPoint(LINK_IS_A_FOLDER_MESSAGE);
     const driveId = item.parentReference?.driveId;
     return {
       ref: driveId ? `drives/${driveId}/items/${item.id}` : `items/${item.id}`,
@@ -274,13 +279,10 @@ export class GraphClient {
    * with a redirect to a pre-authenticated URL, which is fetched without the token.
    */
   async exportPdf(file: RemoteFile, context: SourceContext): Promise<Uint8Array> {
-    const path = `${graphItemPath(file.ref)}/content?format=pdf`;
-    const init = { redirect: 'manual' as const, timeoutMs: PDF_EXPORT_TIMEOUT_MS };
-    let response = await this.send(path, await this.requireToken(context, ''), init);
-    if (response.status === 401) {
-      await response.body?.cancel();
-      response = await this.send(path, await this.requireToken(context, '', true), init);
-    }
+    let response = await this.call(`${graphItemPath(file.ref)}/content?format=pdf`, context, '', {
+      redirect: 'manual',
+      timeoutMs: PDF_EXPORT_TIMEOUT_MS,
+    });
     const location = response.headers.get('location');
     if (!response.ok && !(response.status >= 300 && response.status < 400 && location)) {
       throw await OfficePdfError.from(response);
@@ -310,16 +312,12 @@ export class GraphClient {
    */
   async listContributors(file: RemoteFile, context: SourceContext): Promise<string[]> {
     const path = graphItemPath(file.ref);
-    const item = await this.get<ItemPeople>(
-      `${path}?$select=createdBy,lastModifiedBy,shared`,
-      context,
-      '',
-    );
-    const versions = await this.get<ItemVersions>(
-      `${path}/versions?$select=lastModifiedBy`,
-      context,
-      '',
-    ).catch(() => ({ value: [] }));
+    const [item, versions] = await Promise.all([
+      this.get<ItemPeople>(`${path}?$select=createdBy,lastModifiedBy,shared`, context, ''),
+      this.get<ItemVersions>(`${path}/versions?$select=lastModifiedBy`, context, '').catch(
+        (): ItemVersions => ({ value: [] }),
+      ),
+    ]);
     return [
       personOf(item.lastModifiedBy),
       ...(Array.isArray(versions.value) ? versions.value : []).map((version) =>
@@ -399,14 +397,10 @@ export class OneDriveAdapter implements SourceAdapter {
   private async graphFile(file: RemoteFile): Promise<RemoteFile> {
     if (isGraphRef(file.ref)) return file;
     const item = await extractOneDriveItem(new URL(file.ref), this.http);
-    const ref = item
-      ? `drives/${encodeURIComponent(item.driveId)}/items/${encodeURIComponent(item.itemId)}`
-      : graphItemPath(file.ref);
+    const ref = item ? driveItemPath(item) : graphItemPath(file.ref);
     return { ...file, ref };
   }
 }
-
-const FOLDER_MESSAGE = 'Unter diesem Link liegt ein Ordner – wähle eine Datei darin.';
 
 /**
  * What Office turns into a PDF itself (Graph `content?format=pdf`) – besides PPTX, which is read
@@ -513,6 +507,10 @@ export function officeErrorCode(body: string): string | null {
     return null;
   }
 }
+
+/** Graph path of a drive item by its ids. */
+const driveItemPath = (item: OneDriveItemId) =>
+  `drives/${encodeURIComponent(item.driveId)}/items/${encodeURIComponent(item.itemId)}`;
 
 export const isGraphRef = (ref: string) => ref.startsWith('drives/') || ref.startsWith('items/');
 

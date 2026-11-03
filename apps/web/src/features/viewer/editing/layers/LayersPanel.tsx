@@ -1,14 +1,14 @@
-import type { EditableElement, Rect } from '@slider/shared';
+import { findElement, type EditableElement, type Rect } from '@slider/shared';
 import { useEffect, useEffectEvent, useId, useRef, useState, type CSSProperties } from 'react';
 import { accentColor } from '@/lib/accent';
 import { pluralize } from '@/lib/format';
-import { Button, cn, Icon, IconButton, Spinner } from '@/ui';
+import { Button, cn, Icon, IconButton } from '@/ui';
 import { SidePanel, SidePanelHeader } from '../../components/SidePanel';
 import { useRestoreFocus } from '../../hooks/useRestoreFocus';
 import { useViewerData } from '../../state/viewer-data';
 import { useEditing } from '../editing-context';
-import { elementLabel } from '../lib/element-label';
-import { restacked } from './layer-order';
+import { elementLabel, lockButton, lockOperations } from '../lib/element-label';
+import { moveOperations, restacked, type Restacking } from './layer-order';
 import { FRONT, isFront, MAX_SPREAD, TILTED, useLayers } from './layers-context';
 import { useLayerPictures, type LayerPicture } from './useLayerPictures';
 
@@ -30,6 +30,9 @@ function LayersPanelView({ slideId }: { slideId: string }) {
   const drawn = useLayerPictures(slideId, 'interactive');
   const elements = new Map(editing.elementsOf(slideId).map((element) => [element.id, element]));
   const order = layers.orderOf(slideId);
+  const hovered = layers.hovered?.slideId === slideId ? layers.hovered.elementId : null;
+  const { setHovered } = layers;
+  useEffect(() => () => setHovered(slideId, null), [setHovered, slideId]);
   const pickedIds = layers.picked?.slideId === slideId ? layers.picked.ids : NONE;
   /** Picked last: the one the list shows. */
   const picked = pickedIds.at(-1) ?? null;
@@ -54,6 +57,39 @@ function LayersPanelView({ slideId }: { slideId: string }) {
       ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }, [picked]);
 
+  // A group's parts (Figma's layers): listed under it, indented – open by its arrow, or while one
+  // of them is picked (the group entered). Picked, locked and restacked in it, by their ids.
+  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
+  const toggle = (id: string) =>
+    setOpened((current) => {
+      const next = new Set(current);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  const holding = (group: EditableElement) =>
+    !!picked && !!group.children && !!findElement(group.children, picked);
+  /** The picked part of a group, with the group it lies in – `null`: none picked. */
+  const pickedPart = (() => {
+    if (!picked || elements.has(picked)) return null;
+    const find = (list: readonly EditableElement[]): EditableElement | null => {
+      for (const item of list) {
+        if (!item.children) continue;
+        if (item.children.some((child) => child.id === picked)) return item;
+        const inner = find(item.children);
+        if (inner) return inner;
+      }
+      return null;
+    };
+    const group = find([...elements.values()]);
+    return group ? { group, id: picked } : null;
+  })();
+  /** A part restacked among the group's parts (`moveElement` counts in its group). */
+  const movePart = (group: EditableElement, id: string, how: Restacking) => {
+    const order = group.children!.map((child) => child.id);
+    const next = restacked(order, [id], how);
+    if (next) void editing.apply(moveOperations(order, next, [id]));
+  };
+
   // ⌥↑ / ⌥↓ restack the picked elements (with ⇧ to the top or the bottom), ⌘Z / ⇧⌘Z undo and
   // redo; Esc and ⌘↵ let it go and close the panel – the slides stay taken apart.
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
@@ -72,11 +108,13 @@ function LayersPanelView({ slideId }: { slideId: string }) {
       layers.setPanelOpen(false);
     } else if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && event.altKey && picked) {
       const up = event.key === 'ArrowUp';
-      layers.move(pickedIds, event.shiftKey ? (up ? 'top' : 'bottom') : up ? 'up' : 'down');
+      const how = event.shiftKey ? (up ? 'top' : 'bottom') : up ? 'up' : 'down';
+      if (pickedPart) movePart(pickedPart.group, pickedPart.id, how);
+      else layers.move(pickedIds, how);
     } else if (mod && event.key.toLowerCase() === 'z') {
       if (event.shiftKey) {
-        if (editing.state?.canRedo) editing.redo();
-      } else if (editing.state?.canUndo) editing.undo();
+        editing.redo();
+      } else editing.undo();
     } else handled = false;
     if (handled) {
       event.preventDefault();
@@ -105,9 +143,6 @@ function LayersPanelView({ slideId }: { slideId: string }) {
           <h2 id={titleId} className="min-w-0 flex-1 truncate text-base font-semibold text-fg">
             Ebenen · Folie {number}
           </h2>
-          {drawn.drawing && drawn.background && (
-            <Spinner size="sm" label="Ebenen werden gezeichnet" />
-          )}
           <IconButton
             icon="close"
             label="Schließen (Esc)"
@@ -117,9 +152,10 @@ function LayersPanelView({ slideId }: { slideId: string }) {
           />
         </div>
         <p className="text-xs leading-4 text-fg-subtle">
-          {pluralize(order.length, 'Ebene', 'Ebenen')}, oben zuerst. Auf der Folie wählt ein Klick
-          die Ebene (⇧ mehrere), Ziehen alle im Rahmen; ein Doppelklick kehrt zum Kommentieren
-          zurück. ⇧ + Ziehen dreht die Folien, zweimal Leertaste zeigt die Frontansicht.
+          {pluralize(order.length, 'Ebene', 'Ebenen')}, oben zuerst. Auf der Folie bearbeitet ein
+          Klick die Ebene, ein Doppelklick wählt sie hier in der Liste (⇧ + Klick mehrere), Ziehen
+          alle im Rahmen. ⇧ + Ziehen dreht die Folie, ⌥ + Scrollen ändert den Abstand, zweimal
+          Leertaste wechselt zwischen Frontansicht und schräg.
         </p>
         <div className="flex items-center gap-3 pt-1">
           <label className="flex min-w-0 flex-1 items-center gap-2 text-xs text-fg-muted">
@@ -164,19 +200,22 @@ function LayersPanelView({ slideId }: { slideId: string }) {
         {rows.map((id) => {
           const element = elements.get(id);
           if (!element) return null;
+          const partsShown = !!element.children && (opened.has(id) || holding(element));
           const at = order.indexOf(id);
           const isPicked = pickedIds.includes(id);
+          const held = editing.isHeld(slideId, id);
           // A picked row moves with all picked; another alone.
           const together = isPicked ? pickedIds : [id];
           const moving = dragged !== null && !dragged.ids.includes(id);
-          return (
+          return [
             <LayerRow
               key={id}
               element={element}
+              parts={element.children ? { open: partsShown, toggle: () => toggle(id) } : undefined}
               picture={drawn.pictures.get(id)}
               aspect={aspect}
               picked={isPicked}
-              hovered={id === layers.hovered}
+              hovered={id === hovered}
               dragged={dragged?.ids.includes(id) ?? false}
               dropAbove={moving && dragged.over === at + 1}
               dropBelow={moving && at === 0 && dragged.over === 0}
@@ -184,14 +223,44 @@ function LayersPanelView({ slideId }: { slideId: string }) {
               canDown={restacked(order, together, 'down') !== null}
               onDragStart={() => setDragged({ ids: together, over: at })}
               onDragEnd={() => setDragged(null)}
-              onHover={(over) => layers.setHovered(over ? id : null)}
+              onHover={(over) => layers.setHovered(slideId, over ? id : null)}
               onPick={(add) =>
                 add ? pick(id, true) : pick(isPicked && pickedIds.length === 1 ? null : id)
               }
               onUp={() => layers.move(together, 'up')}
               onDown={() => layers.move(together, 'down')}
-            />
-          );
+              held={held}
+              // Held still by „Hinzufügen“ (not locked in the file): as a double click on it on
+              // the slide – Bearbeiten, with it picked. Else not while a step is under way, as the
+              // format panel's lock.
+              onLock={
+                held
+                  ? () => {
+                      editing.setActive(true);
+                      editing.select({ slideId, elementId: id });
+                    }
+                  : editing.busy
+                    ? undefined
+                    : () => void editing.apply(lockOperations([element]))
+              }
+            />,
+            partsShown && (
+              <PartRows
+                key={`${id}-parts`}
+                group={element}
+                depth={1}
+                picked={picked}
+                opened={opened}
+                toggle={toggle}
+                pictures={drawn.pictures}
+                aspect={aspect}
+                busy={editing.busy}
+                onPick={(group, part) => editing.enterGroup(slideId, group.id, part)}
+                onMove={movePart}
+                onLock={(part) => void editing.apply(lockOperations([part]))}
+              />
+            ),
+          ];
         })}
         <li className="mt-1 flex items-center gap-3 rounded-control-sm px-2 py-2 text-body text-fg-subtle">
           <span className="w-4 shrink-0" />
@@ -211,8 +280,83 @@ function LayersPanelView({ slideId }: { slideId: string }) {
   );
 }
 
+/** A group's parts as rows under it, top first – a group among them with its own parts. */
+function PartRows({
+  group,
+  depth,
+  picked,
+  opened,
+  toggle,
+  pictures,
+  aspect,
+  busy,
+  onPick,
+  onMove,
+  onLock,
+}: {
+  group: EditableElement;
+  depth: number;
+  picked: string | null;
+  opened: ReadonlySet<string>;
+  toggle: (id: string) => void;
+  pictures: ReadonlyMap<string, LayerPicture>;
+  aspect: number;
+  busy: boolean;
+  onPick: (group: EditableElement, part: string) => void;
+  onMove: (group: EditableElement, part: string, how: Restacking) => void;
+  onLock: (part: EditableElement) => void;
+}) {
+  const order = (group.children ?? []).map((child) => child.id);
+  return [...(group.children ?? [])].reverse().map((part) => {
+    const open =
+      !!part.children &&
+      (opened.has(part.id) || (!!picked && !!findElement(part.children, picked)));
+    return [
+      <LayerRow
+        key={part.id}
+        element={part}
+        depth={depth}
+        parts={part.children ? { open, toggle: () => toggle(part.id) } : undefined}
+        picture={pictures.get(part.id)}
+        aspect={aspect}
+        picked={part.id === picked}
+        hovered={false}
+        dragged={false}
+        dropAbove={false}
+        dropBelow={false}
+        canUp={restacked(order, [part.id], 'up') !== null}
+        canDown={restacked(order, [part.id], 'down') !== null}
+        onHover={() => {}}
+        onPick={() => onPick(group, part.id)}
+        onUp={() => onMove(group, part.id, 'up')}
+        onDown={() => onMove(group, part.id, 'down')}
+        held={false}
+        onLock={busy ? undefined : () => onLock(part)}
+      />,
+      open && (
+        <PartRows
+          key={`${part.id}-parts`}
+          group={part}
+          depth={depth + 1}
+          picked={picked}
+          opened={opened}
+          toggle={toggle}
+          pictures={pictures}
+          aspect={aspect}
+          busy={busy}
+          onPick={onPick}
+          onMove={onMove}
+          onLock={onLock}
+        />
+      ),
+    ];
+  });
+}
+
 function LayerRow({
   element,
+  depth = 0,
+  parts,
   picture,
   aspect,
   picked,
@@ -228,8 +372,14 @@ function LayerRow({
   onPick,
   onUp,
   onDown,
+  held,
+  onLock,
 }: {
   element: EditableElement;
+  /** How deep in groups (its parts indented under a group). */
+  depth?: number;
+  /** A group: whether its parts show under it, and its arrow that shows or hides them. */
+  parts?: { open: boolean; toggle: () => void };
   picture: LayerPicture | undefined;
   aspect: number;
   picked: boolean;
@@ -239,19 +389,26 @@ function LayerRow({
   dropBelow: boolean;
   canUp: boolean;
   canDown: boolean;
-  onDragStart: () => void;
-  onDragEnd: () => void;
+  /** Dragged to another place in the list – parts of a group are not (their arrows are). */
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
   onHover: (over: boolean) => void;
   /** `add`: ⇧ or ⌘ held – one more, or one less. */
   onPick: (add: boolean) => void;
   onUp: () => void;
   onDown: () => void;
+  /** Held still by „Hinzufügen“ only, not locked in the file (`Editing.isHeld`). */
+  held: boolean;
+  /** Its lock: locked, the slide neither picks nor moves it (`EditLayer`); none while busy. */
+  onLock: (() => void) | undefined;
 }) {
   return (
     <li
-      data-layer-row={element.id}
-      draggable
+      data-layer-row={depth === 0 ? element.id : undefined}
+      data-layer-part={depth > 0 ? element.id : undefined}
+      draggable={!!onDragStart}
       onDragStart={(event) => {
+        if (!onDragStart) return;
         event.dataTransfer.effectAllowed = 'move';
         event.dataTransfer.setData('text/plain', element.id);
         onDragStart();
@@ -269,6 +426,7 @@ function LayerRow({
         picked ? 'bg-selected' : hovered ? 'bg-hover' : '',
         dragged && 'opacity-50',
       )}
+      style={depth > 0 ? { paddingLeft: `calc(0.5rem + ${depth * 1.25}rem)` } : undefined}
     >
       {dropAbove && (
         <span className="absolute inset-x-1 -top-px h-0.5 rounded-full bg-(--layer-color)" />
@@ -276,7 +434,20 @@ function LayerRow({
       {dropBelow && (
         <span className="absolute inset-x-1 -bottom-px h-0.5 rounded-full bg-(--layer-color)" />
       )}
-      <Icon name="dragIndicator" size={16} className="shrink-0 cursor-grab text-fg-subtle" />
+      {parts ? (
+        <IconButton
+          icon={parts.open ? 'expandMore' : 'chevronRight'}
+          label={parts.open ? 'Teile ausblenden' : 'Teile zeigen'}
+          size="sm"
+          data-row-arrows
+          className="-mx-1.5 shrink-0"
+          onClick={parts.toggle}
+        />
+      ) : onDragStart ? (
+        <Icon name="dragIndicator" size={16} className="shrink-0 cursor-grab text-fg-subtle" />
+      ) : (
+        <span className="w-4 shrink-0" />
+      )}
       <span className="relative size-10 shrink-0 overflow-hidden rounded-thumb bg-surface-2 ring-1 ring-hairline">
         {picture?.url && picture.box && (
           <img
@@ -319,11 +490,34 @@ function LayerRow({
           onClick={onDown}
         />
       </span>
+      {/* Locked: the lock shows always, a click unlocks it; else as the arrows, to lock it. */}
+      <span
+        data-row-arrows
+        className={cn(
+          'flex shrink-0 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100',
+          (picked || element.locked) && 'opacity-100',
+        )}
+      >
+        <IconButton
+          {...(held ? HELD_BUTTON : lockButton(!!element.locked))}
+          size="sm"
+          active={!!element.locked && !held}
+          disabled={!onLock}
+          onClick={onLock}
+        />
+      </span>
     </li>
   );
 }
 
 const NONE: readonly string[] = [];
+
+/** The lock of an element held still by „Hinzufügen“: shown, not lit as a lock in the file is. */
+const HELD_BUTTON = {
+  icon: 'lock' as const,
+  label: 'Bearbeiten',
+  title: 'Im Modus Hinzufügen fest – Klick: Bearbeiten, mit diesem Element gewählt',
+};
 
 /** A layer's picture fit into its square thumbnail, in its own proportions. */
 function thumbnailBox(box: Pick<Rect, 'w' | 'h'>, aspect: number): CSSProperties {

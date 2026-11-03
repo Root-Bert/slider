@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Navigate, Outlet, useParams } from 'react-router';
 import { routes } from '@/lib/routes';
 import { useAccount } from '@/features/auth';
+import { AppHeader } from '@/shell/AppHeader';
 import { AudienceDialog } from './components/AudienceDialog';
 import { BlockedWorkspace } from './components/BlockedWorkspace';
 import { PlanBanner } from './components/PlanBanner';
@@ -27,14 +28,20 @@ export function Component() {
   if (workspace.blocked) return <BlockedWorkspace workspace={workspace} userId={user.id} />;
   // A fresh page per workspace: /w/A → /w/B matches the same route, and without the key its
   // pages keep A's state (running bulk re-render, search, tab) – see WorkspaceLayout.test.tsx.
+  // The header is the layout's, not each page's: switching views (Projekte ⇄ Bibliothek, a master)
+  // keeps it as it is – logo, switcher and avatar aren't built again, so they don't flash.
   return (
-    <>
+    <div className="dot-grid flex min-h-full flex-col">
       <PlanBanner workspace={workspace} userId={user.id} />
-      <Outlet key={workspace.id} />
+      <AppHeader />
+      {/* The page fills what is left below the header (its drop zone, marquee). */}
+      <div className="flex flex-1 flex-col *:flex-1">
+        <Outlet key={workspace.id} />
+      </div>
       {/* Founded at sign-up: private or the company's? (BER-148) */}
       {domainJoin && workspace.audiencePending && workspace.role === 'admin' && (
         <AudienceDialog key={workspace.id} workspace={workspace} email={user.email} />
       )}
-    </>
+    </div>
   );
 }

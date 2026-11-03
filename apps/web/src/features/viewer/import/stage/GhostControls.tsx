@@ -62,7 +62,7 @@ export function GhostControls({
             <IconButton key={icon} icon={icon} label="" title={false} size="sm" />
           ))}
           <ToolbarDivider />
-          <IconButton icon="boxSelect" label="" title={false} size="sm" active={setup.boxMode} />
+          <IconButton icon="gridViewFill" label="" title={false} size="sm" active={setup.boxMode} />
           <IconButton icon="guides" label="" title={false} size="sm" active={setup.showGuides} />
           {/* Known only once the viewer's data is in: it pops in while the stage settles. */}
           {(setup.opening?.hiddenSlideCount ?? 0) > 0 && (

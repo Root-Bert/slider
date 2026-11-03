@@ -17,6 +17,16 @@ cd apps/site && bun run build   # → apps/site/dist (paths are prefixed with /s
 - **Motion:** sections with `data-section` play their entrance once in view
   (`src/scripts/motion.ts`); `data-reveal`, `data-draw` and `data-drift` are styled in
   `site.css`. Reduced motion shows the final state.
+- **Languages:** English at `/slider/`, German and French under `/slider/de/`, `/slider/fr/`
+  (texts in `src/i18n/`). A first visit to an English page follows the browser's language; the
+  footer's switch remembers a choice. Blog posts stay English, Impressum/Datenschutz German.
+- **Light and dark** follow the system: the app's light tokens under `data-theme="light"`. Use
+  tokens (`text-fg`, `bg-surface-1`, …), never hard white, so both work.
+- **Live comments:** every page shows who else is there and lets anyone comment anywhere
+  (`src/components/live/`, `src/scripts/live.ts`); comments go 30 s after the last touch. The
+  server is Slider's API (`apps/api/src/realtime/site-live.ts`, in memory only), reached via
+  `/slider/api/site-live` (Caddy in production, a dev middleware in `astro.config.mjs`). Without
+  that API the dock simply doesn't show.
 - **Legal:** `src/legal/*.md` – fill in the `[placeholders]` before going live.
 
 ## Hosting under /slider
@@ -35,7 +45,7 @@ to `/slider/`. DNS for `bertro.dev` must point at the server, like `slider.bertr
 
 ## License
 
-The website's code is under the repository's AGPL-3.0. Its texts and pictures, and the name and
+The website's code is under the repository's EUPL-1.2. Its texts and pictures, and the name and
 logo of Slider, are not: all rights reserved. The fonts in `src/components/slides/fonts/` are
 under the SIL Open Font License (`OFL.txt` there). Blog posts with `draft: true` are not
 published to the public repository until they go live.

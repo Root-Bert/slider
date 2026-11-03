@@ -5,6 +5,7 @@ import {
   type LiveEvent,
   type LivePeer,
   type LivePresenceInput,
+  type LiveStep,
 } from '@slider/shared';
 import { useSyncExternalStore } from 'react';
 import { sameCursor } from './cursor-anchor';
@@ -142,7 +143,14 @@ export function connectLive(
     deckId,
     source: null,
     connectionId: null,
-    presence: { activeSlideId: null, cursor: null, focusedThreadId: null },
+    presence: {
+      activeSlideId: null,
+      cursor: null,
+      focusedThreadId: null,
+      textCaret: null,
+      picked: null,
+      drag: null,
+    },
     dirty: true,
     inFlight: false,
     lastPost: 0,
@@ -292,6 +300,8 @@ function handle(connection: Connection, event: LiveEvent) {
       connection.dirty = true;
       flush(connection);
       connection.onComments();
+      // Texts typed in together are picked up again (a new connection has not joined them).
+      for (const listener of helloListeners) listener();
       return;
     }
     case 'peer': {
@@ -316,10 +326,58 @@ function handle(connection: Connection, event: LiveEvent) {
       connection.onComments();
       return;
     case 'slides':
+      // A new step's operations first: the editor shows them before the refetch.
+      if (event.step) for (const listener of stepListeners) listener(event.step);
+      connection.onDeckChange(event.type);
+      return;
     case 'proposals':
       connection.onDeckChange(event.type);
       return;
+    case 'text':
+      for (const listener of textListeners.get(event.elementId) ?? []) listener(event.update);
+      return;
   }
+}
+
+// ── Steps of the deck (`EditingProvider`) ────────────────────────────────────
+
+const stepListeners = new Set<(step: LiveStep) => void>();
+
+/** Hears each new step of the deck as it is made (its operations); returns the unsubscribe. */
+export function onLiveStep(listener: (step: LiveStep) => void): () => void {
+  stepListeners.add(listener);
+  return () => void stepListeners.delete(listener);
+}
+
+// ── Typing together (`editing/live/shared-text.ts`) ──────────────────────────
+
+const textListeners = new Map<string, Set<(update: string) => void>>();
+const helloListeners = new Set<() => void>();
+
+/** Hears what the others type in a text typed in together; returns the unsubscribe. */
+export function onLiveText(elementId: string, listener: (update: string) => void): () => void {
+  let set = textListeners.get(elementId);
+  if (!set) {
+    set = new Set();
+    textListeners.set(elementId, set);
+  }
+  set.add(listener);
+  return () => {
+    set.delete(listener);
+    // Only its own set: emptied and subscribed again meanwhile, the new one stays.
+    if (set.size === 0 && textListeners.get(elementId) === set) textListeners.delete(elementId);
+  };
+}
+
+/** Called after every hello (the stream came up, or back): texts are joined anew. */
+export function onLiveHello(listener: () => void): () => void {
+  helloListeners.add(listener);
+  return () => helloListeners.delete(listener);
+}
+
+/** This viewer's connection: its deck and secret key – `null` while the stream is down. */
+export function liveConnection(): { deckId: string; key: string } | null {
+  return current?.connectionId ? { deckId: current.deckId, key: current.connectionId } : null;
 }
 
 /** Reports this viewer's presence; posts are throttled and never overlap. */
@@ -330,7 +388,10 @@ export function setPresence(next: Partial<LivePresenceInput>) {
   if (
     presence.activeSlideId === connection.presence.activeSlideId &&
     presence.focusedThreadId === connection.presence.focusedThreadId &&
-    sameCursor(presence.cursor, connection.presence.cursor)
+    sameCursor(presence.cursor, connection.presence.cursor) &&
+    JSON.stringify(presence.textCaret) === JSON.stringify(connection.presence.textCaret) &&
+    presence.picked === connection.presence.picked &&
+    JSON.stringify(presence.drag) === JSON.stringify(connection.presence.drag)
   ) {
     return;
   }

@@ -31,61 +31,62 @@ async function fileNaming(family: string): Promise<Uint8Array> {
   return zip.generateAsync({ type: 'uint8array' });
 }
 
-it('keeps a font while a review uses it, and removes it once none does', async () => {
-  const ctx = await createTestContext();
-  try {
-    await uploadWorkspaceFonts(ctx.deps, ctx.ownerId, ctx.workspaceId, [
-      { name: 'Lota-Regular.ttf', bytes: lota() },
-    ]);
-    // A review that does not name it, and one that does.
-    const ids: string[] = [];
-    for (const [title, family] of [
-      ['Ohne', 'Arial'],
-      ['Quartalsbericht', 'Lota'],
-    ] as const) {
-      const deck = await createReadyDeck(ctx, { title });
-      ids.push(deck.deckId);
-      const key = `test/${deck.deckId}.odp`;
-      await ctx.deps.storage.put(key, await fileNaming(family));
-      await ctx.deps.db
-        .update(revisions)
-        .set({ pptxKey: key })
-        .where(eq(revisions.id, deck.revisionId));
-    }
-
-    await expect(
-      deleteWorkspaceFonts(ctx.deps, ctx.ownerId, ctx.workspaceId, { family: 'Lota' }),
-    ).rejects.toThrow('nutzt noch die Review „Quartalsbericht“');
-
-    await ctx.deps.db.delete(decks).where(eq(decks.id, ids[1]!));
-    expect(
-      await deleteWorkspaceFonts(ctx.deps, ctx.ownerId, ctx.workspaceId, { family: 'Lota' }),
-    ).toEqual([]);
-  } finally {
-    await ctx.cleanup();
-  }
-});
-
-it('replaces a face the workspace has only for admins – members add new ones', async () => {
-  const ctx = await createTestContext();
-  try {
-    const member = await signedInUser(ctx, { name: 'Max', email: 'max@firma.de' });
-    await ctx.deps.db
-      .insert(workspaceMembers)
-      .values({ workspaceId: ctx.workspaceId, userId: member.user.id, role: 'member' });
-    const upload = (userId: string) =>
-      uploadWorkspaceFonts(ctx.deps, userId, ctx.workspaceId, [
+it('keeps a font while a review uses it, and lets only admins replace a face the workspace has', async () => {
+  {
+    const ctx = await createTestContext();
+    try {
+      await uploadWorkspaceFonts(ctx.deps, ctx.ownerId, ctx.workspaceId, [
         { name: 'Lota-Regular.ttf', bytes: lota() },
       ]);
-    await upload(member.user.id);
-    await expect(upload(member.user.id)).rejects.toThrow('nur Admins');
-    const [face] = await ctx.deps.db.select().from(workspaceFonts);
-    expect(face?.uploadedById).toBe(member.user.id);
+      // A review that does not name it, and one that does.
+      const ids: string[] = [];
+      for (const [title, family] of [
+        ['Ohne', 'Arial'],
+        ['Quartalsbericht', 'Lota'],
+      ] as const) {
+        const deck = await createReadyDeck(ctx, { title });
+        ids.push(deck.deckId);
+        const key = `test/${deck.deckId}.odp`;
+        await ctx.deps.storage.put(key, await fileNaming(family));
+        await ctx.deps.db
+          .update(revisions)
+          .set({ pptxKey: key })
+          .where(eq(revisions.id, deck.revisionId));
+      }
 
-    await upload(ctx.ownerId);
-    const [replaced] = await ctx.deps.db.select().from(workspaceFonts);
-    expect(replaced?.uploadedById).toBe(ctx.ownerId);
-  } finally {
-    await ctx.cleanup();
+      await expect(
+        deleteWorkspaceFonts(ctx.deps, ctx.ownerId, ctx.workspaceId, { family: 'Lota' }),
+      ).rejects.toThrow('nutzt noch die Präsentation „Quartalsbericht“');
+
+      await ctx.deps.db.delete(decks).where(eq(decks.id, ids[1]!));
+      expect(
+        await deleteWorkspaceFonts(ctx.deps, ctx.ownerId, ctx.workspaceId, { family: 'Lota' }),
+      ).toEqual([]);
+    } finally {
+      await ctx.cleanup();
+    }
+  }
+  {
+    const ctx = await createTestContext();
+    try {
+      const member = await signedInUser(ctx, { name: 'Max', email: 'max@firma.de' });
+      await ctx.deps.db
+        .insert(workspaceMembers)
+        .values({ workspaceId: ctx.workspaceId, userId: member.user.id, role: 'member' });
+      const upload = (userId: string) =>
+        uploadWorkspaceFonts(ctx.deps, userId, ctx.workspaceId, [
+          { name: 'Lota-Regular.ttf', bytes: lota() },
+        ]);
+      await upload(member.user.id);
+      await expect(upload(member.user.id)).rejects.toThrow('nur Admins');
+      const [face] = await ctx.deps.db.select().from(workspaceFonts);
+      expect(face?.uploadedById).toBe(member.user.id);
+
+      await upload(ctx.ownerId);
+      const [replaced] = await ctx.deps.db.select().from(workspaceFonts);
+      expect(replaced?.uploadedById).toBe(ctx.ownerId);
+    } finally {
+      await ctx.cleanup();
+    }
   }
 });

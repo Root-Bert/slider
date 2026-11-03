@@ -1,4 +1,5 @@
-import { useEffect, useRef, type PointerEvent, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
+import { usePointerSpot } from '@/ui';
 import { TransitLines } from './TransitLines';
 
 /**
@@ -21,7 +22,7 @@ export function FeaturedJoinCard({
   const followPointer = usePointerSpot();
   return (
     <li
-      className="group hero-glow relative flex min-h-72 flex-col justify-between gap-20 overflow-hidden rounded-panel p-6 ring-hairline transition-[scale,box-shadow] duration-500 ease-emphasized focus-within:shadow-card-glow hover:shadow-card-glow motion-safe:hover:scale-[1.015] sm:p-8"
+      className="group hero-glow relative flex min-h-72 flex-col justify-between gap-20 overflow-hidden rounded-panel p-6 shadow-card-rest transition-[scale,box-shadow] duration-500 ease-emphasized focus-within:shadow-card-glow hover:shadow-card-glow motion-safe:hover:scale-[1.006] sm:p-8"
       onPointerMove={followPointer}
     >
       {/* First, so the positioned content after it paints on top. */}
@@ -38,23 +39,4 @@ export function FeaturedJoinCard({
       <span className="relative flex justify-end">{action}</span>
     </li>
   );
-}
-
-/**
- * Where the pointer is on the card, for its light and rim (`--mx`/`--my`): one write per frame,
- * however often the pointer moves.
- */
-function usePointerSpot() {
-  const frame = useRef(0);
-  useEffect(() => () => cancelAnimationFrame(frame.current), []);
-  return (event: PointerEvent<HTMLElement>) => {
-    const card = event.currentTarget;
-    const { clientX, clientY } = event;
-    cancelAnimationFrame(frame.current);
-    frame.current = requestAnimationFrame(() => {
-      const box = card.getBoundingClientRect();
-      card.style.setProperty('--mx', `${clientX - box.left}px`);
-      card.style.setProperty('--my', `${clientY - box.top}px`);
-    });
-  };
 }

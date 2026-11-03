@@ -109,7 +109,9 @@ function FolderTile({
         />
         <span className="flex min-w-0 flex-col">
           <span className="truncate text-sm font-medium text-fg">{folder.name}</span>
-          <span className="text-xs text-fg-subtle">{pluralize(count, 'Review', 'Reviews')}</span>
+          <span className="text-xs text-fg-subtle">
+            {pluralize(count, 'Präsentation', 'Präsentationen')}
+          </span>
         </span>
       </button>
       {actions.length > 0 && (

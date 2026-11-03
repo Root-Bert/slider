@@ -71,7 +71,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # The most used Google Fonts, drawn as themselves (scripts/google-fonts.py; the browser has the
-# same faces in apps/web/public/fonts/office). About 16 MB.
+# same faces in apps/web/public/fonts/office). 100 families, about 44 MB.
 COPY fonts/google /usr/share/fonts/truetype/google
 RUN fc-cache -f
 

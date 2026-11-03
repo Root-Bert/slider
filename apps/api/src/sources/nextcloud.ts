@@ -6,7 +6,12 @@ import {
   type ParsedShareLink,
 } from '@slider/shared';
 import { ApiError, notAPowerPoint } from '../http/errors';
-import { sourceForbidden, sourceNotFound, sourceUnreachable } from './errors';
+import {
+  LINK_IS_A_FOLDER_MESSAGE,
+  sourceForbidden,
+  sourceNotFound,
+  sourceUnreachable,
+} from './errors';
 import {
   fetchHop,
   fileNameFor,
@@ -14,6 +19,8 @@ import {
   deckFileName,
   isDeckName,
   parseContentDispositionFileName,
+  PDF_MIME,
+  PPTX_MIME,
   readBodyCapped,
   safeFetch,
   type SafeFetchOptions,
@@ -37,9 +44,6 @@ export const NEXTCLOUD_READ_METHODS: ReadonlySet<string> = new Set([
   'SEARCH',
   'REPORT',
 ]);
-
-export const PPTX_MIME =
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 
 /** Answers of PROPFIND, SEARCH and OCS – lists, not files. */
 const MAX_LISTING_BYTES = 8 * 1024 * 1024;
@@ -233,10 +237,6 @@ export function pathFromHref(href: string): string {
 /** `Decks/` → `/Decks`; `''` → `/`. */
 export const normalizePath = (path: string) => `/${path.replace(/^\/+|\/+$/g, '')}`;
 
-const PDF_MIME = 'application/pdf';
-
-const FOLDER_MESSAGE = 'Unter diesem Link liegt ein Ordner – wähle eine Datei darin.';
-
 /** A deck – PowerPoint or PDF – by its name or by the type Nextcloud knows it by. */
 const isDeckResource = (resource: DavResource, name: string) =>
   isDeckName(name) ||
@@ -346,12 +346,10 @@ export class NextcloudClient {
     if (!NEXTCLOUD_READ_METHODS.has(method.toUpperCase())) {
       throw new Error(`The Nextcloud client only reads – ${method} is not allowed`);
     }
-    const { server, loginName, appPassword } = this.credentials;
-    const auth = Buffer.from(`${loginName}:${appPassword}`).toString('base64');
-    const response = await fetchHop(new URL(server + path), this.http, {
+    const response = await fetchHop(new URL(this.credentials.server + path), this.http, {
       method,
       headers: {
-        Authorization: `Basic ${auth}`,
+        Authorization: this.authorization(),
         'OCS-APIRequest': 'true',
         ...(init.body ? { 'Content-Type': 'application/xml; charset=utf-8' } : {}),
         ...init.headers,
@@ -374,12 +372,11 @@ export class NextcloudClient {
     mediaType: string,
     ifMatch: string | null,
   ): Promise<string | null> {
-    const { server, loginName, appPassword } = this.credentials;
-    const auth = Buffer.from(`${loginName}:${appPassword}`).toString('base64');
-    const response = await fetchHop(new URL(server + this.davPath(path)), this.http, {
+    const url = new URL(this.credentials.server + this.davPath(path));
+    const response = await fetchHop(url, this.http, {
       method: 'PUT',
       headers: {
-        Authorization: `Basic ${auth}`,
+        Authorization: this.authorization(),
         'Content-Type': mediaType,
         ...(ifMatch ? { 'If-Match': ifMatch } : {}),
       },
@@ -389,6 +386,12 @@ export class NextcloudClient {
     if (response.status === 412) return null;
     if (!response.ok) throw statusError(response.status);
     return response.headers.get('etag') ?? response.headers.get('oc-etag') ?? '';
+  }
+
+  /** Basic auth with the app password. */
+  private authorization(): string {
+    const { loginName, appPassword } = this.credentials;
+    return `Basic ${Buffer.from(`${loginName}:${appPassword}`).toString('base64')}`;
   }
 
   private async text(response: Response): Promise<string> {
@@ -452,7 +455,7 @@ export class NextcloudClient {
     );
     if (!resource) return null;
     const entry = toEntry(resource);
-    if (!entry || entry.folder) throw notAPowerPoint(FOLDER_MESSAGE);
+    if (!entry || entry.folder) throw notAPowerPoint(LINK_IS_A_FOLDER_MESSAGE);
     return {
       entry,
       etag: resource.props['getetag'] ?? '',
@@ -796,7 +799,7 @@ export class NextcloudAdapter implements SourceAdapter {
     // A shared folder downloads as a ZIP – which starts like a PPTX.
     if (named && /\.zip$/i.test(named)) {
       await response.body?.cancel();
-      throw notAPowerPoint(FOLDER_MESSAGE);
+      throw notAPowerPoint(LINK_IS_A_FOLDER_MESSAGE);
     }
     const bytes = await readBodyCapped(response, this.http.maxBytes);
     return {

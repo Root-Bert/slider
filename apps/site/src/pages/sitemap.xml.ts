@@ -3,7 +3,7 @@ import { publishedPosts } from '~/components/blog/posts';
 import { page } from '~/lib/links';
 
 /** Every page of the site for search engines (no extra dependency, like the RSS feed). */
-const PAGES = ['', 'product', 'vision', 'pricing', 'blog', 'kontakt', 'impressum', 'datenschutz'];
+const PAGES = ['', 'de/', 'fr/', 'pricing', 'de/pricing', 'fr/pricing', 'blog', 'kontakt', 'impressum', 'datenschutz'];
 
 export const GET: APIRoute = async ({ site }) => {
   const posts = await publishedPosts();

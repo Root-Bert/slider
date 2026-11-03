@@ -1,12 +1,10 @@
 ---
 import { Avatar } from '@/ui/Avatar';
 import { render } from 'astro:content';
-import BlogOrbit from '~/components/blog/BlogOrbit.astro';
 import Category from '~/components/blog/Category.astro';
 import Cover from '~/components/blog/Cover.astro';
 import { ACCENT_CSS, FOUNDER, formatDate, publishedPosts } from '~/components/blog/posts';
 import Button from '~/components/Button.astro';
-import Starfield from '~/components/Starfield.astro';
 import Base from '~/layouts/Base.astro';
 import { APP_URL, page } from '~/lib/links';
 
@@ -35,23 +33,19 @@ const tagPlural = { Comparison: 'Comparisons', 'Customer story': 'Customer stori
 
 <Base current="blog" title={data.title} description={data.description}>
   <section class="relative isolate flex flex-col items-center px-4 pt-16 pb-12 md:px-16 md:pt-24" data-section>
-    <BlogOrbit corner="left" />
-    <Starfield src="blog/article-starfield.svg" />
     <div class="flex w-full max-w-[880px] flex-col items-start gap-5">
       <p class="text-xs tabular-nums whitespace-pre text-fg-subtle">
         <a href={page('blog')} class="hover:text-fg">Blog</a>  /  {tagPlural}
       </p>
       <Category tag={data.tag} accent={data.accent} />
-      <h1 class="text-[36px] leading-[1.1] font-bold tracking-[-0.03em] text-fg md:text-[56px]">
-        {data.title.split(' ').map((word, i) => <span class="inline-block" data-reveal style={`--i: ${i * 0.5}`}>{word}&nbsp;</span>)}
-      </h1>
-      <div class="flex flex-wrap items-center gap-3" data-reveal style="--i: 8">
+      <h1 class="ar-title" data-reveal style="--i: 1">{data.title}</h1>
+      <div class="flex flex-wrap items-center gap-3" data-reveal style="--i: 2">
         <Avatar author={FOUNDER} size={24} nativeTitle={false} />
         <span class="text-sm font-medium whitespace-pre text-fg">{data.author} | {data.role}</span>
         <span class="text-xs tabular-nums whitespace-pre-wrap text-fg-subtle">{meta}</span>
       </div>
-      <div class="w-full overflow-hidden rounded-[20px]" data-reveal style="--i: 10">
-        <Cover post={post} size="wide" class="h-[240px]! md:h-[360px]!" />
+      <div class="mt-4 w-full" data-reveal style="--i: 3">
+        <Cover post={post} size="wide" class="ar-cover" />
       </div>
     </div>
   </section>
@@ -78,16 +72,16 @@ const tagPlural = { Comparison: 'Comparisons', 'Customer story': 'Customer stori
         data.shortAnswer && (
           <div
             id="short-answer"
-            class="flex scroll-mt-6 flex-col gap-3 rounded-panel border-l-3 bg-glass px-7 py-6"
-            style={`border-color: ${accent}`}
+            class="ar-short flex scroll-mt-6 flex-col gap-3 px-7 py-6"
+            style={`--accent: ${accent}`}
             data-reveal
           >
-            <p class="text-caption font-medium tracking-wide uppercase" style={`color: ${accent}`}>SHORT ANSWER</p>
+            <p class="text-caption font-medium tracking-wide uppercase text-fg-subtle">SHORT ANSWER</p>
             <p class="text-[17px] leading-[1.65] text-fg">{data.shortAnswer.text}</p>
             <ul class="flex flex-col gap-3">
               {data.shortAnswer.facts.map((fact) => (
                 <li class="flex gap-2.5 text-[15px] text-fg-muted">
-                  <span class="text-sm font-bold text-success" aria-hidden="true">✓</span>
+                  <span class="text-sm font-bold text-accent-blue" aria-hidden="true">✓</span>
                   {fact}
                 </li>
               ))}
@@ -104,7 +98,7 @@ const tagPlural = { Comparison: 'Comparisons', 'Customer story': 'Customer stori
         data.faq.length > 0 && (
           <div class="flex flex-col gap-7">
             <h2 id="faq" class="scroll-mt-6 text-[30px] leading-[1.2] font-bold tracking-[-0.02em] text-fg">Frequently asked questions</h2>
-            <div class="overflow-hidden rounded-panel ring-hairline">
+            <div class="overflow-hidden rounded-[20px] ring-hairline">
               {data.faq.map((item, i) => (
                 <details class="faq group border-hairline px-6 py-5 [&:not(:first-child)]:border-t" open={i === 0}>
                   <summary class="flex cursor-pointer list-none items-center gap-3 text-base font-semibold text-fg [&::-webkit-details-marker]:hidden">
@@ -120,9 +114,9 @@ const tagPlural = { Comparison: 'Comparisons', 'Customer story': 'Customer stori
         )
       }
 
-      <div class="flex items-center gap-4 rounded-panel bg-glass py-5 pr-6 pl-5 ring-hairline">
+      <div class="ar-author flex items-start gap-3">
         <Avatar author={FOUNDER} size={24} nativeTitle={false} />
-        <div class="flex flex-col gap-1">
+        <div class="ar-author-bubble flex flex-col gap-1">
           <p class="text-[15px] font-semibold text-fg">Written by {data.author}</p>
           <p class="text-sm text-fg-subtle">Founder of Slider. Builds tools that help teams get their ideas across.</p>
         </div>
@@ -130,26 +124,25 @@ const tagPlural = { Comparison: 'Comparisons', 'Customer story': 'Customer stori
     </article>
 
     <aside
-      class="sticky top-6 hidden w-[240px] shrink-0 flex-col gap-3.5 self-start rounded-panel bg-glass p-6 shadow-[0_0_40px_rgb(255_255_255/0.06)] ring-hairline-strong lg:flex"
+      class="ar-cta sticky top-24 hidden w-[240px] shrink-0 flex-col gap-3.5 self-start p-6 lg:flex"
       data-reveal
       style="--i: 3"
     >
-      <p class="text-[17px] leading-[1.3] font-semibold text-fg">Review your next deck in Slider</p>
-      <p class="text-sm leading-[1.5] text-fg-subtle">Free for small teams. No credit card.</p>
-      <Button href={`${APP_URL}/`} size="md" class="w-full">Start for free</Button>
+      <p class="text-[19px] leading-[1.2] font-extrabold tracking-[-0.02em]">Review your next deck in Slider</p>
+      <p class="text-sm leading-[1.5] text-white/80">Free for small teams. No credit card.</p>
+      <Button href={`${APP_URL}/`} size="md" variant="inverse" class="w-full">Start for free</Button>
     </aside>
   </section>
 
   {
     related.length > 0 && (
       <section class="relative isolate flex flex-col gap-5 px-4 pt-12 pb-4 md:px-16" data-section>
-        <Starfield src="blog/related-starfield.svg" />
-        <h2 class="text-2xl font-bold tracking-[-0.01em] text-fg">Keep reading</h2>
-        <div class="grid gap-4 md:grid-cols-3">
+        <h2 class="text-[32px] font-extrabold tracking-[-0.04em] text-fg">Keep reading</h2>
+        <div class="grid gap-6 md:grid-cols-3">
           {related.map((other, i) => (
             <a
               href={page(`blog/${other.id}`)}
-              class="flex flex-col items-start gap-3 rounded-panel bg-glass p-6 ring-hairline transition-colors hover:bg-glass-hover"
+              class="ar-related flex flex-col items-start gap-3 p-6"
               data-reveal
               style={`--i: ${i}`}
             >
@@ -164,6 +157,61 @@ const tagPlural = { Comparison: 'Comparisons', 'Customer story': 'Customer stori
 </Base>
 
 <style>
+  .ar-title {
+    font-size: clamp(40px, 5vw, 76px);
+    font-weight: 800;
+    line-height: 0.98;
+    letter-spacing: -0.05em;
+    text-wrap: balance;
+    color: var(--color-fg);
+  }
+  :global(.cv.is-wide.ar-cover) {
+    aspect-ratio: 2 / 1;
+  }
+  :global(.ar-cover .cv-big) {
+    font-size: clamp(80px, 10vw, 150px);
+  }
+  /* Short answer: a slide on its copy in the post's accent. */
+  .ar-short {
+    margin: 0 0 10px 10px;
+    border-radius: 20px;
+    background: var(--color-surface-1);
+    box-shadow:
+      inset 0 0 0 1px var(--color-hairline),
+      -10px 10px 0 color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  /* The author signs off with a comment. */
+  .ar-author-bubble {
+    padding: 14px 18px;
+    border-radius: 4px 20px 20px 20px;
+    background: var(--color-surface-1);
+    box-shadow: inset 0 0 0 1px var(--color-hairline);
+  }
+  /* The call to action is a small Slider-blue slide on its copy, like the end of the homepage. */
+  .ar-cta {
+    margin: 0 0 10px 10px;
+    border-radius: 20px;
+    background: var(--color-accent-blue);
+    color: #fff;
+    box-shadow: -10px 10px 0 color-mix(in srgb, var(--color-accent-blue) 45%, transparent);
+  }
+  .ar-related {
+    margin: 0 0 10px 10px;
+    border-radius: 20px;
+    background: var(--color-surface-1);
+    box-shadow:
+      inset 0 0 0 1px var(--color-hairline),
+      -10px 10px 0 color-mix(in srgb, var(--color-fg) 9%, transparent);
+    transition:
+      translate 200ms var(--ease-emphasized),
+      box-shadow 200ms var(--ease-emphasized);
+  }
+  .ar-related:hover {
+    translate: 3px -3px;
+    box-shadow:
+      inset 0 0 0 1px var(--color-hairline),
+      -13px 13px 0 color-mix(in srgb, var(--color-fg) 9%, transparent);
+  }
   .toc-link[aria-current='true'] {
     border-color: var(--toc);
     color: var(--color-fg);
@@ -220,7 +268,7 @@ const tagPlural = { Comparison: 'Comparisons', 'Customer story': 'Customer stori
     background: var(--color-glass);
   }
   .article-body :global(.ok) {
-    color: var(--color-success);
+    color: var(--color-accent-blue);
   }
   @media (max-width: 640px) {
     .article-body :global(th),

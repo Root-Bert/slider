@@ -43,70 +43,75 @@ function namedFont(records: number, length: number) {
   return { bytes, view, nameAt, stringAt };
 }
 
-it('reads real fonts and imports a normal ZIP of fonts', async () => {
-  expect(readFontFace(lato())).toMatchObject({ family: 'Lato', weight: 400, italic: false });
-  const ctx = await createTestContext();
-  try {
-    for (const compression of ['STORE', 'DEFLATE'] as const) {
-      const zip = new JSZip();
-      zip.file('fonts/Lato.ttf', lato());
-      zip.file('fonts/empty.ttf', new Uint8Array());
-      const result = await uploadWorkspaceFonts(ctx.deps, ctx.ownerId, ctx.workspaceId, [
-        { name: 'fonts.zip', bytes: await zip.generateAsync({ type: 'uint8array', compression }) },
-      ]);
-      expect(result.skipped).toEqual([{ name: 'empty.ttf', reason: expect.any(String) }]);
-      expect(result.fonts).toHaveLength(1);
-      expect(result.fonts[0]?.family).toBe('Lato');
+it('imports a normal ZIP of fonts and stops one with forged lengths before its contents reach the reader', async () => {
+  {
+    expect(readFontFace(lato())).toMatchObject({ family: 'Lato', weight: 400, italic: false });
+    const ctx = await createTestContext();
+    try {
+      for (const compression of ['STORE', 'DEFLATE'] as const) {
+        const zip = new JSZip();
+        zip.file('fonts/Lato.ttf', lato());
+        zip.file('fonts/empty.ttf', new Uint8Array());
+        const result = await uploadWorkspaceFonts(ctx.deps, ctx.ownerId, ctx.workspaceId, [
+          {
+            name: 'fonts.zip',
+            bytes: await zip.generateAsync({ type: 'uint8array', compression }),
+          },
+        ]);
+        expect(result.skipped).toEqual([{ name: 'empty.ttf', reason: expect.any(String) }]);
+        expect(result.fonts).toHaveLength(1);
+        expect(result.fonts[0]?.family).toBe('Lato');
+      }
+    } finally {
+      await ctx.cleanup();
     }
-  } finally {
-    await ctx.cleanup();
+  }
+  {
+    const ctx = await createTestContext();
+    const zip = new JSZip();
+    const actual = 2 * 1024 ** 2;
+    zip.file('bomb.ttf', new Uint8Array(actual));
+    const compressed = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+    const view = new DataView(compressed.buffer, compressed.byteOffset, compressed.byteLength);
+    for (let i = 0; i + 46 < compressed.length; i++) {
+      if (view.getUint32(i, true) === 0x02014b50) view.setUint32(i + 24, 16, true);
+    }
+    try {
+      const result = await uploadWorkspaceFonts(ctx.deps, ctx.ownerId, ctx.workspaceId, [
+        { name: 'fonts.zip', bytes: compressed },
+      ]);
+      expect(result.fonts).toEqual([]);
+      expect(result.skipped).toEqual([
+        { name: 'bomb.ttf', reason: expect.stringContaining('beschädigt') },
+      ]);
+    } finally {
+      await ctx.cleanup();
+    }
   }
 });
 
-it('stops a ZIP with forged lengths before its full contents reach the reader', async () => {
-  const ctx = await createTestContext();
-  const zip = new JSZip();
-  const actual = 2 * 1024 ** 2;
-  zip.file('bomb.ttf', new Uint8Array(actual));
-  const compressed = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
-  const view = new DataView(compressed.buffer, compressed.byteOffset, compressed.byteLength);
-  for (let i = 0; i + 46 < compressed.length; i++) {
-    if (view.getUint32(i, true) === 0x02014b50) view.setUint32(i + 24, 16, true);
+it('caps work on font name tables: counts, lengths, references outside, repeated and empty names', () => {
+  {
+    expect(() => readFontFace(namedFont(1025, 2).bytes)).toThrow(FontFileError);
+    expect(() => readFontFace(namedFont(256, 4096).bytes)).toThrow(FontFileError);
+    const font = namedFont(1, 16);
+    // Trailing bytes are not part of the name table, even though they are in the file.
+    font.view.setUint32(12 + 2 * 16 + 12, font.stringAt - font.nameAt);
+    expect(() => readFontFace(font.bytes)).toThrow(FontFileError);
   }
-  try {
-    const result = await uploadWorkspaceFonts(ctx.deps, ctx.ownerId, ctx.workspaceId, [
-      { name: 'fonts.zip', bytes: compressed },
-    ]);
-    expect(result.fonts).toEqual([]);
-    expect(result.skipped).toEqual([
-      { name: 'bomb.ttf', reason: expect.stringContaining('beschädigt') },
-    ]);
-  } finally {
-    await ctx.cleanup();
+  {
+    const font = namedFont(256, 128);
+    const characters = vi.spyOn(String, 'fromCharCode');
+    try {
+      expect(readFontFace(font.bytes).family).toBe('A'.repeat(64));
+      expect(characters.mock.calls.length).toBeLessThan(1024);
+    } finally {
+      characters.mockRestore();
+    }
+    const blank = namedFont(32, 1024);
+    for (let i = blank.stringAt; i < blank.bytes.length; i += 2) blank.view.setUint16(i, 32);
+    expect(() => readFontFace(blank.bytes)).toThrow(/Namenstabelle.*zu groß/);
   }
-});
-
-it('rejects excessive font name counts, lengths, and references outside their table', () => {
-  expect(() => readFontFace(namedFont(1025, 2).bytes)).toThrow(FontFileError);
-  expect(() => readFontFace(namedFont(256, 4096).bytes)).toThrow(FontFileError);
-  const font = namedFont(1, 16);
-  // Trailing bytes are not part of the name table, even though they are in the file.
-  font.view.setUint32(12 + 2 * 16 + 12, font.stringAt - font.nameAt);
-  expect(() => readFontFace(font.bytes)).toThrow(FontFileError);
-});
-
-it('reads a repeated usable font name once and caps work on empty names', () => {
-  const font = namedFont(256, 128);
-  const characters = vi.spyOn(String, 'fromCharCode');
-  try {
-    expect(readFontFace(font.bytes).family).toBe('A'.repeat(64));
-    expect(characters.mock.calls.length).toBeLessThan(1024);
-  } finally {
-    characters.mockRestore();
-  }
-  const blank = namedFont(32, 1024);
-  for (let i = blank.stringAt; i < blank.bytes.length; i += 2) blank.view.setUint16(i, 32);
-  expect(() => readFontFace(blank.bytes)).toThrow(/Namenstabelle.*zu groß/);
 });
 
 it('checks font membership on GET and HEAD, revokes links, and keeps logos public', async () => {
@@ -126,7 +131,8 @@ it('checks font membership on GET and HEAD, revokes links, and keeps logos publi
       expect((await ctx.request(url, { method, cookie: outsider.cookie })).status).toBe(404);
       const allowed = await ctx.request(url, { method, cookie: member.cookie });
       expect(allowed.status).toBe(200);
-      expect(allowed.headers.get('Cache-Control')).toBe('private, no-store');
+      // Briefly, like a deck's files – and storable for the web app's offline copy.
+      expect(allowed.headers.get('Cache-Control')).toMatch(/^private, max-age=\d+$/);
     }
     await ctx.deps.db
       .update(workspaces)

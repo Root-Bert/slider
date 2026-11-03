@@ -8,12 +8,15 @@ import {
   type RefObject,
 } from 'react';
 import { useDismiss, type DismissRef } from './useDismiss';
+import { useFocusLoop } from './useFocusLoop';
 
 export interface UsePopoverOptions {
   /** Further elements that count as inside (besides the wrapper and the panel). */
   extraRefs?: readonly DismissRef[];
   /** Escape hands the focus back to the trigger (default). */
   returnFocus?: boolean;
+  /** Tab goes round in the panel once the focus is in it (default; `useFocusLoop`). */
+  loopFocus?: boolean;
   /** `aria-haspopup` of the trigger; omitted by default (a plain disclosure). */
   hasPopup?: 'menu' | 'dialog' | 'listbox' | true;
   /** Called with the open state after every change (and once on mount). */
@@ -53,6 +56,7 @@ export interface UsePopover {
 export function usePopover({
   extraRefs = [],
   returnFocus = true,
+  loopFocus = true,
   hasPopup,
   onOpenChange,
   initialOpen = false,
@@ -75,6 +79,8 @@ export function usePopover({
     refs: [wrapperRef, panelRef, ...extraRefs],
     returnFocusTo: returnFocus ? triggerRef : undefined,
   });
+  // The panel by its ref, else by its id (panels in the wrapper often carry only the id).
+  useFocusLoop(() => panelRef.current ?? document.getElementById(panelId), open && loopFocus);
 
   return {
     open,

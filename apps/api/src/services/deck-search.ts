@@ -1,4 +1,4 @@
-import { and, asc, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import {
   DECK_SEARCH_HITS_PER_DECK,
   searchFold,
@@ -32,7 +32,13 @@ export async function searchDecks(
   const deckRows = await db
     .select({ id: decks.id, currentRevisionId: decks.currentRevisionId })
     .from(decks)
-    .where(and(inArray(decks.workspaceId, [...workspaceIds]), openToViewer(access)))
+    .where(
+      and(
+        inArray(decks.workspaceId, [...workspaceIds]),
+        eq(decks.isTemplate, false),
+        openToViewer(access),
+      ),
+    )
     .orderBy(asc(decks.createdAt));
   if (deckRows.length === 0) return [];
   const deckIds = deckRows.map((deck) => deck.id);

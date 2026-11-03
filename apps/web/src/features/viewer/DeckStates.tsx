@@ -10,11 +10,14 @@ export function DeckError({ error }: { error: Error }) {
   const isFinal = status >= 400 && status < 500;
   const [title, message] =
     status === 404
-      ? ['Review nicht gefunden', 'Diese Review gibt es nicht (mehr) oder der Link ist falsch.']
+      ? [
+          'Präsentation nicht gefunden',
+          'Diese Präsentation gibt es nicht (mehr) oder der Link ist falsch.',
+        ]
       : status === 401 || status === 403
         ? [
             'Kein Zugriff',
-            'Du hast keinen Zugriff auf diese Review. Bitte eine Admin-Person des Workspace, dich einzuladen.',
+            'Du hast keinen Zugriff auf diese Präsentation. Bitte eine Admin-Person des Workspace, dich einzuladen.',
           ]
         : ['Das hat nicht geklappt', error.message];
 
@@ -26,7 +29,7 @@ export function DeckError({ error }: { error: Error }) {
         </Button>
       )}
       <TextLink to={routes.reviews()} variant="underline" size="sm">
-        Zu meinen Reviews
+        Zu den Präsentationen
       </TextLink>
     </CenteredMessage>
   );

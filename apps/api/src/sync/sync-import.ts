@@ -11,7 +11,14 @@ import {
   type SlideFingerprint,
   type SlideMatchResult,
 } from '@slider/pptx';
-import { refShape, toSyncSummary, type Anchor, type Shape, type SyncSummary } from '@slider/shared';
+import {
+  refShape,
+  toSyncSummary,
+  type Anchor,
+  type Shape,
+  type ShapeRef,
+  type SyncSummary,
+} from '@slider/shared';
 import type { Executor } from '../db/client';
 import {
   comments,
@@ -44,13 +51,37 @@ import type { ImportJob } from '../import/queue';
 import { deleteBlobs, storageBlobs } from '../services/blob-deletions';
 import { blobKeys } from '../storage/blob-storage';
 import { parseFailedMessage } from './errors';
-import { DEFAULT_SYNC_POLL_INTERVAL_MS } from '../config';
 import { carryShapeIds } from '../import/pdf-boxes';
 import { isPdfPage, openDeckFile } from '../import/pdf-deck';
 import { PdfTimedOut } from '../import/pdf-jobs';
-import { mergeSyncState, syncBackoffMs } from './state';
+import { mergeSyncState } from './state';
+import { newRevisionToLiveTexts } from '../services/edits/live-texts';
 
 type SlideVersionRow = typeof slideVersions.$inferSelect;
+
+/** A parsed slide's fingerprint, with what the caller knows of it besides the file. */
+const parsedFingerprint = (
+  slide: ParsedSlide,
+  known: Pick<SlideFingerprint, 'key' | 'position' | 'sourceSlideId'> & {
+    shapes: Shape[];
+    renderHash: string;
+  },
+): SlideFingerprint =>
+  fingerprintFromShapes({
+    key: known.key,
+    // A PDF's pages are matched by what they show: they have no slide id.
+    sldId: isPdfPage(slide) ? null : slide.sldId,
+    position: known.position,
+    title: slide.title,
+    layoutName: slide.layoutName,
+    textHash: slide.textHash,
+    shapes: known.shapes,
+    renderHash: known.renderHash,
+    contentHash: slide.contentHash,
+    creationId: slide.creationId,
+    hidden: slide.hidden,
+    sourceSlideId: known.sourceSlideId,
+  });
 
 /**
  * The previous revision's fingerprints computed by *this* code from its stored file – not the
@@ -92,18 +123,11 @@ async function currentFingerprints(
       const row = rows[i]!;
       const svg = await document.renderSlideSvg(slide);
       fingerprints.push(
-        fingerprintFromShapes({
+        parsedFingerprint(slide, {
           key: row.slideId,
-          sldId: isPdfPage(slide) ? null : slide.sldId,
           position: row.position,
-          title: slide.title,
-          layoutName: slide.layoutName,
-          textHash: slide.textHash,
           shapes: slide.shapes.map(toShape),
           renderHash: sha256Hex(svgForRenderHash(svg)),
-          contentHash: slide.contentHash,
-          creationId: slide.creationId,
-          hidden: slide.hidden,
           sourceSlideId: row.sourceSlideId,
         }),
       );
@@ -118,12 +142,6 @@ async function currentFingerprints(
     return null;
   }
 }
-
-/**
- * A file whose import fails this often in a row for another reason than a parse error (e.g. a
- * renderer bug on unusual XML) is skipped like an unreadable one until it changes.
- */
-export const SYNC_IMPORT_MAX_ATTEMPTS = 3;
 
 /**
  * Imports a pending revision of a deck that is already in use (BER-107/108/114).
@@ -222,21 +240,7 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
     const prevFingerprints: SlideFingerprint[] = rebuilt ?? [];
     if (!rebuilt) for (const row of previous) prevFingerprints.push(await toFingerprint(row));
     const fingerprintOf = (slide: PlannedSlide) =>
-      fingerprintFromShapes({
-        key: String(slide.position),
-        // A PDF's pages are matched by what they show: they have no slide id.
-        sldId: isPdfPage(slide.parsed) ? null : slide.parsed.sldId,
-        position: slide.position,
-        title: slide.parsed.title,
-        layoutName: slide.parsed.layoutName,
-        textHash: slide.parsed.textHash,
-        shapes: slide.shapes,
-        renderHash: slide.renderHash,
-        contentHash: slide.parsed.contentHash,
-        creationId: slide.parsed.creationId,
-        hidden: slide.parsed.hidden,
-        sourceSlideId: slide.sourceSlideId,
-      });
+      parsedFingerprint(slide.parsed, { ...slide, key: String(slide.position) });
     let nextFingerprints = planned.map(fingerprintOf);
     const results = matchSlides(prevFingerprints, nextFingerprints);
     // A PDF's boxes are measured afresh each version: a page matched to one before takes over its
@@ -369,6 +373,7 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
             aspectRatio,
             shapes: slide.shapes,
             guides: slide.parsed.guides,
+            transition: slide.parsed.transition ?? null,
             renderHash: slide.renderHash,
             renderer: slide.renderer,
           })),
@@ -423,14 +428,18 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
       await mergeSyncState(tx, deckId, {
         lastSyncAt: now.toISOString(),
         lastSyncError: null,
-        consecutiveFailures: 0,
-        pending: null,
         importingRevisionId: null,
-        failedToken: null,
-        importFailures: null,
       });
     });
     deps.log.info(`Deck ${deckId}: revision ${revision.number} imported`);
+    // Texts typed in together right now get what the new file changed in them.
+    const [previousFile] = previousRevisionId
+      ? await db
+          .select({ key: revisions.pptxKey })
+          .from(revisions)
+          .where(eq(revisions.id, previousRevisionId))
+      : [];
+    await newRevisionToLiveTexts(deps, deckId, previousFile?.key ?? null, revision.pptxKey);
   } catch (error) {
     if (error instanceof ConversionAborted || importsStopping()) {
       // Shutdown: the revision stays pending, and the next start imports it again.
@@ -445,42 +454,18 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
       deps.log.error(`Cleanup of revision ${revisionId} failed`, cleanupError),
     );
     const now = clock.now();
-    const token =
-      revision.sourceChangeToken ??
-      (revision.contentSha256 ? `sha256:${revision.contentSha256}` : null);
-    // A file that cannot be parsed – or whose imports kept killing the process – is skipped
-    // until it changes. Anything else may be transient (storage, database): the same file is
-    // tried again with a backoff, and after a few failed imports of it in a row it is skipped
-    // too – a manual "Neu rendern" still tries. Only import attempts of this very file count,
-    // not the failed source checks before it.
-    // A PDF cut off after its deadline would be cut off again: skipped until it changes, too.
+    // The deck keeps its current revision; the error shows until the next pull succeeds.
     const parseFailed =
       error instanceof PptxError ||
       error instanceof ImportCrashLoop ||
       error instanceof PdfTimedOut;
-    const previous = deck.syncState.importFailures;
-    const failures = parseFailed
-      ? null
-      : (previous && previous.token === token ? previous.count : 0) + 1;
     await mergeSyncState(db, deckId, {
       lastSyncError: {
         code: parseFailed ? 'parse_failed' : 'internal',
         message: parseFailedMessage(error),
         at: now.toISOString(),
       },
-      failedToken: parseFailed || (failures ?? 0) >= SYNC_IMPORT_MAX_ATTEMPTS ? token : null,
-      ...(failures === null
-        ? {}
-        : {
-            consecutiveFailures: failures,
-            importFailures: { token, count: failures },
-            nextCheckAt: new Date(
-              now.getTime() +
-                syncBackoffMs(deps.syncPollMs || DEFAULT_SYNC_POLL_INTERVAL_MS, failures),
-            ).toISOString(),
-          }),
       importingRevisionId: null,
-      pending: null,
     }).catch(() => {});
   } finally {
     await endImportAttempt(db, revisionId, { stopped }).catch(() => {});
@@ -630,6 +615,8 @@ async function storeImages(
       revision,
       input.bytes,
       planned.map(({ parsed }) => parsed),
+      // Viewers keep the current version meanwhile: an upload's conversion goes first.
+      { priority: 'background' },
     );
   }
 
@@ -690,18 +677,40 @@ async function carryBoxComments(
   for (const root of roots) {
     const { anchor, slideId: from } = root;
     if ((anchor.type !== 'point' && anchor.type !== 'rect') || !anchor.shapeRef || !from) continue;
-    const shape = refShape(shapesBySlide.get(from) ?? [], anchor.shapeRef);
-    if (!shape) continue;
-    const target = input.boxes.get(from)?.get(shape.id);
-    if (!target) continue;
-    const position = Number(target.key);
-    const to = input.slideIdAt(position);
-    const found = input.shapesAt(position).find((candidate) => candidate.id === target.shapeId);
-    if (!found || (to === from && found.id === anchor.shapeRef.shapeId)) continue;
-    const moved: Anchor = {
-      ...anchor,
-      shapeRef: { ...anchor.shapeRef, shapeId: found.id, name: found.name },
+    const before = shapesBySlide.get(from) ?? [];
+    // Where the shape `ref` is bound to was found now: its slide and shape; `null` when gone.
+    const follow = (ref: ShapeRef) => {
+      const shape = refShape(before, ref);
+      const target = shape && input.boxes.get(from)?.get(shape.id);
+      if (!target) return null;
+      const position = Number(target.key);
+      const found = input.shapesAt(position).find((candidate) => candidate.id === target.shapeId);
+      return found ? { slideId: input.slideIdAt(position), shape: found } : null;
     };
+    // The reference points at the shape's new id – kept as it was where the shape stayed.
+    const rebind = (ref: ShapeRef, shape: Shape, slideId: string): ShapeRef =>
+      slideId === from && shape.id === ref.shapeId
+        ? ref
+        : { ...ref, shapeId: shape.id, name: shape.name };
+    const main = follow(anchor.shapeRef);
+    const to = main?.slideId ?? from;
+    const shapeRef = main ? rebind(anchor.shapeRef, main.shape, main.slideId) : anchor.shapeRef;
+    // Further boxes of the comment (`more`) go along where their shape went with it; one left
+    // on the slide the comment leaves, or taken elsewhere, is no longer part of it.
+    const more =
+      anchor.type === 'rect' && anchor.more
+        ? anchor.more.flatMap((box) => {
+            const went = box.shapeRef && follow(box.shapeRef);
+            if (went && box.shapeRef)
+              return went.slideId === to
+                ? [{ ...box, shapeRef: rebind(box.shapeRef, went.shape, went.slideId) }]
+                : [];
+            return to === from ? [box] : [];
+          })
+        : undefined;
+    const moved: Anchor =
+      anchor.type === 'rect' && more ? { ...anchor, shapeRef, more } : { ...anchor, shapeRef };
+    if (to === from && JSON.stringify(moved) === JSON.stringify(anchor)) continue;
     await tx.update(comments).set({ slideId: to, anchor: moved }).where(eq(comments.id, root.id));
     // Replies live on their root's slide.
     if (to !== from)

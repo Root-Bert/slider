@@ -1,9 +1,14 @@
 import {
+  anchorBoxes,
   clampDrawingShift,
+  clampRect,
   isDrawing,
   isPathStroke,
+  rectCenter,
   rectShapeRefAt,
+  shapeRefForRect,
   refShape,
+  resolveRectAnchor,
   type Anchor,
   type Comment,
   type Point,
@@ -26,6 +31,7 @@ import { useMarkPreview, useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, type Draft } from '../state/viewer-state';
 import { useAiThreads } from '../comments/hooks/useAiThreads';
+import { usePlaceAiBox } from '../voice/hooks/usePlaceAiBox';
 import { AiScan } from './AiScan';
 import { markLabel } from '../comments/lib/labels';
 import { strokePath, strokesBounds, textBox } from './lib/stroke-path';
@@ -37,8 +43,10 @@ import { EditableFrame } from './EditableFrame';
 import { Pin, type MarkState } from './Pin';
 import { FrameEdges, RectFrame } from './RectFrame';
 import { ShapeOutline } from './ShapeOutline';
+import { shapeOutlineStyle } from './lib/shape-outline-style';
 import { StrokePath } from './StrokePath';
 import { TextMark } from './TextBox';
+import { shapeOfBox, slideBoxAt, type SlideBox } from './hooks/useSlideBoxes';
 
 interface AnnotationLayerProps {
   slide: Slide;
@@ -61,14 +69,37 @@ interface AnnotationLayerProps {
    * thread, but nothing moves – a drag there would land somewhere else on the slide.
    */
   still?: boolean;
+  /**
+   * „Bearbeiten“: the marks show as in review, over the elements – only their badges take a click,
+   * what lies under frames, drawings and texts stays to be picked.
+   */
+  editing?: boolean;
+  /**
+   * Editing, an element of this slide is picked or typed in: no mark takes the pointer, so its
+   * handles and text stay reachable under them.
+   */
+  passive?: boolean;
+  /**
+   * The slide's boxes as hovering marks them (`useSlideBoxes`): a comment's box is outlined whole,
+   * as the box under the pointer is, also where it reaches beyond the slide.
+   */
+  slideBoxes?: readonly SlideBox[];
 }
 
 interface Mark {
   thread: Thread;
   rect: Rect;
+  /** The further boxes of a comment on several (`Anchor.more`), where they lie now. */
+  more: MoreBox[];
   state: MarkState;
   /** How far the drawing is shown away from where it is stored, while it (or its box) is dragged. */
   shift: Shift;
+}
+
+interface MoreBox {
+  rect: Rect;
+  /** The element's box it is bound to, while it is on the slide: turned and tilted as that. */
+  shape: Shape | null;
 }
 
 interface Shift {
@@ -101,6 +132,9 @@ export const AnnotationLayer = memo(function AnnotationLayer({
   selecting = false,
   aboveTools = false,
   still = false,
+  editing = false,
+  passive = false,
+  slideBoxes,
 }: AnnotationLayerProps) {
   const dispatch = useViewerDispatch();
   const { viewer, deck, canComment } = useViewerData();
@@ -113,16 +147,22 @@ export const AnnotationLayer = memo(function AnnotationLayer({
   // badge and connector line follow all of them the same way.
   const showPreview = (threadId: string, rect: Rect | null, textOnly = false) =>
     registry.setMarkPreview(rect ? { threadId, rect, textOnly } : null);
+  // The box under an area's centre – of the boxes hovering marks, when given (`useSlideBoxes`).
+  const boxRefAt = (rect: Rect) => {
+    if (!slideBoxes) return rectShapeRefAt(slide.shapes, rect, slide.aspectRatio);
+    const box = slideBoxAt(slide, slideBoxes, rectCenter(rect));
+    return box ? shapeRefForRect(shapeOfBox(slide, box), rect) : null;
+  };
   // A box keeps to the PowerPoint shape under its centre while box mode is on.
   const rectAnchor = (rect: Rect): Extract<Anchor, { type: 'rect' }> => ({
     type: 'rect',
     rect,
-    shapeRef: boxes ? rectShapeRefAt(slide.shapes, rect) : null,
+    shapeRef: boxes ? boxRefAt(rect) : null,
   });
   const isOwn = (comment: Comment) =>
     canComment && comment.source === 'app' && comment.author.id === viewer.author.id;
   // What one may move or rework of one's own – not while held still.
-  const canEdit = (comment: Comment) => !still && isOwn(comment);
+  const canEdit = (comment: Comment) => !still && !editing && isOwn(comment);
   const markMenu = useMarkMenu({ deckId: deck.id, isOwn });
   const { working: aiWorking } = useAiThreads();
 
@@ -144,15 +184,23 @@ export const AnnotationLayer = memo(function AnnotationLayer({
         Math.abs(rect.w - stored.w) < 1e-6 &&
         Math.abs(rect.h - stored.h) < 1e-6;
       const shift = moved ? { dx: rect.x - stored.x, dy: rect.y - stored.y } : NO_SHIFT;
-      result.push({ thread, rect, state, shift });
+      const more = moreBoxes(thread.root.anchor, slide.shapes);
+      result.push({ thread, rect, more, state, shift });
     }
     return result;
   }, [threads, slide.shapes, emphasisId, preview, draft?.commentId]);
 
   const emphasized = marks.find((mark) => mark.state === 'emphasized');
-  const emphasizedShape =
-    boxes && emphasized ? anchoredShape(emphasized.thread.root.anchor, slide.shapes) : null;
-  const draftShape = boxes && draft ? anchoredShape(draft.anchor, slide.shapes) : null;
+  // Outlined as the box under the pointer is: whole, where it lies now.
+  const outlineOf = (shape: Shape | null) =>
+    shape && (slideBoxes?.find((box) => box.id === shape.id) ?? shape);
+  const outlinesOf = (anchor: Anchor) =>
+    anchoredShapes(anchor, slide.shapes).map((shape) => outlineOf(shape) ?? shape);
+  const emphasizedShapes = boxes && emphasized ? outlinesOf(emphasized.thread.root.anchor) : [];
+  const draftShape = boxes && draft ? outlineOf(anchoredShape(draft.anchor, slide.shapes)) : null;
+  // A comment being written on several boxes: each is outlined (box mode) or framed.
+  const draftShapes = boxes && draft ? outlinesOf(draft.anchor) : [];
+  const draftMore = draft && !boxes ? moreBoxes(draft.anchor, slide.shapes) : [];
 
   // While composing, existing marks step back (B2).
   const composing = draft !== null;
@@ -165,8 +213,11 @@ export const AnnotationLayer = memo(function AnnotationLayer({
     canEdit(mark.thread.root) &&
     isBareDrawing(mark.thread) &&
     mark.thread.root.anchor.type !== 'gap';
+  const placeAiBox = usePlaceAiBox();
   const activate = (mark: Mark) => {
     const { root } = mark.thread;
+    // Speaking to the AI, one's own request still at work: its field opens to add to it.
+    if (placeAiBox?.(slide.id, root.anchor, mark.thread.id)) return;
     if (commentable(mark))
       dispatch({
         type: 'drawingCommentStarted',
@@ -183,25 +234,39 @@ export const AnnotationLayer = memo(function AnnotationLayer({
       ref={layerRef}
       className={cn(
         'pointer-events-none absolute inset-0 [container-type:size]',
+        // Over the elements while editing (`EditLayer`), as they show in review.
+        editing && 'z-(--z-raised)',
+        passive && '**:pointer-events-none!',
         aboveTools && 'z-(--z-chrome)',
       )}
     >
-      {emphasizedShape && emphasized && !draftShape && (
+      {emphasized &&
+        !draftShape &&
+        emphasizedShapes.map((shape) => (
+          <ShapeOutline
+            key={shape.id}
+            shape={shape}
+            variant="emphasis"
+            color={accentColor(emphasized.thread.root.author.color)}
+          />
+        ))}
+      {draftShapes.map((shape) => (
         <ShapeOutline
-          shape={emphasizedShape}
-          variant="emphasis"
-          color={accentColor(emphasized.thread.root.author.color)}
-          padded
-        />
-      )}
-      {draftShape && (
-        <ShapeOutline
-          shape={draftShape}
+          key={shape.id}
+          shape={shape}
           variant="target"
           color={accentColor(viewer.author.color)}
-          padded
         />
-      )}
+      ))}
+      {draftMore.map((box, index) => (
+        <RectFrame
+          key={index}
+          rect={box.rect}
+          color={accentColor(viewer.author.color)}
+          rotation={box.shape?.rotation}
+          tilt={box.shape?.tilt}
+        />
+      ))}
       <svg
         className="absolute inset-0 size-full overflow-visible"
         viewBox="0 0 1 1"
@@ -216,7 +281,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
               mark={mark}
               aspectRatio={slide.aspectRatio}
               opacity={opacityOf(mark)}
-              interactive={!composing}
+              interactive={!composing && !editing}
               movable={canEdit(root) && isDrawing(root)}
               onActivate={() => activate(mark)}
               onPreview={(shift) => {
@@ -251,18 +316,28 @@ export const AnnotationLayer = memo(function AnnotationLayer({
         // Freehand, arrow and marker stay themselves: no box; the strokes take the clicks.
         const bareStrokes =
           isDrawing(root) && (root.anchor.type !== 'rect' || isImplicitFrame(root));
+        // One's own plain box moves and resizes – one of several boxes stays with its element.
+        const editableBox = canEdit(root) && !isImplicitFrame(root) && mark.more.length === 0;
         // One's own plain box carries its badge on its corner: dragging the badge resizes it.
-        const ownBox =
-          root.anchor.type === 'rect' && !isImplicitFrame(root) && canEdit(root) && !composing;
+        const ownBox = root.anchor.type === 'rect' && editableBox && !composing;
         // The AI at work: it reads the marked area; a bare pin has none, so its dot shows it.
         const aiScan = aiWorking.has(mark.thread.id) && area.w > 0 && area.h > 0;
+        const scan = (
+          <AiScan
+            rect={area}
+            // On an element's box: as its outline, turned and tilted with it.
+            shape={area === mark.rect ? anchoredShape(root.anchor, slide.shapes) : null}
+            pinOnCorner={!root.strokes.some(isPathStroke)}
+            raised={!!text}
+          />
+        );
         const openMenu = (event: MouseEvent) =>
           markMenu.onContextMenu(event, mark.thread, () => activate(mark));
-        const pin = (inFrame: boolean) => (
+        const pin = (inFrame: boolean, at?: Point) => (
           <Pin
             comment={root}
             // In the box: centred on its corner, dimmed with it.
-            at={inFrame ? { x: 0.5, y: 0.5 } : badgePoint(root, area, mark.shift)}
+            at={at ?? (inFrame ? { x: 0.5, y: 0.5 } : badgePoint(root, area, mark.shift))}
             state={inFrame && mark.state === 'dimmed' ? 'normal' : mark.state}
             onActivate={() => activate(mark)}
             onContextMenu={openMenu}
@@ -289,13 +364,18 @@ export const AnnotationLayer = memo(function AnnotationLayer({
           />
         );
         const badgeInFrame = ownBox && root.strokes.length === 0;
+        // Bound to an element's box: turned and tilted as the element shows, as its outline is.
+        const boundTo =
+          root.anchor.type === 'rect' && root.anchor.shapeRef
+            ? anchoredShape(root.anchor, slide.shapes)
+            : null;
         return (
           <div
             key={mark.thread.id}
             data-hover-thread={mark.thread.id}
             className={cn(composing && 'opacity-30')}
           >
-            {aiScan && <AiScan rect={area} pinOnCorner={!root.strokes.some(isPathStroke)} />}
+            {aiScan && !text && scan}
             {root.anchor.type === 'rect' &&
               !isImplicitFrame(root) &&
               (ownBox ? (
@@ -303,7 +383,12 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                 <EditableFrame
                   rect={mark.rect}
                   color={accentColor(root.author.color)}
-                  handles={mark.state === 'emphasized'}
+                  // Placed freely: its line runs out around its corners, as an element's does.
+                  // Bound to an element's box: it goes with that, no corners to pull.
+                  elementEdge={!root.anchor.shapeRef}
+                  handles={!root.anchor.shapeRef && mark.state === 'emphasized'}
+                  rotation={boundTo?.rotation}
+                  tilt={boundTo?.tilt}
                   emphasized={mark.state === 'emphasized'}
                   isMark
                   edgesOnly
@@ -332,6 +417,8 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                   )}
                   emphasized={mark.state === 'emphasized'}
                   isMark
+                  rotation={boundTo?.rotation}
+                  tilt={boundTo?.tilt}
                 />
               ))}
             {text ? (
@@ -343,7 +430,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                   mark.state === 'dimmed' ? 0.3 : fadeDone && root.status === 'done' ? 0.5 : 1
                 }
                 emphasized={mark.state === 'emphasized'}
-                interactive={!composing}
+                interactive={!composing && !editing}
                 onActivate={() => activate(mark)}
                 onContextMenu={openMenu}
                 onPlace={
@@ -354,42 +441,70 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                 onPreview={
                   followsText ? (rect) => showPreview(mark.thread.id, rect, true) : undefined
                 }
+                // Its pin sits on the box's top left corner (`badgePoint`) unless a drawing starts it.
+                pinOnCorner={!root.strokes.some(isPathStroke)}
               />
             ) : null}
-            {!badgeInFrame && pin(false)}
-            {root.anchor.type === 'rect' &&
-              !text &&
-              !bareStrokes &&
-              !(canEdit(root) && !isImplicitFrame(root)) && (
-                // The frame's border is a pointer target; keyboard users reach it through the badge.
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  aria-hidden
-                  title={markLabel(root)}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    activate(mark);
-                  }}
-                  onContextMenu={openMenu}
-                  className="pointer-events-none absolute cursor-pointer rounded-thumb"
-                  style={{
-                    left: `${area.x * 100}%`,
-                    top: `${area.y * 100}%`,
-                    width: `${area.w * 100}%`,
-                    height: `${area.h * 100}%`,
-                  }}
+            {/* Over a sticker: its box is opaque, the AI reading it shows on it. */}
+            {aiScan && text && scan}
+            {!badgeInFrame &&
+              (boundTo && area === mark.rect && root.strokes.length === 0 ? (
+                // A separate badge (other authors, or marks held still on a layer plane) must
+                // follow the same turned corner as the frame, not its untransformed bbox.
+                <div
+                  data-bound-pin
+                  className="pointer-events-none absolute"
+                  style={shapeOutlineStyle({ ...boundTo, bbox: mark.rect })}
                 >
-                  <FrameEdges active={!composing && !selecting} />
-                </button>
-              )}
+                  {pin(false, { x: 0, y: 0 })}
+                </div>
+              ) : (
+                pin(false)
+              ))}
+            {mark.more.map((box, index) => (
+              // The comment's further boxes: framed as its first, opening the same thread.
+              <MoreFrame
+                key={index}
+                box={box}
+                color={accentColor(root.author.color)}
+                label={markLabel(root)}
+                state={mark.state}
+                faded={fadeDone && root.status === 'done'}
+                active={!composing && !selecting && !editing}
+                onActivate={() => activate(mark)}
+                onContextMenu={openMenu}
+              />
+            ))}
+            {root.anchor.type === 'rect' && !text && !bareStrokes && !editableBox && (
+              // The frame's border is a pointer target; keyboard users reach it through the badge.
+              <button
+                type="button"
+                tabIndex={-1}
+                aria-hidden
+                title={markLabel(root)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  activate(mark);
+                }}
+                onContextMenu={openMenu}
+                className="pointer-events-none absolute cursor-pointer rounded-thumb"
+                // Turned and tilted as its frame shows (`RectFrame`).
+                style={shapeOutlineStyle({
+                  rotation: boundTo?.rotation,
+                  tilt: boundTo?.tilt,
+                  bbox: area,
+                })}
+              >
+                <FrameEdges active={!composing && !selecting && !editing} />
+              </button>
+            )}
           </div>
         );
       })}
 
       {draft && (
         // Held still, the draft is only shown: a click past it lands on the plane below.
-        <div className={cn('contents', still && '*:pointer-events-none')}>
+        <div className={cn('contents', (still || editing) && '**:pointer-events-none!')}>
           <DraftMark
             draft={draft}
             author={viewer.author}
@@ -399,7 +514,8 @@ export const AnnotationLayer = memo(function AnnotationLayer({
               !(
                 draftShape &&
                 draft.anchor.type === 'rect' &&
-                rectsMatch(draft.anchor.rect, draftShape.bbox)
+                // On the slide part of it, as a comment on a box takes it (`shapeOfBox`).
+                rectsMatch(draft.anchor.rect, clampRect(draftShape.bbox))
               )
             }
             onRectChange={(rect) => {
@@ -408,6 +524,8 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                   type: 'anchorPlaced',
                   slideId: draft.slideId,
                   anchor: rectAnchor(rect),
+                  // Moved, a box for the AI stays one.
+                  aiBox: draft.aiBox,
                 });
             }}
             onPointChange={(point) => {
@@ -416,6 +534,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                   type: 'anchorPlaced',
                   slideId: draft.slideId,
                   anchor: { type: 'point', point, shapeRef: null },
+                  aiBox: draft.aiBox,
                 });
             }}
             onWriteInside={(rect, text) => {
@@ -435,6 +554,78 @@ export const AnnotationLayer = memo(function AnnotationLayer({
     </div>
   );
 });
+
+/** The further boxes of a comment on several (`Anchor.more`): where they lie now. */
+function moreBoxes(anchor: Anchor, shapes: readonly Shape[]): MoreBox[] {
+  return anchorBoxes(anchor)
+    .slice(1)
+    .map(({ rect, shapeRef }) => ({
+      rect: shapeRef ? resolveRectAnchor(shapes, rect, shapeRef) : rect,
+      shape: shapeRef ? refShape(shapes, shapeRef) : null,
+    }));
+}
+
+/** The PowerPoint shapes a pin or the boxes of a comment are attached to, those still here. */
+function anchoredShapes(anchor: Anchor, shapes: readonly Shape[]): Shape[] {
+  const refs =
+    anchor.type === 'point' ? [anchor.shapeRef] : anchorBoxes(anchor).map((box) => box.shapeRef);
+  return refs.flatMap((ref) => (ref && refShape(shapes, ref)) || []);
+}
+
+/** A further box of a comment on several: its frame, and its border opens the thread. */
+function MoreFrame({
+  box,
+  color,
+  label,
+  state,
+  faded,
+  active,
+  onActivate,
+  onContextMenu,
+}: {
+  box: MoreBox;
+  color: string;
+  label: string;
+  state: MarkState;
+  faded: boolean;
+  /** Its border takes the pointer (not while a comment is written, or one is placed). */
+  active: boolean;
+  onActivate: () => void;
+  onContextMenu: (event: MouseEvent) => void;
+}) {
+  const turned = { rotation: box.shape?.rotation, tilt: box.shape?.tilt };
+  return (
+    <>
+      <RectFrame
+        rect={box.rect}
+        color={color}
+        className={cn(
+          'transition-opacity duration-200',
+          state === 'dimmed' && 'opacity-30',
+          faded && 'opacity-50',
+        )}
+        emphasized={state === 'emphasized'}
+        isMark
+        {...turned}
+      />
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-hidden
+        title={label}
+        onClick={(event) => {
+          event.stopPropagation();
+          onActivate();
+        }}
+        onContextMenu={onContextMenu}
+        className="pointer-events-none absolute cursor-pointer rounded-thumb"
+        style={shapeOutlineStyle({ ...turned, bbox: box.rect })}
+      >
+        <FrameEdges active={active} />
+      </button>
+    </>
+  );
+}
 
 /** The PowerPoint shape a pin or frame is attached to, if it still exists on this slide. */
 function anchoredShape(anchor: Anchor, shapes: readonly Shape[]): Shape | null {

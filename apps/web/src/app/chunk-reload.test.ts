@@ -25,16 +25,12 @@ function setup(start = 100_000, broken = false) {
 }
 
 describe('installChunkReload', () => {
-  it('reloads when an old route chunk is gone after an update', () => {
-    const { reload, fire } = setup();
+  it('reloads once when an old route chunk is gone, without looping or a stored guard', () => {
+    const { reload, fire, advance } = setup();
     const event = fire();
     expect(reload).toHaveBeenCalledOnce();
     expect(event.preventDefault).toHaveBeenCalled();
-  });
-
-  it('does not loop: a second failure right after the reload shows the error page', () => {
-    const { reload, fire, advance } = setup();
-    fire();
+    // A second failure right after the reload shows the error page.
     advance(2_000);
     const again = fire();
     expect(reload).toHaveBeenCalledOnce();
@@ -42,13 +38,11 @@ describe('installChunkReload', () => {
     advance(60_000);
     fire();
     expect(reload).toHaveBeenCalledTimes(2);
-  });
 
-  it('leaves it to the error page when this tab cannot store the guard', () => {
-    const { reload, fire } = setup(100_000, true);
-    const event = fire();
-    expect(reload).not.toHaveBeenCalled();
-    expect(event.preventDefault).not.toHaveBeenCalled();
+    // A tab that cannot store the guard leaves it to the error page.
+    const broken = setup(100_000, true);
+    expect(broken.fire().preventDefault).not.toHaveBeenCalled();
+    expect(broken.reload).not.toHaveBeenCalled();
   });
 });
 

@@ -6,8 +6,6 @@ import { useViewerToast } from '../state/viewer-toast';
 import { MEDIA_LABELS } from './lib/recording';
 import { RecorderPanel } from './RecorderPanel';
 import { useCreateMediaComment } from './hooks/useMediaComment';
-import { asUploads, useImageAttachments } from './hooks/useImageAttachments';
-import { NoteField } from './NoteField';
 import { useHoldUnsavedWork } from '../lib/unsaved-work';
 import type { Recording } from './hooks/useRecorder';
 
@@ -25,14 +23,10 @@ export function RecordReplyDialog({
 }) {
   const [recording, setRecording] = useState<Recording | null>(null);
   const [recordingRunning, setRecordingRunning] = useState(false);
-  const [note, setNote] = useState('');
-  const images = useImageAttachments();
   const create = useCreateMediaComment(deckId);
   const showToast = useViewerToast();
   // Leaving the review would drop the recording and abort its upload: ask first.
-  useHoldUnsavedWork(
-    recording !== null || recordingRunning || images.attachments.length > 0 || create.isPending,
-  );
+  useHoldUnsavedWork(recording !== null || recordingRunning || create.isPending);
 
   // Cancelling (button, Esc, backdrop) also aborts a running upload: nothing is sent.
   const cancel = () => {
@@ -43,11 +37,8 @@ export function RecordReplyDialog({
   const send = () => {
     if (!recording || create.isPending) return;
     create.mutate(
-      {
-        input: replyInput(root, note),
-        recording,
-        images: asUploads(images.attachments),
-      },
+      // The recording is the reply: no note goes with it.
+      { input: replyInput(root, ''), recording, images: [] },
       {
         onSuccess: () => {
           showToast(`${MEDIA_LABELS[kind].noun} gesendet`);
@@ -84,16 +75,6 @@ export function RecordReplyDialog({
           autoStart
           autoFocus
         />
-        {recording && (
-          <NoteField
-            label="Notiz zur Aufnahme"
-            value={note}
-            onChange={setNote}
-            onSend={send}
-            images={images}
-            disabled={create.isPending}
-          />
-        )}
         {create.error && (
           <ErrorText role="alert" size="xs">
             {create.error.message}

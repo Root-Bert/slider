@@ -69,6 +69,8 @@ export function useMultiSelect(visibleIds: readonly string[]) {
     if (event.defaultPrevented || isTypingTarget(event.target)) return;
     if (document.querySelector('dialog[open], [role="menu"]')) return;
     if (event.key === 'Escape' && selectedIds.length > 0) {
+      // Esc only clears the selection – the page's own Esc waits for the next press.
+      event.preventDefault();
       clear();
     } else if (
       event.key.toLowerCase() === 'a' &&

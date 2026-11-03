@@ -143,21 +143,27 @@ function removeSlot(slot: ParagraphSlot): void {
   }
 }
 
+/** The first paragraph of a container without any: shape text comes before the geometry. */
+function insertFirst(container: XmlNode, paragraph: XmlNode): void {
+  const children = childrenOf(container);
+  const geometry = children.findIndex((child) => tagOf(child) === 'draw:enhanced-geometry');
+  children.splice(geometry < 0 ? children.length : geometry, 0, paragraph);
+}
+
 /**
  * Rewrites the paragraphs of a container (a text box or a shape): `count` paragraphs, each
  * filled by `fill`. Paragraphs beyond the old ones are clones of the last one (list item
- * included); surplus ones go. `insertFirst` places the first paragraph when the container has none.
+ * included); surplus ones go.
  */
 export function rewriteParagraphs(
   container: XmlNode,
   count: number,
   fill: (paragraph: XmlNode, index: number, isNew: boolean) => void,
-  insertFirst: (paragraph: XmlNode) => void,
 ): void {
   const wanted = Math.max(1, count);
   let slots = paragraphSlots(container);
   if (slots.length === 0) {
-    insertFirst(element('text:p'));
+    insertFirst(container, element('text:p'));
     slots = paragraphSlots(container);
   }
   for (let index = 0; index < wanted; index += 1) {
@@ -187,18 +193,9 @@ export function rewriteParagraphs(
  * Replaces the text of a container paragraph by paragraph, keeping each paragraph's style and
  * the style of its first run (see {@link rewriteParagraphs}).
  */
-export function writeParagraphs(
-  container: XmlNode,
-  paragraphs: readonly string[],
-  insertFirst: (paragraph: XmlNode) => void,
-): void {
-  rewriteParagraphs(
-    container,
-    paragraphs.length,
-    (paragraph, index, isNew) => {
-      const text = paragraphs[index] ?? '';
-      if (isNew || paragraphText(paragraph) !== text) setParagraphText(paragraph, text);
-    },
-    insertFirst,
-  );
+export function writeParagraphs(container: XmlNode, paragraphs: readonly string[]): void {
+  rewriteParagraphs(container, paragraphs.length, (paragraph, index, isNew) => {
+    const text = paragraphs[index] ?? '';
+    if (isNew || paragraphText(paragraph) !== text) setParagraphText(paragraph, text);
+  });
 }

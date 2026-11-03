@@ -2,6 +2,14 @@
 .git
 .github
 .claude
+.codex
+.agents
+.aws
+.ssh
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
 **/node_modules
 **/dist
 **/.data

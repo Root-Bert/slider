@@ -3,7 +3,7 @@
  * The website's page icons (Site / Header), drawn from Slider's own marks instead of a generic
  * set: the logo's two offset slides, the reviewer cursor, the orbit with its satellite, the
  * selection box with corner handles and a comment card. 20 × 20, outlined; one filled detail per
- * icon takes the sage accent on the current page.
+ * icon takes Slider blue on the current page.
  */
 export type NavIconName = 'home' | 'product' | 'vision' | 'pricing' | 'blog';
 
@@ -14,7 +14,7 @@ interface Props {
 }
 
 const { name, size = 18, active = false } = Astro.props;
-const accent = active ? 'var(--color-sage)' : 'currentColor';
+const accent = active ? 'var(--color-accent-blue)' : 'currentColor';
 ---
 
 <svg

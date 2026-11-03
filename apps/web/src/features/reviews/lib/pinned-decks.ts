@@ -91,5 +91,5 @@ export const pinnableDeckIds = (decks: readonly Deck[]): ReadonlySet<string> =>
 /** Why "Anpinnen" is off: names the pinned decks, which may sit in folders out of sight. */
 export function pinLimitMessage(pinnedTitles: readonly string[]): string {
   const named = pinnedTitles.length > 0 ? ` (${pinnedTitles.map((t) => `„${t}“`).join(', ')})` : '';
-  return `Höchstens ${MAX_PINNED} Reviews angepinnt${named} – löse zuerst einen.`;
+  return `Höchstens ${MAX_PINNED} Präsentationen angepinnt${named} – löse zuerst eine.`;
 }

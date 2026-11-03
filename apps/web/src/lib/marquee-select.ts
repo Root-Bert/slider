@@ -16,7 +16,7 @@ export interface MarqueeBox {
 }
 
 interface MarqueeOptions {
-  /** The attribute that marks an item and holds its id, e.g. `data-deck-id`. */
+  /** The attribute that marks an item and holds its id, e.g. `data-select-id`. */
   attribute: string;
   /** A drag began; `additive` (Shift/⌘/Ctrl held) keeps the items selected so far. */
   onStart: (additive: boolean) => void;
@@ -24,6 +24,13 @@ interface MarqueeOptions {
   onChange: (ids: string[]) => void;
   /** Plain click on empty space, no drag. */
   onClick: (additive: boolean) => void;
+  /** Presses inside these never start a box (on top of controls and items). */
+  ignore?: string;
+  /**
+   * The element that scrolls under the items, when it isn't the window (both ways then): the
+   * drag scrolls it near its edges and follows its scrolling.
+   */
+  scroller?: RefObject<HTMLElement | null>;
 }
 
 /** Pixels the pointer has to travel before a press becomes a drag. */
@@ -35,10 +42,14 @@ const SCROLL_SPEED = 18;
 const NOT_EMPTY_SPACE =
   'a, button, input, textarea, select, label, dialog, [role="menu"], [data-selection-bar]';
 
+/** A right click here is on a control, not on the page's empty space (its own menu, if any). */
+export const isOnControl = (target: EventTarget) =>
+  (target as Element).closest('a, button, input, textarea, select, [role="menu"]') !== null;
+
 /**
  * Click and drag on empty space draws a selection box (Finder-style) over the items inside
  * `containerRef` – which must be positioned, the box is drawn in its coordinates. Scrolls the
- * window while the pointer is near its top or bottom edge.
+ * window (or `scroller`) while the pointer is near its edge.
  *
  * Render the box element (attached to `boxRef`) while `active`: its position is written straight
  * to the DOM once per frame, so dragging doesn't re-render the page on every mouse move.
@@ -72,9 +83,11 @@ export function useMarqueeSelect(
 
   const onMouseDown = (event: MouseEvent) => {
     if (event.button !== 0 || event.defaultPrevented) return;
-    const { attribute } = latest.current;
+    const { attribute, ignore } = latest.current;
     const target = event.target as Element;
     if (target.closest(NOT_EMPTY_SPACE) || target.closest(`[${attribute}]`)) return;
+    if (ignore && target.closest(ignore)) return;
+    const scroller = latest.current.scroller?.current ?? null;
     const container = containerRef.current;
     if (!container) return;
     // No text selection while dragging.
@@ -139,18 +152,22 @@ export function useMarqueeSelect(
       }
     };
 
+    /** Speed along one axis: faster the closer `at` is to (or the further past) an edge. */
+    const edgeSpeed = (at: number, low: number, high: number) => {
+      const near = (distance: number) => SCROLL_SPEED * Math.min(1, 1 - distance / SCROLL_EDGE);
+      if (at < low + SCROLL_EDGE) return -near(at - low);
+      if (at > high - SCROLL_EDGE) return near(high - at);
+      return 0;
+    };
     const autoScroll = () => {
       frame = 0;
       if (!dragging) return;
-      const { y } = pointer;
-      const speed =
-        y < SCROLL_EDGE
-          ? -SCROLL_SPEED * (1 - y / SCROLL_EDGE)
-          : y > window.innerHeight - SCROLL_EDGE
-            ? SCROLL_SPEED * (1 - (window.innerHeight - y) / SCROLL_EDGE)
-            : 0;
-      if (speed === 0) return;
-      window.scrollBy(0, speed);
+      const rect = scroller?.getBoundingClientRect();
+      const dy = edgeSpeed(pointer.y, rect?.top ?? 0, rect?.bottom ?? window.innerHeight);
+      const dx = rect ? edgeSpeed(pointer.x, rect.left, rect.right) : 0;
+      if (dx === 0 && dy === 0) return;
+      if (scroller) scroller.scrollBy(dx, dy);
+      else window.scrollBy(0, dy);
       frame = requestAnimationFrame(autoScroll);
     };
 
@@ -179,14 +196,15 @@ export function useMarqueeSelect(
 
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
-    window.addEventListener('scroll', scheduleUpdate, { passive: true });
+    const scrolling: HTMLElement | Window = scroller ?? window;
+    scrolling.addEventListener('scroll', scheduleUpdate, { passive: true });
     window.addEventListener('blur', onUp);
     cleanup.current = () => {
       cancelAnimationFrame(frame);
       cancelAnimationFrame(moveFrame);
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
-      window.removeEventListener('scroll', scheduleUpdate);
+      scrolling.removeEventListener('scroll', scheduleUpdate);
       window.removeEventListener('blur', onUp);
       cleanup.current = null;
     };

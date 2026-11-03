@@ -33,6 +33,7 @@ export { EmptyState, type EmptyStateProps } from './EmptyState';
 export { ErrorText, type ErrorTextProps } from './ErrorText';
 export { Legend, type LegendItem, type LegendProps } from './Legend';
 export { GlassPanel, type GlassPanelTone } from './GlassPanel';
+export { DeleteButton } from './DeleteButton';
 export { Icon, type IconName } from './Icon';
 export {
   iconButtonClasses,
@@ -52,7 +53,7 @@ export {
   type RowListProps,
 } from './ListRow';
 export { LoadingState, type LoadingStateProps } from './LoadingState';
-export { Logo } from './Logo';
+export { Logo, LogoMark } from './Logo';
 export { LOGO_ANIMATIONS, type LogoAnimation } from './logo-animations';
 export { ContextMenu, Menu, type MenuAction } from './Menu';
 export { MenuDivider, MenuHeading, MenuItem, type MenuItemProps } from './MenuItem';
@@ -74,6 +75,14 @@ export {
   type SegmentSize,
   type SegmentTone,
 } from './SegmentedControl';
+export { SelectionBar } from './SelectionBar';
+export { SelectedMark, SelectionBox } from './SelectionMarks';
+export {
+  collectionGridClass,
+  selectedCardClass,
+  selectedOutlineClass,
+  selectedRowClass,
+} from './selection-classes';
 export { Select, type SelectOption } from './Select';
 export { Spinner } from './Spinner';
 export {
@@ -82,6 +91,8 @@ export {
   type TextLinkStyle,
   type TextLinkVariant,
 } from './text-link-classes';
+export { NumberField, ScrubHandle } from './NumberField';
+export { steppedValue, useScrub, type NumberRange, type StepKeys } from './scrub';
 export { TextField, type TextFieldProps } from './TextField';
 export { BackLink, TextLink, type TextLinkProps } from './TextLink';
 export { Toast } from './Toast';
@@ -91,7 +102,10 @@ export { Tooltip, type TooltipProps } from './Tooltip';
 export { useCopyToClipboard } from './hooks/useCopyToClipboard';
 export { useDebounced } from './hooks/useDebounced';
 export { useDismiss, type DismissRef } from './hooks/useDismiss';
+export { useFileDrop } from './hooks/useFileDrop';
+export { useFocusLoop } from './hooks/useFocusLoop';
 export { useFullscreen } from './hooks/useFullscreen';
 export { useIsNarrow, useMediaQuery } from './hooks/useMediaQuery';
+export { usePointerSpot } from './hooks/usePointerSpot';
 export { usePopover, type UsePopover, type UsePopoverOptions } from './hooks/usePopover';
 export { useToast, type ShowToast, type ToastMessage, type ToastTone } from './hooks/useToast';

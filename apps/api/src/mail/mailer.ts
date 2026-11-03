@@ -4,12 +4,17 @@ import type { SmtpConfig } from '../config';
 import type { Logger } from '../logger';
 import { LOGO_PNG_BASE64 } from './logo';
 
-/** An image the HTML part shows through `cid:<cid>`. */
-export interface InlineImage {
-  cid: string;
+/** A file the mail carries – shown in its HTML part through `cid:<cid>` when it has one. */
+export interface MailAttachment {
+  cid?: string;
   filename: string;
   contentType: string;
   content: Buffer;
+}
+
+/** An image the HTML part shows through `cid:<cid>`. */
+export interface InlineImage extends MailAttachment {
+  cid: string;
 }
 
 /** Outgoing e-mail: invitations to a workspace or a shared deck. */
@@ -18,10 +23,19 @@ export interface MailMessage {
   subject: string;
   text: string;
   html?: string;
-  attachments?: InlineImage[];
+  attachments?: MailAttachment[];
   /** Where a reply goes, e.g. the sender of a contact message. */
   replyTo?: string;
+  /**
+   * Whose mail it is, as the sender's name („Robert Hofmann (über Slider)“) – the address stays
+   * the instance's own: one claiming the person's own domain fails SPF/DMARC and lands in spam.
+   */
+  fromName?: string;
 }
+
+/** The address in a `from` like „Slider <noreply@example.org>“ (or the bare address). */
+export const fromAddress = (from: string): string =>
+  /<([^>]+)>/.exec(from)?.[1]?.trim() ?? from.trim();
 
 export interface Mailer {
   /** `false` when no SMTP server is configured – the invite link is then shown to copy. */
@@ -52,8 +66,11 @@ export class SmtpMailer implements Mailer {
     this.transport = createTransport({ url: config.url, ...timeouts });
   }
 
-  async send(message: MailMessage): Promise<void> {
-    await this.transport.sendMail({ from: this.config.from, ...message });
+  async send({ fromName, ...message }: MailMessage): Promise<void> {
+    const from = fromName
+      ? { name: fromName, address: fromAddress(this.config.from) }
+      : this.config.from;
+    await this.transport.sendMail({ from, ...message });
   }
 }
 
@@ -157,18 +174,18 @@ const FONT =
   "'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
 /**
- * The mark at `width` px (22×18 proportions). The size is set in CSS too – Apple Mail ignores the
+ * The mark at `width` px (24×20 proportions). The size is set in CSS too – Apple Mail ignores the
  * attributes and would show the 3× PNG at full size.
  */
 const mark = (width: number) => {
-  const height = Math.round((width * 18) / 22);
+  const height = Math.round((width * 20) / 24);
   return `<img src="cid:${LOGO_CID}" width="${width}" height="${height}" alt="" style="display:block;width:${width}px;height:${height}px;max-width:${width}px;border:0;outline:none;">`;
 };
 
 /**
  * A short German mail with Slider's look inside one card: the app canvas with its dot grid, the
- * word mark (`Logo`), heading, the white primary button and the plain link as fallback; around it
- * the client's own background. `color-scheme: light dark` tells clients the card needs no
+ * word mark (`Logo`), heading, the white primary button and the plain link as fallback (a mail
+ * that brings its file along has none); around it the client's own background. `color-scheme: light dark` tells clients the card needs no
  * inverting. The mark travels inline (`cid:`). Gmail drops CSS gradients, so it shows the card
  * without dots.
  */
@@ -177,9 +194,14 @@ export function inviteMail(input: {
   subject: string;
   heading: string;
   intro: string;
-  button: string;
+  /** Someone's own words, quoted under the intro (a file sent with a note). */
+  quote?: string;
+  /** Without one, the mail has no button – `url` then only names the instance (legal links). */
+  button?: string;
   url: string;
   outro: string;
+  /** Files the mail brings along (a deck sent from „Exportieren“). */
+  files?: MailAttachment[];
   /**
    * A line with imprint and privacy policy of the instance the button leads to, below the card
    * (BER-141). Only invites need it: the invitee's address came from someone else, so the first
@@ -194,8 +216,8 @@ export function inviteMail(input: {
   return {
     to: input.to,
     subject: input.subject,
-    text: `${input.intro}\n\n${input.button}: ${input.url}\n\n${input.outro}\n\n– Slider\n${input.legalLinks ? `Impressum: ${origin}/impressum | Datenschutz: ${origin}/datenschutz\n` : ''}`,
-    attachments: [logo],
+    text: `${input.intro}\n\n${input.quote ? `${input.quote}\n\n` : ''}${input.button ? `${input.button}: ${input.url}\n\n` : ''}${input.outro}\n\n– Slider\n${input.legalLinks ? `Impressum: ${origin}/impressum | Datenschutz: ${origin}/datenschutz\n` : ''}`,
+    attachments: [logo, ...(input.files ?? [])],
     html: `<!doctype html>
 <html lang="de">
 <head>
@@ -216,19 +238,29 @@ export function inviteMail(input: {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:440px;">
 <tr><td align="center" bgcolor="${C.canvas}" style="background-color:${C.canvas};background-image:radial-gradient(${C.dots} 1px,transparent 1.2px);background-size:22px 22px;border:1px solid ${C.hairline};border-radius:16px;padding:36px 32px 32px;box-shadow:0 8px 32px rgba(0,0,0,0.12);">
 <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-<td style="padding-right:8px;vertical-align:middle;">${mark(22)}</td>
-<td style="vertical-align:middle;font-size:18px;line-height:24px;font-weight:600;letter-spacing:-0.01em;color:${C.fg};">Slider</td>
+<td style="padding-right:6px;vertical-align:middle;">${mark(24)}</td>
+<td style="vertical-align:middle;font-size:18px;line-height:24px;font-weight:600;letter-spacing:-0.025em;color:${C.fg};">Slider</td>
 </tr></table>
 <h1 style="margin:32px 0 0;font-size:24px;line-height:32px;font-weight:600;letter-spacing:-0.01em;color:${C.fg};">${escapeHtml(input.heading)}</h1>
 <p style="margin:8px 0 0;font-size:14px;line-height:22px;color:${C.muted};">${escapeHtml(input.intro)}</p>
-<table role="presentation" cellpadding="0" cellspacing="0" style="margin:36px auto 0;"><tr>
+${
+  input.quote
+    ? `<p style="margin:24px 0 0;padding:12px 16px;border-left:2px solid ${C.faint};font-size:14px;line-height:22px;color:${C.fg};text-align:left;white-space:pre-line;">${escapeHtml(input.quote)}</p>\n`
+    : ''
+}${
+      input.button
+        ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:36px auto 0;"><tr>
 <td class="slider-button" align="center" bgcolor="${C.primary}" style="background-color:${C.primary};border-radius:12px;box-shadow:${C.glow};">
 <a href="${url}" style="display:inline-block;padding:13px 20px;font-size:14px;line-height:18px;font-weight:500;color:${C.onPrimary};text-decoration:none;border-radius:12px;">${escapeHtml(input.button)}</a>
 </td>
-</tr></table>
-<p style="margin:36px 0 0;font-size:12px;line-height:18px;color:${C.subtle};">${escapeHtml(input.outro)}</p>
-<p style="margin:12px 0 0;font-size:12px;line-height:18px;color:${C.faint};word-break:break-all;">Button geht nicht? <a href="${url}" style="color:${C.subtle};text-decoration:underline;">${url}</a></p>
-</td></tr>
+</tr></table>\n`
+        : ''
+    }<p style="margin:36px 0 0;font-size:12px;line-height:18px;color:${C.subtle};">${escapeHtml(input.outro)}</p>
+${
+  input.button
+    ? `<p style="margin:12px 0 0;font-size:12px;line-height:18px;color:${C.faint};word-break:break-all;">Button geht nicht? <a href="${url}" style="color:${C.subtle};text-decoration:underline;">${url}</a></p>\n`
+    : ''
+}</td></tr>
 ${
   input.legalLinks
     ? `<tr><td align="center" style="padding:16px 0 0;font-size:12px;line-height:18px;color:${C.subtle};"><a href="${imprint}" style="color:${C.subtle};text-decoration:underline;">Impressum</a> | <a href="${privacy}" style="color:${C.subtle};text-decoration:underline;">Datenschutz</a></td></tr>\n`

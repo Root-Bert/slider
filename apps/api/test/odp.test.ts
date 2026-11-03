@@ -25,54 +25,94 @@ async function slidesOf(context: TestContext, deckId: string): Promise<Slide[]> 
 }
 
 describe('an ODP deck', () => {
-  it('is imported as an ODP: slides, hidden ones, boxes with ids, pictures by LibreOffice', async () => {
-    ctx = await createTestContext({ libreOfficePdf: fakeOdpPdf() });
-    const res = await ctx.request('/api/decks/upload', { method: 'POST', body: odpForm(DEMO_ODP) });
-    expect(res.status).toBe(201);
-    const deck = deckSchema.parse(await res.json());
-    await ctx.deps.queue.idle();
-    expect(
-      deckSchema.parse(await (await ctx.request(`/api/decks/${deck.id}`)).json()),
-    ).toMatchObject({
-      import: { status: 'ready' },
-      slideCount: 5,
-      thumbnailRenderer: 'libreoffice',
-    }); // visible ones
+  it('is imported as it is, starts empty with one blank slide, and an ODF file that is no presentation is refused', async () => {
+    {
+      ctx = await createTestContext({ libreOfficePdf: fakeOdpPdf() });
+      const res = await ctx.request('/api/decks/upload', {
+        method: 'POST',
+        body: odpForm(DEMO_ODP),
+      });
+      expect(res.status).toBe(201);
+      const deck = deckSchema.parse(await res.json());
+      await ctx.deps.queue.idle();
+      expect(
+        deckSchema.parse(await (await ctx.request(`/api/decks/${deck.id}`)).json()),
+      ).toMatchObject({
+        import: { status: 'ready' },
+        slideCount: 5,
+        thumbnailRenderer: 'libreoffice',
+      }); // visible ones
 
-    const slides = await slidesOf(ctx, deck.id);
-    expect(slides.map((slide) => slide.title)).toEqual([
-      'Q4 Strategie 2026',
-      'Agenda',
-      'Umsatz nach Region',
-      'Produkt-Roadmap',
-      expect.stringContaining('Backup'),
-      'Vielen Dank',
-    ]);
-    expect(slides.map((slide) => slide.hidden)).toEqual([false, false, false, false, true, false]);
-    const note = slides[2]!.shapes.find((shape) => shape.name === 'Hinweis')!;
-    expect(note.id).toMatch(/^sl\d+$/);
-    expect(note.text).toContain('Budgetfreigabe');
+      const slides = await slidesOf(ctx, deck.id);
+      expect(slides.map((slide) => slide.title)).toEqual([
+        'Q4 Strategie 2026',
+        'Agenda',
+        'Umsatz nach Region',
+        'Produkt-Roadmap',
+        expect.stringContaining('Backup'),
+        'Vielen Dank',
+      ]);
+      expect(slides.map((slide) => slide.hidden)).toEqual([
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+      ]);
+      const note = slides[2]!.shapes.find((shape) => shape.name === 'Hinweis')!;
+      expect(note.id).toMatch(/^sl\d+$/);
+      expect(note.text).toContain('Budgetfreigabe');
 
-    // Stored as an ODP with the ids, so the editor and the boxes name the same elements.
-    const [revision] = await ctx.deps.db
-      .select()
-      .from(revisions)
-      .where(eq(revisions.deckId, deck.id));
-    expect(revision!.pptxKey).toMatch(/\.odp$/);
-    const stored = await ctx.deps.storage.get(revision!.pptxKey!);
-    expect(isOdpBytes(stored!)).toBe(true);
-    const document = await OdpDocument.open(stored!);
-    expect(document.slides()[2]!.elements.map((element) => element.id)).toContain(note.id);
-  });
+      // Stored as an ODP with the ids, so the editor and the boxes name the same elements.
+      const [revision] = await ctx.deps.db
+        .select()
+        .from(revisions)
+        .where(eq(revisions.deckId, deck.id));
+      expect(revision!.pptxKey).toMatch(/\.odp$/);
+      const stored = await ctx.deps.storage.get(revision!.pptxKey!);
+      expect(isOdpBytes(stored!)).toBe(true);
+      const document = await OdpDocument.open(stored!);
+      expect(document.slides()[2]!.elements.map((element) => element.id)).toContain(note.id);
+    }
+    {
+      await ctx?.cleanup();
+      ctx = await createTestContext({ libreOfficePdf: fakeOdpPdf() });
+      const create = () =>
+        ctx!.request('/api/decks/blank', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+      const res = await create();
+      expect(res.status).toBe(201);
+      const deck = deckSchema.parse(await res.json());
+      expect(deck.title).toBe('Neue Präsentation');
 
-  it('refuses an ODF file that is no presentation', async () => {
-    ctx = await createTestContext({ libreOfficePdf: fakeOdpPdf() });
-    const res = await ctx.request('/api/decks/upload', {
-      method: 'POST',
-      body: odpForm(new TextEncoder().encode('kein zip'), 'Kaputt.odp'),
-    });
-    expect(res.status).toBe(400);
-    expect(await res.text()).toContain('nicht lesen');
+      const [revision] = await ctx.deps.db
+        .select()
+        .from(revisions)
+        .where(eq(revisions.deckId, deck.id));
+      expect(revision!.pptxKey).toMatch(/\.odp$/);
+      const document = await OdpDocument.open((await ctx.deps.storage.get(revision!.pptxKey!))!);
+      expect(document.slides()).toHaveLength(1);
+      expect(document.slides()[0]!.elements).toEqual([]);
+
+      // Not "the same file uploaded before": the second one is a deck of its own.
+      const again = await create();
+      expect(again.status).toBe(201);
+      expect(deckSchema.parse(await again.json()).id).not.toBe(deck.id);
+    }
+    {
+      await ctx?.cleanup();
+      ctx = await createTestContext({ libreOfficePdf: fakeOdpPdf() });
+      const res = await ctx.request('/api/decks/upload', {
+        method: 'POST',
+        body: odpForm(new TextEncoder().encode('kein zip'), 'Kaputt.odp'),
+      });
+      expect(res.status).toBe(400);
+      expect(await res.text()).toContain('nicht lesen');
+    }
   });
 });
 

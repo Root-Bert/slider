@@ -1,4 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk';
+import type { BackgroundWork } from './background-work';
 import type { GoogleTokens } from './auth/google';
 import type { MicrosoftTokens } from './auth/microsoft';
 import type { NextcloudAccounts } from './auth/nextcloud';
@@ -16,8 +17,10 @@ import type { DocumentToPdf } from './import/libreoffice';
 import type { Logger } from './logger';
 import type { Mailer } from './mail/mailer';
 import type { LiveHub } from './realtime/live-hub';
+import type { LiveTexts } from './realtime/live-texts';
 import type { WorkspacePresence } from './realtime/workspace-presence';
 import type { SourceAdapters } from './sources/source-adapter';
+import type { CutOutSource } from './services/cut-outs';
 import type { StockPhotoSource } from './services/stock-photos';
 import type { BlobStorage } from './storage/blob-storage';
 import type { SyncService } from './sync/sync-service';
@@ -41,8 +44,19 @@ export interface AppDeps {
   log: Logger;
   /** Presence, live cursors and live comments (BER-104); `createApp` makes one when absent. */
   live?: LiveHub;
+  /**
+   * Texts typed in together (the live editor); `createApp` makes them. A step that changes a
+   * text being typed in writes the change into it (`commitStep`).
+   */
+  liveTexts?: LiveTexts;
   /** Who of a workspace is online (the header's avatars); `createApp` makes one when absent. */
   presence?: WorkspacePresence;
+  /**
+   * Work after the answer (an edit's slides drawn sharper, its old pictures deleted), kept count
+   * of so whoever ends the server waits for it: the server before it closes the database, tests
+   * before removing their files. Absent → it runs untracked.
+   */
+  background?: BackgroundWork;
   /** Automatic updates of link-imported decks (BER-107). */
   sync: SyncService;
   /**
@@ -65,10 +79,15 @@ export interface AppDeps {
   webauthn?: WebAuthn;
   /** Makes the Anthropic client for a workspace's key (BER-183); tests inject a fake. */
   anthropic?: (apiKey: string) => Anthropic;
-  /** How OpenAI-compatible AI services are reached (`ai-providers`); `fetch` when absent. */
+  /**
+   * How the integrations' services are reached – the OpenAI-compatible AI services
+   * (`ai-providers`) and the photo services of stored keys; `fetch` when absent.
+   */
   aiFetch?: (input: string, init?: RequestInit) => Promise<Response>;
   /** Unsplash; absent → the real one with `config.unsplash` (tests inject a fake). */
   stockPhotos?: StockPhotoSource;
+  /** rembg; absent → the real one with `config.rembg` (tests inject a fake). */
+  cutOuts?: CutOutSource;
   /** Stripe for the paid plan (BER-152); `null` without `config.billing` (self-hosting). */
   billing: BillingProvider | null;
   /** Invitation mails; without SMTP a `DevMailer` in development, else a `NullMailer`. */

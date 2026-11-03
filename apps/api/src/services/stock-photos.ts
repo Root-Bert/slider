@@ -1,21 +1,34 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import {
+  PROVIDER_LABELS,
   stockPhotoUrl,
   type ImageCredit,
+  type PhotoProvider,
   type StockOrientation,
   type StockPhoto,
   type UploadedEditImage,
   type Viewer,
 } from '@slider/shared';
-import { aiProposals, comments, type AiSlideChange, type StockPhotoRecord } from '../db/schema';
+import {
+  aiProposals,
+  comments,
+  decks,
+  type AiSlideChange,
+  type StockPhotoRecord,
+} from '../db/schema';
 import type { AppDeps } from '../deps';
 import { ApiError, badRequest, notFound } from '../http/errors';
 import { readBodyCapped } from '../sources/safe-fetch';
-import { editTarget, storeEditImage } from './edits';
+// From the modules, not `./edits`: its edit state asks this one whether photos can be searched.
+import { storeEditImage } from './edits/images';
+import { editTarget } from './edits/target';
+import { effectiveKey, markKeyRefused } from './integration-keys';
 
 /*
- * Stock photos from Unsplash: the editor searches and picks one for a picture frame, the AI
- * picks one and offers two more (BER-183). Unsplash's terms shape all of it:
+ * Stock photos from Unsplash or Pexels – whichever the workspace's integrations name (or the
+ * instance's, or the server's `UNSPLASH_ACCESS_KEY`): the editor searches and picks one for a
+ * picture frame, the AI picks one and offers two more (BER-183). Pexels asks for a credit too;
+ * Unsplash's terms shape all of it:
  * - the Access Key stays here – the server searches for everyone;
  * - pictures shown are Unsplash's own addresses (hotlinked), the browser and the AI load them
  *   from there; only a photo that goes into a slide is fetched into the file;
@@ -26,14 +39,16 @@ import { editTarget, storeEditImage } from './edits';
  *   keeps that credit as the frame's description.
  */
 
-/** Unsplash for the server; tests inject a fake (`deps.stockPhotos`). */
+/** A photo service for the server; tests inject a fake (`deps.stockPhotos`). */
 export interface StockPhotoSource {
   search(
     query: string,
     options: { orientation?: StockOrientation; perPage: number },
   ): Promise<StockPhotoRecord[]>;
+  /** Photos at random, for a search not typed yet. */
+  random(options: { orientation?: StockOrientation; count: number }): Promise<StockPhotoRecord[]>;
   photo(id: string): Promise<StockPhotoRecord | null>;
-  /** A picture's bytes, from Unsplash's image host. */
+  /** A picture's bytes, from the service's image host. */
   picture(url: string): Promise<Uint8Array>;
   /** Reports a photo as used (its `download_location`). */
   track(downloadLocation: string): Promise<void>;
@@ -81,6 +96,35 @@ class StockUnavailable extends ApiError {
   }
 }
 
+/** The service refused the key: the integration needs a new one. */
+export class StockKeyRefused extends StockUnavailable {
+  constructor(readonly provider: PhotoProvider) {
+    super(
+      `${PROVIDER_LABELS[provider]} hat den API-Key abgelehnt – vielleicht gelöscht oder falsch kopiert.`,
+    );
+  }
+}
+
+/** A picture's bytes from the image host of its service – no key needed. */
+async function fetchPicture(url: string, host: string, fetchImpl: typeof fetch = fetch) {
+  const parsed = new URL(url);
+  if (parsed.protocol !== 'https:' || parsed.hostname !== host) {
+    throw badRequest('Kein Foto dieses Dienstes.');
+  }
+  // No redirects: the host checked above is the one asked. Read capped, not whole first.
+  const response = await fetchImpl(url, {
+    signal: AbortSignal.timeout(30_000),
+    redirect: 'manual',
+  }).catch(() => {
+    throw new StockUnavailable();
+  });
+  if (!response.ok) throw new StockUnavailable();
+  return readBodyCapped(response, MAX_PICTURE_BYTES).catch((error: unknown) => {
+    // `readBodyCapped` throws an ApiError only for the size; else the download broke off.
+    throw new StockUnavailable(error instanceof ApiError ? 'Das Foto ist zu groß.' : undefined);
+  });
+}
+
 export class UnsplashSource implements StockPhotoSource {
   constructor(
     private readonly accessKey: string,
@@ -101,6 +145,7 @@ export class UnsplashSource implements StockPhotoSource {
         'Die Fotosuche ist für diese Stunde ausgeschöpft. Bitte später nochmal.',
       );
     }
+    if (response.status === 401) throw new StockKeyRefused('unsplash');
     if (response.status === 404) throw notFound('Dieses Foto gibt es nicht (mehr).');
     if (!response.ok) throw new StockUnavailable();
     return (await response.json()) as T;
@@ -116,24 +161,21 @@ export class UnsplashSource implements StockPhotoSource {
     return body.results.map(toRecord);
   }
 
+  async random(options: { orientation?: StockOrientation; count: number }) {
+    const url = new URL(`${API}/photos/random`);
+    url.searchParams.set('count', String(Math.min(30, options.count)));
+    url.searchParams.set('content_filter', 'high');
+    if (options.orientation) url.searchParams.set('orientation', options.orientation);
+    const body = await this.call<UnsplashPhoto[]>(url.toString());
+    return body.map(toRecord);
+  }
+
   async photo(id: string) {
     return toRecord(await this.call<UnsplashPhoto>(`${API}/photos/${encodeURIComponent(id)}`));
   }
 
-  async picture(url: string) {
-    if (new URL(url).hostname !== IMAGE_HOST) throw badRequest('Kein Foto von Unsplash.');
-    // No redirects: the host checked above is the one asked. Read capped, not whole first.
-    const response = await this.fetchImpl(url, {
-      signal: AbortSignal.timeout(30_000),
-      redirect: 'manual',
-    }).catch(() => {
-      throw new StockUnavailable();
-    });
-    if (!response.ok) throw new StockUnavailable();
-    return readBodyCapped(response, MAX_PICTURE_BYTES).catch((error: unknown) => {
-      // `readBodyCapped` throws an ApiError only for the size; else the download broke off.
-      throw new StockUnavailable(error instanceof ApiError ? 'Das Foto ist zu groß.' : undefined);
-    });
+  picture(url: string) {
+    return fetchPicture(url, IMAGE_HOST, this.fetchImpl);
   }
 
   async track(downloadLocation: string) {
@@ -142,71 +184,273 @@ export class UnsplashSource implements StockPhotoSource {
   }
 }
 
-const sources = new WeakMap<object, StockPhotoSource>();
+const PEXELS_API = 'https://api.pexels.com/v1';
+const PEXELS_IMAGE_HOST = 'images.pexels.com';
 
-/** Unsplash for this server, or `null` when it has no Access Key. */
-export function stockSource(
-  deps: Pick<AppDeps, 'config' | 'stockPhotos'>,
-): StockPhotoSource | null {
-  if (deps.stockPhotos) return deps.stockPhotos;
-  const config = deps.config.unsplash;
-  if (!config) return null;
-  let source = sources.get(config);
-  if (!source) {
-    source = new UnsplashSource(config.accessKey);
-    sources.set(config, source);
+interface PexelsPhoto {
+  id: number;
+  width: number;
+  height: number;
+  /** The photo's own page. */
+  url: string;
+  photographer: string;
+  photographer_url: string;
+  avg_color: string | null;
+  alt: string | null;
+  src: { original: string; medium: string };
+}
+
+const pexelsRecord = (photo: PexelsPhoto): StockPhotoRecord => ({
+  id: String(photo.id),
+  description: photo.alt || null,
+  width: photo.width,
+  height: photo.height,
+  color: photo.avg_color,
+  thumbUrl: photo.src.medium,
+  // Its image host sizes and cuts on `w`, `h` and `fit=crop` as Unsplash's does.
+  rawUrl: photo.src.original,
+  credit: {
+    name: photo.photographer,
+    profileUrl: photo.photographer_url,
+    photoUrl: photo.url,
+    source: 'pexels',
+  },
+  // Pexels counts nothing: there is nothing to report.
+  downloadLocation: '',
+});
+
+/** Pexels (pexels.com/api): a key per account, 200 requests an hour unless raised. */
+export class PexelsSource implements StockPhotoSource {
+  constructor(
+    private readonly apiKey: string,
+    private readonly fetchImpl: typeof fetch = fetch,
+  ) {}
+
+  private async call<T>(url: string): Promise<T> {
+    const response = await this.fetchImpl(url, {
+      headers: { Authorization: this.apiKey },
+      signal: AbortSignal.timeout(10_000),
+    }).catch(() => {
+      throw new StockUnavailable();
+    });
+    if (response.status === 401 || response.status === 403) throw new StockKeyRefused('pexels');
+    if (response.status === 429) {
+      throw new ApiError(
+        429,
+        'rate_limited',
+        'Die Fotosuche ist für diese Stunde ausgeschöpft. Bitte später nochmal.',
+      );
+    }
+    if (response.status === 404) throw notFound('Dieses Foto gibt es nicht (mehr).');
+    if (!response.ok) throw new StockUnavailable();
+    return (await response.json()) as T;
   }
+
+  async search(query: string, options: { orientation?: StockOrientation; perPage: number }) {
+    const url = new URL(`${PEXELS_API}/search`);
+    url.searchParams.set('query', query);
+    url.searchParams.set('per_page', String(options.perPage));
+    if (options.orientation) {
+      url.searchParams.set(
+        'orientation',
+        options.orientation === 'squarish' ? 'square' : options.orientation,
+      );
+    }
+    const body = await this.call<{ photos: PexelsPhoto[] }>(url.toString());
+    return body.photos.map(pexelsRecord);
+  }
+
+  /** Pexels has no photos at random: its curated ones, a page at random. */
+  async random(options: { orientation?: StockOrientation; count: number }) {
+    const url = new URL(`${PEXELS_API}/curated`);
+    url.searchParams.set('per_page', String(Math.min(80, options.count)));
+    url.searchParams.set('page', String(1 + Math.floor(Math.random() * 20)));
+    const body = await this.call<{ photos: PexelsPhoto[] }>(url.toString());
+    return body.photos.map(pexelsRecord);
+  }
+
+  async photo(id: string) {
+    return pexelsRecord(
+      await this.call<PexelsPhoto>(`${PEXELS_API}/photos/${encodeURIComponent(id)}`),
+    );
+  }
+
+  picture(url: string) {
+    return fetchPicture(url, PEXELS_IMAGE_HOST, this.fetchImpl);
+  }
+
+  async track() {}
+}
+
+/** A service for a key of the integrations – reached like the AI's (`deps.aiFetch` in tests). */
+export function photoSourceFor(
+  deps: Pick<AppDeps, 'aiFetch'>,
+  provider: PhotoProvider,
+  apiKey: string,
+): StockPhotoSource {
+  const { aiFetch } = deps;
+  const fetchImpl: typeof fetch = aiFetch
+    ? (input, init) => aiFetch(input instanceof Request ? input.url : String(input), init)
+    : fetch;
+  return provider === 'pexels'
+    ? new PexelsSource(apiKey, fetchImpl)
+    : new UnsplashSource(apiKey, fetchImpl);
+}
+
+/** Asks the service once with the key; its refusal as a 400 in German. */
+export async function checkPhotoKey(
+  deps: Pick<AppDeps, 'aiFetch'>,
+  provider: PhotoProvider,
+  apiKey: string,
+): Promise<void> {
+  try {
+    await photoSourceFor(deps, provider, apiKey).search('office', { perPage: 1 });
+  } catch (error) {
+    if (error instanceof StockKeyRefused) throw badRequest(error.message);
+    throw error;
+  }
+}
+
+/** The photo service a workspace searches with, and the key it runs on (to mark it refused). */
+export interface PhotoSource {
+  source: StockPhotoSource;
+  provider: PhotoProvider;
+  /** `null`: a test's fake. */
+  keyId: string | null;
+}
+
+/** Per stored key – a changed key is a new row, so a new service. */
+const keySources = new Map<string, StockPhotoSource>();
+
+/**
+ * The workspace's photo service: its integration, else the instance's (the server's
+ * `UNSPLASH_ACCESS_KEY` becomes one of those) – `null` when there is none, or the key in use was
+ * refused.
+ */
+export async function photoSource(deps: AppDeps, workspaceId: string): Promise<PhotoSource | null> {
+  if (deps.stockPhotos) return { source: deps.stockPhotos, provider: 'unsplash', keyId: null };
+  const found = await effectiveKey(deps, workspaceId, 'photos');
+  if (found.row) {
+    if (found.row.error) return null;
+    const provider = found.row.provider as PhotoProvider;
+    let source = keySources.get(found.row.id);
+    if (!source) {
+      source = photoSourceFor(deps, provider, found.row.apiKey);
+      keySources.set(found.row.id, source);
+      if (keySources.size > MAX_CACHED) keySources.delete(keySources.keys().next().value!);
+    }
+    return { source, provider, keyId: found.row.id };
+  }
+  return null;
+}
+
+async function requireSource(deps: AppDeps, workspaceId: string): Promise<PhotoSource> {
+  const source = await photoSource(deps, workspaceId);
+  if (!source) throw notFound('Die Fotosuche ist in diesem Workspace nicht eingerichtet.');
   return source;
 }
 
-function requireSource(deps: Pick<AppDeps, 'config' | 'stockPhotos'>): StockPhotoSource {
-  const source = stockSource(deps);
-  if (!source) throw notFound('Die Fotosuche ist auf diesem Server nicht eingerichtet.');
-  return source;
+/** `load` on the service – a refused key is marked, so the settings say why photos stopped. */
+async function asking<T>(deps: AppDeps, source: PhotoSource, load: () => Promise<T>): Promise<T> {
+  try {
+    return await load();
+  } catch (error) {
+    if (error instanceof StockKeyRefused && source.keyId) {
+      await markKeyRefused(deps, source.keyId, error.message);
+    }
+    throw error;
+  }
 }
 
 // Searches and photos seen lately: the same search (the AI's and then the person's) and a pick
-// from a search cost Unsplash nothing more.
-const searches = new Map<string, { at: number; photos: StockPhotoRecord[] }>();
+// from a search cost the service nothing more. Kept per service – ids are only theirs.
+const searches = new Map<string, { at: number; photos: Promise<StockPhotoRecord[]> }>();
 const seen = new Map<string, StockPhotoRecord>();
 
-function remember(photos: readonly StockPhotoRecord[]): void {
+const seenKey = (provider: PhotoProvider, id: string) => `${provider}|${id}`;
+
+function remember(provider: PhotoProvider, photos: readonly StockPhotoRecord[]): void {
   for (const photo of photos) {
-    seen.delete(photo.id);
-    seen.set(photo.id, photo);
+    const key = seenKey(provider, photo.id);
+    seen.delete(key);
+    seen.set(key, photo);
   }
   while (seen.size > MAX_CACHED) seen.delete(seen.keys().next().value as string);
 }
 
-/** Photos for a search, best first. */
-export async function searchPhotos(
-  deps: Pick<AppDeps, 'config' | 'stockPhotos' | 'clock'>,
-  query: string,
-  { orientation, perPage = 24 }: { orientation?: StockOrientation; perPage?: number } = {},
+/**
+ * The photos `load` finds for what was asked (`key`), kept for a quarter hour: asked again
+ * meanwhile – also while the first call is still on its way –, Unsplash is not asked again. The
+ * oldest go once more are kept than {@link MAX_CACHED}; a call that failed is not kept.
+ */
+function cachedPhotos(
+  deps: AppDeps,
+  source: PhotoSource,
+  asked: string,
+  load: () => Promise<StockPhotoRecord[]>,
 ): Promise<StockPhotoRecord[]> {
-  const source = requireSource(deps);
-  const key = `${query.trim().toLowerCase()}|${orientation ?? ''}|${perPage}`;
+  const key = `${source.keyId ?? source.provider}|${asked}`;
   const now = deps.clock.now().getTime();
   const cached = searches.get(key);
   if (cached && now - cached.at < SEARCH_TTL_MS) return cached.photos;
-  const photos = await source.search(query.trim(), { orientation, perPage });
+  const photos = asking(deps, source, load).then((found) => {
+    remember(source.provider, found);
+    return found;
+  });
   searches.delete(key);
   searches.set(key, { at: now, photos });
   while (searches.size > MAX_CACHED) searches.delete(searches.keys().next().value as string);
-  remember(photos);
+  photos.catch(() => {
+    if (searches.get(key)?.photos === photos) searches.delete(key);
+  });
   return photos;
 }
 
-/** A photo by its id. */
+/** Photos for a search, best first. */
+export async function searchPhotos(
+  deps: AppDeps,
+  workspaceId: string,
+  query: string,
+  { orientation, perPage = 24 }: { orientation?: StockOrientation; perPage?: number } = {},
+): Promise<StockPhotoRecord[]> {
+  const source = await requireSource(deps, workspaceId);
+  const asked = query.trim();
+  return cachedPhotos(
+    deps,
+    source,
+    `search|${orientation ?? ''}|${perPage}|${asked.toLowerCase()}`,
+    () => source.source.search(asked, { orientation, perPage }),
+  );
+}
+
+/**
+ * Photos at random – what the editor shows before anything is typed, each time a picture is
+ * picked. Kept as long as a search, for each orientation: opening the panel again and again costs
+ * Unsplash one call per quarter hour (a demo app has 50 an hour).
+ */
+export async function randomPhotos(
+  deps: AppDeps,
+  workspaceId: string,
+  { orientation, count = 24 }: { orientation?: StockOrientation; count?: number } = {},
+): Promise<StockPhotoRecord[]> {
+  const source = await requireSource(deps, workspaceId);
+  return cachedPhotos(deps, source, `random|${orientation ?? ''}|${count}`, () =>
+    source.source.random({ orientation, count }),
+  );
+}
+
+/** A photo by its id, of the workspace's service. */
 export async function findPhoto(
-  deps: Pick<AppDeps, 'config' | 'stockPhotos'>,
+  deps: AppDeps,
+  workspaceId: string,
   id: string,
 ): Promise<StockPhotoRecord> {
-  const known = seen.get(id);
+  const source = await requireSource(deps, workspaceId);
+  const known = seen.get(seenKey(source.provider, id));
   if (known) return known;
-  const photo = await requireSource(deps).photo(id);
+  const photo = await asking(deps, source, () => source.source.photo(id));
   if (!photo) throw notFound('Dieses Foto gibt es nicht (mehr).');
-  remember([photo]);
+  remember(source.provider, [photo]);
   return photo;
 }
 
@@ -220,15 +464,28 @@ export async function fetchPhoto(
   photo: StockPhotoRecord,
   aspect: number | null,
 ): Promise<UploadedEditImage & { bytes: Uint8Array; mediaType: string; credit: ImageCredit }> {
-  const bytes = await requireSource(deps).picture(stockPhotoUrl(photo, PICTURE_WIDTH, aspect));
+  const url = stockPhotoUrl(photo, PICTURE_WIDTH, aspect);
+  // From the image host of the service it came from – whichever the workspace uses now.
+  const bytes = await (deps.stockPhotos
+    ? deps.stockPhotos.picture(url)
+    : fetchPicture(url, photo.credit.source === 'pexels' ? PEXELS_IMAGE_HOST : IMAGE_HOST));
   const stored = await storeEditImage(deps, deckId, bytes, photo.credit);
   return { ...stored, bytes, credit: photo.credit };
 }
 
-/** Tells Unsplash a photo was used; a failure only costs the count, never the edit. */
-export async function trackPhoto(deps: AppDeps, photo: StockPhotoRecord): Promise<void> {
+/**
+ * Tells Unsplash a photo was used – with the workspace's Unsplash key, if it still searches
+ * there; a failure only costs the count, never the edit.
+ */
+export async function trackPhoto(
+  deps: AppDeps,
+  workspaceId: string,
+  photo: StockPhotoRecord,
+): Promise<void> {
+  if ((photo.credit.source ?? 'unsplash') !== 'unsplash' || !photo.downloadLocation) return;
   try {
-    await requireSource(deps).track(photo.downloadLocation);
+    const source = await photoSource(deps, workspaceId);
+    if (source?.provider === 'unsplash') await source.source.track(photo.downloadLocation);
   } catch (error) {
     deps.log.warn(`Unsplash download of ${photo.id} not reported`, error);
   }
@@ -236,7 +493,7 @@ export async function trackPhoto(deps: AppDeps, photo: StockPhotoRecord): Promis
 
 // ── The editor ───────────────────────────────────────────────────────────
 
-/** `GET /decks/:id/stock/photos` – for who may edit the deck. */
+/** `GET /decks/:id/stock/photos` – for who may edit the deck; without a query, photos at random. */
 export async function searchForDeck(
   deps: AppDeps,
   viewer: Viewer,
@@ -244,9 +501,14 @@ export async function searchForDeck(
   query: string,
   orientation: StockOrientation | undefined,
 ): Promise<StockPhoto[]> {
-  await editTarget(deps, viewer, deckId);
-  if (!query.trim()) return [];
-  return (await searchPhotos(deps, query, { orientation })).map(toStockPhoto);
+  const { deck } = await editTarget(deps, viewer, deckId);
+  // Nothing typed in a workspace without a photo source: nothing to show – no error, as before
+  // photos at random came (the editor asks before anything is typed).
+  if (!query.trim() && !(await photoSource(deps, deck.workspaceId))) return [];
+  const photos = query.trim()
+    ? await searchPhotos(deps, deck.workspaceId, query, { orientation })
+    : await randomPhotos(deps, deck.workspaceId, { orientation });
+  return photos.map(toStockPhoto);
 }
 
 /** `POST /decks/:id/stock/photos/:photoId`: a person picked it – it is used, Unsplash hears. */
@@ -258,9 +520,9 @@ export async function pickPhoto(
   aspect: number | null,
 ): Promise<UploadedEditImage> {
   const { deck } = await editTarget(deps, viewer, deckId);
-  const photo = await findPhoto(deps, photoId);
+  const photo = await findPhoto(deps, deck.workspaceId, photoId);
   const { imageId, width, height } = await fetchPhoto(deps, deck.id, photo, aspect);
-  await trackPhoto(deps, photo);
+  await trackPhoto(deps, deck.workspaceId, photo);
   return { imageId, width, height };
 }
 
@@ -275,7 +537,6 @@ export function reportChosenPhotosLater(
   deckId: string,
   options: { rootCommentId?: string } = {},
 ): void {
-  if (!stockSource(deps)) return;
   void reportChosenPhotos(deps, deckId, options).catch((error: unknown) =>
     deps.log.warn(`Unsplash downloads of deck ${deckId} not reported`, error),
   );
@@ -290,7 +551,12 @@ export async function reportChosenPhotos(
   deckId: string,
   { rootCommentId }: { rootCommentId?: string } = {},
 ): Promise<void> {
-  if (!stockSource(deps)) return;
+  const [deck] = await deps.db
+    .select({ workspaceId: decks.workspaceId })
+    .from(decks)
+    .where(eq(decks.id, deckId));
+  const source = deck && (await photoSource(deps, deck.workspaceId));
+  if (!deck || source?.provider !== 'unsplash') return;
   let commentIds: string[] | null = null;
   if (rootCommentId) {
     const thread = await deps.db
@@ -332,6 +598,6 @@ export async function reportChosenPhotos(
       .where(and(eq(aiProposals.id, row.id), eq(aiProposals.updatedAt, row.updatedAt)))
       .returning({ id: aiProposals.id });
     if (claimed.length === 0) continue;
-    for (const photo of due) await trackPhoto(deps, photo);
+    for (const photo of due) await trackPhoto(deps, deck.workspaceId, photo);
   }
 }

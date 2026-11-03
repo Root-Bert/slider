@@ -66,14 +66,6 @@ const find = (deck: CorpusDeck, label: string): CorpusSlide => {
 export const nextSldId = (deck: CorpusDeck): number =>
   Math.max(255, ...deck.slides.map((slide, index) => slide.sldId ?? 256 + index)) + 1;
 
-/** Gives every slide its sldId explicitly, so later reorders keep them. */
-export function withExplicitIds(deck: CorpusDeck): CorpusDeck {
-  return {
-    ...deck,
-    slides: deck.slides.map((slide, index) => ({ ...slide, sldId: slide.sldId ?? 256 + index })),
-  };
-}
-
 export function insertAt(deck: CorpusDeck, index: number, slide: CorpusSlide): CorpusDeck {
   const slides = [...deck.slides];
   slides.splice(index, 0, { sldId: nextSldId(deck), ...slide });

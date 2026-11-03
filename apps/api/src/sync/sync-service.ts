@@ -1,7 +1,7 @@
 import { and, desc, eq, exists, isNull, max } from 'drizzle-orm';
 import type { SyncError, SyncResult } from '@slider/shared';
 import type { Clock } from '../clock';
-import { DEFAULT_SYNC_POLL_INTERVAL_MS, type Config } from '../config';
+import type { Config } from '../config';
 import type { Database } from '../db/client';
 import {
   decks,
@@ -32,26 +32,10 @@ import {
   type SourceContext,
 } from '../sources/source-adapter';
 import { blobKeys, type BlobStorage } from '../storage/blob-storage';
-import {
-  loginUrlOfDeck,
-  ownerLeftMessage,
-  storageFullMessage,
-  toSyncError,
-  TRANSIENT_SYNC_ERRORS,
-} from './errors';
-import { healthyCheck, mergeSyncState, SYNC_MAX_BACKOFF_MS, syncBackoffMs } from './state';
+import { loginUrlOfDeck, ownerLeftMessage, storageFullMessage, toSyncError } from './errors';
+import { healthyCheck, mergeSyncState } from './state';
 
-export { SYNC_MAX_BACKOFF_MS } from './state';
-
-/** Only decks someone opened or changed within this window are polled. */
-export const SYNC_ACTIVE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-/** Constant autosaving must not postpone an import forever: after 10 × debounce it happens. */
-export const SYNC_MAX_DEBOUNCE_FACTOR = 10;
-/** Transient errors (source unreachable) show a banner only after this many failures in a row. */
-export const SYNC_TRANSIENT_ERROR_THRESHOLD = 3;
-/** Sources without ETag/cTag are downloaded and hashed – at most every 5 poll intervals. */
-export const SYNC_CONTENT_CHECK_FACTOR = 5;
-/** A manual check waits this long for the import before answering `queued`. */
+/** A pull waits this long for the import before answering `queued`. */
 export const SYNC_MANUAL_WAIT_MS = 25_000;
 
 const CONTENT_TOKEN_PREFIX = 'sha256:';
@@ -69,45 +53,34 @@ export interface SyncServiceDeps {
   queue: JobQueue<ImportJob>;
   clock: Clock;
   log: Logger;
-  config: Pick<Config, 'sync' | 'plans'>;
+  config: Pick<Config, 'plans'>;
   /** The owners' Microsoft connections, for decks that do not know theirs yet. */
   connections?: ConnectionLookup;
   /** LibreOffice for Word, Excel and text files (see `toDeckBytes`); absent → none of those. */
   documentPdf?: DocumentToPdf | null;
-}
-
-export interface CheckOptions {
-  /** Owner pressed "Neu rendern": no debounce, no throttling, wait for the import. */
-  manual?: boolean;
+  /** How long a pull waits for its import; {@link SYNC_MANUAL_WAIT_MS} unless a test says. */
+  waitMs?: number;
 }
 
 type Remote = { adapter: SourceAdapter; file: RemoteFile; context: SourceContext };
 
 /**
- * Keeps link-imported decks up to date (BER-107). `checkDeck` compares the source's change
- * token with the current revision's, waits until PowerPoint stops autosaving (debounce) and then
- * queues a sync import of the new file. Idempotent: the same token never creates a second
- * revision, and identical bytes under a new token only record the token.
+ * Pulls a link-imported deck's file from its source, only when asked ("Neu rendern"): nothing
+ * polls. A deck lives in Slider once imported. `checkDeck` compares the source's change token
+ * with the current revision's and imports a new file as a new revision. Idempotent: the same
+ * token never creates a second revision, and identical bytes under a new token only record the
+ * token. A deck edited in Slider is not pulled over (`edit_conflict`).
  *
  * Errors never touch the current revision; they end up in `decks.sync_state` for a banner.
  */
 export class SyncService {
   /** One check per deck at a time; concurrent callers share it. */
-  private readonly inFlight = new Map<string, { promise: Promise<SyncResult>; manual: boolean }>();
+  private readonly inFlight = new Map<string, Promise<SyncResult>>();
 
   constructor(private readonly deps: SyncServiceDeps) {}
 
-  private get pollMs(): number {
-    return this.deps.config.sync.pollIntervalMs || DEFAULT_SYNC_POLL_INTERVAL_MS;
-  }
-
-  private get debounceMs(): number {
-    return this.deps.config.sync.debounceMs;
-  }
-
-  checkDeck(deckId: string, options: CheckOptions = {}): Promise<SyncResult> {
-    const manual = options.manual ?? false;
-    return this.exclusive(deckId, manual, () => this.check(deckId, manual));
+  checkDeck(deckId: string): Promise<SyncResult> {
+    return this.exclusive(deckId, () => this.check(deckId));
   }
 
   /**
@@ -123,7 +96,6 @@ export class SyncService {
   ): Promise<SyncResult> {
     return this.exclusive(
       deckId,
-      true,
       async () => {
         // Pending first, then the current revision: a sync import finishing in between
         // would otherwise leave us comparing against a stale revision.
@@ -163,30 +135,28 @@ export class SyncService {
             this.deps.clock.now(),
           ),
         );
-        return this.createRevision(deck, { bytes, sha: sourceSha }, null, 'upload', true);
+        return this.createRevision(deck, { bytes, sha: sourceSha }, null, 'upload');
       },
       { join: false },
     );
   }
 
   /**
-   * Serialises work per deck. By default a caller joins a running call it may share (any call
-   * for a poll, a manual one for a manual call); with `join: false` it always queues behind.
+   * Serialises work per deck. By default a caller joins a running call; with `join: false` it
+   * always queues behind.
    */
   private exclusive(
     deckId: string,
-    manual: boolean,
     work: () => Promise<SyncResult>,
     { join = true }: { join?: boolean } = {},
   ): Promise<SyncResult> {
     const running = this.inFlight.get(deckId);
-    if (join && running && (running.manual || !manual)) return running.promise;
-    // A manual request waits for a running poll check, then runs without debounce.
-    const before = running ? running.promise.catch(() => undefined) : Promise.resolve();
+    if (join && running) return running;
+    const before = running ? running.catch(() => undefined) : Promise.resolve();
     const promise = before.then(work).finally(() => {
-      if (this.inFlight.get(deckId)?.promise === promise) this.inFlight.delete(deckId);
+      if (this.inFlight.get(deckId) === promise) this.inFlight.delete(deckId);
     });
-    this.inFlight.set(deckId, { promise, manual });
+    this.inFlight.set(deckId, promise);
     return promise;
   }
 
@@ -221,7 +191,7 @@ export class SyncService {
     return row ?? null;
   }
 
-  private async check(deckId: string, manual: boolean): Promise<SyncResult> {
+  private async check(deckId: string): Promise<SyncResult> {
     // Pending first, then the deck: if a queued import commits in between, `load` already sees
     // its revision as current (the flip is atomic), so we never compare against a stale one.
     const pending = await this.pendingRevision(deckId);
@@ -233,18 +203,11 @@ export class SyncService {
     if (!current) return { status: 'unchanged' };
 
     const now = this.deps.clock.now();
-    // Syncing goes by the owner's accounts: never with someone who left the workspace (their
+    // Pulling goes by the owner's accounts: never with someone who left the workspace (their
     // linked decks are deleted then, see `departDecks`; this catches decks from before).
     if (!(await this.ownerIsMember(deck))) return this.ownerLeft(deck, now);
-    // Over the plan's limits nothing new comes in (BER-155): "Neu laden" says why, polling waits.
-    if (manual) await assertWithinLimits(this.deps.db, this.deps.config, deck.workspaceId, now);
-    else if (await this.overLimit(deck, now)) {
-      await mergeSyncState(this.deps.db, deckId, {
-        lastCheckedAt: now.toISOString(),
-        nextCheckAt: this.after(now, SYNC_MAX_BACKOFF_MS),
-      });
-      return { status: 'unchanged' };
-    }
+    // Over the plan's limits nothing new comes in (BER-155): "Neu rendern" says why.
+    await assertWithinLimits(this.deps.db, this.deps.config, deck.workspaceId, now);
     const state = deck.syncState;
     const adapter = this.deps.sources[deck.source as Exclude<DeckRow['source'], 'upload'>];
     const file: RemoteFile = {
@@ -257,14 +220,11 @@ export class SyncService {
     try {
       // Through the deck's Microsoft (Nextcloud, Google) connection – or, without one, the first
       // of the owner's that has access; the rest of the check goes through the same one.
+      const readToken = (context: SourceContext) => adapter.getChangeToken(file, context);
       const changed =
-        deck.source === 'nextcloud'
-          ? await this.throughNextcloud(deck, (context) => adapter.getChangeToken(file, context))
-          : deck.source === 'google'
-            ? await this.throughGoogle(deck, (context) => adapter.getChangeToken(file, context))
-            : await withDeckConnection(this.deps, deck, (context) =>
-                adapter.getChangeToken(file, context),
-              );
+        deck.source === 'nextcloud' || deck.source === 'google'
+          ? await this.throughOwnConnection(deck, deck.source, readToken)
+          : await withDeckConnection(this.deps, deck, readToken);
       const remote: Remote = { adapter, file, context: changed.context };
       let token = changed.value;
       // Decks linked before contributors were recorded learn them now; the rest with a revision.
@@ -272,76 +232,37 @@ export class SyncService {
       if (!knowsContributors) await this.refreshContributors(deck, remote);
       let baseline = current.sourceChangeToken;
       let downloaded: Downloaded | null = null;
-      const bookkeeping: Partial<DeckSyncStateRow> = {};
 
       if (token === '') {
-        // No ETag/cTag: compare the content itself, but not on every poll.
-        const lastContentCheck = state.lastContentCheckAt
-          ? Date.parse(state.lastContentCheckAt)
-          : 0;
-        if (!manual && now.getTime() - lastContentCheck < SYNC_CONTENT_CHECK_FACTOR * this.pollMs) {
-          await mergeSyncState(this.deps.db, deckId, {
-            lastCheckedAt: now.toISOString(),
-            nextCheckAt: this.after(now, this.pollMs),
-          });
-          return { status: 'unchanged' };
-        }
+        // No ETag/cTag: compare the content itself.
         downloaded = await this.download(remote);
         token = CONTENT_TOKEN_PREFIX + downloaded.sha;
         const sha = await this.revisionSha(current);
         baseline = sha ? CONTENT_TOKEN_PREFIX + sha : null;
-        bookkeeping.lastContentCheckAt = now.toISOString();
-      }
-
-      // Edits made in Slider and not saved yet (BER-180): a new version from the cloud must not
-      // replace them. The editor tells that the cloud changed; saving decides.
-      if (current.editSeq !== current.savedSeq && (baseline === null || token !== baseline)) {
-        await mergeSyncState(this.deps.db, deckId, {
-          ...healthyCheck(now, new Date(now.getTime() + this.pollMs)),
-          ...bookkeeping,
-          cloudChangedToken: token,
-        });
-        return { status: 'unchanged' };
       }
 
       if (baseline !== null && token === baseline) {
-        await mergeSyncState(this.deps.db, deckId, {
-          ...healthyCheck(now, new Date(now.getTime() + this.pollMs)),
-          ...bookkeeping,
-        });
+        await mergeSyncState(this.deps.db, deckId, healthyCheck(now));
         return { status: 'unchanged' };
       }
 
-      if (!manual && state.failedToken && token === state.failedToken) {
-        // This exact file failed to import before; wait for the next change.
-        await mergeSyncState(this.deps.db, deckId, {
-          lastCheckedAt: now.toISOString(),
-          nextCheckAt: this.after(now, this.pollMs),
-          pending: null,
-          ...bookkeeping,
-        });
-        return { status: 'error', error: this.storedError(deck) };
+      // Edited in Slider (BER-180): a new file from the source must not replace the edits.
+      if (current.editSeq !== current.savedSeq) {
+        await mergeSyncState(this.deps.db, deckId, healthyCheck(now));
+        throw new ApiError(
+          409,
+          'edit_conflict',
+          'Die Datei in der Quelle hat sich geändert, aber diese Präsentation wurde in Slider bearbeitet. Die neue Version wird nicht übernommen, damit die Änderungen bleiben.',
+        );
       }
 
-      // The workspace's storage is full (BER-151): no new version comes in – neither waited
-      // for nor downloaded – until there is room. Then the next check takes it over by itself.
+      // The workspace's storage is full (BER-151): no new version comes in until there is room.
       // A version found too big before waits for room for its own size, without a new download.
       const blockedBytes = state.storageBlocked?.token === token ? state.storageBlocked.bytes : 0;
       if (await this.storageFull(deck, blockedBytes, now)) {
-        return await this.storageBlocked(deck, now, bookkeeping);
+        return await this.storageBlocked(deck, now);
       }
 
-      if (!manual) {
-        const waiting = this.debounce(state, token, now);
-        if (waiting) {
-          await mergeSyncState(this.deps.db, deckId, { ...waiting, ...bookkeeping });
-          return { status: 'queued' };
-        }
-      }
-
-      if (Object.keys(bookkeeping).length > 0) {
-        await mergeSyncState(this.deps.db, deckId, bookkeeping);
-      }
       downloaded ??= await this.download(remote);
       const { bytes } = downloaded;
       const realToken = token.startsWith(CONTENT_TOKEN_PREFIX) ? null : token;
@@ -353,70 +274,29 @@ export class SyncService {
             .set({ sourceChangeToken: realToken })
             .where(eq(revisions.id, current.id));
         }
-        await mergeSyncState(
-          this.deps.db,
-          deckId,
-          healthyCheck(now, new Date(now.getTime() + this.pollMs)),
-        );
+        await mergeSyncState(this.deps.db, deckId, healthyCheck(now));
         return { status: 'unchanged' };
       }
       // Room left, but not for this file: it waits the same way.
       if (await this.storageFull(deck, bytes.byteLength, now)) {
-        return await this.storageBlocked(deck, now, {
-          storageBlocked: { token, bytes: bytes.byteLength },
-        });
+        return await this.storageBlocked(deck, now, { token, bytes: bytes.byteLength });
       }
       if (knowsContributors) await this.refreshContributors(deck, remote);
       const size = bytes.byteLength;
-      return await this.createRevision(
-        deck,
-        downloaded,
-        realToken,
-        manual ? 'manual' : 'poll',
-        manual,
-      ).catch((error: unknown) => {
-        // Another upload took the rest meanwhile (the binding check, under the lock): it waits
-        // the same way.
-        if (error instanceof ApiError && error.code === 'plan_limit') {
-          return this.storageBlocked(deck, now, { storageBlocked: { token, bytes: size } });
-        }
-        throw error;
-      });
+      return await this.createRevision(deck, downloaded, realToken, 'manual').catch(
+        (error: unknown) => {
+          // Another upload took the rest meanwhile (the binding check, under the lock): it waits
+          // the same way.
+          if (error instanceof ApiError && error.code === 'plan_limit') {
+            return this.storageBlocked(deck, now, { token, bytes: size });
+          }
+          throw error;
+        },
+      );
     } catch (error) {
+      if (error instanceof ApiError && error.code === 'edit_conflict') throw error;
       return this.fail(deck, error, now);
     }
-  }
-
-  /**
-   * `null` when the change has settled (or waited long enough) and should be imported now;
-   * otherwise the pending state to store.
-   */
-  private debounce(
-    state: DeckSyncStateRow,
-    token: string,
-    now: Date,
-  ): Partial<DeckSyncStateRow> | null {
-    const debounce = this.debounceMs;
-    const pending = state.pending ?? null;
-    const same = pending?.token === token;
-    const firstSeenAt = pending ? Date.parse(pending.firstSeenAt) : now.getTime();
-    const lastChangedAt = same && pending ? Date.parse(pending.lastChangedAt) : now.getTime();
-    const t = now.getTime();
-    const forced = t - firstSeenAt >= SYNC_MAX_DEBOUNCE_FACTOR * debounce;
-    const settled = same && t - lastChangedAt >= debounce;
-    if (forced || settled) return null;
-    // Look again before the quiet period ends, to notice further autosaves.
-    const recheck = Math.min(this.pollMs, Math.max(1_000, Math.floor(debounce / 2)));
-    const nextCheckAt = Math.max(t + 1_000, Math.min(lastChangedAt + debounce, t + recheck));
-    return {
-      pending: {
-        token,
-        firstSeenAt: new Date(firstSeenAt).toISOString(),
-        lastChangedAt: new Date(lastChangedAt).toISOString(),
-      },
-      lastCheckedAt: now.toISOString(),
-      nextCheckAt: new Date(nextCheckAt).toISOString(),
-    };
   }
 
   /** Stores the file as a pending revision and queues its import. */
@@ -424,8 +304,7 @@ export class SyncService {
     deck: DeckRow,
     { bytes, sha }: Downloaded,
     token: string | null,
-    trigger: 'poll' | 'manual' | 'upload',
-    wait: boolean,
+    trigger: 'manual' | 'upload',
   ): Promise<SyncResult> {
     const { db, storage, clock, queue } = this.deps;
     const revisionId = crypto.randomUUID();
@@ -484,12 +363,9 @@ export class SyncService {
           reservedBytes: bytes.byteLength,
         });
         await mergeSyncState(tx, deck.id, {
-          ...(trigger === 'upload' ? {} : healthyCheck(now, new Date(now.getTime() + this.pollMs))),
-          // Keep an earlier error visible, and failed imports counted (their backoff), until the
-          // import succeeded.
+          ...(trigger === 'upload' ? {} : healthyCheck(now)),
+          // Keep an earlier error visible until the import succeeded.
           ...(deck.syncState.lastSyncError ? { lastSyncError: deck.syncState.lastSyncError } : {}),
-          consecutiveFailures: deck.syncState.consecutiveFailures ?? 0,
-          pending: null,
           importingRevisionId: revisionId,
         });
       });
@@ -503,11 +379,10 @@ export class SyncService {
     }
 
     const done = queue.run({ deckId: deck.id, revisionId, kind: 'sync' });
-    if (!wait) return { status: 'queued', revisionId };
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<void>((resolve) => {
-      timer = setTimeout(resolve, SYNC_MANUAL_WAIT_MS);
+      timer = setTimeout(resolve, this.deps.waitMs ?? SYNC_MANUAL_WAIT_MS);
     });
     await Promise.race([done, timeout]);
     clearTimeout(timer);
@@ -548,103 +423,49 @@ export class SyncService {
     });
     if (!expected) this.deps.log.error(`Sync check of deck ${deck.id} failed`, error);
     else this.deps.log.warn(`Sync check of deck ${deck.id}: ${syncError.code}`);
-    const failures = (deck.syncState.consecutiveFailures ?? 0) + 1;
-    const backoff = syncBackoffMs(this.pollMs, failures);
-    const show =
-      !TRANSIENT_SYNC_ERRORS.has(syncError.code) || failures >= SYNC_TRANSIENT_ERROR_THRESHOLD;
     await mergeSyncState(this.deps.db, deck.id, {
       lastCheckedAt: now.toISOString(),
-      nextCheckAt: this.after(now, backoff),
-      consecutiveFailures: failures,
-      ...(show
-        ? { lastSyncError: { code: syncError.code, message: syncError.message, at: syncError.at } }
-        : {}),
+      lastSyncError: { code: syncError.code, message: syncError.message, at: syncError.at },
     }).catch(() => {});
     return { status: 'error', error: syncError };
   }
 
   /**
-   * Nextcloud decks read through their own connection, else through the owner's accounts at the
-   * file's server (the adapter tries them, also when the own one lost access) – remembering the
-   * one that worked, unless the deck changed connection meanwhile.
+   * Nextcloud and Google decks read through their own connection, else through the owner's other
+   * accounts – Nextcloud's at the file's server, also when the own one lost access; Google's, else
+   * the public link (the adapter tries them) – remembering the one that worked, unless the deck
+   * changed connection meanwhile.
    */
-  private async throughNextcloud<T>(
+  private async throughOwnConnection<T>(
     deck: DeckRow,
+    source: 'nextcloud' | 'google',
     run: (context: SourceContext) => Promise<T>,
   ): Promise<{ value: T; context: SourceContext }> {
-    const context: SourceContext = {
-      userId: deck.ownerId,
-      nextcloudConnectionId: deck.nextcloudConnectionId,
-    };
+    const field = source === 'nextcloud' ? 'nextcloudConnectionId' : 'googleConnectionId';
+    const connections = source === 'nextcloud' ? nextcloudConnections : googleConnections;
+    const own = deck[field];
+    const context: SourceContext = { userId: deck.ownerId, [field]: own };
     const value = await run(context);
-    const used = context.nextcloudConnectionId;
-    const own = deck.nextcloudConnectionId;
+    const used = context[field];
     if (used && used !== own) {
       await this.deps.db
         .update(decks)
-        .set({ nextcloudConnectionId: used })
+        .set({ [field]: used })
         .where(
           and(
             eq(decks.id, deck.id),
-            own ? eq(decks.nextcloudConnectionId, own) : isNull(decks.nextcloudConnectionId),
+            own ? eq(decks[field], own) : isNull(decks[field]),
             // Disconnected during the check: nothing to remember (the foreign key would fail).
             exists(
               this.deps.db
-                .select({ id: nextcloudConnections.id })
-                .from(nextcloudConnections)
-                .where(eq(nextcloudConnections.id, used)),
+                .select({ id: connections.id })
+                .from(connections)
+                .where(eq(connections.id, used)),
             ),
           ),
         );
     }
     return { value, context };
-  }
-
-  /**
-   * Google decks read through their own connection, else through the owner's other Google
-   * accounts, else the public link (the adapter tries them) – remembering the account that
-   * worked, unless the deck changed connection meanwhile.
-   */
-  private async throughGoogle<T>(
-    deck: DeckRow,
-    run: (context: SourceContext) => Promise<T>,
-  ): Promise<{ value: T; context: SourceContext }> {
-    const context: SourceContext = {
-      userId: deck.ownerId,
-      googleConnectionId: deck.googleConnectionId,
-    };
-    const value = await run(context);
-    const used = context.googleConnectionId;
-    const own = deck.googleConnectionId;
-    if (used && used !== own) {
-      await this.deps.db
-        .update(decks)
-        .set({ googleConnectionId: used })
-        .where(
-          and(
-            eq(decks.id, deck.id),
-            own ? eq(decks.googleConnectionId, own) : isNull(decks.googleConnectionId),
-            // Disconnected during the check: nothing to remember (the foreign key would fail).
-            exists(
-              this.deps.db
-                .select({ id: googleConnections.id })
-                .from(googleConnections)
-                .where(eq(googleConnections.id, used)),
-            ),
-          ),
-        );
-    }
-    return { value, context };
-  }
-
-  private async overLimit(deck: DeckRow, now: Date): Promise<boolean> {
-    try {
-      await assertWithinLimits(this.deps.db, this.deps.config, deck.workspaceId, now);
-      return false;
-    } catch (error) {
-      if (error instanceof ApiError && error.code === 'plan_over_limit') return true;
-      throw error;
-    }
   }
 
   /** `addBytes` more would not fit into the workspace's storage (`plan_limit`, BER-151). */
@@ -662,13 +483,12 @@ export class SyncService {
 
   /**
    * The new version waits for room (`storage_full`): nothing is imported, the banner says why,
-   * and the next regular check tries again – no backoff, nothing to do by hand once something
-   * was deleted or the plan upgraded.
+   * and the next pull tries again once something was deleted or the plan upgraded.
    */
   private async storageBlocked(
     deck: DeckRow,
     now: Date,
-    bookkeeping: Partial<DeckSyncStateRow> = {},
+    storageBlocked?: DeckSyncStateRow['storageBlocked'],
   ): Promise<SyncResult> {
     const error: SyncError = {
       code: 'storage_full',
@@ -681,10 +501,8 @@ export class SyncService {
     };
     await mergeSyncState(this.deps.db, deck.id, {
       lastCheckedAt: now.toISOString(),
-      nextCheckAt: this.after(now, this.pollMs),
-      pending: null,
       lastSyncError: error,
-      ...bookkeeping,
+      ...(storageBlocked ? { storageBlocked } : {}),
     });
     return { status: 'error', error };
   }
@@ -710,8 +528,6 @@ export class SyncService {
     };
     await mergeSyncState(this.deps.db, deck.id, {
       lastCheckedAt: now.toISOString(),
-      nextCheckAt: this.after(now, SYNC_MAX_BACKOFF_MS),
-      pending: null,
       lastSyncError: error,
     });
     return { status: 'error', error };
@@ -749,9 +565,5 @@ export class SyncService {
       .set({ contentSha256: sha })
       .where(eq(revisions.id, revision.id));
     return sha;
-  }
-
-  private after(now: Date, ms: number): string {
-    return new Date(now.getTime() + ms).toISOString();
   }
 }

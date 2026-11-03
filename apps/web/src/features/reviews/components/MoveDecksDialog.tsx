@@ -62,7 +62,7 @@ export function MoveDecksDialog({
       title={
         decks.length === 1
           ? `„${decks[0]!.title}“ verschieben`
-          : `${pluralize(decks.length, 'Review', 'Reviews')} verschieben`
+          : `${pluralize(decks.length, 'Präsentation', 'Präsentationen')} verschieben`
       }
     >
       <div className="flex flex-col gap-4">

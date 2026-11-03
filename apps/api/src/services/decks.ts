@@ -1,5 +1,25 @@
-import { and, asc, count, desc, eq, inArray, max, min, or, sql, type SQL } from 'drizzle-orm';
-import type { Author, Deck, DeckSource } from '@slider/shared';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  max,
+  min,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
+import {
+  DEFAULT_AI_NAME,
+  type Author,
+  type Deck,
+  type DeckSource,
+  type DeckTemplate,
+  type TemplateColor,
+} from '@slider/shared';
 import { openToViewer, permissionsFor, type DeckViewerAccess } from '../auth/access';
 import { displayAuthor, ownerAuthor } from '../authors';
 import type { Executor } from '../db/client';
@@ -10,18 +30,22 @@ import {
   revisions,
   slideVersions,
   users,
+  integrationKeys,
+  workspaceMasters,
   workspaceMembers,
+  workspaces,
   type DeckRow,
 } from '../db/schema';
 import type { AppDeps } from '../deps';
 import { sha256Hex } from '../import/common';
+import { readPolicy, ruleFor } from './integration-keys';
 import { deckFileExtension } from '../import/odp-deck';
 import { pdfMakerOf } from '../import/pdf-maker';
 import { blobKeys, fileUrl } from '../storage/blob-storage';
 import { deckBlobs, deleteBlobs } from './blob-deletions';
 import { toDeckSync } from './deck-sync';
 import { isOpenComment } from './open-comments';
-import { assertDeckSlot } from './plans';
+import { assertDeckSlot, assertStorageFor } from './plans';
 import { rolesOf } from './workspaces/roles';
 
 export interface DeckDtoOptions {
@@ -39,65 +63,115 @@ export async function toDeckDtos(
   const deckIds = rows.map((row) => row.id);
   const revisionIds = rows.flatMap((row) => (row.currentRevisionId ? [row.currentRevisionId] : []));
   const ownerIds = [...new Set(rows.map((row) => row.ownerId))];
+  const workspaceIds = [...new Set(rows.map((row) => row.workspaceId))];
+  const masterIds = [
+    ...new Set(rows.flatMap((row) => (row.masterId && !row.isTemplate ? [row.masterId] : []))),
+  ];
 
-  const [owners, revisionNumbers, slideCounts, thumbnails, openCounts, authors, pendingRevisions] =
-    await Promise.all([
-      db.select().from(users).where(inArray(users.id, ownerIds)),
-      revisionIds.length
-        ? db
-            .select({
-              id: revisions.id,
-              number: revisions.number,
-              summary: revisions.summary,
-              officeFailure: revisions.officeFailure,
-            })
-            .from(revisions)
-            .where(inArray(revisions.id, revisionIds))
-        : [],
-      revisionIds.length
-        ? db
-            .select({ revisionId: slideVersions.revisionId, count: count() })
-            .from(slideVersions)
-            // Visible slides only, as the viewer counts them ("1 / n").
-            .where(
-              and(inArray(slideVersions.revisionId, revisionIds), eq(slideVersions.hidden, false)),
-            )
-            .groupBy(slideVersions.revisionId)
-        : [],
-      revisionIds.length
-        ? db
-            .selectDistinctOn([slideVersions.revisionId], {
-              revisionId: slideVersions.revisionId,
-              key: slideVersions.thumbnailKey,
-              renderer: slideVersions.renderer,
-            })
-            .from(slideVersions)
-            .where(
-              and(inArray(slideVersions.revisionId, revisionIds), eq(slideVersions.hidden, false)),
-            )
-            .orderBy(slideVersions.revisionId, asc(slideVersions.position))
-        : [],
-      db
-        .select({ deckId: comments.deckId, count: count() })
-        .from(comments)
-        .where(and(inArray(comments.deckId, deckIds), isOpenComment()))
-        .groupBy(comments.deckId),
-      db
-        .select({
-          deckId: comments.deckId,
-          author: comments.author,
-          lastAt: max(comments.createdAt),
-        })
-        .from(comments)
-        .where(inArray(comments.deckId, deckIds))
-        .groupBy(comments.deckId, comments.author)
-        .orderBy(desc(max(comments.createdAt))),
-      db
-        .select({ deckId: revisions.deckId, since: min(revisions.createdAt) })
-        .from(revisions)
-        .where(and(inArray(revisions.deckId, deckIds), eq(revisions.status, 'pending')))
-        .groupBy(revisions.deckId),
-    ]);
+  const [
+    owners,
+    revisionNumbers,
+    slideCounts,
+    thumbnails,
+    openCounts,
+    authors,
+    pendingRevisions,
+    ais,
+    activeKeys,
+    policy,
+    masterColors,
+  ] = await Promise.all([
+    db.select().from(users).where(inArray(users.id, ownerIds)),
+    revisionIds.length
+      ? db
+          .select({
+            id: revisions.id,
+            number: revisions.number,
+            summary: revisions.summary,
+            officeFailure: revisions.officeFailure,
+          })
+          .from(revisions)
+          .where(inArray(revisions.id, revisionIds))
+      : [],
+    revisionIds.length
+      ? db
+          .select({ revisionId: slideVersions.revisionId, count: count() })
+          .from(slideVersions)
+          // Visible slides only, as the viewer counts them ("1 / n").
+          .where(
+            and(inArray(slideVersions.revisionId, revisionIds), eq(slideVersions.hidden, false)),
+          )
+          .groupBy(slideVersions.revisionId)
+      : [],
+    revisionIds.length
+      ? db
+          .selectDistinctOn([slideVersions.revisionId], {
+            revisionId: slideVersions.revisionId,
+            key: slideVersions.thumbnailKey,
+            renderer: slideVersions.renderer,
+          })
+          .from(slideVersions)
+          .where(
+            and(inArray(slideVersions.revisionId, revisionIds), eq(slideVersions.hidden, false)),
+          )
+          .orderBy(slideVersions.revisionId, asc(slideVersions.position))
+      : [],
+    db
+      .select({ deckId: comments.deckId, count: count() })
+      .from(comments)
+      .where(and(inArray(comments.deckId, deckIds), isOpenComment()))
+      .groupBy(comments.deckId),
+    db
+      .select({
+        deckId: comments.deckId,
+        author: comments.author,
+        lastAt: max(comments.createdAt),
+      })
+      .from(comments)
+      .where(inArray(comments.deckId, deckIds))
+      .groupBy(comments.deckId, comments.author)
+      .orderBy(desc(max(comments.createdAt))),
+    db
+      .select({ deckId: revisions.deckId, since: min(revisions.createdAt) })
+      .from(revisions)
+      .where(and(inArray(revisions.deckId, deckIds), eq(revisions.status, 'pending')))
+      .groupBy(revisions.deckId),
+    db
+      .select({
+        id: workspaces.id,
+        name: workspaces.aiName,
+        // A key from before workspaces had several stays on the workspace until first used.
+        oldKey: sql<boolean>`${workspaces.aiApiKey} is not null and ${workspaces.aiKeyError} is null`,
+      })
+      .from(workspaces)
+      .where(inArray(workspaces.id, workspaceIds)),
+    db
+      .select({ workspaceId: integrationKeys.workspaceId, error: integrationKeys.error })
+      .from(integrationKeys)
+      .where(
+        and(
+          eq(integrationKeys.kind, 'ai'),
+          eq(integrationKeys.active, true),
+          or(
+            inArray(integrationKeys.workspaceId, workspaceIds),
+            isNull(integrationKeys.workspaceId),
+          ),
+        ),
+      ),
+    readPolicy({ db }),
+    masterIds.length
+      ? db
+          .select({
+            id: workspaceMasters.id,
+            colors: workspaceMasters.colors,
+            // Designed in Slider: its layout grid, from the template deck it is designed in.
+            design: decks.templateDesign,
+          })
+          .from(workspaceMasters)
+          .leftJoin(decks, eq(decks.id, workspaceMasters.draftDeckId))
+          .where(inArray(workspaceMasters.id, masterIds))
+      : [],
+  ]);
 
   const ownerById = new Map(owners.map((owner) => [owner.id, ownerAuthor(owner)]));
   const numberByRevision = new Map(revisionNumbers.map((row) => [row.id, row.number]));
@@ -110,6 +184,34 @@ export async function toDeckDtos(
   const thumbnailByRevision = new Map(thumbnails.map((row) => [row.revisionId, row]));
   const openCountByDeck = new Map(openCounts.map((row) => [row.deckId, row.count]));
   const participantsByDeck = groupParticipants(authors);
+  const colorsByMaster = new Map(masterColors.map((row) => [row.id, row.colors]));
+  const gridByMaster = new Map(masterColors.map((row) => [row.id, row.design?.grid ?? null]));
+  // A template offers the colours being set in it; a deck those of the template it is made from.
+  const templateColors = (row: DeckRow): TemplateColor[] | null => {
+    const colors = row.isTemplate
+      ? row.templateDesign?.colors
+      : row.masterId
+        ? colorsByMaster.get(row.masterId)
+        : undefined;
+    return colors?.length ? colors : null;
+  };
+  // As `effectiveKey`: the workspace's own active key, where it may use one, else the
+  // instance's, where it takes that over. Refused, it is no help.
+  const instanceKey = activeKeys.find((key) => key.workspaceId === null);
+  const ownKeys = new Map(activeKeys.map((key) => [key.workspaceId, key]));
+  const keyWorks = (workspaceId: string) => {
+    const rule = ruleFor(policy, 'ai', workspaceId);
+    const key =
+      (rule.ownKeys && ownKeys.get(workspaceId)) ||
+      (rule.inherit !== 'none' ? instanceKey : undefined);
+    return Boolean(key && !key.error);
+  };
+  const aiByWorkspace = new Map(
+    ais.map((ai) => [
+      ai.id,
+      { name: ai.name ?? DEFAULT_AI_NAME, available: Boolean(ai.oldKey) || keyWorks(ai.id) },
+    ]),
+  );
 
   return rows.map((row) => {
     const owner = ownerById.get(row.ownerId);
@@ -134,6 +236,7 @@ export async function toDeckDtos(
       thumbnailRenderer: thumbnail?.renderer ?? null,
       officeFailure: officeFailureByRevision.get(revisionId) ?? null,
       participants: participantsOf(owner, participantsByDeck.get(row.id) ?? []),
+      ai: aiByWorkspace.get(row.workspaceId) ?? { name: DEFAULT_AI_NAME, available: false },
       import: row.importState,
       currentRevisionId: row.currentRevisionId,
       sync: toDeckSync(row, {
@@ -144,6 +247,9 @@ export async function toDeckDtos(
       permissions,
       folderId: row.folderId,
       restricted: row.restrictedAt !== null,
+      template: row.isTemplate ? (row.templateDesign ?? EMPTY_TEMPLATE) : null,
+      colors: { template: templateColors(row), custom: row.customColors },
+      grid: !row.isTemplate && row.masterId ? (gridByMaster.get(row.masterId) ?? null) : null,
     };
   });
 }
@@ -230,7 +336,14 @@ export async function listWorkspaceDecks(
   const rows = await db
     .select()
     .from(decks)
-    .where(and(inArray(decks.workspaceId, [...workspaceIds]), openToViewer(access)))
+    .where(
+      and(
+        inArray(decks.workspaceId, [...workspaceIds]),
+        // Templates being designed are no projects – the library leads to them.
+        eq(decks.isTemplate, false),
+        openToViewer(access),
+      ),
+    )
     .orderBy(desc(decks.updatedAt));
   return toDeckDtos(db, rows, { access });
 }
@@ -261,7 +374,20 @@ export interface NewDeckFile {
   nextcloudConnectionId?: string | null;
   /** The Google connection that could read the file (`decks.google_connection_id`). */
   googleConnectionId?: string | null;
+  /** The workspace's design it was made from (`decks.master_id`). */
+  masterId?: string | null;
+  /** A template to design (`decks.is_template`), no review: no deck slot, its own title. */
+  template?: { title: string; design?: DeckTemplate };
 }
+
+/** A template just started: nothing named, marked or saved yet. */
+export const EMPTY_TEMPLATE: DeckTemplate = {
+  layoutNames: {},
+  placeholders: {},
+  guides: [],
+  masterId: null,
+  savedAt: null,
+};
 
 /**
  * Stores the original, creates deck + revision 1 and queues the import. Returns at once.
@@ -283,16 +409,20 @@ export async function createDeckFromFile(
     .transaction(async (tx) => {
       // The plan's deck and storage limits (BER-130, BER-151), checked under a lock on the
       // workspace – the reservation below is part of the same transaction.
-      await assertDeckSlot(tx, deps.config, workspaceId, {
-        addBytes: file.bytes.byteLength,
-        now,
-      });
+      if (file.template) {
+        await assertStorageFor(tx, deps.config, workspaceId, file.bytes.byteLength, now);
+      } else {
+        await assertDeckSlot(tx, deps.config, workspaceId, {
+          addBytes: file.bytes.byteLength,
+          now,
+        });
+      }
       await tx.insert(decks).values({
         id: deckId,
         ownerId,
         linkedById: ownerId,
         workspaceId,
-        title: titleFromFileName(file.fileName),
+        title: file.template?.title ?? titleFromFileName(file.fileName),
         fileName: file.fileName,
         source: file.source,
         sourceUrl: file.sourceUrl ?? null,
@@ -301,6 +431,9 @@ export async function createDeckFromFile(
         microsoftConnectionId: file.microsoftConnectionId ?? null,
         nextcloudConnectionId: file.nextcloudConnectionId ?? null,
         googleConnectionId: file.googleConnectionId ?? null,
+        masterId: file.masterId ?? null,
+        isTemplate: file.template !== undefined,
+        templateDesign: file.template ? (file.template.design ?? EMPTY_TEMPLATE) : null,
         createdAt: now,
         updatedAt: now,
         importState: { status: 'queued' },

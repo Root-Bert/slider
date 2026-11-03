@@ -18,7 +18,7 @@ faq:
   - q: Do reviewers need a Slider account?
     a: Yes, a free one. You invite them to your workspace by mail or link as reviewers, so they can view and comment but not change your decks.
   - q: Is Slider free?
-    a: 'Yes, for small teams: up to 5 people, 3 decks and 2 GB storage, no credit card needed. Bigger teams pay one flat price per workspace, and you can self-host Slider for free, without limits.'
+    a: 'Yes, for small teams: as many decks as you like, up to 5 people and 2 GB storage, no credit card needed. Bigger teams pay one flat price per workspace, and you can self-host Slider for free, without limits.'
 related:
   - slider-vs-google-slides-comments
   - best-presentation-feedback-tools-2026

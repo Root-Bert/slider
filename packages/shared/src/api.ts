@@ -4,6 +4,7 @@ import {
   anchorSchema,
   commentReactionKindSchema,
   commentStatusSchema,
+  customColorsSchema,
   MAX_MEDIA_PEAKS,
   mediaKindSchema,
   pathStrokeSchema,
@@ -11,9 +12,6 @@ import {
   rectSchema,
   shapeRefSchema,
   strokeSchema,
-  type Comment,
-  type Deck,
-  type Slide,
   type Viewer,
   type WorkspaceRole,
 } from './model';
@@ -40,12 +38,12 @@ import type { DomainWorkspace, MeLimits, MeUser, PendingInvite, Workspace } from
  * | POST   | /decks/:deckId/revisions (multipart `file`, uploads only) |         | SyncResult            |
  * | GET    | /decks/:deckId/revisions/:revisionId/diff (`latest` ok) |           | RevisionDiff          |
  * | GET    | /decks/:deckId/deleted-slides          |                            | DeletedSlide[]        |
- * | GET    | /decks/:deckId/slides/:slideId/versions |                           | SlideVersionView[] (newest first) |
  * | GET    | /decks/:deckId/comments                |                            | Comment[] (flat)      |
  * | POST   | /decks/:deckId/comments                | CreateCommentInput         | Comment (201)         |
  * | PATCH  | /comments/:commentId                   | UpdateCommentInput         | Comment               |
  * | DELETE | /comments/:commentId                   |                            | 204                   |
  * | PUT    | /comments/:commentId/reaction          | SetCommentReactionInput    | Comment               |
+ * | PUT    | /comments/:commentId/recording (multipart `file` + `comment` JSON, author only) | SetCommentRecordingInput | Comment |
  * | POST   | /decks/:deckId/media-comments (multipart `file` and/or `image` + `comment` JSON) | CreateMediaCommentInput | Comment (201) |
  * | GET    | /decks/:deckId/media-usage             |                            | MediaUsage            |
  * | GET    | /media/:mediaId                        | (Range supported)          | audio/video/PNG bytes |
@@ -166,10 +164,12 @@ export const ERROR_CODES = [
   'plan_over_limit',
   /** Older versions' files can't be deleted while a version is imported or rendered. */
   'storage_busy',
-  /** The cloud's file changed since the edited deck was opened or saved (BER-182): overwrite? */
+  /** The source's file changed, but the deck was edited in Slider: pulling would drop the edits. */
   'edit_conflict',
   /** The workspace has no (working) Anthropic API key for its AI (BER-183). */
   'ai_not_configured',
+  /** Neither a key for speech to text nor the server's own Whisper for the workspace. */
+  'speech_not_configured',
   /**
    * No instance admin yet: a signed-in account has to enter the setup token from the server log
    * first (`POST /setup/claim`); until then every other route answers with this (403).
@@ -187,6 +187,11 @@ export const ERROR_CODES = [
   'account_blocked',
   /** Deleting the account needs a fresh sign-in: sign out and in again first. */
   'reauth_required',
+  /**
+   * An edit names another account than the one signed in (signed in anew in another tab before
+   * this one heard of it): refused, kept by the editor for its account.
+   */
+  'account_changed',
   'internal',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -208,7 +213,16 @@ export interface ApiError {
 }
 
 /** Upload limit from BER-91. */
-export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
+export const MAX_UPLOAD_BYTES = 512 * 1024 * 1024;
+
+/**
+ * Deck files from this size go up in parts over tus (`POST /api/decks/tus`), each part well
+ * under a proxy's limit per request (Cloudflare: 100 MB). Smaller ones take one request.
+ */
+export const DECK_UPLOAD_IN_PARTS_FROM = 64 * 1024 * 1024;
+export const DECK_UPLOAD_PART_BYTES = 32 * 1024 * 1024;
+/** Where tus uploads of deck files begin (under `API_PREFIX`). */
+export const DECK_TUS_PATH = '/decks/tus';
 
 export interface MeResponse {
   viewer: Viewer;
@@ -369,6 +383,8 @@ export const updateDeckInputSchema = z
     archived: z.boolean(),
     /** Moves the deck into a folder of its workspace; `null` takes it out. */
     folderId: z.string().max(100).nullable(),
+    /** Its own colours beside its template's („Eigene“), in their order. */
+    customColors: customColorsSchema,
   })
   .partial();
 export type UpdateDeckInput = z.infer<typeof updateDeckInputSchema>;
@@ -383,6 +399,12 @@ export const MAX_COMMENT_BODY_LENGTH = 10_000;
 export const MAX_DRAWING_STROKES = 50;
 
 export const createCommentInputSchema = z.object({
+  /**
+   * Made by the browser (a UUID), so a comment written offline is known by its id before the
+   * server has it – replies, edits and deletes queued after it name it. Sent again (an answer
+   * lost on the way), the comment already saved under it is the answer: never a second one.
+   */
+  id: z.uuid().optional(),
   slideId: z.string().nullable(),
   parentId: z.string().nullable().default(null),
   body: z.string().trim().max(MAX_COMMENT_BODY_LENGTH),
@@ -395,8 +417,11 @@ export type CreateCommentInput = z.input<typeof createCommentInputSchema>;
 
 /** Recordings stop by themselves after five minutes. */
 export const MAX_MEDIA_DURATION_MS = 5 * 60_000;
-/** Per recording. Five minutes of the recorder's video settings are ~20 MB; this leaves room. */
-export const MAX_MEDIA_BYTES = 100 * 1024 * 1024;
+/**
+ * Per recording. Five minutes of a screen recording (1080p, 2.5 Mbit/s) are ~95 MB; this leaves
+ * room. From `DECK_UPLOAD_IN_PARTS_FROM` a recording goes up in parts over tus, like a deck.
+ */
+export const MAX_MEDIA_BYTES = 512 * 1024 * 1024;
 
 /** What browsers' MediaRecorder produces: WebM/Opus (Chrome, Firefox), MP4/AAC (Safari), Ogg. */
 export const MEDIA_MIME_TYPES = {
@@ -420,21 +445,32 @@ export const isAllowedMediaMimeType = (kind: 'audio' | 'video', mimeType: string
  * The `comment` field of the multipart upload; the recording goes in `file`, a drawn image in
  * `image`. `media` describes the recording – present exactly when `file` is sent.
  */
+/** What the upload says about its recording; the bytes go in `file`. */
+const recordingInfoSchema = z.object({
+  kind: mediaKindSchema,
+  // A little slack: the recorder stops on a timer, the container may report a few ms more.
+  durationMs: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_MEDIA_DURATION_MS + 5_000),
+  peaks: z.array(z.number().min(0).max(1)).max(MAX_MEDIA_PEAKS).default([]),
+});
+
 export const createMediaCommentInputSchema = createCommentInputSchema.extend({
-  media: z
-    .object({
-      kind: mediaKindSchema,
-      // A little slack: the recorder stops on a timer, the container may report a few ms more.
-      durationMs: z
-        .number()
-        .int()
-        .min(1)
-        .max(MAX_MEDIA_DURATION_MS + 5_000),
-      peaks: z.array(z.number().min(0).max(1)).max(MAX_MEDIA_PEAKS).default([]),
-    })
-    .optional(),
+  media: recordingInfoSchema.optional(),
 });
 export type CreateMediaCommentInput = z.input<typeof createMediaCommentInputSchema>;
+
+/**
+ * The `comment` field when editing a comment with a new recording (multipart, the recording in
+ * `file`): it replaces the comment's recording, `body` its text – may go empty, it is the note.
+ */
+export const setCommentRecordingInputSchema = z.object({
+  body: z.string().trim().max(MAX_COMMENT_BODY_LENGTH),
+  media: recordingInfoSchema,
+});
+export type SetCommentRecordingInput = z.input<typeof setCommentRecordingInputSchema>;
 
 /** Storage of the deck's workspace (BER-151): every file of its reviews counts. */
 export interface MediaUsage {
@@ -491,8 +527,3 @@ export const setCommentReactionInputSchema = z.object({
   kind: commentReactionKindSchema.nullable(),
 });
 export type SetCommentReactionInput = z.infer<typeof setCommentReactionInputSchema>;
-
-/** Convenience aliases so consumers import everything from one place. */
-export type DeckResponse = Deck;
-export type SlidesResponse = Slide[];
-export type CommentsResponse = Comment[];

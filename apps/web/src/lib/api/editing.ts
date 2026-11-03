@@ -1,27 +1,43 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import type {
   AiProposal,
   ApplyEditInput,
+  ApplyEditResult,
   CreateAiProposalInput,
   DeckEditState,
+  DeckLayouts,
+  GenerateEditImageInput,
+  RevertEditInput,
+  SendExportInput,
   SlideLayers,
   StockOrientation,
   StockSearch,
+  UpdateAiProposalInput,
   UploadedEditImage,
-  WorkspaceAi,
-  AddWorkspaceAiKeyInput,
-  AiModelList,
-  UpdateWorkspaceAiKeyInput,
 } from '@slider/shared';
-import { api } from '../api-client';
-import { queryKeys, workspaceKeys } from './keys';
-import { useInvalidateSlideImages } from './revisions';
+import { useEffect } from 'react';
+import { api, apiDownload, isStoredAnswer, unreachableError } from '../api-client';
+import { queryKeys } from './keys';
+import { invalidateSlideImages } from './revisions';
 
 /*
  * Editing a deck in Slider (BER-180 – BER-183): its elements, operations on them, undo and redo,
  * saving back to the cloud, and the AI's proposals. Every answer is the new edit state; the
  * slides (titles, boxes, pictures) are reloaded alongside.
  */
+
+/**
+ * A slide just put in, shown before the server has it (`pending-slides.ts`): its id begins so,
+ * and nothing is asked about it until it is the server's.
+ */
+export const STAND_IN_SLIDE = 'pending:';
+export const isStandInSlide = (slideId: string) => slideId.startsWith(STAND_IN_SLIDE);
 
 export const useDeckEdit = (deckId: string, enabled = true) =>
   useQuery({
@@ -30,30 +46,44 @@ export const useDeckEdit = (deckId: string, enabled = true) =>
     enabled,
   });
 
-/** Stores an answer's edit state and reloads the slides it changed. */
+/**
+ * The layouts of the deck's own design, for „Folie einfügen“. Asked again each time it opens: a
+ * layout taken in from a template changes them – the pictures are kept on the server.
+ */
+export const useDeckLayouts = (deckId: string, enabled = true) =>
+  useQuery({
+    queryKey: queryKeys.deckLayouts(deckId),
+    queryFn: () => api.get<DeckLayouts>(`/decks/${deckId}/layouts`),
+    enabled,
+  });
+
+/**
+ * Stores an answer's edit state and reloads the slides it changed – also from outside React (the
+ * editor's outbox, `features/viewer/editing/edit-outbox.ts`).
+ */
+export function storeEditAnswer(queryClient: QueryClient, deckId: string, state: DeckEditState) {
+  queryClient.setQueryData(queryKeys.edit(deckId), state);
+  return invalidateSlideImages(queryClient, deckId);
+}
+
 function useEditAnswer(deckId: string) {
   const queryClient = useQueryClient();
-  const reloadSlides = useInvalidateSlideImages(deckId);
-  return (state: DeckEditState) => {
-    queryClient.setQueryData(queryKeys.edit(deckId), state);
-    return reloadSlides();
-  };
+  return (state: DeckEditState) => storeEditAnswer(queryClient, deckId, state);
 }
 
-export function useApplyEdit(deckId: string) {
-  const answered = useEditAnswer(deckId);
-  return useMutation({
-    mutationFn: (input: ApplyEditInput) =>
-      api.post<DeckEditState>(`/decks/${deckId}/edit/operations`, input),
-    onSuccess: answered,
-  });
-}
+/**
+ * Sends one edit of the editor's: the new edit state. Not a mutation hook – the editor's outbox
+ * sends (`edit-outbox.ts`), also once the editor is gone, and stores the answer itself.
+ */
+export const postEdit = (deckId: string, input: ApplyEditInput) =>
+  api.post<ApplyEditResult>(`/decks/${deckId}/edit/operations`, input);
 
-export function useMoveEdit(deckId: string) {
+/** Takes back one own step (undo, or the undo's step: redo) – what others changed stays. */
+export function useRevertEdit(deckId: string) {
   const answered = useEditAnswer(deckId);
   return useMutation({
-    mutationFn: (direction: 'undo' | 'redo') =>
-      api.post<DeckEditState>(`/decks/${deckId}/edit/${direction}`),
+    mutationFn: (input: RevertEditInput) =>
+      api.post<ApplyEditResult>(`/decks/${deckId}/edit/revert`, input),
     onSuccess: answered,
   });
 }
@@ -62,55 +92,40 @@ export function useMoveEdit(deckId: string) {
 export type BackgroundPriority = 'interactive' | 'background';
 
 /**
- * The picture an element's text is typed over (the live editor): its slide drawn without that
- * text, by the server on asking – a second or two the first time.
- */
-export function useTextBackground(deckId: string) {
-  return useMutation({
-    mutationFn: ({ elementId, priority }: { elementId: string; priority: BackgroundPriority }) =>
-      api.post<{ url: string }>(
-        `/decks/${deckId}/edit/elements/${encodeURIComponent(elementId)}/background`,
-        { priority },
-      ),
-  });
-}
-
-/**
- * What the editor draws an element with while its slide is drawn anew after its look or place
- * changed (`POST …/cutout`): the slide without it, and its area and outline as masks – cut to
- * `box` on the slide – painted in its colours. `plain`: its look is one colour each or none, so
- * the masks painted draw it as LibreOffice does; `strokeWidth`: the outline's width in the mask.
- */
-export interface ElementCutout {
-  backdrop: string;
-  fill: string | null;
-  stroke: string | null;
-  box: { x: number; y: number; w: number; h: number } | null;
-  /** What lies over the element, drawn over it in turn (as it is), at `aboveBox`. */
-  above: string | null;
-  aboveBox: { x: number; y: number; w: number; h: number } | null;
-  strokeWidth: number;
-  plain: boolean;
-  /** How see-through its area and outline are drawn (0–1). */
-  fillOpacity: number;
-  strokeOpacity: number;
-}
-
-export function useElementCutout(deckId: string) {
-  return useMutation({
-    mutationFn: ({ elementId, priority }: { elementId: string; priority: BackgroundPriority }) =>
-      api.post<ElementCutout>(
-        `/decks/${deckId}/edit/elements/${encodeURIComponent(elementId)}/cutout`,
-        { priority },
-      ),
-  });
-}
-
-/**
  * A slide taken apart for the layers view (`SlideLayers`) at an edit step: drawn by the server on
  * asking – a few seconds the first time; the one before stays while the next is drawn.
  * `background`: a slide beside the one looked at – drawn after what someone waits for.
  */
+/** A slide taken apart (`SlideLayers`) at an edit step – for `useSlideLayers` and drawing ahead. */
+const pendingLayers = new Map<string, { priority: BackgroundPriority }>();
+const layerRequestKey = (deckId: string, slideId: string, seq: number) =>
+  JSON.stringify([deckId, slideId, seq]);
+
+export const slideLayersQuery = (
+  deckId: string,
+  slideId: string,
+  seq: number,
+  priority: BackgroundPriority = 'interactive',
+) => ({
+  queryKey: queryKeys.slideLayers(deckId, slideId, seq),
+  queryFn: async () => {
+    const key = layerRequestKey(deckId, slideId, seq);
+    const pending = { priority };
+    pendingLayers.set(key, pending);
+    try {
+      const layers = await api.post<SlideLayers>(
+        `/decks/${deckId}/edit/slides/${encodeURIComponent(slideId)}/layers`,
+        { priority },
+      );
+      if (isStoredAnswer(layers) && layers.seq !== seq) throw unreachableError();
+      return layers;
+    } finally {
+      if (pendingLayers.get(key) === pending) pendingLayers.delete(key);
+    }
+  },
+  staleTime: Infinity,
+});
+
 export const useSlideLayers = (
   deckId: string,
   slideId: string | null,
@@ -119,23 +134,86 @@ export const useSlideLayers = (
     enabled = true,
     priority = 'interactive',
   }: { enabled?: boolean; priority?: BackgroundPriority } = {},
-) =>
-  useQuery({
-    queryKey: queryKeys.slideLayers(deckId, slideId, seq),
-    queryFn: () =>
-      api.post<SlideLayers>(
-        `/decks/${deckId}/edit/slides/${encodeURIComponent(slideId ?? '')}/layers`,
-        { priority },
-      ),
-    enabled: enabled && slideId !== null && seq !== undefined,
+) => {
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    ...slideLayersQuery(deckId, slideId ?? '', seq ?? 0, priority),
+    enabled: enabled && slideId !== null && !isStandInSlide(slideId) && seq !== undefined,
+    // Another step of the same slide: its pictures until the new ones come – also those of an
+    // earlier step drawn ahead (`useLayersAhead`), so the layers open without waiting.
     placeholderData: (previous, query) =>
-      // Another step of the same slide: its pictures until the new ones come.
-      query?.queryKey[2] === slideId ? keepPreviousData(previous) : undefined,
-    staleTime: Infinity,
+      query?.queryKey[2] === slideId
+        ? keepPreviousData(previous)
+        : queryClient
+            .getQueriesData<SlideLayers>({ queryKey: ['slideLayers', deckId, slideId] })
+            .reduce<SlideLayers | undefined>(
+              (latest, [, data]) => (data && (!latest || data.seq > latest.seq) ? data : latest),
+              undefined,
+            ),
     // Drawn ahead while many are (503): asked again a little later.
     retry: priority === 'background' ? 3 : 1,
     retryDelay: (attempt) => 1500 * 2 ** attempt,
   });
+  useEffect(() => {
+    if (
+      !enabled ||
+      priority !== 'interactive' ||
+      slideId === null ||
+      seq === undefined ||
+      query.fetchStatus !== 'fetching'
+    )
+      return;
+    const pending = pendingLayers.get(layerRequestKey(deckId, slideId, seq));
+    if (!pending || pending.priority === 'interactive') return;
+    pending.priority = 'interactive';
+    // Same render job, promoted by drawOnce on the server. The original query owns the
+    // response and the cache; this second request only moves it ahead of speculative work.
+    void api
+      .post(`/decks/${deckId}/edit/slides/${encodeURIComponent(slideId)}/layers`, {
+        priority: 'interactive',
+      })
+      .catch(() => {});
+  }, [deckId, slideId, seq, enabled, priority, query.fetchStatus]);
+  return query;
+};
+
+/**
+ * A slide taken apart for the per-element editor (`SlideCompositor`): live texts left out of the
+ * pictures and what the browser draws whole not drawn (`compose`). The one of an earlier step
+ * stays while the next is drawn.
+ */
+export const useComposedLayers = (
+  deckId: string,
+  slideId: string,
+  seq: number | undefined,
+  enabled: boolean,
+) => {
+  const queryClient = useQueryClient();
+  return useQuery({
+    queryKey: queryKeys.composedLayers(deckId, slideId, seq),
+    queryFn: async ({ queryKey }) => {
+      const layers = await api.post<SlideLayers>(
+        `/decks/${deckId}/edit/slides/${encodeURIComponent(slideId)}/layers`,
+        { priority: 'interactive', compose: true },
+      );
+      // Offline, the slide's pictures as last drawn (kept by the service worker) – of another
+      // step maybe: the elements the browser draws come from the model anyway, the others stand
+      // as they were drawn. Drawn anew once back online.
+      if (isStoredAnswer(layers) && layers.seq !== seq) {
+        window.addEventListener('online', () => void queryClient.invalidateQueries({ queryKey }), {
+          once: true,
+        });
+      }
+      return layers;
+    },
+    enabled: enabled && !isStandInSlide(slideId) && seq !== undefined,
+    // Another step of the same slide: its pictures until the new ones come.
+    placeholderData: (previous, query) =>
+      query?.queryKey[2] === slideId ? keepPreviousData(previous) : undefined,
+    staleTime: Infinity,
+    retry: 1,
+  });
+};
 
 export function useUploadEditImage(deckId: string) {
   return useMutation({
@@ -144,6 +222,24 @@ export function useUploadEditImage(deckId: string) {
       body.append('file', file);
       return api.post<UploadedEditImage>(`/decks/${deckId}/edit/images`, body);
     },
+  });
+}
+
+/** A picture generated from a description, cut to the frame's `aspect` – ready for `replaceImage`. */
+export function useGenerateEditImage(deckId: string) {
+  return useMutation({
+    mutationFn: (input: GenerateEditImageInput) =>
+      api.post<UploadedEditImage>(`/decks/${deckId}/edit/images/generate`, input),
+  });
+}
+
+/** The picture of picture element `elementId` cut out of its background – ready for `replaceImage`. */
+export function useRemoveBackground(deckId: string) {
+  return useMutation({
+    mutationFn: (elementId: string) =>
+      api.post<UploadedEditImage>(
+        `/decks/${deckId}/edit/elements/${encodeURIComponent(elementId)}/remove-background`,
+      ),
   });
 }
 
@@ -156,7 +252,8 @@ export const useStockSearch = (deckId: string, query: string, orientation?: Stoc
       if (orientation) params.set('orientation', orientation);
       return api.get<StockSearch>(`/decks/${deckId}/stock/photos?${params}`);
     },
-    enabled: query.trim().length >= 2,
+    // Empty: photos at random; one letter is no search yet.
+    enabled: query.trim().length !== 1,
     staleTime: 10 * 60_000,
   });
 
@@ -170,17 +267,38 @@ export function usePickStockPhoto(deckId: string) {
   });
 }
 
-export function useSaveEdit(deckId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (input: { overwrite?: boolean }) =>
-      api.post<DeckEditState>(`/decks/${deckId}/edit/save`, input),
-    onSuccess: (state) => queryClient.setQueryData(queryKeys.edit(deckId), state),
-  });
-}
-
 /** Where the edited file downloads from (a plain link: the browser saves it). */
 export const editedFileUrl = (deckId: string) => `/api/decks/${deckId}/edit/file`;
+
+/** The edited file as a PDF – LibreOffice draws it, which takes a moment. */
+export const useDownloadEditedPdf = (deckId: string) =>
+  useMutation({
+    mutationFn: (fallbackName: string) => apiDownload(`/decks/${deckId}/edit/pdf`, fallbackName),
+  });
+
+/** One slide as a PDF (LibreOffice draws its page anew) or as its picture (PNG). */
+export const useDownloadSlide = (deckId: string) =>
+  useMutation({
+    mutationFn: ({
+      slideId,
+      format,
+      fallbackName,
+    }: {
+      slideId: string;
+      format: 'pdf' | 'png';
+      fallbackName: string;
+    }) =>
+      apiDownload(
+        `/decks/${deckId}/edit/slides/${encodeURIComponent(slideId)}/${format}`,
+        fallbackName,
+      ),
+  });
+
+/** An export mailed to someone as an attachment (`mail` in the edit state: the server can). */
+export const useSendExport = (deckId: string) =>
+  useMutation({
+    mutationFn: (input: SendExportInput) => api.post<void>(`/decks/${deckId}/edit/send`, input),
+  });
 
 // ── AI proposals ─────────────────────────────────────────────────────────
 
@@ -222,6 +340,38 @@ export function useCancelProposal(deckId: string) {
   });
 }
 
+/**
+ * Its card done (✕, „Erledigt“) or open again – for everyone, as a thread is resolved. Optimistic
+ * like `useUpdateComment`: shown at once, rolled back alone on an error; the others hear it live.
+ */
+export function useResolveProposal(deckId: string) {
+  const queryClient = useQueryClient();
+  const key = queryKeys.proposals(deckId);
+  return useMutation({
+    mutationFn: ({ proposalId, status }: UpdateAiProposalInput & { proposalId: string }) =>
+      api.patch<AiProposal>(`/decks/${deckId}/ai/proposals/${proposalId}`, { status }),
+    onMutate: async ({ proposalId, status }) => {
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient
+        .getQueryData<AiProposal[]>(key)
+        ?.find((item) => item.id === proposalId);
+      const resolvedAt = status === 'done' ? new Date().toISOString() : null;
+      queryClient.setQueryData<AiProposal[]>(key, (list) =>
+        list?.map((item) => (item.id === proposalId ? { ...item, resolvedAt } : item)),
+      );
+      return { previous };
+    },
+    onError: (_error, { proposalId }, context) => {
+      const previous = context?.previous;
+      if (!previous) return;
+      queryClient.setQueryData<AiProposal[]>(key, (list) =>
+        list?.map((item) => (item.id === proposalId ? previous : item)),
+      );
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
+  });
+}
+
 /** Takes an applied proposal back (`revert`) or applies it again (`reapply`). */
 export function useMoveProposal(deckId: string) {
   const answered = useEditAnswer(deckId);
@@ -247,50 +397,5 @@ export function useChooseProposalPhoto(deckId: string) {
       await answered(state);
       await queryClient.invalidateQueries({ queryKey: queryKeys.proposals(deckId) });
     },
-  });
-}
-
-// ── Workspace AI keys ────────────────────────────────────────────────────
-
-export const useWorkspaceAi = (workspaceId: string, enabled = true) =>
-  useQuery({
-    queryKey: workspaceKeys.ai(workspaceId),
-    queryFn: () => api.get<WorkspaceAi>(`/workspaces/${workspaceId}/ai`),
-    enabled,
-  });
-
-/** The models a stored key may run on – asked of its provider when the picker opens. */
-export const useWorkspaceAiModels = (workspaceId: string, keyId: string, enabled: boolean) =>
-  useQuery({
-    queryKey: [...workspaceKeys.ai(workspaceId), 'models', keyId],
-    queryFn: () => api.get<AiModelList>(`/workspaces/${workspaceId}/ai/keys/${keyId}/models`),
-    enabled,
-    staleTime: 5 * 60_000,
-    retry: false,
-  });
-
-export function useAddWorkspaceAiKey(workspaceId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (input: AddWorkspaceAiKeyInput) =>
-      api.post<WorkspaceAi>(`/workspaces/${workspaceId}/ai/keys`, input),
-    onSuccess: (ai) => queryClient.setQueryData(workspaceKeys.ai(workspaceId), ai),
-  });
-}
-
-export function useUpdateWorkspaceAiKey(workspaceId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ keyId, ...input }: UpdateWorkspaceAiKeyInput & { keyId: string }) =>
-      api.patch<WorkspaceAi>(`/workspaces/${workspaceId}/ai/keys/${keyId}`, input),
-    onSuccess: (ai) => queryClient.setQueryData(workspaceKeys.ai(workspaceId), ai),
-  });
-}
-
-export function useRemoveWorkspaceAiKey(workspaceId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (keyId: string) => api.delete(`/workspaces/${workspaceId}/ai/keys/${keyId}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: workspaceKeys.ai(workspaceId) }),
   });
 }

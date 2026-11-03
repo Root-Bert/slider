@@ -1,4 +1,6 @@
 import type {
+  Deck,
+  UpdateDeckTemplateInput,
   Author,
   CreatedWorkspaceInvite,
   CreateWorkspaceInviteInput,
@@ -12,6 +14,7 @@ import type {
   WorkspaceRole,
   WorkspaceFont,
   WorkspaceFontUpload,
+  WorkspaceMaster,
   WorkspaceSso,
 } from '@slider/shared';
 import { WORKSPACE_PRESENCE_POLL_MS } from '@slider/shared';
@@ -113,6 +116,88 @@ export function useRemoveWorkspaceFontFamily(workspaceId: string) {
       queryClient.setQueryData(workspaceKeys.fonts(workspaceId), fonts);
       void queryClient.invalidateQueries({ predicate: isEditState });
     },
+  });
+}
+
+// ── Slide masters ──────────────────────────────────────────────────────────
+
+/** The workspace's slide masters: company designs with a picture of each layout. */
+export const useWorkspaceMasters = (workspaceId: string, enabled = true) =>
+  useQuery({
+    queryKey: workspaceKeys.masters(workspaceId),
+    queryFn: () => api.get<WorkspaceMaster[]>(`/workspaces/${workspaceId}/masters`),
+    enabled,
+  });
+
+/** Members and admins: one design, a template (`.otp`, `.potx`); its layouts are drawn. */
+export function useUploadWorkspaceMaster(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => {
+      const body = new FormData();
+      body.append('file', file);
+      return apiRequest<WorkspaceMaster[]>(`/workspaces/${workspaceId}/masters`, {
+        method: 'POST',
+        body,
+      });
+    },
+    onSuccess: (masters) => queryClient.setQueryData(workspaceKeys.masters(workspaceId), masters),
+  });
+}
+
+/** Members and admins: a design's name in Slider. */
+export function useRenameWorkspaceMaster(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ masterId, name }: { masterId: string; name: string }) =>
+      api.patch<WorkspaceMaster[]>(`/workspaces/${workspaceId}/masters/${masterId}`, { name }),
+    onSuccess: (masters) => queryClient.setQueryData(workspaceKeys.masters(workspaceId), masters),
+  });
+}
+
+/** Members and admins: a template to design in the editor – a deck marked as one. */
+export function useCreateTemplateDraft(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<Deck>(`/workspaces/${workspaceId}/masters/draft`, {}),
+    onSuccess: (deck) => {
+      queryClient.setQueryData(queryKeys.deck(deck.id), deck);
+      // In the library as it is made (the server saves it by itself from then on).
+      void queryClient.invalidateQueries({ queryKey: workspaceKeys.masters(workspaceId) });
+    },
+  });
+}
+
+/** Changes to a template being designed go one after another. */
+export const templateScope = (deckId: string) => `deck-template:${deckId}`;
+
+/** A template being designed: its layouts' names, placeholders and guides. */
+export function useUpdateDeckTemplate(deckId: string) {
+  const queryClient = useQueryClient();
+  const mutationKey = ['deck-template', deckId];
+  return useMutation({
+    mutationKey,
+    // One change after another, in the order made: typing „12“ never ends as 1.
+    scope: { id: templateScope(deckId) },
+    mutationFn: (input: UpdateDeckTemplateInput) =>
+      api.patch<Deck>(`/decks/${deckId}/template`, input),
+    onSuccess: (deck) => {
+      // A change still to come is shown already – the server's answer would take it back.
+      if (queryClient.isMutating({ mutationKey }) > 1) return;
+      queryClient.setQueryData(queryKeys.deck(deckId), deck);
+    },
+  });
+}
+
+/** Admins only: a design with its file and pictures. */
+export function useRemoveWorkspaceMaster(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (masterId: string) =>
+      apiRequest<WorkspaceMaster[]>(`/workspaces/${workspaceId}/masters/${masterId}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: (masters) => queryClient.setQueryData(workspaceKeys.masters(workspaceId), masters),
   });
 }
 
@@ -226,8 +311,8 @@ export function useRemoveMember(workspaceId: string) {
     // Awaited: after leaving, the start page must not pick the workspace just left.
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: workspaceKeys.members(workspaceId) });
-      // Their linked reviews are gone, their uploads have a new owner (BER-165).
-      void queryClient.invalidateQueries({ queryKey: queryKeys.deckLists });
+      // `me` and the deck lists: their linked reviews are gone, their uploads have a new owner
+      // (BER-165).
       return reloadMembership();
     },
   });

@@ -1,0 +1,36 @@
+---
+import { t, type Lang } from '~/i18n';
+import { UNSPLASH_HOME, referral, type Photo } from '~/lib/photos';
+
+/** The visible credit every Unsplash photo carries: „Foto von X auf Unsplash“, both linked. */
+interface Props {
+  photo: Photo;
+  lang: Lang;
+  class?: string;
+  [attr: `data-${string}`]: string;
+}
+
+const { photo, lang, class: className, ...rest } = Astro.props;
+const w = t(lang).photo;
+---
+
+<p class:list={['credit', className]} {...rest}>
+  {w.by} <a href={referral(photo.profile)} target="_blank" rel="noopener">{photo.name}</a> {w.on}{' '}<a href={UNSPLASH_HOME} target="_blank" rel="noopener">Unsplash</a>
+</p>
+
+<style>
+  .credit {
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--color-fg-subtle);
+  }
+  .credit a {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+    text-underline-offset: 2px;
+  }
+  .credit a:hover {
+    color: var(--color-fg);
+  }
+</style>

@@ -2,13 +2,17 @@ import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { createMiddleware } from 'hono/factory';
 import { z } from 'zod';
+import { ODP_MIME, OTP_MIME } from '@slider/odp';
 import {
   applyEditInputSchema,
   choosePhotoInputSchema,
   createAiProposalInputSchema,
+  generateEditImageInputSchema,
   pickStockPhotoInputSchema,
-  saveEditInputSchema,
+  revertEditInputSchema,
+  sendExportInputSchema,
   stockOrientationSchema,
+  updateAiProposalInputSchema,
 } from '@slider/shared';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import type { AppDeps } from '../deps';
@@ -21,23 +25,34 @@ import {
   createProposal,
   listProposals,
   reapplyProposal,
+  resolveProposal,
   revertProposal,
 } from '../services/ai-proposals';
+import { cutOutElement } from '../services/cut-outs';
+import { generateEditImage } from '../services/image-generation';
 import { pickPhoto, reportChosenPhotosLater, searchForDeck } from '../services/stock-photos';
-import { elementCutout, slideLayers, textBackground } from '../services/edit-backgrounds';
+import { slideLayers } from '../services/edit-backgrounds';
+import { getDeckLayouts } from '../services/workspace-masters';
 import {
   MAX_EDIT_IMAGE_BYTES,
   applyEdit,
   editedFile,
+  editedPdf,
+  editedSlidePdf,
+  editedSlidePng,
+  filePicture,
   getEditState,
-  moveEdit,
-  saveEdit,
+  revertEdit,
+  sendExport,
   uploadEditImage,
+  uploadedPicture,
 } from '../services/edits';
 
 const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
 const renderOptionsSchema = z.object({
   priority: z.enum(['background', 'interactive']).default('interactive'),
+  /** Layers for the per-element editor: live texts left out, browser-drawn elements not drawn. */
+  compose: z.boolean().default(false),
 });
 
 /** Editing a deck in Slider (BER-180, BER-181, BER-182). Needs the right to manage the deck. */
@@ -75,6 +90,38 @@ export function editsRoutes(deps: AppDeps) {
     await next();
   });
 
+  // Freistellen takes rembg's CPU for seconds a picture, one picture at a time per server.
+  const cutOutWindow = fixedWindow({ limit: 10, windowMs: 60_000, clock: deps.clock });
+  const cutOutRequests = createMiddleware<ViewerEnv>(async (c, next) => {
+    assertWithinLimit(
+      c,
+      cutOutWindow.hit(c.var.viewer.author.id),
+      'Zu viele Bilder auf einmal freigestellt. Bitte warte einen Moment.',
+    );
+    await next();
+  });
+
+  // A PDF is the whole deck drawn by LibreOffice, which only draws a few files at once.
+  const pdfWindow = fixedWindow({ limit: 5, windowMs: 60_000, clock: deps.clock });
+  const pdfRequests = createMiddleware<ViewerEnv>(async (c, next) => {
+    assertWithinLimit(
+      c,
+      pdfWindow.hit(c.var.viewer.author.id),
+      'Zu viele PDFs auf einmal. Bitte warte einen Moment.',
+    );
+    await next();
+  });
+  // Mailing an export: sent in the person's name with whatever they attach – a handful an hour.
+  const mailWindow = fixedWindow({ limit: 20, windowMs: 60 * 60_000, clock: deps.clock });
+  const mailRequests = createMiddleware<ViewerEnv>(async (c, next) => {
+    assertWithinLimit(
+      c,
+      mailWindow.hit(c.var.viewer.author.id),
+      'Zu viele Mails auf einmal. Bitte warte ein wenig.',
+    );
+    await next();
+  });
+
   // Every search costs the server's Unsplash allowance (50 an hour for a demo app).
   const stockWindow = fixedWindow({ limit: 30, windowMs: 60_000, clock: deps.clock });
   const stockRequests = createMiddleware<ViewerEnv>(async (c, next) => {
@@ -91,49 +138,16 @@ export function editsRoutes(deps: AppDeps) {
       .get('/decks/:deckId/edit', viewer, async (c) =>
         c.json(await getEditState(deps, c.var.viewer, c.req.param('deckId'))),
       )
+      .get('/decks/:deckId/layouts', viewer, async (c) =>
+        c.json(await getDeckLayouts(deps, c.var.viewer, c.req.param('deckId'))),
+      )
       .post('/decks/:deckId/edit/operations', viewer, edits, async (c) => {
         const input = await readJson(c, applyEditInputSchema);
         return c.json(await applyEdit(deps, c.var.viewer, c.req.param('deckId'), input));
       })
-      // The picture the live editor types an element's text over: drawn while it waits.
-      .post(
-        '/decks/:deckId/edit/elements/:elementId/background',
-        viewer,
-        backgrounds,
-        async (c) => {
-          // `{ "priority": "background" }`: asked for ahead, before anyone waits for it.
-          const { priority } = await readJson(c, renderOptionsSchema, MAX_JSON_BODY_BYTES, {
-            allowEmpty: true,
-          });
-          return c.json(
-            await textBackground(
-              deps,
-              c.var.viewer,
-              c.req.param('deckId'),
-              c.req.param('elementId'),
-              priority,
-            ),
-          );
-        },
-      )
-      .post('/decks/:deckId/edit/elements/:elementId/cutout', viewer, backgrounds, async (c) => {
-        // `{ "priority": "background" }`: asked for ahead, before anyone waits for it.
-        const { priority } = await readJson(c, renderOptionsSchema, MAX_JSON_BODY_BYTES, {
-          allowEmpty: true,
-        });
-        return c.json(
-          await elementCutout(
-            deps,
-            c.var.viewer,
-            c.req.param('deckId'),
-            c.req.param('elementId'),
-            priority,
-          ),
-        );
-      })
       .post('/decks/:deckId/edit/slides/:slideId/layers', viewer, backgrounds, async (c) => {
         // `{ "priority": "background" }`: asked for ahead, before anyone waits for it.
-        const { priority } = await readJson(c, renderOptionsSchema, MAX_JSON_BODY_BYTES, {
+        const { priority, compose } = await readJson(c, renderOptionsSchema, MAX_JSON_BODY_BYTES, {
           allowEmpty: true,
         });
         return c.json(
@@ -143,15 +157,14 @@ export function editsRoutes(deps: AppDeps) {
             c.req.param('deckId'),
             c.req.param('slideId'),
             priority,
+            compose,
           ),
         );
       })
-      .post('/decks/:deckId/edit/undo', viewer, edits, async (c) =>
-        c.json(await moveEdit(deps, c.var.viewer, c.req.param('deckId'), -1)),
-      )
-      .post('/decks/:deckId/edit/redo', viewer, edits, async (c) =>
-        c.json(await moveEdit(deps, c.var.viewer, c.req.param('deckId'), 1)),
-      )
+      .post('/decks/:deckId/edit/revert', viewer, edits, async (c) => {
+        const input = await readJson(c, revertEditInputSchema);
+        return c.json(await revertEdit(deps, c.var.viewer, c.req.param('deckId'), input));
+      })
       .post(
         '/decks/:deckId/edit/images',
         viewer,
@@ -172,6 +185,29 @@ export function editsRoutes(deps: AppDeps) {
             201,
           );
         },
+      )
+      .post('/decks/:deckId/edit/images/generate', viewer, edits, aiRequests, async (c) => {
+        const input = await readJson(c, generateEditImageInputSchema);
+        return c.json(
+          await generateEditImage(deps, c.var.viewer, c.req.param('deckId'), input),
+          201,
+        );
+      })
+      .post(
+        '/decks/:deckId/edit/elements/:elementId/remove-background',
+        viewer,
+        edits,
+        cutOutRequests,
+        async (c) =>
+          c.json(
+            await cutOutElement(
+              deps,
+              c.var.viewer,
+              c.req.param('deckId'),
+              c.req.param('elementId'),
+            ),
+            201,
+          ),
       )
       .get('/decks/:deckId/stock/photos', viewer, stockRequests, async (c) => {
         const orientation = stockOrientationSchema
@@ -199,19 +235,25 @@ export function editsRoutes(deps: AppDeps) {
           201,
         );
       })
-      .post('/decks/:deckId/edit/save', viewer, async (c) => {
-        const input = await readJson(c, saveEditInputSchema);
-        const state = await saveEdit(deps, c.var.viewer, c.req.param('deckId'), input);
-        // The file left Slider: the AI's photos in it are used now.
-        reportChosenPhotosLater(deps, c.req.param('deckId'));
-        return c.json(state);
-      })
       .get('/decks/:deckId/ai/proposals', viewer, async (c) =>
         c.json(await listProposals(deps, c.var.viewer, c.req.param('deckId'))),
       )
       .post('/decks/:deckId/ai/proposals', viewer, aiRequests, async (c) => {
         const input = await readJson(c, createAiProposalInputSchema);
         return c.json(await createProposal(deps, c.var.viewer, c.req.param('deckId'), input), 202);
+      })
+      // Its card done or open again, for everyone – as `PATCH /comments/:id` with a status.
+      .patch('/decks/:deckId/ai/proposals/:proposalId', viewer, async (c) => {
+        const input = await readJson(c, updateAiProposalInputSchema);
+        return c.json(
+          await resolveProposal(
+            deps,
+            c.var.viewer,
+            c.req.param('deckId'),
+            c.req.param('proposalId'),
+            input,
+          ),
+        );
       })
       .post('/decks/:deckId/ai/proposals/:proposalId/cancel', viewer, edits, async (c) => {
         await cancelProposal(deps, c.var.viewer, c.req.param('deckId'), c.req.param('proposalId'));
@@ -249,14 +291,84 @@ export function editsRoutes(deps: AppDeps) {
           ),
         ),
       )
+      .get('/decks/:deckId/edit/pictures', viewer, backgrounds, async (c) => {
+        const path = c.req.query('path') ?? '';
+        if (!path.startsWith('Pictures/') || path.length > 300) throw badRequest('Kein Bild.');
+        const { bytes, mediaType } = await filePicture(
+          deps,
+          c.var.viewer,
+          c.req.param('deckId'),
+          path,
+        );
+        return c.body(bytes as Uint8Array<ArrayBuffer>, 200, {
+          'Content-Type': mediaType,
+          'Cache-Control': 'private, max-age=3600',
+          'X-Content-Type-Options': 'nosniff',
+        });
+      })
+      .get('/decks/:deckId/edit/images/:imageId', viewer, backgrounds, async (c) => {
+        const { bytes, mediaType } = await uploadedPicture(
+          deps,
+          c.var.viewer,
+          c.req.param('deckId'),
+          c.req.param('imageId'),
+        );
+        return c.body(bytes as Uint8Array<ArrayBuffer>, 200, {
+          'Content-Type': mediaType,
+          'Cache-Control': 'private, max-age=3600',
+          'X-Content-Type-Options': 'nosniff',
+        });
+      })
       .get('/decks/:deckId/edit/file', viewer, async (c) => {
-        const { bytes, fileName } = await editedFile(deps, c.var.viewer, c.req.param('deckId'));
+        const { bytes, fileName, template } = await editedFile(
+          deps,
+          c.var.viewer,
+          c.req.param('deckId'),
+        );
         reportChosenPhotosLater(deps, c.req.param('deckId'));
         return c.body(bytes as Uint8Array<ArrayBuffer>, 200, {
-          'Content-Type': 'application/vnd.oasis.opendocument.presentation',
+          'Content-Type': template ? OTP_MIME : ODP_MIME,
           'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
           'Cache-Control': 'private, no-store',
         });
+      })
+      .get('/decks/:deckId/edit/pdf', viewer, pdfRequests, async (c) => {
+        const { bytes, fileName } = await editedPdf(deps, c.var.viewer, c.req.param('deckId'));
+        reportChosenPhotosLater(deps, c.req.param('deckId'));
+        return c.body(bytes as Uint8Array<ArrayBuffer>, 200, {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+          'Cache-Control': 'private, no-store',
+        });
+      })
+      // „Nur diese Folie“: one slide as a PDF (drawn anew) or as its picture.
+      .get(
+        '/decks/:deckId/edit/slides/:slideId/:format{pdf|png}',
+        viewer,
+        pdfRequests,
+        async (c) => {
+          const deckId = c.req.param('deckId');
+          const draw = c.req.param('format') === 'pdf' ? editedSlidePdf : editedSlidePng;
+          const { bytes, fileName, contentType } = await draw(
+            deps,
+            c.var.viewer,
+            deckId,
+            c.req.param('slideId'),
+          );
+          reportChosenPhotosLater(deps, deckId);
+          return c.body(bytes as Uint8Array<ArrayBuffer>, 200, {
+            'Content-Type': contentType,
+            'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+            'Cache-Control': 'private, no-store',
+          });
+        },
+      )
+      // Any of them mailed to someone, as an attachment.
+      .post('/decks/:deckId/edit/send', viewer, mailRequests, async (c) => {
+        const input = await readJson(c, sendExportInputSchema);
+        await sendExport(deps, c.var.viewer, c.req.param('deckId'), input);
+        reportChosenPhotosLater(deps, c.req.param('deckId'));
+        return c.body(null, 204);
       })
   );
 }

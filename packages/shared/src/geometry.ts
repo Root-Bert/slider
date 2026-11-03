@@ -15,9 +15,32 @@ export interface Rect {
   h: number;
 }
 
-export const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
+export const clamp = (value: number, min: number, max: number): number =>
+  Math.min(max, Math.max(min, value));
+
+export const clamp01 = (value: number): number => clamp(value, 0, 1);
 
 export const clampPoint = (point: Point): Point => ({ x: clamp01(point.x), y: clamp01(point.y) });
+
+/** The part of a rect on the slide – elements may hang off it, anchors only live on it. */
+export function clampRect(rect: Rect): Rect {
+  const x = clamp01(rect.x);
+  const y = clamp01(rect.y);
+  return {
+    x,
+    y,
+    w: Math.max(0, Math.min(rect.w - (x - rect.x), 1 - x)),
+    h: Math.max(0, Math.min(rect.h - (y - rect.y), 1 - y)),
+  };
+}
+
+/** The rect's corners, clockwise from its top left. */
+export const rectCorners = ({ x, y, w, h }: Rect): Point[] => [
+  { x, y },
+  { x: x + w, y },
+  { x: x + w, y: y + h },
+  { x, y: y + h },
+];
 
 /** Builds a normalised rect from two arbitrary corner points (e.g. drag start and end). */
 export function rectFromPoints(a: Point, b: Point): Rect {

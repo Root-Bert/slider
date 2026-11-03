@@ -57,7 +57,7 @@ export function UsageOverview({
         <div className="flex flex-col gap-3 sm:flex-row">
           <UsageMeter label="Personen" state={seatState(usage)} />
           <UsageMeter
-            label="Reviews"
+            label="Präsentationen"
             state={deckState(usage)}
             hint={usage.maxDecks !== null ? 'Archivierte zählen mit.' : undefined}
           />
@@ -86,10 +86,10 @@ function UsageWarnings({ details, isAdmin }: { details: WorkspaceUsageDetails; i
         variant="tinted"
         title="Der Workspace liegt über dem Limit seines Plans"
       >
-        Bis er wieder hineinpasst, gehen keine neuen Reviews, Uploads und Importe, kein Abgleich mit
+        Bis er wieder hineinpasst, gehen keine neuen Präsentationen, Uploads und Importe, kein Abgleich mit
         der Quelldatei, keine Einladungen und keine neuen Kommentare oder Antworten. Lesen, Löschen
         und Personen entfernen geht weiter. Um das zu ändern: Personen entfernen oder Einladungen
-        zurückziehen, Reviews oder Aufnahmen löschen – oder upgraden.
+        zurückziehen, Präsentationen oder Aufnahmen löschen – oder upgraden.
       </Notice>
     );
   }
@@ -106,13 +106,13 @@ function UsageWarnings({ details, isAdmin }: { details: WorkspaceUsageDetails; i
   }
   const near = [
     nearLimit(seatState(usage)) && 'Personen',
-    nearLimit(deckState(usage)) && 'Reviews',
+    nearLimit(deckState(usage)) && 'Präsentationen',
     nearLimit(storageState(usage)) && 'Speicher',
   ].filter((label): label is string => Boolean(label));
   if (near.length === 0) return null;
   return (
     <Notice tone="info" variant="tinted" title="Bald am Limit">
-      {near.join(', ')}: fast ausgeschöpft. Ist ein Limit überschritten, gehen neue Reviews,
+      {near.join(', ')}: fast ausgeschöpft. Ist ein Limit überschritten, gehen neue Präsentationen,
       Uploads, Einladungen und Kommentare nicht mehr.
     </Notice>
   );
@@ -130,7 +130,7 @@ function PlanSection({
   const paid = details.plan === 'paid';
   const limits = [
     usage.maxMembers !== null && `${usage.maxMembers} Personen`,
-    usage.maxDecks !== null && `${usage.maxDecks} Reviews`,
+    usage.maxDecks !== null && `${usage.maxDecks} Präsentationen`,
     usage.maxStorageBytes !== null && `${formatFileSize(usage.maxStorageBytes)} Speicher`,
   ].filter((part): part is string => Boolean(part));
   const description = billing.granted

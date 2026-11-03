@@ -174,7 +174,7 @@ export function ImportOverlay({ deck, compact = false }: { deck: Deck; compact?:
   const progress = state.status === 'running' ? state.progress : null;
 
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 bg-scrim px-6 text-center text-fg">
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 bg-scrim dark-ink px-6 text-center text-fg">
       <Icon name="sync" size={compact ? 18 : 24} className="animate-spin [animation-duration:2s]" />
       {!compact && (
         <>

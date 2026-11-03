@@ -20,11 +20,39 @@ export function ResolveButton({
 }: ResolveButtonProps) {
   const update = useUpdateComment(deckId);
   const done = comment.status === 'done';
+  return (
+    <ResolveToggle
+      done={done}
+      onToggle={() => update.mutate({ commentId: comment.id, status: done ? 'open' : 'done' })}
+      failed={update.isError}
+      variant={variant}
+      className={className}
+    />
+  );
+}
+
+/**
+ * The thread's done toggle for anything done like a thread (the AI's card on a variant): one
+ * icon, label and title. `failed`: the last toggle was not saved.
+ */
+export function ResolveToggle({
+  done,
+  onToggle,
+  failed = false,
+  variant = 'icon',
+  className,
+}: {
+  done: boolean;
+  onToggle: () => void;
+  failed?: boolean;
+  variant?: 'chip' | 'icon';
+  className?: string;
+}) {
   const label = done ? 'Erledigt' : 'Erledigen';
 
   const onClick = (event: MouseEvent) => {
     event.stopPropagation();
-    update.mutate({ commentId: comment.id, status: done ? 'open' : 'done' });
+    onToggle();
   };
   // A toggle: the name says what it switches, `aria-pressed` whether it's on ("Erledigt,
   // gedrückt"); what a click does is the tooltip's.
@@ -32,7 +60,7 @@ export function ResolveButton({
 
   return (
     <span className={cn('relative z-(--z-raised) inline-flex items-center gap-1.5', className)}>
-      {update.isError && (
+      {failed && (
         <span role="alert" className="text-caption text-danger">
           Nicht gespeichert
         </span>

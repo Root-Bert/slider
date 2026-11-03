@@ -41,16 +41,17 @@ function unloadAsks(): boolean {
 }
 
 describe('LeaveGuard', () => {
-  it('lets the review close without unsent work', async () => {
+  it('asks before leaving with unsent work – never between slides, staying keeps it, confirming leaves', async () => {
     const router = setup();
     await act(() => router.navigate('/w/w1'));
     expect(router.state.location.pathname).toBe('/w/w1');
-    expect(unloadAsks()).toBe(false);
-  });
+    await act(() => router.navigate('/d/d1'));
 
-  it('asks before leaving with unsent work – staying keeps it, confirming leaves', async () => {
-    const router = setup();
     hold();
+    await act(() => router.navigate('/d/d1?slide=s2'));
+    expect(router.state.location.search).toBe('?slide=s2');
+    expect(screen.queryByRole('dialog')).toBeNull();
+
     await act(() => router.navigate('/w/w1'));
     expect(router.state.location.pathname).toBe('/d/d1');
     expect(screen.getByRole('dialog', { name: 'Entwurf verwerfen?' })).toBeTruthy();
@@ -64,16 +65,8 @@ describe('LeaveGuard', () => {
     expect(router.state.location.pathname).toBe('/w/w1');
   });
 
-  it('never asks for moving between slides (only the query changes)', async () => {
+  it('has the browser ask before closing the tab with unsent work or a typed reply, kept when leaving within the app', async () => {
     const router = setup();
-    hold();
-    await act(() => router.navigate('/d/d1?slide=s2'));
-    expect(router.state.location.search).toBe('?slide=s2');
-    expect(screen.queryByRole('dialog')).toBeNull();
-  });
-
-  it('has the browser ask before closing the tab with unsent work or a typed reply', () => {
-    setup();
     expect(unloadAsks()).toBe(false);
     hold();
     expect(unloadAsks()).toBe(true);
@@ -85,11 +78,6 @@ describe('LeaveGuard', () => {
     // A typed reply survives leaving within the app, but not a reload.
     act(() => replyDrafts.set('t1', 'Danke!'));
     expect(unloadAsks()).toBe(true);
-  });
-
-  it('lets a typed reply leave within the app – it is kept for the thread', async () => {
-    const router = setup();
-    act(() => replyDrafts.set('t1', 'Danke!'));
     await act(() => router.navigate('/w/w1'));
     expect(router.state.location.pathname).toBe('/w/w1');
   });

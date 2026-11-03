@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useEffectEvent,
   useLayoutEffect,
@@ -9,13 +10,22 @@ import {
   type MouseEvent,
   type ReactNode,
 } from 'react';
-import { cn, useIsNarrow } from '@/ui';
+import { cn, SelectionBox, useIsNarrow } from '@/ui';
+import { selectionStyle } from '@/lib/accent';
 import { rafThrottle } from '@/lib/dom';
+import { useMarqueeSelect } from '@/lib/marquee-select';
+import { useMultiSelect } from '@/lib/multi-select';
+import { CommentSelectionContext, type CommentSelection } from '../comments/comment-selection';
+import { CommentSelectionBar } from '../comments/CommentSelectionBar';
+import { useCommentThreads } from '../comments/hooks/useCommentThreads';
+import type { Thread } from '../comments/lib/comment-selectors';
 import { ConnectorLines } from '../connectors/ConnectorLines';
-import { useCanvasPan } from './hooks/useCanvasPan';
 import { useFoldProgress } from './hooks/useFoldProgress';
 import { useScrollActiveSlide } from './hooks/useScrollActiveSlide';
 import { useTimelineMetrics } from './hooks/useTimelineMetrics';
+import { useHandPan } from './hooks/useHandPan';
+import { useHandleRoom } from './hooks/useHandleRoom';
+import { useZoomToggle } from './hooks/useZoomToggle';
 import { useTimelineWheel } from './hooks/useTimelineWheel';
 import { useFrameAspects } from '../state/frame-format';
 import {
@@ -26,6 +36,7 @@ import {
   slideHeightAt,
   splitForWidth,
   TRACK_PAD_TOP,
+  trackStack,
   trailingWidth,
   visibleRange,
   type TrackLayout,
@@ -33,23 +44,32 @@ import {
 import { useRevisionData } from '../state/revision-data';
 import { useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
-import { useViewerDispatch, useViewerState } from '../state/viewer-state';
+import { isSidePanelOpen, useViewerDispatch, useViewerState } from '../state/viewer-state';
 import { CommentColumns } from './CommentColumns';
 import { MINIMAP_ROW_H } from './lib/minimap';
 import { Minimap } from './Minimap';
 import { SplitHandle } from './SplitHandle';
 import { TimelineContext, type SizeAnchor } from './timeline-context';
 import { Track } from './Track';
+import { TrackDotsContext } from './TrackDots';
+import { useTrackSwipe } from './hooks/useTrackSwipe';
+import { useVariantFlow } from './hooks/useVariantFlow';
+import { VariantSheet } from './VariantSheet';
+import { useEditing } from '../editing/editing-context';
 
 /** Clicks on these (or inside them) in the comment area keep the thread panel open. */
 const KEEPS_PANEL =
   'button, a, input, textarea, select, label, [contenteditable], [role="button"], [data-comment-card], [data-connector-blob], [data-gap-bubble]';
+/** Presses here never start a selection box: the header (slides, controls) and the composer. */
+const NO_BOX = `${KEEPS_PANEL}, [data-timeline-header], [data-composer]`;
 
 /** How fast the minimap folds. */
 const MINIMAP_FOLD_MS = 200;
 
 /** Slides grow to at least this width when a drawing tool is picked. */
 const DRAW_MIN_W = 640;
+/** Less comment area than this left under the band counts as closed. */
+const COMMENTS_CLOSED_H = 32;
 
 type Range = { first: number; last: number };
 const sameRange = (a: Range, b: Range) => a.first === b.first && a.last === b.last;
@@ -70,16 +90,11 @@ export function Timeline({
   /** Gets the split handle's spot, where the find bar docks (`null` while there is no handle). */
   findSlotRef?: (slot: HTMLElement | null) => void;
 }) {
-  const { slides, slideIndex } = useViewerData();
-  const {
-    split,
-    activeSlideId,
-    tool,
-    threadPanelOpen,
-    deletedPanelOpen,
-    layersPanelOpen,
-    showMinimap,
-  } = useViewerState();
+  const { slides, slideIndex, viewer, variantsOf, deck } = useViewerData();
+  const editing = useEditing();
+  const viewerState = useViewerState();
+  const { split, activeSlideId, tool, threadPanelOpen, showMinimap } = viewerState;
+  const sidePanelOpen = isSidePanelOpen(viewerState);
   const { deletedSlides } = useRevisionData();
   const hasDeleted = deletedSlides.length > 0;
   const dispatch = useViewerDispatch();
@@ -87,6 +102,20 @@ export function Timeline({
   const narrow = useIsNarrow();
   const wrapperRef = useRef<HTMLElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const controlsRowRef = useRef<HTMLDivElement>(null);
+  // The split handle's spot: the find bar docks there (`findSlotRef`); it fits into the gap the
+  // controls leave in the middle (`useHandleRoom`).
+  const [handleSlot, setHandleSlot] = useState<HTMLElement | null>(null);
+  const slotRef = useCallback(
+    (slot: HTMLElement | null) => {
+      setHandleSlot(slot);
+      findSlotRef?.(slot);
+    },
+    [findSlotRef],
+  );
+  useHandleRoom(handleSlot, controlsRowRef);
+  const boxRef = useRef<HTMLDivElement>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
   const foldRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<SizeAnchor | null>(null);
@@ -98,6 +127,17 @@ export function Timeline({
   const shownSplit = draggedSplit ?? split;
 
   const metrics = useTimelineMetrics(wrapperRef, scrollerRef, controlsRef, foldRef);
+  // More tracks than the slides', swiped into the band: one per variant over them and the speaker
+  // notes under them – not on phones, not in a template (its slides are its layouts).
+  const ownTracks = !narrow && !deck.template;
+  const mostVariants = useMemo(
+    () => Math.max(0, ...[...variantsOf.values()].map((list) => list.length)),
+    [variantsOf],
+  );
+  const stack = useMemo(
+    () => (ownTracks ? trackStack(mostVariants, editing.available) : { above: 0, below: 0 }),
+    [ownTracks, mostVariants, editing.available],
+  );
   // The minimap folds in JS: band height and slide height change in the same frame (measuring
   // the band would lag a frame behind it and make the slides judder). The slides take exactly
   // the height the band gives up, so the comment area doesn't move.
@@ -120,14 +160,98 @@ export function Timeline({
   );
   // Whole pixels: the track, the header and the comment area stay on crisp edges.
   const slideH = geometry && Math.round(slideHeightAt(narrow ? null : shownSplit, geometry));
+  const swipe = useTrackSwipe(stack, slideH ?? 0);
+  // „Variante erstellen“ from the right-click menu, a copy opened, the AI done with one.
+  useVariantFlow(swipe.go, stack.above > 0);
+  // For the dots in the gaps: memoised, so a gap only renders again when the track changes.
+  const trackDots = useMemo(
+    () => ({ stack, track: swipe.track, go: swipe.go }),
+    [stack, swipe.track, swipe.go],
+  );
+  // What the handle leaves of the comment area: next to nothing closes it (see `commentsClosed`).
+  const commentsClosed =
+    !narrow &&
+    !!metrics &&
+    !!slideH &&
+    metrics.viewportH - TRACK_PAD_TOP - slideH - metrics.controlsH - foldH < COMMENTS_CLOSED_H;
+  useEffect(() => {
+    dispatch({ type: 'commentsClosedSet', closed: commentsClosed });
+  }, [dispatch, commentsClosed]);
   const layout = useMemo(
     () =>
       slideH ? layoutTrack(aspectRatios, slideH, hasDeleted ? trailingWidth(slideH) : 0) : null,
     [aspectRatios, slideH, hasDeleted],
   );
 
-  useTimelineWheel({ scrollerRef, geometry, anchorRef, enabled: !narrow });
-  useCanvasPan({ scrollerRef, ignore: KEEPS_PANEL, enabled: !narrow });
+  // Comments selected as the decks in "Präsentationen" are: a box drawn over them on the comment
+  // area's background, ⌘/⇧-click, ⌘A, Esc. Only the threads the filters show count.
+  const { bySlide, byGap } = useCommentThreads();
+  const visibleThreads = useMemo(() => {
+    const seen = new Map<string, Thread>();
+    for (const slide of slides)
+      for (const thread of bySlide.get(slide.id) ?? []) seen.set(thread.id, thread);
+    for (const list of byGap.values()) for (const thread of list) seen.set(thread.id, thread);
+    return [...seen.values()];
+  }, [slides, bySlide, byGap]);
+  const visibleIds = useMemo(() => visibleThreads.map((thread) => thread.id), [visibleThreads]);
+  const selection = useMultiSelect(visibleIds);
+  const selectedThreads = useMemo(
+    () => visibleThreads.filter((thread) => selection.selected.has(thread.id)),
+    [visibleThreads, selection.selected],
+  );
+  // A box just drawn: the click that ends it isn't a click on the background.
+  const boxDrawn = useRef(false);
+  const marquee = useMarqueeSelect(contentRef, boxRef, {
+    attribute: 'data-comment-card',
+    ignore: NO_BOX,
+    scroller: scrollerRef,
+    ...selection.marquee,
+    onStart: (additive) => {
+      boxDrawn.current = true;
+      selection.marquee.onStart(additive);
+    },
+  });
+  // The cards are memoised: they get a stable click handler and re-render only on a new selection.
+  const [selectionMenuAt, setSelectionMenuAt] = useState<{ x: number; y: number } | null>(null);
+  const latest = useRef({
+    click: selection.onModifiedClick as CommentSelection['onModifiedClick'],
+    menu: (() => {}) as CommentSelection['onContextMenuCapture'],
+  });
+  useEffect(() => {
+    // Phones have no handle to grow the bar out of: no selection there.
+    latest.current.click = narrow ? () => false : selection.onModifiedClick;
+    latest.current.menu = (threadId, event) => {
+      const { selected } = selection;
+      if (narrow || event.shiftKey || selected.size < 2 || !selected.has(threadId)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setSelectionMenuAt({ x: event.clientX, y: event.clientY });
+    };
+  });
+  const onModifiedClick = useCallback<CommentSelection['onModifiedClick']>(
+    (threadId, event) => latest.current.click(threadId, event),
+    [],
+  );
+  const onContextMenuCapture = useCallback<CommentSelection['onContextMenuCapture']>(
+    (threadId, event) => latest.current.menu(threadId, event),
+    [],
+  );
+  const commentSelection = useMemo<CommentSelection>(
+    () => ({ selected: selection.selected, onModifiedClick, onContextMenuCapture }),
+    [selection.selected, onModifiedClick, onContextMenuCapture],
+  );
+
+  useTimelineWheel({
+    scrollerRef,
+    geometry,
+    anchorRef,
+    enabled: !narrow,
+    onTrackWheel: swipe.wheel,
+  });
+  // Space held and dragging, or the middle button: the hand.
+  useHandPan({ scrollerRef, enabled: !narrow });
+  // Space tapped twice: the active slide at 100 %, and back.
+  useZoomToggle(!narrow);
 
   useLayoutEffect(() => {
     registry.setScroller(scrollerRef.current);
@@ -139,6 +263,10 @@ export function Timeline({
 
   // Windowing: only slides (and columns) within a viewport left and right are rendered.
   const [range, setRange] = useState<Range>({ first: 0, last: -1 });
+  const slideOrder = useMemo(() => slides.map((slide) => slide.id).join(), [slides]);
+  const shownOrder = useRef(slideOrder);
+  /** The active slide's left edge on screen (px from the track's), as last seen. */
+  const activeAt = useRef<{ slideId: string; viewportX: number } | null>(null);
   const scrollLeftRef = useRef(0);
   const prevLayout = useRef<TrackLayout | null>(null);
   const clientW = metrics?.clientW ?? 0;
@@ -147,6 +275,12 @@ export function Timeline({
     const scroller = scrollerRef.current;
     if (!scroller || !layout) return;
     scrollLeftRef.current = scroller.scrollLeft;
+    // Where the active slide is on screen – kept there when the slides change around it. Not from
+    // a layout of slides not yet taken in (the reorder below takes it then).
+    const index = activeSlideId ? slideIndex.get(activeSlideId) : undefined;
+    const box = index === undefined ? undefined : layout.slides[index];
+    if (activeSlideId && box && slideOrder === shownOrder.current)
+      activeAt.current = { slideId: activeSlideId, viewportX: box.x - scroller.scrollLeft };
     const next = visibleRange(layout, scroller.scrollLeft, scroller.clientWidth);
     setRange((current) => (sameRange(current, next) ? current : next));
   });
@@ -207,12 +341,19 @@ export function Timeline({
   // … and the slide most in view becomes active.
   useScrollActiveSlide(scrollerRef);
 
-  // A new revision reorders the track: the active slide (kept by its id) stays in view.
-  const slideOrder = useMemo(() => slides.map((slide) => slide.id).join(), [slides]);
-  const shownOrder = useRef(slideOrder);
+  // A new revision reorders the track, someone else puts a slide in before it: the active slide
+  // (kept by its id) stays where it is on screen – no glide away and back – else in view.
   const revealActive = useEffectEvent(() => {
-    if (activeSlideId)
-      registry.revealSlide(activeSlideId, { behavior: 'instant', align: 'nearest' });
+    if (!activeSlideId) return;
+    const at = activeAt.current;
+    const index = slideIndex.get(activeSlideId);
+    const box = index === undefined ? undefined : layout?.slides[index];
+    if (at?.slideId === activeSlideId && box)
+      registry.scrollTrackTo(box.x - at.viewportX, 'instant');
+    else registry.revealSlide(activeSlideId, { behavior: 'instant', align: 'nearest' });
+    // The slides rendered around it from where the track is now – before this frame paints, else
+    // the active one is out of the window for a frame and fades in anew.
+    updateRange();
   });
   useLayoutEffect(() => {
     if (shownOrder.current === slideOrder || !layout) return;
@@ -249,6 +390,10 @@ export function Timeline({
 
   // A click on the comment area's background (not on a card or control) closes the thread panel.
   const onCommentAreaClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (boxDrawn.current) {
+      boxDrawn.current = false;
+      return;
+    }
     if (!threadPanelOpen || !(event.target instanceof Element)) return;
     if (event.target.closest('[data-timeline-header]') || event.target.closest(KEEPS_PANEL)) return;
     // Selecting text ends in a click too.
@@ -262,6 +407,8 @@ export function Timeline({
         ref={scrollerRef}
         data-timeline
         onClick={onCommentAreaClick}
+        // Selected comments and the selection box in the viewer's own colour.
+        style={selectionStyle(viewer.author.color)}
         className={cn(
           'absolute inset-0 overflow-auto overscroll-contain [container-type:inline-size] [scrollbar-color:var(--color-surface-4)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin]',
           narrow && 'snap-x snap-mandatory [scroll-padding-inline:16px]',
@@ -271,12 +418,19 @@ export function Timeline({
             side panel open the content runs on by the panel's room (12 + 400 + 12 gap), so the
             last slides can scroll clear of it – `revealSlide` already aims that far. */}
         <div
+          ref={contentRef}
+          onMouseDown={
+            narrow
+              ? undefined
+              : (event) => {
+                  boxDrawn.current = false;
+                  marquee.onMouseDown(event);
+                }
+          }
           className={cn(
             'dot-grid relative min-h-full min-w-full',
             layout && 'w-(--content-w)',
-            layout &&
-              (threadPanelOpen || deletedPanelOpen || layersPanelOpen) &&
-              'md:w-[calc(var(--content-w)+424px)]',
+            layout && sidePanelOpen && 'md:w-[calc(var(--content-w)+424px)]',
           )}
           style={layout ? ({ '--content-w': `${layout.contentW}px` } as CSSProperties) : undefined}
         >
@@ -297,7 +451,9 @@ export function Timeline({
           >
             {layout && context ? (
               <TimelineContext value={context}>
-                <Track layout={layout} range={range} snap={narrow} />
+                <TrackDotsContext value={trackDots}>
+                  <Track layout={layout} range={range} snap={narrow} stack={stack} swipe={swipe} />
+                </TrackDotsContext>
               </TimelineContext>
             ) : (
               <div style={{ height: slideH ?? 0 }} />
@@ -306,14 +462,17 @@ export function Timeline({
           {/* Minimap, controls row and split handle: one band of fixed height right under the
               track, part of where the comment area starts. Connector lines pass behind all of it.
               Slides and comments run on behind a side panel; this band makes room for it (its
-              own container, so the controls row's container queries see the narrowed width). */}
+              own container, so the controls row's container queries see the narrowed width).
+              Over the track, yet the pointer passes through it except on its controls: a slide
+              element reaching past the slide's bottom edge is still grabbed there – its border,
+              corners and turning handle (the track's overflow lies under this band). */}
           <div
             ref={controlsRef}
             data-timeline-header
             data-connector-occluder
             className={cn(
-              'sticky left-0 z-(--z-chrome) w-[100cqw] pt-2 pb-2 transition-[padding] duration-300 @container',
-              (threadPanelOpen || deletedPanelOpen || layersPanelOpen) && 'md:pr-[412px]',
+              'pointer-events-none sticky left-0 z-(--z-chrome) w-[100cqw] pt-2 pb-2 transition-[padding] duration-300 @container',
+              sidePanelOpen && 'md:pr-[412px]',
             )}
             style={{ top: TRACK_PAD_TOP + (slideH ?? 0) }}
           >
@@ -336,10 +495,13 @@ export function Timeline({
                 controls, so where they would overlap on a narrow band the controls win. */}
             <div className="relative px-4 pt-2">
               {geometry && slideH && !narrow && (
-                // The find bar morphs out of the handle and takes its place while open.
+                // The find bar, the voice bar and the comment selection morph out of the handle and
+                // take its place while open, its ends still sticking out beside them to drag; the
+                // voice bar gives way to the others, the selection to the find bar and a hint.
                 <div
-                  ref={findSlotRef}
-                  className="absolute inset-x-0 top-2 bottom-0 flex items-center justify-center [&:has([data-find-bar])>[data-split-handle]]:invisible"
+                  ref={slotRef}
+                  // Only what sits in it takes the pointer (the band lets it through).
+                  className="absolute inset-x-0 top-2 bottom-0 flex items-center justify-center *:pointer-events-auto [&:has([data-handle-hint])>[data-split-handle]]:invisible [&:has([data-find-bar],[data-handle-hint],[data-comment-selection])>[data-voice-bar]]:invisible [&:has([data-find-bar],[data-handle-hint])>[data-comment-selection]]:invisible"
                 >
                   <SplitHandle
                     geometry={geometry}
@@ -347,21 +509,35 @@ export function Timeline({
                     split={shownSplit}
                     onDrag={setDraggedSplit}
                   />
+                  <CommentSelectionBar
+                    threads={selectedThreads}
+                    onClear={selection.clear}
+                    menuAt={selectionMenuAt}
+                    onMenuClose={() => setSelectionMenuAt(null)}
+                  />
                 </div>
               )}
-              <div className="pointer-events-none relative [&>*>*]:pointer-events-auto">
+              <div
+                ref={controlsRowRef}
+                className="pointer-events-none relative [&>*>*]:pointer-events-auto"
+              >
                 {controls}
               </div>
             </div>
           </div>
           {layout && context && (
             <TimelineContext value={context}>
-              <CommentColumns layout={layout} range={range} narrow={narrow} />
+              <CommentSelectionContext value={commentSelection}>
+                <CommentColumns layout={layout} range={range} narrow={narrow} />
+              </CommentSelectionContext>
             </TimelineContext>
           )}
+          {marquee.active && <SelectionBox ref={boxRef} raised />}
         </div>
       </div>
       <ConnectorLines wrapperRef={wrapperRef} layer={connectorLayer} />
+      {/* „Variante erstellen“ on a phone: no variant tracks, the tile's field in a sheet. */}
+      <VariantSheet />
     </main>
   );
 }

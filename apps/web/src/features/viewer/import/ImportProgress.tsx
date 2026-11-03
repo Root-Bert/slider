@@ -74,7 +74,7 @@ export function ImportProgress({
         done={done}
         viewer={{
           canComment: deck.permissions.canComment,
-          // Like `UploadRevisionControl`: whoever manages an uploaded (not linked) deck.
+          // Whoever manages an uploaded (not linked) deck.
           canUpload: deck.permissions.canManage && !isDeckLinked(deck),
           opening,
         }}

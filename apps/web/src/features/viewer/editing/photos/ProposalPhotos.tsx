@@ -7,7 +7,9 @@ import {
 } from '@slider/shared';
 import { useEffect, useRef, useState } from 'react';
 import { useChooseProposalPhoto, useDeckEdit } from '@/lib/api';
+import { OFFLINE_HINT } from '@/lib/offline';
 import { cn } from '@/ui';
+import { useEditing } from '../editing-context';
 import { useViewerData } from '../../state/viewer-data';
 import { useViewerToast } from '../../state/viewer-toast';
 import { PhotoCredit } from './PhotoCredit';
@@ -32,6 +34,7 @@ export function ProposalPhotos({
   const { deck, canManage } = useViewerData();
   const toast = useViewerToast();
   const choose = useChooseProposalPhoto(deck.id);
+  const { offline } = useEditing();
   const switchable = canManage && proposal.status === 'applied' && photos.candidates.length > 1;
   const edit = useDeckEdit(deck.id, switchable);
   const [picked, setPicked] = useState<string | null>(null);
@@ -114,12 +117,16 @@ export function ProposalPhotos({
                 type="button"
                 aria-pressed={active}
                 aria-label={`Foto ${index + 1} von ${photo.credit.name}`}
-                title={photo.description ?? `Foto von ${photo.credit.name}`}
+                title={
+                  offline ? OFFLINE_HINT : (photo.description ?? `Foto von ${photo.credit.name}`)
+                }
+                disabled={offline}
                 onClick={() => pick(photo)}
                 className={cn(
                   'relative overflow-hidden rounded-thumb outline-none transition-shadow',
                   'focus-visible:ring-2 focus-visible:ring-fg/60',
                   active ? 'ring-2 ring-fg' : 'opacity-75 hover:opacity-100',
+                  'disabled:cursor-not-allowed disabled:opacity-40',
                 )}
                 style={{
                   height: THUMB_HEIGHT,

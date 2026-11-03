@@ -176,7 +176,7 @@ async function redirectLogin(
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe('GET /api/auth/providers', () => {
-  it('lists the configured logins', async () => {
+  it('lists the configured logins and the sign-up mode', async () => {
     ctx = await createTestContext({
       config: {
         ...authConfig({ oidc: OIDC, signup: 'domains' }),
@@ -210,9 +210,9 @@ describe('GET /api/auth/providers', () => {
       // No mail on this instance: no login links (BER-168).
       emailLogin: false,
     });
-  });
 
-  it('reports open sign-up while the instance has no admin, then SIGNUP again', async () => {
+    // Open sign-up while the instance has no admin, then SIGNUP again.
+    await ctx.cleanup();
     ctx = await createTestContext({ config: authConfig({ oidc: OIDC, signup: 'invite' }) });
     const signup = async () =>
       authProvidersSchema.parse(await (await ctx.request('/api/auth/providers')).json()).signup;
@@ -223,7 +223,7 @@ describe('GET /api/auth/providers', () => {
 });
 
 describe('sessions', () => {
-  it('answers 401 to anonymous callers without dev login, decks included (no guests)', async () => {
+  it('answers 401 to anonymous callers (no guests), signs in with the cookie, renews at most daily, expires and logs out', async () => {
     ctx = await createTestContext({ config: authConfig() });
     expect((await me()).status).toBe(401);
     expect(await (await ctx.request('/api/decks')).json()).toMatchObject({
@@ -231,10 +231,7 @@ describe('sessions', () => {
     });
     const { deckId } = await createReadyDeck(ctx);
     expect((await ctx.request(`/api/decks/${deckId}`)).status).toBe(401);
-  });
 
-  it('signs in with the cookie, renews at most daily, expires and logs out', async () => {
-    ctx = await createTestContext({ config: authConfig() });
     const { user, cookie } = await signedInUser(ctx, {
       name: 'Robert Hofmann',
       email: 'robert@example.org',
@@ -276,16 +273,14 @@ describe('sessions', () => {
       [],
     );
     expect((await me(cookie)).status).toBe(401);
-  });
 
-  it('rejects expired sessions', async () => {
-    ctx = await createTestContext({ config: authConfig() });
-    const { cookie } = await signedInUser(ctx, { name: 'R', email: 'robert@example.org' });
+    // Unused for 31 days: expired.
+    const idle = await signedInUser(ctx, { name: 'R', email: 'r2@example.org' });
     ctx.clock.advance(31 * DAY_MS);
-    expect((await me(cookie)).status).toBe(401);
+    expect((await me(idle.cookie)).status).toBe(401);
   });
 
-  it('ends a session 90 days after its login, however often it is used', async () => {
+  it('ends a session 90 days after its login, however often it is used – old sessions too', async () => {
     ctx = await createTestContext({ config: authConfig() });
     const { user, cookie } = await signedInUser(ctx, { name: 'R', email: 'robert@example.org' });
     const [created] = await ctx.deps.db.select().from(sessions).where(eq(sessions.userId, user.id));
@@ -312,11 +307,9 @@ describe('sessions', () => {
     expect(await ctx.deps.db.select().from(sessions).where(eq(sessions.userId, user.id))).toEqual(
       [],
     );
-  });
 
-  it('ends sessions from before the cap on time too, and the hourly job deletes them', async () => {
-    ctx = await createTestContext({ config: authConfig() });
-    const { user, cookie } = await signedInUser(ctx, { name: 'R', email: 'robert@example.org' });
+    // Sessions from before the cap end on time too, and the hourly job deletes them.
+    const old = await signedInUser(ctx, { name: 'O', email: 'old@example.org' });
     // Renewed the old way: valid for another 30 days, but its login is 91 days ago.
     const now = ctx.clock.now().getTime();
     await ctx.deps.db
@@ -325,19 +318,12 @@ describe('sessions', () => {
         createdAt: new Date(now - 91 * DAY_MS),
         expiresAt: new Date(now + 29 * DAY_MS),
       })
-      .where(eq(sessions.userId, user.id));
-    expect((await me(cookie)).status).toBe(401);
+      .where(eq(sessions.userId, old.user.id));
+    expect((await me(old.cookie)).status).toBe(401);
     await purgeStaleRows(ctx.deps);
-    expect(await ctx.deps.db.select().from(sessions).where(eq(sessions.userId, user.id))).toEqual(
-      [],
-    );
-  });
-
-  it('prefers a session over the dev owner', async () => {
-    ctx = await createTestContext();
-    const { user, cookie } = await signedInUser(ctx, { name: 'Lena', email: 'lena@firma.de' });
-    expect((await me(cookie)).body.viewer.author.id).toBe(user.id);
-    expect((await me()).body.viewer.author.id).toBe(ctx.ownerId);
+    expect(
+      await ctx.deps.db.select().from(sessions).where(eq(sessions.userId, old.user.id)),
+    ).toEqual([]);
   });
 });
 
@@ -382,24 +368,29 @@ describe('OIDC login', () => {
     expect((await me(sessionCookieFrom(again) ?? '')).body.user?.id).toBe(body.user?.id);
   });
 
-  it.each([
-    ['a forged state', {}, { state: 'forged' }, 'failed'],
-    ['another audience', { aud: 'someone-else' }, {}, 'failed'],
-    ['another issuer', { iss: 'https://evil.example.com' }, {}, 'failed'],
-    ['a replayed nonce', { nonce: 'old-nonce' }, {}, 'failed'],
-    ['an expired ID token', { exp: 1_000 }, {}, 'failed'],
-    ['an unverified e-mail', { email_verified: false }, {}, 'email_unverified'],
-    ['no e-mail', { email: undefined }, {}, 'no_email'],
-    ['a provider error', {}, { error: 'access_denied' }, 'denied'],
-  ])('rejects %s', async (_, claims, tamper, error) => {
-    const idp = fakeOidc(claims);
+  it('rejects forged, foreign, replayed or expired logins and missing or unverified e-mails', async () => {
+    const cases: [Record<string, unknown>, Record<string, string>, string][] = [
+      [{}, { state: 'forged' }, 'failed'],
+      [{ aud: 'someone-else' }, {}, 'failed'],
+      [{ iss: 'https://evil.example.com' }, {}, 'failed'],
+      [{ nonce: 'old-nonce' }, {}, 'failed'],
+      [{ exp: 1_000 }, {}, 'failed'],
+      [{ email_verified: false }, {}, 'email_unverified'],
+      [{ email: undefined }, {}, 'no_email'],
+      [{}, { error: 'access_denied' }, 'denied'],
+    ];
+    const idp = fakeOidc();
     await oidcContext(idp, { signup: 'open' });
-    const res = await redirectLogin('oidc', idp, { tamper });
-    expect(res.headers.get('location')).toBe(`http://localhost:5173/login?error=${error}`);
-    expect(sessionCookieFrom(res)).toBeNull();
+    const base = idp.claims;
+    for (const [claims, tamper, error] of cases) {
+      idp.claims = { ...base, ...claims };
+      const res = await redirectLogin('oidc', idp, { tamper });
+      expect(res.headers.get('location')).toBe(`http://localhost:5173/login?error=${error}`);
+      expect(sessionCookieFrom(res)).toBeNull();
+    }
   });
 
-  it('keeps sign-up closed with SIGNUP=invite', async () => {
+  it('applies SIGNUP (invite closed, domains for verified company addresses) and never merges into another login', async () => {
     const idp = fakeOidc();
     await oidcContext(idp);
     const res = await redirectLogin('oidc', idp, { returnTo: '/decks' });
@@ -409,26 +400,32 @@ describe('OIDC login', () => {
     expect(await ctx.deps.db.select().from(users).where(eq(users.email, 'anna@firma.de'))).toEqual(
       [],
     );
-  });
 
-  it('SIGNUP=domains admits verified company addresses only', async () => {
-    const idp = fakeOidc();
+    await ctx.cleanup();
     await oidcContext(idp, { signup: 'domains', signupDomains: ['firma.de'] });
     expect(sessionCookieFrom(await redirectLogin('oidc', idp))).toBeTruthy();
-
     idp.claims = { ...idp.claims, sub: 'other', email: 'max@gmail.com' };
     expect((await redirectLogin('oidc', idp)).headers.get('location')).toMatch(
       /error=signup_closed/,
     );
+
+    // Never merges into an account that already signs in another way.
+    await ctx.cleanup();
+    idp.claims = { ...idp.claims, sub: 'oidc-user-2', email: 'robert@example.org' };
+    await oidcContext(idp, { signup: 'open' });
+    expect((await redirectLogin('oidc', idp)).headers.get('location')).toMatch(
+      /error=account_exists/,
+    );
   });
 
-  it('lets people with a pending e-mail invite sign up, without a workspace of their own', async () => {
+  it('lets invited people sign up: by e-mail invite without a workspace of their own, by invite link joining', async () => {
     const idp = fakeOidc();
     await oidcContext(idp);
+    const owner = await ownerCookie();
     await ctx.request(`/api/workspaces/${ctx.workspaceId}/invites`, {
       method: 'POST',
       json: { email: 'Anna@Firma.de', role: 'reviewer' },
-      cookie: await ownerCookie(),
+      cookie: owner,
     });
     const cookie = sessionCookieFrom(await redirectLogin('oidc', idp)) ?? '';
     const { body } = await me(cookie);
@@ -436,37 +433,27 @@ describe('OIDC login', () => {
     expect(body.pendingInvites).toEqual([
       expect.objectContaining({ workspaceName: 'Mein Workspace', role: 'reviewer' }),
     ]);
-  });
 
-  it('lets people coming through an invite link (returnTo /join/…) sign up and join', async () => {
-    const idp = fakeOidc({ email: 'extern@agentur.de' });
-    await oidcContext(idp);
+    // Through an invite link (returnTo /join/…).
+    idp.claims = { ...idp.claims, sub: 'extern', email: 'extern@agentur.de' };
     const created = createdWorkspaceInviteSchema.parse(
       await (
         await ctx.request(`/api/workspaces/${ctx.workspaceId}/invites`, {
           method: 'POST',
           json: { role: 'member' },
-          cookie: await ownerCookie(),
+          cookie: owner,
         })
       ).json(),
     );
     const joinPath = new URL(created.url).pathname;
     const res = await redirectLogin('oidc', idp, { returnTo: joinPath });
     expect(res.headers.get('location')).toBe(`http://localhost:5173${joinPath}`);
-    const cookie = sessionCookieFrom(res) ?? '';
-    const join = await ctx.request(`/api${joinPath}`, { method: 'POST', cookie });
+    const joined = sessionCookieFrom(res) ?? '';
+    const join = await ctx.request(`/api${joinPath}`, { method: 'POST', cookie: joined });
     expect(join.status).toBe(200);
-    expect((await me(cookie)).body.workspaces).toEqual([
+    expect((await me(joined)).body.workspaces).toEqual([
       expect.objectContaining({ id: ctx.workspaceId, role: 'member' }),
     ]);
-  });
-
-  it('never merges into an account that already signs in another way', async () => {
-    const idp = fakeOidc({ email: 'robert@example.org' });
-    await oidcContext(idp, { signup: 'open' });
-    expect((await redirectLogin('oidc', idp)).headers.get('location')).toMatch(
-      /error=account_exists/,
-    );
   });
 });
 
@@ -533,7 +520,7 @@ describe('Microsoft login', () => {
     );
   });
 
-  it('signed in, connects file access and links the login – no new session', async () => {
+  it('signed in, connects file access and links the login – no new session; unverified e-mails never sign up', async () => {
     const idp = fakeMicrosoft({ oid: 'oid-lena', preferred_username: 'lena@firma.de' });
     await msContext(idp, {}, { instanceAdmin: true });
     await finishBootstrap();
@@ -558,14 +545,15 @@ describe('Microsoft login', () => {
     expect((await me(max.cookie)).body.user?.microsoftConnected).toBe(true);
     expect(await loginsOf(max.user.id)).toEqual([]);
     expect(await loginsOf(lena.user.id)).toEqual([{ provider: 'microsoft' }]);
-  });
 
-  it('does not take an unverified e-mail claim for sign-up', async () => {
-    const idp = fakeMicrosoft({
+    // An unverified e-mail claim is not taken for sign-up.
+    await ctx.cleanup();
+    idp.claims = {
+      ...idp.claims,
       oid: 'oid-x',
       preferred_username: undefined,
       email: 'robert@example.org',
-    });
+    };
     await msContext(
       idp,
       { auth: { ...authConfig().auth!, signup: 'open' } },
@@ -603,21 +591,49 @@ describe('first logins of an unclaimed instance', () => {
   const identities = () => ctx.deps.db.select().from(userIdentities);
   const admins = () => ctx.deps.db.select().from(users).where(eq(users.isInstanceAdmin, true));
 
-  it.each([
-    ['SIGNUP=open', { signup: 'open' }, 'anna@firma.de'],
-    ['SIGNUP=domains', { signup: 'domains', signupDomains: ['firma.de'] }, 'anna@firma.de'],
-    // The dev owner's own address takes over the login-less dev owner account – still no admin.
-    ['the dev owner address', { signup: 'open' }, 'robert@example.org'],
-  ])('signing in never makes anyone instance admin (%s, production)', async (_, auth, email) => {
-    const idp = fakeOidc({ email });
-    await oidcInstance(idp, { env: 'production' }, auth);
-    const grant = await setupGrant();
-    const cookie = sessionCookieFrom(await redirectLogin('oidc', idp, { cookie: grant })) ?? '';
-    expect((await me(cookie)).body.user).toMatchObject({ email, isInstanceAdmin: false });
+  it('signing in never makes anyone instance admin (production), not even two first logins at once', async () => {
+    const cases: [Partial<Config['auth']>, string][] = [
+      [{ signup: 'open' }, 'anna@firma.de'],
+      [{ signup: 'domains', signupDomains: ['firma.de'] }, 'anna@firma.de'],
+      // The dev owner's own address takes over the login-less dev owner account – still no admin.
+      [{ signup: 'open' }, 'robert@example.org'],
+    ];
+    for (const [auth, email] of cases) {
+      if (instanceDir) {
+        await ctx.cleanup();
+        await rm(instanceDir, { recursive: true, force: true });
+      }
+      const idp = fakeOidc({ email });
+      await oidcInstance(idp, { env: 'production' }, auth);
+      const grant = await setupGrant();
+      const cookie = sessionCookieFrom(await redirectLogin('oidc', idp, { cookie: grant })) ?? '';
+      expect((await me(cookie)).body.user).toMatchObject({ email, isInstanceAdmin: false });
+      expect(await admins()).toEqual([]);
+    }
+
+    await ctx.cleanup();
+    ctx = await createTestContext({ config: authConfig({ signup: 'open' }) });
+    const login = (subject: string, email: string) =>
+      signInWithIdentity(ctx.deps, {
+        provider: 'oidc',
+        subject,
+        email,
+        emailVerified: true,
+        name: null,
+        inviteToken: null,
+      });
+    const results = await Promise.all([
+      login('anna', 'anna@firma.de'),
+      login('bert', 'bert@firma.de'),
+    ]);
+    const signedIn = results.map((result) => (result.ok ? result.user : null));
+    expect(signedIn.every(Boolean)).toBe(true);
+    expect(new Set(signedIn.map((user) => user?.id)).size).toBe(2);
     expect(await admins()).toEqual([]);
+    expect(await identities()).toHaveLength(2);
   });
 
-  it('nobody signs in or up without the setup token typed in this browser', async () => {
+  it('nobody signs in or up without the setup token typed in this browser; with it, even under SIGNUP=invite or domains', async () => {
     const idp = fakeOidc();
     await oidcInstance(idp, { env: 'production' }, { signup: 'open' });
     const providers = async (cookie = '') =>
@@ -654,16 +670,18 @@ describe('first logins of an unclaimed instance', () => {
     expect((await providers(grant)).setupPending).toBe(false);
     expect(sessionCookieFrom(await redirectLogin('oidc', idp, { cookie: grant }))).toBeTruthy();
     expect(await admins()).toEqual([]);
-  });
 
-  it('with the setup grant, whoever typed in the token signs up even under SIGNUP=invite or domains', async () => {
-    const idp = fakeOidc({ sub: 'x', email: 'x@gmail.com' });
+    // With the grant, whoever typed in the token signs up even under SIGNUP=invite or domains.
+    await ctx.cleanup();
+    await rm(instanceDir!, { recursive: true, force: true });
+    idp.claims = { ...idp.claims, sub: 'x', email: 'x@gmail.com' };
     await oidcInstance(idp, { env: 'production' });
     expect(
       sessionCookieFrom(await redirectLogin('oidc', idp, { cookie: await setupGrant() })),
     ).toBeTruthy();
 
     await ctx.cleanup();
+    await rm(instanceDir!, { recursive: true, force: true });
     await oidcInstance(
       idp,
       { env: 'production' },
@@ -673,28 +691,6 @@ describe('first logins of an unclaimed instance', () => {
       sessionCookieFrom(await redirectLogin('oidc', idp, { cookie: await setupGrant() })),
     ).toBeTruthy();
     expect(await admins()).toEqual([]);
-  });
-
-  it('two simultaneous first logins: two normal accounts, no admin', async () => {
-    ctx = await createTestContext({ config: authConfig({ signup: 'open' }) });
-    const login = (subject: string, email: string) =>
-      signInWithIdentity(ctx.deps, {
-        provider: 'oidc',
-        subject,
-        email,
-        emailVerified: true,
-        name: null,
-        inviteToken: null,
-      });
-    const results = await Promise.all([
-      login('anna', 'anna@firma.de'),
-      login('bert', 'bert@firma.de'),
-    ]);
-    const signedIn = results.map((result) => (result.ok ? result.user : null));
-    expect(signedIn.every(Boolean)).toBe(true);
-    expect(new Set(signedIn.map((user) => user?.id)).size).toBe(2);
-    expect(await admins()).toEqual([]);
-    expect(await identities()).toHaveLength(2);
   });
 
   describe('the setup token before anything else (SIGNUP=invite)', () => {
@@ -730,9 +726,15 @@ describe('first logins of an unclaimed instance', () => {
       expect(await res.json()).toMatchObject({ error: { code: 'instance_unclaimed' } });
     };
 
-    it('signed in, every route but login, /me and the setup page is closed until the claim', async () => {
+    it('every route but login, /me and the setup page is closed until the claim; then SIGNUP applies again', async () => {
       const idp = fakeOidc();
       await tokenInstance(idp);
+      // Signed out, or with a stale session: 401 as before, not the claim.
+      expect((await ctx.request('/api/decks')).status).toBe(401);
+      expect((await ctx.request('/api/decks', { cookie: 'slider_session=stale' })).status).toBe(
+        401,
+      );
+
       const cookie = await grantedLogin(idp);
       expect((await me(cookie)).body).toMatchObject({
         instanceClaimed: false,
@@ -754,6 +756,10 @@ describe('first logins of an unclaimed instance', () => {
       expect((await claim(cookie, 'wrong')).status).toBe(403);
       await blocked(await ctx.request('/api/decks', { cookie }));
 
+      idp.claims = { ...idp.claims, sub: 'bert', email: 'bert@firma.de', name: 'Bert' };
+      const bert = await grantedLogin(idp);
+      await blocked(await ctx.request('/api/decks', { cookie: bert }));
+
       expect((await claim(cookie)).status).toBe(200);
       expect((await me(cookie)).body).toMatchObject({
         instanceClaimed: true,
@@ -761,26 +767,7 @@ describe('first logins of an unclaimed instance', () => {
       });
       expect((await ctx.request('/api/decks', { cookie })).status).toBe(200);
       expect((await ctx.request('/api/workspaces', { cookie })).status).toBe(200);
-    });
 
-    it('signed out, or with a stale session: 401 as before, not the claim', async () => {
-      const idp = fakeOidc();
-      await tokenInstance(idp);
-      expect((await ctx.request('/api/decks')).status).toBe(401);
-      expect((await ctx.request('/api/decks', { cookie: 'slider_session=stale' })).status).toBe(
-        401,
-      );
-    });
-
-    it('once someone claimed, nobody is asked again – and SIGNUP applies again', async () => {
-      const idp = fakeOidc();
-      await tokenInstance(idp);
-      const anna = await grantedLogin(idp);
-      idp.claims = { ...idp.claims, sub: 'bert', email: 'bert@firma.de', name: 'Bert' };
-      const bert = await grantedLogin(idp);
-      await blocked(await ctx.request('/api/decks', { cookie: bert }));
-
-      expect((await claim(anna)).status).toBe(200);
       // Bert signed up before the claim: a normal account now, no admin, not asked any more.
       expect((await me(bert)).body).toMatchObject({
         instanceClaimed: true,
@@ -797,12 +784,15 @@ describe('first logins of an unclaimed instance', () => {
     });
   });
 
-  it('dev login: the dev owner and signed-in accounts are never asked for the token', async () => {
+  it('dev login: the dev owner and signed-in accounts are never asked for the token, a session wins', async () => {
     ctx = await createTestContext();
     expect((await me()).body.instanceClaimed).toBe(true);
     expect((await ctx.request('/api/decks')).status).toBe(200);
-    const { cookie } = await signedInUser(ctx, { name: 'Lena', email: 'lena@firma.de' });
+    const { user, cookie } = await signedInUser(ctx, { name: 'Lena', email: 'lena@firma.de' });
     expect((await me(cookie)).body.instanceClaimed).toBe(true);
+    // A session wins over the dev owner.
+    expect((await me(cookie)).body.viewer.author.id).toBe(user.id);
+    expect((await me()).body.viewer.author.id).toBe(ctx.ownerId);
     expect((await ctx.request('/api/decks', { cookie })).status).toBe(200);
     expect(await admins()).toEqual([]);
   });

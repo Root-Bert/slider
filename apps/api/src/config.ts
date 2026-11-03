@@ -52,8 +52,6 @@ export interface Config {
    * links still import).
    */
   googleDrive: GoogleDriveConfig | null;
-  /** Automatic updates of link-imported decks (BER-107). */
-  sync: SyncConfig;
   /** Voice and video comments (BER-116). */
   media: MediaConfig;
   /**
@@ -96,12 +94,28 @@ export interface Config {
    * (~1 CPU core and up to 1 GB RAM). Imports of one deck always run one after another.
    */
   importWorkers?: number;
-  /** Stock photos from Unsplash; `null` (or absent) until UNSPLASH_ACCESS_KEY is set. */
-  unsplash?: UnsplashConfig | null;
   /**
-   * `AI_ALLOW_INTERNAL_URLS`: a workspace's OpenAI-compatible AI service may sit on an internal
-   * address or plain http – a local Ollama or vLLM. Off by default: the server would otherwise
-   * reach into its own network for whoever administers a workspace.
+   * Stock photos from Unsplash; `null` (or absent) until UNSPLASH_ACCESS_KEY is set. Taken over
+   * as one of the instance's photo keys (`integration-keys`).
+   */
+  unsplash?: UnsplashConfig | null;
+  /** `ANTHROPIC_API_KEY`: taken over as one of the instance's AI keys (`integration-keys`). */
+  anthropicApiKey?: string | null;
+  /** `MISTRAL_API_KEY`: taken over for speech to text and voice (live words follow from it). */
+  mistralApiKey?: string | null;
+  /** `BFL_API_KEY`: taken over for generating pictures (Black Forest Labs). */
+  bflApiKey?: string | null;
+  /** The AI cuts pictures out (rembg); `null` (or absent) until REMBG_URL is set. */
+  rembg?: RembgConfig | null;
+  /**
+   * Speech to text on the server itself (deploy/stt); `null` (or absent) until SPEECH_URL is set.
+   * Taken over once as a self-hosted key of the instance (`integration-keys`).
+   */
+  speech?: SpeechServerConfig | null;
+  /**
+   * `AI_ALLOW_INTERNAL_URLS`: the instance's OpenAI-compatible service may sit on an internal
+   * address or plain http – a local Ollama or vLLM. Workspaces' keys never may: the server would
+   * otherwise reach into its own network for whoever administers a workspace.
    */
   aiAllowInternalUrls?: boolean;
 }
@@ -109,6 +123,20 @@ export interface Config {
 export interface UnsplashConfig {
   /** The application's Access Key – only ever used by the server, which searches for everyone. */
   accessKey: string;
+}
+
+export interface RembgConfig {
+  /** `REMBG_URL`: where rembg's server (`rembg s`) answers, e.g. `http://rembg:7000`. */
+  url: string;
+  /** `REMBG_MODEL`: the model it cuts out with – an open one, IS-Net by default. */
+  model: string;
+}
+
+export interface SpeechServerConfig {
+  /** `SPEECH_URL`: where it answers OpenAI's API, up to `/v1` – e.g. `http://stt:8000/v1`. */
+  url: string;
+  /** `SPEECH_MODEL`: the model it names, `whisper-large-v3-turbo` by default. */
+  model: string;
 }
 
 export interface RetentionConfig {
@@ -189,17 +217,6 @@ export interface SmtpConfig {
   /** e.g. `Slider <slider@example.com>` */
   from: string;
 }
-
-export interface SyncConfig {
-  /** How often link decks are checked for changes; `0` turns polling off (manual sync still works). */
-  pollIntervalMs: number;
-  /** Quiet time after the last change before a new revision is imported (PowerPoint autosaves). */
-  debounceMs: number;
-}
-
-export const DEFAULT_SYNC_POLL_INTERVAL_MS = 60_000;
-export const DEFAULT_SYNC_DEBOUNCE_MS = 60_000;
-export const MIN_SYNC_POLL_INTERVAL_MS = 10_000;
 
 export interface MicrosoftConfig {
   clientId: string;
@@ -282,15 +299,6 @@ const envSchema = z.object({
   NEXTCLOUD_CLIENT_ID: z.string().optional(),
   NEXTCLOUD_CLIENT_SECRET: z.string().optional(),
   NEXTCLOUD_LOGIN_ANY: booleanEnv.default(true),
-  SYNC_POLL_INTERVAL_MS: z.coerce
-    .number()
-    .int()
-    .min(0)
-    .refine((ms) => ms === 0 || ms >= MIN_SYNC_POLL_INTERVAL_MS, {
-      message: `SYNC_POLL_INTERVAL_MS muss 0 (aus) oder mindestens ${MIN_SYNC_POLL_INTERVAL_MS} sein.`,
-    })
-    .default(DEFAULT_SYNC_POLL_INTERVAL_MS),
-  SYNC_DEBOUNCE_MS: z.coerce.number().int().min(0).default(DEFAULT_SYNC_DEBOUNCE_MS),
   AUTH_DEV_LOGIN: booleanEnv.optional(),
   SIGNUP: z.enum(SIGNUP_MODES).default('open'),
   SIGNUP_DOMAINS: z.string().optional(),
@@ -313,7 +321,6 @@ const envSchema = z.object({
   /** Older name of PLAN_FREE_MAX_STORAGE_BYTES (it counted recordings per deck owner). */
   MEDIA_QUOTA_BYTES: z.coerce.number().int().min(0).optional(),
   MAX_MEDIA_BYTES: z.coerce.number().int().positive().default(MAX_MEDIA_BYTES),
-  /** `0` = unlimited. */
   /** Forces the demo's limits on (`true`) or off (`false`); see {@link isLimitedInstance}. */
   SLIDER_DEMO: booleanEnv.optional(),
   PLAN_FREE_MAX_MEMBERS: z.coerce.number().int().min(0).optional(),
@@ -329,6 +336,13 @@ const envSchema = z.object({
   PDF_TIMEOUT_MS: z.coerce.number().int().min(10_000).default(PDF_TIMEOUT_MS),
   IMPORT_WORKERS: z.coerce.number().int().min(1).max(16).default(1),
   UNSPLASH_ACCESS_KEY: z.string().min(10).optional(),
+  ANTHROPIC_API_KEY: z.string().startsWith('sk-ant-').optional(),
+  MISTRAL_API_KEY: z.string().min(10).optional(),
+  BFL_API_KEY: z.string().min(10).optional(),
+  REMBG_URL: z.url().optional(),
+  REMBG_MODEL: z.string().min(1).default('isnet-general-use'),
+  SPEECH_URL: z.url().optional(),
+  SPEECH_MODEL: z.string().min(1).default('whisper-large-v3-turbo'),
   AI_ALLOW_INTERNAL_URLS: booleanEnv.optional(),
 });
 
@@ -543,7 +557,6 @@ export function loadConfig(
       loginAnyServer: parsed.NEXTCLOUD_LOGIN_ANY,
     },
     googleDrive,
-    sync: { pollIntervalMs: parsed.SYNC_POLL_INTERVAL_MS, debounceMs: parsed.SYNC_DEBOUNCE_MS },
     media: {
       dir: parsed.MEDIA_DIR
         ? path.resolve(REPO_ROOT, expandHome(parsed.MEDIA_DIR))
@@ -572,6 +585,11 @@ export function loadConfig(
     pdfTimeoutMs: parsed.PDF_TIMEOUT_MS,
     importWorkers: parsed.IMPORT_WORKERS,
     unsplash: parsed.UNSPLASH_ACCESS_KEY ? { accessKey: parsed.UNSPLASH_ACCESS_KEY } : null,
+    anthropicApiKey: parsed.ANTHROPIC_API_KEY ?? null,
+    mistralApiKey: parsed.MISTRAL_API_KEY ?? null,
+    bflApiKey: parsed.BFL_API_KEY ?? null,
+    rembg: parsed.REMBG_URL ? { url: parsed.REMBG_URL, model: parsed.REMBG_MODEL } : null,
+    speech: parsed.SPEECH_URL ? { url: parsed.SPEECH_URL, model: parsed.SPEECH_MODEL } : null,
     aiAllowInternalUrls: parsed.AI_ALLOW_INTERNAL_URLS ?? false,
   };
 }
@@ -641,10 +659,7 @@ const hostingEnvSchema = z.object({
     .regex(/^postgres(ql)?:\/\//i, 'DATABASE_URL muss mit postgres:// beginnen.')
     .optional(),
   WEB_DIST_DIR: z.string().min(1).optional(),
-  TRUST_PROXY: z
-    .enum(['0', '1', 'false', 'true'])
-    .transform((value) => value === '1' || value === 'true')
-    .optional(),
+  TRUST_PROXY: booleanEnv.optional(),
 });
 
 function loadHostingConfig(env: NodeJS.ProcessEnv, nodeEnv: Config['env']): HostingConfig {

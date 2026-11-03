@@ -7,7 +7,7 @@ export function Component() {
   const navigate = useNavigate();
   return (
     <CenteredMessage title="Seite nicht gefunden" message="Diese Adresse gibt es nicht (mehr).">
-      <Button onClick={() => navigate(routes.reviews())}>Zu meinen Reviews</Button>
+      <Button onClick={() => navigate(routes.reviews())}>Zu den Präsentationen</Button>
     </CenteredMessage>
   );
 }

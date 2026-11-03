@@ -29,30 +29,27 @@ describe('useLinkImport – back from the Microsoft login', () => {
   beforeEach(() => sessionStorage.clear());
   afterEach(() => vi.unstubAllGlobals());
 
-  it('a crafted /neu?link=… only prefills the field, it never imports on its own', async () => {
+  it('a crafted /neu?link=… or a login from another workspace only prefills, never imports', async () => {
     const { fetchMock, hook } = setup(`?link=${encodeURIComponent(LINK)}&workspace=ws1`);
     expect(hook.result.current.url).toBe(LINK);
     await act(async () => {});
     expect(importCalls(fetchMock)).toHaveLength(0);
     expect(hook.result.current.pending).toBe(false);
+
+    rememberLinkLogin(LINK, 'other-ws');
+    const other = setup(`?link=${encodeURIComponent(LINK)}`);
+    await act(async () => {});
+    expect(importCalls(other.fetchMock)).toHaveLength(0);
   });
 
-  it('imports once when this tab started the login for this link and workspace', async () => {
+  it('imports once after this tab’s own login, and remembers the link before leaving for it', async () => {
     rememberLinkLogin(LINK, 'ws1');
     const { fetchMock, onImported } = setup(`?link=${encodeURIComponent(LINK)}`);
     await waitFor(() => expect(onImported).toHaveBeenCalledOnce());
     expect(importCalls(fetchMock)).toHaveLength(1);
     expect(sessionStorage.length).toBe(0);
-  });
 
-  it('does not import into another workspace than the login was started in', async () => {
-    rememberLinkLogin(LINK, 'other-ws');
-    const { fetchMock } = setup(`?link=${encodeURIComponent(LINK)}`);
-    await act(async () => {});
-    expect(importCalls(fetchMock)).toHaveLength(0);
-  });
-
-  it('"Mit Microsoft anmelden" remembers the link before leaving for the login', async () => {
+    // "Mit Microsoft anmelden" remembers the link before leaving for the login.
     const assign = vi.fn();
     vi.stubGlobal('location', { ...window.location, assign });
     const { hook } = setup(`?link=${encodeURIComponent(LINK)}&msError=denied`);

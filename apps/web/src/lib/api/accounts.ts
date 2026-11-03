@@ -8,6 +8,7 @@ import {
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { api, apiRequest } from '../api-client';
 import { routes } from '../routes';
+import { forgetOffline } from '../offline';
 
 /**
  * Data rights: the own account's ZIP export and deletion on `/konto` (BER-145); without login,
@@ -18,11 +19,10 @@ import { routes } from '../routes';
 export const ACCOUNT_EXPORT_URL = `${API_PREFIX}/me/export`;
 
 /** Before deleting the own account: workspaces that need a new admin. */
-export const useDeletionChoices = (enabled: boolean) =>
+export const useDeletionChoices = () =>
   useQuery({
     queryKey: ['me', 'deletion'],
     queryFn: () => api.get<SuccessorChoice[]>('/me/deletion'),
-    enabled,
     staleTime: 0,
   });
 
@@ -32,7 +32,10 @@ export const useDeleteAccount = () =>
     mutationFn: (input: DeleteAccountInput) =>
       apiRequest<void>('/me', { method: 'DELETE', body: input }),
     // The session is gone with the account: leave the app for the login page.
-    onSuccess: () => window.location.assign(routes.login()),
+    onSuccess: async () => {
+      await forgetOffline();
+      window.location.assign(routes.login());
+    },
   });
 
 /** `/datenanfrage`: asks for the link to the given address (answer is the same either way). */

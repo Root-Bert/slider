@@ -13,6 +13,7 @@ import {
   releaseRunningImportAttempts,
   resumeImports,
 } from '../src/import/attempts';
+import { deband } from '../src/import/deband';
 import { backfillFileAuthors } from '../src/import/file-author-backfill';
 import { findInterruptedImports, importDeck } from '../src/import/import-deck';
 import { ConversionAborted, type PptxToPdf } from '../src/import/libreoffice';
@@ -58,18 +59,7 @@ const failingWith =
   };
 
 describe('import pipeline', () => {
-  it('counts only visible slides, like the viewer', async () => {
-    const slides = [
-      parsedSlide(256, 0),
-      { ...parsedSlide(257, 1), hidden: true },
-      parsedSlide(258, 2),
-    ];
-    ctx = await createTestContext({ openPptx: stubPptx({ slides }) });
-    const deck = await upload(ctx);
-    expect(deck).toMatchObject({ import: { status: 'ready' }, slideCount: 2 });
-  });
-
-  it('creates slides with shapes and stores an SVG render per slide', async () => {
+  it('creates slides with shapes and SVG renders, counts only visible slides and re-runs without duplicating', async () => {
     ctx = await createTestContext({ openPptx: stubPptx({}, 3) });
     const deck = await upload(ctx);
     expect(deck).toMatchObject({ import: { status: 'ready' }, slideCount: 3 });
@@ -89,75 +79,53 @@ describe('import pipeline', () => {
     // Cached only briefly: every revalidation runs the deck's access check again.
     expect(image.headers.get('cache-control')).toBe('private, max-age=300');
     expect(await image.text()).toContain('<svg');
-  });
 
-  it.each([
-    [
-      'encrypted',
-      'Die Datei ist passwortgeschützt. Bitte ohne Passwort speichern und erneut hochladen.',
-    ],
-    ['not_pptx', 'Die Datei ist keine PowerPoint (.pptx).'],
-    ['corrupt', 'Die Datei ist beschädigt und konnte nicht gelesen werden.'],
-    [
-      'too_many_slides',
-      'Diese Präsentation hat mehr als 1024 Folien – so große Decks können wir nicht übernehmen.',
-    ],
-  ] as const)('reports %s files in German', async (code, message) => {
-    ctx = await createTestContext({ openPptx: failingWith(new PptxError(code, 'parser detail')) });
-    const deck = await upload(ctx);
-    expect(deck.import).toEqual({ status: 'failed', error: message });
-  });
-
-  it('fails with a generic message on unexpected errors', async () => {
-    ctx = await createTestContext({ openPptx: failingWith(new Error('boom')) });
-    const deck = await upload(ctx);
-    expect(deck.import).toEqual({
-      status: 'failed',
-      error: 'Import fehlgeschlagen. Bitte erneut versuchen.',
-    });
-  });
-
-  it('can be re-run for the same revision without duplicating slides', async () => {
-    ctx = await createTestContext({ openPptx: stubPptx({}, 2) });
-    const deck = await upload(ctx);
-    const [revision] = await ctx.deps.db.query.revisions.findMany({
-      where: (r, { eq: is }) => is(r.deckId, deck.id),
-    });
+    // The same revision imported again keeps its slides.
     await importDeck(
-      { ...ctx.deps, openPptx: stubPptx({}, 2), log: silentLogger },
-      { deckId: deck.id, revisionId: revision?.id ?? '' },
+      { ...ctx.deps, openPptx: stubPptx({}, 3), log: silentLogger },
+      { deckId: deck.id, revisionId: deck.currentRevisionId ?? '' },
     );
     const again = deckSchema.parse(await (await ctx.request(`/api/decks/${deck.id}`)).json());
-    expect(again).toMatchObject({ import: { status: 'ready' }, slideCount: 2 });
-  });
+    expect(again).toMatchObject({ import: { status: 'ready' }, slideCount: 3 });
 
-  it('with duplicate sldIds the first slide gets the PowerPoint comments, as in a sync', async () => {
-    const parsed: ParsedComment[] = [
-      {
-        externalId: '{D}',
-        format: 'modern',
-        sldId: 300,
-        author: { name: 'Anna Becker', initials: 'AB' },
-        createdAt: null,
-        text: 'Doppelt?',
-        status: 'open',
-        anchor: { type: 'slide' },
-        replies: [],
-      },
+    // Hidden slides are not counted, like the viewer.
+    await ctx.cleanup();
+    const slides = [
+      parsedSlide(256, 0),
+      { ...parsedSlide(257, 1), hidden: true },
+      parsedSlide(258, 2),
     ];
-    const slides = [parsedSlide(300, 0), parsedSlide(300, 1)];
-    ctx = await createTestContext({ openPptx: stubPptx({ slides, comments: parsed }) });
-    const deck = await upload(ctx);
-    const list = slideSchema
-      .array()
-      .parse(await (await ctx.request(`/api/decks/${deck.id}/slides`)).json());
-    const [comment] = commentSchema
-      .array()
-      .parse(await (await ctx.request(`/api/decks/${deck.id}/comments`)).json());
-    expect(comment?.slideId).toBe(list[0]?.id);
+    ctx = await createTestContext({ openPptx: stubPptx({ slides }) });
+    expect(await upload(ctx)).toMatchObject({ import: { status: 'ready' }, slideCount: 2 });
   });
 
-  it('imports PowerPoint comments with replies and maps anchors', async () => {
+  it('reports failures in German', async () => {
+    const cases: [Error, string][] = [
+      [
+        new PptxError('encrypted', 'parser detail'),
+        'Die Datei ist passwortgeschützt. Bitte ohne Passwort speichern und erneut hochladen.',
+      ],
+      [new PptxError('not_pptx', 'parser detail'), 'Die Datei ist keine PowerPoint (.pptx).'],
+      [
+        new PptxError('corrupt', 'parser detail'),
+        'Die Datei ist beschädigt und konnte nicht gelesen werden.',
+      ],
+      [
+        new PptxError('too_many_slides', 'parser detail'),
+        'Diese Präsentation hat mehr als 1024 Folien – so große Decks können wir nicht übernehmen.',
+      ],
+      // Unexpected errors get a generic message.
+      [new Error('boom'), 'Import fehlgeschlagen. Bitte erneut versuchen.'],
+    ];
+    for (const [error, message] of cases) {
+      await ctx?.cleanup();
+      ctx = await createTestContext({ openPptx: failingWith(error) });
+      const deck = await upload(ctx);
+      expect(deck.import, message).toEqual({ status: 'failed', error: message });
+    }
+  });
+
+  it('imports PowerPoint comments with replies and anchors; duplicate sldIds give them to the first slide', async () => {
     const parsed: ParsedComment[] = [
       {
         externalId: '{A}',
@@ -202,6 +170,22 @@ describe('import pipeline', () => {
       slideId: root?.slideId,
       author: { name: 'Max Kern' },
     });
+
+    // Two slides with the same sldId: the first gets the comments, as in a sync.
+    await ctx.cleanup();
+    const doubled: ParsedComment[] = [
+      { ...parsed[0]!, externalId: '{D}', sldId: 300, anchor: { type: 'slide' }, replies: [] },
+    ];
+    const slides = [parsedSlide(300, 0), parsedSlide(300, 1)];
+    ctx = await createTestContext({ openPptx: stubPptx({ slides, comments: doubled }) });
+    const twin = await upload(ctx);
+    const twinSlides = slideSchema
+      .array()
+      .parse(await (await ctx.request(`/api/decks/${twin.id}/slides`)).json());
+    const [comment] = commentSchema
+      .array()
+      .parse(await (await ctx.request(`/api/decks/${twin.id}/comments`)).json());
+    expect(comment?.slideId).toBe(twinSlides[0]?.id);
   });
 });
 
@@ -370,7 +354,7 @@ describe('shutdown during rendering', () => {
 describe('shutdown in any phase of an import', () => {
   afterEach(() => resumeImports());
 
-  it('never counts as a crash, however often it happens', async () => {
+  it('never counts as a crash, however often it happens, and takes back no earlier one', async () => {
     let shuttingDown = true;
     const parse = stubPptx({}, 2);
     const openPptx: OpenPptx = async (bytes) => {
@@ -405,13 +389,8 @@ describe('shutdown in any phase of an import', () => {
     await ctx.deps.queue.idle();
     const done = deckSchema.parse(await (await ctx.request(`/api/decks/${deck.id}`)).json());
     expect(done.import).toEqual({ status: 'ready' });
-  });
 
-  it('a run stopped before it was counted takes back no earlier crash', async () => {
-    ctx = await createTestContext();
-    const deck = await upload(ctx);
-    const revisionId = deck.currentRevisionId ?? '';
-    // Two earlier runs died with the process.
+    // A run stopped before it was counted takes back no earlier crash.
     await ctx.deps.db
       .update(revisions)
       .set({ importAttempts: 2 })
@@ -419,8 +398,7 @@ describe('shutdown in any phase of an import', () => {
     await releaseRunningImportAttempts(ctx.deps.db);
     // Shutdown before `beginImportAttempt` (e.g. the database closing under the first step).
     await endImportAttempt(ctx.deps.db, revisionId, { stopped: true });
-    const [row] = await ctx.deps.db.select().from(revisions).where(eq(revisions.id, revisionId));
-    expect(row?.importAttempts).toBe(2);
+    expect(await attempts()).toBe(2);
   });
 });
 
@@ -458,7 +436,7 @@ describe('upsertPptxComments', () => {
     { ...emptyComment(), externalId: 'orphan', sldId: 999 },
   ];
 
-  it('is idempotent and updates text on re-import', async () => {
+  it('is idempotent, updates text and keeps a status changed in Slider on re-import', async () => {
     ctx = await createTestContext();
     const { deckId, slideIds } = await createReadyDeck(ctx, { slideCount: 1 });
     const slides = new Map([[7, { slideId: slideIds[0] ?? '', shapes: [] }]]);
@@ -484,9 +462,21 @@ describe('upsertPptxComments', () => {
     expect(rows.find((row) => row.externalId === 'author1:1')?.body).toBe('Dann');
     const reply = rows.find((row) => row.externalId === '{guid}/{reply}');
     expect(reply?.parentId).toBe(rows.find((row) => row.externalId === '{guid}')?.id);
+
+    // A status changed in Slider survives re-imports.
+    await ctx.deps.db
+      .update(comments)
+      .set({ status: 'done' })
+      .where(eq(comments.externalId, 'author1:1'));
+    await upsertPptxComments(ctx.deps.db, deckId, parsed('Dann'), slides, now);
+    const [row] = await ctx.deps.db
+      .select()
+      .from(comments)
+      .where(eq(comments.externalId, 'author1:1'));
+    expect(row?.status).toBe('done');
   });
 
-  it('legacy comments converted to modern ones by PowerPoint 365 keep their row, replies and status', async () => {
+  it('legacy comments converted to modern ones by PowerPoint 365 keep their row, replies and status, and stay deleted if deleted in Slider', async () => {
     ctx = await createTestContext();
     const { deckId, slideIds } = await createReadyDeck(ctx, { slideCount: 1 });
     const slides = new Map([[7, { slideId: slideIds[0] ?? '', shapes: [] }]]);
@@ -565,88 +555,68 @@ describe('upsertPptxComments', () => {
     expect(replies.find((row) => row.body === 'Mach ich.')?.externalId).toBe(
       `${modern.externalId}/${modern.replies[0]?.externalId}`,
     );
-  });
 
-  it('legacy comments deleted in Slider stay deleted after PowerPoint 365 converted them', async () => {
-    ctx = await createTestContext();
-    const { deckId, slideIds } = await createReadyDeck(ctx, { slideCount: 1 });
-    const slides = new Map([[7, { slideId: slideIds[0] ?? '', shapes: [] }]]);
-    const legacy = (id: string, text: string, replies: ParsedComment['replies'] = []) =>
-      ({
+    // Comments deleted in Slider stay deleted once PowerPoint 365 converted them.
+    {
+      const { deckId, slideIds } = await createReadyDeck(ctx, { slideCount: 1 });
+      const slides = new Map([[7, { slideId: slideIds[0] ?? '', shapes: [] }]]);
+      const legacy = (id: string, text: string, replies: ParsedComment['replies'] = []) =>
+        ({
+          externalId: id,
+          format: 'legacy',
+          sldId: 7,
+          author: { name: 'Lena Wolf', initials: 'LW' },
+          createdAt: '2025-03-01T10:00:00.000',
+          text,
+          status: 'open',
+          anchor: { type: 'slide' },
+          replies,
+        }) satisfies ParsedComment;
+      const reply = (id: string, text: string) => ({
         externalId: id,
-        format: 'legacy',
-        sldId: 7,
-        author: { name: 'Lena Wolf', initials: 'LW' },
-        createdAt: '2025-03-01T10:00:00.000',
+        author: { name: 'Max Kern', initials: null },
+        createdAt: '2025-03-01T11:00:00.000',
         text,
-        status: 'open',
-        anchor: { type: 'slide' },
-        replies,
-      }) satisfies ParsedComment;
-    const reply = (id: string, text: string) => ({
-      externalId: id,
-      author: { name: 'Max Kern', initials: null },
-      createdAt: '2025-03-01T11:00:00.000',
-      text,
-    });
-    const gone = legacy('author1:1', 'Weg damit.', [reply('author2:1', 'Ok.')]);
-    const kept = legacy('author1:2', 'Bleibt.', [reply('author2:2', 'Antwort weg.')]);
-    await upsertPptxComments(ctx.deps.db, deckId, [gone, kept], slides, new Date());
-    const rows = await ctx.deps.db.select().from(comments).where(eq(comments.deckId, deckId));
-    const idOf = (externalId: string) => rows.find((row) => row.externalId === externalId)?.id;
-    // Deleted in Slider: one whole thread, and one reply of the other.
-    for (const id of [idOf('author1:1'), idOf('author1:2/author2:2')]) {
-      expect((await ctx.request(`/api/comments/${id}`, { method: 'DELETE' })).status).toBe(204);
-    }
+      });
+      const gone = legacy('author1:1', 'Weg damit.', [reply('author2:1', 'Ok.')]);
+      const kept = legacy('author1:2', 'Bleibt.', [reply('author2:2', 'Antwort weg.')]);
+      await upsertPptxComments(ctx.deps.db, deckId, [gone, kept], slides, new Date());
+      const rows = await ctx.deps.db.select().from(comments).where(eq(comments.deckId, deckId));
+      const idOf = (externalId: string) => rows.find((row) => row.externalId === externalId)?.id;
+      // Deleted in Slider: one whole thread, and one reply of the other.
+      for (const id of [idOf('author1:1'), idOf('author1:2/author2:2')]) {
+        expect((await ctx.request(`/api/comments/${id}`, { method: 'DELETE' })).status).toBe(204);
+      }
 
-    const converted = (comment: ParsedComment, guid: string): ParsedComment => ({
-      ...comment,
-      externalId: `{${guid}}`,
-      format: 'modern',
-      createdAt: '2025-03-01T09:00:00.000Z',
-      replies: comment.replies.map((r, i) => ({
-        ...r,
-        externalId: `{${guid}-R${i}}`,
-        createdAt: '2025-03-01T10:00:00.000Z',
-      })),
-    });
-    const file = [converted(gone, 'AAAA'), converted(kept, 'BBBB')];
-    for (let run = 0; run < 2; run++) {
-      const counts = await upsertPptxComments(ctx.deps.db, deckId, file, slides, new Date());
-      expect(counts).toMatchObject({ inserted: 0, restored: 0 });
-    }
+      const converted = (comment: ParsedComment, guid: string): ParsedComment => ({
+        ...comment,
+        externalId: `{${guid}}`,
+        format: 'modern',
+        createdAt: '2025-03-01T09:00:00.000Z',
+        replies: comment.replies.map((r, i) => ({
+          ...r,
+          externalId: `{${guid}-R${i}}`,
+          createdAt: '2025-03-01T10:00:00.000Z',
+        })),
+      });
+      const file = [converted(gone, 'AAAA'), converted(kept, 'BBBB')];
+      for (let run = 0; run < 2; run++) {
+        const counts = await upsertPptxComments(ctx.deps.db, deckId, file, slides, new Date());
+        expect(counts).toMatchObject({ inserted: 0, restored: 0 });
+      }
 
-    const after = await ctx.deps.db.select().from(comments).where(eq(comments.deckId, deckId));
-    expect(after.map((row) => row.externalId)).toEqual(['{BBBB}']);
-    expect(after[0]?.id).toBe(idOf('author1:2'));
+      const after = await ctx.deps.db.select().from(comments).where(eq(comments.deckId, deckId));
+      expect(after.map((row) => row.externalId)).toEqual(['{BBBB}']);
+      expect(after[0]?.id).toBe(idOf('author1:2'));
+    }
   });
 
-  it('keeps a status changed in Slider across re-imports', async () => {
+  it('recognises a linked deck’s authors by a member’s address only; an uploaded file’s stay PowerPoint authors', async () => {
     ctx = await createTestContext();
+    const { db } = ctx.deps;
+    const owner = (await db.select().from(users).where(eq(users.id, ctx.ownerId)))[0]!;
     const { deckId, slideIds } = await createReadyDeck(ctx, { slideCount: 1 });
-    const slides = new Map([[7, { slideId: slideIds[0] ?? '', shapes: [] }]]);
-    await upsertPptxComments(ctx.deps.db, deckId, parsed('x'), slides, new Date());
-    await ctx.deps.db
-      .update(comments)
-      .set({ status: 'done' })
-      .where(eq(comments.externalId, 'author1:1'));
-    await upsertPptxComments(ctx.deps.db, deckId, parsed('x'), slides, new Date());
-
-    const [row] = await ctx.deps.db
-      .select()
-      .from(comments)
-      .where(eq(comments.externalId, 'author1:1'));
-    expect(row?.status).toBe('done');
-  });
-
-  /** A linked deck (OneDrive) with one slide, sldId 7, and a comment helper for it. */
-  async function authorFixture(source: 'onedrive' | 'upload' = 'onedrive') {
-    const context = await createTestContext();
-    ctx = context;
-    const { db } = context.deps;
-    const [owner] = await db.select().from(users).where(eq(users.id, context.ownerId));
-    const { deckId, slideIds } = await createReadyDeck(context, { slideCount: 1 });
-    await db.update(decks).set({ source }).where(eq(decks.id, deckId));
+    await db.update(decks).set({ source: 'onedrive' }).where(eq(decks.id, deckId));
     const slides = new Map([[7, { slideId: slideIds[0] ?? '', shapes: [] }]]);
     const comment = (externalId: string, author: ParsedComment['author']): ParsedComment => ({
       ...emptyComment(),
@@ -660,12 +630,22 @@ describe('upsertPptxComments', () => {
       const rows = await db.select().from(comments).where(eq(comments.deckId, deckId));
       return (id: string) => rows.find((row) => row.externalId === id)?.author;
     };
-    return { db, owner: owner!, comment, authorsAfter };
-  }
-
-  it('shows authors of a linked deck with a member’s e-mail address as that member', async () => {
-    const { db, owner, comment, authorsAfter } = await authorFixture();
-    await connectMicrosoft(db, owner.id, { account: 'R.Hofmann@Firma.de' });
+    const oid = '6f1c2d3e-4b5a-4c6d-8e7f-901a2b3c4d5e';
+    await connectMicrosoft(db, owner.id, { subject: oid, account: 'R.Hofmann@Firma.de' });
+    await db.insert(userIdentities).values([
+      {
+        provider: 'microsoft',
+        subject: '9188040d-6c67-4c5b-b112-36a304b66dad:00000000-0000-0000-1a2b-3c4d5e6f7a8b',
+        userId: owner.id,
+      },
+      // The address of a login, which any Nextcloud server may claim, is ignored.
+      {
+        provider: 'nextcloud',
+        subject: 'https://cloud.example.com:robert',
+        email: 'ceo@firma.de',
+        userId: owner.id,
+      },
+    ]);
     const authorOf = await authorsAfter([
       // The UPN of a work account, against a connected Microsoft account (any case).
       comment('work', {
@@ -693,28 +673,6 @@ describe('upsertPptxComments', () => {
         userId: 'S::lena@firma.de::00000000-1111-2222-3333-444444444444',
         providerId: 'AD',
       }),
-    ]);
-    expect(authorOf('work')).toMatchObject({ id: owner.id, type: 'owner' });
-    expect(authorOf('google')).toMatchObject({ id: owner.id, type: 'owner' });
-    expect(authorOf('forged-google')).toEqual(externalAuthor('Robert'));
-    expect(authorOf('stranger')).toEqual({
-      id: 'pptx:lena wolf',
-      name: 'Lena Wolf',
-      type: 'external',
-      color: 'powerpoint',
-    });
-  });
-
-  it('recognises a linked deck’s authors by address only, never by account id or name', async () => {
-    const { db, owner, comment, authorsAfter } = await authorFixture();
-    const oid = '6f1c2d3e-4b5a-4c6d-8e7f-901a2b3c4d5e';
-    await connectMicrosoft(db, owner.id, { subject: oid });
-    await db.insert(userIdentities).values({
-      provider: 'microsoft',
-      subject: '9188040d-6c67-4c5b-b112-36a304b66dad:00000000-0000-0000-1a2b-3c4d5e6f7a8b',
-      userId: owner.id,
-    });
-    const authorOf = await authorsAfter([
       // The object id of a connected Microsoft account, but another address: nobody.
       comment('object-id', {
         name: 'R. Hofmann',
@@ -742,24 +700,6 @@ describe('upsertPptxComments', () => {
         userId: 'S::namesake@elsewhere.example::00000000-1111-2222-3333-444444444444',
         providerId: 'AD',
       }),
-    ]);
-    expect(authorOf('address')).toMatchObject({ id: owner.id, type: 'owner' });
-    expect(authorOf('object-id')).toEqual(externalAuthor('R. Hofmann'));
-    expect(authorOf('personal')).toEqual(externalAuthor('Robert'));
-    for (const id of ['legacy', 'namesake']) {
-      expect(authorOf(id)).toEqual(externalAuthor(owner.name));
-    }
-  });
-
-  it('ignores the address of a login, which any Nextcloud server may claim', async () => {
-    const { db, owner, comment, authorsAfter } = await authorFixture();
-    await db.insert(userIdentities).values({
-      provider: 'nextcloud',
-      subject: 'https://cloud.example.com:robert',
-      email: 'ceo@firma.de',
-      userId: owner.id,
-    });
-    const authorOf = await authorsAfter([
       comment('claimed', {
         name: 'CEO',
         initials: null,
@@ -767,14 +707,26 @@ describe('upsertPptxComments', () => {
         providerId: 'AD',
       }),
     ]);
+    for (const id of ['work', 'google', 'address']) {
+      expect(authorOf(id), id).toMatchObject({ id: owner.id, type: 'owner' });
+    }
+    expect(authorOf('forged-google')).toEqual(externalAuthor('Robert'));
+    expect(authorOf('stranger')).toEqual({
+      id: 'pptx:lena wolf',
+      name: 'Lena Wolf',
+      type: 'external',
+      color: 'powerpoint',
+    });
+    expect(authorOf('object-id')).toEqual(externalAuthor('R. Hofmann'));
+    expect(authorOf('personal')).toEqual(externalAuthor('Robert'));
+    for (const id of ['legacy', 'namesake']) {
+      expect(authorOf(id)).toEqual(externalAuthor(owner.name));
+    }
     expect(authorOf('claimed')).toEqual(externalAuthor('CEO'));
-  });
 
-  it('keeps every author of an uploaded file a PowerPoint author', async () => {
-    const { db, owner, comment, authorsAfter } = await authorFixture('upload');
-    const oid = '6f1c2d3e-4b5a-4c6d-8e7f-901a2b3c4d5e';
-    await connectMicrosoft(db, owner.id, { subject: oid });
-    const authorOf = await authorsAfter([
+    // An uploaded file names nobody, whatever it claims.
+    await db.update(decks).set({ source: 'upload' }).where(eq(decks.id, deckId));
+    const uploadedAuthorOf = await authorsAfter([
       comment('forged-email', {
         name: owner.name,
         initials: null,
@@ -788,15 +740,14 @@ describe('upsertPptxComments', () => {
         providerId: 'AD',
       }),
     ]);
-    expect(authorOf('forged-email')).toEqual(externalAuthor(owner.name));
-    expect(authorOf('forged-id')).toEqual(externalAuthor(owner.name));
+    expect(uploadedAuthorOf('forged-email')).toEqual(externalAuthor(owner.name));
+    expect(uploadedAuthorOf('forged-id')).toEqual(externalAuthor(owner.name));
   });
 });
 
 describe('toAnchor', () => {
-  const shapes = [{ id: '4', name: 'Bild', bbox: { x: 0.5, y: 0.5, w: 0.4, h: 0.4 }, text: '' }];
-
-  it('attaches points to the shape below them', () => {
+  it('attaches points to the shape below them and falls back to the slide when the shape is gone', () => {
+    const shapes = [{ id: '4', name: 'Bild', bbox: { x: 0.5, y: 0.5, w: 0.4, h: 0.4 }, text: '' }];
     expect(toAnchor({ type: 'point', point: { x: 0.7, y: 0.7 } }, shapes)).toEqual({
       type: 'point',
       point: { x: 0.7, y: 0.7 },
@@ -807,9 +758,6 @@ describe('toAnchor', () => {
         bbox: shapes[0]!.bbox,
       },
     });
-  });
-
-  it('falls back to the slide when the shape is gone', () => {
     expect(toAnchor({ type: 'shape', shapeId: '99' }, shapes)).toEqual({ type: 'slide' });
   });
 });
@@ -852,3 +800,35 @@ function emptyComment(): ParsedComment {
     replies: [],
   };
 }
+
+describe('deband', () => {
+  it('smooths LibreOffice’s gradient bands, leaving lines and a lone faint edge as drawn', () => {
+    const width = 400;
+    const height = 3;
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    const set = (x: number, y: number, v: number) =>
+      rgba.set([v, 40, 90, 255], (y * width + x) * 4);
+    for (let x = 0; x < width; x++) {
+      // Row 0: ten 20 px bands two shades apart, a white hairline through them; then flat.
+      set(x, 0, x === 100 ? 255 : x < 200 ? 20 + Math.floor(x / 20) * 2 : 60);
+      // Row 1: a card two shades lighter on its background – one edge, no gradient.
+      set(x, 1, x < 150 ? 50 : 52);
+      // Row 2: the bands without the line.
+      set(x, 2, x < 200 ? 20 + Math.floor(x / 20) * 2 : 60);
+    }
+    const before = new Uint8ClampedArray(rgba);
+    deband(rgba, width, height);
+    const red = (x: number, y: number) => rgba[(y * width + x) * 4] as number;
+    // Between the middles of the first and last band: no step larger than the dither's.
+    for (let x = 31; x < 190; x++)
+      expect(Math.abs(red(x, 2) - red(x - 1, 2))).toBeLessThanOrEqual(2);
+    expect(new Set(Array.from({ length: 160 }, (_, i) => red(30 + i, 2))).size).toBeGreaterThan(15);
+    // Pixels follow the ramp: about where the bands' shades say.
+    expect(Math.abs(red(50, 2) - (20 + (50 - 10) / 10))).toBeLessThanOrEqual(1.5);
+    expect(red(100, 0)).toBe(255);
+    for (let x = 0; x < width; x++) expect(red(x, 1)).toBe(before[(width + x) * 4]);
+    // Flat beyond the last band, and colour channels that did not change stay as they were.
+    expect(red(300, 2)).toBe(60);
+    expect(rgba[(2 * width + 50) * 4 + 1]).toBe(40);
+  });
+});

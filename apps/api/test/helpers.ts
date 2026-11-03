@@ -8,6 +8,7 @@ import { inject } from 'vitest';
 import type { CreateCommentInput, Shape } from '@slider/shared';
 import type { ParsedPresentation, ParsedSlide } from '@slider/pptx';
 import { createApp } from '../src/app';
+import { BackgroundWork } from '../src/background-work';
 import { GoogleTokens } from '../src/auth/google';
 import { MicrosoftTokens } from '../src/auth/microsoft';
 import { NextcloudAccounts } from '../src/auth/nextcloud';
@@ -63,6 +64,7 @@ import { EncryptedBlobStorage } from '../src/storage/encrypted-blob-storage';
 import { TEST_DATA_KEY } from './setup-data-key';
 import { FsBlobStorage } from '../src/storage/fs-blob-storage';
 import { SyncService } from '../src/sync/sync-service';
+import type { CutOutSource } from '../src/services/cut-outs';
 import type { StockPhotoSource } from '../src/services/stock-photos';
 
 export class TestClock implements Clock {
@@ -99,10 +101,8 @@ export const testConfig = (overrides: Partial<Config> = {}): Config => ({
   microsoft: null,
   nextcloud: { server: null, login: null, loginAnyServer: false },
   googleDrive: null,
-  // Polling is driven by hand in tests (`SyncScheduler.tick`); the debounce default applies.
-  sync: { pollIntervalMs: 0, debounceMs: 60_000 },
   media: { dir: '/unused', maxBytes: 1024 * 1024 },
-  // The real plans (free: 5 people, 3 decks, 2 GB); tests that need more pass `plans`.
+  // The real plans (free: 5 people, 2 GB, decks unlimited); tests that need more pass `plans`.
   limited: true,
   plans: DEFAULT_PLAN_LIMITS,
   // Without Stripe; billing tests pass `billing` and a fake provider (`test/fakes/billing`).
@@ -268,6 +268,8 @@ export async function createTestContext(
     aiFetch?: (input: string, init?: RequestInit) => Promise<Response>;
     /** A fake Unsplash: stock photos without network. */
     stockPhotos?: StockPhotoSource;
+    /** A fake rembg: pictures cut out without network. */
+    cutOuts?: CutOutSource;
     /** Fake passkey verification (no real authenticator in tests). */
     webauthn?: WebAuthn;
     /** Environment and restart hook for the setup page; without it `/api/setup` is a 404. */
@@ -280,6 +282,8 @@ export async function createTestContext(
      * (`auth/instance-gate`) – tests of everything else start claimed.
      */
     instanceAdmin?: boolean;
+    /** How long a pull waits for its import; 0 answers `queued` right away (gated imports). */
+    syncWaitMs?: number;
   } = {},
 ): Promise<TestContext> {
   const { db, close } = await openTestDatabase();
@@ -318,7 +322,6 @@ export async function createTestContext(
           ...renderers,
           slidesExtras: (deck, revision) => slidesExtras(deck, revision),
           renderProgress,
-          syncPollMs: config.sync.pollIntervalMs,
         },
         job,
       ),
@@ -375,6 +378,7 @@ export async function createTestContext(
     config,
     connections: microsoft,
     documentPdf: options.documentPdf,
+    waitMs: options.syncWaitMs,
   });
   const deps: AppDeps = {
     config,
@@ -397,6 +401,7 @@ export async function createTestContext(
     anthropic: options.anthropic,
     aiFetch: options.aiFetch,
     stockPhotos: options.stockPhotos,
+    cutOuts: options.cutOuts,
     ssoNetwork: {
       fetch,
       lookup: options.lookup ?? publicLookup,
@@ -407,6 +412,7 @@ export async function createTestContext(
     instance: options.instance,
     ownerId: owner.id,
     live: options.live,
+    background: new BackgroundWork(),
   };
   const app = createApp(deps);
 
@@ -430,6 +436,8 @@ export async function createTestContext(
     },
     cleanup: async () => {
       await queue.idle();
+      // Work after an answer (an edit's slides drawn sharper) writes files and rows until done.
+      await deps.background?.idle();
       await close();
       await rm(blobsDir, { recursive: true, force: true });
     },
@@ -488,13 +496,6 @@ export const pinComment = (slideId: string, body = 'Bitte prüfen.'): CreateComm
   body,
   anchor: { type: 'point', point: { x: 0.5, y: 0.5 }, shapeRef: null },
 });
-
-/** The `name=value` pair of a Set-Cookie header, ready to send back as `Cookie`. */
-export function cookieFrom(response: Response): string {
-  const header = response.headers.get('set-cookie');
-  if (!header) throw new Error('Response sets no cookie');
-  return header.split(';')[0] ?? '';
-}
 
 /** A user with a login session (BER-129); `cookie` signs requests in as them. */
 export async function signedInUser(

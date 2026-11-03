@@ -456,6 +456,132 @@
       "when": 1793118047608,
       "tag": "0064_edit_images_since",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1793145888218,
+      "tag": "0065_workspace_masters",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1793184926624,
+      "tag": "0066_ai_asks",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1793205532871,
+      "tag": "0067_ai_name",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1793210979720,
+      "tag": "0068_deck_master",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1793284438376,
+      "tag": "0069_edit_client_ids",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1793289693642,
+      "tag": "0070_edit_rows",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1793352478033,
+      "tag": "0071_integration_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1793356792176,
+      "tag": "0072_workspace_integration_models",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1793378972609,
+      "tag": "0073_transcripts",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1793381174377,
+      "tag": "0074_template_drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1793407448563,
+      "tag": "0075_drop_template_drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1793410098143,
+      "tag": "0076_template_colors",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1793440921645,
+      "tag": "0077_transcript_summaries",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1793539706526,
+      "tag": "0078_ai_usage",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1793547554990,
+      "tag": "0079_slide_variants",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1793566971402,
+      "tag": "0080_slide_transitions",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1793711520432,
+      "tag": "0081_ai_proposal_resolved",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1793724083816,
+      "tag": "0082_ai_usage_no_cost",
+      "breakpoints": true
     }
   ]
 }

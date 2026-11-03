@@ -10,6 +10,7 @@ import { CSP_REPORT_PATH } from './http/csp';
 import { errorHandler, notFoundHandler } from './http/errors';
 import { healthCheck, trustProxy } from './http/hosting';
 import { LiveHub } from './realtime/live-hub';
+import { LiveTexts } from './realtime/live-texts';
 import { WorkspacePresence } from './realtime/workspace-presence';
 import { sameOriginWrites } from './http/same-origin';
 import { serveWebApp } from './http/static';
@@ -17,11 +18,15 @@ import { authRoutes } from './routes/auth';
 import { billingRoutes } from './routes/billing';
 import { commentsRoutes } from './routes/comments';
 import { decksRoutes } from './routes/decks';
+import { deckTusRoutes } from './routes/deck-tus';
 import { filePickerRoutes } from './routes/file-picker';
 import { nextcloudRoutes } from './routes/nextcloud';
 import { filesRoutes } from './routes/files';
 import { liveRoutes } from './routes/live';
+import { siteLiveRoutes } from './routes/site-live';
+import { SiteLive } from './realtime/site-live';
 import { mediaRoutes } from './routes/media';
+import { voiceRoutes } from './routes/voice';
 import { dataRequestsRoutes } from './routes/data-requests';
 import { contactRoutes } from './routes/contact';
 import { cspReportRoutes } from './routes/csp-report';
@@ -33,7 +38,7 @@ import { setupRoutes } from './routes/setup';
 import { storageRoutes } from './routes/storage';
 import { syncRoutes } from './routes/sync';
 import { editsRoutes } from './routes/edits';
-import { workspaceAiRoutes } from './routes/workspace-ai';
+import { integrationsRoutes } from './routes/integrations';
 import { workspacesRoutes } from './routes/workspaces';
 import { foldersRoutes } from './routes/folders';
 import { configureFileUrls } from './storage/file-urls';
@@ -42,14 +47,17 @@ export function createApp(appDeps: AppDeps) {
   configureFileUrls(appDeps.config.secret);
   const live = appDeps.live ?? new LiveHub();
   const presence = appDeps.presence ?? new WorkspacePresence(() => appDeps.clock.now().getTime());
-  const deps: AppDeps = { ...appDeps, live, presence };
+  const texts = appDeps.liveTexts ?? new LiveTexts(live);
+  // Live comments on the product website – in memory, apart from decks and accounts.
+  const site = new SiteLive();
+  const deps: AppDeps = { ...appDeps, live, presence, liveTexts: texts };
   const app = new Hono();
 
   if (deps.config.env === 'development') {
     // Live presence posts come many times a second while a pointer moves – not worth a log line.
     const log = logger();
-    const livePosts = `${API_PREFIX}/live/`;
-    app.use((c, next) => (c.req.path.startsWith(livePosts) ? next() : log(c, next)));
+    const livePosts = [`${API_PREFIX}/live/`, `${API_PREFIX}/site-live/`];
+    app.use((c, next) => (livePosts.some((p) => c.req.path.startsWith(p)) ? next() : log(c, next)));
   }
   // gzip for the web app, the API's JSON and SVG slides – also behind a proxy that doesn't
   // compress (nginx's and Traefik's defaults). Skips the live stream (text/event-stream, it would
@@ -78,18 +86,21 @@ export function createApp(appDeps: AppDeps) {
     .route('/', meRoutes(deps, gate))
     .route('/', dataRequestsRoutes(deps))
     .route('/', contactRoutes(deps))
+    .route('/', siteLiveRoutes(site))
     .route('/', legalRoutes(deps))
     .route('/', instanceAdminRoutes(deps))
+    .route('/', deckTusRoutes(deps))
     .route('/', decksRoutes(deps))
     .route('/', filePickerRoutes(deps))
     .route('/', nextcloudRoutes(deps))
     .route('/', syncRoutes(deps))
     .route('/', editsRoutes(deps))
-    .route('/', workspaceAiRoutes(deps))
+    .route('/', integrationsRoutes(deps))
     .route('/', storageRoutes(deps))
     .route('/', commentsRoutes(deps))
-    .route('/', liveRoutes(deps, live, presence))
+    .route('/', liveRoutes(deps, live, presence, texts))
     .route('/', mediaRoutes(deps))
+    .route('/', voiceRoutes(deps))
     .route('/', workspacesRoutes(deps, presence))
     .route('/', billingRoutes(deps))
     .route('/', foldersRoutes(deps))

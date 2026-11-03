@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
 } from 'react';
 import {
   Button,
@@ -38,12 +39,10 @@ interface RecorderPanelProps {
   /** Take the keyboard on opening: Space and ↵ work right away. */
   autoFocus?: boolean;
   /**
-   * The big start button. Off where the start sits beside the note field, as the comment's mic
-   * does: that one counts `startRequest` up.
+   * The bin beside the take (running or finished): it goes, the recorder closes. Where the
+   * recorder was opened by a mic beside a field, the bin takes that mic's place.
    */
-  startButton?: boolean;
-  /** Raised by one to start recording from outside (see `startButton`). */
-  startRequest?: number;
+  onDiscard?: () => void;
 }
 
 const NO_SCREEN = 'Bildschirm teilen geht in diesem Browser nicht';
@@ -96,8 +95,7 @@ function RecorderBody({
   onRecordingChange,
   autoStart = false,
   autoFocus = false,
-  startButton = true,
-  startRequest = 0,
+  onDiscard,
   source,
   onSourceChange,
 }: RecorderPanelProps & {
@@ -119,20 +117,6 @@ function RecorderBody({
     if (autoFocus) rootRef.current?.focus({ preventScroll: true });
   }, [autoFocus]);
 
-  const startFromOutside = useEffectEvent(() => {
-    if (state.status !== 'idle' && state.status !== 'ready') return;
-    // The panel takes the keyboard: Space pauses, ↵ stops, as after its own button.
-    rootRef.current?.focus({ preventScroll: true });
-    void start();
-  });
-  // Only requests made after mounting: a new picture source remounts the body.
-  const seenRequest = useRef(startRequest);
-  useEffect(() => {
-    if (startRequest === seenRequest.current) return;
-    seenRequest.current = startRequest;
-    startFromOutside();
-  }, [startRequest]);
-
   // Starting and stopping swap the buttons: the one that had the focus is disabled, then gone,
   // and the focus would drop to <body> – where Space and ↵ no longer reach the panel. So it moves
   // on to the new record button (stop while recording), else to the panel itself.
@@ -141,7 +125,9 @@ function RecorderBody({
   useLayoutEffect(() => {
     const active = document.activeElement;
     if (!holdsFocus.current || (active && active !== document.body)) return;
-    (recordButtonRef.current ?? rootRef.current)?.focus({ preventScroll: true });
+    // A start still waiting for the camera is disabled: the panel holds the keys meanwhile.
+    const button = recordButtonRef.current;
+    (button && !button.disabled ? button : rootRef.current)?.focus({ preventScroll: true });
   }, [phase]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -177,6 +163,50 @@ function RecorderBody({
   useEffect(() => reportRecording(recordingNow), [recordingNow]);
 
   const remaining = MAX_MEDIA_DURATION_MS - elapsedMs;
+  const discard = onDiscard && (
+    <IconButton
+      icon="delete"
+      label="Aufnahme löschen"
+      title="Löschen"
+      variant="subtle"
+      size="compact"
+      onClick={onDiscard}
+    />
+  );
+  // Recording again keeps the place: the take goes, the start comes back.
+  const again = (
+    <IconButton
+      icon="replay"
+      label="Neu aufnehmen"
+      variant="subtle"
+      size="compact"
+      onClick={reset}
+    />
+  );
+
+  // Audio: a bar of its own. Video: in the middle of the preview – the picture to come is the start.
+  const startButton = (
+    <Button
+      ref={recordButtonRef}
+      variant="secondary"
+      onClick={() => void start()}
+      disabled={state.status === 'requesting'}
+      title="Aufnahme starten (Leertaste)"
+      className={kind === 'audio' ? 'w-full' : 'shadow-float'}
+    >
+      {state.status === 'requesting' ? (
+        <Spinner size={16} />
+      ) : (
+        <Icon
+          name={kind === 'audio' ? 'mic' : IDLE_ICONS[source]}
+          size={18}
+          className="text-danger"
+        />
+      )}
+      {state.status === 'requesting' ? requestingLabel(kind, source) : 'Aufnahme starten'}
+      {state.status !== 'requesting' && <Kbd className="-mr-1">Leertaste</Kbd>}
+    </Button>
+  );
 
   return (
     <div
@@ -213,13 +243,12 @@ function RecorderBody({
         />
       )}
 
-      {kind === 'video' && !recording && (
+      {kind === 'video' && !recording && state.status !== 'error' && (
         <CameraPreview
           stream={stream}
           source={source}
           recording={recordingNow}
-          paused={paused}
-          elapsedMs={elapsedMs}
+          start={recordingNow ? null : startButton}
         />
       )}
 
@@ -231,25 +260,26 @@ function RecorderBody({
           <Button variant="ghost" size="sm" onClick={reset}>
             Erneut
           </Button>
+          {discard}
+        </div>
+      ) : recording?.kind === 'audio' ? (
+        // One block: the take to listen to (its length in the player), again, the bin.
+        <div className="flex items-center gap-1">
+          <AudioPlayer
+            src={recording.url}
+            durationMs={recording.durationMs}
+            peaks={recording.peaks}
+            className="mr-1 min-w-0 flex-1"
+          />
+          {again}
+          {discard}
         </div>
       ) : recording ? (
-        <div className="flex flex-col gap-2">
-          {recording.kind === 'audio' ? (
-            <AudioPlayer
-              src={recording.url}
-              durationMs={recording.durationMs}
-              peaks={recording.peaks}
-            />
-          ) : (
-            <VideoPlayer src={recording.url} />
-          )}
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-caption text-fg-subtle tabular-nums">
-              {formatDuration(recording.durationMs)} | {formatFileSize(recording.blob.size)}
-            </span>
-            <Button variant="ghost" size="sm" icon="replay" onClick={reset}>
-              Neu aufnehmen
-            </Button>
+        <div className="flex flex-col gap-1.5">
+          <VideoPlayer src={recording.url} />
+          <div className="flex justify-end gap-1">
+            {again}
+            {discard}
           </div>
         </div>
       ) : recordingNow ? (
@@ -282,38 +312,16 @@ function RecorderBody({
           >
             {formatDuration(elapsedMs)} / {formatDuration(MAX_MEDIA_DURATION_MS)}
           </span>
+          {discard}
         </div>
-      ) : !startButton ? (
-        state.status === 'requesting' && (
-          <p role="status" className="flex items-center gap-2 text-caption text-fg-subtle">
-            <Spinner size={14} />
-            {requestingLabel(kind, source)}
-          </p>
-        )
       ) : (
-        <Button
-          ref={recordButtonRef}
-          variant="secondary"
-          onClick={() => void start()}
-          disabled={state.status === 'requesting'}
-          title="Aufnahme starten (Leertaste)"
-          className="w-full"
-        >
-          {state.status === 'requesting' ? (
-            <Spinner size={16} />
-          ) : (
-            <Icon
-              name={kind === 'audio' ? 'mic' : IDLE_ICONS[source]}
-              size={18}
-              className="text-danger"
-            />
-          )}
-          {state.status === 'requesting' ? requestingLabel(kind, source) : 'Aufnahme starten'}
-          {state.status !== 'requesting' && <Kbd className="-mr-1">Leertaste</Kbd>}
-        </Button>
+        kind === 'audio' && startButton
       )}
 
-      <StorageHint deckId={deckId} />
+      {/* The limit before the start (the running time shows it then), the storage until a take. */}
+      {!recording && state.status !== 'error' && (
+        <StorageHint deckId={deckId} limit={!recordingNow} />
+      )}
     </div>
   );
 }
@@ -324,7 +332,7 @@ function requestingLabel(kind: MediaKind, source: VideoSource) {
 }
 
 // Anchored right and clipped: in a narrow panel the oldest bars drop off instead of running under the time.
-function LiveLevels({ levels, paused }: { levels: readonly number[]; paused: boolean }) {
+export function LiveLevels({ levels, paused }: { levels: readonly number[]; paused: boolean }) {
   const bars = Array.from({ length: 40 }, (_, i) => levels[levels.length - 40 + i] ?? 0);
   return (
     <div
@@ -345,18 +353,21 @@ function LiveLevels({ levels, paused }: { levels: readonly number[]; paused: boo
   );
 }
 
+/**
+ * The picture to come, and before the take its start in the middle: the camera live (alone or as
+ * the bubble of „Beides“), the screen only once it is picked at the start.
+ */
 function CameraPreview({
   stream,
   source,
   recording,
-  paused,
-  elapsedMs,
+  start,
 }: {
   stream: MediaStream | null;
   source: VideoSource;
   recording: boolean;
-  paused: boolean;
-  elapsedMs: number;
+  /** The start button, shown over the picture until the take begins. */
+  start: ReactNode;
 }) {
   // A callback ref: the preview's video element changes between the full frame and the bubble.
   const videoRef = useCallback(
@@ -367,15 +378,13 @@ function CameraPreview({
   );
   // Before recording, "Beides" shows the layout: the screen to come, the camera as its bubble.
   const bubbleOnly = source === 'both' && !recording;
+  const screenToCome = bubbleOnly || (source === 'screen' && !recording);
   const showsScreen = source !== 'camera' && recording;
 
   return (
     <div className="relative aspect-video overflow-hidden rounded-control bg-canvas">
-      {bubbleOnly || (source === 'screen' && !recording) ? (
-        <div className="flex size-full flex-col items-center justify-center gap-1.5 bg-surface-1 text-fg-faint">
-          <Icon name="screenShare" size={28} />
-          <span className="text-caption">Bildschirm wählst du beim Start</span>
-        </div>
+      {screenToCome ? (
+        <div className="size-full bg-surface-1" />
       ) : stream ? (
         // Not mirrored: the preview shows exactly what the recording will show.
         <video
@@ -386,12 +395,10 @@ function CameraPreview({
           className={cn('size-full', showsScreen ? 'object-contain' : 'object-cover')}
         />
       ) : (
-        <div className="flex size-full items-center justify-center text-fg-faint">
-          <Icon name="cameraVideo" size={28} />
-        </div>
+        <div className="size-full bg-surface-1" />
       )}
       {bubbleOnly && (
-        <div className="absolute right-[4%] bottom-[6%] flex aspect-[4/3] h-[46%] items-center justify-center overflow-hidden rounded-[10.5%/14%] bg-canvas text-fg-faint shadow-float after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:ring-hairline-strong">
+        <div className="absolute right-[4%] bottom-[6%] flex aspect-[4/3] h-[40%] items-center justify-center overflow-hidden rounded-[10.5%/14%] bg-canvas text-fg-faint shadow-float after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:ring-hairline-strong">
           {stream ? (
             <video ref={videoRef} autoPlay muted playsInline className="size-full object-cover" />
           ) : (
@@ -399,28 +406,37 @@ function CameraPreview({
           )}
         </div>
       )}
-      {recording && (
-        <span className="absolute top-2 left-2 flex items-center gap-1.5 rounded-chip bg-scrim px-2 py-0.5 text-caption font-medium text-fg tabular-nums">
-          <span className={cn('size-2 rounded-full bg-danger', !paused && 'animate-pulse')} />
-          {formatDuration(elapsedMs)}
-          {paused && ' | Pause'}
-        </span>
+      {start && (
+        <div
+          className={cn(
+            'absolute inset-0 flex flex-col items-center gap-2',
+            // Above the bubble of „Beides“, in the middle otherwise.
+            bubbleOnly ? 'justify-start pt-[9%]' : 'justify-center',
+          )}
+        >
+          {start}
+          {screenToCome && (
+            <span className="text-caption text-fg-subtle">Bildschirm wählst du beim Start</span>
+          )}
+        </div>
       )}
     </div>
   );
 }
 
 /** "Max. 5 Min. 1,2 GB von 5 GB belegt." – no storage line without a quota. */
-function StorageHint({ deckId }: { deckId: string }) {
+function StorageHint({ deckId, limit }: { deckId: string; limit: boolean }) {
   const usage = useMediaUsage(deckId).data;
   const limitBytes = usage?.limitBytes ?? null;
   const nearlyFull = usage && limitBytes !== null && usage.usedBytes / limitBytes > 0.9;
+  const storage =
+    usage && limitBytes !== null
+      ? `${formatFileSize(usage.usedBytes)} von ${formatFileSize(limitBytes)} belegt.`
+      : null;
+  if (!limit && !storage) return null;
   return (
     <p className={cn('text-caption', nearlyFull ? 'text-warning' : 'text-fg-faint')}>
-      Max. 5 Min.
-      {usage &&
-        limitBytes !== null &&
-        ` ${formatFileSize(usage.usedBytes)} von ${formatFileSize(limitBytes)} belegt.`}
+      {[limit && 'Max. 5 Min.', storage].filter(Boolean).join(' ')}
     </p>
   );
 }

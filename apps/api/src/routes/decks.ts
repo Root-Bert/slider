@@ -18,8 +18,16 @@ import {
   type DeckSearchResult,
   type DeckSource,
   type Viewer,
+  updateDeckTemplateInputSchema,
 } from '@slider/shared';
-import { deckAccess, requireDeckAccess, requireOwner, viewerAccess } from '../auth/access';
+import { blankOdp } from '@slider/odp';
+import {
+  deckAccess,
+  requireDeckAccess,
+  requireOwner,
+  viewerAccess,
+  type DeckViewerAccess,
+} from '../auth/access';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import { decks, revisions, type DeckRow } from '../db/schema';
 import { toDeckBytes } from '../import/any-file';
@@ -50,6 +58,12 @@ import { findFolder } from '../services/folders';
 import { assertDeckSlot } from '../services/plans';
 import { listSlides } from '../services/slides';
 import { requireRole, resolveUploadWorkspace } from '../services/workspaces';
+import {
+  deckFileFromMaster,
+  saveTemplateToLibrary,
+  scheduleTemplateSave,
+  updateDeckTemplate,
+} from '../services/workspace-masters';
 
 /** Headroom for multipart boundaries and headers on top of the file itself. */
 const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
@@ -59,6 +73,14 @@ const linkBodySchema = z.object({
   /** BER-129; omitted by old clients → the first workspace the user may create decks in. */
   workspaceId: z.string().max(100).optional(),
 });
+
+const blankBodySchema = z.object({
+  workspaceId: z.string().max(100).optional(),
+  /** Made from this design of the workspace (`workspace_masters`) instead of Slider's own. */
+  masterId: z.string().max(100).optional(),
+});
+/** A new empty deck's file – its title is "Neue Präsentation". */
+const BLANK_DECK_FILE_NAME = 'Neue Präsentation.odp';
 
 /** Opening a deck keeps it in the automatic update rotation (BER-107); written at most hourly. */
 const LAST_VIEWED_THROTTLE_MS = 60 * 60 * 1000;
@@ -87,7 +109,7 @@ async function findExistingDeck(
     .select({ id: decks.id })
     .from(decks)
     .leftJoin(revisions, eq(revisions.id, decks.currentRevisionId))
-    .where(and(eq(decks.workspaceId, workspaceId), condition))
+    .where(and(eq(decks.workspaceId, workspaceId), eq(decks.isTemplate, false), condition))
     .orderBy(sql`${decks.archivedAt} is not null`, desc(decks.updatedAt));
   for (const { id } of rows) {
     const found = await deckAccess(deps, viewer, id, 'view').catch((error: unknown) => {
@@ -127,6 +149,18 @@ const findDeckWithContent = (
 
 const existingDeckDto = async (deps: AppDeps, viewer: Viewer, deck: DeckRow) =>
   toDeckDto(deps.db, deck, { access: await viewerAccess(deps.db, viewer) });
+
+/** `?workspaceId=` → that workspace (members only); without it: all my workspaces. */
+async function workspaceIdsOf(
+  deps: AppDeps,
+  viewer: Viewer,
+  access: DeckViewerAccess,
+  workspaceId: string | undefined,
+): Promise<string[]> {
+  if (!workspaceId) return [...access.roles.keys()];
+  await requireRole(deps.db, workspaceId, viewer.author.id);
+  return [workspaceId];
+}
 
 /**
  * Downloads a resolved source file and starts its import – unless the workspace has a deck of
@@ -183,6 +217,33 @@ async function importRemote(
   return { deck, created: true };
 }
 
+/**
+ * An uploaded file as a deck – one request (`POST /decks/upload`) or in parts (`deck-tus.ts`):
+ * a PowerPoint or a PDF as it is, any other file as a PDF. The same file uploaded (or linked)
+ * before opens that deck instead of a second one (`created: false`).
+ */
+export async function createUploadedDeck(
+  deps: AppDeps,
+  viewer: Viewer,
+  requestedWorkspaceId: string | undefined,
+  file: { fileName: string; original: Uint8Array },
+): Promise<{ deck: Deck; created: boolean }> {
+  const workspaceId = await resolveUploadWorkspace(deps, viewer.author.id, requestedWorkspaceId);
+  const bytes = await toDeckBytes(file.fileName, file.original, deps.documentPdf);
+  const sourceSha256 = sha256Hex(file.original);
+  const same = await findDeckWithContent(deps, viewer, workspaceId, sourceSha256, {
+    linkedOnly: false,
+  });
+  if (same) return { deck: await existingDeckDto(deps, viewer, same), created: false };
+  await assertDeckSlot(deps.db, deps.config, workspaceId, { addBytes: bytes.byteLength });
+  const deck = await createDeckFromFile(
+    deps,
+    { ownerId: viewer.author.id, workspaceId },
+    { fileName: file.fileName, bytes, sourceSha256, source: 'upload' },
+  );
+  return { deck, created: true };
+}
+
 /** Work and school drives have `b!…` ids; personal OneDrive ids are plain hex. */
 const driveKind = (driveId: string) => (driveId.startsWith('b!') ? 'sharepoint' : 'onedrive');
 
@@ -192,8 +253,8 @@ const driveKind = (driveId: string) => (driveId.startsWith('b!') ? 'sharepoint' 
  * never blocks a plain upload (or the other way round).
  */
 export const REMOTE_IMPORTS_IN_FLIGHT = 2;
-/** All accounts together: bounds the memory of parallel downloads (up to 200 MB each). */
-export const REMOTE_IMPORTS_IN_FLIGHT_TOTAL = 6;
+/** All accounts together: bounds the memory of parallel downloads (up to 512 MB each). */
+export const REMOTE_IMPORTS_IN_FLIGHT_TOTAL = 3;
 
 /** Caps link and picker imports in flight, per account and in total (after {@link importLimit}). */
 function remoteImportSlot() {
@@ -248,9 +309,7 @@ export function decksRoutes(deps: AppDeps) {
         const { viewer } = c.var;
         requireOwner(viewer);
         const access = await viewerAccess(deps.db, viewer);
-        const workspaceId = c.req.query('workspaceId');
-        if (workspaceId) await requireRole(deps.db, workspaceId, viewer.author.id);
-        const workspaceIds = workspaceId ? [workspaceId] : [...access.roles.keys()];
+        const workspaceIds = await workspaceIdsOf(deps, viewer, access, c.req.query('workspaceId'));
         return c.json(await listWorkspaceDecks(deps, workspaceIds, access));
       })
 
@@ -277,9 +336,7 @@ export function decksRoutes(deps: AppDeps) {
           );
         }
         const access = await viewerAccess(deps.db, viewer);
-        const workspaceId = c.req.query('workspaceId');
-        if (workspaceId) await requireRole(deps.db, workspaceId, viewer.author.id);
-        const workspaceIds = workspaceId ? [workspaceId] : [...access.roles.keys()];
+        const workspaceIds = await workspaceIdsOf(deps, viewer, access, c.req.query('workspaceId'));
         return c.json<DeckSearchResult[]>(await searchDecks(deps, workspaceIds, access, query));
       })
 
@@ -317,34 +374,36 @@ export function decksRoutes(deps: AppDeps) {
           if (file.size === 0) throw badRequest('Die Datei ist leer.');
 
           const field = body['workspaceId'];
-          const workspaceId = await resolveUploadWorkspace(
-            deps,
-            viewer.author.id,
-            c.req.query('workspaceId') || (typeof field === 'string' && field ? field : undefined),
-          );
-          // A PowerPoint or a PDF as it is; any other file becomes a PDF.
+          const requested =
+            c.req.query('workspaceId') || (typeof field === 'string' && field ? field : undefined);
           const original = new Uint8Array(await file.arrayBuffer());
-          const bytes = await toDeckBytes(file.name, original, deps.documentPdf);
-          const sourceSha256 = sha256Hex(original);
-          // The same file uploaded (or linked) before: open that review instead of a second one.
-          const same = await findDeckWithContent(deps, viewer, workspaceId, sourceSha256, {
-            linkedOnly: false,
+          const { deck, created } = await createUploadedDeck(deps, viewer, requested, {
+            fileName: file.name,
+            original,
           });
-          if (same) return c.json(await existingDeckDto(deps, viewer, same), 200);
-          await assertDeckSlot(deps.db, deps.config, workspaceId, { addBytes: bytes.byteLength });
-          const deck = await createDeckFromFile(
-            deps,
-            { ownerId: viewer.author.id, workspaceId },
-            {
-              fileName: file.name,
-              bytes,
-              sourceSha256,
-              source: 'upload',
-            },
-          );
-          return c.json(deck, 201);
+          return c.json(deck, created ? 201 : 200);
         },
       )
+
+      /**
+       * Start from scratch: an ODP with one slide to build in the editor – blank, or of the first
+       * layout of a design of the workspace (`masterId`).
+       */
+      .post('/decks/blank', viewer, imports, async (c) => {
+        const { viewer } = c.var;
+        requireOwner(viewer);
+        const { workspaceId: requested, masterId } = await readJson(c, blankBodySchema);
+        const workspaceId = await resolveUploadWorkspace(deps, viewer.author.id, requested);
+        const bytes = masterId
+          ? await deckFileFromMaster(deps, viewer.author.id, workspaceId, masterId)
+          : await blankOdp(deps.clock.now());
+        const deck = await createDeckFromFile(
+          deps,
+          { ownerId: viewer.author.id, workspaceId },
+          { fileName: BLANK_DECK_FILE_NAME, bytes, source: 'upload', masterId: masterId ?? null },
+        );
+        return c.json(deck, 201);
+      })
 
       .post('/decks/link', viewer, imports, downloads, async (c) => {
         const { viewer } = c.var;
@@ -477,10 +536,23 @@ export function decksRoutes(deps: AppDeps) {
         const { viewer } = c.var;
         const { deck } = await deckAccess(deps, viewer, c.req.param('deckId'), 'view');
         await touchLastViewed(deps, deck);
-        return c.json(
-          await toDeckDto(deps.db, deck, { access: await viewerAccess(deps.db, viewer) }),
-        );
+        return c.json(await existingDeckDto(deps, viewer, deck));
       })
+
+      /**
+       * A template being designed: what its file cannot say yet – the layouts' names, which
+       * elements are placeholders, the guides.
+       */
+      .patch('/decks/:deckId/template', viewer, async (c) => {
+        const input = await readJson(c, updateDeckTemplateInputSchema);
+        const deck = await updateDeckTemplate(deps, c.var.viewer, c.req.param('deckId'), input);
+        return c.json(await existingDeckDto(deps, c.var.viewer, deck));
+      })
+
+      /** Saves a template being designed to the workspace's library (members and admins). */
+      .post('/decks/:deckId/template/save', viewer, imports, async (c) =>
+        c.json(await saveTemplateToLibrary(deps, c.var.viewer, c.req.param('deckId'))),
+      )
 
       .patch('/decks/:deckId', viewer, async (c) => {
         const deck = await requireDeckAccess(deps, c.var.viewer, c.req.param('deckId'), 'own');
@@ -496,14 +568,15 @@ export function decksRoutes(deps: AppDeps) {
               ? { archivedAt: input.archived ? (deck.archivedAt ?? now) : null }
               : {}),
             ...(input.folderId !== undefined ? { folderId: input.folderId } : {}),
+            ...(input.customColors !== undefined ? { customColors: input.customColors } : {}),
             updatedAt: now,
           })
           .where(eq(decks.id, deck.id))
           .returning();
         if (!updated) throw new Error(`Deck ${deck.id} vanished during update`);
-        return c.json(
-          await toDeckDto(deps.db, updated, { access: await viewerAccess(deps.db, c.var.viewer) }),
-        );
+        // A template's name is its name in the library too.
+        if (updated.isTemplate && input.title !== undefined) scheduleTemplateSave(deps, deck.id);
+        return c.json(await existingDeckDto(deps, c.var.viewer, updated));
       })
 
       .delete('/decks/:deckId', viewer, async (c) => {

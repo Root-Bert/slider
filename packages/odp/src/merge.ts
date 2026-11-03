@@ -261,6 +261,23 @@ const OTHER_STYLE_REFERENCES = new Set([
 const refersToStyle = (name: string): boolean =>
   (name.endsWith('-name') && name !== 'style:display-name') || OTHER_STYLE_REFERENCES.has(name);
 
+/**
+ * What `node` itself (not what is below it) names by name: each attribute that refers to a
+ * style – a parent or list style, a gradient, hatch, fill picture, transparency, marker or dash
+ * pattern, a master page, a font declaration (`style:font-name`) – with the names it gives
+ * (`draw:stroke-dash-names` gives several).
+ */
+export function styleReferencesOf(node: XmlNode): { attribute: string; name: string }[] {
+  return attributeNames(node)
+    .filter(refersToStyle)
+    .flatMap((attribute) =>
+      (attr(node, attribute) ?? '')
+        .split(' ')
+        .filter(Boolean)
+        .map((name) => ({ attribute, name })),
+    );
+}
+
 /** Points references to renamed styles at their new names, in `nodes` and everything below. */
 export function renameStyleReferences(
   nodes: readonly XmlNode[],

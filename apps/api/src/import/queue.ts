@@ -18,31 +18,39 @@ export interface QueueOptions<Job> {
   concurrency?: number;
   /** Jobs with the same key never run side by side, e.g. two imports of one deck. */
   key?: (job: Job) => string;
+  /**
+   * Jobs someone waits for: they have `concurrency` slots of their own, so they never wait for
+   * the other jobs – only for each other.
+   */
+  urgent?: (job: Job) => boolean;
 }
 
 /**
  * Runs up to `concurrency` jobs side by side (rendering is CPU-bound: each running job may hold
- * one LibreOffice). The next job is the waiting one with the lowest `priority`, in order of
- * arrival among equals, whose `key` is not running yet. A failing job is logged and never stops
- * the queue.
+ * one LibreOffice), plus as many `urgent` ones. The next job is the waiting one with the lowest
+ * `priority`, in order of arrival among equals, whose `key` is not running yet and that has a
+ * free slot. A failing job is logged and never stops the queue.
  */
 export class InProcessQueue<Job> implements JobQueue<Job> {
   private readonly waiting: { job: Job; done: () => void }[] = [];
   private readonly runningKeys = new Set<string>();
-  private running = 0;
+  /** Running jobs: urgent ones, the others. */
+  private readonly running = { urgent: 0, other: 0 };
   private drained: (() => void)[] = [];
   private readonly priority: (job: Job) => number;
   private readonly concurrency: number;
   private readonly key: ((job: Job) => string) | undefined;
+  private readonly urgent: (job: Job) => boolean;
 
   constructor(
     private readonly handler: JobHandler<Job>,
     private readonly log: Logger,
-    { priority = () => 0, concurrency = 1, key }: QueueOptions<Job> = {},
+    { priority = () => 0, concurrency = 1, key, urgent = () => false }: QueueOptions<Job> = {},
   ) {
     this.priority = priority;
     this.concurrency = Math.max(1, Math.floor(concurrency));
     this.key = key;
+    this.urgent = urgent;
   }
 
   enqueue(job: Job): void {
@@ -58,17 +66,21 @@ export class InProcessQueue<Job> implements JobQueue<Job> {
   }
 
   idle(): Promise<void> {
-    if (this.running === 0 && this.waiting.length === 0) return Promise.resolve();
+    if (this.runningCount() === 0 && this.waiting.length === 0) return Promise.resolve();
     return new Promise<void>((resolve) => this.drained.push(resolve));
   }
 
+  private runningCount(): number {
+    return this.running.urgent + this.running.other;
+  }
+
+  private lane(job: Job): 'urgent' | 'other' {
+    return this.urgent(job) ? 'urgent' : 'other';
+  }
+
   private next(): void {
-    while (this.running < this.concurrency) {
-      const entry = this.take();
-      if (!entry) break;
-      this.start(entry);
-    }
-    if (this.running === 0 && this.waiting.length === 0) {
+    for (let entry = this.take(); entry; entry = this.take()) this.start(entry);
+    if (this.runningCount() === 0 && this.waiting.length === 0) {
       for (const resolve of this.drained.splice(0)) resolve();
     }
   }
@@ -78,6 +90,7 @@ export class InProcessQueue<Job> implements JobQueue<Job> {
     let index = -1;
     let best = Infinity;
     for (const [i, entry] of this.waiting.entries()) {
+      if (this.running[this.lane(entry.job)] >= this.concurrency) continue;
       if (this.key && this.runningKeys.has(this.key(entry.job))) continue;
       const rank = this.priority(entry.job);
       if (rank < best) {
@@ -90,12 +103,13 @@ export class InProcessQueue<Job> implements JobQueue<Job> {
 
   private start(entry: { job: Job; done: () => void }): void {
     const key = this.key?.(entry.job);
-    this.running += 1;
+    const lane = this.lane(entry.job);
+    this.running[lane] += 1;
     if (key !== undefined) this.runningKeys.add(key);
     void this.handler(entry.job)
       .catch((error: unknown) => this.log.error('Background job failed', entry.job, error))
       .finally(() => {
-        this.running -= 1;
+        this.running[lane] -= 1;
         if (key !== undefined) this.runningKeys.delete(key);
         entry.done();
         this.next();
@@ -120,6 +134,9 @@ export interface ImportJob {
  */
 export const importJobPriority = (job: ImportJob): number =>
   job.kind === 'rerender' ? 2 : job.kind === 'sync' ? 1 : 0;
+
+/** A first import never waits for syncs or re-renders already running (`QueueOptions.urgent`). */
+export const isUrgentImportJob = (job: ImportJob): boolean => (job.kind ?? 'initial') === 'initial';
 
 /** One deck's imports never overlap: they replace the same slides and progress. */
 export const importJobKey = (job: ImportJob): string => job.deckId;

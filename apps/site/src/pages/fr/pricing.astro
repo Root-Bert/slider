@@ -1,0 +1,11 @@
+---
+import Pricing from '~/components/pricing/Pricing.astro';
+import { t } from '~/i18n';
+import Base from '~/layouts/Base.astro';
+
+const { meta } = t('fr');
+---
+
+<Base current="pricing" lang="fr" translated="pricing" title={meta.pricingTitle} description={meta.pricingDescription}>
+  <Pricing lang="fr" />
+</Base>

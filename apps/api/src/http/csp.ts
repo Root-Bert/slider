@@ -27,14 +27,26 @@ const ONEDRIVE_PICKER = ['https://onedrive.live.com', 'https://*.sharepoint.com'
  */
 const DIRECTIVES: [string, ...string[]][] = [
   ['default-src', "'self'"],
-  ['script-src', "'self'"],
+  // `'wasm-unsafe-eval'`: speaking to the AI hears the pauses with a small model in WebAssembly
+  // (Silero VAD on onnxruntime-web) – compiling WebAssembly, no `eval` of scripts.
+  ['script-src', "'self'", "'wasm-unsafe-eval'"],
   ['style-src', "'self'"],
   ['font-src', "'self'"],
   // `data:`: generated avatars (DiceBear); `blob:`: images and recordings before upload;
-  // Unsplash: stock photos are shown from Unsplash itself (its terms), until one is picked.
-  ['img-src', "'self'", 'data:', 'blob:', 'https://images.unsplash.com'],
+  // Unsplash, Pexels: stock photos are shown from the service itself (its terms), until one is
+  // picked.
+  [
+    'img-src',
+    "'self'",
+    'data:',
+    'blob:',
+    'https://images.unsplash.com',
+    'https://images.pexels.com',
+  ],
   ['media-src', "'self'", 'blob:'],
-  ['connect-src', "'self'"],
+  // Mistral's realtime stream: the words shown live while speaking to the AI (`live` key) – the
+  // browser connects itself, with a token the server got for it.
+  ['connect-src', "'self'", 'wss://api.mistral.ai'],
   ['worker-src', "'self'"],
   ['frame-src', ...ONEDRIVE_PICKER],
   ['form-action', "'self'", ...ONEDRIVE_PICKER],

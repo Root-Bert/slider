@@ -7,6 +7,8 @@ import { sourceApp } from './lib/labels';
 interface AuthorLineProps {
   comment: Comment;
   trailing?: ReactNode;
+  /** Floats right after the time without taking room – the reaction picker. */
+  afterTime?: ReactNode;
   className?: string;
 }
 
@@ -16,7 +18,7 @@ interface AuthorLineProps {
  * card, a phone's panel) the "aus PowerPoint" goes – the badge says it too – and the date gives
  * way before the name does.
  */
-export function AuthorLine({ comment, trailing, className }: AuthorLineProps) {
+export function AuthorLine({ comment, trailing, afterTime, className }: AuthorLineProps) {
   const app = sourceApp(comment.source);
   return (
     <header className={cn('@container flex min-w-0 items-center gap-2', className)}>
@@ -32,6 +34,7 @@ export function AuthorLine({ comment, trailing, className }: AuthorLineProps) {
         {app && <span className="hidden @min-[20rem]:inline">aus {app} | </span>}
         {app ? formatShortDate(comment.createdAt) : formatRelativeTime(comment.createdAt)}
       </time>
+      {afterTime && <span className="relative -ml-2 shrink-0 self-stretch">{afterTime}</span>}
       {trailing && <span className="ml-auto flex shrink-0 items-center">{trailing}</span>}
     </header>
   );

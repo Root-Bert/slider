@@ -63,7 +63,7 @@ export const unlimitedUsage = (usage: WorkspaceUsage) =>
 export const formatRatio = ({ used, max }: Pick<LimitState, 'used' | 'max'>) =>
   max === null ? String(used) : `${used}/${max}`;
 
-const decksWord = (n: number) => (n === 1 ? 'Review' : 'Reviews');
+const decksWord = (n: number) => (n === 1 ? 'Präsentation' : 'Präsentationen');
 
 /** Overview: "2 von 3 Reviews" / "5 Reviews". */
 export function formatDeckUsage(usage: WorkspaceUsage): string {
@@ -74,7 +74,7 @@ export function formatDeckUsage(usage: WorkspaceUsage): string {
 /** Why "Neue Review" is off, matching the API's `plan_limit` message. */
 export function deckLimitMessage(workspace: Pick<Workspace, 'plan' | 'usage'>): string {
   const max = workspace.usage.maxDecks ?? 0;
-  return `Im ${planLabel(workspace.plan)} ${max === 1 ? 'ist eine Review' : `sind ${max} Reviews`} pro Workspace möglich. Lösche eine, um Platz zu schaffen.`;
+  return `Im ${planLabel(workspace.plan)} ${max === 1 ? 'ist eine Präsentation' : `sind ${max} Präsentationen`} pro Workspace möglich. Lösche eine, um Platz zu schaffen.`;
 }
 
 /**

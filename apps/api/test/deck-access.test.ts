@@ -149,20 +149,18 @@ const OPEN = {
 };
 
 describe('restricting a deck to selected accounts', () => {
-  it('starts unrestricted and says so in the deck and its access list', async () => {
-    const res = await ctx.request(`/api/decks/${deck.deckId}/access`);
-    expect(res.status).toBe(200);
-    expect(deckAccessSchema.parse(await res.json())).toEqual({ restricted: false, userIds: [] });
-    const dto = deckSchema.parse(await (await ctx.request(`/api/decks/${deck.deckId}`)).json());
-    expect(dto.restricted).toBe(false);
-  });
+  it('keeps everyone unlisted out like a non-member, on every way to the deck, until lifted', async () => {
+    const start = await ctx.request(`/api/decks/${deck.deckId}/access`);
+    expect(start.status).toBe(200);
+    expect(deckAccessSchema.parse(await start.json())).toEqual({ restricted: false, userIds: [] });
+    expect(
+      deckSchema.parse(await (await ctx.request(`/api/decks/${deck.deckId}`)).json()).restricted,
+    ).toBe(false);
 
-  it('keeps everyone else out like a non-member, on every way to the deck', async () => {
     const anna = await member('Anna', 'reviewer');
     const ben = await member('Ben', 'reviewer');
     const ids = await commentWithRecording();
-    const before = await reach(ben.cookie, ids);
-    expect(before).toEqual(OPEN);
+    expect(await reach(ben.cookie, ids)).toEqual(OPEN);
 
     const access = await restrict(deck.deckId, [anna.user.id]);
     expect(access).toEqual({ restricted: true, userIds: [anna.user.id] });
@@ -180,30 +178,52 @@ describe('restricting a deck to selected accounts', () => {
       await (await ctx.request(`/api/decks/${deck.deckId}`, { cookie: anna.cookie })).json(),
     );
     expect(dto.restricted).toBe(true);
-  });
 
-  it('keeps archived and foldered decks out of the lists too, and keeps the restriction', async () => {
-    const ben = await member('Ben', 'member');
+    // archived and in a folder, it stays restricted and out of the lists
     const folder = await ctx.request(`/api/workspaces/${ctx.workspaceId}/folders`, {
       method: 'POST',
       json: { name: 'Vorstand' },
     });
     const { id: folderId } = (await folder.json()) as { id: string };
-    await restrict(deck.deckId, []);
     const moved = await ctx.request(`/api/decks/${deck.deckId}`, {
       method: 'PATCH',
       json: { folderId, archived: true },
     });
     expect(deckSchema.parse(await moved.json()).restricted).toBe(true);
     expect(await listedDeckIds(ben.cookie)).not.toContain(deck.deckId);
+
+    // a new list replaces the old one, duplicates folded
+    await restrict(deck.deckId, [anna.user.id, ben.user.id, anna.user.id]);
+    expect((await restrict(deck.deckId, [ben.user.id])).userIds).toEqual([ben.user.id]);
+    expect((await ctx.request(`/api/decks/${deck.deckId}`, { cookie: anna.cookie })).status).toBe(
+      404,
+    );
+
+    // lifting lets everyone in again and keeps the list for next time
+    const lifted = await setAccess(deck.deckId, { restricted: false, userIds: [ben.user.id] });
+    expect(deckAccessSchema.parse(await lifted.json())).toEqual({
+      restricted: false,
+      userIds: [ben.user.id],
+    });
+    expect((await ctx.request(`/api/decks/${deck.deckId}`, { cookie: anna.cookie })).status).toBe(
+      200,
+    );
   });
 
-  it('never locks out the owner or the admins, listed or not', async () => {
+  it('never locks out the owner or the admins, and suggests only who may open it for @', async () => {
+    const anna = await member('Anna', 'reviewer');
     const mia = await member('Mia', 'member');
     const carla = await member('Carla', 'admin');
+    await restrict(deck.deckId, [anna.user.id]);
+    const people = await ctx.request(`/api/decks/${deck.deckId}/people`);
+    const suggested = authorSchema
+      .array()
+      .parse(await people.json())
+      .map((person) => person.id);
+    expect(suggested.sort()).toEqual([anna.user.id, carla.user.id, ctx.ownerId].sort());
+
     await ctx.deps.db.update(decks).set({ ownerId: mia.user.id }).where(eq(decks.id, deck.deckId));
     await restrict(deck.deckId, []);
-
     for (const cookie of [mia.cookie, carla.cookie, undefined]) {
       expect((await ctx.request(`/api/decks/${deck.deckId}`, { cookie })).status).toBe(200);
       expect(await listedDeckIds(cookie)).toContain(deck.deckId);
@@ -219,69 +239,25 @@ describe('restricting a deck to selected accounts', () => {
     );
   });
 
-  it('suggests only the people who may open it for @', async () => {
-    const anna = await member('Anna', 'reviewer');
-    await member('Ben', 'reviewer');
-    const carla = await member('Carla', 'admin');
-    await restrict(deck.deckId, [anna.user.id]);
-    const res = await ctx.request(`/api/decks/${deck.deckId}/people`);
-    const ids = authorSchema
-      .array()
-      .parse(await res.json())
-      .map((person) => person.id);
-    expect(ids.sort()).toEqual([anna.user.id, carla.user.id, ctx.ownerId].sort());
-  });
-
-  it('lifting the restriction lets everyone in again and keeps the list for next time', async () => {
-    const anna = await member('Anna', 'reviewer');
-    const ben = await member('Ben', 'reviewer');
-    await restrict(deck.deckId, [anna.user.id]);
-    expect((await ctx.request(`/api/decks/${deck.deckId}`, { cookie: ben.cookie })).status).toBe(
-      404,
-    );
-
-    const res = await setAccess(deck.deckId, { restricted: false, userIds: [anna.user.id] });
-    expect(deckAccessSchema.parse(await res.json())).toEqual({
-      restricted: false,
-      userIds: [anna.user.id],
-    });
-    expect((await ctx.request(`/api/decks/${deck.deckId}`, { cookie: ben.cookie })).status).toBe(
-      200,
-    );
-    expect(await listedDeckIds(ben.cookie)).toContain(deck.deckId);
-  });
-
-  it('replaces the whole list', async () => {
-    const anna = await member('Anna', 'reviewer');
-    const ben = await member('Ben', 'reviewer');
-    await restrict(deck.deckId, [anna.user.id, ben.user.id, anna.user.id]);
-    const access = await restrict(deck.deckId, [ben.user.id]);
-    expect(access.userIds).toEqual([ben.user.id]);
-    expect((await ctx.request(`/api/decks/${deck.deckId}`, { cookie: anna.cookie })).status).toBe(
-      404,
-    );
-  });
-
-  it('accepts only members of the workspace, and rejects malformed bodies', async () => {
-    const outsider = await signedInUser(ctx, { name: 'Olaf', email: 'olaf@extern.de' });
-    const res = await setAccess(deck.deckId, { restricted: true, userIds: [outsider.user.id] });
-    expect(res.status).toBe(400);
-    expect(await res.json()).toMatchObject({ error: { code: 'bad_request' } });
-    const unknown = await setAccess(deck.deckId, { restricted: true, userIds: ['nobody'] });
-    expect(unknown.status).toBe(400);
-    expect((await setAccess(deck.deckId, { restricted: 'ja', userIds: [] })).status).toBe(400);
-    expect((await setAccess(deck.deckId, { restricted: true })).status).toBe(400);
-    // Nothing changed.
-    const access = await ctx.request(`/api/decks/${deck.deckId}/access`);
-    expect(deckAccessSchema.parse(await access.json())).toEqual({ restricted: false, userIds: [] });
-  });
-
-  it('lets only its managers and the admins read or change the list', async () => {
+  it('lets only its managers change the list, to members of the workspace only', async () => {
     const anna = await member('Anna', 'member');
     const mia = await member('Mia', 'member');
     const carla = await member('Carla', 'admin');
     const outsider = await signedInUser(ctx, { name: 'Olaf', email: 'olaf@extern.de' });
     const path = `/api/decks/${deck.deckId}/access`;
+
+    const foreign = await setAccess(deck.deckId, { restricted: true, userIds: [outsider.user.id] });
+    expect(foreign.status).toBe(400);
+    expect(await foreign.json()).toMatchObject({ error: { code: 'bad_request' } });
+    expect((await setAccess(deck.deckId, { restricted: true, userIds: ['nobody'] })).status).toBe(
+      400,
+    );
+    expect((await setAccess(deck.deckId, { restricted: 'ja', userIds: [] })).status).toBe(400);
+    expect((await setAccess(deck.deckId, { restricted: true })).status).toBe(400);
+    expect(deckAccessSchema.parse(await (await ctx.request(path)).json())).toEqual({
+      restricted: false,
+      userIds: [],
+    });
 
     // A member who doesn't own it may see the deck, not its list.
     expect((await ctx.request(path, { cookie: anna.cookie })).status).toBe(403);
@@ -301,7 +277,7 @@ describe('restricting a deck to selected accounts', () => {
     expect((await restrict(deck.deckId, [], mia.cookie)).userIds).toEqual([]);
   });
 
-  it('drops the grant when its member leaves or is removed', async () => {
+  it('drops a grant when its member leaves, and all of them with the deck', async () => {
     const anna = await member('Anna', 'reviewer');
     await restrict(deck.deckId, [anna.user.id]);
     const removed = await ctx.request(
@@ -309,11 +285,12 @@ describe('restricting a deck to selected accounts', () => {
       { method: 'DELETE' },
     );
     expect(removed.status).toBe(204);
-    const grants = await ctx.deps.db
-      .select()
-      .from(deckAccessGrants)
-      .where(eq(deckAccessGrants.deckId, deck.deckId));
-    expect(grants).toEqual([]);
+    expect(
+      await ctx.deps.db
+        .select()
+        .from(deckAccessGrants)
+        .where(eq(deckAccessGrants.deckId, deck.deckId)),
+    ).toEqual([]);
 
     // Back in the workspace, Anna is no longer on the list.
     await ctx.deps.db
@@ -322,19 +299,19 @@ describe('restricting a deck to selected accounts', () => {
     expect((await ctx.request(`/api/decks/${deck.deckId}`, { cookie: anna.cookie })).status).toBe(
       404,
     );
-  });
 
-  it('goes with the deck', async () => {
-    const anna = await member('Anna', 'reviewer');
     await restrict(deck.deckId, [anna.user.id]);
     expect((await ctx.request(`/api/decks/${deck.deckId}`, { method: 'DELETE' })).status).toBe(204);
     expect(await ctx.deps.db.select().from(deckAccessGrants)).toEqual([]);
     expect(await ctx.deps.db.select().from(comments)).toEqual([]);
   });
 
-  it('ends the live connections of everyone it keeps out, right away', async () => {
+  it('ends the live connections of everyone it keeps out right away and tells the others', async () => {
     const anna = await member('Anna', 'reviewer');
     const ben = await member('Ben', 'reviewer');
+    const events: LiveEvent[] = [];
+    const owner: Author = { id: ctx.ownerId, name: 'Owner', type: 'owner', color: 'blue' };
+    hub.join(deck.deckId, owner, (event) => events.push(event));
     const opened: { abort: () => void; body: ReadableStream<Uint8Array> | null }[] = [];
     const openLive = async (cookie: string) => {
       const controller = new AbortController();
@@ -353,31 +330,16 @@ describe('restricting a deck to selected accounts', () => {
       await openLive(anna.cookie);
       await openLive(ben.cookie);
       const names = () => hub.peers(deck.deckId).map((peer) => peer.author.name);
-      expect(names().sort()).toEqual(['Anna', 'Ben']);
+      expect(names().sort()).toEqual(['Anna', 'Ben', 'Owner']);
 
       await restrict(deck.deckId, [anna.user.id]);
-      expect(names()).toEqual(['Anna']);
+      expect(names().sort()).toEqual(['Anna', 'Owner']);
+      expect(events.map((event) => event.type)).toContain('leave');
     } finally {
       for (const stream of opened) {
         stream.abort();
         await stream.body?.cancel().catch(() => {});
       }
     }
-  });
-
-  it('tells the others in the deck who left', async () => {
-    const events: LiveEvent[] = [];
-    const author = (id: string, name: string): Author => ({
-      id,
-      name,
-      type: 'owner',
-      color: 'blue',
-    });
-    hub.join(deck.deckId, author(ctx.ownerId, 'Owner'), (event) => events.push(event));
-    const ben = await member('Ben', 'reviewer');
-    hub.join(deck.deckId, author(ben.user.id, 'Ben'), () => {});
-    await restrict(deck.deckId, []);
-    expect(events.map((event) => event.type)).toContain('leave');
-    expect(hub.peers(deck.deckId).map((peer) => peer.author.id)).toEqual([ctx.ownerId]);
   });
 });

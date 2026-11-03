@@ -1,11 +1,12 @@
 ---
 import Slide from '~/components/slides/Slide.astro';
 import { asset } from '~/lib/links';
-import type { Post } from './posts';
+import { ACCENT_CSS, ACCENT_INK, type Post } from './posts';
 
 /**
- * A post's cover, drawn in code: an accent glow behind a versus pill pair, a ranking, a version
- * number, a slide with pins, or code braces.
+ * A post's cover, drawn in code as a slide in the post's accent on its paler copy, down and to the
+ * left (the logo): a versus pill pair, a ranking, a version number, a slide with pins, or code
+ * braces. Inside a link, hovering lifts the slide off its copy, like the buttons.
  */
 interface Props {
   post: Post;
@@ -17,68 +18,39 @@ interface Props {
 const { post, size = 'card', class: className } = Astro.props;
 const { cover, accent } = post.data;
 const wide = size === 'wide';
-const glow = {
-  powerpoint: 'glow-powerpoint.svg',
-  cyan: 'glow-cyan.svg',
-  green: 'glow-green.svg',
-  violet: 'glow-violet.svg',
-  yellow: 'glow-yellow.svg',
-  blue: 'glow-blue.svg',
-}[accent];
-const pill = wide
-  ? 'px-3.5 py-2 text-[15px] sm:px-[18px] sm:py-2.5 sm:text-[22px]'
-  : 'px-[18px] py-2.5 text-[17px]';
 ---
 
 <div
-  class:list={[
-    'relative isolate flex items-center justify-center overflow-hidden bg-surface-1',
-    wide ? 'h-[400px]' : 'h-[220px]',
-    className,
-  ]}
+  class:list={['cv', wide && 'is-wide', className]}
+  style={`--bg: ${ACCENT_CSS[accent]}; --ink: ${ACCENT_INK[accent]}`}
   aria-hidden="true"
 >
-  <img
-    src={asset(`blog/${glow}`)}
-    alt=""
-    class="pointer-events-none absolute -z-10 h-[140%] w-[120%] max-w-none"
-  />
   {
     cover.kind === 'versus' && (
-      <div class="flex items-center gap-2.5 sm:gap-3.5">
-        <span class:list={['rounded-full bg-primary font-semibold text-on-primary shadow-glow ring-hairline-strong', pill]}>
-          Slider
-        </span>
-        <span class="text-sm text-fg-subtle">vs</span>
-        <span class:list={['rounded-full bg-glass-elevated font-semibold whitespace-nowrap text-fg ring-hairline-strong', pill]}>
-          {cover.other}
-        </span>
+      <div class="cv-versus">
+        <span class="cv-pill is-slider">Slider</span>
+        <span class="cv-vs">vs</span>
+        <span class="cv-pill is-other">{cover.other}</span>
       </div>
     )
   }
   {
     cover.kind === 'ranking' && (
-      <div class="flex flex-col gap-2 self-start pt-11 pr-24">
-        <div class="flex items-center gap-2.5 rounded-control-sm bg-glass-elevated py-2.5 pr-4 pl-3 ring-hairline-strong">
-          <span class="text-[13px] tabular-nums whitespace-pre text-fg">1  Slider</span>
-          <span class="h-2 w-[140px] rounded-thumb bg-accent-cyan shadow-[0_0_10px_rgb(0_224_255/0.7)]" />
+      <div class="cv-ranking">
+        <div class="is-first">
+          <span>1  Slider</span>
+          <i style="width: 140px" />
         </div>
         {[110, 80].map((w, i) => (
-          <div class="flex w-max items-center gap-2.5 rounded-control-sm bg-glass py-2.5 pr-4 pl-3 ring-hairline">
-            <span class="text-[13px] tabular-nums text-fg-faint">{i + 2}</span>
-            <span class="h-2 rounded-thumb bg-fg-faint" style={`width: ${w}px`} />
+          <div>
+            <span>{i + 2}</span>
+            <i style={`width: ${w}px`} />
           </div>
         ))}
       </div>
     )
   }
-  {
-    cover.kind === 'version' && (
-      <span class="text-[96px] font-black tracking-[-0.05em] text-fg [text-shadow:0_0_30px_rgb(255_255_255/0.25),0_0_90px_rgb(255_255_255/0.08)]">
-        {cover.label}
-      </span>
-    )
-  }
+  {cover.kind === 'version' && <span class="cv-big">{cover.label}</span>}
   {
     cover.kind === 'slide' && (
       <div class="relative">
@@ -89,11 +61,108 @@ const pill = wide
       </div>
     )
   }
-  {
-    cover.kind === 'code' && (
-      <span class="font-mono text-[80px] font-medium text-accent-blue [text-shadow:0_0_30px_rgb(0_72_255/0.5)]">
-        {'{ }'}
-      </span>
-    )
-  }
+  {cover.kind === 'code' && <span class="cv-big cv-code">{'{ }'}</span>}
 </div>
+
+<style>
+  .cv {
+    --step: 10px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 16 / 10;
+    container-type: inline-size;
+    margin: 0 0 var(--step) var(--step);
+    border-radius: 20px;
+    background: var(--bg);
+    color: var(--ink);
+    box-shadow: calc(var(--step) * -1) var(--step) 0 color-mix(in srgb, var(--bg) 45%, transparent);
+    transition:
+      translate 200ms var(--ease-emphasized),
+      box-shadow 200ms var(--ease-emphasized);
+  }
+  .cv.is-wide {
+    --step: clamp(12px, 1.6vw, 22px);
+    border-radius: clamp(20px, 2.2vw, 32px);
+  }
+  :global(a:hover) > .cv,
+  :global(a:hover) .cv {
+    translate: 3px -3px;
+    box-shadow: calc(var(--step) * -1 - 3px) calc(var(--step) + 3px) 0 color-mix(in srgb, var(--bg) 45%, transparent);
+  }
+
+  .cv-versus {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  /* Sized by the slide's width, so the pair always fits, from a phone to the article hero. */
+  .cv-pill {
+    padding: 0.55em 1.1em;
+    border-radius: 999px;
+    font-size: clamp(12px, 3.6cqw, 26px);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+  }
+  .cv-pill.is-slider {
+    background: var(--color-accent-blue);
+    color: #fff;
+    box-shadow: -4px 4px 0 color-mix(in srgb, var(--color-accent-blue) 45%, transparent);
+  }
+  .cv-pill.is-other {
+    background: #fff;
+    color: #000;
+  }
+  .cv-vs {
+    font-size: 14px;
+    font-weight: 600;
+    opacity: 0.7;
+  }
+
+  .cv-ranking {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .cv-ranking div {
+    display: flex;
+    width: max-content;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px 10px 12px;
+    border-radius: 12px;
+    background: rgb(255 255 255 / 0.55);
+    color: #000;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    white-space: pre;
+  }
+  .cv-ranking div.is-first {
+    background: #fff;
+  }
+  .cv-ranking i {
+    height: 8px;
+    border-radius: 99px;
+    background: rgb(0 0 0 / 0.2);
+  }
+  .cv-ranking .is-first i {
+    background: var(--color-accent-blue);
+  }
+
+  .cv-big {
+    font-size: 96px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.05em;
+  }
+  .is-wide .cv-big {
+    font-size: clamp(96px, 12vw, 180px);
+  }
+  .cv-code {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+</style>

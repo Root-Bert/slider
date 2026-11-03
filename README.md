@@ -58,13 +58,14 @@ licenses. Please run `bun run lint && bun run typecheck && bun run test` first.
 
 ## License
 
-Slider is open source under the [GNU Affero General Public License v3.0](LICENSE). You may use,
-change and host it, including commercially. If you offer a changed version to others over a
-network, you must share its source code under the same license.
+Slider is open source under the [European Union Public Licence v1.2](LICENSE) (EUPL-1.2). You
+may use, change and host it, including commercially. If you distribute a changed version or offer
+it to others over a network, you must share its source code under the EUPL or one of the
+compatible licenses it lists. All 23 language versions of the EUPL are equally valid; the German
+one is in [LICENSE.de.txt](LICENSE.de.txt).
 
-The AGPL covers the code. The name Slider, its logo and the website's texts and pictures
+The EUPL covers the code. The name Slider, its logo and the website's texts and pictures
 (`apps/site`) are not licensed under it: all rights reserved.
 
-If the AGPL doesn't work for your organisation, for example because you want to keep changes
-private or your company doesn't allow AGPL software, a commercial license is available:
-slider@bertro.dev.
+Support, hosting and operation for public administrations and companies, as well as a commercial
+license for those who need other terms: slider@bertro.dev.

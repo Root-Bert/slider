@@ -231,7 +231,19 @@ export function FilterChip({
       )}
     >
       {icon && <Icon name={icon} size={ICON_PX[size]} />}
-      {!iconOnly && children}
+      {!iconOnly &&
+        (size === 'md' ? (
+          // The selected md chip is font-medium: an invisible medium copy holds that width, so
+          // selecting a segment never resizes it (or shifts its neighbours).
+          <span className="inline-grid">
+            <span className="col-start-1 row-start-1">{children}</span>
+            <span aria-hidden className="invisible col-start-1 row-start-1 font-medium">
+              {children}
+            </span>
+          </span>
+        ) : (
+          children
+        ))}
       {count !== undefined && (
         <span className={cn('text-xs font-medium', selected ? 'text-fg-muted' : 'text-fg-subtle')}>
           {count}

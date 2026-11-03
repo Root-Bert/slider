@@ -3,7 +3,7 @@ import { cn } from './cn';
 /**
  * - `quiet`: no underline, `fg-subtle` (or `fg-muted` with `tone="muted"`) → `fg` on hover.
  *   Back links, breadcrumbs, "Kopieren".
- * - `underline`: `fg-muted`, underlined (offset 4) → `fg`. Secondary ways out ("Zu meinen Reviews").
+ * - `underline`: `fg-muted`, underlined (offset 4) → `fg`. Secondary ways out ("Zu den Projekten").
  * - `inline`: a link inside running text: `fg`, underlined (offset 2), fades on hover.
  * - `mention`: a URL in a comment body.
  */

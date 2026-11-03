@@ -13,8 +13,6 @@ export type PenTool = Exclude<PathStrokeTool, 'rect' | 'ellipse'>;
  */
 export type Tool = PenTool | 'eraser';
 
-export const isPenTool = (tool: Tool | null): tool is PenTool => tool !== null && tool !== 'eraser';
-
 /** The tool bar's order, pointer first – Tab / ⇧Tab steps through it. */
 export const TOOL_CYCLE: readonly (Tool | null)[] = [null, 'pen', 'arrow', 'highlighter', 'eraser'];
 
@@ -72,6 +70,16 @@ export interface Draft {
   held?: boolean;
   /** Counts the clicks that would have replaced this draft but were ignored (`keepsDraft`). */
   nudge?: number;
+  /**
+   * A box drawn while speaking to the AI: what is said (or typed) meanwhile belongs to it, ↵
+   * sends it to the AI (`AiBoxComposer`) – the box's own number, new for each box drawn.
+   */
+  aiBox?: number;
+  /**
+   * The box for the AI adds to this thread, whose request the AI still works on: sent, it is a
+   * reply there, the AI stopped and asked again with it (`useSendAiBox`).
+   */
+  aiThreadId?: string;
 }
 
 /** One's own drawing just saved: typing right away comments on it (`drawingCommentStarted`). */
@@ -99,6 +107,8 @@ export interface ViewerState {
   /** "Bearbeiten" from a card's context menu: the thread panel opens with this comment's editor. */
   editingCommentId: string | null;
   statusFilter: StatusFilter;
+  /** The filter before the comments were hidden: K brings it back (`commentsToggled`). */
+  shownStatusFilter: Exclude<StatusFilter, 'hidden'>;
   /**
    * Threads someone is replying to right now (typed reply, open voice/video/sketch dialog), with
    * how many fields hold them. They stay listed even when they stop matching the status filter –
@@ -139,6 +149,13 @@ export interface ViewerState {
    */
   layersPanelOpen: boolean;
   /**
+   * „Hintergrund“ from a slide's right-click menu: that slide's background in the side panel,
+   * where the thread, the deleted slides or the layers would be – by its page id, `null` = closed.
+   */
+  backgroundPanelPageId: string | null;
+  /** „Layout umbenennen“ from a template slide's right-click menu: its page id, `null` = closed. */
+  layoutRenamePageId: string | null;
+  /**
    * Box mode (B): a click comments on the PowerPoint box under the pointer, which is outlined
    * while hovered. Off: a click places a free comment and boxes never show.
    */
@@ -147,10 +164,29 @@ export interface ViewerState {
   boxModeFlipped: boolean;
   /** "Hilfslinien zeigen": PowerPoint's drawing guides, and the boxes that cross them. */
   showGuides: boolean;
+  /** „Layout-Ansicht“ (H): the layout grid over the slides – a template's, or a presentation's template's. */
+  showLayoutGrid: boolean;
+  /**
+   * Its columns and rows set in the side panel (⇧H, the view on with it) – where the thread, the
+   * deleted slides, the layers or a background would be.
+   */
+  layoutGridPanelOpen: boolean;
+  /**
+   * „Exportieren“ (S): the deck's file (a template's as `.otp`) and a PDF in the side panel – where
+   * the thread, the deleted slides, the layers, a background or the layout grid would be.
+   */
+  sharePanelOpen: boolean;
+  /** The direction of the grid being set (its fields in use): only it shows meanwhile. */
+  layoutGridAxis: 'columns' | 'rows' | null;
   /** Slides hidden in PowerPoint: out of sight by default, H or the toolbar shows them. */
   showHiddenSlides: boolean;
   /** The minimap under the track: opens as set on /konto, the button left of the slide counter toggles it. */
   showMinimap: boolean;
+  /**
+   * The split handle pushed the comment area out of sight (desktop): the participants give way,
+   * only the AI's avatar stays – in the controls row.
+   */
+  commentsClosed: boolean;
   /**
    * Portrait pages in 16:9 frames, the page filling its frame – the wheel moves the part it
    * shows. Only counts when the deck has portrait pages (`frame-format`).
@@ -161,7 +197,8 @@ export interface ViewerState {
 export type ViewerAction =
   | { type: 'activeSlideChanged'; slideId: string }
   | { type: 'toolSelected'; tool: Tool | null }
-  | { type: 'anchorPlaced'; slideId: string; anchor: Anchor }
+  /** `aiBox`: a box drawn while speaking to the AI – it goes to the AI (`Draft.aiBox`). */
+  | { type: 'anchorPlaced'; slideId: string; anchor: Anchor; aiBox?: number; aiThreadId?: string }
   | { type: 'strokeAdded'; slideId: string; stroke: Stroke }
   | { type: 'gapDraftStarted'; afterSlideId: string | null; beforeSlideId: string | null }
   /** A click on a bare drawing's badge: the composer opens to comment on it. */
@@ -201,6 +238,8 @@ export type ViewerAction =
   /** Inline thread collapsed: drops the focus unless the panel shows that thread. */
   | { type: 'threadUnfocused'; threadId: string }
   | { type: 'statusFilterChanged'; filter: StatusFilter }
+  /** K: hides the comments, or brings back the filter they were hidden from. */
+  | { type: 'commentsToggled' }
   /** A reply field of the thread started (`true`) or stopped (`false`) holding a draft. */
   | { type: 'composingChanged'; threadId: string; composing: boolean }
   | { type: 'mediaReplyOpened'; reply: MediaReply }
@@ -215,11 +254,20 @@ export type ViewerAction =
   | { type: 'deletedPanelSet'; open: boolean }
   | { type: 'layersSet'; open: boolean }
   | { type: 'layersPanelSet'; open: boolean }
+  /** `null` closes it. */
+  | { type: 'backgroundPanelSet'; pageId: string | null }
+  /** `null` closes it. */
+  | { type: 'layoutRenameSet'; pageId: string | null }
   | { type: 'boxModeToggled' }
   | { type: 'boxModeFlipped'; flipped: boolean }
   | { type: 'showGuidesToggled' }
+  | { type: 'layoutGridToggled' }
+  | { type: 'layoutGridPanelSet'; open: boolean }
+  | { type: 'sharePanelSet'; open: boolean }
+  | { type: 'layoutGridAxisSet'; axis: 'columns' | 'rows' | null }
   | { type: 'showHiddenSlidesToggled' }
   | { type: 'showMinimapToggled' }
+  | { type: 'commentsClosedSet'; closed: boolean }
   | { type: 'wideFramesToggled' }
   /** Comments refetched: a thread deleted meanwhile (by someone else) loses focus and panel. */
   | { type: 'threadsReplaced'; threadIds: ReadonlySet<string> }

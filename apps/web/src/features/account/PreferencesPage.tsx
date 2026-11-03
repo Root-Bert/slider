@@ -21,7 +21,7 @@ export function Component() {
       back={{ to: routes.reviews() }}
       toast={toast}
     >
-      <Section title="Darstellung" description="Gilt für alle deine Reviews.">
+      <Section title="Darstellung" description="Gilt für alle deine Präsentationen.">
         <ColorPicker color={user.color} onNotify={showToast} />
       </Section>
 

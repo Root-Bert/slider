@@ -10,7 +10,7 @@ export interface PageHeaderProps {
   subtitle?: ReactNode;
   /** `sm` 14px (setup, onboarding) or `body` 13px (reviews, new review). */
   subtitleSize?: 'sm' | 'body';
-  /** "← Zurück zu den Reviews" above the title. */
+  /** "← Zurück zu den Projekten" above the title. */
   back?: { to: To; label?: string };
   /** Left of the title: avatar, workspace mark, icon. */
   leading?: ReactNode;
@@ -22,7 +22,7 @@ export interface PageHeaderProps {
   align?: 'start' | 'center';
   /** `inline`: subtitle on the title's baseline, wrapping below on narrow screens (reviews). */
   layout?: 'stacked' | 'inline';
-  /** Lays the title's children out in a row, e.g. a breadcrumb "Reviews › Ordner". */
+  /** Lays the title's children out in a row, e.g. a breadcrumb "Projekte › Ordner". */
   titleRow?: boolean;
   /** Layout only (page padding); the look comes from the props. */
   className?: string;

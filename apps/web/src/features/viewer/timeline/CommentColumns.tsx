@@ -6,7 +6,7 @@ import { threadsOf, useCommentThreads } from '../comments/hooks/useCommentThread
 import { afterCommit } from '@/lib/dom';
 import { prefersReducedMotion } from '@/lib/motion';
 import { followConnectors } from '../connectors/hooks/useConnectorLayout';
-import { bandCapacity, brickLayout, planBands } from '../connectors/lib/card-layout';
+import { bandCapacity, brickLayout, naturalWidth, planBands } from '../connectors/lib/card-layout';
 import {
   countLeftExits,
   fadesDone,
@@ -19,6 +19,7 @@ import { gapLabel, slideLabel } from '../comments/lib/labels';
 import {
   busRoom,
   cardMode,
+  columnSpans,
   slideHeightAt,
   splitForWidth,
   type TrackLayout,
@@ -45,11 +46,11 @@ interface CommentColumnsProps {
 }
 
 /**
- * The comment area: below every slide a column exactly as wide as the slide, holding that
- * slide's comments – full cards (B1/B3), compact cards or one bubble, depending on the width.
- * Gap comments sit in a column under their ⊕ divider. All columns share one grid cell, so the
- * area is as tall as the tallest column without measuring; columns never overlap because slides
- * and gaps don't.
+ * The comment area: below every slide a column holding that slide's comments – full cards
+ * (B1/B3), compact cards or one bubble, depending on the width. A column is as wide as its slide
+ * or grows into the free room beside it (`columnSpans`). Gap comments sit in a column under their
+ * ⊕ divider. All columns share one grid cell, so the area is as tall as the tallest column
+ * without measuring; columns never overlap, `columnSpans` keeps them apart.
  */
 export function CommentColumns({ layout, range, narrow }: CommentColumnsProps) {
   const { slides } = useViewerData();
@@ -63,10 +64,28 @@ export function CommentColumns({ layout, range, narrow }: CommentColumnsProps) {
     return busRoom(Math.min(lines, BUS_ROOM_MAX_LINES));
   }, [bySlide, narrow]);
 
+  // Columns with comments grow into the free room beside their slide (not on phones: stacked).
+  const spans = useMemo(
+    () =>
+      columnSpans(
+        layout,
+        (index) => {
+          const slide = slides[index];
+          const count = slide ? threadsOf(bySlide, slide.id).length : 0;
+          return count > 0 && !narrow ? naturalWidth(count) : 0;
+        },
+        (index) => {
+          const slide = slides[index];
+          return !!slide && byGap.has(gapKey(slide.id, slides[index + 1]?.id ?? null));
+        },
+      ),
+    [layout, slides, bySlide, byGap, narrow],
+  );
+
   const columns: ReactNode[] = [];
   for (let index = range.first; index <= range.last; index++) {
     const slide = slides[index];
-    const box = layout.slides[index];
+    const box = spans[index];
     const gap = layout.gaps[index];
     if (!slide || !box || !gap) continue;
     const threads = threadsOf(bySlide, slide.id);

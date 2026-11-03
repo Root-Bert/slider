@@ -1,29 +1,22 @@
-import type { DragEvent, MouseEvent } from 'react';
+import type { DragEvent } from 'react';
 import type { Deck, DeckSearchResult } from '@slider/shared';
-import type { ShowToast } from '@/ui';
+import { selectableItemProps, type SelectableItems } from '@/lib/collection-selection';
+import { collectionGridClass, type ShowToast } from '@/ui';
 import { setDraggedDecks } from '../lib/deck-drag';
 import { DeckCard, DeckRow } from './DeckCard';
 
 export type DeckView = 'grid' | 'list';
 
-interface DeckCollectionProps {
+interface DeckCollectionProps extends SelectableItems {
   decks: readonly Deck[];
   view: DeckView;
   onNotify: ShowToast;
-  selected: ReadonlySet<string>;
-  /** ⌘/Ctrl/Shift-click on a deck, or any click while some are selected; true when it changed the selection instead of opening it. */
-  onModifiedClick: (deckId: string, event: MouseEvent) => boolean;
-  /** Right click on one of several selected decks: their shared actions instead of its own. */
-  onSelectionMenu: (at: { x: number; y: number }) => void;
   /** Search hits in the decks' text by deck id (BER-175). */
   searchHits?: ReadonlyMap<string, DeckSearchResult>;
 }
 
-/** Clicks on these keep their own meaning, even with a modifier key. */
-const OWN_CONTROLS = '[data-deck-footer], button, input, [role="menu"]';
-
-const GRID_CLASSES =
-  'grid grid-cols-1 gap-x-14 gap-y-16 min-[700px]:grid-cols-2 min-[1200px]:grid-cols-3';
+/** The comments button and avatars keep their clicks, even with a modifier key. */
+const OWN_CONTROLS = '[data-deck-footer]';
 
 export function DeckCollection({
   decks,
@@ -35,19 +28,7 @@ export function DeckCollection({
   searchHits,
 }: DeckCollectionProps) {
   const Item = view === 'grid' ? DeckCard : DeckRow;
-  const onClickCapture = (deckId: string) => (event: MouseEvent) => {
-    if ((event.target as Element).closest(OWN_CONTROLS)) return;
-    if (onModifiedClick(deckId, event)) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-  };
-  const onContextMenuCapture = (deckId: string) => (event: MouseEvent) => {
-    if (event.shiftKey || selected.size < 2 || !selected.has(deckId)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    onSelectionMenu({ x: event.clientX, y: event.clientY });
-  };
+  const selection = { selected, onModifiedClick, onSelectionMenu };
   // Onto a folder tile: the whole selection when the deck is part of it, else just this deck.
   const onDragStart = (deck: Deck) => (event: DragEvent) => {
     const ids = selected.has(deck.id)
@@ -59,15 +40,15 @@ export function DeckCollection({
   };
   return (
     <ul
-      className={view === 'grid' ? GRID_CLASSES : 'glass flex flex-col gap-1 rounded-panel p-1.5'}
+      className={
+        view === 'grid' ? collectionGridClass : 'glass flex flex-col gap-1 rounded-panel p-1.5'
+      }
     >
       {decks.map((deck) => (
         <li
           key={deck.id}
-          data-deck-id={deck.id}
           className="min-w-0"
-          onClickCapture={onClickCapture(deck.id)}
-          onContextMenuCapture={onContextMenuCapture(deck.id)}
+          {...selectableItemProps(deck.id, selection, OWN_CONTROLS)}
           onDragStart={deck.permissions.canManage ? onDragStart(deck) : undefined}
         >
           <Item
@@ -100,7 +81,7 @@ export function DeckCollectionSkeleton({ view, count = 6 }: { view: DeckView; co
     );
   }
   return (
-    <div className={GRID_CLASSES} aria-hidden>
+    <div className={collectionGridClass} aria-hidden>
       {items.map((index) => (
         <div key={index} className="flex flex-col gap-3">
           <div className="skeleton aspect-video rounded-control-sm" />

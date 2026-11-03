@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import { declaredSize, inflateEntry } from '@slider/shared';
 import { OdpError } from './errors';
 
 /*
@@ -32,62 +33,21 @@ export function isOdpBytes(bytes: Uint8Array): boolean {
   return text.startsWith(`mimetype${ODP_MIME}`);
 }
 
-const declaredSize = (entry: JSZip.JSZipObject): number =>
-  (entry as unknown as { _data?: { uncompressedSize?: number } })._data?.uncompressedSize ?? 0;
+/** Inflates one entry within `cap` and its declared size (`inflateEntry`). */
+const inflate = (path: string, entry: JSZip.JSZipObject, cap: number): Promise<Uint8Array> =>
+  inflateEntry(path, entry, cap, (message) => new OdpError('corrupt', message));
 
-interface JSZipStream {
-  on(event: 'data', listener: (chunk: Uint8Array) => void): JSZipStream;
-  on(event: 'error', listener: (error: Error) => void): JSZipStream;
-  on(event: 'end', listener: () => void): JSZipStream;
-  pause(): JSZipStream;
-  resume(): JSZipStream;
-}
+/**
+ * A copy of a zip's map of parts – without a prototype, as JSZip makes it: a part named like an
+ * object's own property (`constructor`) must not be found where there is none.
+ */
+const copyEntries = (
+  entries: Readonly<Record<string, JSZip.JSZipObject>>,
+): Record<string, JSZip.JSZipObject> =>
+  Object.assign(Object.create(null) as Record<string, JSZip.JSZipObject>, entries);
 
-function inflate(path: string, entry: JSZip.JSZipObject, cap: number): Promise<Uint8Array> {
-  const declared = declaredSize(entry);
-  if (declared > cap) return Promise.reject(new OdpError('corrupt', `${path} is too large.`));
-  return new Promise((resolve, reject) => {
-    const chunks: Uint8Array[] = [];
-    let length = 0;
-    let settled = false;
-    const fail = (message: string) => {
-      if (settled) return;
-      settled = true;
-      reject(new OdpError('corrupt', message));
-    };
-    const stream = (
-      entry as unknown as { internalStream(type: 'uint8array'): JSZipStream }
-    ).internalStream('uint8array');
-    stream
-      .on('data', (chunk: Uint8Array) => {
-        if (settled) return;
-        length += chunk.length;
-        if (length > declared) {
-          stream.pause();
-          fail(`${path} unpacks to more data than the file declares.`);
-          return;
-        }
-        chunks.push(chunk);
-      })
-      .on('error', (error: Error) => fail(`${path} cannot be unpacked: ${error.message}`))
-      .on('end', () => {
-        if (settled) return;
-        if (length !== declared) {
-          fail(`${path} unpacks to a different size than the file declares.`);
-          return;
-        }
-        settled = true;
-        const out = new Uint8Array(length);
-        let offset = 0;
-        for (const chunk of chunks) {
-          out.set(chunk, offset);
-          offset += chunk.length;
-        }
-        resolve(out);
-      })
-      .resume();
-  });
-}
+/** Sizes of parts written in this process – JSZip only knows them for parts read from a zip. */
+const writtenSizes = new WeakMap<object, number>();
 
 export class OdpArchive {
   private xmlLeft: number;
@@ -151,7 +111,7 @@ export class OdpArchive {
   /** A part's unpacked size as the zip declares it (0 if missing). */
   size(path: string): number {
     const entry = this.zip.file(path);
-    return entry ? declaredSize(entry) : 0;
+    return entry ? (writtenSizes.get(entry) ?? declaredSize(entry)) : 0;
   }
 
   /** Unpacks a binary part (a picture), outside the XML budget. */
@@ -167,10 +127,26 @@ export class OdpArchive {
 
   write(path: string, data: string | Uint8Array, compress = true): void {
     this.zip.file(path, data, { compression: compress ? 'DEFLATE' : 'STORE' });
+    const entry = this.zip.file(path);
+    if (entry && typeof data !== 'string') writtenSizes.set(entry, data.byteLength);
   }
 
   remove(path: string): void {
     this.zip.remove(path);
+  }
+
+  /**
+   * The package's parts as they are now, for {@link restore}. Cheap: JSZip keeps a part as an
+   * object it replaces on every write and drops on removal, never changes – so the map of them
+   * is the whole state, and the bytes are shared.
+   */
+  entries(): Readonly<Record<string, JSZip.JSZipObject>> {
+    return copyEntries(this.zip.files);
+  }
+
+  /** Puts the package's parts back as {@link entries} returned them: later writes and removals undone. */
+  restore(entries: Readonly<Record<string, JSZip.JSZipObject>>): void {
+    this.zip.files = copyEntries(entries);
   }
 
   /** The zip again, `mimetype` first and uncompressed as ODF requires. */
@@ -179,7 +155,8 @@ export class OdpArchive {
     if (names[0] !== 'mimetype') {
       // Rebuild in the required order; only happens with files other tools wrote oddly.
       const ordered = new JSZip();
-      ordered.file('mimetype', ODP_MIME, { compression: 'STORE' });
+      const type = (await this.zip.file('mimetype')?.async('string'))?.trim();
+      ordered.file('mimetype', type === OTP_MIME ? OTP_MIME : ODP_MIME, { compression: 'STORE' });
       for (const name of names) {
         const entry = this.zip.files[name];
         if (!entry || name === 'mimetype') continue;

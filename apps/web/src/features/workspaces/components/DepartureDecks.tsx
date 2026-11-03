@@ -31,8 +31,8 @@ export function DepartureDecks({
     return (
       <p className="text-body text-fg-subtle">
         {self
-          ? 'Du hast hier keine eigenen Reviews.'
-          : 'Die Person hat hier keine eigenen Reviews.'}
+          ? 'Du hast hier keine eigenen Präsentationen.'
+          : 'Die Person hat hier keine eigenen Präsentationen.'}
       </p>
     );
   }
@@ -43,16 +43,16 @@ export function DepartureDecks({
         <DeckList
           label={
             !heir
-              ? 'Diese Reviews werden mit allen Kommentaren gelöscht – sonst ist niemand mehr da:'
+              ? 'Diese Präsentationen werden mit allen Kommentaren gelöscht – sonst ist niemand mehr da:'
               : self
-                ? 'Diese verknüpften Reviews werden mit allen Kommentaren gelöscht – Slider liest ihre Dateien mit deinen Konten:'
-                : 'Diese verknüpften Reviews werden mit allen Kommentaren gelöscht – Slider liest ihre Dateien mit den Konten der Person:'
+                ? 'Diese verknüpften Präsentationen werden mit allen Kommentaren gelöscht – Slider liest ihre Dateien mit deinen Konten:'
+                : 'Diese verknüpften Präsentationen werden mit allen Kommentaren gelöscht – Slider liest ihre Dateien mit den Konten der Person:'
           }
           decks={deleted}
         />
       )}
       {transferred.length > 0 && heirName && (
-        <DeckList label={`Diese hochgeladenen Reviews gehen an ${heirName}:`} decks={transferred} />
+        <DeckList label={`Diese hochgeladenen Präsentationen gehen an ${heirName}:`} decks={transferred} />
       )}
     </div>
   );

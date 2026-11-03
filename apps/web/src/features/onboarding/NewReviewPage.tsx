@@ -24,7 +24,7 @@ export function Component() {
     return (
       <CenteredMessage title="Keine Berechtigung zum Anlegen" message={noCreateMessage(workspace)}>
         <TextLink to={routes.workspace(workspace.id)} variant="underline" size="sm">
-          Zurück zu den Reviews
+          Zurück zu den Präsentationen
         </TextLink>
       </CenteredMessage>
     );
@@ -32,7 +32,7 @@ export function Component() {
   if (workspace.locked) {
     // Over the plan's limits (BER-155) – the API would refuse the import anyway.
     return (
-      <CenteredMessage title="Gerade keine neue Review" message={LOCKED_MESSAGE}>
+      <CenteredMessage title="Gerade keine neue Präsentation" message={LOCKED_MESSAGE}>
         <TextLink to={routes.usage(workspace.id)} variant="underline" size="sm">
           Zur Nutzung
         </TextLink>
@@ -42,9 +42,9 @@ export function Component() {
   if (deckState(workspace.usage).full) {
     // The plan's deck limit (BER-130) – the API would refuse the import anyway.
     return (
-      <CenteredMessage title="Keine Review mehr frei" message={deckLimitMessage(workspace)}>
+      <CenteredMessage title="Keine Präsentation mehr frei" message={deckLimitMessage(workspace)}>
         <TextLink to={routes.workspace(workspace.id)} variant="underline" size="sm">
-          Zu den Reviews
+          Zu den Präsentationen
         </TextLink>
       </CenteredMessage>
     );

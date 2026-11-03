@@ -1,10 +1,12 @@
 ---
-import { buttonClasses, type ButtonVariant } from '@/ui/button-classes';
-
-/** A link that looks like the app's Button (white primary with halo, glass secondary). */
+/**
+ * A link styled as the website's button: a solid pill with an arrow (primary, or white on Slider
+ * blue: inverse), an outlined pill (secondary) or plain text (ghost). Solid ones sit on their own
+ * paler copy, down and to the left, the way the logo stacks two slides; hovering lifts them off it.
+ */
 interface Props {
   href: string;
-  variant?: Extract<ButtonVariant, 'primary' | 'secondary' | 'ghost'>;
+  variant?: 'primary' | 'inverse' | 'secondary' | 'ghost';
   size?: 'md' | 'lg';
   class?: string;
 }
@@ -13,14 +15,78 @@ const { href, variant = 'primary', size = 'lg', class: className } = Astro.props
 const external = /^https?:|^mailto:/.test(href);
 ---
 
-<a
-  href={href}
-  class:list={[
-    buttonClasses({ variant, size }),
-    variant === 'primary' && 'shadow-glow hover:shadow-glow-hover',
-    className,
-  ]}
-  rel={external ? 'noopener' : undefined}
->
+<a href={href} class:list={['site-btn', `site-btn-${variant}`, `site-btn-${size}`, className]} rel={external ? 'noopener' : undefined}>
   <slot />
+  {(variant === 'primary' || variant === 'inverse') && <span class="site-btn-arrow" aria-hidden="true">→</span>}
 </a>
+
+<style>
+  .site-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    border-radius: 999px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition:
+      background-color 150ms,
+      color 150ms,
+      box-shadow 200ms var(--ease-emphasized),
+      translate 200ms var(--ease-emphasized);
+  }
+  .site-btn-lg {
+    height: 52px;
+    padding: 0 26px;
+    font-size: 16px;
+  }
+  .site-btn-md {
+    height: 40px;
+    padding: 0 18px;
+    font-size: 14px;
+  }
+  /* Slider blue: the reviewers' blue, the one colour the brand owns. */
+  .site-btn-primary {
+    --stack: color-mix(in srgb, var(--color-accent-blue) 45%, transparent);
+    background: var(--color-accent-blue);
+    color: #fff;
+  }
+  .site-btn-inverse {
+    --stack: rgb(255 255 255 / 0.4);
+    background: #fff;
+    color: var(--color-accent-blue);
+  }
+  .site-btn-primary,
+  .site-btn-inverse {
+    box-shadow: -4px 4px 0 var(--stack);
+  }
+  .site-btn-primary:hover,
+  .site-btn-inverse:hover {
+    translate: 2px -2px;
+    box-shadow: -7px 7px 0 var(--stack);
+  }
+  .site-btn-primary:active,
+  .site-btn-inverse:active {
+    translate: none;
+    box-shadow: -2px 2px 0 var(--stack);
+  }
+  .site-btn-secondary {
+    color: var(--color-fg);
+    box-shadow: inset 0 0 0 1px var(--color-hairline-strong);
+  }
+  .site-btn-secondary:hover {
+    box-shadow: inset 0 0 0 1px var(--color-fg);
+  }
+  .site-btn-ghost {
+    color: var(--color-fg-muted);
+  }
+  .site-btn-ghost:hover {
+    color: var(--color-fg);
+  }
+  .site-btn-arrow {
+    transition: translate 200ms var(--ease-emphasized);
+  }
+  .site-btn:hover .site-btn-arrow {
+    translate: 3px 0;
+  }
+</style>

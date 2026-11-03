@@ -11,7 +11,7 @@ import {
   type SyntheticEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Button } from './Button';
+import { Button, type ButtonSize } from './Button';
 import { cn } from './cn';
 import type { IconName } from './Icon';
 import { IconButton, type IconButtonSize, type IconButtonVariant } from './IconButton';
@@ -48,9 +48,15 @@ interface MenuProps {
   triggerClassName?: string;
   /**
    * A text button instead of the "…" icon, e.g. "Konto verbinden" with a chevron. `label` then
-   * only names the menu.
+   * only names the menu. A node may hide its text on narrow screens (`max-sm:sr-only`).
    */
-  triggerText?: string;
+  triggerText?: ReactNode;
+  /** The text trigger's leading icon, e.g. `add` for "Hinzufügen". */
+  triggerIcon?: IconName;
+  /** The text trigger's size: `sm` (default), `toolbar` next to a filter. */
+  triggerTextSize?: ButtonSize;
+  /** The text trigger shows a spinner and can't be opened, e.g. while an upload runs. */
+  triggerLoading?: boolean;
 }
 
 /**
@@ -65,10 +71,16 @@ export function Menu({
   triggerVariant,
   triggerClassName,
   triggerText,
+  triggerIcon,
+  triggerTextSize = 'sm',
+  triggerLoading,
 }: MenuProps) {
   // Only a keyboard-opened menu puts focus on its first item; a click shouldn't pre-select one.
   const [openedByKeyboard, setOpenedByKeyboard] = useState(false);
-  const { open, setOpen, close, wrapperRef, triggerRef, panelRef, panelId } = usePopover();
+  // Tab leaves a menu (closing it), it does not go round in it – arrows walk the items.
+  const { open, setOpen, close, wrapperRef, triggerRef, panelRef, panelId } = usePopover({
+    loopFocus: false,
+  });
   const triggerProps = {
     // aria-expanded and the open look; a menu button is never `aria-pressed`.
     expanded: open,
@@ -97,8 +109,10 @@ export function Menu({
         <Button
           ref={triggerRef}
           variant="secondary"
-          size="sm"
+          size={triggerTextSize}
+          icon={triggerIcon}
           trailingIcon="expandMore"
+          loading={triggerLoading}
           {...triggerProps}
         >
           {triggerText}

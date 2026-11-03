@@ -7,8 +7,10 @@ import { useEditing } from './editing-context';
  */
 export function useAutoZoom() {
   const editing = useEditing();
-  const element = editing.active ? editing.selectedElement : null;
-  const slideId = editing.active ? (editing.selection?.slideId ?? null) : null;
+  // Not in the layers view: its planes are looked at as they are.
+  const zooms = editing.active && !editing.layers;
+  const element = zooms ? editing.selectedElement : null;
+  const slideId = zooms ? (editing.selection?.slideId ?? null) : null;
   useZoomToRect(
     element && slideId ? { key: element.id, slideId, rect: element.bbox } : null,
     'autoZoom',

@@ -116,7 +116,7 @@ function ClaimInstance({ initialToken }: { initialToken: string | null }) {
       // Used up: the server deleted it.
       storeSetupToken(null);
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['setup'] }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.setup }),
         queryClient.invalidateQueries({ queryKey: queryKeys.me }),
       ]);
     },

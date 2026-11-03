@@ -10,6 +10,7 @@ import {
 } from '@slider/pptx';
 import type { Shape } from '@slider/shared';
 import { getDocument, type PDFPageProxy } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { deband } from './deband';
 import { pageBoxes, RECORD_BOXES } from './pdf-boxes';
 import {
   MAX_PAGE_HEIGHT,
@@ -20,7 +21,6 @@ import {
   PageCountMismatch,
   STANDARD_FONTS,
   LAYER_IMAGE_WIDTH,
-  type CutoutImages,
   type LayerImages,
   type PageImages,
   type PagePicture,
@@ -182,66 +182,56 @@ export async function drawPdfPages(
       throw new PageCountMismatch(document.numPages, expectedPages);
     }
     onOpened?.(document.numPages);
-    // One canvas pair for the whole deck – its pages share a size; a new pair only when a page
-    // is taller or shorter than the one before.
-    let canvases = null as { full: Canvas; thumbnail: Canvas } | null;
-    for (let number = 1; number <= document.numPages; number++) {
-      const page = await document.getPage(number);
-      const viewport = page.getViewport({ scale: 1 });
-      const scaled = page.getViewport({ scale: PAGE_IMAGE_WIDTH / viewport.width });
-      const height = Math.round(scaled.height);
-      if (!Number.isFinite(height) || height < 1 || height > MAX_PAGE_HEIGHT) {
-        throw new Error(`PDF page ${number} is too tall to draw (${height} px)`);
+    // Encoding a 4K page takes several times longer than drawing it, and runs on threads of its
+    // own: the next pages are drawn while the ones before are still encoded. Each page in flight
+    // holds its canvas pair, so how many go at once depends on their size; `onPage` still gets
+    // them one by one, in page order.
+    const spare: CanvasPair[] = [];
+    const inFlight: { pair: CanvasPair; images: Promise<PageImages> }[] = [];
+    let delivered = 0;
+    const deliver = async () => {
+      const oldest = inFlight.shift()!;
+      const images = await oldest.images;
+      spare.push(oldest.pair);
+      await onPage(images, delivered++);
+    };
+    try {
+      for (let number = 1; number <= document.numPages; number++) {
+        const page = await document.getPage(number);
+        const viewport = page.getViewport({ scale: 1 });
+        const scaled = page.getViewport({ scale: PAGE_IMAGE_WIDTH / viewport.width });
+        const height = Math.round(scaled.height);
+        if (!Number.isFinite(height) || height < 1 || height > MAX_PAGE_HEIGHT) {
+          throw new Error(`PDF page ${number} is too tall to draw (${height} px)`);
+        }
+        const depth = Math.max(1, Math.floor(PAGES_IN_FLIGHT_PIXELS / (PAGE_IMAGE_WIDTH * height)));
+        while (inFlight.length >= depth) await deliver();
+        // Pages of a deck share a size: a pair is reused, new ones (and only those) made for
+        // another height.
+        const at = spare.findIndex((pair) => pair.full.height === height);
+        if (at === -1) spare.length = 0;
+        const pair = at === -1 ? newCanvasPair(height) : spare.splice(at, 1)[0]!;
+        const canvas = pair.full;
+        const context = canvas.getContext('2d');
+        context.setTransform(1, 0, 0, 1, 0, 0);
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        await page.render({
+          canvas: canvas as unknown as RenderParameters['canvas'],
+          canvasContext: context as unknown as RenderParameters['canvasContext'],
+          viewport: scaled,
+        }).promise;
+        page.cleanup();
+        smoothGradients(context, canvas.width, height);
+        const images = encodePage(pair, picture);
+        // Failing while the next page renders is no unhandled rejection: `deliver` throws it.
+        images.catch(() => {});
+        inFlight.push({ pair, images });
       }
-      if (!canvases || canvases.full.height !== height) {
-        canvases = {
-          full: createCanvas(PAGE_IMAGE_WIDTH, height),
-          thumbnail: createCanvas(
-            PAGE_THUMBNAIL_WIDTH,
-            Math.max(1, Math.round((height * PAGE_THUMBNAIL_WIDTH) / PAGE_IMAGE_WIDTH)),
-          ),
-        };
-      }
-      const { full: canvas, thumbnail } = canvases;
-      const context = canvas.getContext('2d');
-      context.setTransform(1, 0, 0, 1, 0, 0);
-      context.fillStyle = '#ffffff';
-      context.fillRect(0, 0, canvas.width, canvas.height);
-      await page.render({
-        canvas: canvas as unknown as RenderParameters['canvas'],
-        canvasContext: context as unknown as RenderParameters['canvasContext'],
-        viewport: scaled,
-      }).promise;
-      page.cleanup();
-
-      if (picture === 'backdrop') {
-        // The picture alone: no thumbnail (empty).
-        await onPage(
-          {
-            image: new Uint8Array(await canvas.encode('jpeg', JPEG_QUALITY)),
-            thumbnail: new Uint8Array(0),
-          },
-          number - 1,
-        );
-        continue;
-      }
-      const small = thumbnail.getContext('2d');
-      small.setTransform(1, 0, 0, 1, 0, 0);
-      small.clearRect(0, 0, thumbnail.width, thumbnail.height);
-      small.imageSmoothingEnabled = true;
-      small.imageSmoothingQuality = 'high';
-      small.drawImage(canvas, 0, 0, thumbnail.width, thumbnail.height);
-      // Encoded side by side (each on a thread of its own).
-      const [image, preview] = await Promise.all([
-        picture === 'quick'
-          ? canvas.encode('jpeg', JPEG_QUALITY)
-          : canvas.encode('webp', WEBP_QUALITY),
-        thumbnail.encode('webp', WEBP_QUALITY),
-      ]);
-      await onPage(
-        { image: new Uint8Array(image), thumbnail: new Uint8Array(preview) },
-        number - 1,
-      );
+      while (inFlight.length > 0) await deliver();
+    } finally {
+      // A page given up half-way: its encodes still run on their threads – nobody waits for them.
+      for (const { images } of inFlight) images.catch(() => {});
     }
     return document.numPages;
   } finally {
@@ -249,10 +239,55 @@ export async function drawPdfPages(
   }
 }
 
+/**
+ * Pixels of the pages {@link drawPdfPages} encodes at once: three 16:9 pages at full width
+ * (about 100 MB of canvases); a tall page goes alone.
+ */
+const PAGES_IN_FLIGHT_PIXELS = 3 * PAGE_IMAGE_WIDTH * 2160;
+
+interface CanvasPair {
+  full: Canvas;
+  thumbnail: Canvas;
+}
+
+const newCanvasPair = (height: number): CanvasPair => ({
+  full: createCanvas(PAGE_IMAGE_WIDTH, height),
+  thumbnail: createCanvas(
+    PAGE_THUMBNAIL_WIDTH,
+    Math.max(1, Math.round((height * PAGE_THUMBNAIL_WIDTH) / PAGE_IMAGE_WIDTH)),
+  ),
+});
+
+/** A drawn page's images; the pair must not be drawn on until it resolves. */
+async function encodePage(
+  { full: canvas, thumbnail }: CanvasPair,
+  picture: PagePicture,
+): Promise<PageImages> {
+  if (picture === 'backdrop') {
+    // The picture alone: no thumbnail (empty).
+    return {
+      image: new Uint8Array(await canvas.encode('jpeg', JPEG_QUALITY)),
+      thumbnail: new Uint8Array(0),
+    };
+  }
+  const small = thumbnail.getContext('2d');
+  small.setTransform(1, 0, 0, 1, 0, 0);
+  small.clearRect(0, 0, thumbnail.width, thumbnail.height);
+  small.imageSmoothingEnabled = true;
+  small.imageSmoothingQuality = 'high';
+  small.drawImage(canvas, 0, 0, thumbnail.width, thumbnail.height);
+  // Encoded side by side (each on a thread of its own).
+  const [image, preview] = await Promise.all([
+    picture === 'quick' ? canvas.encode('jpeg', JPEG_QUALITY) : canvas.encode('webp', WEBP_QUALITY),
+    thumbnail.encode('webp', WEBP_QUALITY),
+  ]);
+  return { image: new Uint8Array(image), thumbnail: new Uint8Array(preview) };
+}
+
 /** Less opaque than this (of 255) is see-through in a matted drawing: the page edge's noise. */
 const MIN_OPACITY = 8;
 
-/** Pixels around what was drawn, kept in a cutout: the edges' soft pixels stay whole. */
+/** Pixels around what was drawn, kept with it: the edges' soft pixels stay whole. */
 const CUTOUT_MARGIN = 2;
 
 /** Where `alpha` is not zero, widened by {@link CUTOUT_MARGIN}; `null` when nowhere. */
@@ -308,7 +343,22 @@ async function drawRgba(
     viewport: scaled,
   }).promise;
   page.cleanup();
-  return { canvas, rgba: context.getImageData(0, 0, canvas.width, height).data, height };
+  return { canvas, rgba: smoothGradients(context, canvas.width, height), height };
+}
+
+/**
+ * LibreOffice's gradients, drawn as bands, smoothed over in a drawn page (`deband.ts`); its
+ * pixels after.
+ */
+function smoothGradients(
+  context: ReturnType<Canvas['getContext']>,
+  width: number,
+  height: number,
+): Uint8ClampedArray {
+  const image = context.getImageData(0, 0, width, height);
+  deband(image.data, width, height);
+  context.putImageData(image, 0, 0);
+  return image.data;
 }
 
 interface Drawn {
@@ -367,11 +417,15 @@ async function matted(
 }
 
 /**
- * A slide taken apart from its PDF (`OdpDocument.toLayerBytes`), {@link LAYER_IMAGE_WIDTH} wide:
- * with `background`, the first page – the slide without its elements – as a JPEG; then each pair
- * of pages – an element alone on white and on black – as that element alone ({@link matted}).
+ * A slide taken apart from its PDF (`OdpDocument.toLayerBytes`), `width` wide: with `background`,
+ * the first page – the slide without its elements – as a JPEG; then each pair of pages – an
+ * element alone on white and on black – as that element alone ({@link matted}).
  */
-export async function drawLayerPages(pdf: Uint8Array, background = true): Promise<LayerImages> {
+export async function drawLayerPages(
+  pdf: Uint8Array,
+  background = true,
+  width = LAYER_IMAGE_WIDTH,
+): Promise<LayerImages> {
   const loading = open(pdf);
   try {
     const document = await loading.promise;
@@ -381,93 +435,17 @@ export async function drawLayerPages(pdf: Uint8Array, background = true): Promis
     }
     const ground = background
       ? new Uint8Array(
-          await (
-            await drawRgba(document, 1, LAYER_IMAGE_WIDTH)
-          ).canvas.encode('jpeg', JPEG_QUALITY),
+          await (await drawRgba(document, 1, width)).canvas.encode('jpeg', JPEG_QUALITY),
         )
       : null;
     const layers: LayerImages['layers'] = [];
     for (let number = first + 1; number < document.numPages; number += 2) {
-      const onWhite = await drawRgba(document, number, LAYER_IMAGE_WIDTH);
+      const onWhite = await drawRgba(document, number, width);
       // On a black canvas too: a bare edge shows through, like the page.
-      const onBlack = await drawRgba(document, number + 1, LAYER_IMAGE_WIDTH, '#000000');
+      const onBlack = await drawRgba(document, number + 1, width, '#000000');
       layers.push((await matted(onWhite, onBlack)) ?? { image: null, box: null });
     }
     return { background: ground, layers };
-  } finally {
-    await loading.destroy();
-  }
-}
-
-/**
- * An element's cutout from its PDF (`OdpDocument.toCutoutBytes`): each page drawn as the slide is
- * (its width). The first two – the element's area and outline in black on white – become masks,
- * black where drawn, as opaque as dark, both cut to the part either covers. The other two – what
- * lies over the element, on white and on black – become that alone, see-through where the page
- * showed, cut to the part it covers.
- */
-export async function drawCutoutPages(pdf: Uint8Array): Promise<CutoutImages> {
-  const loading = open(pdf);
-  try {
-    const document = await loading.promise;
-    if (document.numPages !== 2 && document.numPages !== 4) {
-      throw new PageCountMismatch(document.numPages, 2);
-    }
-    const draw = (number: number) => drawRgba(document, number);
-    const masks: Uint8Array[] = [];
-    let width = PAGE_IMAGE_WIDTH;
-    let height = 0;
-    for (const number of [1, 2]) {
-      const drawn = await draw(number);
-      const alpha = new Uint8Array(drawn.canvas.width * drawn.height);
-      for (let i = 0; i < alpha.length; i++) alpha[i] = 255 - (drawn.rgba[i * 4] as number);
-      masks.push(alpha);
-      width = drawn.canvas.width;
-      height = drawn.height;
-    }
-    const covered = coveredBox(masks, width, height);
-    const mask = async (alpha: Uint8Array): Promise<Uint8Array | null> => {
-      if (!covered) return null;
-      const out = createCanvas(covered.w, covered.h);
-      const context = out.getContext('2d');
-      const image = context.createImageData(covered.w, covered.h);
-      let any = false;
-      for (let y = 0; y < covered.h; y++) {
-        for (let x = 0; x < covered.w; x++) {
-          const a = alpha[(covered.top + y) * width + covered.left + x] as number;
-          if (a > 0) any = true;
-          image.data[(y * covered.w + x) * 4 + 3] = a;
-        }
-      }
-      if (!any) return null;
-      context.putImageData(image, 0, 0);
-      return new Uint8Array(await out.encode('png'));
-    };
-    const [fill, stroke] = await Promise.all([mask(masks[0]!), mask(masks[1]!)]);
-    let above: Uint8Array | null = null;
-    let aboveBox: CutoutImages['aboveBox'] = null;
-    if (document.numPages === 4) {
-      const matte = await matted(
-        await draw(3),
-        await drawRgba(document, 4, PAGE_IMAGE_WIDTH, '#000000'),
-      );
-      above = matte?.image ?? null;
-      aboveBox = matte?.box ?? null;
-    }
-    return {
-      fill,
-      stroke,
-      box: covered
-        ? {
-            x: covered.left / width,
-            y: covered.top / height,
-            w: covered.w / width,
-            h: covered.h / height,
-          }
-        : null,
-      above,
-      aboveBox,
-    };
   } finally {
     await loading.destroy();
   }

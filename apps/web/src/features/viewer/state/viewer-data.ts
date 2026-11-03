@@ -1,4 +1,12 @@
-import type { AccentColor, Author, Comment, Deck, Slide, Viewer } from '@slider/shared';
+import {
+  aiAuthor,
+  type AccentColor,
+  type Author,
+  type Comment,
+  type Deck,
+  type Slide,
+  type Viewer,
+} from '@slider/shared';
 import { createContext, useContext } from 'react';
 import {
   buildThreads,
@@ -12,12 +20,19 @@ import { mentions } from '../comments/lib/mentions';
 /** Server data of the open deck plus everything derived from it once per fetch. */
 export interface ViewerData {
   deck: Deck;
-  /** Sorted by position; without slides hidden in PowerPoint unless they are shown (H). */
+  /**
+   * Sorted by position; without slides hidden in PowerPoint unless they are shown (H), and never
+   * with variants – they show above their slide (`variantsOf`).
+   */
   slides: Slide[];
   slideIndex: ReadonlyMap<string, number>;
+  /** Each slide's variants (made in the editor), by the slide's id, in file order. */
+  variantsOf: ReadonlyMap<string, Slide[]>;
   /** Slides hidden in PowerPoint, shown or not – the switch for them only shows when there are any. */
   hiddenSlideCount: number;
   viewer: Viewer;
+  /** The workspace's AI under the name its admins gave it – the author of its comments. */
+  aiAuthor: Author;
   /** Rename, share, new versions, sync – from `deck.permissions` (BER-129). */
   canManage: boolean;
   /** Write comments, reply and resolve; `viewer`s (a deck was shared with them) only look. */
@@ -58,14 +73,31 @@ export function deriveViewerData(
         participants: rawDeck.participants.map((person) => withColorOverride(person, overrides)),
       }
     : rawDeck;
-  const comments = recolor
-    ? rawComments.map((comment) =>
-        overrides[comment.author.id]
-          ? { ...comment, author: withColorOverride(comment.author, overrides) }
-          : comment,
-      )
-    : rawComments;
-  const slides = [...rawSlides].sort((a, b) => a.position - b.position);
+  const ai = aiAuthor(rawDeck.ai?.name);
+  // The AI's comments keep the name it had when it wrote them: shown under the one it has now.
+  const comments = rawComments.map((comment) =>
+    comment.author.type === 'ai'
+      ? comment.author.name === ai.name
+        ? comment
+        : { ...comment, author: ai }
+      : overrides[comment.author.id]
+        ? { ...comment, author: withColorOverride(comment.author, overrides) }
+        : comment,
+  );
+  const sorted = [...rawSlides].sort((a, b) => a.position - b.position);
+  // A variant whose slide is not in the revision any more is a hidden slide like others.
+  const ids = new Set(sorted.map((slide) => slide.id));
+  const isVariant = (slide: Slide) => !!slide.variantOf && ids.has(slide.variantOf);
+  const slides = sorted.filter((slide) => !isVariant(slide));
+  const variantsOf = new Map<string, Slide[]>();
+  // Hidden in the file only so that the deck leaves them out: on their track they are slides as
+  // any other, neither dimmed nor marked hidden.
+  for (const slide of sorted)
+    if (isVariant(slide))
+      variantsOf.set(slide.variantOf!, [
+        ...(variantsOf.get(slide.variantOf!) ?? []),
+        { ...slide, hidden: false },
+      ]);
   const threads = buildThreads(comments);
   const members = recolor
     ? rawMembers.map((person) => withColorOverride(person, overrides))
@@ -84,8 +116,10 @@ export function deriveViewerData(
     deck,
     slides,
     slideIndex: new Map(slides.map((slide, index) => [slide.id, index])),
+    variantsOf,
     hiddenSlideCount: slides.filter((slide) => slide.hidden).length,
     viewer,
+    aiAuthor: ai,
     canManage: deck.permissions.canManage,
     canComment: deck.permissions.canComment,
     threads,
@@ -93,9 +127,11 @@ export function deriveViewerData(
     threadsBySlide: groupThreadsBySlide(threads, slides),
     gapThreads: gapThreadsByGap(threads, slides),
     participantNames: names,
-    // A deleted account keeps its "@Gelöschtes Konto" in old text, but nobody can mention it now.
+    // A deleted account keeps its "@Gelöschtes Konto" in old text, but nobody can mention it now;
+    // the AI is asked with ⌘↵, not by name.
     mentionable: [...people.values()].filter(
-      (person) => person.id !== viewer.author.id && person.type !== 'deleted',
+      (person) =>
+        person.id !== viewer.author.id && person.type !== 'deleted' && person.type !== 'ai',
     ),
     mentionedThreadIds: new Set(
       threads

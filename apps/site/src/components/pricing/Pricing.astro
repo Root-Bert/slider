@@ -1,0 +1,364 @@
+---
+import { Icon } from '@/ui/Icon';
+import Button from '~/components/Button.astro';
+import AiMark from '~/components/AiMark.astro';
+import Credit from '~/components/Credit.astro';
+import { t, type Lang } from '~/i18n';
+import { APP_URL, CONTACT_URL, REPO_URL } from '~/lib/links';
+import { PHOTOS, photoSrcset, photoUrl } from '~/lib/photos';
+
+/**
+ * Pricing: four plans per workspace, never per seat – Free, Team (€79), AI (€249, we run the AI)
+ * and Enterprise – then self-hosting, free and unlimited. Prices are the same in every language.
+ * Drawn in the brand's language: every plan is a slide on a colour slide (the logo's stack, the
+ * hero's colours), AI is the Slider-blue one most teams pick, the over-limit rule is a comment from Slider and self-hosting a yellow slide with a dog
+ * at home on the sofa.
+ */
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const p = t(lang).pricing;
+const plans = [
+  { name: 'Free', price: '€0', unit: p.forever, copy: p.plans.free, cta: p.plans.free.cta, href: `${APP_URL}/`, back: 'var(--color-accent-yellow)' },
+  { name: 'Team', price: '€79', unit: p.monthly, copy: p.plans.team, cta: p.soon, href: `${APP_URL}/`, back: 'var(--color-accent-green)' },
+  { name: 'AI', price: '€249', unit: p.monthly, copy: p.plans.ai, cta: p.soon, href: `${APP_URL}/`, back: 'var(--color-accent-violet)', featured: true },
+  { name: 'Enterprise', price: p.custom, unit: p.contract, copy: p.plans.enterprise, cta: p.plans.enterprise.cta, href: CONTACT_URL, back: 'var(--color-accent-cyan)' },
+];
+const sofa = PHOTOS.sofa;
+---
+
+<section class="pr" data-section data-live="pricing">
+  <h1 class="pr-title" data-reveal>{p.title}</h1>
+  <p class="pr-sub" data-reveal style="--i: 1">{p.sub}</p>
+
+  <!-- One grid row per card part, shared through subgrid, so prices, buttons and lists line up. -->
+  <div class="pr-plans">
+    {
+      plans.map((plan, i) => (
+        <div class:list={['pr-plan', plan.featured && 'is-featured']} data-reveal style={`--i: ${1.5 + i * 0.5}; --back: ${plan.back}`}>
+          <div class="pr-plan-head">
+            <h2>{plan.name}</h2>
+            {plan.featured && <span class="pr-popular">{p.popular}</span>}
+          </div>
+          <p class="pr-price">
+            <span class:list={[!plan.price.startsWith('€') && 'is-word']}>{plan.price}</span>
+            <small>{plan.unit}</small>
+          </p>
+          <p class="pr-pitch">{plan.copy.pitch}</p>
+          <div class="pr-cta">
+            <Button href={plan.href} variant={plan.featured ? 'inverse' : 'secondary'} class="w-full">{plan.cta}</Button>
+            <p>{plan.copy.note}</p>
+          </div>
+          <ul class="pr-features">
+            <li class="pr-lead">{plan.copy.lead}</li>
+            {plan.copy.features.map((feature) => (
+              <li>
+                <Icon name="check" size={18} />
+                {feature}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))
+    }
+  </div>
+
+  <p class="pr-over" data-reveal style="--i: 3">
+    <AiMark size={28} />
+    <span>{p.over}</span>
+  </p>
+</section>
+
+<section class="pr pr-self-wrap" data-section data-live="self">
+  <div class="pr-self" data-reveal>
+    <div class="pr-self-text">
+      <h2>{p.selfTitle}</h2>
+      <p>{p.selfBody}</p>
+      <Button href={REPO_URL}>{p.selfButton}</Button>
+    </div>
+    <figure class="pr-self-photo" style={`--photo-bg: ${sofa.color}`}>
+      <img src={photoUrl(sofa, 720, 4 / 5)} srcset={photoSrcset(sofa, 720, 4 / 5)} alt="" loading="lazy" decoding="async" />
+      <Credit photo={sofa} lang={lang} class="pr-credit" />
+    </figure>
+  </div>
+  <p class="pr-license" data-reveal style="--i: 1">
+    {p.license}{' '}
+    <a href={CONTACT_URL}>slider@bertro.dev</a>
+  </p>
+</section>
+
+<style>
+  .pr {
+    --step: 12px;
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 120px 32px 0;
+  }
+  .pr-title {
+    max-width: 11em;
+    font-size: clamp(44px, 5.6vw, 92px);
+    font-weight: 800;
+    line-height: 0.95;
+    letter-spacing: -0.05em;
+    text-wrap: balance;
+  }
+  .pr-sub {
+    max-width: 30em;
+    margin-top: 28px;
+    font-size: 19px;
+    line-height: 1.5;
+    color: var(--color-fg-muted);
+  }
+
+  .pr-plans {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 28px 24px;
+    margin-top: 80px;
+  }
+  /* A plan is a slide on a colour slide, down and to the left: the logo's stack. */
+  .pr-plan {
+    position: relative;
+    display: grid;
+    grid-row: span 5;
+    grid-template-rows: subgrid;
+    gap: 22px;
+    margin: 0 0 var(--step) var(--step);
+    padding: 28px;
+    border-radius: 24px;
+    background: var(--color-surface-1);
+    box-shadow:
+      inset 0 0 0 1px var(--color-hairline),
+      calc(var(--step) * -1) var(--step) 0 var(--back);
+  }
+  /* AI: the Slider-blue slide most teams pick. The app's text colours turn white inside it. */
+  .pr-plan.is-featured {
+    --color-fg: #fff;
+    --color-fg-muted: rgb(255 255 255 / 0.82);
+    --color-fg-subtle: rgb(255 255 255 / 0.7);
+    --color-hairline: rgb(255 255 255 / 0.25);
+    background: var(--color-accent-blue);
+    color: #fff;
+    box-shadow: calc(var(--step) * -1) var(--step) 0 var(--back);
+  }
+  .pr-plan-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .pr-plan h2 {
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--color-fg);
+  }
+  /* A comment stuck to the slide: a white speech bubble, its point down at the card. */
+  .pr-popular {
+    position: absolute;
+    top: -15px;
+    right: 22px;
+    padding: 6px 12px;
+    border-radius: 14px 14px 14px 3px;
+    background: #fff;
+    color: var(--color-accent-blue);
+    font-size: 13px;
+    font-weight: 700;
+    box-shadow: 0 6px 18px rgb(0 0 0 / 0.18);
+  }
+  .pr-price {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+  }
+  .pr-price span {
+    font-size: 56px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.05em;
+    color: var(--color-fg);
+  }
+  .pr-price span.is-word {
+    font-size: 36px;
+    line-height: 56px;
+    letter-spacing: -0.04em;
+  }
+  .pr-price small {
+    font-size: 14px;
+    color: var(--color-fg-subtle);
+  }
+  .pr-pitch {
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--color-fg-muted);
+  }
+  .pr-cta {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .pr-cta p {
+    font-size: 12px;
+    line-height: 1.4;
+    text-align: center;
+    color: var(--color-fg-subtle);
+  }
+  .pr-features {
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    padding-top: 22px;
+    border-top: 1px solid var(--color-hairline);
+  }
+  .pr-features li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 15px;
+    line-height: 1.4;
+    color: var(--color-fg);
+  }
+  .pr-features li :global(svg) {
+    flex: none;
+    margin-top: 1px;
+    color: var(--color-accent-blue);
+  }
+  .is-featured .pr-features li :global(svg) {
+    color: #fff;
+  }
+  .pr-features .pr-lead {
+    font-size: 14px;
+    color: var(--color-fg-subtle);
+  }
+
+  /* The over-limit rule is a comment from Slider. */
+  .pr-over {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    max-width: 720px;
+    margin-top: 40px;
+  }
+  .pr-over span {
+    padding: 14px 18px;
+    border-radius: 4px 20px 20px 20px;
+    background: var(--color-surface-1);
+    box-shadow: inset 0 0 0 1px var(--color-hairline);
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--color-fg-muted);
+  }
+
+  .pr-self-wrap {
+    --step: clamp(12px, 1.8vw, 26px);
+    padding-top: 140px;
+  }
+  /* Self-hosting: a yellow slide on its stack, a dog at home on the sofa. */
+  .pr-self {
+    display: grid;
+    grid-template-columns: 56fr 44fr;
+    min-height: 440px;
+    margin: 0 0 var(--step) var(--step);
+    overflow: hidden;
+    border-radius: clamp(20px, 2.6vw, 40px);
+    background: var(--color-accent-yellow);
+    color: #000;
+    box-shadow: calc(var(--step) * -1) var(--step) 0 color-mix(in srgb, var(--color-accent-yellow) 45%, transparent);
+  }
+  .pr-self-text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 24px;
+    padding: clamp(32px, 5vw, 72px);
+  }
+  .pr-self h2 {
+    max-width: 9em;
+    font-size: clamp(36px, 4.4vw, 72px);
+    font-weight: 800;
+    line-height: 0.95;
+    letter-spacing: -0.05em;
+    text-wrap: balance;
+  }
+  .pr-self-text p {
+    max-width: 26em;
+    font-size: 18px;
+    line-height: 1.5;
+    color: rgb(0 0 0 / 0.72);
+  }
+  .pr-self-text :global(.site-btn) {
+    margin-top: 8px;
+  }
+  .pr-self-photo {
+    position: relative;
+    margin: 0;
+    background: var(--photo-bg);
+  }
+  .pr-self-photo img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .pr-self-photo :global(.pr-credit) {
+    position: absolute;
+    right: 12px;
+    bottom: 10px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: rgb(0 0 0 / 0.45);
+    color: rgb(255 255 255 / 0.85);
+    backdrop-filter: blur(8px);
+  }
+  .pr-self-photo :global(.pr-credit a:hover) {
+    color: #fff;
+  }
+  .pr-license {
+    margin-top: 28px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--color-fg-subtle);
+  }
+  .pr-license a {
+    color: var(--color-fg-muted);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .pr-license a:hover {
+    color: var(--color-fg);
+  }
+
+  @media (max-width: 1199px) {
+    .pr-plans {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 767px) {
+    .pr {
+      padding: 72px 16px 0;
+    }
+    .pr-plans {
+      grid-template-columns: minmax(0, 1fr);
+      margin-top: 56px;
+    }
+    .pr-plan {
+      display: flex;
+      flex-direction: column;
+    }
+    .pr-self-wrap {
+      padding-top: 96px;
+    }
+    .pr-self {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .pr-self-photo {
+      order: -1;
+      aspect-ratio: 4 / 3;
+    }
+  }
+</style>

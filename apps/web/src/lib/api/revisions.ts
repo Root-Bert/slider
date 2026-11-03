@@ -1,12 +1,5 @@
-import type {
-  DeletedSlide,
-  RerenderResult,
-  Revision,
-  RevisionDiff,
-  SlideVersionView,
-  SyncResult,
-} from '@slider/shared';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { DeletedSlide, RerenderResult, RevisionDiff } from '@slider/shared';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { api } from '../api-client';
 import { queryKeys } from './keys';
 
@@ -17,14 +10,6 @@ import { queryKeys } from './keys';
  * scrolled to, would otherwise load expired links).
  */
 export const SIGNED_URL_STALE_MS = 60 * 60_000;
-
-export const useRevisions = (deckId: string, enabled = true) =>
-  useQuery({
-    queryKey: queryKeys.revisions(deckId),
-    queryFn: () => api.get<Revision[]>(`/decks/${deckId}/revisions`),
-    enabled,
-    staleTime: 60_000,
-  });
 
 /**
  * What the current revision changed; only fetched from revision 2 on. Asks for the revision by
@@ -54,20 +39,6 @@ export const useDeletedSlides = (deckId: string, revisionId: string | null, enab
     refetchInterval: SIGNED_URL_STALE_MS,
   });
 
-/** One slide in every revision, newest first: "Alt" on a comment shows the one it was made on. */
-export const useSlideVersions = (
-  deckId: string,
-  slideId: string | null,
-  revisionId: string | null,
-) =>
-  useQuery({
-    queryKey: queryKeys.slideVersions(deckId, slideId ?? '', revisionId),
-    queryFn: () => api.get<SlideVersionView[]>(`/decks/${deckId}/slides/${slideId}/versions`),
-    enabled: slideId !== null,
-    staleTime: SIGNED_URL_STALE_MS,
-    refetchInterval: SIGNED_URL_STALE_MS,
-  });
-
 /**
  * Everything that belongs to a revision: reloaded when a new one arrives. Diffs and deleted
  * slides are keyed by revision id – the new deck DTO brings a new id and with it fresh queries,
@@ -80,23 +51,9 @@ export function useInvalidateRevision(deckId: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.deck(deckId), exact: true }),
       queryClient.invalidateQueries({ queryKey: queryKeys.slides(deckId) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.comments(deckId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.revisions(deckId), exact: true }),
       queryClient.invalidateQueries({ queryKey: queryKeys.status(deckId), exact: true }),
       queryClient.invalidateQueries({ queryKey: queryKeys.deckLists }),
     ]);
-}
-
-/** "Neue Version hochladen" for uploaded decks (owner only). */
-export function useUploadRevision(deckId: string) {
-  const invalidate = useInvalidateRevision(deckId);
-  return useMutation({
-    mutationFn: (file: File) => {
-      const form = new FormData();
-      form.append('file', file);
-      return api.post<SyncResult>(`/decks/${deckId}/revisions`, form);
-    },
-    onSettled: invalidate,
-  });
 }
 
 /**
@@ -117,12 +74,15 @@ export function useRerenderDeck(deckId: string) {
 }
 
 /** New slide images arrived: the slide list and thumbnails point at new files. */
+export const invalidateSlideImages = (queryClient: QueryClient, deckId: string) =>
+  Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.deck(deckId), exact: true }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.slides(deckId) }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.deckLists }),
+  ]);
+
+/** `invalidateSlideImages` for this deck, from a component. */
 export function useInvalidateSlideImages(deckId: string) {
   const queryClient = useQueryClient();
-  return () =>
-    Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.deck(deckId), exact: true }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.slides(deckId) }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.deckLists }),
-    ]);
+  return () => invalidateSlideImages(queryClient, deckId);
 }

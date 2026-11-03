@@ -67,10 +67,38 @@ describe('creating comments', () => {
       .array()
       .parse(await (await ctx.request(`/api/decks/${deck.deckId}/comments`)).json());
     expect(list.map((c) => c.id)).toEqual([comment.id]);
+
+    // Written offline, under the browser's own id, and sent again after a lost answer (also a
+    // reply naming it): each saved once, the retry answered with the comment saved first.
+    const id = '6f1c2b0e-3a4d-4c5e-9f60-718293a4b5c6';
+    const offline = await create({ ...pinComment(slide(1), 'Offline'), id });
+    expect(offline.id).toBe(id);
+    expect(await create({ ...pinComment(slide(1), 'Offline, anders'), id })).toMatchObject({
+      id,
+      body: 'Offline',
+    });
+    const replyId = '0a9b8c7d-6e5f-4a3b-8c1d-2e3f4a5b6c7d';
+    const reply = {
+      slideId: slide(1),
+      parentId: id,
+      body: 'Antwort',
+      anchor: { type: 'slide' as const },
+      id: replyId,
+    };
+    await create(reply);
+    expect((await create(reply)).id).toBe(replyId);
+    const saved = commentSchema
+      .array()
+      .parse(await (await ctx.request(`/api/decks/${deck.deckId}/comments`)).json());
+    expect(saved.map((c) => c.id).sort()).toEqual([comment.id, id, replyId].sort());
+    // Someone else's id is not theirs to take, nor an id that is no UUID.
+    const ben = await asMember('Ben Weber');
+    expect((await post({ ...pinComment(slide(1), 'Meins'), id }, ben)).status).toBe(400);
+    expect((await post({ ...pinComment(slide(1), 'Kurz'), id: 'abc' })).status).toBe(400);
   });
 
-  it('accepts a drawing without text', async () => {
-    const comment = await create({
+  it('accepts drawings without text, up to the largest (50 strokes of 2000 points) over the general JSON cap', async () => {
+    const small = await create({
       slideId: slide(0),
       body: '',
       anchor: { type: 'rect', rect: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, shapeRef: null },
@@ -85,10 +113,8 @@ describe('creating comments', () => {
         },
       ],
     });
-    expect(comment.strokes).toHaveLength(1);
-  });
+    expect(small.strokes).toHaveLength(1);
 
-  it('accepts the largest drawing (50 strokes of 2000 points), over the general JSON cap', async () => {
     const points = Array.from({ length: 2000 }, (_, i) => ({
       x: 0.123456789012345 + i / 1e6,
       y: 0.987654321098765 - i / 1e6,
@@ -107,25 +133,20 @@ describe('creating comments', () => {
     expect((await create(input)).strokes).toHaveLength(50);
   });
 
-  it('rejects comments with neither text nor drawing', async () => {
-    const res = await post(pinComment(slide(0), '   '));
-    expect(res.status).toBe(400);
-    expect(await res.json()).toMatchObject({ error: { code: 'bad_request' } });
-  });
+  it('rejects comments with neither text nor drawing, invalid anchors and slides of another deck', async () => {
+    const empty = await post(pinComment(slide(0), '   '));
+    expect(empty.status).toBe(400);
+    expect(await empty.json()).toMatchObject({ error: { code: 'bad_request' } });
 
-  it('rejects invalid anchors', async () => {
-    const res = await post({
+    const offSlide = await post({
       slideId: slide(0),
       body: 'x',
       anchor: { type: 'point', point: { x: 2, y: 0 }, shapeRef: null },
     });
-    expect(res.status).toBe(400);
-  });
+    expect(offSlide.status).toBe(400);
 
-  it('rejects slides from another deck', async () => {
     const other = await createReadyDeck(ctx, { slideCount: 1 });
-    const res = await post(pinComment(other.slideIds[0] ?? ''));
-    expect(res.status).toBe(400);
+    expect((await post(pinComment(other.slideIds[0] ?? ''))).status).toBe(400);
   });
 
   it('creates gap comments without a slide', async () => {
@@ -187,7 +208,7 @@ describe('text on the slide ("Text auf Folie")', () => {
       strokes: [stroke],
     }) as CreateCommentInput;
 
-  it('stores the text box next to drawings, separate from the comment', async () => {
+  it('stores the text box next to drawings, separate from the comment, also without one', async () => {
     const comment = await create({
       ...textComment(textStroke()),
       strokes: [
@@ -210,16 +231,14 @@ describe('text on the slide ("Text auf Folie")', () => {
       .array()
       .parse(await (await ctx.request(`/api/decks/${deck.deckId}/comments`)).json());
     expect(listed?.strokes[0]).toEqual(textStroke());
-  });
 
-  it('accepts a text box without a comment', async () => {
-    const comment = await create(textComment(textStroke(), ''));
-    expect(comment.body).toBe('');
-    expect(comment.strokes[0]).toEqual(textStroke());
-  });
+    // A sticker without a comment of its own: its text is the comment's – it counts as one.
+    const sticker = await create(textComment(textStroke(), ''));
+    expect(sticker.body).toBe('Logo größer\nund mittig');
+    expect(sticker.strokes[0]).toEqual(textStroke());
 
-  it('still accepts the old stroke format and rect shapes', async () => {
-    const comment = await create({
+    // The old stroke format and rect shapes are still accepted.
+    const old = await create({
       slideId: slide(0),
       body: '',
       anchor: { type: 'rect', rect: box, shapeRef: null },
@@ -242,23 +261,26 @@ describe('text on the slide ("Text auf Folie")', () => {
         },
       ],
     });
-    expect(comment.strokes.map((stroke) => stroke.tool)).toEqual(['rect', 'highlighter']);
+    expect(old.strokes.map((stroke) => stroke.tool)).toEqual(['rect', 'highlighter']);
   });
 
-  it.each([
-    ['empty text', { text: '   ' }],
-    ['a box beyond the slide', { x: 0.8, w: 0.3 }],
-    ['a zero-width box', { w: 0 }],
-    ['a tiny font', { fontSize: 0.001 }],
-    ['a huge font', { fontSize: 0.5 }],
-    ['an unknown colour', { color: 'pink' }],
-    ['text that is too long', { text: 'x'.repeat(2001) }],
-  ])('rejects %s', async (_, overrides) => {
-    const res = await post(textComment(textStroke(overrides)));
-    expect(res.status).toBe(400);
-  });
+  it('rejects invalid text boxes, and allows only one, and none on replies or gaps', async () => {
+    const invalid: Record<string, unknown>[] = [
+      { text: '   ' },
+      { x: 0.8, w: 0.3 },
+      { w: 0 },
+      { fontSize: 0.001 },
+      { fontSize: 0.5 },
+      { color: 'pink' },
+      { text: 'x'.repeat(2001) },
+    ];
+    for (const overrides of invalid) {
+      expect(
+        (await post(textComment(textStroke(overrides)))).status,
+        JSON.stringify(overrides),
+      ).toBe(400);
+    }
 
-  it('allows only one text box, and none on replies or gaps', async () => {
     const two = await post({ ...textComment(textStroke()), strokes: [textStroke(), textStroke()] });
     expect(two.status).toBe(400);
 
@@ -281,34 +303,28 @@ describe('text on the slide ("Text auf Folie")', () => {
     expect(gap.status).toBe(400);
   });
 
-  it('leaves the text on the slide alone when the comment is edited', async () => {
+  it('keeps the text box on edits of the comment; only its author moves it, onto the slide', async () => {
     const comment = await create(textComment(textStroke()));
-    const res = await ctx.request(`/api/comments/${comment.id}`, {
-      method: 'PATCH',
-      json: { body: 'Neuer Text' },
-    });
-    const updated = commentSchema.parse(await res.json());
-    expect(updated.body).toBe('Neuer Text');
-    expect(updated.strokes[0]).toEqual(textStroke());
-  });
+    const edited = commentSchema.parse(
+      await (
+        await ctx.request(`/api/comments/${comment.id}`, {
+          method: 'PATCH',
+          json: { body: 'Neuer Text' },
+        })
+      ).json(),
+    );
+    expect(edited.body).toBe('Neuer Text');
+    expect(edited.strokes[0]).toEqual(textStroke());
 
-  it('moves and resizes the text box afterwards; the anchor follows it', async () => {
-    const comment = await create(textComment(textStroke()));
-    const moved = { x: 0.5, y: 0.6, w: 0.4, h: 0.2 };
-    const res = await ctx.request(`/api/comments/${comment.id}`, {
-      method: 'PATCH',
-      json: { textBox: moved },
-    });
-    const updated = commentSchema.parse(await res.json());
-    expect(updated.strokes[0]).toEqual(textStroke(moved));
-    expect(updated.anchor).toEqual({ type: 'rect', rect: moved, shapeRef: null });
-    expect(updated.body).toBe('Bitte prüfen');
-  });
-
-  it('lets only the author move a text box, onto the slide, on comments that have one', async () => {
-    const comment = await create(textComment(textStroke()));
+    // Moved and resized afterwards: the anchor follows it.
     const patch = (textBox: object, cookie?: string) =>
       ctx.request(`/api/comments/${comment.id}`, { method: 'PATCH', json: { textBox }, cookie });
+    const moved = { x: 0.5, y: 0.6, w: 0.4, h: 0.2 };
+    const updated = commentSchema.parse(await (await patch(moved)).json());
+    expect(updated.strokes[0]).toEqual(textStroke(moved));
+    expect(updated.anchor).toEqual({ type: 'rect', rect: moved, shapeRef: null });
+    expect(updated.body).toBe('Neuer Text');
+
     const guest = await asMember('Max Kern');
     expect((await patch({ x: 0.2, y: 0.2, w: 0.2, h: 0.1 }, guest)).status).toBe(403);
     expect((await patch({ x: 0.9, y: 0.2, w: 0.2, h: 0.1 })).status).toBe(400);
@@ -334,17 +350,35 @@ describe('moving a box afterwards', () => {
   const patch = (id: string, anchor: object, cookie?: string) =>
     ctx.request(`/api/comments/${id}`, { method: 'PATCH', json: { anchor }, cookie });
 
-  it('moves and resizes the author’s box', async () => {
+  it('moves and resizes the author’s box – only for the author, on the slide, and only boxes', async () => {
     const comment = await boxComment();
     const res = await patch(comment.id, box({ x: 0.5, y: 0.4, w: 0.3, h: 0.1 }));
     expect(res.status).toBe(200);
     expect(commentSchema.parse(await res.json()).anchor).toEqual(
       box({ x: 0.5, y: 0.4, w: 0.3, h: 0.1 }),
     );
-  });
 
-  it('only for the author, on the slide, and only boxes', async () => {
-    const comment = await boxComment();
+    // One comment on several boxes (⇧-click in box mode): all are stored, moving the first keeps
+    // the others; more than a comment may mark are refused.
+    const more = [{ rect: { x: 0.6, y: 0.6, w: 0.2, h: 0.2 }, shapeRef: null }];
+    const several = await create({
+      slideId: slide(0),
+      body: 'Alle drei',
+      anchor: { ...box({ x: 0.1, y: 0.1, w: 0.2, h: 0.2 }), more },
+    } as CreateCommentInput);
+    expect(several.anchor).toMatchObject({ type: 'rect', more });
+    const movedFirst = await patch(several.id, box({ x: 0.3, y: 0.1, w: 0.2, h: 0.2 }));
+    expect(commentSchema.parse(await movedFirst.json()).anchor).toEqual({
+      ...box({ x: 0.3, y: 0.1, w: 0.2, h: 0.2 }),
+      more,
+    });
+    const tooMany = await post({
+      slideId: slide(0),
+      body: 'x',
+      anchor: { ...box({ x: 0.1, y: 0.1, w: 0.2, h: 0.2 }), more: Array(50).fill(more[0]) },
+    } as CreateCommentInput);
+    expect(tooMany.status).toBe(400);
+
     const member = await asMember('Max Kern');
     expect((await patch(comment.id, box({ x: 0.2, y: 0.2, w: 0.2, h: 0.2 }), member)).status).toBe(
       403,
@@ -365,7 +399,7 @@ describe('moving a box afterwards', () => {
 });
 
 describe('replies', () => {
-  it('inherit the parent’s slide', async () => {
+  it('inherit the parent’s slide, cannot be nested, use a slide anchor and a comment of the deck', async () => {
     const root = await create(pinComment(slide(1)));
     const reply = await create({
       slideId: null,
@@ -374,27 +408,14 @@ describe('replies', () => {
       anchor: { type: 'slide' },
     });
     expect(reply).toMatchObject({ parentId: root.id, slideId: slide(1) });
-  });
-
-  it('cannot be nested', async () => {
-    const root = await create(pinComment(slide(0)));
-    const reply = await create({
-      slideId: null,
-      parentId: root.id,
-      body: 'A',
-      anchor: { type: 'slide' },
-    });
-    const res = await post({
+    const nested = await post({
       slideId: null,
       parentId: reply.id,
       body: 'B',
       anchor: { type: 'slide' },
     });
-    expect(res.status).toBe(400);
-  });
+    expect(nested.status).toBe(400);
 
-  it('must use a slide anchor and reference a comment of the same deck', async () => {
-    const root = await create(pinComment(slide(0)));
     const withPin = await post({ ...pinComment(slide(0)), parentId: root.id });
     expect(withPin.status).toBe(400);
     const unknownParent = await post({
@@ -431,7 +452,7 @@ describe('updating and deleting', () => {
     expect(reopened).toMatchObject({ status: 'open', resolvedBy: null, resolvedAt: null });
   });
 
-  it('only lets the author edit the text', async () => {
+  it('lets only the author edit the text, never emptied but on drawings, never on PowerPoint comments', async () => {
     const root = await create(pinComment(slide(0)));
     const guest = await asMember('Max Kern');
 
@@ -447,10 +468,8 @@ describe('updating and deleting', () => {
       json: { body: 'Präziser' },
     });
     expect(commentSchema.parse(await byAuthor.json()).body).toBe('Präziser');
-  });
 
-  it('never empties the text of a comment without recording or image', async () => {
-    const root = await create(pinComment(slide(0), 'Logo fehlt.'));
+    // Without recording or image, the text is the comment: never emptied.
     for (const body of ['', '   ']) {
       const res = await ctx.request(`/api/comments/${root.id}`, {
         method: 'PATCH',
@@ -459,10 +478,9 @@ describe('updating and deleting', () => {
       expect(res.status).toBe(400);
     }
     const [row] = await ctx.deps.db.select().from(comments);
-    expect(row?.body).toBe('Logo fehlt.');
-  });
+    expect(row?.body).toBe('Präziser');
 
-  it('empties the text of a drawing, which stays the comment’s content', async () => {
+    // A drawing stays the comment’s content.
     const drawing = await create({
       slideId: slide(0),
       body: 'Hier',
@@ -484,9 +502,7 @@ describe('updating and deleting', () => {
     });
     expect(res.status).toBe(200);
     expect(commentSchema.parse(await res.json())).toMatchObject({ body: '', strokes: [{}] });
-  });
 
-  it('never edits the text of PowerPoint comments', async () => {
     const id = crypto.randomUUID();
     await ctx.deps.db.insert(comments).values({
       id,
@@ -498,11 +514,11 @@ describe('updating and deleting', () => {
       source: 'pptx',
       externalId: 'guid-1',
     });
-    const res = await ctx.request(`/api/comments/${id}`, {
+    const pptx = await ctx.request(`/api/comments/${id}`, {
       method: 'PATCH',
       json: { body: 'Neu' },
     });
-    expect(res.status).toBe(403);
+    expect(pptx.status).toBe(403);
     const resolve = await ctx.request(`/api/comments/${id}`, {
       method: 'PATCH',
       json: { status: 'done' },
@@ -510,7 +526,7 @@ describe('updating and deleting', () => {
     expect(resolve.status).toBe(200);
   });
 
-  it('lets members delete only their own comments; deleting a root removes its replies', async () => {
+  it('lets members delete only their own comments, the owner any; deleting a root removes its replies', async () => {
     const guest = await asMember('Anna Becker');
     const ownerRoot = await create(pinComment(slide(0)));
     const guestRoot = await create(pinComment(slide(1), 'Von Anna'), guest);
@@ -534,14 +550,12 @@ describe('updating and deleting', () => {
       .array()
       .parse(await (await ctx.request(`/api/decks/${deck.deckId}/comments`)).json());
     expect(left.map((c) => c.id)).toEqual([ownerRoot.id]);
-  });
 
-  it('lets the owner delete any comment', async () => {
-    const guest = await asMember('Anna Becker');
-    const guestRoot = await create(pinComment(slide(1)), guest);
-    expect((await ctx.request(`/api/comments/${guestRoot.id}`, { method: 'DELETE' })).status).toBe(
+    const another = await create(pinComment(slide(1)), guest);
+    expect((await ctx.request(`/api/comments/${another.id}`, { method: 'DELETE' })).status).toBe(
       204,
     );
+    expect((await ctx.request('/api/comments/nope', { method: 'DELETE' })).status).toBe(404);
   });
 
   it('can delete only the comment and leave its drawing on the slide', async () => {
@@ -673,10 +687,6 @@ describe('updating and deleting', () => {
       anchor: anchor(0.3),
     });
   });
-
-  it('returns 404 for unknown comments', async () => {
-    expect((await ctx.request('/api/comments/nope', { method: 'DELETE' })).status).toBe(404);
-  });
 });
 
 describe('viewers only look', () => {
@@ -717,7 +727,7 @@ describe('reactions (👍 / 👎 / egal)', () => {
       .parse(await (await ctx.request(`/api/decks/${deck.deckId}/comments`)).json())
       .find((c) => c.id === commentId);
 
-  it('keeps one reaction per person: reacting again changes it, null takes it back', async () => {
+  it('keeps one reaction per person: reacting again changes it, null takes it back; on replies too', async () => {
     const root = await create(pinComment(slide(0)));
     const ada = await asMember('Ada Lovelace');
     expect((await react(root.id, 'up')).status).toBe(200);
@@ -737,10 +747,8 @@ describe('reactions (👍 / 👎 / egal)', () => {
     expect((await listed(root.id))?.reactions).toMatchObject([
       { kind: 'down', author: { name: 'Robert Hofmann' } },
     ]);
-  });
 
-  it('works on replies too and goes with the comment', async () => {
-    const root = await create(pinComment(slide(0)));
+    // On a reply too, and it goes with the comment.
     const reply = await create({
       ...pinComment(slide(0), 'Ja'),
       parentId: root.id,
@@ -769,7 +777,7 @@ describe('own colour (PATCH /me)', () => {
       .array()
       .parse(await (await ctx.request(`/api/decks/${deck.deckId}/comments`, { cookie })).json());
 
-  it('recolours the owner and their existing comments, not other people’s', async () => {
+  it('recolours the person and their existing comments, not other people’s, in known colours only', async () => {
     const guest = await asMember('Lena');
     const own = await create(pinComment(slide(0)));
     const guestComment = await create(pinComment(slide(1)), guest);
@@ -784,17 +792,12 @@ describe('own colour (PATCH /me)', () => {
     expect(comments.find((c) => c.id === guestComment.id)?.author.color).toBe(
       guestComment.author.color,
     );
-  });
 
-  it('lets a member recolour their comments', async () => {
-    const member = await asMember('Lena');
-    const own = await create(pinComment(slide(0)), member);
-    const res = await patchMe('yellow', member);
-    expect(meResponse(await res.json()).author.color).toBe('yellow');
-    expect((await listed(member)).find((c) => c.id === own.id)?.author.color).toBe('yellow');
-  });
-
-  it('rejects unknown colours', async () => {
+    const byGuest = await patchMe('yellow', guest);
+    expect(meResponse(await byGuest.json()).author.color).toBe('yellow');
+    expect((await listed(guest)).find((c) => c.id === guestComment.id)?.author.color).toBe(
+      'yellow',
+    );
     expect((await patchMe('pink')).status).toBe(400);
   });
 });

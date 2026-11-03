@@ -1,3 +1,4 @@
+import { anchorBoxes } from '@slider/shared';
 import { useLayoutEffect, useState, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
 import { gapKey } from '../lib/comment-selectors';
@@ -25,9 +26,20 @@ function draftTargetBox(
   switch (anchor.type) {
     case 'point':
       return denormalizeRect({ ...anchor.point, w: 0, h: 0 }, box);
-    case 'rect':
-      // While the box is dragged, its shown place – not the stored one.
-      return denormalizeRect(preview?.threadId === null ? preview.rect : anchor.rect, box);
+    case 'rect': {
+      // While the box is dragged, its shown place – not the stored one. On several boxes:
+      // beside all of them, so it covers none.
+      const rects = anchorBoxes(anchor).map((each) => each.rect);
+      const left = Math.min(...rects.map((rect) => rect.x));
+      const top = Math.min(...rects.map((rect) => rect.y));
+      const all = {
+        x: left,
+        y: top,
+        w: Math.max(...rects.map((rect) => rect.x + rect.w)) - left,
+        h: Math.max(...rects.map((rect) => rect.y + rect.h)) - top,
+      };
+      return denormalizeRect(preview?.threadId === null ? preview.rect : all, box);
+    }
     case 'slide':
       return { left: box.left, top: box.top, right: box.right, bottom: box.bottom };
   }

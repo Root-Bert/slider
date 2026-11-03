@@ -15,7 +15,7 @@ export interface SettingsLayoutProps {
   subtitle?: ReactNode;
   /** Left of the title: avatar, workspace mark, icon. */
   leading?: ReactNode;
-  /** "← Zurück zu den Reviews" above the title. */
+  /** "← Zurück zu den Projekten" above the title. */
   back?: { to: To; label?: string };
   /** Right end of the title row, e.g. a link to related settings. */
   actions?: ReactNode;
@@ -23,8 +23,11 @@ export interface SettingsLayoutProps {
   width?: 'default' | 'wide';
   /** Cuts a long title off with an ellipsis (default on: names can be long). */
   truncate?: boolean;
-  /** `app`: the member area's `AppHeader`. `logo`: only the logo (setup, before any login). */
-  header?: 'app' | 'logo';
+  /**
+   * `app`: the member area's `AppHeader`. `logo`: only the logo (setup, before any login).
+   * `none`: a layout above already shows the header (a workspace's settings, `WorkspaceLayout`).
+   */
+  header?: 'app' | 'logo' | 'none';
   /**
    * Its sections at the side (from `xl` on), each to jump to – every `id` that of an element
    * wrapping the section (`SectionNav`).
@@ -54,7 +57,7 @@ export function SettingsLayout({
   truncate = true,
   header = 'app',
   nav,
-  logoLink = { to: routes.reviews(), label: 'Slider – Reviews' },
+  logoLink = { to: routes.reviews(), label: 'Slider – Präsentationen' },
   toast,
   children,
 }: SettingsLayoutProps) {
@@ -66,7 +69,7 @@ export function SettingsLayout({
         // Home from here too: signed out, the reviews send to the login.
         <LogoHeader logoLink={logoLink} />
       ) : (
-        <AppHeader logoLink={logoLink} />
+        header === 'app' && <AppHeader logoLink={logoLink} />
       )}
       <main
         className={cn(

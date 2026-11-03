@@ -27,10 +27,10 @@ export const RECORDER_FORMATS: Record<MediaKind, readonly string[]> = {
   ],
 };
 
-/** Bits per second. 480p at 450 kbit/s + audio ≈ 3.6 MB per minute. */
+/** Bits per second. 720p at 1.5 Mbit/s + audio ≈ 11 MB per minute. */
 export const RECORDER_BITRATES: Record<MediaKind, MediaRecorderOptions> = {
   audio: { audioBitsPerSecond: 24_000 },
-  video: { videoBitsPerSecond: 450_000, audioBitsPerSecond: 32_000 },
+  video: { videoBitsPerSecond: 1_500_000, audioBitsPerSecond: 64_000 },
 };
 
 export const AUDIO_CONSTRAINTS: MediaTrackConstraints = {
@@ -40,30 +40,30 @@ export const AUDIO_CONSTRAINTS: MediaTrackConstraints = {
   autoGainControl: true,
 };
 
-/** A face in a comment card needs no HD: 480p at 24 fps keeps files small. */
+/** A face in a comment card: 720p at 30 fps looks sharp without huge files. */
 export const VIDEO_CONSTRAINTS: MediaTrackConstraints = {
-  width: { ideal: 854 },
-  height: { ideal: 480 },
-  frameRate: { ideal: 24, max: 30 },
+  width: { ideal: 1280 },
+  height: { ideal: 720 },
+  frameRate: { ideal: 30, max: 30 },
   facingMode: 'user',
 };
 
 /** Where a video comment's picture comes from: the camera, the shared screen, or both. */
 export type VideoSource = 'camera' | 'screen' | 'both';
 
-/** Screens carry text: 720p at 15 fps reads well, and 900 kbit/s ≈ 7 MB per minute. */
-export const SCREEN_MAX_SIZE = { width: 1280, height: 720 } as const;
-export const SCREEN_FRAME_RATE = 15;
+/** Screens carry text: 1080p at 24 fps reads crisp, and 2.5 Mbit/s ≈ 19 MB per minute. */
+export const SCREEN_MAX_SIZE = { width: 1920, height: 1080 } as const;
+export const SCREEN_FRAME_RATE = 24;
 export const SCREEN_BITRATES: MediaRecorderOptions = {
-  videoBitsPerSecond: 900_000,
-  audioBitsPerSecond: 32_000,
+  videoBitsPerSecond: 2_500_000,
+  audioBitsPerSecond: 64_000,
 };
 
 export const SCREEN_CONSTRAINTS: DisplayMediaStreamOptions = {
   video: {
     width: { ideal: SCREEN_MAX_SIZE.width },
     height: { ideal: SCREEN_MAX_SIZE.height },
-    frameRate: { ideal: SCREEN_FRAME_RATE, max: 24 },
+    frameRate: { ideal: SCREEN_FRAME_RATE, max: 30 },
   },
   // The voice comes from the microphone; tab audio would only double it.
   audio: false,

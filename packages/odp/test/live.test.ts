@@ -1,8 +1,14 @@
 import { readFileSync } from 'node:fs';
-import type { LiveRun, LiveTextStyle, RichParagraph } from '@slider/shared';
+import {
+  textAreaInset,
+  type LiveRun,
+  type LiveTextStyle,
+  type RichParagraph,
+} from '@slider/shared';
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
-import { OdpDocument, OdpError } from '../src';
+import { listLabels } from '@slider/shared/live-text';
+import { OdpDocument, OdpError, placedBox } from '../src';
 import { OdpArchive } from '../src/archive';
 
 const DEMO = new Uint8Array(readFileSync(new URL('./fixtures/demo.odp', import.meta.url)));
@@ -53,7 +59,7 @@ const run = (text: string, over: Partial<LiveTextStyle> = {}): LiveRun => ({
 });
 
 describe('live elements', () => {
-  it('draws text frames and plain boxes live, tables, pictures and groups not', async () => {
+  it('draws text frames and boxes live, resolving placeholder looks, and types in any shape with text but not over fields', async () => {
     const document = await open();
     const live = document
       .slides()
@@ -68,45 +74,68 @@ describe('live elements', () => {
       ['Roadmap Visual', false],
       ['Meilensteine', false],
     ]);
-  });
-
-  it('resolves the look of placeholder text through its styles', async () => {
-    const document = await open();
-    const title = byName(document, 0, 'Title 1').live!;
-    expect(title.verticalAlign).toBe('bottom');
-    expect(title.fill).toBeNull();
-    expect(title.paragraphs[0]).toMatchObject({
-      align: 'center',
-      fontIndependent: true,
-      lineSpacing: { type: 'proportional', value: 0.9 },
-      runs: [{ text: 'Q4 Strategie 2026', font: 'Calibri Light', size: 60, color: '#000000' }],
-    });
-    const agenda = byName(document, 1, 'Content 2').live!;
-    expect(agenda.paragraphs).toHaveLength(4);
-    expect(agenda.paragraphs[0]).toMatchObject({
-      level: 1,
-      spaceBefore: expect.closeTo(10, 1),
-      marginLeft: 18,
-      bullet: { char: '•', font: 'Arial', size: 28, at: 0, width: 18 },
-    });
-    const hint = byName(document, 2, 'Hinweis').live!;
-    expect(hint).toMatchObject({ fill: '#f1f5f9', stroke: null, verticalAlign: 'middle' });
-    expect(hint.paragraphs[0]?.runs[0]).toMatchObject({ italic: true, color: '#334155' });
-  });
-
-  it('types in any shape with text, but not over fields or numbering', async () => {
-    const document = await open();
-    // Under the picture or not: only the typed text is drawn over it, the slide stays as it is.
-    const roadmap = byName(document, 3, 'Roadmap Visual');
-    document.apply([
-      { type: 'setBox', elementId: byName(document, 3, 'Title 1').id, box: roadmap.bbox },
-    ]);
-    expect(byName(document, 3, 'Title 1').live).not.toBeNull();
+    // Resolves the look of placeholder text through its styles.
+    {
+      const document = await open();
+      const title = byName(document, 0, 'Title 1').live!;
+      expect(title.verticalAlign).toBe('bottom');
+      expect(title.fill).toBeNull();
+      expect(title.paragraphs[0]).toMatchObject({
+        align: 'center',
+        fontIndependent: true,
+        lineSpacing: { type: 'proportional', value: 0.9 },
+        runs: [{ text: 'Q4 Strategie 2026', font: 'Calibri Light', size: 60, color: '#000000' }],
+      });
+      const agenda = byName(document, 1, 'Content 2').live!;
+      expect(agenda.paragraphs).toHaveLength(4);
+      expect(agenda.paragraphs[0]).toMatchObject({
+        level: 1,
+        spaceBefore: expect.closeTo(10, 1),
+        marginLeft: 18,
+        bullet: { char: '•', font: 'Arial', size: 28, at: 0, width: 18 },
+      });
+      const hint = byName(document, 2, 'Hinweis').live!;
+      expect(hint).toMatchObject({ fill: '#f1f5f9', stroke: null, verticalAlign: 'middle' });
+      expect(hint.paragraphs[0]?.runs[0]).toMatchObject({ italic: true, color: '#334155' });
+    }
+    // Where no style sets the text's distance from the box: LibreOffice's standard for frames,
+    // none for placeholders (their text otherwise jumped when typing began).
+    {
+      const zip = await JSZip.loadAsync(DEMO);
+      for (const name of ['content.xml', 'styles.xml']) {
+        const xml = await zip.file(name)!.async('string');
+        zip.file(name, xml.replace(/ fo:padding(-\w+)?="[^"]*"/g, ''));
+      }
+      const document = await OdpDocument.open(await zip.generateAsync({ type: 'uint8array' }));
+      document.ensureIds();
+      expect(byName(document, 0, 'Title 1').live!.padding).toEqual({
+        top: 0,
+        bottom: 0,
+        left: 0,
+        right: 0,
+      });
+      expect(byName(document, 2, 'Hinweis').live!.padding).toEqual({
+        top: expect.closeTo(3.54, 2),
+        bottom: expect.closeTo(3.54, 2),
+        left: expect.closeTo(7.09, 2),
+        right: expect.closeTo(7.09, 2),
+      });
+    }
+    // Types in any shape with text, but not over fields.
+    {
+      const document = await open();
+      // Under the picture or not: only the typed text is drawn over it, the slide stays as it is.
+      const roadmap = byName(document, 3, 'Roadmap Visual');
+      document.apply([
+        { type: 'setBox', elementId: byName(document, 3, 'Title 1').id, box: roadmap.bbox },
+      ]);
+      expect(byName(document, 3, 'Title 1').live).not.toBeNull();
+    }
   });
 });
 
 describe('writing live elements', () => {
-  it('writes formatted text that reads back the same', async () => {
+  it('writes formatted text that reads back the same, keeping bullets and sharing equal styles', async () => {
     const document = await open();
     const title = byName(document, 1, 'Title 1');
     const paragraphs: RichParagraph[] = [
@@ -116,6 +145,8 @@ describe('writing live elements', () => {
       },
       { align: 'right', runs: [run('zweite Zeile\nmit Umbruch', { italic: true, size: 30 })] },
       { align: 'left', runs: [run('gesperrt', { caps: 'uppercase', letterSpacing: 2 })] },
+      // See-through letters; the next run does not take the paragraph's (the first run's) opacity.
+      { align: 'left', runs: [run('halb', { opacity: 0.5 }), run(' voll')] },
     ];
     document.apply([{ type: 'setRichText', elementId: title.id, paragraphs }]);
     const again = await roundtrip(document);
@@ -123,6 +154,7 @@ describe('writing live elements', () => {
     expect(live.paragraphs.map((paragraph) => paragraph.align)).toEqual([
       'center',
       'right',
+      'left',
       'left',
     ]);
     expect(live.paragraphs.map((paragraph) => paragraph.runs)).toEqual(
@@ -135,46 +167,79 @@ describe('writing live elements', () => {
       'Agenda neu',
       'zweite Zeile\nmit Umbruch',
       'gesperrt',
+      'halb voll',
     ]);
-  });
-
-  it('keeps bullets and list items when the text gets more paragraphs', async () => {
-    const document = await open();
-    const content = byName(document, 1, 'Content 2');
-    document.apply([
-      {
-        type: 'setRichText',
-        elementId: content.id,
-        paragraphs: ['Eins', 'Zwei', 'Drei', 'Vier', 'Fünf'].map((text) => ({
-          align: 'left' as const,
-          runs: [run(text, { size: 28 })],
-        })),
-      },
-    ]);
-    const live = byName(await roundtrip(document), 1, 'Content 2').live!;
-    expect(live.paragraphs).toHaveLength(5);
-    expect(live.paragraphs.every((paragraph) => paragraph.bullet?.char === '•')).toBe(true);
-  });
-
-  it('shares equal styles instead of writing them again', async () => {
-    const document = await open();
-    const title = byName(document, 1, 'Title 1');
-    const write = () =>
+    // Keeps bullets and list items when the text gets more paragraphs.
+    {
+      const document = await open();
+      const content = byName(document, 1, 'Content 2');
       document.apply([
         {
           type: 'setRichText',
-          elementId: title.id,
-          paragraphs: [{ align: 'left', runs: [run('A', { bold: true }), run('B')] }],
+          elementId: content.id,
+          paragraphs: ['Eins', 'Zwei', 'Drei', 'Vier', 'Fünf'].map((text) => ({
+            align: 'left' as const,
+            runs: [run(text, { size: 28 })],
+          })),
         },
       ]);
-    write();
-    const once = (await document.toBytes()).byteLength;
-    write();
-    write();
-    expect((await document.toBytes()).byteLength).toBe(once);
+      const live = byName(await roundtrip(document), 1, 'Content 2').live!;
+      expect(live.paragraphs).toHaveLength(5);
+      expect(live.paragraphs.every((paragraph) => paragraph.bullet?.char === '•')).toBe(true);
+    }
+    // Puts paragraphs in lists – the shape's own bullets, else lists of its own – and out again,
+    // numbers counting per level, with strike and line spacing.
+    {
+      const document = await open();
+      const content = byName(document, 1, 'Content 2');
+      const line = (text: string, list: RichParagraph['list'], over = {}): RichParagraph => ({
+        align: 'left',
+        runs: [run(text, over)],
+        list,
+        lineSpacing: { type: 'proportional', value: 1.5 },
+      });
+      document.apply([
+        {
+          type: 'setRichText',
+          elementId: content.id,
+          paragraphs: [
+            line('Punkt', { kind: 'bullet', level: 1 }),
+            line('ohne', null),
+            line('eins', { kind: 'number', level: 1 }),
+            line('zwei', { kind: 'number', level: 1 }, { strike: true }),
+            line('zwei a', { kind: 'number', level: 2 }),
+            line('drei', { kind: 'number', level: 1 }),
+          ],
+        },
+      ]);
+      const live = byName(await roundtrip(document), 1, 'Content 2').live!;
+      expect(listLabels(live.paragraphs)).toEqual(['•', null, '1.', '2.', '1.', '3.']);
+      expect(live.paragraphs[0]?.bullet).toMatchObject({ font: 'Arial', width: 18 });
+      expect(live.paragraphs[4]?.bullet).toMatchObject({ at: 27, width: 27, size: 20 });
+      expect(live.paragraphs[3]?.runs[0]).toMatchObject({ text: 'zwei', strike: true });
+      expect(live.paragraphs.every((p) => p.lineSpacing.value === 1.5)).toBe(true);
+    }
+    // Shares equal styles instead of writing them again.
+    {
+      const document = await open();
+      const title = byName(document, 1, 'Title 1');
+      const write = () =>
+        document.apply([
+          {
+            type: 'setRichText',
+            elementId: title.id,
+            paragraphs: [{ align: 'left', runs: [run('A', { bold: true }), run('B')] }],
+          },
+        ]);
+      write();
+      const once = (await document.toBytes()).byteLength;
+      write();
+      write();
+      expect((await document.toBytes()).byteLength).toBe(once);
+    }
   });
 
-  it('sets fill, border and vertical alignment in a style of the element’s own', async () => {
+  it('sets fill, border and alignment in a style of its own, adds boxes with the editor’s ids and refuses what is not live', async () => {
     const document = await open();
     const hint = byName(document, 2, 'Hinweis');
     document.apply([
@@ -202,61 +267,253 @@ describe('writing live elements', () => {
     ]);
     document.apply([{ type: 'setShapeStyle', elementId: hint.id, fill: null, stroke: null }]);
     expect(byName(document, 2, 'Hinweis').live).toMatchObject({ fill: null, stroke: null });
-  });
-
-  it('adds text boxes and boxes with the editor’s ids', async () => {
-    const document = await open();
-    document.apply([
-      {
-        type: 'addElement',
-        slideIndex: 0,
-        elementId: 'sltest-box',
-        kind: 'rect',
-        box: { x: 0.1, y: 0.1, w: 0.2, h: 0.1 },
-        fill: '#ff0000',
-        stroke: null,
-        paragraphs: [{ align: 'center', runs: [run('Box')] }],
-      },
-    ]);
-    const added = (await roundtrip(document))
-      .slides()[0]!
-      .elements.find((element) => element.id === 'sltest-box')!;
-    expect(added).toMatchObject({ kind: 'shape', name: 'Rechteck 1', paragraphs: ['Box'] });
-    expect(added.bbox.x).toBeCloseTo(0.1, 3);
-    expect(added.live).toMatchObject({ fill: '#ff0000', verticalAlign: 'middle', autoGrow: false });
-    expect(() =>
+    // Adds text boxes and boxes with the editor’s ids.
+    {
+      const document = await open();
       document.apply([
         {
           type: 'addElement',
-          slideIndex: 0,
+          pageId: document.pageIds()[0]!,
           elementId: 'sltest-box',
+          kind: 'rect',
+          box: { x: 0.1, y: 0.1, w: 0.2, h: 0.1 },
+          fill: '#ff0000',
+          stroke: null,
+          paragraphs: [{ align: 'center', runs: [run('Box')] }],
+        },
+        {
+          type: 'addElement',
+          pageId: document.pageIds()[0]!,
+          elementId: 'sltest-hexagon',
+          kind: 'rect',
+          shape: 'hexagon',
+          box: { x: 0.5, y: 0.1, w: 0.2, h: 0.3 },
+          fill: '#ff0000',
+          stroke: null,
+          paragraphs: [{ align: 'center', runs: [run('Sechseck')] }],
+        },
+        {
+          type: 'addElement',
+          pageId: document.pageIds()[0]!,
+          elementId: 'sltest-text',
           kind: 'text',
-          box: { x: 0, y: 0, w: 0.1, h: 0.1 },
+          box: { x: 0.1, y: 0.5, w: 0.3, h: 0.3 },
           fill: null,
           stroke: null,
-          paragraphs: [],
+          paragraphs: [{ align: 'right', runs: [run('Unten rechts')] }],
         },
-      ]),
-    ).toThrow(OdpError);
-  });
-
-  it('refuses formatted text on what is not live', async () => {
-    const document = await open();
-    const table = byName(document, 2, 'Tabelle Umsatz');
-    expect(() =>
+        // A plain text box sits at the bottom of its box too (the 3 × 3 grid of the text tab).
+        { type: 'setShapeStyle', elementId: 'sltest-text', verticalAlign: 'bottom' },
+      ]);
+      const elements = (await roundtrip(document)).slides()[0]!.elements;
+      expect(elements.find((element) => element.id === 'sltest-text')!.live).toMatchObject({
+        verticalAlign: 'bottom',
+        autoGrow: true,
+        fill: null,
+        stroke: null,
+      });
+      const added = elements.find((element) => element.id === 'sltest-box')!;
+      expect(added).toMatchObject({ kind: 'shape', name: 'Rechteck 1', paragraphs: ['Box'] });
+      expect(added.bbox.x).toBeCloseTo(0.1, 3);
+      expect(added.live).toMatchObject({
+        fill: '#ff0000',
+        verticalAlign: 'middle',
+        autoGrow: false,
+      });
+      // A rectangle lays its text out in its box, a hexagon in its middle – as LibreOffice does.
+      expect(added.live!.textArea).toBeUndefined();
+      const hexagon = elements.find((element) => element.id === 'sltest-hexagon')!.live!;
+      const inset = (5400 * 100) / 234 + 1700;
+      expect(hexagon.textArea).toEqual({
+        left: expect.closeTo(inset / 21600, 5),
+        top: expect.closeTo(inset / 21600, 5),
+        right: expect.closeTo(inset / 21600, 5),
+        bottom: expect.closeTo(inset / 21600, 5),
+      });
+      // As LibreOffice writes geometry out: equations; a rounded rectangle wider than high keeps
+      // its corners (stretch point), so its sides' insets are smaller.
+      const roundRect = textAreaInset(
+        {
+          type: 'round-rectangle',
+          viewBox: '0 0 21600 21600',
+          modifiers: '3600',
+          textAreas: '?f3 ?f4 ?f5 ?f6',
+          stretchX: '10800',
+          stretchY: '10800',
+          equations: {
+            f0: '45',
+            f1: '$0 *sin(?f0 *(pi/180))',
+            f2: '?f1 *3163/7636',
+            f3: 'left+?f2 ',
+            f4: 'top+?f2 ',
+            f5: 'right-?f2 ',
+            f6: 'bottom-?f2 ',
+          },
+        },
+        5.5,
+        3.713,
+      )!;
+      expect(roundRect.top).toBeCloseTo(0.04882, 4);
+      expect(roundRect.left).toBeCloseTo(0.04882 / (5.5 / 3.713), 4);
+      // From PowerPoint: in the box's own 1/100 mm.
+      const ooxml = textAreaInset(
+        {
+          type: 'ooxml-hexagon',
+          viewBox: '0 0 0 0',
+          textAreas: '?f1 ?f2 ?f3 ?f4',
+          equations: {
+            f0: 'min(logwidth,logheight)/6',
+            f1: '?f0',
+            f2: '?f0',
+            f3: 'logwidth-?f0',
+            f4: 'logheight-?f0',
+          },
+        },
+        6,
+        3,
+      )!;
+      expect(ooxml).toMatchObject({
+        left: expect.closeTo(1 / 12, 5),
+        top: expect.closeTo(1 / 6, 5),
+      });
+      // Unreadable: the whole box, as before.
+      expect(
+        textAreaInset({ textAreas: '?f0 0 21600 21600', equations: { f0: 'gamma(2)' } }, 1, 1),
+      ).toBeNull();
+      expect(() =>
+        document.apply([
+          {
+            type: 'addElement',
+            pageId: document.pageIds()[0]!,
+            elementId: 'sltest-box',
+            kind: 'text',
+            box: { x: 0, y: 0, w: 0.1, h: 0.1 },
+            fill: null,
+            stroke: null,
+            paragraphs: [],
+          },
+        ]),
+      ).toThrow(OdpError);
+    }
+    // Lines: across the frame as drawn, an arrow head LibreOffice's own; moved, flattened,
+    // turned and copied by their ends; restyled, the heads sized with the line.
+    {
+      const document = await open();
+      const pageId = document.pageIds()[0]!;
       document.apply([
         {
-          type: 'setRichText',
-          elementId: table.id,
-          paragraphs: [{ align: 'left', runs: [run('x')] }],
+          type: 'addElement',
+          pageId,
+          elementId: 'sltest-arrow',
+          kind: 'line',
+          box: { x: 0.1, y: 0.2, w: 0.4, h: 0.3 },
+          flip: { x: true, y: false },
+          heads: 'end',
+          fill: null,
+          stroke: { color: '#112233', width: 3, dash: 'dash' },
+          paragraphs: [],
         },
-      ]),
-    ).toThrow(OdpError);
+      ]);
+      const bytes = await document.toBytes();
+      const archive = await OdpArchive.open(bytes);
+      expect(await archive.readText('styles.xml')).toContain(
+        '<draw:marker draw:name="Arrow" svg:viewBox="0 0 20 30" svg:d="M10 0l-10 30h20z"/>',
+      );
+      // Three times as wide as the line (9 pt), as PowerPoint's medium head.
+      expect(await archive.readText('content.xml')).toMatch(
+        /draw:marker-end="Arrow" draw:marker-end-width="0.318cm" draw:marker-end-center="false"/,
+      );
+      const arrow = (await OdpDocument.open(bytes))
+        .slides()[0]!
+        .elements.find((element) => element.id === 'sltest-arrow')!;
+      expect(arrow).toMatchObject({
+        kind: 'line',
+        name: 'Pfeil 1',
+        movable: true,
+        live: null,
+        flip: { x: true, y: false },
+        line: { heads: 'end' },
+        look: { fill: null, fills: [], stroke: { color: '#112233', width: 3, dash: 'dash' } },
+        paint: { outline: 'line' },
+      });
+      expect(arrow.bbox.w).toBeCloseTo(0.4, 3);
+      // Laid flat (a level line) and turned upright by its centre: its ends follow.
+      document.apply([
+        {
+          type: 'setBox',
+          elementId: 'sltest-arrow',
+          box: { x: 0.2, y: 0.5, w: 0.3, h: 0 },
+          flip: { x: false, y: false },
+        },
+      ]);
+      const flat = document.slides()[0]!.elements.find((item) => item.id === 'sltest-arrow')!;
+      expect(flat.bbox).toMatchObject({ x: expect.closeTo(0.2, 3), h: 0 });
+      expect(flat.flip).toEqual({ x: false, y: false });
+      document.apply([
+        { type: 'setBox', elementId: 'sltest-arrow', box: flat.bbox, rotation: 90 },
+        { type: 'setShapeStyle', elementId: 'sltest-arrow', heads: 'both' },
+        {
+          type: 'copyElement',
+          elementId: 'sltest-arrow',
+          pageId,
+          newElementId: 'sltest-arrow-copy',
+          box: { x: 0.6, y: 0.1, w: 0, h: 0.3 },
+        },
+      ]);
+      const upright = document.slides()[0]!.elements.find((item) => item.id === 'sltest-arrow')!;
+      expect(upright.bbox.w).toBeCloseTo(0, 3);
+      expect(upright.bbox.x + upright.bbox.w / 2).toBeCloseTo(0.35, 3);
+      // Turned clockwise: its start, on the left, comes on top.
+      expect(upright.flip).toEqual({ x: false, y: false });
+      expect(upright.rotation).toBe(0);
+      expect(upright.line).toEqual({ heads: 'both' });
+      const copy = document.slides()[0]!.elements.find((item) => item.id === 'sltest-arrow-copy')!;
+      expect(copy).toMatchObject({
+        kind: 'line',
+        line: { heads: 'both' },
+        paint: { outline: 'line' },
+      });
+      expect(copy.bbox.x).toBeCloseTo(0.6, 3);
+      // Thinner: its heads with it, still drawn by the browser.
+      document.apply([
+        {
+          type: 'setShapeStyle',
+          elementId: 'sltest-arrow',
+          stroke: { color: '#ff0000', width: 1 },
+        },
+      ]);
+      expect(
+        await (await OdpArchive.open(await document.toBytes())).readText('content.xml'),
+      ).toMatch(/draw:marker-start-width="0.21cm"/);
+      expect(
+        document.slides()[0]!.elements.find((item) => item.id === 'sltest-arrow')!.paint,
+      ).toEqual({ outline: 'line', radius: 0 });
+      // Heads are a line's only.
+      expect(() =>
+        document.apply([
+          { type: 'setShapeStyle', elementId: byName(document, 2, 'Hinweis').id, heads: 'end' },
+        ]),
+      ).toThrow(OdpError);
+    }
+    // Refuses formatted text on what is not live.
+    {
+      const document = await open();
+      const table = byName(document, 2, 'Tabelle Umsatz');
+      expect(() =>
+        document.apply([
+          {
+            type: 'setRichText',
+            elementId: table.id,
+            paragraphs: [{ align: 'left', runs: [run('x')] }],
+          },
+        ]),
+      ).toThrow(OdpError);
+    }
   });
 });
 
 describe('the picture typed over', () => {
-  it('leaves out the text and keeps the shape', async () => {
+  it('draws the picture typed over without the text, the same while only the text changes – refusing what cannot be typed in', async () => {
     const document = await open();
     const hint = byName(document, 2, 'Hinweis');
     const blank = document.blankText(hint.id);
@@ -266,9 +523,8 @@ describe('the picture typed over', () => {
     const left = after?.find((element) => element.name === 'Hinweis');
     expect(left?.paragraphs?.join('')).toBe('');
     expect(left?.live).toMatchObject({ fill: '#f1f5f9', autoGrow: false });
-  });
 
-  it('draws the same picture while only the text changes', async () => {
+    // Draws the same picture while only the text changes.
     const fingerprint = async (change: (document: OdpDocument) => void) => {
       const document = await open();
       change(document);
@@ -290,11 +546,11 @@ describe('the picture typed over', () => {
     });
     expect(typed).toBe(before);
     expect(moved).not.toBe(before);
-  });
-
-  it('refuses what cannot be typed in', async () => {
-    const document = await open();
-    expect(document.blankText(byName(document, 2, 'Tabelle Umsatz').id)).toBeNull();
+    // Refuses what cannot be typed in.
+    {
+      const document = await open();
+      expect(document.blankText(byName(document, 2, 'Tabelle Umsatz').id)).toBeNull();
+    }
   });
 });
 
@@ -337,7 +593,7 @@ describe('fonts for the render pool', () => {
 });
 
 describe('layers of a slide', () => {
-  it('draws the slide without its elements, then each element alone on white and on black', async () => {
+  it('draws the slide without its elements, then each alone on white and black – off the page and tilted ones whole and flat, parts named by what they show', async () => {
     const document = await open();
     const count = document.slides().length;
     const elements = document.slides()[2]!.elements;
@@ -361,10 +617,86 @@ describe('layers of a slide', () => {
     expect(styles).toMatch(
       /<style:master-page [^>]*style:name="slLayers"[^>]*\/>|style:name="slLayers"[^>]*><\/style:master-page>/,
     );
-  });
+    // Each drawn with its middle on the page's: moved – even reaching off the page – it is
+    // drawn whole and not again, its picture's box taken back to where it lies.
+    {
+      const document = await open();
+      const title = byName(document, 2, 'Title 1');
+      const before = await (await open()).toLayerBytes(2, () => null);
+      document.apply([{ type: 'setBox', elementId: title.id, box: { ...title.bbox, x: -0.3 } }]);
+      const layers = await document.toLayerBytes(2, () => null);
+      const at = layers.elementIds.indexOf(title.id);
+      expect(layers.layers).toEqual(before.layers);
+      const centred = 0.5 - title.bbox.w / 2;
+      expect(layers.placements[at]?.shift.x).toBeCloseTo(centred + 0.3);
+      expect(layers.placements[at]?.shift.y).toBeCloseTo(before.placements[at]?.shift.y ?? NaN);
+      // On its own pages it lies in the page's middle.
+      const copy = await OdpDocument.open(layers.bytes);
+      const alone = copy.slides()[3 + 2 * at]!.elements[0]!;
+      expect(alone.bbox.x).toBeCloseTo(centred);
+      expect(placedBox(alone.bbox, layers.placements[at]!).x).toBeCloseTo(-0.3);
+      expect(layers.placements[at]?.scale).toEqual({ x: 1, y: 1 });
+      // A group goes there with its parts (it drew where it lay, placed as if moved).
+      const grouped = await (await open()).toLayerBytes(3, () => null);
+      const group = byName(await open(), 3, 'Meilensteine');
+      const g = grouped.elementIds.indexOf(group.id);
+      const alongside = (await OdpDocument.open(grouped.bytes)).slides()[4 + 2 * g]!.elements[0]!;
+      const back = placedBox(alongside.bbox, grouped.placements[g]!);
+      expect(back.x).toBeCloseTo(group.bbox.x);
+      expect(back.y).toBeCloseTo(group.bbox.y);
+    }
+    // One larger than the page (off its top and bottom): drawn smaller to fit, not cut – its box
+    // comes back where it lies. One holding text keeps its size (smaller, it would wrap anew).
+    {
+      const document = await open();
+      const picture = byName(document, 3, 'Roadmap Visual');
+      const title = byName(document, 3, 'Title 1');
+      const box = { x: 0.1, y: -0.05, w: 0.5, h: 1.2 };
+      document.apply([
+        { type: 'setBox', elementId: picture.id, box },
+        { type: 'setBox', elementId: title.id, box },
+      ]);
+      const layers = await document.toLayerBytes(3, () => null);
+      expect(layers.placements[layers.elementIds.indexOf(title.id)]?.scale).toEqual({ x: 1, y: 1 });
+      const at = layers.elementIds.indexOf(picture.id);
+      const placement = layers.placements[at]!;
+      const { scale } = placement;
+      expect(scale.x).toBe(1);
+      expect(scale.y).toBeCloseTo(1 / 1.2);
+      const alone = (await OdpDocument.open(layers.bytes)).slides()[4 + 2 * at]!.elements[0]!;
+      expect(alone.bbox.y).toBeCloseTo(0);
+      expect(alone.bbox.y + alone.bbox.h).toBeCloseTo(1);
+      // Back where it lies (scale · p + shift = drawn).
+      const back = placedBox(alone.bbox, placement);
+      expect(back.x).toBeCloseTo(box.x);
+      expect(back.y).toBeCloseTo(box.y);
+      expect(back.h).toBeCloseTo(box.h);
+    }
+    // Draws a tilted element flat and alone, its picture in no part.
+    {
+      const document = await open();
+      const hint = byName(document, 2, 'Hinweis');
+      const png = new Uint8Array(readFileSync(new URL('./fixtures/demo.odp', import.meta.url)));
+      document.apply(
+        [
+          {
+            type: 'setTilt',
+            elementId: hint.id,
+            tilt: { x: 0, y: 30 },
+            picture: { imageId: 'tilted', box: hint.bbox },
+          },
+        ],
+        new Map([['tilted', { bytes: png, mediaType: 'image/png', width: 10, height: 10 }]]),
+      );
+      const layers = await document.toLayerBytes(2, () => null);
+      expect(layers.elementIds).toContain(hint.id);
+      const content = await (await OdpArchive.open(layers.bytes)).readText('content.xml');
+      expect(content).not.toContain('Hinweis (3D)');
+      expect(content).not.toContain('draw:display="none"');
+    }
 
-  it('names each part by what it shows – the same in another order, another once changed', async () => {
-    const parts = async (change?: 'move' | 'box') => {
+    // Names each part by what it shows – the same in another order, another once changed.
+    const parts = async (change?: 'move' | 'box' | 'size') => {
       const document = await open();
       const title = byName(document, 2, 'Title 1');
       if (change === 'move') {
@@ -373,6 +705,11 @@ describe('layers of a slide', () => {
       if (change === 'box') {
         document.apply([
           { type: 'setBox', elementId: title.id, box: { ...title.bbox, x: title.bbox.x + 0.05 } },
+        ]);
+      }
+      if (change === 'size') {
+        document.apply([
+          { type: 'setBox', elementId: title.id, box: { ...title.bbox, w: title.bbox.w - 0.05 } },
         ]);
       }
       const drawing = await document.toLayerBytes(2, () => null);
@@ -384,106 +721,121 @@ describe('layers of a slide', () => {
     const moved = await parts('move');
     expect(moved.background).toBe(before.background);
     expect(moved.byId).toEqual(before.byId);
-    const boxed = await parts('box');
+    // Moved on the slide: drawn as it was (where it lies is no part of its picture).
+    expect((await parts('box')).byId).toEqual(before.byId);
+    // Composed (the per-element editor): what the browser draws whole is not drawn – no layer,
+    // no pages; a text typed live is left out of its element's picture.
+    {
+      const document = await open();
+      const hint = byName(document, 2, 'Hinweis');
+      const title = byName(document, 2, 'Title 1');
+      expect(title.paint).toBeDefined();
+      document.apply([
+        {
+          type: 'setShapeStyle',
+          elementId: hint.id,
+          effects: {
+            shadow: { x: 2, y: 2, blur: 4, color: '#000000', opacity: 0.4 },
+            blur: null,
+            glow: null,
+            backdrop: null,
+          },
+        },
+      ]);
+      expect(byName(document, 2, 'Hinweis').paint).toBeUndefined();
+      const drawing = await document.toLayerBytes(2, () => null, { compose: true });
+      const drawn = drawing.layers.filter((layer) => layer !== null);
+      expect(drawing.layers[drawing.elementIds.indexOf(title.id)]).toBeNull();
+      // The master's background alone, its shapes alone (on white and on black), then each
+      // element drawn.
+      expect(drawing.masterShapes).toEqual(expect.any(String));
+      expect(drawing.masterGround).toEqual(expect.any(String));
+      expect(drawing.pages).toHaveLength(1 + 1 + 2 + 2 * drawn.length);
+      const content = await (await OdpArchive.open(drawing.bytes)).readText('content.xml');
+      expect(content).not.toContain('Planwerte');
+      expect(content).toContain('presentation:background-objects-visible="false"');
+      // The same for another slide of its master: drawn once.
+      const other = await (await open()).toLayerBytes(1, () => null, { compose: true });
+      expect(other.masterGround).toBe(drawing.masterGround);
+      expect((await (await open()).toLayerBytes(2, () => null)).masterGround).toBeNull();
+    }
+    const boxed = await parts('size');
     expect(boxed.background).toBe(before.background);
     expect(boxed.byId.get(before.title)).not.toBe(before.byId.get(before.title));
     for (const [id, part] of before.byId) {
       if (id !== before.title) expect(boxed.byId.get(id)).toBe(part);
     }
+
+    // Composed, the master's shapes over the slide's own background (the browser draws that
+    // beneath them): the slide without its elements on white and on black, named the same
+    // whatever its own background and wherever its elements lie.
+    const masterShapes = async (change?: 'background' | 'box') => {
+      const document = await open();
+      const slide = document.slides()[2]!;
+      const title = byName(document, 2, 'Title 1');
+      if (change === 'background') {
+        document.apply([
+          {
+            type: 'setSlideBackground',
+            pageId: slide.pageId!,
+            fills: [
+              {
+                type: 'gradient',
+                kind: 'linear',
+                angle: 135,
+                stops: [
+                  { color: '#112233', at: 0 },
+                  { color: '#ddeeff', at: 1 },
+                ],
+                opacity: 1,
+                visible: true,
+              },
+            ],
+          },
+        ]);
+      }
+      if (change === 'box') {
+        document.apply([
+          { type: 'setBox', elementId: title.id, box: { ...title.bbox, x: title.bbox.x + 0.05 } },
+        ]);
+      }
+      return document.toLayerBytes(2, () => null, { compose: true });
+    };
+    const plain = await masterShapes();
+    expect(plain.pages.slice(1, 3)).toEqual([4, 5]);
+    const drawnXml = await (await OdpArchive.open(plain.bytes)).readText('content.xml');
+    expect(drawnXml).toContain('draw:fill-color="#ffffff"');
+    expect(drawnXml).toContain('draw:fill-color="#000000"');
+    expect((await masterShapes('background')).masterShapes).toBe(plain.masterShapes);
+    expect((await masterShapes('box')).masterShapes).toBe(plain.masterShapes);
+    // Not composed: none.
+    expect((await (await open()).toLayerBytes(2, () => null)).masterShapes).toBeNull();
   });
 });
 
-describe('cutouts for drawing an element live', () => {
-  const idsOf = async (bytes: Uint8Array) => {
-    const content = await (await OdpArchive.open(bytes)).readText('content.xml');
-    return [...content.matchAll(/ xml:id="([^"]*)"/g)].map((match) => match[1]);
-  };
-
-  it('draws a shape alone, its area and its outline in black', async () => {
+describe('looks and an element left out', () => {
+  it('offers fill and border for shapes and text frames only and leaves an element out of its slide', async () => {
     const document = await open();
-    const count = document.slides().length;
-    const hint = byName(document, 2, 'Hinweis');
-    const cut = (await document.toCutoutBytes(hint.id, () => null))!;
-    // Nothing lies over it: its page twice.
-    expect(cut).toMatchObject({ pages: [3, 4], above: false, plain: true });
-    const copy = await OdpDocument.open(cut.bytes);
-    const slides = copy.slides();
-    expect(slides).toHaveLength(count + 1);
-    expect(slides[2]!.elements.map((element) => element.name)).toEqual(['Hinweis']);
-    expect(slides[3]!.elements.map((element) => element.name)).toEqual(['Hinweis']);
-    expect(slides[2]!.elements[0]!.live).toMatchObject({ fill: '#000000', stroke: null });
-    expect(slides[3]!.elements[0]!.live).toMatchObject({
-      fill: null,
-      stroke: { color: '#000000' },
-    });
-    expect(slides[2]!.elements[0]!.live!.paragraphs.flatMap((p) => p.runs)).toEqual([]);
-    // Black also in its paragraph style, which LibreOffice draws over the shape's own fill …
-    expect(await textStyleFills(cut.bytes, 'Hinweis')).toMatchObject([
-      { fill: 'solid', color: '#000000' },
-      { fill: 'none' },
-    ]);
-    // … on white pages, not the master's background presentation style.
-    const content = await (await OdpArchive.open(cut.bytes)).readText('content.xml');
-    const grounds = [...content.matchAll(/<draw:page [^>]*draw:style-name="([^"]*)"/g)]
-      .slice(2, 4)
-      .map(
-        ([, name]) =>
-          new RegExp(
-            `style:name="${name}"><style:drawing-page-properties[^>]* draw:fill-color="([^"]*)"`,
-          ).exec(content)?.[1],
-      );
-    expect(grounds).toEqual(['#ffffff', '#ffffff']);
-    // Every other page is empty.
-    for (const [index, slide] of slides.entries()) {
-      if (index !== 2 && index !== 3) expect(slide.elements).toEqual([]);
-    }
-    const ids = await idsOf(cut.bytes);
-    expect(new Set(ids).size).toBe(ids.length);
-  });
+    expect(byName(document, 1, 'Title 1').look).not.toBeNull();
+    const table = byName(document, 2, 'Tabelle Umsatz');
+    expect(table.look).toBeNull();
+    expect(() =>
+      document.apply([{ type: 'setShapeStyle', elementId: table.id, fill: '#ffffff' }]),
+    ).toThrow(OdpError);
 
-  it('adds what lies over it, on white and on black', async () => {
-    const document = await open();
-    const title = byName(document, 2, 'Title 1');
-    const cut = (await document.toCutoutBytes(title.id, () => null))!;
-    expect(cut).toMatchObject({ pages: [3, 4, 5, 6], above: true });
-    const slides = (await OdpDocument.open(cut.bytes)).slides();
-    for (const index of [4, 5]) {
-      expect(slides[index]!.elements.map((element) => element.name)).toEqual([
+    // Leaves an element out of its slide, and what lies over it.
+    {
+      const document = await open();
+      const title = byName(document, 2, 'Title 1');
+      expect(document.blankElement(title.id)).toMatchObject({ pageIndex: 2 });
+      expect(document.slides()[2]!.elements).toEqual([]);
+      const other = await open();
+      other.blankElement(byName(other, 2, 'Hinweis').id);
+      expect(other.slides()[2]!.elements.map((element) => element.name)).toEqual([
+        'Title 1',
         'Tabelle Umsatz',
-        'Hinweis',
       ]);
     }
-  });
-
-  it('names the same look the same, another look otherwise', async () => {
-    const fingerprint = async (fill?: string) => {
-      const document = await open();
-      const hint = byName(document, 2, 'Hinweis');
-      if (fill) document.apply([{ type: 'setShapeStyle', elementId: hint.id, fill }]);
-      return (await document.toCutoutBytes(hint.id, () => null))!.fingerprint;
-    };
-    // Its own colours are not in the masks: another fill draws the same cutout.
-    expect(await fingerprint()).toBe(await fingerprint());
-    expect(await fingerprint('#123456')).toBe(await fingerprint());
-    const moved = await open();
-    const hint = byName(moved, 2, 'Hinweis');
-    moved.apply([{ type: 'setBox', elementId: hint.id, box: { ...hint.bbox, x: 0.1 } }]);
-    expect((await moved.toCutoutBytes(hint.id, () => null))!.fingerprint).not.toBe(
-      await fingerprint(),
-    );
-  });
-
-  it('leaves an element out of its slide, and what lies over it', async () => {
-    const document = await open();
-    const title = byName(document, 2, 'Title 1');
-    expect(document.blankElement(title.id)).toMatchObject({ pageIndex: 2 });
-    expect(document.slides()[2]!.elements).toEqual([]);
-    const other = await open();
-    other.blankElement(byName(other, 2, 'Hinweis').id);
-    expect(other.slides()[2]!.elements.map((element) => element.name)).toEqual([
-      'Title 1',
-      'Tabelle Umsatz',
-    ]);
   });
 });
 
@@ -515,8 +867,8 @@ describe('what LibreOffice is handed to draw', () => {
   it('holds no macro and no event, whatever the deck has', async () => {
     const page = await (await withMacros()).toDrawingBytes([0], () => null);
     expect(await executable(page)).toEqual({ files: [], events: false });
-    const document = await withMacros();
-    const cut = await document.toCutoutBytes(byName(document, 2, 'Hinweis').id, () => null);
-    expect(await executable(cut!.bytes)).toEqual({ files: [], events: false });
+    // Nor a slide taken apart (the composed editor's layers).
+    const layers = await (await withMacros()).toLayerBytes(2, () => null, { compose: true });
+    expect(await executable(layers.bytes)).toEqual({ files: [], events: false });
   });
 });

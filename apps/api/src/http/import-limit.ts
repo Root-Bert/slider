@@ -6,7 +6,7 @@ import { clientAddress, fixedWindow } from './rate-limit';
 
 /**
  * Imports per account and hour: uploads, links, OneDrive picks, new versions and "Neu rendern"
- * together. Each one is up to 200 MB downloaded or uploaded, parsed and rendered by LibreOffice
+ * together. Each one is up to 512 MB downloaded or uploaded, parsed and rendered by LibreOffice
  * in the one import queue – without a cap one account (open sign-up on the demo) could keep the
  * queue busy for everyone, or make the server fetch URLs in a loop. Failed attempts count too.
  */
@@ -56,8 +56,11 @@ export function importLimit(deps: AppDeps) {
 
 /** Deck files (uploads and new versions) one account may send at once – each is buffered whole. */
 export const DECK_UPLOADS_IN_FLIGHT = 2;
-/** All accounts together: bounds the memory of parallel uploads (up to 200 MB each, copied). */
-export const DECK_UPLOADS_IN_FLIGHT_TOTAL = 4;
+/**
+ * All accounts together: bounds the memory of parallel uploads. One of 512 MB takes about
+ * 1–1.5 GB while it becomes a deck (the file, its encrypted copy; in one request the body too).
+ */
+export const DECK_UPLOADS_IN_FLIGHT_TOTAL = 2;
 
 const uploadSlots = new WeakMap<AppDeps, ReturnType<typeof createUploadSlot>>();
 

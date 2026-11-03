@@ -48,8 +48,8 @@ export function useDraftDrawing({
 }) {
   const dispatch = useViewerDispatch();
   const { draft, lastDrawing } = useViewerState();
-  const { deck } = useViewerData();
-  const createComment = useCreateComment(deck.id);
+  const { deck, viewer } = useViewerData();
+  const createComment = useCreateComment(deck.id, viewer.author);
   const updateComment = useUpdateComment(deck.id);
   const showToast = useViewerToast();
   const [stroke, setStroke] = useState<PathStroke | null>(null);

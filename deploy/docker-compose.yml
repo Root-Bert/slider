@@ -50,6 +50,32 @@ services:
       retries: 5
       start_period: 20s
 
+  # Optional: the AI cuts pictures out of their background. Starts with
+  # `docker compose --profile rembg up -d` and REMBG_URL=http://rembg:7000 in .env.
+  rembg:
+    profiles: [rembg]
+    build: ./rembg
+    image: slider-rembg:local
+    restart: unless-stopped
+    # Not published: only Slider reaches it. Capped so slides and imports keep their share.
+    expose:
+      - '7000'
+    cpus: 2
+    mem_limit: 2g
+
+  # Optional: speech to text on this server (Whisper). Starts with
+  # `docker compose --profile stt up -d` and SPEECH_URL=http://stt:8000/v1 in .env.
+  stt:
+    profiles: [stt]
+    build: ./stt
+    image: slider-stt:local
+    restart: unless-stopped
+    # Not published: only Slider reaches it. Capped so slides and imports keep their share.
+    expose:
+      - '8000'
+    cpus: 4
+    mem_limit: 3g
+
   caddy:
     image: caddy:2
     restart: unless-stopped

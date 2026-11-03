@@ -23,8 +23,11 @@ const DECK_FILE_MAX_AGE_S = 5 * 60;
  * check as the deck itself, the source's included (`deckAccess`). So a link passed on opens
  * nothing, and a revocation in SharePoint or Nextcloud closes the files with the deck. Images
  * load same-origin, so the session cookie comes along. Workspace logos stay signature-only:
- * the invitation page shows them before anyone is signed in. Workspace fonts require current
- * membership and are not cached, so removing a member revokes their file links too.
+ * the invitation page shows them before anyone is signed in. Workspace fonts and the slide
+ * masters' files (a design and its layout pictures) require current membership and are cached
+ * briefly, like a deck's: removing a member closes their file links within minutes. Not
+ * `no-store` – the web app's service worker keeps them for offline (it stores nothing marked
+ * so), per browser profile and dropped with the account (`public/sw.js`).
  */
 export function filesRoutes(deps: AppDeps) {
   return new Hono().get('/*', async (c) => {
@@ -34,27 +37,29 @@ export function filesRoutes(deps: AppDeps) {
     if (validFor === null) throw forbidden('Dieser Link ist abgelaufen oder ungültig.');
     const deckId = /^decks\/([^/]+)\//.exec(key)?.[1];
     const fontWorkspaceId = /^workspaces\/([^/]+)\/fonts\//.exec(key)?.[1];
+    const masterWorkspaceId = /^workspaces\/([^/]+)\/masters\//.exec(key)?.[1];
     if (deckId) {
       const viewer = await resolveViewer(c, deps);
       if (!viewer) throw unauthorized();
       await deckAccess(deps, viewer, deckId, 'view');
     }
-    if (fontWorkspaceId) {
+    const memberOf = fontWorkspaceId ?? masterWorkspaceId;
+    if (memberOf) {
       const viewer = await resolveViewer(c, deps);
       if (!viewer) throw unauthorized();
-      await requireRole(deps.db, fontWorkspaceId, viewer.author.id);
+      await requireRole(deps.db, memberOf, viewer.author.id);
     }
 
     const contentType = contentTypeForKey(key);
     // Keys are content-unique: after the access check, a cached copy is still the file.
     const etag = `"${key}"`;
-    const cacheControl = fontWorkspaceId
-      ? 'private, no-store'
-      : deckId
-        ? `private, max-age=${Math.min(validFor, DECK_FILE_MAX_AGE_S)}`
-        : // The link expires: cache no longer than it is valid.
-          `private, max-age=${validFor}, immutable`;
-    if (deckId && c.req.header('If-None-Match') === etag) {
+    // Checked access on every load: briefly cached, then asked again – unchanged, without the file.
+    const revalidated = Boolean(deckId || memberOf);
+    const cacheControl = revalidated
+      ? `private, max-age=${Math.min(validFor, DECK_FILE_MAX_AGE_S)}`
+      : // The link expires: cache no longer than it is valid.
+        `private, max-age=${validFor}, immutable`;
+    if (revalidated && c.req.header('If-None-Match') === etag) {
       c.header('Cache-Control', cacheControl);
       c.header('ETag', etag);
       return c.body(null, 304);
@@ -69,7 +74,7 @@ export function filesRoutes(deps: AppDeps) {
 
     c.header('Content-Type', contentType);
     c.header('Cache-Control', cacheControl);
-    if (deckId) c.header('ETag', etag);
+    if (revalidated) c.header('ETag', etag);
     if (contentType === 'image/svg+xml') c.header('Content-Security-Policy', SVG_CSP);
     c.header('Content-Length', String(size));
     return data ? c.body(data) : c.body(null);

@@ -92,16 +92,16 @@ export function ReactionChips({
 }
 
 /**
- * 👍 / 👎 / egal floating at the message's top edge while it is hovered or has focus (thread
- * panel, cards) – the chips under the text then only show what was picked. Needs a
- * `group/message relative` parent.
+ * 👍 / 👎 / egal floating after the time in the author line while the message is hovered or has
+ * focus (thread panel, cards) – the chips under the text then only show what was picked. Needs a
+ * `group/message` ancestor.
  */
 export function ReactionPicker({
   comment,
-  className = '-top-3.5 right-12',
+  className = '-top-2.5 left-2',
 }: {
   comment: Comment;
-  /** Where it floats; by default on the top edge, left of the ⋯ menu. */
+  /** Where it floats; by default just after the time in the author line (`afterTime`), a little above it. */
   className?: string;
 }) {
   const { mine, canReact, toggle } = useCommentReaction(comment);
@@ -134,7 +134,7 @@ export function ReactionPicker({
             onClick={(event) => pick(event, kind)}
             style={{ '--reaction': REACTION_COLORS[kind] } as CSSProperties}
             className={cn(
-              'group/reaction grid size-8 place-items-center rounded-full transition-[background-color,color,transform] duration-200 active:scale-95',
+              'group/reaction grid size-7 place-items-center rounded-full transition-[background-color,color,transform] duration-200 active:scale-95',
               picked
                 ? 'bg-[color-mix(in_srgb,var(--reaction)_16%,transparent)] text-fg'
                 : 'text-fg-muted hover:bg-hover hover:text-fg',
@@ -144,7 +144,7 @@ export function ReactionPicker({
               kind={kind}
               active={picked}
               burst={burstOf(kind)}
-              size={20}
+              size={18}
               className="transition-transform duration-300 group-hover/reaction:-translate-y-px group-hover/reaction:scale-115"
             />
           </button>

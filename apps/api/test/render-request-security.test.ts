@@ -6,11 +6,7 @@ it('caps render options before deck access, including streamed bodies without Co
   const ctx = await createTestContext();
   try {
     const deck = crypto.randomUUID();
-    for (const suffix of [
-      'elements/absent/background',
-      'elements/absent/cutout',
-      'slides/absent/layers',
-    ]) {
+    for (const suffix of ['slides/absent/layers']) {
       const url = `/api/decks/${deck}/edit/${suffix}`;
       expect((await ctx.request(url, { method: 'POST' })).status).toBe(404);
       expect(

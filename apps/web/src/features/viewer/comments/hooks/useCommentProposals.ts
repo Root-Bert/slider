@@ -4,9 +4,7 @@ import { useAiProposals } from '@/lib/api';
 const NONE: readonly AiProposal[] = [];
 
 /** The AI's proposals by the comment that asked for them, oldest first (BER-183). */
-export function useCommentProposals(
-  deckId: string,
-): (commentId: string) => readonly AiProposal[] {
+export function useCommentProposals(deckId: string): (commentId: string) => readonly AiProposal[] {
   const { data } = useAiProposals(deckId);
   const byComment = new Map<string, AiProposal[]>();
   for (const proposal of [...(data ?? [])].reverse()) {

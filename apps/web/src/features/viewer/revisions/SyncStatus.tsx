@@ -30,9 +30,9 @@ const relativeOrJustNow = (iso: string) => {
 };
 
 /**
- * How the automatic update of a linked deck is doing, as one small icon next to the comment
- * filter – nothing above the track, so no slide or pin is ever covered: a spinner while a
- * change is being taken over, a danger icon when the update failed (Figma A3). Clicking the
+ * How pulling a linked deck's file is doing, as one small icon next to the comment filter –
+ * nothing above the track, so no slide or pin is ever covered: a spinner while a new version
+ * is being taken over, a danger icon when it failed (Figma A3). Clicking the
  * icon tells what is going on, which version is still shown and – where the viewer can fix
  * it – the one action that does. A new version that loaded fine is a notice of its own
  * (`RevisionNotice`).
@@ -50,10 +50,10 @@ export function SyncStatus() {
       className="shrink-0"
       label={
         <>
-          <span className="block">Änderung erkannt – wird übernommen …</span>
+          <span className="block">Neue Version wird übernommen …</span>
           {sync.pendingSince && (
             <span className="block text-fg-subtle">
-              Erkannt {formatRelativeTime(sync.pendingSince)}
+              Seit {formatRelativeTime(sync.pendingSince)}
             </span>
           )}
         </>
@@ -62,7 +62,7 @@ export function SyncStatus() {
       <span
         role="status"
         tabIndex={0}
-        aria-label="Änderung erkannt – wird übernommen"
+        aria-label="Neue Version wird übernommen"
         className="flex size-8 items-center justify-center rounded-control text-fg-subtle"
       >
         <Spinner size={16} />

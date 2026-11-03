@@ -1,0 +1,1 @@
+ALTER TABLE "ai_usage" DROP COLUMN "cost_usd";

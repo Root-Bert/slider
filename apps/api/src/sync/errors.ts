@@ -7,42 +7,42 @@ import { ImportCrashLoop } from '../import/attempts';
 import { PdfTimedOut } from '../import/pdf-jobs';
 
 /**
- * Maps whatever went wrong during an automatic update to a {@link SyncError} with a German
+ * Maps whatever went wrong while pulling a deck's file to a {@link SyncError} with a German
  * banner text (BER-107). The deck always keeps its last good revision, and the messages say so.
  */
 
 export const SYNC_MESSAGES = {
   auth_required:
-    'Die Verbindung zu Microsoft ist abgelaufen. Melde dich erneut an, damit Slider Änderungen an der PowerPoint übernimmt. Bis dahin siehst du die letzte Version.',
+    'Die Verbindung zu Microsoft ist abgelaufen. Melde dich erneut an, um neue Versionen der Datei zu holen. Bis dahin siehst du die letzte Version.',
   nextcloud_auth_required:
-    'Die Verbindung zu Nextcloud ist getrennt. Verbinde dein Nextcloud-Konto erneut, damit Slider Änderungen an der PowerPoint übernimmt. Bis dahin siehst du die letzte Version.',
+    'Die Verbindung zu Nextcloud ist getrennt. Verbinde dein Nextcloud-Konto erneut, um neue Versionen der Datei zu holen. Bis dahin siehst du die letzte Version.',
   google_auth_required:
-    'Slider darf die Datei in Google Drive nicht mehr lesen. Verbinde dein Google-Konto erneut, damit Slider Änderungen übernimmt. Bis dahin siehst du die letzte Version.',
+    'Slider darf die Datei in Google Drive nicht mehr lesen. Verbinde dein Google-Konto erneut, um neue Versionen der Datei zu holen. Bis dahin siehst du die letzte Version.',
   consent_required:
     'Deine Organisation erlaubt Slider keinen Zugriff mehr auf die Datei. Eine Administratorin oder ein Administrator muss Slider einmalig freigeben (Admin-Zustimmung). Bis dahin siehst du die letzte Version.',
   not_configured:
-    'Die Microsoft-Anmeldung ist auf diesem Server nicht mehr eingerichtet – automatische Aktualisierung ist pausiert.',
+    'Die Microsoft-Anmeldung ist auf diesem Server nicht mehr eingerichtet – neue Versionen der Datei lassen sich nicht holen.',
   access_revoked:
     'Slider hat keinen Zugriff mehr auf die Datei – die Freigabe wurde vermutlich entfernt. Es bleibt die letzte Version sichtbar.',
   not_found: 'Die Datei wurde gelöscht oder verschoben. Slider zeigt weiter die letzte Version.',
-  unreachable: 'Die Quelle ist gerade nicht erreichbar. Slider versucht es automatisch erneut.',
+  unreachable: 'Die Quelle ist gerade nicht erreichbar. Versuche es später noch einmal.',
   not_a_powerpoint: 'Unter dem Link liegt keine PowerPoint-Datei und kein PDF mehr.',
-  internal: 'Aktualisierung fehlgeschlagen. Slider versucht es später erneut.',
+  internal: 'Die neue Version konnte nicht geholt werden. Versuche es später noch einmal.',
 } satisfies Partial<
   Record<SyncErrorCode | 'nextcloud_auth_required' | 'google_auth_required', string>
 >;
 
 /** Banner of a deck archived because the file is in the OneDrive of someone who left. */
 export const OWNER_LEFT_MESSAGE =
-  'Die PowerPoint liegt im OneDrive einer Person, die nicht mehr im Workspace ist. Slider aktualisiert die Präsentation nicht mehr – es bleibt die letzte Version sichtbar.';
+  'Die PowerPoint liegt im OneDrive einer Person, die nicht mehr im Workspace ist. Neue Versionen der Datei lassen sich nicht mehr holen – es bleibt die letzte Version sichtbar.';
 
 /** The same for a file in the Nextcloud of someone who left. */
 export const NEXTCLOUD_OWNER_LEFT_MESSAGE =
-  'Die PowerPoint liegt in der Nextcloud einer Person, die nicht mehr im Workspace ist. Slider aktualisiert die Präsentation nicht mehr, es bleibt die letzte Version sichtbar.';
+  'Die PowerPoint liegt in der Nextcloud einer Person, die nicht mehr im Workspace ist. Neue Versionen der Datei lassen sich nicht mehr holen, es bleibt die letzte Version sichtbar.';
 
 /** The same for a file in the Google Drive of someone who left. */
 export const GOOGLE_OWNER_LEFT_MESSAGE =
-  'Die Präsentation liegt im Google Drive einer Person, die nicht mehr im Workspace ist. Slider aktualisiert sie nicht mehr, es bleibt die letzte Version sichtbar.';
+  'Die Präsentation liegt im Google Drive einer Person, die nicht mehr im Workspace ist. Neue Versionen der Datei lassen sich nicht mehr holen, es bleibt die letzte Version sichtbar.';
 
 const SOURCE_NAMES: Record<DeckRow['source'], string> = {
   onedrive: 'OneDrive',
@@ -55,10 +55,10 @@ const SOURCE_NAMES: Record<DeckRow['source'], string> = {
 
 /**
  * Banner of a deck whose new version doesn't fit into the workspace's storage (BER-151): it
- * waits, and the next check after something was deleted takes it over by itself.
+ * waits until something was deleted or the plan upgraded.
  */
 export const storageFullMessage = (deck: Pick<DeckRow, 'source'>) =>
-  `Speicher voll – neue Versionen aus ${SOURCE_NAMES[deck.source]} werden erst wieder übernommen, wenn Platz frei ist.`;
+  `Speicher voll – neue Versionen aus ${SOURCE_NAMES[deck.source]} lassen sich erst wieder holen, wenn Platz frei ist.`;
 
 /** The owner-left banner in the words of the deck's source. */
 export const ownerLeftMessage = (deck: Pick<DeckRow, 'source'>) =>
@@ -77,9 +77,6 @@ const PARSE_MESSAGES: Record<PptxError['code'], string> = {
     'Die neue Version ist keine PowerPoint-Datei (.pptx). Es bleibt die letzte Version sichtbar.',
   too_many_slides: `Die neue Version hat mehr als ${MAX_SLIDES} Folien – so große Decks können wir nicht übernehmen. Es bleibt die letzte Version sichtbar.`,
 };
-
-/** Errors that are probably temporary: shown only after a few failures in a row. */
-export const TRANSIENT_SYNC_ERRORS: ReadonlySet<SyncErrorCode> = new Set(['unreachable']);
 
 /**
  * Where the owner signs in again; comes back to the deck. With the deck's connection, Microsoft

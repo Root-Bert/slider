@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { AI_AUTHOR } from '@slider/shared';
 import {
   deckStatusCounts,
   filterThreads,
@@ -32,25 +33,29 @@ const EMPTY: Thread[] = [];
 
 /**
  * Applies the comment filter bar (status, or the threads the AI edited) and the avatar filter (your avatar:
- * threads that @mention you; someone else's: threads they wrote in) to the deck's threads.
+ * threads that @mention you; someone else's: threads they wrote in, the AI's also those it
+ * answered in) to the deck's threads.
  * A thread being replied to stays listed, whatever its status now (`useKeepThreadListed`).
  */
 export function useCommentThreads(): VisibleThreads {
   const { threads, threadsBySlide, gapThreads, slides, slideIndex, mentionedThreadIds, viewer } =
     useViewerData();
-  const { edited: aiThreadIds } = useAiThreads();
+  const { edited: aiThreadIds, answered: aiAnswered } = useAiThreads();
   const { statusFilter, personFilter, composingThreads } = useViewerState();
   const keep = useMemo(() => new Set(composingThreads.keys()), [composingThreads]);
 
   const threadIds = useMemo(() => {
     if (personFilter === null) return null;
     if (personFilter === viewer.author.id) return mentionedThreadIds;
-    return new Set(
+    const ids = new Set(
       threads
         .filter((thread) => thread.participants.some((author) => author.id === personFilter))
         .map((thread) => thread.id),
     );
-  }, [personFilter, viewer.author.id, mentionedThreadIds, threads]);
+    // The AI's avatar: also the threads it answered in, not only those it wrote a comment in.
+    if (personFilter === AI_AUTHOR.id) for (const id of aiAnswered) ids.add(id);
+    return ids;
+  }, [personFilter, viewer.author.id, mentionedThreadIds, threads, aiAnswered]);
 
   const filter = useMemo<ThreadFilter>(
     () => ({ status: statusFilter, threadIds, aiThreadIds, keep }),

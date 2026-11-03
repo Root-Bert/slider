@@ -1,6 +1,7 @@
 import type { EditableElement, LiveElement, LiveParagraph, LiveRun } from '@slider/shared';
 import { useLayoutEffect, useRef, type CSSProperties, type ReactNode, type Ref } from 'react';
-import { boxCss, paragraphCss, strutOf, textCss, u } from './css';
+import { listLabels } from '@slider/shared/live-text';
+import { boxCss, layoutSize, paragraphCss, strutOf, textCss, u } from './css';
 import { fontCss } from './fonts';
 import { DEFAULT_STYLE, plainParagraph } from './model';
 
@@ -9,7 +10,8 @@ import { DEFAULT_STYLE, plainParagraph } from './model';
  * so the parity check (`scripts/live-parity.ts`) draws exactly what the editor does.
  */
 
-export function Bullet({ paragraph }: { paragraph: LiveParagraph }) {
+/** `label`: what it shows – a number counted over the text (`listLabels`), else its character. */
+export function Bullet({ paragraph, label }: { paragraph: LiveParagraph; label?: string | null }) {
   const bullet = paragraph.bullet;
   if (!bullet) return null;
   const strut = strutOf(paragraph);
@@ -20,20 +22,24 @@ export function Bullet({ paragraph }: { paragraph: LiveParagraph }) {
       data-live-bullet=""
       style={{
         display: 'inline-block',
-        width: u(bullet.width),
+        // A label wider than its room pushes the text on, a little apart (as LibreOffice does).
+        minWidth: u(bullet.width),
+        boxSizing: 'border-box',
+        paddingRight: u(bullet.size * 0.25),
         marginLeft: u(-bullet.width),
         textIndent: 0,
         fontFamily: fontCss(bullet.font ?? strut.font),
-        fontSize: u(bullet.size),
+        fontSize: u(layoutSize(bullet.size)),
         lineHeight: 0,
         color: bullet.color,
         fontWeight: 400,
         fontStyle: 'normal',
         textDecoration: 'none',
         userSelect: 'none',
+        whiteSpace: 'nowrap',
       }}
     >
-      {bullet.char}
+      {label ?? bullet.char}
     </span>
   );
 }
@@ -58,15 +64,17 @@ export function EmptyMark({ paragraph }: { paragraph: LiveParagraph }) {
 export function ParagraphView({
   paragraph,
   first = false,
+  label,
 }: {
   paragraph: LiveParagraph;
   first?: boolean;
+  label?: string | null;
 }) {
   const runs = paragraph.runs.filter((run) => run.text);
   const last = runs.at(-1);
   return (
     <p data-live-paragraph="" style={paragraphCss(paragraph, first)}>
-      <Bullet paragraph={paragraph} />
+      <Bullet paragraph={paragraph} label={label} />
       {runs.map((run, i) => (
         <RunView key={i} run={run} paragraph={paragraph} />
       ))}
@@ -99,12 +107,44 @@ const PROMPT: Record<string, string> = {
   outline: 'Text hinzufügen',
 };
 
+/**
+ * What an empty placeholder asks for, greyed, in its own font, size and alignment – where its
+ * text would go: its layout's text (typed in a Slider template), else what its kind takes. Only
+ * the editor draws it: LibreOffice draws an empty placeholder not at all (Prüfen, exports).
+ */
+export function PromptText({
+  element,
+  live,
+  hidden = false,
+}: {
+  element: Pick<EditableElement, 'role'>;
+  live: LiveElement;
+  /** Laid out unseen: the box as high as with it. */
+  hidden?: boolean;
+}) {
+  const paragraph = live.paragraphs[0] ?? emptyParagraph(live);
+  const lines = (live.prompt ?? PROMPT[element.role ?? ''] ?? 'Text hinzufügen').split('\n');
+  return (
+    <div
+      data-live-prompt=""
+      style={{ opacity: 0.45, ...(hidden ? { visibility: 'hidden' as const } : {}) }}
+    >
+      {lines.map((line, i) => (
+        <p key={i} style={paragraphCss(paragraph, i === 0)}>
+          {line || '\u200b'}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 /** The text of a live element, read-only. */
 export function TextView({ live }: { live: LiveElement }) {
+  const labels = listLabels(live.paragraphs);
   return (
     <div data-live-text="">
       {live.paragraphs.map((paragraph, i) => (
-        <ParagraphView key={i} paragraph={paragraph} first={i === 0} />
+        <ParagraphView key={i} paragraph={paragraph} first={i === 0} label={labels[i]} />
       ))}
     </div>
   );
@@ -160,9 +200,11 @@ function useShrinkToFit(enabled: boolean) {
 }
 
 /**
- * One live element. `prompt`: an empty placeholder shows what to type (LibreOffice draws
- * nothing there). `children` replace the text (the inline editor). `textOnly`: just the text,
- * over LibreOffice's picture of its shape.
+ * One live element. `prompt`: an empty placeholder shows what to type (`PromptText`) – `'room'`:
+ * laid out unseen (the prompt layer draws it), `'alone'`: the prompt, nothing of its shape.
+ * `children` replace the text (the inline editor). `textOnly`: just the text, over LibreOffice's
+ * picture of its shape – but LibreOffice draws an empty placeholder not at all, so its fill and
+ * border are drawn here until it holds text.
  */
 export function LiveElementView({
   element,
@@ -175,7 +217,7 @@ export function LiveElementView({
 }: {
   element: EditableElement;
   live: LiveElement;
-  prompt?: boolean;
+  prompt?: boolean | 'room' | 'alone';
   textOnly?: boolean;
   children?: ReactNode;
   style?: CSSProperties;
@@ -185,21 +227,16 @@ export function LiveElementView({
   const shrink = live.shrink === true && !live.autoGrow;
   const fitRef = useShrinkToFit(shrink);
   const content = empty
-    ? prompt && (
-        <div style={{ opacity: 0.45 }}>
-          <p style={paragraphCss(live.paragraphs[0] ?? emptyParagraph(live), true)}>
-            {PROMPT[element.role ?? ''] ?? 'Text hinzufügen'}
-          </p>
-        </div>
-      )
+    ? prompt && <PromptText element={element} live={live} hidden={prompt === 'room'} />
     : (children ?? <TextView live={live} />);
+  const shapeShown = prompt !== 'alone' && (!textOnly || live.placeholder);
   return (
     <div
       ref={ref}
       data-live-element={element.id}
-      style={{ ...boxCss(element, live, textOnly), ...style }}
+      style={{ ...boxCss(element, live, !shapeShown), ...style }}
     >
-      {!textOnly && <StrokeView live={live} />}
+      {shapeShown && <StrokeView live={live} />}
       {shrink ? (
         <div ref={fitRef} data-live-fit="" style={{ transformOrigin: '0 0', flexShrink: 0 }}>
           {content}

@@ -17,10 +17,13 @@ import {
 import { sql } from 'drizzle-orm';
 import type {
   AccentColor,
+  AiFeature,
   AiProposalStatus,
-  AiProvider,
+  IntegrationKind,
+  IntegrationProvider,
   Anchor,
   DeckEditSource,
+  DeckTemplate,
   DowngradeReason,
   Author,
   CommentReactionKind,
@@ -36,10 +39,13 @@ import type {
   SlideDiffStatus,
   SlideOperation,
   SlideRenderer,
+  SlideTransition,
   StockPhoto,
   Stroke,
   SyncErrorCode,
   SyncSummary,
+  TemplateColor,
+  TranscriptStatus,
   WorkspaceRole,
 } from '@slider/shared';
 import { encryptedJson, encryptedJsonList, encryptedText } from './encrypted-columns';
@@ -52,35 +58,20 @@ import type { PdfMaker } from '../import/pdf-maker';
  */
 
 /** Automatic update bookkeeping per deck (BER-107); `{}` until the first check. ISO timestamps. */
+/**
+ * The last pull of a linked deck from its source. Pulls happen only by hand ("Neu rendern");
+ * keys of the automatic polling from before are still in older rows and ignored.
+ */
 export interface DeckSyncStateRow {
   lastCheckedAt?: string;
-  nextCheckAt?: string;
   lastSyncAt?: string;
   lastSyncError?: { code: SyncErrorCode; message: string; at: string } | null;
-  consecutiveFailures?: number;
-  /** A changed token waiting for PowerPoint to stop autosaving (debounce). */
-  pending?: { token: string; firstSeenAt: string; lastChangedAt: string } | null;
   importingRevisionId?: string | null;
-  /** Token of a file that failed to import; not downloaded again until the token changes. */
-  failedToken?: string | null;
   /**
-   * Failed imports of one file version in a row (not parse errors). Counted apart from failed
-   * source checks, which `consecutiveFailures` counts too: an outage before an edit must not use
-   * up the import's attempts.
-   */
-  importFailures?: { token: string | null; count: number } | null;
-  /** Last check through the content hash (sources without ETag/cTag). */
-  lastContentCheckAt?: string;
-  /**
-   * A version too big for the storage left (`storage_full`): its token and size, so later checks
-   * do not download it again until there is room for that many bytes.
+   * A version too big for the storage left (`storage_full`): its token and size, so the next
+   * pull does not download it again until there is room for that many bytes.
    */
   storageBlocked?: { token: string; bytes: number } | null;
-  /**
-   * The cloud's file changed while the deck has edits not saved yet (BER-180): its token. The
-   * new version is not imported over the edits; saving decides. Cleared by saving.
-   */
-  cloudChangedToken?: string | null;
 }
 
 /** `decks.files_bytes`: what a review's files take up in blob storage, by kind. */
@@ -412,6 +403,16 @@ export const workspaces = pgTable('workspaces', {
   aiKeySetAt: timestamptz('ai_key_set_at'),
   /** Why Anthropic refused the key last (removed, no credit, …); `null` while it works. */
   aiKeyError: text('ai_key_error'),
+  /** What its admins named the AI; `null`: `KI`. */
+  aiName: text('ai_name'),
+  /**
+   * Per kind, the model it runs the instance's key on, where the instance lets it pick one – for
+   * that key only: once the instance sets another active, the instance's model applies again.
+   */
+  integrationModels: jsonb('integration_models')
+    .$type<Partial<Record<IntegrationKind, { keyId: string; model: string }>>>()
+    .notNull()
+    .default({}),
 });
 
 /** Stripe events already handled – webhooks arrive at least once, some twice (BER-152). */
@@ -496,41 +497,90 @@ export const workspaceFonts = pgTable(
 );
 export type WorkspaceFontRow = typeof workspaceFonts.$inferSelect;
 
+/** A layout of a design, as stored: its pictures in the blob store. */
+export interface WorkspaceMasterLayoutRow {
+  name: string | null;
+  master: string | null;
+  imageKey: string;
+  thumbnailKey: string;
+}
+
 /**
- * The API keys of a workspace's AI: its admins store several – Anthropic, OpenAI, Gemini or a
- * service speaking OpenAI's API – and set one active; every member's AI requests run on that one,
- * with its model. Keys are sealed and never sent to a browser.
+ * A company design a workspace uploaded as slide masters, a template (`.otp`, `.potx`): the
+ * file as kept, and a picture of each layout – drawn by LibreOffice with placeholders saying
+ * "Titel" and "Text", or as Slider's own preview without it. All under
+ * `workspaces/<id>/masters/<masterId>/`.
  */
-export const workspaceAiKeys = pgTable(
-  'workspace_ai_keys',
+export const workspaceMasters = pgTable(
+  'workspace_masters',
   {
     id: text('id').primaryKey(),
     workspaceId: text('workspace_id')
       .notNull()
       .references(() => workspaces.id, { onDelete: 'cascade' }),
-    provider: text('provider').$type<AiProvider>().notNull(),
-    /** The service's address – only for `custom`. */
+    /** The file's name without its extension. Encrypted at rest, like a deck's title. */
+    name: encryptedText('workspace_masters', 'name').notNull(),
+    format: text('format').$type<'pptx' | 'odp'>().notNull(),
+    fileKey: text('file_key').notNull(),
+    /** The file and the layout pictures together. */
+    sizeBytes: integer('size_bytes').notNull(),
+    aspectRatio: doublePrecision('aspect_ratio').notNull(),
+    /** Encrypted at rest: the layout names come from the file. */
+    layouts: encryptedJson<WorkspaceMasterLayoutRow[]>('workspace_masters', 'layouts').notNull(),
+    uploadedById: text('uploaded_by_id').references(() => users.id, { onDelete: 'set null' }),
+    /** Designed in Slider: the template deck (`decks.is_template`) it is edited in. */
+    draftDeckId: text('draft_deck_id').references((): AnyPgColumn => decks.id, {
+      onDelete: 'set null',
+    }),
+    /** Its colours – the only ones decks made from it offer. Set where it is designed. */
+    colors: jsonb('colors').$type<TemplateColor[]>().notNull().default([]),
+    createdAt: createdAt(),
+  },
+  (t) => [index('workspace_masters_workspace_idx').on(t.workspaceId)],
+);
+export type WorkspaceMasterRow = typeof workspaceMasters.$inferSelect;
+
+/**
+ * The API keys of the integrations – the AI's models, speech to text, photos: per kind, the
+ * instance (`workspaceId` null) and each workspace store several and set one active. A workspace
+ * without an active key of a kind uses the instance's, as far as the instance's rule for it lets
+ * it (`integration-keys`). Keys are sealed and never sent to a browser.
+ */
+export const integrationKeys = pgTable(
+  'integration_keys',
+  {
+    id: text('id').primaryKey(),
+    /** `null`: the instance's own. */
+    workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
+    kind: text('kind').$type<IntegrationKind>().notNull(),
+    provider: text('provider').$type<IntegrationProvider>().notNull(),
+    /** The service's address – for `custom`, or one changed from the usual. */
     baseUrl: text('base_url'),
+    // Sealed under the table's first name: the keys stored then still open.
     apiKey: encryptedText('workspace_ai_keys', 'api_key').notNull(),
     /** `sk-…AbCd` – what the settings show of the key. */
     hint: text('hint').notNull(),
+    /** The model it runs on; empty for photos. */
     model: text('model').notNull(),
     active: boolean('active').notNull().default(false),
     setById: text('set_by_id').references((): AnyPgColumn => users.id, { onDelete: 'set null' }),
     setByName: text('set_by_name'),
     setAt: timestamptz('set_at').notNull(),
-    /** Why the provider refused the key last (removed, no credit, …); `null` while it works. */
+    /** Why the service refused the key last (removed, no credit, …); `null` while it works. */
     error: text('error'),
   },
   (t) => [
-    index('workspace_ai_keys_workspace_idx').on(t.workspaceId),
-    // One active key per workspace at most.
-    uniqueIndex('workspace_ai_keys_active_idx')
-      .on(t.workspaceId)
-      .where(sql`${t.active}`),
+    index('integration_keys_workspace_idx').on(t.workspaceId),
+    // One active key per kind and workspace at most – and per kind for the instance.
+    uniqueIndex('integration_keys_active_idx')
+      .on(t.workspaceId, t.kind)
+      .where(sql`${t.active} AND ${t.workspaceId} IS NOT NULL`),
+    uniqueIndex('integration_keys_instance_active_idx')
+      .on(t.kind)
+      .where(sql`${t.active} AND ${t.workspaceId} IS NULL`),
   ],
 );
-export type WorkspaceAiKeyRow = typeof workspaceAiKeys.$inferSelect;
+export type IntegrationKeyRow = typeof integrationKeys.$inferSelect;
 
 /**
  * People an admin removed from a workspace: they don't come back by domain (`joinByDomain`),
@@ -699,6 +749,23 @@ export const decks = pgTable(
      * looking at every deck.
      */
     editImagesSince: timestamptz('edit_images_since'),
+    /**
+     * The workspace's design (`workspace_masters`) the deck is built on: made from it, or found
+     * in its file on import (`linkDeckMaster`). The editor offers its layouts. `null` = none.
+     */
+    masterId: text('master_id').references((): AnyPgColumn => workspaceMasters.id, {
+      onDelete: 'set null',
+    }),
+    /**
+     * A template being designed in the editor, no review: left out of the projects, their
+     * search and the plan's deck count. Its slides are the layouts; `template_design` keeps what
+     * the file cannot say yet (layout names, placeholders, guides).
+     */
+    isTemplate: boolean('is_template').notNull().default(false),
+    /** Encrypted at rest: the layout names are the members' words. `null` for a review. */
+    templateDesign: encryptedJson<DeckTemplate>('decks', 'template_design'),
+    /** Its own colours beside its template's („Eigene“ in the colour pickers), `#rrggbb`. */
+    customColors: jsonb('custom_colors').$type<string[]>().notNull().default([]),
   },
   (t) => [
     index('decks_owner_updated_idx').on(t.ownerId, t.updatedAt),
@@ -712,6 +779,7 @@ export const decks = pgTable(
     // For the `on delete set null` of deleted revisions and folders: no scan of every deck.
     index('decks_current_revision_idx').on(t.currentRevisionId),
     index('decks_folder_idx').on(t.folderId),
+    index('decks_master_idx').on(t.masterId),
   ],
 );
 
@@ -856,6 +924,16 @@ export const slideVersions = pgTable(
     position: integer('position').notNull(),
     pptxSldId: integer('pptx_sld_id'),
     hidden: boolean('hidden').notNull().default(false),
+    /**
+     * A variant of another slide of the revision (made in the editor, `slider:variant-of` in the
+     * ODP): that slide's id. It shows above that slide, not in the deck.
+     */
+    variantOf: text('variant_of'),
+    /**
+     * How the slide comes in when presenting (ODP's page transition), for every viewer of the slide
+     * show; `null`: none Slider plays, or not read yet (rows from before it, PPTX and PDF).
+     */
+    transition: text('transition').$type<SlideTransition>(),
     /** Encrypted at rest (BER-149), like `shapes` – the slide's text. */
     title: encryptedText('slide_versions', 'title'),
     layoutName: text('layout_name'),
@@ -925,9 +1003,26 @@ export const deckEdits = pgTable(
     operations: encryptedJsonList<SlideOperation>('deck_edits', 'operations').notNull(),
     source: text('source').$type<DeckEditSource>().notNull(),
     authorId: text('author_id').references(() => users.id, { onDelete: 'set null' }),
+    /**
+     * The editor's own id for the edit this step made (`ApplyEditInput.clientEditId`): the same
+     * edit sent again – a retry, a reload, after a restart of the server too – is found by it
+     * and not applied twice.
+     */
+    clientEditId: text('client_edit_id'),
+    /**
+     * What the step left out (`FileChange.dropped`): operations that did not fit – or, taking a
+     * step back, slides someone changed the same way since. The same edit sent again gets it
+     * back; `null` on steps from before it was kept (counted then from `operations`).
+     */
+    dropped: integer('dropped'),
     createdAt: createdAt(),
   },
-  (t) => [unique('deck_edits_revision_seq_unique').on(t.revisionId, t.seq)],
+  (t) => [
+    unique('deck_edits_revision_seq_unique').on(t.revisionId, t.seq),
+    uniqueIndex('deck_edits_client_edit_idx')
+      .on(t.deckId, t.clientEditId)
+      .where(sql`${t.clientEditId} is not null`),
+  ],
 );
 
 /**
@@ -953,6 +1048,20 @@ export interface AiSlideChange {
   pictures?: ({ path: string; mediaId: string } | { path: string; imageId: string })[];
   /** The stock photo the AI put on this slide, and its other choices. */
   stock?: AiStockPhotos;
+  /**
+   * Layouts the AI took in from the workspace's templates (all of them, on every change) – taken
+   * into the file on applying, before the slides that name them.
+   */
+  layouts?: AiTakenLayout[];
+}
+
+/** A template's layout the AI took into its copy of the deck. */
+export interface AiTakenLayout {
+  /** The workspace's template (`workspace_masters.id`) and its master page. */
+  template: string;
+  master: string;
+  /** The master page's name in the AI's copy – the slides name it so. */
+  as: string;
 }
 
 /** A stock photo as stored: with the address that reports it as used to Unsplash. */
@@ -1001,11 +1110,25 @@ export const aiProposals = pgTable(
     /** The edit step the proposal was made on. */
     baseSeq: integer('base_seq').notNull(),
     summary: encryptedText('ai_proposals', 'summary'),
+    /** Its reply asks the people something about the request: the thread stays open. */
+    asks: boolean('asks').notNull().default(false),
     error: text('error'),
     /** The edit step that applied it. */
     appliedSeq: integer('applied_seq'),
+    /**
+     * That step's row (`deck_edits.id`): a step undone and replaced by another makes another
+     * row at the same `seq` – only the id tells the proposal's own step from it. `null` on
+     * proposals applied before it was kept.
+     */
+    appliedEditId: text('applied_edit_id'),
     /** The slides it rewrote – taking it back puts `before` again, applying again `after`. */
     changes: encryptedJsonList<AiSlideChange>('ai_proposals', 'changes').notNull().default([]),
+    /**
+     * Its card closed („Erledigt“) – for everyone, like a thread's done state (`comments`); set
+     * on a variant's answer, which has no thread. `null`: open.
+     */
+    resolvedBy: text('resolved_by'),
+    resolvedAt: timestamptz('resolved_at'),
     createdById: text('created_by_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
     updatedAt: timestamptz('updated_at').notNull().defaultNow(),
@@ -1137,6 +1260,11 @@ export const media = pgTable(
     position: integer('position').notNull().default(0),
     storageKey: text('storage_key').notNull(),
     sha256: text('sha256').notNull(),
+    /** What a recording says (`transcriptStatus` `done`); made on the server after the upload. */
+    transcript: encryptedText('media', 'transcript'),
+    transcriptStatus: text('transcript_status').$type<TranscriptStatus>().notNull().default('none'),
+    /** The transcript in short, made when the comment goes to the AI; shown in its place. */
+    transcriptSummary: encryptedText('media', 'transcript_summary'),
     createdAt: createdAt(),
   },
   (t) => [
@@ -1178,6 +1306,33 @@ export const blobDeletions = pgTable(
   (t) => [primaryKey({ columns: [t.store, t.key] })],
 );
 
+/**
+ * Every request to an AI service (`ai-usage`): what it used (tokens, audio, pictures) – for the
+ * instance dashboard. Never what was asked or answered. Outlives the workspace and the key
+ * (set null): the instance still paid for it.
+ */
+export const aiUsage = pgTable(
+  'ai_usage',
+  {
+    id: text('id').primaryKey(),
+    at: timestamptz('at').notNull(),
+    workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'set null' }),
+    keyId: text('key_id').references(() => integrationKeys.id, { onDelete: 'set null' }),
+    /** Ran on the instance's key – the instance pays – not on one of the workspace's own. */
+    instanceKey: boolean('instance_key').notNull(),
+    feature: text('feature').$type<AiFeature>().notNull(),
+    provider: text('provider').notNull(),
+    model: text('model').notNull(),
+    inputTokens: integer('input_tokens').notNull().default(0),
+    outputTokens: integer('output_tokens').notNull().default(0),
+    cacheReadTokens: integer('cache_read_tokens').notNull().default(0),
+    cacheWriteTokens: integer('cache_write_tokens').notNull().default(0),
+    audioSeconds: doublePrecision('audio_seconds').notNull().default(0),
+    images: integer('images').notNull().default(0),
+  },
+  (t) => [index('ai_usage_at_idx').on(t.at)],
+);
+
 export type WorkspaceRow = typeof workspaces.$inferSelect;
 export type WorkspaceMemberRow = typeof workspaceMembers.$inferSelect;
 export type WorkspaceInviteRow = typeof workspaceInvites.$inferSelect;
@@ -1186,6 +1341,7 @@ export type DeckFolderRow = typeof deckFolders.$inferSelect;
 export type DeckAccessGrantRow = typeof deckAccessGrants.$inferSelect;
 export type RevisionRow = typeof revisions.$inferSelect;
 export type SlideVersionRow = typeof slideVersions.$inferSelect;
+export type DeckEditRow = typeof deckEdits.$inferSelect;
 /** Who drew a slide image – see `slide_versions.renderer`. */
 export type { SlideRenderer };
 export type CommentRow = typeof comments.$inferSelect;

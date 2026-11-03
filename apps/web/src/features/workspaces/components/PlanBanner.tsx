@@ -12,7 +12,7 @@ export function PlanBanner({ workspace, userId }: { workspace: Workspace; userId
   const { billing } = workspace;
   const downgradeAt = pendingDowngrade(billing);
   const message = workspace.locked
-    ? 'Der Workspace liegt über dem Limit seines Plans: Neue Reviews, Uploads, Einladungen und Kommentare gehen gerade nicht.'
+    ? 'Der Workspace liegt über dem Limit seines Plans: Neue Präsentationen, Uploads, Einladungen und Kommentare gehen gerade nicht.'
     : downgradeAt && workspace.role === 'admin'
       ? downgradeMessage(downgradeAt)
       : billing.transfer?.to.id === userId

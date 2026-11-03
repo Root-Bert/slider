@@ -4,9 +4,11 @@ import { routes } from '@/lib/routes';
 import { isSignedOutError } from '@/features/auth';
 import { markDeckOpened } from '@/lib/last-visits';
 import { motionMs } from '@/lib/motion';
-import { useComments, useDeck, useDeckPeople, useMe, useSlides } from '@/lib/api';
+import { useComments, useDeck, useDeckEdit, useDeckPeople, useMe, useSlides } from '@/lib/api';
 import { ImportProgress } from './import/ImportProgress';
 import { DeckError, DeckLoading } from './DeckStates';
+import { dropPendingSlide, usePendingSlides, withPendingSlides } from './editing/pending-slides';
+import { dropRemoteSlideOps, useRemoteSlideOps, withRemoteSlides } from './editing/remote-slides';
 import { useColorOverrides } from './hooks/useColorOverrides';
 import { useLiveConnected } from './live/lib/live-store';
 import { blockingError } from './lib/blocking-error';
@@ -43,6 +45,27 @@ export function DeckRoute({ deckId }: { deckId: string }) {
   // Not awaited: `@` suggests the commenters until the rest arrives.
   const people = useDeckPeople(deckId, ready);
   const colorOverrides = useColorOverrides();
+  // Slides just put in show at once, until the server's are there (read from the cache only).
+  const pendingSlides = usePendingSlides();
+  // Someone else's slides duplicated, moved, deleted: shown at once too (`remote-slides`).
+  const remoteSlideOps = useRemoteSlideOps();
+  const editState = useDeckEdit(deckId, false).data;
+  const shownSlides = useMemo(() => {
+    if (!slides.data) return null;
+    const pending = withPendingSlides(deckId, slides.data, editState?.slides, pendingSlides);
+    const remote = withRemoteSlides(
+      deckId,
+      pending.slides,
+      editState?.slides,
+      editState?.seq,
+      remoteSlideOps,
+    );
+    return { slides: remote.slides, settled: pending.settled, remoteSettled: remote.settled };
+  }, [deckId, slides.data, editState?.slides, editState?.seq, pendingSlides, remoteSlideOps]);
+  useEffect(() => {
+    for (const newPageId of shownSlides?.settled ?? []) dropPendingSlide(newPageId);
+    dropRemoteSlideOps(shownSlides?.remoteSettled ?? []);
+  }, [shownSlides]);
 
   useDocumentTitle(deck.data?.title);
 
@@ -56,17 +79,17 @@ export function DeckRoute({ deckId }: { deckId: string }) {
 
   const data = useMemo(
     () =>
-      deck.data && slides.data && comments.data && me.data
+      deck.data && shownSlides && comments.data && me.data
         ? deriveViewerData(
             deck.data,
-            slides.data,
+            shownSlides.slides,
             comments.data,
             me.data.viewer,
             colorOverrides,
             people.data,
           )
         : null,
-    [deck.data, slides.data, comments.data, me.data, colorOverrides, people.data],
+    [deck.data, shownSlides, comments.data, me.data, colorOverrides, people.data],
   );
 
   // A deck seen importing morphs into the viewer: the import stage stays on top of the freshly

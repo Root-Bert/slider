@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { and, eq, notExists } from 'drizzle-orm';
-import { clamp01, type Rect, type Shape } from '@slider/shared';
+import { clampRect, type Shape } from '@slider/shared';
 import type { ParsedShape } from '@slider/pptx';
 import type { Executor } from '../db/client';
 import { comments, slides, slideVersions } from '../db/schema';
@@ -37,17 +37,16 @@ export async function deleteOrphanSlides(db: Executor, deckId: string): Promise<
 }
 
 export function toShape(shape: ParsedShape): Shape {
-  return { id: shape.id, name: shape.name, bbox: clampRect(shape.bbox), text: shape.text };
+  return {
+    id: shape.id,
+    name: shape.name,
+    bbox: clampRect(shape.bbox),
+    text: shape.text,
+    // Shown turned and tilted in box mode as it is on the slide.
+    ...(shape.rotation ? { rotation: shape.rotation } : {}),
+    ...(shape.tilt ? { tilt: shape.tilt } : {}),
+  };
 }
 
 /** Shapes may hang off the slide; anchors only live on it. */
-export function clampRect(rect: Rect): Rect {
-  const x = clamp01(rect.x);
-  const y = clamp01(rect.y);
-  return {
-    x,
-    y,
-    w: Math.max(0, Math.min(rect.w - (x - rect.x), 1 - x)),
-    h: Math.max(0, Math.min(rect.h - (y - rect.y), 1 - y)),
-  };
-}
+export { clampRect };

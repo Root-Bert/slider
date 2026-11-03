@@ -1,6 +1,5 @@
 import { refShape, type Rect, type Shape } from '@slider/shared';
 import { normaliseText } from './hash';
-import type { ParsedSlide } from './types';
 
 /**
  * Slide matching between two revisions of a deck (BER-108). Pure and deterministic.
@@ -136,27 +135,6 @@ export function shapeSignature(shapes: readonly ShapeLike[]): string {
       shape.text,
     ]),
   );
-}
-
-/** Fingerprint of a freshly parsed slide. `key` defaults to its index. */
-export function fingerprintFromParsed(
-  slide: ParsedSlide,
-  options: { key?: string; renderHash?: string | null; sourceSlideId?: string | null } = {},
-): SlideFingerprint {
-  return fingerprintFromShapes({
-    contentHash: slide.contentHash,
-    creationId: slide.creationId,
-    key: options.key ?? String(slide.index),
-    sldId: slide.sldId,
-    position: slide.index,
-    title: slide.title,
-    layoutName: slide.layoutName,
-    textHash: slide.textHash,
-    shapes: slide.shapes,
-    renderHash: options.renderHash ?? null,
-    hidden: slide.hidden,
-    sourceSlideId: options.sourceSlideId ?? null,
-  });
 }
 
 /** Fingerprint from stored data (e.g. a `slide_versions` row). */
@@ -410,6 +388,18 @@ function neighbourSim(ctx: Context, p: number, n: number): number | null {
   return (side(-1, -1) + side(1, 1)) / 2;
 }
 
+/** Mean of the features that are there (`null`: not available), by their weights; 0 without any. */
+function weightedMean(features: readonly (readonly [number | null, number])[]): number {
+  let sum = 0;
+  let weight = 0;
+  for (const [value, w] of features) {
+    if (value === null) continue;
+    sum += value * w;
+    weight += w;
+  }
+  return weight === 0 ? 0 : sum / weight;
+}
+
 /** Weighted mean of the available features, 0–1. Identical renders score 1 outright. */
 function score(ctx: Context, a: Prepared, b: Prepared): number {
   if (renderEqual(a.fp, b.fp)) return 1;
@@ -423,14 +413,7 @@ function score(ctx: Context, a: Prepared, b: Prepared): number {
       WEIGHTS.position,
     ],
   ];
-  let sum = 0;
-  let weight = 0;
-  for (const [value, w] of features) {
-    if (value === null) continue;
-    sum += value * w;
-    weight += w;
-  }
-  return weight === 0 ? 0 : sum / weight;
+  return weightedMean(features);
 }
 
 /**
@@ -444,14 +427,7 @@ function contentSim(a: Prepared, b: Prepared): number {
     [titleSim(a, b), WEIGHTS.title],
     [layoutEq(a, b), WEIGHTS.layout],
   ];
-  let sum = 0;
-  let weight = 0;
-  for (const [value, w] of features) {
-    if (value === null) continue;
-    sum += value * w;
-    weight += w;
-  }
-  return weight === 0 ? 0 : sum / weight;
+  return weightedMean(features);
 }
 
 // ── Assignment ──────────────────────────────────────────────────────────────
@@ -844,14 +820,7 @@ function relinkScore(a: Prepared, b: Prepared): number {
     [titleSim(a, b), 0.2],
     [layoutEq(a, b), 0.1],
   ];
-  let sum = 0;
-  let weight = 0;
-  for (const [value, w] of features) {
-    if (value === null) continue;
-    sum += value * w;
-    weight += w;
-  }
-  const base = weight === 0 ? 0 : sum / weight;
+  const base = weightedMean(features);
   // The same sldId breaks ties between equally similar candidates.
   const sameId = a.fp.sldId !== null && a.fp.sldId === b.fp.sldId;
   return Math.min(1, base + (sameId ? 0.01 : 0));

@@ -226,9 +226,6 @@ export const exchangeCode = (
     tenant,
   );
 
-export const refreshAccessToken = (config: MicrosoftConfig, fetch: Fetch, refreshToken: string) =>
-  refreshForScope(config, fetch, refreshToken, MICROSOFT_SCOPES);
-
 /** Trades the refresh token for a token of another resource, e.g. SharePoint for the file picker. */
 export const refreshForScope = (
   config: MicrosoftConfig,
@@ -264,6 +261,10 @@ const identityOf = (claims: IdTokenClaims | null | undefined) =>
   claims && typeof claims.tid === 'string' && typeof claims.oid === 'string'
     ? { tenantId: claims.tid, identitySubject: `${claims.tid}:${claims.oid}` }
     : null;
+
+/** Cache key of a connection's token for another resource than Graph (`getScopedToken`). */
+const scopedCacheKey = (connectionId: string, scope: string, tenant?: string) =>
+  `${connectionId}:${tenant ?? ''}:${scope}`;
 
 /**
  * Delegated Microsoft tokens per connected Microsoft account (`microsoft_connections`, several
@@ -325,12 +326,14 @@ export class MicrosoftTokens {
     const id = connectionId ?? (await this.connectionIds(userId))[0];
     const connection = id ? await this.findConnection(userId, id) : null;
     if (!connection) throw new MicrosoftAuthError('failed', 'no_connection', 'not connected');
+    // Where `getScopedToken` finds the picker's token.
+    const pickerCacheKey = scopedCacheKey(connection.id, PICKER_CONSUMER_SCOPE, CONSUMERS_TENANT);
     const tokens = await exchangeCode(config, this.fetch, code, verifier, {
       scope: PICKER_CONSENT_SCOPES,
       tenant: CONSUMERS_TENANT,
     });
     if (!tokens.refresh_token) {
-      this.remember(`${connection.id}:${CONSUMERS_TENANT}:${PICKER_CONSUMER_SCOPE}`, tokens);
+      this.remember(pickerCacheKey, tokens);
       return;
     }
     let graph: TokenResponse;
@@ -340,7 +343,7 @@ export class MicrosoftTokens {
       this.deps.log.warn(
         `Picker consent for connection ${connection.id}: new refresh token not usable for Graph, keeping the old one (${String(error)})`,
       );
-      this.remember(`${connection.id}:${CONSUMERS_TENANT}:${PICKER_CONSUMER_SCOPE}`, tokens);
+      this.remember(pickerCacheKey, tokens);
       return;
     }
     const account = await this.fetchAccount(graph.access_token);
@@ -362,7 +365,7 @@ export class MicrosoftTokens {
         ...(account?.id ? { subject: account.id } : {}),
       })
       .where(eq(microsoftConnections.id, connection.id));
-    this.remember(`${connection.id}:${CONSUMERS_TENANT}:${PICKER_CONSUMER_SCOPE}`, tokens);
+    this.remember(pickerCacheKey, tokens);
     this.remember(`${connection.id}:read`, graph);
   }
 
@@ -562,7 +565,7 @@ export class MicrosoftTokens {
   ): Promise<string | null> {
     return this.refreshed(
       connectionId,
-      `${connectionId}:${tenant ?? ''}:${scope}`,
+      scopedCacheKey(connectionId, scope, tenant),
       scope,
       false,
       tenant,

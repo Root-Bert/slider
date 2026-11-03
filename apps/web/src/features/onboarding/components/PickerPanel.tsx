@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { motionMs } from '@/lib/motion';
 import { Button, cn, ErrorText, IconButton } from '@/ui';
 import {
@@ -93,16 +100,13 @@ export function PickerPanel({
     onShownChange?.(mounted);
   }, [mounted, onShownChange]);
 
-  const onCloseRef = useRef(onClose);
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  });
+  const close = useEffectEvent(() => onClose());
   useEffect(() => {
     if (!open) return;
     panelRef.current?.focus();
     // Escape inside an embedded frame stays there; its own "Abbrechen" closes too.
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onCloseRef.current();
+      if (event.key === 'Escape') close();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);

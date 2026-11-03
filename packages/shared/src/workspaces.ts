@@ -495,6 +495,66 @@ export const workspaceFontUploadSchema = z.object({
 });
 export type WorkspaceFontUpload = z.infer<typeof workspaceFontUploadSchema>;
 
+/** One design file uploaded as slide masters. */
+export const WORKSPACE_MASTER_MAX_BYTES = 100 * 1024 ** 2;
+/** Designs one workspace may have. */
+export const WORKSPACE_MASTER_MAX_SETS = 50;
+
+/** A layout of an uploaded design, drawn with placeholders saying "Titel" and "Text". */
+export const workspaceMasterLayoutSchema = z.object({
+  /** "Titelfolie", "Title and Content"; `null` when the file names none. */
+  name: z.string().nullable(),
+  /** The PowerPoint master it belongs to (its theme name), when a file has several. */
+  master: z.string().nullable(),
+  imageUrl: z.string(),
+  thumbnailUrl: z.string(),
+});
+export type WorkspaceMasterLayout = z.infer<typeof workspaceMasterLayoutSchema>;
+
+/**
+ * A company design the workspace uploaded as a template (`.otp`, `.potx`): its slide masters
+ * and their layouts. `fileUrl` loads the file as kept: a template, `fileExtension` its ending
+ * (designs uploaded before they were kept so are presentations, `.odp`/`.pptx`).
+ */
+export const workspaceMasterSchema = z.object({
+  id: z.string(),
+  /** The file's name without its extension. */
+  name: z.string(),
+  format: z.enum(['pptx', 'odp']),
+  /** The file and the layout pictures together. */
+  sizeBytes: z.number().int().nonnegative(),
+  /** Width / height of its slides. */
+  aspectRatio: z.number().positive(),
+  fileUrl: z.string(),
+  fileExtension: z.enum(['otp', 'potx', 'odp', 'pptx']),
+  layouts: z.array(workspaceMasterLayoutSchema),
+  /** Designed in Slider: the template deck it is edited in. Optional for older API versions. */
+  draftDeckId: z.string().nullable().optional(),
+  createdAt: z.iso.datetime(),
+});
+export type WorkspaceMaster = z.infer<typeof workspaceMasterSchema>;
+
+/**
+ * `GET /decks/:id/layouts`: the layouts of a deck's own design – the master pages in its file –
+ * for the editor's „Folie einfügen“, each by its master page (`page`, the `master` of an
+ * `addSlide`) with a picture. None for a deck that is no ODP.
+ */
+export const deckLayoutsSchema = z.object({
+  aspectRatio: z.number().positive(),
+  layouts: z.array(
+    workspaceMasterLayoutSchema.pick({ name: true, imageUrl: true, thumbnailUrl: true }).extend({
+      page: z.string(),
+    }),
+  ),
+});
+export type DeckLayouts = z.infer<typeof deckLayoutsSchema>;
+
+/** `PATCH /workspaces/:id/masters/:masterId`: a design's name in Slider (the file keeps its own). */
+export const renameWorkspaceMasterInputSchema = z.object({
+  name: z.string().trim().min(1, 'Bitte einen Namen angeben.').max(200),
+});
+export type RenameWorkspaceMasterInput = z.infer<typeof renameWorkspaceMasterInputSchema>;
+
 export const workspaceMemberSchema = z.object({
   userId: z.string(),
   name: z.string(),

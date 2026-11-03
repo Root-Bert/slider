@@ -5,12 +5,12 @@
  */
 interface Props {
   label: string;
-  /** Any CSS colour; the website's sage by default. */
+  /** Any CSS colour; Slider blue by default. */
   accent?: string;
   class?: string;
 }
 
-const { label, accent = 'var(--color-sage)', class: className } = Astro.props;
+const { label, accent = 'var(--color-accent-blue)', class: className } = Astro.props;
 ---
 
 <div class:list={['flex items-center gap-2.5', className]} style={`--mark: ${accent}`}>

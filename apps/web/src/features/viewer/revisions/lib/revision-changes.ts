@@ -7,7 +7,6 @@ import type {
   SlideDiff,
   SyncError,
   SyncErrorCode,
-  SyncResult,
   SyncSummary,
 } from '@slider/shared';
 
@@ -153,28 +152,6 @@ export function revisionNoticeText(
 ): string {
   const head = `V${revisionNumber} geladen`;
   return summary?.text ? `${head} | ${summary.text}` : head;
-}
-
-export type ToastTone = 'neutral' | 'danger';
-
-/**
- * Toast after "Neue Version hochladen". `null` for a new version: that one is
- * announced by the notice next to the button (`RevisionNotice`), for everybody watching.
- */
-export function syncResultMessage(result: SyncResult): { text: string; tone: ToastTone } | null {
-  switch (result.status) {
-    case 'unchanged':
-      return { text: 'Keine Änderungen', tone: 'neutral' };
-    case 'updated':
-      return null;
-    case 'queued':
-      return { text: 'Änderung erkannt – wird übernommen …', tone: 'neutral' };
-    case 'error':
-      return {
-        text: result.error?.message ?? 'Die Präsentation konnte nicht aktualisiert werden.',
-        tone: 'danger',
-      };
-  }
 }
 
 /**

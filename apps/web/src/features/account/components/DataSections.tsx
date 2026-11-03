@@ -52,7 +52,7 @@ export function DeleteAccountSection({ email }: { email: string }) {
 function DeleteOwnAccountDialog({ email, onClose }: { email: string; onClose: () => void }) {
   const [typed, setTyped] = useState('');
   const [successors, setSuccessors] = useState<Record<string, string>>({});
-  const choices = useDeletionChoices(true);
+  const choices = useDeletionChoices();
   const remove = useDeleteAccount();
   const logout = useLogout();
   // The session is older than a fresh sign-in: sign out and back in, then delete.

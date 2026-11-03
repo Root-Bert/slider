@@ -1,29 +1,31 @@
-import {
-  offsetInRect,
-  pointInRect,
-  rectArea,
-  rectCenter,
-  rectContains,
-  type Point,
-  type Rect,
-} from './geometry';
+import { offsetInRect, pointInRect, rectArea, rectCenter, type Point, type Rect } from './geometry';
 import type { Guide, Shape, ShapeRef } from './model';
+import { DEFAULT_ASPECT, turnedBoxContains, type TurnedBox } from './turned-box';
 
 /**
- * Finds the shape under a point, preferring the smallest (most specific) one.
+ * Finds the shape under a point, preferring the smallest (most specific) one – a turned or tilted
+ * one as it shows (`aspect`: the slide's width over its height).
  * Used when placing an anchor so it can follow the object across revisions (BER-98, BER-111).
  */
-export function hitTestShapes(shapes: readonly Shape[], point: Point): Shape | null {
-  let best: Shape | null = null;
+export function hitTestShapes<T extends TurnedBox>(
+  shapes: readonly T[],
+  point: Point,
+  aspect = DEFAULT_ASPECT,
+): T | null {
+  let best: T | null = null;
   for (const shape of shapes) {
-    if (!rectContains(shape.bbox, point)) continue;
-    if (!best || rectArea(shape.bbox) < rectArea(best.bbox)) best = shape;
+    if (!turnedBoxContains(shape, point, aspect)) continue;
+    if (!best || rectArea(shape.bbox) <= rectArea(best.bbox)) best = shape;
   }
   return best;
 }
 
-export function shapeRefAt(shapes: readonly Shape[], point: Point): ShapeRef | null {
-  const shape = hitTestShapes(shapes, point);
+export function shapeRefAt(
+  shapes: readonly Shape[],
+  point: Point,
+  aspect = DEFAULT_ASPECT,
+): ShapeRef | null {
+  const shape = hitTestShapes(shapes, point, aspect);
   return shape
     ? { shapeId: shape.id, offset: offsetInRect(shape.bbox, point), ...identityOf(shape) }
     : null;
@@ -80,9 +82,41 @@ export function shapeRefForRect(shape: Shape, rect: Rect): ShapeRef {
 }
 
 /** Binds a box to the shape under its centre, or `null` when there is none. */
-export function rectShapeRefAt(shapes: readonly Shape[], rect: Rect): ShapeRef | null {
-  const shape = hitTestShapes(shapes, rectCenter(rect));
+export function rectShapeRefAt(
+  shapes: readonly Shape[],
+  rect: Rect,
+  aspect = DEFAULT_ASPECT,
+): ShapeRef | null {
+  const shape = hitTestShapes(shapes, rectCenter(rect), aspect);
   return shape ? shapeRefForRect(shape, rect) : null;
+}
+
+/** Below this share of overlap (intersection over union) a box is not about a shape. */
+const MIN_COVER = 0.3;
+
+/**
+ * Binds a box placed by area alone (the AI's comments) to the shape it is about: the one it
+ * covers best, else the shape under its centre; `null` when there is none.
+ */
+export function rectShapeRefOver(
+  shapes: readonly Shape[],
+  rect: Rect,
+  aspect = DEFAULT_ASPECT,
+): ShapeRef | null {
+  let best: Shape | null = null;
+  let bestCover = MIN_COVER;
+  for (const shape of shapes) {
+    const { bbox } = shape;
+    const w = Math.min(rect.x + rect.w, bbox.x + bbox.w) - Math.max(rect.x, bbox.x);
+    const h = Math.min(rect.y + rect.h, bbox.y + bbox.h) - Math.max(rect.y, bbox.y);
+    if (w <= 0 || h <= 0) continue;
+    const cover = (w * h) / (rectArea(rect) + rectArea(bbox) - w * h);
+    if (cover >= bestCover) {
+      best = shape;
+      bestCover = cover;
+    }
+  }
+  return best ? shapeRefForRect(best, rect) : rectShapeRefAt(shapes, rect, aspect);
 }
 
 /**

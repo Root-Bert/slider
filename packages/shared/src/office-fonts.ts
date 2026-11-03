@@ -6,7 +6,7 @@
  * same – so a line breaks in both at the same word.
  */
 
-/** The most used Google Fonts (scripts/google-fonts.py), drawn as themselves. */
+/** The most used Google Fonts and 80 more for slides (scripts/google-fonts.py), as themselves. */
 export const GOOGLE_FONTS = [
   'Roboto',
   'Open Sans',
@@ -28,6 +28,86 @@ export const GOOGLE_FONTS = [
   'Lora',
   'Noto Serif',
   'Roboto Mono',
+  'Source Sans 3',
+  'Nunito Sans',
+  'Fira Sans',
+  'Barlow',
+  'Barlow Condensed',
+  'DM Sans',
+  'Manrope',
+  'IBM Plex Sans',
+  'Karla',
+  'Titillium Web',
+  'Josefin Sans',
+  'Libre Franklin',
+  'Mulish',
+  'Quicksand',
+  'Archivo',
+  'Space Grotesk',
+  'Outfit',
+  'Plus Jakarta Sans',
+  'Lexend',
+  'Figtree',
+  'Red Hat Display',
+  'Sora',
+  'Urbanist',
+  'Public Sans',
+  'Jost',
+  'Be Vietnam Pro',
+  'Hanken Grotesk',
+  'Geist',
+  'Bricolage Grotesque',
+  'Instrument Sans',
+  'Cabin',
+  'Exo 2',
+  'Kanit',
+  'Asap',
+  'Bebas Neue',
+  'Anton',
+  'Archivo Black',
+  'Fjalla One',
+  'Teko',
+  'Dosis',
+  'Comfortaa',
+  'Varela Round',
+  'Fredoka',
+  'Righteous',
+  'Source Serif 4',
+  'PT Serif',
+  'Libre Baskerville',
+  'EB Garamond',
+  'Cormorant Garamond',
+  'Crimson Pro',
+  'Bitter',
+  'Roboto Slab',
+  'Zilla Slab',
+  'Arvo',
+  'DM Serif Display',
+  'Spectral',
+  'Alegreya',
+  'Vollkorn',
+  'Literata',
+  'Fraunces',
+  'Newsreader',
+  'Frank Ruhl Libre',
+  'Abril Fatface',
+  'Cinzel',
+  'Instrument Serif',
+  'Source Code Pro',
+  'Fira Code',
+  'JetBrains Mono',
+  'IBM Plex Mono',
+  'Space Mono',
+  'Inconsolata',
+  'Dancing Script',
+  'Caveat',
+  'Pacifico',
+  'Lobster',
+  'Permanent Marker',
+  'Indie Flower',
+  'Great Vibes',
+  'Amatic SC',
+  'Satisfy',
 ] as const;
 
 export const OFFICE_FONTS = [
@@ -55,6 +135,22 @@ export const OFFICE_FONT_SUBSTITUTES: Readonly<Record<string, OfficeFont>> = {
   'Courier New': 'Liberation Mono',
   Courier: 'Liberation Mono',
 };
+
+/**
+ * The name new text is written in for a font name: an Office font's free twin under its own
+ * name (Calibri: Carlito), any other as it is. Slider never writes Microsoft's names into new
+ * content – the picker and the AI offer the twins; files that name them stay as they are.
+ */
+export function freeFontName(name: string): string {
+  const lower = name
+    .trim()
+    .replace(/^['"]|['"]$/g, '')
+    .toLowerCase();
+  const twin = Object.entries(OFFICE_FONT_SUBSTITUTES).find(
+    ([font]) => font.toLowerCase() === lower,
+  );
+  return twin ? twin[1] : name;
+}
 
 /** Fonts whose characters LibreOffice maps to other ones (Wingdings bullets): no plain text. */
 export const SYMBOL_FONTS = ['symbol', 'wingdings', 'wingdings 2', 'wingdings 3', 'webdings'];

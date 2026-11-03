@@ -27,7 +27,7 @@ const CLOSED_COPY: Record<Exclude<InviteState, 'valid'>, { title: string; messag
   used: {
     title: 'Einladung schon angenommen',
     message:
-      'Diese Einladung wurde bereits verwendet. Bist du schon Mitglied, findest du den Workspace in deinen Reviews.',
+      'Diese Einladung wurde bereits verwendet. Bist du schon Mitglied, findest du ihn bei den Präsentationen.',
   },
 };
 
@@ -182,11 +182,11 @@ export function SignInToJoin({ token }: { token: string }) {
   );
 }
 
-/** "Zu meinen Reviews" below a join card. */
+/** "Zu den Projekten" below a join card. */
 export function ReviewsLink() {
   return (
     <TextLink to={routes.reviews()} variant="underline" size="sm">
-      Zu meinen Reviews
+      Zu den Präsentationen
     </TextLink>
   );
 }

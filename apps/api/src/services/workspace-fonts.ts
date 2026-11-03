@@ -362,7 +362,7 @@ export async function deleteWorkspaceFonts(
   const [using] = await decksNaming(deps, workspaceId, [family], { first: true });
   if (using) {
     throw badRequest(
-      `„${family}“ nutzt noch die Review „${using.title}“ (vielleicht auch weitere). Erst wenn keine Review sie mehr nutzt, lässt sich die Schrift entfernen.`,
+      `„${family}“ nutzt noch die Präsentation „${using.title}“ (vielleicht auch weitere). Erst wenn keine Präsentation sie mehr nutzt, lässt sich die Schrift entfernen.`,
     );
   }
   const gone = await deps.db

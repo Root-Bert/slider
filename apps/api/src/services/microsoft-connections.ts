@@ -100,7 +100,6 @@ export async function disconnectMicrosoft(
     await tx.delete(microsoftConnections).where(inArray(microsoftConnections.id, ids));
     for (const deck of affected) {
       await mergeSyncState(tx, deck.id, {
-        pending: null,
         lastSyncError: { code: 'auth_required', message: SYNC_MESSAGES.auth_required, at },
       });
     }

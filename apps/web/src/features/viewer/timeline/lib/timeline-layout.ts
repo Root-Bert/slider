@@ -1,3 +1,4 @@
+import { clamp } from '@slider/shared';
 /**
  * Geometry of the deck timeline: every slide side by side in one horizontal track, each slide's
  * comments in a column of exactly its width below it. The split handle between the slide area
@@ -11,14 +12,30 @@
 export const TRACK_PAD_X = 16;
 /** Room above the slides; the track itself is exactly as tall as its slides. */
 export const TRACK_PAD_TOP = 16;
+/**
+ * The tracks stacked over and under the slides' – the band shows one of them at a time, swiped
+ * up and down (`useTrackSwipe`): `above` variant tracks (the first variant of each slide right
+ * over the slides, the second over that, …, and on an editable deck one more to make a variant
+ * in), `below` the speaker notes. A track is named by its place: 0 the slides, -1 the first
+ * variants, 1 the notes.
+ */
+export interface TrackStack {
+  above: number;
+  below: number;
+}
+
+export function trackStack(mostVariants: number, canEdit: boolean): TrackStack {
+  return { above: mostVariants + (canEdit ? 1 : 0), below: canEdit ? 1 : 0 };
+}
+
+/** What track `track` holds, as its dot names it. */
+export const trackName = (track: number): string =>
+  track === 0 ? 'Folien' : track > 0 ? 'Notizen' : `Variante ${-track}`;
+
 /** Desktop-1 slide height (982px wide at 16:9): the default split never makes slides taller. */
 export const DEFAULT_SLIDE_H_MAX = 552;
 /** Smallest slide height the split handle allows. */
 export const MIN_SLIDE_H = 90;
-/** The comment area keeps at least this height … */
-export const COMMENT_MIN_H = 160;
-/** … and at least this share of the viewer height, however far the handle is dragged down. */
-export const COMMENT_MIN_SHARE = 0.25;
 /** At the default split the comment area keeps this share (Figma D1). */
 export const COMMENT_DEFAULT_SHARE = 0.4;
 /**
@@ -48,8 +65,6 @@ export interface TrackGeometry {
   hDefault: number;
 }
 
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-
 export function computeTrackGeometry({
   aspectRatios,
   viewportW,
@@ -65,8 +80,8 @@ export function computeTrackGeometry({
   /** Height of the band between track and comments: minimap, controls row and split handle. */
   controlsH: number;
   /**
-   * Height a folded minimap frees (`controlsH` still counts it): the slides take all of it, at
-   * every split, so the comment area stays where it is. Only as far as the width allows.
+   * Height a folded minimap frees (`controlsH` still counts it): the slides take all of it, so
+   * the comment area stays where it is – at the default only as far as the width allows.
    */
   freedH?: number;
   narrow: boolean;
@@ -82,16 +97,20 @@ export function computeTrackGeometry({
     return { hMin: h, hMax: h, hDefault: h };
   }
 
-  // The widest slide leaves room for its divider and a peek of the next slide.
+  // The handle at the bottom: the slides take the whole height and the comment area is gone –
+  // wider than the window if need be, the track scrolls sideways anyway. Only the default keeps
+  // the widest slide within the width, with room for its divider and a peek of the next slide.
   const widthLimit = Math.floor((inner - GAP_MAX - PEEK_PX) / arMax);
-  const commentMin = Math.max(COMMENT_MIN_H, Math.ceil(COMMENT_MIN_SHARE * viewportH));
-  const largest = Math.max(ABSOLUTE_MIN_H, Math.min(widthLimit, viewportH - commentMin - chrome));
+  const largest = Math.max(ABSOLUTE_MIN_H, viewportH - chrome);
   const hMin = Math.min(MIN_SLIDE_H, largest);
   const hMax = Math.max(hMin, largest);
   const defaultLimit = Math.floor((1 - COMMENT_DEFAULT_SHARE) * viewportH) - chrome;
   const hDefault = clamp(Math.min(DEFAULT_SLIDE_H_MAX, defaultLimit, widthLimit), hMin, hMax);
-  const grow = Math.max(0, Math.min(freedH, widthLimit - hMax));
-  return { hMin: hMin + grow, hMax: hMax + grow, hDefault: hDefault + grow };
+  return {
+    hMin: hMin + freedH,
+    hMax: hMax + freedH,
+    hDefault: hDefault + Math.max(0, Math.min(freedH, widthLimit - hDefault)),
+  };
 }
 
 /** Slide height at `split` (0 = handle at the top, 1 = at the bottom, `null` = default). */
@@ -223,6 +242,44 @@ export type CardMode = 'full' | 'compact' | 'bubble';
 
 export const cardMode = (columnWidth: number): CardMode =>
   columnWidth >= CARD_FULL_MIN ? 'full' : columnWidth >= CARD_COMPACT_MIN ? 'compact' : 'bubble';
+
+/** Room kept free between two comment columns grown towards each other: lines to lower bands run down there. */
+export const COLUMN_SPACING = 48;
+
+/**
+ * Where each slide's comment column sits. As wide as its slide – unless its cards want more
+ * (`wanted`, 0 = no comments): then it grows into the free room beside the slide, at most up to
+ * halfway to the next column with comments, centred under the slide where it can. Slides and
+ * gaps with comments (`gapTaken`) keep their room.
+ */
+export function columnSpans(
+  layout: TrackLayout,
+  wanted: (index: number) => number,
+  gapTaken: (index: number) => boolean,
+): { x: number; w: number }[] {
+  // Occupied stretches of the track in order: slides with comments, gaps with comments.
+  const taken: { left: number; right: number; slide: number | null }[] = [];
+  layout.slides.forEach((box, index) => {
+    if (wanted(index) > 0) taken.push({ left: box.x, right: box.x + box.w, slide: index });
+    const gap = layout.gaps[index];
+    if (gap && gapTaken(index)) taken.push({ left: gap.x, right: gap.x + gap.w, slide: null });
+  });
+  const spans = layout.slides.map((box) => ({ x: box.x, w: box.w }));
+  taken.forEach((stretch, at) => {
+    if (stretch.slide === null) return;
+    const box = layout.slides[stretch.slide]!;
+    const prev = taken[at - 1];
+    const next = taken[at + 1];
+    const left = Math.min(box.x, prev ? (prev.right + box.x + COLUMN_SPACING) / 2 : TRACK_PAD_X);
+    const right = Math.max(
+      box.x + box.w,
+      next ? (box.x + box.w + next.left - COLUMN_SPACING) / 2 : layout.contentW - TRACK_PAD_X,
+    );
+    const w = clamp(wanted(stretch.slide), box.w, right - left);
+    spans[stretch.slide] = { x: clamp(box.x + box.w / 2 - w / 2, left, right - w), w };
+  });
+  return spans;
+}
 
 /** Smallest split at which a column is at least `width` wide (for a slide of aspect `ar`). */
 export const splitForWidth = (width: number, ar: number, geo: TrackGeometry) =>

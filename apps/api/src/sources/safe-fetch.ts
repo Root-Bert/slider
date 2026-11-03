@@ -311,6 +311,11 @@ export const isPdfBytes = (bytes: Uint8Array): boolean =>
 /** What a linked deck may be: a PowerPoint or a PDF (Keynote, Canva, Google exports). */
 export const isDeckBytes = (bytes: Uint8Array): boolean => isPptxBytes(bytes) || isPdfBytes(bytes);
 
+/** Media types of the two deck files, as cloud sources name them. */
+export const PPTX_MIME =
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+export const PDF_MIME = 'application/pdf';
+
 /** A deck file by its name: `.pptx` or `.pdf`. */
 export const isDeckName = (name: string): boolean => /\.(pptx|pdf)$/i.test(name);
 

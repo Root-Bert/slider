@@ -1,4 +1,6 @@
-import type { Rect } from '@slider/shared';
+import type { Rect, TurnedBox } from '@slider/shared';
+import { cn } from '@/ui';
+import { shapeOutlineStyle } from './lib/shape-outline-style';
 
 /**
  * The AI at work on a thread (BER-183), on its mark on the slide: the AI reads the marked area.
@@ -8,24 +10,34 @@ import type { Rect } from '@slider/shared';
  */
 export function AiScan({
   rect,
+  shape,
   pinOnCorner = false,
+  raised = false,
 }: {
   rect: Rect;
+  /**
+   * The element the thread hangs on, when the area is its box: drawn as its outline in box mode
+   * is – a little off it, turned and tilted as it shows.
+   */
+  shape?: TurnedBox | null;
   /** The pin sits on the top left corner: it is that corner of the viewfinder, no bracket there. */
   pinOnCorner?: boolean;
+  /** Over a sticker: its opaque box would hide it, also when lifted as emphasized. */
+  raised?: boolean;
 }) {
+  // A shape reference can bind a small area too. Keep that area, and transform it as its mark
+  // is transformed.
+  const geometry = shapeOutlineStyle({ bbox: rect, rotation: shape?.rotation, tilt: shape?.tilt });
   return (
     <div
       aria-hidden
-      className="pointer-events-none absolute"
-      style={{
-        left: `${rect.x * 100}%`,
-        top: `${rect.y * 100}%`,
-        width: `${rect.w * 100}%`,
-        height: `${rect.h * 100}%`,
-      }}
+      className={cn('pointer-events-none absolute', raised && 'z-(--z-raised)')}
+      style={geometry}
     >
-      <div className="absolute inset-0 overflow-hidden rounded-thumb">
+      <div
+        className={cn('absolute inset-0 overflow-hidden', shape ? 'rounded-mark' : 'rounded-thumb')}
+        style={{ borderRadius: geometry.borderRadius }}
+      >
         <span className="ai-scan-tint absolute inset-0" />
         <span className="ai-scan-wash absolute inset-0" />
         {/* The dots stay put; only the light behind them moves. */}

@@ -42,6 +42,13 @@ export function pluralize(count: number, singular: string, plural: string): stri
 }
 
 /**
+ * An action on several selected items that applies to only some of them: „Archivieren (2)“ –
+ * decks, comments alike.
+ */
+export const withCount = (label: string, count: number, selected: number) =>
+  count > 0 && count < selected ? `${label} (${count})` : label;
+
+/**
  * Upload sizes: whole KB (at least 1) below 1 MB, else MB with one decimal – `300` → `1 KB`,
  * `12.4 * 1024 * 1024` → `12,4 MB`. For recordings and storage use {@link formatFileSize}.
  */
@@ -71,3 +78,8 @@ export function formatDuration(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 }
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Looks like an e-mail address (the server checks it for real). */
+export const isEmailAddress = (text: string): boolean => EMAIL_PATTERN.test(text.trim());

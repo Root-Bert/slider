@@ -12,6 +12,13 @@
 		rewrite * /api/contact
 		reverse_proxy slider:8787
 	}
+	# Live comments on the site (stream + posts), also only these routes; Slider keeps nothing.
+	handle /slider/api/site-live* {
+		uri strip_prefix /slider
+		reverse_proxy slider:8787 {
+			header_up X-Forwarded-For {client_ip}
+		}
+	}
 	handle /slider/* {
 		reverse_proxy website:80
 	}

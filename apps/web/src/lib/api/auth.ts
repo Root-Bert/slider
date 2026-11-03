@@ -13,6 +13,7 @@ import type {
 } from '@slider/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api-client';
+import { forgetOffline } from '../offline';
 import { registerPasskey } from '../passkeys';
 import { queryKeys, workspaceKeys } from './keys';
 
@@ -123,5 +124,14 @@ export function useDisconnectMicrosoft() {
   });
 }
 
-/** Signs out. The caller then loads the login page fresh, which also drops every cached response. */
-export const useLogout = () => useMutation({ mutationFn: () => api.post<void>('/auth/logout') });
+/**
+ * Signs out; what the browser kept of the account for offline goes with it. The caller then loads
+ * the login page fresh, which also drops every cached response.
+ */
+export const useLogout = () =>
+  useMutation({
+    mutationFn: async () => {
+      await api.post<void>('/auth/logout');
+      await forgetOffline();
+    },
+  });

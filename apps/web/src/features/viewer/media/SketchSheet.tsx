@@ -266,6 +266,8 @@ export function SketchSheet({
               key={index}
               rect={box}
               color={accentColor(stroke.color)}
+              // Its line runs out around its corners, as a comment's box on the slide does.
+              elementEdge
               handles={isSelected}
               emphasized={isSelected}
               // Unselected, only its border takes the pointer: what lies inside stays reachable.

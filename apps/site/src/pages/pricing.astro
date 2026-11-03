@@ -1,16 +1,11 @@
 ---
-import Hero from '~/components/pricing/Hero.astro';
-import Plans from '~/components/pricing/Plans.astro';
-import SelfHosting from '~/components/pricing/SelfHosting.astro';
+import Pricing from '~/components/pricing/Pricing.astro';
+import { t } from '~/i18n';
 import Base from '~/layouts/Base.astro';
+
+const { meta } = t('en');
 ---
 
-<Base
-  current="pricing"
-  title="Pricing"
-  description="Slider is priced per workspace, never per seat: free for small teams, €79 a month for up to 100 people, €249 a month with AI run for you, free and unlimited when you host it yourself."
->
-  <Hero />
-  <Plans />
-  <SelfHosting />
+<Base current="pricing" lang="en" translated="pricing" title={meta.pricingTitle} description={meta.pricingDescription}>
+  <Pricing lang="en" />
 </Base>

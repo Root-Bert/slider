@@ -2,10 +2,10 @@ import { expect, sampleDeckFile, SAMPLE_SLIDES, shot, test } from '../support';
 
 test('uploading a PPTX imports it and opens the viewer', async ({ page }) => {
   await page.goto('/');
-  // The toolbar button; the empty review list offers a second one.
-  await page.getByRole('button', { name: 'Neue Review' }).first().click();
+  // The toolbar button; the empty list offers a second one.
+  await page.getByRole('button', { name: 'Neue Präsentation' }).first().click();
   await expect(page).toHaveURL(/\/neu/);
-  await expect(page.getByRole('heading', { level: 1, name: 'Neue Review' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Neue Präsentation' })).toBeVisible();
 
   const chooser = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: 'Datei auswählen' }).click();
@@ -44,9 +44,10 @@ test('uploading a PPTX imports it and opens the viewer', async ({ page }) => {
   await page.getByRole('button', { name: 'Folienübersicht einblenden' }).click();
   await expect(overview).toBeVisible();
 
-  // Back on the home page the review is listed.
-  await page.getByRole('button', { name: 'Review schließen' }).click();
-  await expect(page.getByRole('heading', { level: 1, name: 'Reviews' })).toBeVisible();
+  // Back on the home page the deck is listed.
+  await page.getByRole('button', { name: 'Präsentation schließen' }).click();
+  await expect(page).not.toHaveURL(/\/d\//);
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Präsentationen');
   await expect(page.getByText('slider-demo').first()).toBeVisible();
   await shot(page, 'home-with-review');
 });

@@ -24,7 +24,7 @@ export function UsersTable({ userId, onNotify }: { userId: string; onNotify: Sho
     return blocking
       ? {
           title: `${user.name} sperren?`,
-          description: `${user.email} wird sofort abgemeldet und kann sich nicht mehr anmelden. Reviews, Kommentare und Mitgliedschaften bleiben, Entsperren lässt das Konto wieder herein.`,
+          description: `${user.email} wird sofort abgemeldet und kann sich nicht mehr anmelden. Präsentationen, Kommentare und Mitgliedschaften bleiben, Entsperren lässt das Konto wieder herein.`,
           confirmLabel: 'Sperren',
           tone: 'danger',
           done: `${user.name} ist gesperrt`,

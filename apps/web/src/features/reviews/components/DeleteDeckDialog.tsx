@@ -35,7 +35,7 @@ function fileCopy(decks: readonly Deck[]): { removed: string[]; kept: string | n
   const where = places.join(' bzw. ');
   const kept =
     uploaded > 0
-      ? `Bei verknüpften Reviews bleibt das Original ${where}.`
+      ? `Bei verknüpften Präsentationen bleibt das Original ${where}.`
       : linked.length === 1
         ? `Das Original ${where} bleibt.`
         : `Die Originale ${where} bleiben.`;
@@ -62,7 +62,7 @@ export function DeleteDeckDialog({
       title={
         single
           ? `„${single.title}“ löschen?`
-          : `${pluralize(decks.length, 'Review', 'Reviews')} löschen?`
+          : `${pluralize(decks.length, 'Präsentation', 'Präsentationen')} löschen?`
       }
       description={
         <div className="flex flex-col gap-2">

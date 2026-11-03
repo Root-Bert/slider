@@ -4,7 +4,8 @@ import { attr, attributeNames, childrenOf, firstChild, tagOf, type XmlNode } fro
  * ODF styles resolved the way LibreOffice reads them: a style's properties are its own over its
  * parent's (`style:parent-style-name`), down to the family's default style. Elements of a slide
  * name their styles from content.xml's automatic styles or styles.xml's common styles; those of
- * a master page from styles.xml's automatic or common styles.
+ * a master page from styles.xml's automatic or common styles. A parent is always a common style:
+ * LibreOffice ignores a parent named among the automatic styles (ODF allows no other).
  */
 
 export type Properties = Record<string, string>;
@@ -35,15 +36,50 @@ export const propertiesOf = (style: XmlNode, kind: PropertyKind): Properties => 
 
 export class StyleIndex {
   private readonly byKey = new Map<string, XmlNode>();
+  /** styles.xml's common styles: the only ones a style can have as its parent. */
+  private readonly commonByKey = new Map<string, XmlNode>();
+  /** content.xml's automatic styles and the faces content.xml declares (`content`). */
+  private readonly contentStyles = new Set<XmlNode>();
+  private readonly contentFonts: Set<string> | null = null;
   private readonly defaults = new Map<string, XmlNode>();
   private readonly lists = new Map<string, XmlNode>();
+  private readonly dashes = new Map<string, XmlNode>();
+  private readonly markers = new Map<string, XmlNode>();
+  private readonly gradients = new Map<string, XmlNode>();
+  private readonly fillImages = new Map<string, XmlNode>();
+  private readonly opacities = new Map<string, XmlNode>();
   private readonly fonts = new Map<string, string>();
 
   /**
    * `containers` in lookup order: the first that has a name wins (content.xml's automatic
    * styles before the common ones). `fontDecls` are the `office:font-face-decls` of both parts.
+   * `common`: styles.xml's `office:styles`, where parents are looked up. `content`: content.xml's
+   * automatic styles and font declarations – LibreOffice resolves a `style:font-name` there
+   * only among content.xml's faces.
    */
-  constructor(containers: readonly XmlNode[], fontDecls: readonly XmlNode[]) {
+  constructor(
+    containers: readonly XmlNode[],
+    fontDecls: readonly XmlNode[],
+    common?: XmlNode,
+    content?: { styles?: XmlNode; fonts?: XmlNode },
+  ) {
+    if (content) {
+      for (const node of content.styles ? childrenOf(content.styles) : []) {
+        this.contentStyles.add(node);
+      }
+      this.contentFonts = new Set(
+        (content.fonts ? childrenOf(content.fonts) : [])
+          .filter((face) => tagOf(face) === 'style:font-face')
+          .map((face) => attr(face, 'style:name'))
+          .filter((name): name is string => !!name),
+      );
+    }
+    for (const node of common ? childrenOf(common) : []) {
+      const name = attr(node, 'style:name');
+      if (tagOf(node) === 'style:style' && name) {
+        this.commonByKey.set(`${attr(node, 'style:family')}:${name}`, node);
+      }
+    }
     for (const container of containers) {
       for (const node of childrenOf(container)) {
         const tag = tagOf(node);
@@ -56,6 +92,21 @@ export class StyleIndex {
           if (!this.byKey.has(key)) this.byKey.set(key, node);
         } else if (tag === 'text:list-style' && name && !this.lists.has(name)) {
           this.lists.set(name, node);
+        } else if (tag === 'draw:stroke-dash') {
+          const dash = attr(node, 'draw:name');
+          if (dash && !this.dashes.has(dash)) this.dashes.set(dash, node);
+        } else if (tag === 'draw:marker') {
+          const marker = attr(node, 'draw:name');
+          if (marker && !this.markers.has(marker)) this.markers.set(marker, node);
+        } else if (tag === 'draw:gradient' || tag === 'draw:fill-image' || tag === 'draw:opacity') {
+          const named =
+            tag === 'draw:gradient'
+              ? this.gradients
+              : tag === 'draw:opacity'
+                ? this.opacities
+                : this.fillImages;
+          const fill = attr(node, 'draw:name');
+          if (fill && !named.has(fill)) named.set(fill, node);
         }
       }
     }
@@ -78,24 +129,20 @@ export class StyleIndex {
     return this.byKey.has(`${family}:${name}`);
   }
 
-  /** The style and its parents, root first. */
+  /** The style and its parents (common styles only, as LibreOffice reads them), root first. */
   chain(family: string, name: string | undefined): XmlNode[] {
     const chain: XmlNode[] = [];
     let current = this.style(family, name);
     while (current && chain.length < MAX_DEPTH && !chain.includes(current)) {
       chain.unshift(current);
-      current = this.style(family, attr(current, 'style:parent-style-name'));
+      const parent = attr(current, 'style:parent-style-name');
+      current = parent ? this.commonByKey.get(`${family}:${parent}`) : undefined;
     }
     return chain;
   }
 
   defaultStyle(family: string): XmlNode | undefined {
     return this.defaults.get(family);
-  }
-
-  /** Properties of a style with its parents, without the family's default. */
-  resolve(family: string, name: string | undefined, kind: PropertyKind): Properties {
-    return Object.assign({}, ...this.chain(family, name).map((style) => propertiesOf(style, kind)));
   }
 
   /** The style's list style: its own `style:list-style-name`, or one inside its graphic properties. */
@@ -114,20 +161,63 @@ export class StyleIndex {
     return name ? this.lists.get(name) : undefined;
   }
 
+  /** A dash pattern (`draw:stroke-dash`) by its `draw:name`. */
+  dash(name: string | undefined): XmlNode | undefined {
+    return name ? this.dashes.get(name) : undefined;
+  }
+
+  /** A line end (`draw:marker`, an arrow head) by its `draw:name`. */
+  marker(name: string | undefined): XmlNode | undefined {
+    return name ? this.markers.get(name) : undefined;
+  }
+
+  /** A gradient (`draw:gradient`) by its `draw:name`. */
+  gradient(name: string | undefined): XmlNode | undefined {
+    return name ? this.gradients.get(name) : undefined;
+  }
+
+  /** A see-through gradient (`draw:opacity`) by its `draw:name`. */
+  opacity(name: string | undefined): XmlNode | undefined {
+    return name ? this.opacities.get(name) : undefined;
+  }
+
+  /** A fill picture (`draw:fill-image`) by its `draw:name`. */
+  fillImage(name: string | undefined): XmlNode | undefined {
+    return name ? this.fillImages.get(name) : undefined;
+  }
+
   /** The family name a `style:font-name` stands for. */
   font(name: string): string {
     return this.fonts.get(name) ?? name;
   }
 
-  /** The `style:font-face` name for a family, if the file declares one. */
-  fontFaceFor(family: string): string | undefined {
-    for (const [name, value] of this.fonts) if (value === family) return name;
-    return undefined;
+  /**
+   * A style's properties as LibreOffice reads them: a `style:font-name` of content.xml naming a
+   * face only styles.xml declares means nothing (decks started blank declare Inter there only).
+   */
+  propertiesOf(style: XmlNode, kind: PropertyKind): Properties {
+    const props = propertiesOf(style, kind);
+    const name = props['style:font-name'];
+    if (
+      name &&
+      this.contentFonts &&
+      this.contentStyles.has(style) &&
+      !this.contentFonts.has(name)
+    ) {
+      delete props['style:font-name'];
+    }
+    return props;
   }
 
-  /** Every style name of `family` (for picking free names). */
-  names(): Set<string> {
-    return new Set([...this.byKey.keys()].map((key) => key.slice(key.indexOf(':') + 1)));
+  /**
+   * The `style:font-face` name for a family, for a style of content.xml: one content.xml
+   * declares (LibreOffice looks no further), else none – the family is then named as it is.
+   */
+  fontFaceFor(family: string): string | undefined {
+    for (const [name, value] of this.fonts) {
+      if (value === family && (!this.contentFonts || this.contentFonts.has(name))) return name;
+    }
+    return undefined;
   }
 }
 

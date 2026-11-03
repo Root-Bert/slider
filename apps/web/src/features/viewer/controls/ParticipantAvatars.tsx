@@ -1,6 +1,6 @@
 import type { AccentColor, Author } from '@slider/shared';
 import { useEffect, useId, useRef, useState } from 'react';
-import { useUpdateMe } from '@/lib/api';
+import { useAiProposals, useUpdateMe } from '@/lib/api';
 import {
   Avatar,
   AvatarOverflow,
@@ -20,6 +20,7 @@ import { useGoToSlide } from '../hooks/useGoToSlide';
 import { useLivePeople } from '../live/lib/live-people';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
+import { useVoice } from '../voice/voice-context';
 
 const MAX_OTHERS = 5;
 /** Press length (ms) that opens the picker on touch – iOS Safari fires no `contextmenu`. */
@@ -28,18 +29,19 @@ const LONG_PRESS_MS = 500;
 const LONG_PRESS_SLOP = 10;
 
 /**
- * Bottom right: who else is here, then you. People in the deck right now come first, with a live
- * dot (BER-104). Hovering an avatar shows the name. Clicking it filters the comments: your own
+ * Bottom right: who else is here, then you, then the workspace's AI under its name (with the dot
+ * while it works). People in the deck right now come first, with a live dot (BER-104). Hovering an avatar shows the name. Clicking it filters the comments: your own
  * avatar shows the threads that @mention you, someone else's the threads they wrote in; a second
  * click shows everyone again. Right-clicking (or Shift+F10 / the menu key, or a long press on
  * touch) picks a colour – your own for everyone, someone else's only for you (`color-overrides`) –
  * and jumps to a live person's slide. PowerPoint authors keep their orange.
  */
 export function ParticipantAvatars() {
-  const { deck, viewer } = useViewerData();
+  const { deck, viewer, aiAuthor } = useViewerData();
   const { personFilter } = useViewerState();
   const live = useLivePeople();
   const liveSlide = new Map(live.map((person) => [person.author.id, person.activeSlideId]));
+  const { aiPresent, aiWorking } = useAiPresence();
   const present = [
     // You are already the last avatar – your other windows don't add you twice.
     ...live.map((person) => person.author).filter((author) => author.id !== viewer.author.id),
@@ -99,8 +101,36 @@ export function ParticipantAvatars() {
         </div>
       )}
       <AvatarColorPicker author={viewer.author} self />
+      {/* Always last, right of you: never lost in the "+n" chip. Speaking to it is in its menu
+          (and a double click on the split handle). */}
+      {aiPresent && <AiAvatarButton author={aiAuthor} working={aiWorking} />}
     </div>
   );
+}
+
+/** The AI's avatar: a click filters like anyone's; speaking to it is in its menu. */
+function AiAvatarButton({ author, working }: { author: Author; working: boolean }) {
+  const voice = useVoice();
+  const speaking = voice.status !== 'off' && voice.status !== 'ended';
+  return (
+    <AvatarColorPicker
+      author={author}
+      live={working}
+      voice={{ active: speaking, toggle: voice.toggle }}
+    />
+  );
+}
+
+/** Whether the AI is one of the participants, and whether it is working right now. */
+function useAiPresence() {
+  const { deck, threads } = useViewerData();
+  const { data: proposals } = useAiProposals(deck.id);
+  const aiWorking = proposals?.some((proposal) => proposal.status === 'running') ?? false;
+  // The AI is one of them once the workspace set it up – or while its comments are in the deck.
+  const aiPresent =
+    !!deck.ai?.available ||
+    threads.some((thread) => thread.participants.some((author) => author.type === 'ai'));
+  return { aiPresent, aiWorking };
 }
 
 /** The person the comments are filtered by, as last seen among the avatars (`null`: none). */
@@ -128,6 +158,8 @@ interface AvatarColorPickerProps {
   live?: boolean;
   liveSlideId?: string | null;
   className?: string;
+  /** The AI's avatar: its menu starts (or sends) speaking to it. */
+  voice?: { active: boolean; toggle: () => void };
 }
 
 function AvatarColorPicker({
@@ -136,6 +168,7 @@ function AvatarColorPicker({
   live = false,
   liveSlideId = null,
   className,
+  voice,
 }: AvatarColorPickerProps) {
   const { slideIndex } = useViewerData();
   const { personFilter } = useViewerState();
@@ -151,7 +184,7 @@ function AvatarColorPicker({
   // the trigger takes no `triggerProps`.
   const { open, setOpen, close, wrapperRef, triggerRef, panelRef } = usePopover();
   const titleId = useId();
-  const hasPicker = !fixedColor || liveIndex !== undefined;
+  const hasPicker = !fixedColor || liveIndex !== undefined || !!voice;
   // Opened from the keyboard: the focus moves into the picker.
   const focusPicker = useRef(false);
   // A touch press: its timer, where it started, and whether it already opened the picker (then
@@ -279,7 +312,7 @@ function AvatarColorPicker({
           <Avatar author={author} size={32} nativeTitle={false} />
           {live && (
             <span
-              aria-label="gerade da"
+              aria-label={author.type === 'ai' ? 'arbeitet gerade' : 'gerade da'}
               className="absolute right-0 bottom-0 size-2.5 rounded-full bg-success ring-2 ring-canvas"
             />
           )}
@@ -311,6 +344,21 @@ function AvatarColorPicker({
               disabled={self && updateMe.isPending}
               className="gap-2"
             />
+          )}
+          {voice && (
+            <Button
+              variant="soft"
+              size="xs"
+              weight="normal"
+              icon={voice.active ? 'send' : 'mic'}
+              onClick={() => {
+                voice.toggle();
+                close();
+              }}
+              className="self-start"
+            >
+              {voice.active ? `An ${author.name} senden` : `Mit ${author.name} sprechen`}
+            </Button>
           )}
           {liveIndex !== undefined && (
             <Button

@@ -1,4 +1,4 @@
-import type { Point, Rect } from '@slider/shared';
+import { clamp, rectCorners, type Point, type Rect } from '@slider/shared';
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { afterCommit, commitPending, rafThrottle } from '@/lib/dom';
@@ -8,11 +8,14 @@ import {
   layoutBlobConnectors,
   layoutConnectors,
   type Box,
+  type Connector,
   type ConnectorRequest,
 } from '../lib/connector-routing';
 import { roundedPath } from '@/lib/rounded-path';
-import { projectUnitSquare, type Projection, type Quad } from '../lib/plane-projection';
+import { projectUnitSquare, type Projection } from '../lib/plane-projection';
+import { seenCorners } from '../../editing/layers/seen-on-plane';
 import { useStageRegistry } from '../../state/stage-registry';
+import { COLUMN_SPACING } from '../../timeline/lib/timeline-layout';
 
 export interface ConnectorItem {
   threadId: string;
@@ -85,8 +88,6 @@ const FOLLOW_EVENT = 'slider:connectors-follow';
 export function followConnectors(element: Element, ms: number): void {
   element.dispatchEvent(new CustomEvent(FOLLOW_EVENT, { bubbles: true, detail: ms }));
 }
-
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 const relative = (rect: DOMRect, origin: DOMRect): Box => ({
   left: rect.left - origin.left,
@@ -185,6 +186,9 @@ export function useConnectorLayout({
       const lines: MeasuredConnector[] = [];
       const cutouts: Cutout[] = [];
       const colorOf = new Map<string, string>();
+      // Every slide's lines, bundled together at the end: neighbouring slides' lines merge too.
+      const connectors: Connector[] = [];
+      const obstacles: Box[] = [];
 
       // Lines pass behind every visible card, bubble and blob. All rendered
       // ones, not just those in view: the lines scroll sideways without a re-measure.
@@ -195,6 +199,7 @@ export function useConnectorLayout({
         const box = relative(element.getBoundingClientRect(), origin);
         if (!visible(box)) continue;
         cutouts.push({ kind: 'fill', box: clipped(box) });
+        obstacles.push(box);
       }
       // The reaction pickers float above a card's top edge, where lines come in: while one shows,
       // the lines pass behind it too.
@@ -271,10 +276,12 @@ export function useConnectorLayout({
             const from = marker.getBoundingClientRect().bottom - origin.top;
             const box = relative(bubble.getBoundingClientRect(), origin);
             if (box.top < commentTop + VISIBLE_SLACK) continue;
-            lines.push({
-              threadId: item.threadId,
-              color: item.color,
-              d: `M${x} ${from}V${box.top}`,
+            connectors.push({
+              id: item.threadId,
+              points: [
+                { x, y: from },
+                { x, y: box.top },
+              ],
             });
             continue;
           }
@@ -333,9 +340,13 @@ export function useConnectorLayout({
             margin,
           });
         }
-        if (requests.length === 0) {
+        // The lines pass behind the slide's marks, flat or on its planes.
+        const markCutouts = () => {
           cutouts.push(...measureCutouts(slideElement, origin, cropped ? slide : null));
           cutouts.push(...layerCutouts(frame, origin));
+        };
+        if (requests.length === 0) {
+          markCutouts();
           continue;
         }
 
@@ -346,9 +357,22 @@ export function useConnectorLayout({
         } else {
           const cardsTop = Math.min(...requests.map((request) => request.target.y));
           const columnBox = column ? relative(column.getBoundingClientRect(), origin) : null;
+          // A column grown past its slide's corridor keeps the room `columnSpans` left beside it.
           const margins = columnBox && {
-            left: { from: corridor.left + MARGIN_INSET, to: columnBox.left - MARGIN_INSET },
-            right: { from: columnBox.right + MARGIN_INSET, to: corridor.right - MARGIN_INSET },
+            left: {
+              from:
+                (columnBox.left < corridor.left
+                  ? columnBox.left - COLUMN_SPACING / 2
+                  : corridor.left) + MARGIN_INSET,
+              to: columnBox.left - MARGIN_INSET,
+            },
+            right: {
+              from: columnBox.right + MARGIN_INSET,
+              to:
+                (columnBox.right > corridor.right
+                  ? columnBox.right + COLUMN_SPACING / 2
+                  : corridor.right) - MARGIN_INSET,
+            },
           };
           routed = layoutConnectors(requests, {
             slide,
@@ -359,17 +383,21 @@ export function useConnectorLayout({
             margins: margins ?? undefined,
           });
         }
-        // Lines of one author lying close together merge into one and branch off.
-        routed = bundleConnectors(routed, (id) => colorOf.get(id) ?? '');
-        for (const connector of routed)
-          lines.push({
-            threadId: connector.id,
-            color: colorOf.get(connector.id) ?? 'var(--color-fg)',
-            d: roundedPath(connector.points),
-          });
-        cutouts.push(...measureCutouts(slideElement, origin, cropped ? slide : null));
-        cutouts.push(...layerCutouts(frame, origin));
+        connectors.push(...routed);
+        markCutouts();
       }
+
+      // Lines of one author lying close together merge into one and branch off.
+      for (const connector of bundleConnectors(
+        connectors,
+        (id) => colorOf.get(id) ?? '',
+        obstacles,
+      ))
+        lines.push({
+          threadId: connector.id,
+          color: colorOf.get(connector.id) ?? 'var(--color-fg)',
+          d: roundedPath(connector.points),
+        });
 
       commit({
         lines,
@@ -514,6 +542,14 @@ function cutoutMarkup(cutouts: readonly Cutout[]): string {
     .join('');
 }
 
+/** A pin's dot (as seen on screen) as a cutout. */
+const pinCutout = (dot: DOMRect, origin: DOMRect): Cutout => ({
+  kind: 'circle',
+  cx: (dot.left + dot.right) / 2 - origin.left,
+  cy: (dot.top + dot.bottom) / 2 - origin.top,
+  r: Math.max(dot.width, dot.height) / 2 + CUTOUT_PAD,
+});
+
 /**
  * Mark shapes on a slide ([data-mark] in the annotation layer) as mask cutouts, so the lines run
  * behind pins, frames and drawings instead of over them. On a zoomed slide only marks in its
@@ -537,12 +573,7 @@ function measureCutouts(slideElement: HTMLElement, origin: DOMRect, frame: Box |
     if (kind === 'pin') {
       const dot = (mark.firstElementChild ?? mark).getBoundingClientRect();
       if (outside(dot)) continue;
-      cutouts.push({
-        kind: 'circle',
-        cx: (dot.left + dot.right) / 2 - origin.left,
-        cy: (dot.top + dot.bottom) / 2 - origin.top,
-        r: Math.max(dot.width, dot.height) / 2 + CUTOUT_PAD,
-      });
+      cutouts.push(pinCutout(dot, origin));
     } else if (kind === 'frame') {
       const rect = mark.getBoundingClientRect();
       if (outside(rect)) continue;
@@ -563,11 +594,8 @@ function measureCutouts(slideElement: HTMLElement, origin: DOMRect, frame: Box |
 
 /** A plane of a slide turned in 3D (`LayerStage`) as seen, from its corners. */
 function planeProjection(plane: Element): Projection | null {
-  const corners = [...plane.querySelectorAll(':scope > [data-plane-corner]')].map((corner) => {
-    const rect = corner.getBoundingClientRect();
-    return { x: rect.left, y: rect.top };
-  });
-  return corners.length === 4 ? projectUnitSquare(corners as unknown as Quad) : null;
+  const corners = seenCorners(plane);
+  return corners ? projectUnitSquare(corners) : null;
 }
 
 /** Where the plane a comment's marks lie on is seen, while its slide is turned in 3D. */
@@ -597,22 +625,11 @@ function layerCutouts(frame: Element, origin: DOMRect): Cutout[] {
     for (const mark of plane.querySelectorAll<HTMLElement | SVGElement>('[data-mark]')) {
       const kind = mark.dataset.mark;
       if (kind === 'pin') {
-        const dot = (mark.firstElementChild ?? mark).getBoundingClientRect();
-        cutouts.push({
-          kind: 'circle',
-          cx: (dot.left + dot.right) / 2 - origin.left,
-          cy: (dot.top + dot.bottom) / 2 - origin.top,
-          r: Math.max(dot.width, dot.height) / 2 + CUTOUT_PAD,
-        });
+        cutouts.push(pinCutout((mark.firstElementChild ?? mark).getBoundingClientRect(), origin));
       } else if (kind === 'frame' && mark instanceof HTMLElement) {
         const box = boxOnPlane(mark, plane);
         if (!box) continue;
-        const corners = [
-          { x: box.x, y: box.y },
-          { x: box.x + box.w, y: box.y },
-          { x: box.x + box.w, y: box.y + box.h },
-          { x: box.x, y: box.y + box.h },
-        ];
+        const corners = rectCorners(box);
         cutouts.push({
           kind: 'path',
           d: `M${corners.map((corner) => seen(project, corner)).join('L')}Z`,

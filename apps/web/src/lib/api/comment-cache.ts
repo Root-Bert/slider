@@ -1,37 +1,49 @@
-import type { Author, Comment, CommentReactionKind, CreateCommentInput } from '@slider/shared';
+import {
+  isTextStroke,
+  moveDrawing,
+  type Author,
+  type Comment,
+  type CommentReactionKind,
+  type CreateCommentInput,
+  type UpdateCommentInput,
+} from '@slider/shared';
+import type { CommentAction } from './comment-outbox';
 
-/* Cache helpers for optimistic comment inserts (used by `useCreateReply`). */
-
-const TEMP_PREFIX = 'temp-';
-let tempCounter = 0;
+/*
+ * The comments as shown: the server's list (the query cache) with what was done to them here and
+ * is not taken by the server yet (`comment-outbox.ts`) laid over it – a new comment shown pending.
+ */
 
 /**
- * Local placeholder id. Not `crypto.randomUUID()`: that only exists in secure contexts, and
- * replies must also work when the app is served over plain http (LAN, staging).
+ * A comment's own id, made here (a UUID v4): it is known before the server has the comment, so
+ * what is done to it meanwhile names it. Not `crypto.randomUUID()`: that only exists in secure
+ * contexts, and comments must also work when the app is served over plain http (LAN, staging).
  */
-const tempId = () => `${TEMP_PREFIX}${Date.now().toString(36)}-${(tempCounter += 1)}`;
+export function newCommentId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
-/** Replies shown before the server confirmed them have a temporary id (optimistic insert). */
-export const isPendingComment = (comment: Pick<Comment, 'id'>) =>
-  comment.id.startsWith(TEMP_PREFIX);
-
-/** Placeholder for a reply that is still on its way to the server. */
-export function pendingReply(
-  input: CreateCommentInput,
-  root: Pick<Comment, 'deckId'>,
+/** A new comment as the server will return it, until it does: shown pending meanwhile. */
+export function pendingComment(
+  input: CreateCommentInput & { id: string },
+  deckId: string,
   author: Author,
   now = new Date(),
 ): Comment {
   const createdAt = now.toISOString();
   return {
-    id: tempId(),
-    deckId: root.deckId,
+    id: input.id,
+    deckId,
     slideId: input.slideId,
     parentId: input.parentId ?? null,
     author,
-    body: input.body,
+    body: input.body.trim(),
     anchor: input.anchor,
-    strokes: [],
+    strokes: input.strokes ?? [],
     media: null,
     status: 'open',
     resolvedBy: null,
@@ -42,40 +54,6 @@ export function pendingReply(
   };
 }
 
-/** Swaps the placeholder for the saved comment; appends it if a refetch already dropped it. */
-export function confirmComment(
-  comments: readonly Comment[],
-  tempId: string,
-  saved: Comment,
-): Comment[] {
-  const rest = comments.filter((comment) => comment.id !== saved.id);
-  const index = rest.findIndex((comment) => comment.id === tempId);
-  if (index === -1) return [...rest, saved];
-  return rest.map((comment) => (comment.id === tempId ? saved : comment));
-}
-
-/**
- * A refetched list with the placeholders of replies still on their way: the server's list
- * doesn't have them yet, and they would vanish until the reply is confirmed. One whose reply the
- * server already lists (new there, same thread and author) is dropped instead of shown twice.
- */
-export function keepPending(previous: readonly Comment[] | undefined, fresh: Comment[]): Comment[] {
-  const pending = previous?.filter(isPendingComment) ?? [];
-  if (pending.length === 0) return fresh;
-  const known = new Set(previous?.map((comment) => comment.id));
-  const arrived = fresh.filter((comment) => !known.has(comment.id));
-  const kept = pending.filter((placeholder) => {
-    const index = arrived.findIndex(
-      (comment) =>
-        comment.parentId === placeholder.parentId && comment.author.id === placeholder.author.id,
-    );
-    if (index === -1) return true;
-    arrived.splice(index, 1);
-    return false;
-  });
-  return kept.length === 0 ? fresh : [...fresh, ...kept];
-}
-
 /** The comment as the server will return it after `author` reacted with `kind` (`null`: took it back). */
 export function withReaction(
   comment: Comment,
@@ -84,4 +62,89 @@ export function withReaction(
 ): Comment {
   const others = (comment.reactions ?? []).filter((reaction) => reaction.author.id !== author.id);
   return { ...comment, reactions: kind ? [...others, { kind, author }] : others };
+}
+
+/** The comment as the server will return it after `input` (mirrors `updateComment`). */
+export function withUpdate(
+  comment: Comment,
+  { textBox, anchor: box, move, removeMarks, addStrokes, ...input }: UpdateCommentInput,
+): Comment {
+  if (move) return { ...moveDrawing(comment, move.dx, move.dy), ...input };
+  const current = comment.anchor;
+  if (addStrokes && current.type === 'rect')
+    return {
+      ...comment,
+      ...input,
+      strokes: [...comment.strokes, ...addStrokes.strokes],
+      anchor: { ...current, rect: addStrokes.rect },
+    };
+  if (removeMarks) {
+    const { pin } = removeMarks;
+    const anchor =
+      pin && current.type === 'rect'
+        ? { type: 'point' as const, point: pin, shapeRef: current.shapeRef }
+        : current;
+    return { ...comment, ...input, strokes: [], anchor };
+  }
+  // A box moved without resizing takes its drawing along (like the API).
+  if (
+    box &&
+    current.type === 'rect' &&
+    Math.abs(box.rect.w - current.rect.w) < 1e-6 &&
+    Math.abs(box.rect.h - current.rect.h) < 1e-6
+  ) {
+    const { strokes } = moveDrawing(
+      comment,
+      box.rect.x - current.rect.x,
+      box.rect.y - current.rect.y,
+    );
+    return { ...comment, ...input, anchor: box, strokes };
+  }
+  const next = { ...comment, ...input, ...(box ? { anchor: box } : {}) };
+  const text = textBox && comment.strokes.find(isTextStroke);
+  if (!textBox || !text) return next;
+  const { anchor } = comment;
+  const followsText =
+    anchor.type === 'rect' &&
+    (['x', 'y', 'w', 'h'] as const).every((key) => Math.abs(anchor.rect[key] - text[key]) < 1e-6);
+  return {
+    ...next,
+    strokes: comment.strokes.map((stroke) => (stroke === text ? { ...text, ...textBox } : stroke)),
+    anchor: followsText ? { ...anchor, rect: textBox } : anchor,
+  };
+}
+
+/** The list after `action`, as the server will have it once it took it. */
+export function withAction(comments: readonly Comment[], action: CommentAction): Comment[] {
+  switch (action.type) {
+    case 'create':
+      // Taken already (its answer on the way, or a list fetched since): the server's one stays.
+      return comments.some((comment) => comment.id === action.comment.id)
+        ? [...comments]
+        : [...comments, action.comment];
+    case 'update':
+      return comments.map((comment) =>
+        comment.id === action.commentId ? withUpdate(comment, action.input) : comment,
+      );
+    case 'react':
+      return comments.map((comment) =>
+        comment.id === action.commentId
+          ? withReaction(comment, action.author, action.kind)
+          : comment,
+      );
+    case 'delete':
+      // Replies go with their root; only its comment going, its drawing stays on the slide bare.
+      return comments.flatMap((comment) => {
+        if (comment.parentId === action.commentId) return [];
+        if (comment.id !== action.commentId) return [comment];
+        return action.keepDrawing
+          ? [{ ...comment, body: '', media: null, images: [], status: 'open' as const }]
+          : [];
+      });
+  }
+}
+
+/** The server's list with what is queued laid over it, in the order done (the same list if none). */
+export function withQueued(comments: Comment[], actions: readonly CommentAction[]): Comment[] {
+  return actions.reduce<Comment[]>((list, action) => withAction(list, action), comments);
 }

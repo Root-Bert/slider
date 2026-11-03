@@ -42,8 +42,19 @@ export const router = createBrowserRouter([
             children: [
               { index: true, lazy: () => import('@/features/reviews/ReviewsPage') },
               { path: 'material', lazy: () => import('@/features/workspaces/MaterialPage') },
+              { path: 'material/neu', lazy: () => import('@/features/onboarding/NewMaterialPage') },
               {
-                path: 'einstellungen',
+                path: 'material/vorlagen/:masterId',
+                lazy: () => import('@/features/workspaces/MasterPage'),
+              },
+              {
+                // Links from before designs were called „Vorlagen“.
+                path: 'material/folienmaster/:masterId',
+                lazy: () => import('@/features/workspaces/MasterPage'),
+              },
+              {
+                // `integrationen`: the integrations tab – one route, so switching tabs keeps the page.
+                path: 'einstellungen/:tab?',
                 lazy: () => import('@/features/workspaces/SettingsPage'),
               },
             ],

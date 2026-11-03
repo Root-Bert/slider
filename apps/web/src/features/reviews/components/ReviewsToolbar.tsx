@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { GlassPanel, IconButton, SegmentedControl, Select, Toolbar, type Segment } from '@/ui';
+import { ViewToolbar } from '@/features/workspaces';
+import { SegmentedControl, Select, type Segment } from '@/ui';
 import { DECK_SORTS, SORT_LABELS, type DeckSort, type ReviewTab } from '../lib/deck-filters';
 import type { DeckView } from './DeckCollection';
 
@@ -42,21 +43,18 @@ export function ReviewsToolbar({
   ];
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex flex-wrap items-center gap-3">
-        <GlassPanel className="p-1">
-          <SegmentedControl
-            label="Reviews filtern"
-            segments={segments}
-            value={tab}
-            onChange={onTabChange}
-          />
-        </GlassPanel>
-        {action}
-      </div>
-      {/* Below sm the search takes its own full-width row, sort and view sit under it. */}
-      <div className="flex items-center gap-2 max-sm:w-full max-sm:flex-wrap">
-        {search}
+    <ViewToolbar
+      filter={
+        <SegmentedControl
+          label="Präsentationen filtern"
+          segments={segments}
+          value={tab}
+          onChange={onTabChange}
+        />
+      }
+      action={action}
+      search={search}
+      sort={
         <Select
           aria-label="Sortieren nach"
           size="toolbar"
@@ -64,25 +62,9 @@ export function ReviewsToolbar({
           onChange={onSortChange}
           options={SORT_OPTIONS}
         />
-        <Toolbar role="group" label="Ansicht">
-          <IconButton
-            icon="gridView"
-            label="Kachelansicht"
-            size="sm"
-            iconSize={18}
-            active={view === 'grid'}
-            onClick={() => onViewChange('grid')}
-          />
-          <IconButton
-            icon="viewList"
-            label="Listenansicht"
-            size="sm"
-            iconSize={18}
-            active={view === 'list'}
-            onClick={() => onViewChange('list')}
-          />
-        </Toolbar>
-      </div>
-    </div>
+      }
+      view={view}
+      onViewChange={onViewChange}
+    />
   );
 }

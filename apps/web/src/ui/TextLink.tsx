@@ -78,10 +78,10 @@ export function TextLink(props: TextLinkProps) {
   );
 }
 
-/** "← Zurück zu den Reviews" above a settings-style page title. */
+/** "← Zurück zu den Projekten" above a settings-style page title. */
 export function BackLink({
   to,
-  label = 'Zurück zu den Reviews',
+  label = 'Zurück zu den Präsentationen',
   className,
 }: {
   to: To;

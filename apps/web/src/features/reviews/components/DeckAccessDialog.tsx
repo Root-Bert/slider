@@ -8,7 +8,7 @@ import { Avatar, Badge, Button, cn, Dialog, ErrorText, Icon, LoadingState, TextF
 /** Why a member can't be taken off the list – shown as the row's tooltip. */
 const lockedReason = (member: WorkspaceMember, ownerId: string): string | null =>
   member.userId === ownerId
-    ? 'Hat die Review angelegt'
+    ? 'Hat die Präsentation angelegt'
     : member.role === 'admin'
       ? 'Admin des Workspace'
       : null;
@@ -45,7 +45,7 @@ export function DeckAccessDialog({
       open
       onClose={onClose}
       title={`Zugriff auf „${deck.title}“`}
-      description="Wer die Review angelegt hat und die Admins haben immer Zugriff."
+      description="Wer die Präsentation angelegt hat und die Admins haben immer Zugriff."
       className="w-[min(520px,calc(100vw-32px))]"
     >
       {failed && !(access.data && members.data) ? (
@@ -141,7 +141,7 @@ function AccessForm({
       }}
     >
       <fieldset className="flex flex-col gap-1">
-        <legend className="sr-only">Wer die Review öffnen darf</legend>
+        <legend className="sr-only">Wer die Präsentation öffnen darf</legend>
         <ChoiceRow
           name={choiceName}
           checked={!restricted}
@@ -149,7 +149,7 @@ function AccessForm({
           onSelect={() => choose(false)}
           icon="person"
           title={`Alle in ${workspaceName}`}
-          description="Jedes Mitglied des Workspace kann die Review öffnen."
+          description="Jedes Mitglied des Workspace kann die Präsentation öffnen."
         />
         <ChoiceRow
           name={choiceName}

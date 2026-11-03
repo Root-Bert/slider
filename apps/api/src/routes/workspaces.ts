@@ -4,6 +4,7 @@ import { bodyLimit } from 'hono/body-limit';
 import {
   createWorkspaceInputSchema,
   createWorkspaceInviteInputSchema,
+  renameWorkspaceMasterInputSchema,
   updateMemberInputSchema,
   updateWorkspaceDomainInputSchema,
   updateWorkspaceInputSchema,
@@ -13,13 +14,16 @@ import {
   type JoinResult,
   type Viewer,
   WORKSPACE_FONT_UPLOAD_MAX_BYTES,
+  WORKSPACE_MASTER_MAX_BYTES,
 } from '@slider/shared';
-import { requireOwner } from '../auth/access';
+import { requireOwner, viewerAccess } from '../auth/access';
+import { toDeckDto } from '../services/decks';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import { decks, users, type UserRow } from '../db/schema';
 import type { AppDeps } from '../deps';
 import type { WorkspacePresence } from '../realtime/workspace-presence';
 import { ApiError, badRequest, fileTooLarge } from '../http/errors';
+import { deckUploadSlot, importLimit } from '../http/import-limit';
 import { clientAddress, fixedWindow, rateLimit } from '../http/rate-limit';
 import { readJson } from '../http/validate';
 import { cancelSubscriptions } from '../services/billing-owner';
@@ -29,6 +33,14 @@ import {
   requireFontUploader,
   uploadWorkspaceFonts,
 } from '../services/workspace-fonts';
+import {
+  createTemplateDraft,
+  deleteWorkspaceMaster,
+  listWorkspaceMasters,
+  renameWorkspaceMaster,
+  requireMasterUploader,
+  uploadWorkspaceMaster,
+} from '../services/workspace-masters';
 import {
   acceptInviteById,
   createInvite,
@@ -75,6 +87,9 @@ export const INVITE_MAILS_PER_HOUR = { limited: 20, unlimited: 200 } as const;
 /** Workspaces, members and invitations (BER-129). */
 export function workspacesRoutes(deps: AppDeps, presence: WorkspacePresence) {
   const viewer = viewerMiddleware(deps);
+  // A design uploaded or made is read and drawn by LibreOffice like an import: same budget.
+  const imports = importLimit(deps);
+  const uploads = deckUploadSlot(deps);
   const limited = rateLimit({
     limit: deps.config.inviteRateLimit,
     windowMs: 60_000,
@@ -188,6 +203,67 @@ export function workspacesRoutes(deps: AppDeps, presence: WorkspacePresence) {
           await deleteWorkspaceFonts(deps, userId(c.var.viewer), c.req.param('id'), { family }),
         );
       })
+      /** The workspace's slide masters: company designs with a picture of each layout. */
+      .get('/workspaces/:id/masters', viewer, async (c) =>
+        c.json(await listWorkspaceMasters(deps, userId(c.var.viewer), c.req.param('id'))),
+      )
+      /** A template to design in the editor: a deck marked as one, to open right away. */
+      .post('/workspaces/:id/masters/draft', viewer, imports, async (c) => {
+        const { viewer: v } = c.var;
+        const row = await createTemplateDraft(deps, userId(v), c.req.param('id'));
+        return c.json(
+          await toDeckDto(deps.db, row, { access: await viewerAccess(deps.db, v) }),
+          201,
+        );
+      })
+      .post(
+        '/workspaces/:id/masters',
+        viewer,
+        imports,
+        uploads,
+        bodyLimit({
+          maxSize: WORKSPACE_MASTER_MAX_BYTES + 256 * 1024,
+          onError: (c) => c.json(fileTooLarge(WORKSPACE_MASTER_MAX_BYTES).toBody(), 413),
+        }),
+        async (c) => {
+          // Before the upload is read: no one else makes the server buffer it.
+          await requireMasterUploader(deps, userId(c.var.viewer), c.req.param('id'));
+          const body = await c.req.parseBody().catch(() => {
+            throw badRequest('Die Datei konnte nicht gelesen werden.');
+          });
+          const file = body['file'];
+          if (!(file instanceof File))
+            throw badRequest('Bitte die Datei im Feld „file“ mitsenden.');
+          return c.json(
+            await uploadWorkspaceMaster(deps, userId(c.var.viewer), c.req.param('id'), {
+              name: file.name,
+              bytes: new Uint8Array(await file.arrayBuffer()),
+            }),
+          );
+        },
+      )
+      .patch('/workspaces/:id/masters/:masterId', viewer, async (c) => {
+        const { name } = await readJson(c, renameWorkspaceMasterInputSchema);
+        return c.json(
+          await renameWorkspaceMaster(
+            deps,
+            userId(c.var.viewer),
+            c.req.param('id'),
+            c.req.param('masterId'),
+            name,
+          ),
+        );
+      })
+      .delete('/workspaces/:id/masters/:masterId', viewer, async (c) =>
+        c.json(
+          await deleteWorkspaceMaster(
+            deps,
+            userId(c.var.viewer),
+            c.req.param('id'),
+            c.req.param('masterId'),
+          ),
+        ),
+      )
       /** Company workspace (BER-148): open it to the admin's domain, or make it private. */
       .put('/workspaces/:id/domain', viewer, async (c) => {
         const user = await requireUser(deps, c.var.viewer);

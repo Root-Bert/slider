@@ -1,24 +1,40 @@
 import {
+  listNumberSchema,
   SYMBOL_FONTS,
+  type ElementEffects,
+  type ElementLook,
   type LiveElement,
   type LiveParagraph,
   type LiveRun,
   type LiveTextStyle,
+  type StrokeDash,
   type TextAlign,
+  type TextAreaInset,
   type VerticalAlign,
+  textAreaInset,
 } from '@slider/shared';
-import { hasPlainGeometry } from './geometry';
+import { readFills } from './fills';
+import { frameOf } from './geometry';
 import { propertiesOf as propsOf, type Properties, type StyleIndex, unquote } from './styles';
 import { lengthToCm } from './units';
-import { attr, childrenOf, elementChildren, firstChild, tagOf, textOf, type XmlNode } from './xml';
+import {
+  attr,
+  childrenOf,
+  element,
+  elementChildren,
+  firstChild,
+  tagOf,
+  textOf,
+  type XmlNode,
+} from './xml';
 
 /*
  * Which texts of a slide can be typed on it (the live editor), and how they look: a text frame
- * or a shape, upright, its text in runs of font, size, colour, bold, italic, underline, capitals
- * and letter spacing, with bullets. The browser draws only the text, over LibreOffice's picture
- * of the slide with that text left out – the shape itself stays LibreOffice's. Text the browser
- * could not draw like LibreOffice does (fields, numbering, symbol fonts, rotated text, …) is not
- * typed on the slide.
+ * or a shape, upright, its text in runs of font, size, colour, bold, italic, underline, strike,
+ * capitals and letter spacing, with bullets and numbers. The browser draws only the text, over
+ * LibreOffice's picture of the slide with that text left out – the shape itself stays
+ * LibreOffice's. Text the browser could not draw like LibreOffice does (fields, numbering of
+ * several levels, symbol fonts, rotated text, …) is not typed on the slide.
  */
 
 export const PT_PER_CM = 72 / 2.54;
@@ -55,7 +71,7 @@ const NOT_LIVE_CLASSES = new Set([
 
 /**
  * A shape whose text can be typed: a rectangle or a custom shape of any outline (its text laid
- * out in its box – exact for rectangles, near enough for the rest), unless its text is turned.
+ * out in its geometry's text area, {@link shapeTextArea}), unless its text is turned.
  */
 function isTextShape(node: XmlNode): boolean {
   const tag = tagOf(node);
@@ -99,16 +115,21 @@ function checkText(props: Properties): void {
   const position = props['style:text-position'];
   if (position && !/^0%?( 100%)?$/.test(position.trim())) notLive('super-/subscript');
   if ((props['fo:font-variant'] ?? 'normal') !== 'normal') notLive('small caps');
-  if ((props['style:text-line-through-style'] ?? 'none') !== 'none') notLive('strike-through');
+  // One plain line through is drawn like the browser draws it; double, bold or of letters not.
+  if ((props['style:text-line-through-style'] ?? 'none') !== 'none') {
+    const type = props['style:text-line-through-type'];
+    const width = props['style:text-line-through-width'];
+    if ((type && type !== 'single') || props['style:text-line-through-text']) {
+      notLive('strike-through');
+    }
+    if (width && !['auto', 'normal'].includes(width)) notLive('strike-through');
+  }
   if ((props['style:text-outline'] ?? 'false') !== 'false') notLive('outline');
   if ((props['fo:text-shadow'] ?? 'none') !== 'none') notLive('shadow');
   const scale = props['style:text-scale'];
   if (scale && scale !== '100%') notLive('text scale');
   const relief = props['style:font-relief'];
   if (relief && relief !== 'none') notLive('relief');
-  const opacity = props['loext:opacity'];
-  // LibreOffice writes 0% for „not set“ in default styles; only a real transparency counts.
-  if (opacity && opacity !== '100%' && opacity !== '0%') notLive('transparent text');
 }
 
 export function applyText(
@@ -138,6 +159,9 @@ export function applyText(
   if (style) next.italic = style === 'italic' || style === 'oblique';
   const underline = props['style:text-underline-style'];
   if (underline) next.underline = underline !== 'none';
+  const strike = props['style:text-line-through-style'];
+  if (strike && strike !== 'none') next.strike = true;
+  else if (strike) delete next.strike;
   // Absent when plain: `none` and no extra spacing are what the editor's text has by default.
   const transform = props['fo:text-transform'];
   if (transform === 'uppercase' || transform === 'lowercase' || transform === 'capitalize')
@@ -146,7 +170,17 @@ export function applyText(
   const spacing = props['fo:letter-spacing'];
   const letterSpacing = spacing && spacing !== 'normal' ? (pt(spacing) ?? 0) : spacing ? 0 : null;
   if (letterSpacing) next.letterSpacing = letterSpacing;
-  else if (letterSpacing === 0) delete next.letterSpacing;
+  const kerning = props['style:letter-kerning'];
+  if (kerning === 'true') delete next.kerning;
+  else if (kerning === 'false') next.kerning = false;
+  // LibreOffice writes 0% for „not set“ in default styles; only a real transparency counts.
+  const opacity = props['loext:opacity'];
+  if (opacity && opacity !== '0%') {
+    const share = Number.parseFloat(opacity) / 100;
+    if (Number.isFinite(share) && share > 0 && share < 1)
+      next.opacity = Math.round(share * 1000) / 1000;
+    else if (Number.isFinite(share)) delete next.opacity;
+  } else if (letterSpacing === 0) delete next.letterSpacing;
   return next;
 }
 
@@ -206,7 +240,7 @@ function applyParagraph(base: ParagraphLook, props: Properties): ParagraphLook {
 
 // ── Element ──────────────────────────────────────────────────────────────
 
-/** Where an element's text gets its look, outermost first (see {@link readLive}). */
+/** Where an element's text gets its look, outermost first (see {@link explainLive}). */
 export interface TextContext {
   index: StyleIndex;
   /** The family default's and shape style's text and paragraph properties. */
@@ -231,15 +265,54 @@ function levelChain(
   return levelChainOf.length > 0 ? [...levelChainOf, ...chain.slice(1)] : chain;
 }
 
+/**
+ * LibreOffice's own „standard“ graphic style, where a file has none: its text in Liberation Sans
+ * at 18 pt, whatever the family default names (decks started blank named Inter only there).
+ */
+const LIBREOFFICE_STANDARD_TEXT: Properties = {
+  'fo:font-family': 'Liberation Sans',
+  'fo:font-size': '18pt',
+};
+
+/**
+ * What LibreOffice lays under a graphic style chain that does not reach „standard“ (a style
+ * without a parent, or none at all): the file's common „standard“ style, else its own
+ * ({@link LIBREOFFICE_STANDARD_TEXT}) – over the family default, never under it. For the text
+ * only: its padding is DEFAULT_PADDING already, and a text frame is never filled from it.
+ */
+function standardUnder(
+  index: StyleIndex,
+  family: string,
+  chain: readonly XmlNode[],
+): XmlNode | 'builtin' | null {
+  if (family !== 'graphic') return null;
+  const root = chain[0];
+  if (root && attr(root, 'style:name') === 'standard') return null;
+  return index.style('graphic', 'standard') ?? 'builtin';
+}
+
 export function textContext(index: StyleIndex, node: XmlNode): TextContext {
   const { family, name } = shapeStyleRef(node);
   const fallback = index.defaultStyle('graphic');
   const of = (kind: 'text' | 'paragraph') => (level: number) => {
-    const chain = [...(fallback ? [fallback] : []), ...levelChain(index, family, name, level)];
-    const props: Properties[] = chain.map((style) => propsOf(style, kind));
+    const own = levelChain(index, family, name, level);
+    const standard = standardUnder(index, family, own);
+    const props: Properties[] = [
+      ...(fallback ? [index.propertiesOf(fallback, kind)] : []),
+      ...(standard === 'builtin'
+        ? kind === 'text'
+          ? [LIBREOFFICE_STANDARD_TEXT]
+          : []
+        : standard
+          ? [index.propertiesOf(standard, kind)]
+          : []),
+      ...own.map((style) => index.propertiesOf(style, kind)),
+    ];
     // The frame's default paragraph style (`draw:text-style-name`).
     const textStyle = attr(node, 'draw:text-style-name');
-    props.push(...index.chain('paragraph', textStyle).map((style) => propsOf(style, kind)));
+    props.push(
+      ...index.chain('paragraph', textStyle).map((style) => index.propertiesOf(style, kind)),
+    );
     return props;
   };
   return {
@@ -257,6 +330,8 @@ const DEFAULT_TEXT: LiveTextStyle = {
   bold: false,
   italic: false,
   underline: false,
+  // LibreOffice kerns only where a style says so.
+  kerning: false,
 };
 
 const DEFAULT_PARAGRAPH: ParagraphLook = {
@@ -286,7 +361,12 @@ const sameStyle = (a: LiveTextStyle, b: LiveTextStyle) =>
   a.color === b.color &&
   a.bold === b.bold &&
   a.italic === b.italic &&
-  a.underline === b.underline;
+  a.underline === b.underline &&
+  !!a.strike === !!b.strike &&
+  (a.caps ?? 'none') === (b.caps ?? 'none') &&
+  (a.letterSpacing ?? 0) === (b.letterSpacing ?? 0) &&
+  a.kerning === b.kerning &&
+  (a.opacity ?? 1) === (b.opacity ?? 1);
 
 function readRuns(ctx: TextContext, paragraph: XmlNode, base: LiveTextStyle): LiveRun[] {
   const runs: LiveRun[] = [];
@@ -308,7 +388,7 @@ function readRuns(ctx: TextContext, paragraph: XmlNode, base: LiveTextStyle): Li
       if (INLINE_IGNORED.has(tag)) continue;
       if (tag === 'text:span') {
         const name = attr(child, 'text:style-name');
-        const props = ctx.index.chain('text', name).map((s) => propsOf(s, 'text'));
+        const props = ctx.index.chain('text', name).map((s) => ctx.index.propertiesOf(s, 'text'));
         walk(
           child,
           props.reduce((current, p) => applyText(ctx.index, current, p), style),
@@ -325,7 +405,7 @@ function readRuns(ctx: TextContext, paragraph: XmlNode, base: LiveTextStyle): Li
   return runs;
 }
 
-interface ParagraphPlace {
+export interface ParagraphPlace {
   paragraph: XmlNode;
   level: number;
   /** The list style in effect, `undefined` outside a list. */
@@ -334,7 +414,7 @@ interface ParagraphPlace {
   header: boolean;
 }
 
-function paragraphPlaces(ctx: TextContext, container: XmlNode): ParagraphPlace[] {
+export function paragraphPlaces(ctx: TextContext, container: XmlNode): ParagraphPlace[] {
   const places: ParagraphPlace[] = [];
   const walk = (node: XmlNode, level: number, list: XmlNode | undefined, header: boolean) => {
     for (const child of childrenOf(node)) {
@@ -347,6 +427,8 @@ function paragraphPlaces(ctx: TextContext, container: XmlNode): ParagraphPlace[]
         for (const item of childrenOf(child)) {
           const itemTag = tagOf(item);
           if (itemTag === 'text:list-item' || itemTag === 'text:list-header') {
+            // Counting anew from a number: LibreOffice's own rules, not followed here.
+            if (attr(item, 'text:start-value') !== undefined) notLive('numbering restart');
             walk(item, level + 1, style, itemTag === 'text:list-header');
           }
         }
@@ -368,7 +450,7 @@ function paragraphPlaces(ctx: TextContext, container: XmlNode): ParagraphPlace[]
   return places;
 }
 
-function levelStyle(list: XmlNode | undefined, level: number): XmlNode | undefined {
+export function levelStyle(list: XmlNode | undefined, level: number): XmlNode | undefined {
   if (!list || level === 0) return undefined;
   return elementChildren(list).find((node) => Number(attr(node, 'text:level') ?? 1) === level);
 }
@@ -397,38 +479,54 @@ function readBullet(
     at = look.marginLeft + (pt(properties && attr(properties, 'text:space-before')) ?? 0);
     textAt = at + (pt(properties && attr(properties, 'text:min-label-width')) ?? 0);
   }
+  /** The bullet's or number's look: its own text properties, else the text's. */
+  const labelLook = (char: string): NonNullable<LiveParagraph['bullet']> => {
+    const props = propsOf(style, 'text');
+    const size = props['fo:font-size'];
+    const relative = attr(style, 'text:bullet-relative-size');
+    const font = props['style:font-name']
+      ? ctx.index.font(props['style:font-name'])
+      : props['fo:font-family']
+        ? unquote(props['fo:font-family'])
+        : null;
+    if (font && SYMBOL_FONTS.includes(font.toLowerCase())) notLive('symbol bullet');
+    const color =
+      props['fo:color'] && /^#[0-9a-f]{6}$/i.test(props['fo:color'])
+        ? props['fo:color'].toLowerCase()
+        : first.color;
+    return {
+      char,
+      font,
+      size: size?.endsWith('%')
+        ? (first.size * Number.parseFloat(size)) / 100
+        : relative
+          ? (first.size * Number.parseFloat(relative)) / 100
+          : (pt(size) ?? first.size),
+      color,
+      at,
+      width: textAt - at,
+    };
+  };
   let bullet: LiveParagraph['bullet'] = null;
   if (tag === 'text:list-level-style-bullet' && !place.header) {
     const char = attr(style, 'text:bullet-char') ?? '';
-    if (char) {
-      const props = propsOf(style, 'text');
-      const size = props['fo:font-size'];
-      const relative = attr(style, 'text:bullet-relative-size');
-      const font = props['style:font-name']
-        ? ctx.index.font(props['style:font-name'])
-        : props['fo:font-family']
-          ? unquote(props['fo:font-family'])
-          : null;
-      if (font && SYMBOL_FONTS.includes(font.toLowerCase())) notLive('symbol bullet');
-      const color =
-        props['fo:color'] && /^#[0-9a-f]{6}$/i.test(props['fo:color'])
-          ? props['fo:color'].toLowerCase()
-          : first.color;
+    if (char) bullet = labelLook(char);
+  } else if (tag === 'text:list-level-style-number') {
+    const format = attr(style, 'style:num-format') ?? '';
+    if (format !== '' && !place.header) {
+      const number = listNumberSchema.safeParse(format);
+      if (!number.success) notLive('numbering');
+      // „1.1.“: the numbers of the levels above drawn too.
+      if (Number(attr(style, 'text:display-levels') ?? 1) > 1) notLive('numbering levels');
+      const start = Number(attr(style, 'text:start-value') ?? 1);
       bullet = {
-        char,
-        font,
-        size: size?.endsWith('%')
-          ? (first.size * Number.parseFloat(size)) / 100
-          : relative
-            ? (first.size * Number.parseFloat(relative)) / 100
-            : (pt(size) ?? first.size),
-        color,
-        at,
-        width: textAt - at,
+        ...labelLook(''),
+        number: number.data,
+        ...(attr(style, 'style:num-prefix') ? { prefix: attr(style, 'style:num-prefix') } : {}),
+        ...(attr(style, 'style:num-suffix') ? { suffix: attr(style, 'style:num-suffix') } : {}),
+        ...(Number.isInteger(start) && start !== 1 ? { start } : {}),
       };
     }
-  } else if (tag === 'text:list-level-style-number') {
-    if ((attr(style, 'style:num-format') ?? '') !== '' && !place.header) notLive('numbering');
   } else if (tag !== 'text:list-level-style-bullet') {
     notLive('picture bullets');
   }
@@ -439,25 +537,24 @@ function readParagraph(ctx: TextContext, place: ParagraphPlace): LiveParagraph {
   const level = Math.max(1, place.level);
   const name = attr(place.paragraph, 'text:style-name');
   const paragraphChain = ctx.index.chain('paragraph', name);
-  const textProps = [...ctx.shapeText(level), ...paragraphChain.map((s) => propsOf(s, 'text'))];
+  const textProps = [
+    ...ctx.shapeText(level),
+    ...paragraphChain.map((s) => ctx.index.propertiesOf(s, 'text')),
+  ];
   // The defaults of the family hold „not set“ values LibreOffice never draws (see `checkText`).
   const base = textProps.reduce(
     (style, props, i) => applyText(ctx.index, style, props, { check: i > 0 }),
     DEFAULT_TEXT,
   );
-  const paragraphProps = [
-    ...ctx.shapeParagraph(level),
-    ...paragraphChain.map((s) => propsOf(s, 'paragraph')),
-  ];
+  const shapeParagraph = ctx.shapeParagraph(level);
+  const paragraphProps = [...shapeParagraph, ...paragraphChain.map((s) => propsOf(s, 'paragraph'))];
   const look = paragraphProps.reduce(applyParagraph, DEFAULT_PARAGRAPH);
   // Read from the shape only: LibreOffice ignores it in a paragraph's own style.
   const fontIndependent =
-    ctx
-      .shapeParagraph(level)
-      .reduce<string | undefined>(
-        (value, props) => props['style:font-independent-line-spacing'] ?? value,
-        undefined,
-      ) === 'true';
+    shapeParagraph.reduce<string | undefined>(
+      (value, props) => props['style:font-independent-line-spacing'] ?? value,
+      undefined,
+    ) === 'true';
   const runs = readRuns(ctx, place.paragraph, base);
   const first = runs.find((run) => run.text.trim()) ?? runs[0] ?? base;
   const { bullet, marginLeft, indent } = readBullet(ctx, place, look, first);
@@ -471,6 +568,10 @@ function readParagraph(ctx: TextContext, place: ParagraphPlace): LiveParagraph {
       bold: mark.bold,
       italic: mark.italic,
       underline: mark.underline,
+      ...(mark.strike ? { strike: true } : {}),
+      ...(mark.caps ? { caps: mark.caps } : {}),
+      ...(mark.letterSpacing ? { letterSpacing: mark.letterSpacing } : {}),
+      ...(mark.kerning === false ? { kerning: false as const } : {}),
     },
     align: look.align,
     fontIndependent,
@@ -486,12 +587,18 @@ function readParagraph(ctx: TextContext, place: ParagraphPlace): LiveParagraph {
 
 // ── Box ──────────────────────────────────────────────────────────────────
 
+/**
+ * The text's distance from the box where no style sets it: LibreOffice's „standard“ graphic
+ * style for frames and shapes – even without a parent style – but none for placeholders (its
+ * presentation styles have no padding of their own).
+ */
 const DEFAULT_PADDING = {
   top: 0.125 * PT_PER_CM,
   bottom: 0.125 * PT_PER_CM,
   left: 0.25 * PT_PER_CM,
   right: 0.25 * PT_PER_CM,
 };
+const PLACEHOLDER_PADDING = { top: 0, bottom: 0, left: 0, right: 0 };
 
 /** The graphic properties a shape is drawn with: the default style's, then its own style chain's. */
 export function graphicPropsOf(index: StyleIndex, node: XmlNode): Properties {
@@ -504,30 +611,138 @@ export function graphicPropsOf(index: StyleIndex, node: XmlNode): Properties {
   );
 }
 
-function readBox(index: StyleIndex, node: XmlNode, shape: LiveShape) {
+/**
+ * A dash pattern's look: dots when its parts are no longer than they are apart and short (at most
+ * twice the line's width, or 0.1 cm), dashes otherwise.
+ */
+function dashOf(index: StyleIndex, name: string | undefined): StrokeDash {
+  const pattern = index.dash(name);
+  if (!pattern) return 'dash';
+  const lengths = ['draw:dots1-length', 'draw:dots2-length']
+    .map((key) => attr(pattern, key))
+    .filter((value): value is string => !!value);
+  const short = lengths.every((value) =>
+    value.endsWith('%') ? parseFloat(value) <= 200 : (lengthToCm(value) ?? 0) <= 0.1,
+  );
+  return short ? 'dot' : 'dash';
+}
+
+/**
+ * Fill and border of a shape or text frame as the editor offers them: the fill as one colour
+ * (a gradient or picture reads as none) and as layers, the border as one colour or none. `shape`: whether it is a shape (filled and
+ * outlined unless its style says otherwise) or a text frame (neither).
+ */
+export function readLook(index: StyleIndex, node: XmlNode, shape: boolean): ElementLook {
   const props = graphicPropsOf(index, node);
-  // The shape stays LibreOffice's picture: its fill and outline are read for the editor's
-  // controls only – one colour each, else none.
-  const fillKind = props['draw:fill'] ?? (shape === 'text' ? 'none' : 'solid');
+  const { fill, stroke } = lookOf(index, props, shape);
+  const { fills, aspect, backdrop } = readFills(index, node, props, shape ? 'solid' : 'none');
+  const effects = effectsOf(props);
+  if (backdrop && backdrop.radius > 0) effects.backdrop = backdrop.radius;
+  return { fill, fills, fillAspect: aspect, stroke, effects };
+}
+
+/** A percentage as a share (0–1), `fallback` when there is none. */
+function share(value: string | undefined, fallback: number): number {
+  const number = value === undefined ? NaN : Number.parseFloat(value);
+  return Number.isFinite(number) ? Math.min(1, Math.max(0, number / 100)) : fallback;
+}
+
+/** Shadow, soft edge and glow from the shape's graphic properties (LibreOffice's defaults). */
+export function effectsOf(props: Properties): ElementEffects {
+  const color = (value: string | undefined, fallback: string) =>
+    /^#[0-9a-f]{6}$/i.test(value ?? '') ? (value as string).toLowerCase() : fallback;
+  const shadow =
+    props['draw:shadow'] === 'visible'
+      ? {
+          x: pt(props['draw:shadow-offset-x']) ?? pt('0.2cm') ?? 0,
+          y: pt(props['draw:shadow-offset-y']) ?? pt('0.2cm') ?? 0,
+          blur: Math.max(0, pt(props['loext:shadow-blur']) ?? 0),
+          color: color(props['draw:shadow-color'], '#808080'),
+          opacity: share(props['draw:shadow-opacity'], 1),
+        }
+      : null;
+  const blur = pt(props['loext:softedge-radius']) ?? 0;
+  const radius = pt(props['loext:glow-radius']) ?? 0;
+  const glow =
+    radius > 0
+      ? {
+          radius,
+          color: color(props['loext:glow-color'], '#000000'),
+          opacity: 1 - share(props['loext:glow-transparency'], 0),
+        }
+      : null;
+  // The backdrop blur is no property of LibreOffice's: `readLook` takes it from Slider's mark.
+  return { shadow, blur: blur > 0 ? blur : null, glow, backdrop: null };
+}
+
+/** {@link readLook}'s colours from the shape's graphic properties. */
+function lookOf(
+  index: StyleIndex,
+  props: Properties,
+  shape: boolean,
+): Pick<ElementLook, 'fill' | 'stroke'> {
+  const fillKind = props['draw:fill'] ?? (shape ? 'solid' : 'none');
   const fill =
     fillKind === 'solid' && props['loext:fill-use-slide-background'] !== 'true'
       ? (props['draw:fill-color'] ?? '#729fcf').toLowerCase()
       : null;
-  const strokeKind = props['draw:stroke'] ?? (shape === 'text' ? 'none' : 'solid');
+  const strokeKind = props['draw:stroke'] ?? (shape ? 'solid' : 'none');
   const stroke =
-    strokeKind === 'solid'
+    strokeKind === 'solid' || strokeKind === 'dash'
       ? {
           color: (props['svg:stroke-color'] ?? '#3465a4').toLowerCase(),
           width: pt(props['svg:stroke-width']) ?? 0,
+          ...(strokeKind === 'dash' ? { dash: dashOf(index, props['draw:stroke-dash']) } : {}),
         }
       : null;
+  return { fill, stroke };
+}
+
+/**
+ * Where a custom shape lays out its text, as insets of its box (`w`×`h` cm); `undefined`: in the
+ * whole box. Not mirrored – the editor mirrors it with the element.
+ */
+function shapeTextArea(node: XmlNode, w: number, h: number): TextAreaInset | undefined {
+  const geometry =
+    tagOf(node) === 'draw:custom-shape' ? firstChild(node, 'draw:enhanced-geometry') : undefined;
+  if (!geometry) return undefined;
+  const equations: Record<string, string> = {};
+  for (const child of elementChildren(geometry)) {
+    const name = tagOf(child) === 'draw:equation' ? attr(child, 'draw:name') : undefined;
+    const formula = name && attr(child, 'draw:formula');
+    if (name && formula) equations[name] = formula;
+  }
+  return (
+    textAreaInset(
+      {
+        type: attr(geometry, 'draw:type'),
+        viewBox: attr(geometry, 'svg:viewBox'),
+        modifiers: attr(geometry, 'draw:modifiers'),
+        textAreas: attr(geometry, 'draw:text-areas'),
+        stretchX: attr(geometry, 'draw:path-stretchpoint-x'),
+        stretchY: attr(geometry, 'draw:path-stretchpoint-y'),
+        equations,
+      },
+      w,
+      h,
+    ) ?? undefined
+  );
+}
+
+function readBox(index: StyleIndex, node: XmlNode, shape: LiveShape) {
+  const props = graphicPropsOf(index, node);
+  // The shape stays LibreOffice's picture: its fill and outline are read for the editor's
+  // controls only.
+  const { fill, stroke } = lookOf(index, props, shape === 'shape');
   const fit = props['draw:fit-to-size'];
   if (fit && fit !== 'false' && fit !== 'none') notLive('fit to size');
   if (props['draw:auto-grow-width'] === 'true') notLive('grows in width');
   if (shape === 'shape' && props['fo:wrap-option'] === 'no-wrap') notLive('no wrap');
   const writing = props['style:writing-mode'];
   if (writing && !['lr-tb', 'page', 'lr'].includes(writing)) notLive('writing mode');
-  const padding = { ...DEFAULT_PADDING };
+  const placeholder =
+    !!attr(node, 'presentation:class') || shapeStyleRef(node).family === 'presentation';
+  const padding = { ...(placeholder ? PLACEHOLDER_PADDING : DEFAULT_PADDING) };
   const all = props['fo:padding'];
   for (const side of ['top', 'bottom', 'left', 'right'] as const) {
     const value = props[`fo:padding-${side}`] ?? all;
@@ -542,14 +757,12 @@ function readBox(index: StyleIndex, node: XmlNode, shape: LiveShape) {
         : 'middle';
   const grow = props['draw:auto-grow-height'];
   const autoGrow = grow === undefined ? shape === 'text' : grow === 'true';
-  const minHeight = pt(props['fo:min-height']);
   return {
     fill,
     stroke,
     padding,
     verticalAlign,
     autoGrow,
-    minHeight: autoGrow ? (minHeight ?? 0) : null,
     ...(props['style:shrink-to-fit'] === 'true' ? { shrink: true } : {}),
   };
 }
@@ -558,10 +771,6 @@ function readBox(index: StyleIndex, node: XmlNode, shape: LiveShape) {
  * The element's text as the browser draws it while it is typed in, or `null` (with the reason,
  * for tests) when it cannot be typed on the slide.
  */
-export function readLive(index: StyleIndex, node: XmlNode): LiveElement | null {
-  return explainLive(index, node).live;
-}
-
 export function explainLive(
   index: StyleIndex,
   node: XmlNode,
@@ -569,18 +778,28 @@ export function explainLive(
   try {
     const shape = liveShapeOf(node);
     if (!shape) return { live: null, why: 'not a text frame or rectangle' };
-    if (!hasPlainGeometry(node)) return { live: null, why: 'transformed' };
+    const frame = frameOf(node);
+    if (!frame) return { live: null, why: 'transformed' };
     const role = attr(node, 'presentation:class');
     if (role && NOT_LIVE_CLASSES.has(role)) return { live: null, why: `placeholder ${role}` };
     if (attr(node, 'draw:text-rotate-angle') && attr(node, 'draw:text-rotate-angle') !== '0')
       return { live: null, why: 'rotated text' };
     const box = readBox(index, node, shape);
+    const textArea = shapeTextArea(node, frame.box.w, frame.box.h);
     const container = shape === 'text' ? (firstChild(node, 'draw:text-box') as XmlNode) : node;
     const ctx = textContext(index, node);
-    const paragraphs = paragraphPlaces(ctx, container).map((place) => readParagraph(ctx, place));
+    const places = paragraphPlaces(ctx, container);
+    // An empty placeholder: one empty paragraph in its layout's look, which typing starts from.
+    if (places.length === 0 && role) {
+      places.push({ paragraph: element('text:p'), level: 0, list: undefined, header: false });
+    }
+    const paragraphs = places.map((place) => readParagraph(ctx, place));
     const empty = paragraphs.every((paragraph) => paragraph.runs.every((run) => !run.text.trim()));
     const placeholder = attr(node, 'presentation:placeholder') === 'true' && empty;
-    return { live: { ...box, placeholder, paragraphs }, why: null };
+    return {
+      live: { ...box, ...(textArea ? { textArea } : {}), placeholder, paragraphs },
+      why: null,
+    };
   } catch (error) {
     if (error instanceof NotLive) return { live: null, why: error.message };
     throw error;

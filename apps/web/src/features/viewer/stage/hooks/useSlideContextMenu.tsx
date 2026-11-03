@@ -1,11 +1,13 @@
-import { hitTestShapes, type Anchor, type Point, type Slide } from '@slider/shared';
+import type { Anchor, Point, Slide } from '@slider/shared';
 import { useState, type MouseEvent, type RefObject } from 'react';
 import { ContextMenu, type MenuAction } from '@/ui';
 import { focusCommentField } from '../../comments/lib/composer-focus';
+import { useSlideActions } from '../../editing/hooks/useSlideActions';
 import { toSlidePoint } from '../../lib/geometry';
 import { useViewerDispatch } from '../../state/viewer-state';
 import { useViewerToast } from '../../state/viewer-toast';
 import { boxAnchor } from '../lib/box-anchor';
+import { shapeOfBox, slideBoxAt, useSlideBoxes } from './useSlideBoxes';
 
 interface Options {
   slide: Slide;
@@ -18,12 +20,17 @@ interface Options {
 
 /**
  * Right click on a slide: on a PowerPoint box (with or without box mode) "Kommentar zur Box"
- * and "Text kopieren"; anywhere else on the slide "Kommentar hier" and "Kommentar zur Folie".
+ * and "Text kopieren"; anywhere else on the slide "Kommentar hier" and "Kommentar zur Folie" –
+ * and on editable decks, in „Bearbeiten“ as in review, "Hintergrund", "Folie ausblenden" and
+ * "Folie löschen".
  * Pins, cards and text boxes keep their own menus; with nothing to offer the browser's shows.
  */
 export function useSlideContextMenu({ slide, boxRef, canComment, disabled }: Options) {
   const dispatch = useViewerDispatch();
   const showToast = useViewerToast();
+  const slideActions = useSlideActions();
+  // The boxes hovering marks, in review and while editing alike.
+  const boxes = useSlideBoxes(slide);
   const [menu, setMenu] = useState<{ x: number; y: number; actions: MenuAction[] } | null>(null);
 
   const place = (anchor: Anchor) => {
@@ -43,7 +50,8 @@ export function useSlideContextMenu({ slide, boxRef, canComment, disabled }: Opt
     if (disabled || !boxRef.current) return;
     if ((event.target as Element).closest('button, textarea, input, [contenteditable]')) return;
     const point: Point = toSlidePoint(event, boxRef.current);
-    const shape = hitTestShapes(slide.shapes, point);
+    const box = slideBoxAt(slide, boxes, point);
+    const shape = box && shapeOfBox(slide, box);
     const actions: MenuAction[] = shape
       ? [
           ...(canComment
@@ -81,6 +89,7 @@ export function useSlideContextMenu({ slide, boxRef, canComment, disabled }: Opt
               ] satisfies MenuAction[])
             : []),
         ];
+    actions.push(...slideActions(slide));
     if (actions.length === 0) return;
     event.preventDefault();
     setMenu({ x: event.clientX, y: event.clientY, actions });

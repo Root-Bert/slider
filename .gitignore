@@ -4,6 +4,15 @@ dist/
 .data/
 *.log
 .env
+.env.*
+!.env.example
+# Local credentials and private keys never belong in a release.
+*.pem
+*.key
+*.p12
+*.pfx
+.aws/
+.ssh/
 .DS_Store
 .claude/worktrees/
 .claude/settings.local.json
@@ -13,5 +22,11 @@ e2e/.data/
 e2e/.results/
 e2e/.report/
 e2e/.shots/
+e2e/.live-data/
+e2e/.live-results/
+apps/web/live-parity/
 # Company fonts of a server install (deploy/docker-compose.yml mounts them).
 deploy/fonts/
+# Whisper model of a local deploy/stt run (WHISPER_MODELS=./models).
+deploy/stt/models/
+deploy/stt/__pycache__/

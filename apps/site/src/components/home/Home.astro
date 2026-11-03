@@ -1,0 +1,101 @@
+---
+import Button from '../Button.astro';
+import Opinion from './Opinion.astro';
+import Questions from './Questions.astro';
+import { localPage, t, type Lang } from '~/i18n';
+import { APP_URL } from '~/lib/links';
+
+/**
+ * The homepage, the same in every language. It turns around one thing: saying what you think.
+ * The hero asks for your opinion on a slide, the questions everyone has come as a stack of slides,
+ * and the end is one big Slider-blue slide on its stack: the logo, life-size. Kept short on purpose.
+ */
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const w = t(lang);
+---
+
+<Opinion lang={lang} />
+
+<Questions lang={lang} />
+
+<section class="home-end" data-section>
+  <div class="home-end-slide" data-reveal>
+    <h2>{w.opinion.end}</h2>
+    <div class="home-end-actions">
+      <Button href={`${APP_URL}/`} variant="inverse">{w.cta.button}</Button>
+      <Button href={localPage(lang, 'pricing')} variant="ghost" class="home-end-ghost">{w.cta.pricing}</Button>
+    </div>
+    <p class="home-live"><span aria-hidden="true"></span>{w.opinion.live}</p>
+  </div>
+</section>
+
+<style>
+  .home-end {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 160px 32px 0;
+  }
+  /* One big slide in Slider blue, its first version peeking out behind: the logo, life-size. */
+  .home-end-slide {
+    --step: clamp(14px, 2.4vw, 36px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 0 0 var(--step) var(--step);
+    padding: clamp(72px, 11vw, 160px) 24px clamp(56px, 7vw, 96px);
+    border-radius: clamp(20px, 2.6vw, 40px);
+    background: var(--color-accent-blue);
+    color: #fff;
+    text-align: center;
+    box-shadow: calc(var(--step) * -1) var(--step) 0 color-mix(in srgb, var(--color-accent-blue) 45%, transparent);
+  }
+  .home-end h2 {
+    max-width: 11em;
+    font-size: clamp(44px, 7vw, 112px);
+    font-weight: 800;
+    line-height: 0.95;
+    letter-spacing: -0.05em;
+    text-wrap: balance;
+  }
+  .home-end-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 44px;
+  }
+  .home-end-actions :global(.home-end-ghost) {
+    color: rgb(255 255 255 / 0.8);
+  }
+  .home-end-actions :global(.home-end-ghost:hover) {
+    color: #fff;
+  }
+  .home-live {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: 36em;
+    margin-top: 40px;
+    font-size: 15px;
+    line-height: 1.45;
+    color: rgb(255 255 255 / 0.75);
+    text-align: left;
+  }
+  .home-live span {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-accent-green);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent-green) 30%, transparent);
+  }
+  @media (max-width: 767px) {
+    .home-end {
+      padding: 104px 16px 0;
+    }
+  }
+</style>

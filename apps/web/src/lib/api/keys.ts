@@ -1,6 +1,8 @@
 /** Central query keys, so invalidation stays consistent across features. */
 export const queryKeys = {
   me: ['me'] as const,
+  /** The instance setup (`/einrichtung`). */
+  setup: ['setup'] as const,
   decks: ['decks'] as const,
   /** Every workspace's deck list – invalidate this after a deck was created or changed. */
   deckLists: ['decks', 'list'] as const,
@@ -15,31 +17,31 @@ export const queryKeys = {
   comments: (deckId: string) => ['decks', deckId, 'comments'] as const,
   people: (deckId: string) => ['decks', deckId, 'people'] as const,
   status: (deckId: string) => ['decks', deckId, 'status'] as const,
-  revisions: (deckId: string) => ['decks', deckId, 'revisions'] as const,
   /**
    * One revision's diff – it never changes. Fetched by id (never via `latest`), so an entry can
-   * never hold another revision's diff, and outside the `revisions` list key so reloading the
-   * list doesn't refetch every diff.
+   * never hold another revision's diff.
    */
   revisionDiff: (deckId: string, revisionId: string | null) =>
     ['decks', deckId, 'revision-diff', revisionId] as const,
   deletedSlides: (deckId: string, revisionId: string | null) =>
     ['decks', deckId, 'deleted-slides', revisionId] as const,
-  /** One slide in every revision (Alt/Neu, BER-109) – keyed by the current revision too. */
-  slideVersions: (deckId: string, slideId: string, revisionId: string | null) =>
-    ['decks', deckId, 'slide-versions', slideId, revisionId] as const,
   /** Stored files of a review and what older versions take up (managers only). */
   storage: (deckId: string) => ['decks', deckId, 'storage'] as const,
   /** Who may open a review (managers only, "Zugriff einschränken …"). */
   access: (deckId: string) => ['decks', deckId, 'access'] as const,
   /** Whether and how a deck can be edited, with its elements (BER-180, managers only). */
   edit: (deckId: string) => ['decks', deckId, 'edit'] as const,
+  /** The layouts of a deck's own design, with their pictures (managers only). */
+  deckLayouts: (deckId: string) => ['decks', deckId, 'layouts'] as const,
   /**
    * A slide taken apart at an edit step – never changes, so outside the deck's keys: what
    * refreshes the deck (`useLive`) does not ask for it again.
    */
   slideLayers: (deckId: string, slideId: string | null, seq: number | undefined) =>
     ['slideLayers', deckId, slideId, seq] as const,
+  composedLayers: (deckId: string, slideId: string, seq: number | undefined) =>
+    ['composedLayers', deckId, slideId, seq] as const,
+  /** What lies over a slide's background, by what lies there (`look`) – outside the deck's keys. */
   /**
    * Stock photos for a search – outside the deck's keys too: every refresh of the deck would
    * search again, and each search counts against the person's limit on the server.
@@ -67,9 +69,15 @@ export const workspaceKeys = {
   online: (workspaceId: string) => ['workspaces', workspaceId, 'online'] as const,
   /** Company login of one workspace (BER-162), admins only. */
   sso: (workspaceId: string) => ['workspaces', workspaceId, 'sso'] as const,
-  /** The workspace's AI keys (BER-183), admins only. */
-  ai: (workspaceId: string) => ['workspaces', workspaceId, 'ai'] as const,
+  /**
+   * A workspace's integrations – or the instance's (`null`) – admins only. All under one root:
+   * the instance's change what every workspace sees.
+   */
+  integrations: (workspaceId: string | null) =>
+    ['integrations', workspaceId ?? 'instance'] as const,
   fonts: (workspaceId: string) => ['workspaces', workspaceId, 'fonts'] as const,
+  /** The workspace's slide masters (uploaded company designs). */
+  masters: (workspaceId: string) => ['workspaces', workspaceId, 'masters'] as const,
   join: (token: string) => ['join', token] as const,
   passkeys: ['account', 'passkeys'] as const,
   identities: ['account', 'identities'] as const,

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import type { Deck } from '@slider/shared';
+import { DECK_UPLOAD_IN_PARTS_FROM, type Deck } from '@slider/shared';
 import { uploadWithProgress } from '@/lib/api-client';
+import { CANCEL_UPLOAD, uploadInParts } from '@/lib/upload-in-parts';
 import { queryKeys, reportSessionError } from '@/lib/api';
 import { validateUploadFile } from '../lib/upload-validation';
 
@@ -33,20 +34,22 @@ export function useDeckUpload(workspaceId: string, onUploaded: (deck: Deck) => v
 
     // All bytes sent: from here on the server creates the deck even if we stop listening.
     let sent = false;
-    const formData = new FormData();
-    formData.append('workspaceId', workspaceId);
-    formData.append('file', file);
+    const onProgress = (progress: number) => {
+      if (progress >= 1) sent = true;
+      setState({ status: 'uploading', file, progress });
+    };
     try {
-      const deck = await uploadWithProgress<Deck>(
-        // In the URL too: the server checks the target before it reads the file.
-        `/decks/upload?workspaceId=${encodeURIComponent(workspaceId)}`,
-        formData,
-        (progress) => {
-          if (progress >= 1) sent = true;
-          setState({ status: 'uploading', file, progress });
-        },
-        controller.signal,
-      );
+      // Big files go in parts (a proxy may refuse one big request); a reload goes on from there.
+      const deck =
+        file.size >= DECK_UPLOAD_IN_PARTS_FROM
+          ? await uploadInParts<Deck>(file, { workspaceId }, onProgress, controller.signal)
+          : await uploadWithProgress<Deck>(
+              // In the URL too: the server checks the target before it reads the file.
+              `/decks/upload?workspaceId=${encodeURIComponent(workspaceId)}`,
+              formDataOf(file, workspaceId),
+              onProgress,
+              controller.signal,
+            );
       queryClient.setQueryData(queryKeys.deck(deck.id), deck);
       void queryClient.invalidateQueries({ queryKey: queryKeys.deckLists });
       void queryClient.invalidateQueries({ queryKey: queryKeys.me });
@@ -70,10 +73,18 @@ export function useDeckUpload(workspaceId: string, onUploaded: (deck: Deck) => v
   };
 
   const cancel = () => {
-    controllerRef.current?.abort();
+    // Cancelled on purpose: a file sent in parts is dropped on the server too.
+    controllerRef.current?.abort(CANCEL_UPLOAD);
     controllerRef.current = null;
     setState({ status: 'idle' });
   };
 
   return { state, start: (file: File) => void start(file), cancel };
+}
+
+function formDataOf(file: File, workspaceId: string): FormData {
+  const formData = new FormData();
+  formData.append('workspaceId', workspaceId);
+  formData.append('file', file);
+  return formData;
 }

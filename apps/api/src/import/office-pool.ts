@@ -11,6 +11,7 @@ import {
   ConversionAborted,
   ConversionFailed,
   ConversionTimedOut,
+  fontconfigEnv,
   hardenedProfile,
 } from './libreoffice';
 
@@ -194,6 +195,7 @@ export async function createOfficePool({
       );
       await copyFile(WORKER_SCRIPT, path.join(scripts, 'office-worker.py'));
       const socketPath = path.join(this.dir, 's');
+      const env = { ...process.env, SLIDER_OFFICE_SOCKET: socketPath };
       const failed = new Promise<never>((_, reject) => {
         this.failStart = reject;
       });
@@ -218,7 +220,8 @@ export async function createOfficePool({
         {
           // Own process group: a hang takes `soffice` and `soffice.bin` down together.
           detached: true,
-          env: { ...process.env, SLIDER_OFFICE_SOCKET: socketPath },
+          // The checkout's Google Fonts where the system lacks them (development).
+          env: (await fontconfigEnv(this.dir, [], env)) ?? env,
           stdio: ['ignore', 'ignore', 'pipe'],
         },
       );

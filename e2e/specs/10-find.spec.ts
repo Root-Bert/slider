@@ -7,7 +7,7 @@ test('⌘F / Ctrl F searches the review and jumps to the hits (BER-176)', async 
   await expect(counter).toHaveValue('1');
 
   await page.keyboard.press('ControlOrMeta+f');
-  const find = page.getByRole('textbox', { name: 'In dieser Review suchen' });
+  const find = page.getByRole('textbox', { name: 'In dieser Präsentation suchen' });
   await expect(find).toBeFocused();
 
   // On the agenda (slide 2) and on slide 3 itself; typing jumps to the first hit.
@@ -55,7 +55,7 @@ test('the find bar fits a phone', async ({ page }) => {
   const deck = await uploadSampleDeck(page);
   await openDeck(page, deck.id);
   await page.keyboard.press('ControlOrMeta+f');
-  const find = page.getByRole('textbox', { name: 'In dieser Review suchen' });
+  const find = page.getByRole('textbox', { name: 'In dieser Präsentation suchen' });
   await find.fill('Umsatz');
   const bar = page.locator('[data-find-bar]');
   const box = (await bar.boundingBox())!;

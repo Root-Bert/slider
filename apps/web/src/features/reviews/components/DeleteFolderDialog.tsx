@@ -22,7 +22,7 @@ export function DeleteFolderDialog({
     <ConfirmDialog
       onClose={onClose}
       title={`Ordner „${folder.name}“ löschen?`}
-      description="Die Reviews darin bleiben erhalten und stehen danach wieder direkt in der Übersicht."
+      description="Die Präsentationen darin bleiben erhalten und stehen danach wieder direkt in der Übersicht."
       confirmLabel="Ordner löschen"
       pending={deleteFolder.isPending}
       error={deleteFolder.error?.message}

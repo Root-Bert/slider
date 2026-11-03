@@ -29,7 +29,7 @@ export function usePruneDeckStorage(deckId: string) {
     },
     onSettled: () =>
       Promise.all(
-        (['slide-versions', 'deleted-slides', 'revision-diff', 'revisions'] as const).map((part) =>
+        (['deleted-slides', 'revision-diff'] as const).map((part) =>
           queryClient.invalidateQueries({ queryKey: ['decks', deckId, part] }),
         ),
       ),

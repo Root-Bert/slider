@@ -86,7 +86,6 @@ export async function disconnectNextcloud(
     await tx.delete(nextcloudConnections).where(eq(nextcloudConnections.id, row.id));
     for (const deck of affected) {
       await mergeSyncState(tx, deck.id, {
-        pending: null,
         lastSyncError: {
           code: 'auth_required',
           message: SYNC_MESSAGES.nextcloud_auth_required,

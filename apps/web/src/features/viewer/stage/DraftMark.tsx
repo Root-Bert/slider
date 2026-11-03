@@ -12,7 +12,7 @@ import { StrokePath } from './StrokePath';
 import { TextMark } from './TextBox';
 import { isModKey, typesCharacter } from '@/lib/keyboard';
 import { cn } from '@/ui';
-import { DRAFT_PIN_RING, NAME_TAG_CLASS } from './lib/mark-chrome';
+import { DRAFT_PIN_RING } from './lib/mark-chrome';
 
 interface DraftMarkProps {
   draft: Draft;
@@ -42,7 +42,8 @@ export function DraftMark({
   onPointChange,
   onWriteInside,
 }: DraftMarkProps) {
-  const color = accentColor(author.color);
+  // A box for the AI in its sage, as its light round a card at work (`ai-rim`).
+  const color = draft.aiBox === undefined ? accentColor(author.color) : 'var(--color-sage)';
   const registry = useStageRegistry();
   const { anchor } = draft;
   const box =
@@ -89,11 +90,12 @@ export function DraftMark({
       return;
     }
     if (!typesCharacter(event)) return;
-    if (framed) {
+    // A box for the AI: typed into its field beside it, never onto the slide.
+    if (framed && draft.aiBox === undefined) {
       event.preventDefault();
       onWriteInside(box.rect, event.key);
     } else {
-      // A picked PowerPoint box: the key goes on into the comment field.
+      // A picked PowerPoint box (or a box for the AI): the key goes on into the comment field.
       focusCommentField();
     }
   });
@@ -133,21 +135,21 @@ export function DraftMark({
         <EditableFrame
           rect={box.rect}
           color={color}
-          handles
+          // Placed freely: its line runs out around its corners; bound to a box, none to pull.
+          elementEdge={!box.shapeRef}
+          handles={!box.shapeRef}
           className="bg-surface-1"
           title="Ziehen zum Verschieben, Ecken zum Ändern der Größe, Tippen schreibt hinein, ↵ zum Kommentar"
-          onDoubleClick={() => onWriteInside(box.rect)}
+          onDoubleClick={() => {
+            if (draft.aiBox === undefined) onWriteInside(box.rect);
+          }}
           // The composer next to the box follows it live.
           onPreview={(rect) => registry.setMarkPreview(rect ? { threadId: null, rect } : null)}
           onCommit={(rect, done) => {
             onRectChange(rect);
             done();
           }}
-        >
-          <span className={cn(NAME_TAG_CLASS, 'px-1.5')} style={{ backgroundColor: color }}>
-            {author.name.split(' ')[0]}
-          </span>
-        </EditableFrame>
+        />
       )}
 
       {point && (

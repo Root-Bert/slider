@@ -1,7 +1,13 @@
 import { memo } from 'react';
-import { cn, CountBubble, Icon } from '@/ui';
+import { cn, CountBubble, Icon, usePopover } from '@/ui';
 import type { Thread } from '../comments/lib/comment-selectors';
+import { isPendingSlideId } from '../editing/pending-slides';
+import { SlideInsertPicker } from '../editing/SlideInsertPicker';
+import { useTransitionOf } from '../editing/transition/picked-transitions';
+import { SlideTransitionPicker } from '../editing/transition/SlideTransitionPicker';
+import { transitionLabel } from '../editing/transition/transition-frames';
 import { useViewerDispatch } from '../state/viewer-state';
+import { TrackDots, trackDotsHeight, useTrackDots } from '../timeline/TrackDots';
 
 interface GapDividerProps {
   gapKey: string;
@@ -15,6 +21,11 @@ interface GapDividerProps {
   threads: Thread[] | undefined;
   isDrafting: boolean;
   canComment: boolean;
+  /**
+   * The deck is editable here: a ⊕ above the comment button inserts a slide, a button between
+   * them picks the transition of the slide after the gap.
+   */
+  canInsert: boolean;
 }
 
 /**
@@ -23,12 +34,55 @@ interface GapDividerProps {
  */
 const HAIRLINE_MASK =
   '[mask-image:linear-gradient(transparent,#000_30%,#000_calc(50%-20px),transparent_calc(50%-20px),transparent_calc(50%+20px),#000_calc(50%+20px),#000_70%,transparent)]';
-/** Without a ⊕ the line runs through, still fading towards both ends. */
+/** With two buttons (insert, comment) the pause is taller. */
+const HAIRLINE_MASK_PAIR =
+  '[mask-image:linear-gradient(transparent,#000_30%,#000_calc(50%-32px),transparent_calc(50%-32px),transparent_calc(50%+32px),#000_calc(50%+32px),#000_70%,transparent)]';
+/** With three (insert, transition, comment) taller still. */
+const HAIRLINE_MASK_TRIPLE =
+  '[mask-image:linear-gradient(transparent,#000_25%,#000_calc(50%-48px),transparent_calc(50%-48px),transparent_calc(50%+48px),#000_calc(50%+48px),#000_75%,transparent)]';
+/** Without buttons the line runs through, still fading towards both ends. */
 const HAIRLINE_FADE = '[mask-image:linear-gradient(transparent,#000_30%,#000_70%,transparent)]';
+/** By the number of buttons in the pause. */
+const HAIRLINE_MASKS = [HAIRLINE_FADE, HAIRLINE_MASK, HAIRLINE_MASK_PAIR, HAIRLINE_MASK_TRIPLE];
+/** Half the pause by the number of buttons (as in the masks above); none: a little round the dots. */
+const HAIRLINE_PAUSES = [6, 20, 32, 48];
+
+/** The gap's buttons: who may insert (and pick the transition after it) and comment there. */
+export function gapButtons({
+  afterSlideId,
+  beforeSlideId,
+  canInsert: insertable,
+  canComment: commentable,
+}: Pick<GapDividerProps, 'afterSlideId' | 'beforeSlideId' | 'canInsert' | 'canComment'>) {
+  // Beside a slide just put in, not on the server yet: nothing to name it by until it is.
+  const settled = ![afterSlideId, beforeSlideId].some((id) => id && isPendingSlideId(id));
+  const canInsert = insertable && settled;
+  const canComment = commentable && settled;
+  const canTransition = canInsert && beforeSlideId !== null;
+  const count = Number(canInsert && !!afterSlideId) + Number(canTransition) + Number(canComment);
+  return { canInsert, canComment, canTransition, count };
+}
 
 /**
- * A short hairline between two slides with an always-visible ⊕ that starts a "hier fehlt eine
- * Folie" comment (BER-103). Existing gap comments show as a marker below the button.
+ * How far the track dots' bottom lies over the gap's middle (px): over its `count` buttons
+ * (centred there, `size-6`/`size-5` with `gap-2`), 8px apart – on every track alike, so the dots
+ * stay put when the band swipes to one without the buttons.
+ */
+export function gapDotsLift(count: number, width: number): number {
+  const button = width < 32 ? 20 : 24;
+  return (count > 0 ? (count * button + (count - 1) * 8) / 2 : 0) + 8;
+}
+
+/** The pause reaching further up, over the track dots over the buttons (`below` + `above` px). */
+const hairlineMaskAround = (below: number, above: number) =>
+  `linear-gradient(transparent,#000 25%,#000 calc(50% - ${above}px),transparent calc(50% - ${above}px),transparent calc(50% + ${below}px),#000 calc(50% + ${below}px),#000 75%,transparent)`;
+
+/**
+ * A short hairline between two slides with always-visible buttons in its pause: on an editable
+ * deck a ⊕ that inserts a slide there (its picker opens beside it) and the transition of the
+ * slide after it (likewise), and the comment button that
+ * starts a "hier fehlt eine Folie" comment (BER-103). Existing gap comments show as a marker
+ * below them.
  */
 export const GapDivider = memo(function GapDivider({
   gapKey,
@@ -40,13 +94,24 @@ export const GapDivider = memo(function GapDivider({
   beforeSlideId,
   threads,
   isDrafting,
-  canComment,
+  canComment: commentable,
+  canInsert: insertable,
 }: GapDividerProps) {
   const dispatch = useViewerDispatch();
   const openThreads = threads?.filter((thread) => thread.root.status === 'open') ?? [];
   const first = threads?.[0];
   // Narrow gaps (small slides) get a smaller button.
   const tight = width < 32;
+  const {
+    canInsert,
+    canComment,
+    canTransition,
+    count: buttons,
+  } = gapButtons({ afterSlideId, beforeSlideId, canInsert: insertable, canComment: commentable });
+  // The band's tracks (variants, notes): their dots sit over the buttons.
+  const dots = trackDotsHeight(useTrackDots()?.stack);
+  const pause = HAIRLINE_PAUSES[buttons] ?? 0;
+  const lift = gapDotsLift(buttons, width);
 
   return (
     <div
@@ -59,10 +124,21 @@ export const GapDivider = memo(function GapDivider({
         className={cn(
           'absolute top-1/5 h-3/5 w-px transition-colors',
           isDrafting ? 'bg-fg' : 'bg-fg-subtle',
-          canComment ? HAIRLINE_MASK : HAIRLINE_FADE,
+          !dots && HAIRLINE_MASKS[buttons],
         )}
+        style={dots ? { maskImage: hairlineMaskAround(pause, lift + dots + 6) } : undefined}
       />
-      <div className="absolute top-1/2 left-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2">
+      {/* Above the slides' elements: one reaching past its slide would cover the buttons. */}
+      {/* The buttons centred; the track dots over them and the comments' marker under them lie
+          outside, so neither moves them (nor the hairline's pause). */}
+      <div className="absolute top-1/2 left-1/2 z-(--z-overlay) flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-2">
+        <TrackDots className="absolute bottom-full left-1/2 mb-2 -translate-x-1/2" />
+        {canInsert && afterSlideId && (
+          <InsertSlideButton afterSlideId={afterSlideId} tight={tight} />
+        )}
+        {canTransition && beforeSlideId && (
+          <TransitionButton afterSlideId={afterSlideId} slideId={beforeSlideId} tight={tight} />
+        )}
         {canComment && (
           // A mark on the track rather than a toolbar control (like pins): no hover fill, so not
           // an IconButton. Sits in the hairline's pause.
@@ -77,11 +153,12 @@ export const GapDivider = memo(function GapDivider({
               isDrafting ? 'text-fg' : 'text-fg-muted hover:text-fg',
             )}
           >
-            <Icon name="addCircle" size={tight ? 'lg' : 'xl'} />
+            <Icon name={canInsert ? 'addComment' : 'addCircle'} size={tight ? 'lg' : 'xl'} />
           </button>
         )}
         {first && (
           <CountBubble
+            className="absolute top-full left-1/2 mt-2 -translate-x-1/2"
             count={threads.length}
             color={first.root.author.color}
             dim={openThreads.length === 0}
@@ -96,3 +173,85 @@ export const GapDivider = memo(function GapDivider({
     </div>
   );
 });
+
+/** The gap's ⊕ on an editable deck: opens „Folie einfügen“ beside it. */
+function InsertSlideButton({ afterSlideId, tight }: { afterSlideId: string; tight: boolean }) {
+  const { open, close, triggerProps, triggerRef, panelRef, panelId } = usePopover({
+    hasPopup: 'dialog',
+  });
+  return (
+    <>
+      <button
+        type="button"
+        {...triggerProps}
+        aria-label="Folie einfügen"
+        title="Folie einfügen"
+        className={cn(
+          'flex items-center justify-center rounded-full transition-colors',
+          tight ? 'size-5' : 'size-6',
+          open ? 'text-fg' : 'text-fg-muted hover:text-fg',
+        )}
+      >
+        <Icon name="addCircle" size={tight ? 'lg' : 'xl'} />
+      </button>
+      {open && (
+        <SlideInsertPicker
+          anchorRef={triggerRef}
+          panelRef={panelRef}
+          panelId={panelId}
+          afterSlideId={afterSlideId}
+          onClose={close}
+        />
+      )}
+    </>
+  );
+}
+
+/**
+ * The gap's transition button on an editable deck: opens „Übergang“ for the slide after the gap.
+ * Drawn stronger while that slide has one.
+ */
+function TransitionButton({
+  afterSlideId,
+  slideId,
+  tight,
+}: {
+  afterSlideId: string | null;
+  slideId: string;
+  tight: boolean;
+}) {
+  const transitionOf = useTransitionOf();
+  const { open, close, triggerProps, triggerRef, panelRef, panelId } = usePopover({
+    hasPopup: 'dialog',
+  });
+  const transition = transitionOf(slideId) ?? 'none';
+  const label =
+    transition === 'none' ? 'Übergang wählen' : `Übergang: ${transitionLabel(transition)}`;
+  return (
+    <>
+      <button
+        type="button"
+        {...triggerProps}
+        aria-label={label}
+        title={label}
+        className={cn(
+          'flex items-center justify-center rounded-full transition-colors',
+          tight ? 'size-5' : 'size-6',
+          open || transition !== 'none' ? 'text-fg' : 'text-fg-muted hover:text-fg',
+        )}
+      >
+        <Icon name="animation" size={tight ? 'lg' : 'xl'} />
+      </button>
+      {open && (
+        <SlideTransitionPicker
+          anchorRef={triggerRef}
+          panelRef={panelRef}
+          panelId={panelId}
+          afterSlideId={afterSlideId}
+          slideId={slideId}
+          onClose={close}
+        />
+      )}
+    </>
+  );
+}

@@ -33,8 +33,3 @@ export type PersonName = keyof typeof PEOPLE;
 export function person(name: PersonName): Author {
   return { id: name.toLowerCase(), name, type: 'owner', color: PEOPLE[name] };
 }
-
-/** The persona's accent, typed as an accent (not the wider `Author` colour), e.g. for sketch palettes. */
-export function personAccent(name: PersonName): AccentColor {
-  return PEOPLE[name];
-}

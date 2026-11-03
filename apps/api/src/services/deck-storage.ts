@@ -163,7 +163,7 @@ async function mediaBytesOf(db: Executor, deckId: string): Promise<number> {
   return Number(row?.bytes ?? 0);
 }
 
-function toDto(deps: StorageDeps, deck: DeckRow, plan: StoragePlan): DeckStorage {
+function toDto(plan: StoragePlan): DeckStorage {
   const breakdown = breakdownOf(plan.files, plan.mediaBytes);
   const freeable = reclaimable(plan);
   const olderWithFiles = new Set(freeable.map((file) => file.revisionId));
@@ -253,7 +253,7 @@ export async function getDeckStorage(deps: StorageDeps, deck: DeckRow): Promise<
   ]);
   // Measured anyway: keep the workspace's sum current.
   await storeFilesBytes(deps.db, deck.id, files);
-  return toDto(deps, deck, {
+  return toDto({
     files,
     mediaBytes,
     older: references.older,

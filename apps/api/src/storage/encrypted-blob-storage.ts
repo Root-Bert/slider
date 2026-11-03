@@ -204,17 +204,23 @@ function openAny<T extends Uint8Array>(
 /** `blobKey` is the key the file is stored under; only that key opens it again. */
 export function sealBlob(data: Uint8Array, key: DataKey, blobKey: string): Uint8Array {
   const { state, header } = sodium.crypto_secretstream_xchacha20poly1305_init_push(key.blobKey);
-  const parts: Uint8Array[] = [MAGIC, header];
   const count = chunkCount(data.length);
+  // Written into one buffer as it goes: a deck of hundreds of MB is not held twice more.
+  const out = new Uint8Array(PREFIX_BYTES + data.length + count * ABYTES);
+  out.set(MAGIC, 0);
+  out.set(header, MAGIC.length);
+  let written = PREFIX_BYTES;
   for (let index = 0; index < count; index++) {
     const chunk = data.subarray(index * CHUNK_BYTES, (index + 1) * CHUNK_BYTES);
     const tag =
       index === count - 1
         ? sodium.crypto_secretstream_xchacha20poly1305_TAG_FINAL
         : sodium.crypto_secretstream_xchacha20poly1305_TAG_MESSAGE;
-    parts.push(sodium.crypto_secretstream_xchacha20poly1305_push(state, chunk, blobKey, tag));
+    const sealed = sodium.crypto_secretstream_xchacha20poly1305_push(state, chunk, blobKey, tag);
+    out.set(sealed, written);
+    written += sealed.length;
   }
-  return Buffer.concat(parts);
+  return out;
 }
 
 /** `blobKey` as sealed with, or `null` for the `SLS1` format. */

@@ -2,9 +2,10 @@ import { useQuery } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { SETUP_TOKEN_HEADER, type SetupStatus } from '@slider/shared';
 import { apiRequest } from '@/lib/api-client';
+import { queryKeys } from '@/lib/api';
 import { routes } from '@/lib/routes';
 import { SettingsLayout } from '@/shell/layouts/SettingsLayout';
-import { Button, ButtonLink, Notice, Spinner, useToast } from '@/ui';
+import { Button, Notice, Spinner } from '@/ui';
 import { NotAuthorized } from './components/NotAuthorized';
 import { SetupForm, type SetupTab } from './components/SetupForm';
 import { storedSetupToken, storeSetupToken } from './lib/setup-form';
@@ -18,13 +19,12 @@ import { storedSetupToken, storeSetupToken } from './lib/setup-form';
  */
 export function Component() {
   const [token, setToken] = useState(storedSetupToken);
-  const [toast, showToast] = useToast();
   const [tab, setTab] = useState<SetupTab>('settings');
   // The query function reads the token from here, so a newly typed one is sent on the refetch.
   const tokenRef = useRef(token);
   const headers: Record<string, string> = token ? { [SETUP_TOKEN_HEADER]: token } : {};
   const status = useQuery({
-    queryKey: ['setup'],
+    queryKey: queryKeys.setup,
     queryFn: () =>
       apiRequest<SetupStatus>('/setup', {
         headers: tokenRef.current ? { [SETUP_TOKEN_HEADER]: tokenRef.current } : {},
@@ -54,28 +54,7 @@ export function Component() {
       title="Slider einrichten"
       subtitle={status.data?.settings ? SUBTITLES[tab] : SUBTITLES.settings}
       back={{ to: routes.reviews() }}
-      // The instance admin is in the instance's own pages: home is its dashboard.
-      logoLink={
-        status.data?.claimed && status.data.authorized
-          ? { to: routes.instance(), label: 'Instanz-Dashboard' }
-          : undefined
-      }
-      actions={
-        status.data?.claimed &&
-        status.data.authorized && (
-          <ButtonLink
-            to={routes.instance()}
-            variant="secondary"
-            size="sm"
-            icon="manageAccounts"
-            iconSize={16}
-          >
-            Instanz-Dashboard
-          </ButtonLink>
-        )
-      }
       truncate={false}
-      toast={toast}
     >
       {status.isPending ? (
         <Spinner size="2xl" className="text-fg-subtle" />
@@ -92,7 +71,6 @@ export function Component() {
             status={status.data}
             settings={status.data.settings}
             headers={headers}
-            onNotify={showToast}
             tab={tab}
             onTabChange={setTab}
           />
@@ -116,5 +94,7 @@ export function Component() {
 /** Under the title: what the open tab holds. */
 const SUBTITLES: Record<SetupTab, string> = {
   settings: 'Anmeldung, E-Mail-Versand, wer ein Konto anlegen darf, Impressum und Datenschutz.',
+  integrations:
+    'Das allgemeine KI-Modell, Sprache zu Text, Bildquellen und Bildgenerierung für alle Workspaces – und was Workspaces davon nutzen dürfen.',
   env: 'Was die .env des Servers festlegt – nur dort änderbar, danach Slider neu starten.',
 };

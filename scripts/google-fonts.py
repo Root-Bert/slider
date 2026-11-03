@@ -18,7 +18,9 @@ from pathlib import Path
 
 from fontTools.ttLib import TTFont
 
-# The 20 most used families of Google Fonts, sans, serif and mono.
+# The 20 most used families of Google Fonts, sans, serif and mono – and 80 more for slides
+# (BER-183): sans, display, serif, mono and handwriting. Latin faces; a family Google has no bold
+# or italic of is drawn with a synthesised one.
 FAMILIES = [
     'Roboto',
     'Open Sans',
@@ -40,6 +42,91 @@ FAMILIES = [
     'Lora',
     'Noto Serif',
     'Roboto Mono',
+    # Sans
+    'Source Sans 3',
+    'Nunito Sans',
+    'Fira Sans',
+    'Barlow',
+    'Barlow Condensed',
+    'DM Sans',
+    'Manrope',
+    'IBM Plex Sans',
+    'Karla',
+    'Titillium Web',
+    'Josefin Sans',
+    'Libre Franklin',
+    'Mulish',
+    'Quicksand',
+    'Archivo',
+    'Space Grotesk',
+    'Outfit',
+    'Plus Jakarta Sans',
+    'Lexend',
+    'Figtree',
+    'Red Hat Display',
+    'Sora',
+    'Urbanist',
+    'Public Sans',
+    'Jost',
+    'Be Vietnam Pro',
+    'Hanken Grotesk',
+    'Geist',
+    'Bricolage Grotesque',
+    'Instrument Sans',
+    'Cabin',
+    'Exo 2',
+    'Kanit',
+    'Asap',
+    # Display
+    'Bebas Neue',
+    'Anton',
+    'Archivo Black',
+    'Fjalla One',
+    'Teko',
+    'Dosis',
+    'Comfortaa',
+    'Varela Round',
+    'Fredoka',
+    'Righteous',
+    # Serif
+    'Source Serif 4',
+    'PT Serif',
+    'Libre Baskerville',
+    'EB Garamond',
+    'Cormorant Garamond',
+    'Crimson Pro',
+    'Bitter',
+    'Roboto Slab',
+    'Zilla Slab',
+    'Arvo',
+    'DM Serif Display',
+    'Spectral',
+    'Alegreya',
+    'Vollkorn',
+    'Literata',
+    'Fraunces',
+    'Newsreader',
+    'Frank Ruhl Libre',
+    'Abril Fatface',
+    'Cinzel',
+    'Instrument Serif',
+    # Mono
+    'Source Code Pro',
+    'Fira Code',
+    'JetBrains Mono',
+    'IBM Plex Mono',
+    'Space Mono',
+    'Inconsolata',
+    # Handwriting
+    'Dancing Script',
+    'Caveat',
+    'Pacifico',
+    'Lobster',
+    'Permanent Marker',
+    'Indie Flower',
+    'Great Vibes',
+    'Amatic SC',
+    'Satisfy',
 ]
 
 FACES = [('Regular', 0, 400), ('Bold', 0, 700), ('Italic', 1, 400), ('BoldItalic', 1, 700)]
@@ -78,19 +165,23 @@ def main() -> None:
         files = []
         metrics = None
         for face, italic, weight in FACES:
+            local = TTF_DIR / f'{stem}-{face}.ttf'
             url = urls.get((italic, weight))
-            if not url:
+            if not url and not local.exists():
                 files.append(None)
                 continue
-            data = fetch(url)
+            # A face already in the checkout stays as it is: refetched, a newer version could
+            # break lines elsewhere in decks drawn with it.
+            data = local.read_bytes() if local.exists() else fetch(url)
             font = TTFont(io.BytesIO(data))
             # LibreOffice finds the face by its family name: it must be the one decks name.
             name = font['name'].getBestFamilyName()
             if name != family:
                 raise SystemExit(f'{family} {face}: the file names its family {name!r}')
-            (TTF_DIR / f'{stem}-{face}.ttf').write_bytes(data)
-            font.flavor = 'woff2'
-            font.save(WOFF2_DIR / f'{stem}-{face}.woff2')
+            local.write_bytes(data)
+            if not (WOFF2_DIR / f'{stem}-{face}.woff2').exists():
+                font.flavor = 'woff2'
+                font.save(WOFF2_DIR / f'{stem}-{face}.woff2')
             files.append(f'{stem}-{face}')
             if metrics is None:
                 metrics = (font['head'].unitsPerEm, font['hhea'].ascent, -font['hhea'].descent)

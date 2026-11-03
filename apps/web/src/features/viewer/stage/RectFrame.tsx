@@ -1,7 +1,8 @@
-import type { Rect } from '@slider/shared';
+import type { ElementTilt, Rect } from '@slider/shared';
 import type { CSSProperties, ReactNode } from 'react';
 import { cn } from '@/ui';
 import { frameHalo } from './lib/mark-chrome';
+import { elementTransform } from '../editing/tilt/tilt-math';
 
 interface RectFrameProps {
   rect: Rect;
@@ -10,6 +11,10 @@ interface RectFrameProps {
   dashed?: boolean;
   /** A comment's mark: connector lines pass behind it. */
   isMark?: boolean;
+  /** Turned by this much (degrees clockwise, around its centre) – as the element it hangs on. */
+  rotation?: number;
+  /** Tilted in depth as the element it hangs on. */
+  tilt?: ElementTilt | null;
   className?: string;
   children?: ReactNode;
 }
@@ -21,6 +26,8 @@ export function RectFrame({
   emphasized = false,
   dashed = false,
   isMark = false,
+  rotation = 0,
+  tilt,
   className,
   children,
 }: RectFrameProps) {
@@ -33,6 +40,7 @@ export function RectFrame({
         top: `${rect.y * 100}%`,
         width: `${rect.w * 100}%`,
         height: `${rect.h * 100}%`,
+        transform: elementTransform(rotation, tilt),
         borderColor: color,
         boxShadow: emphasized ? frameHalo(color) : undefined,
       }}

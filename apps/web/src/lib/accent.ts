@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import type { AccentColor, AuthorColor } from '@slider/shared';
 
 /*
@@ -28,9 +29,6 @@ const RING: Record<AuthorColor, string> = {
   powerpoint: 'var(--color-ring-powerpoint)',
   deleted: 'var(--color-ring-deleted)',
 };
-
-/** PowerPoint's own colour – marks of comments imported from PowerPoint. */
-export const POWERPOINT_COLOR = 'var(--color-powerpoint)';
 
 /** CSS colour for a reviewer's pins, lines and drawings (BER-99). */
 export const accentColor = (color: AuthorColor): string => ACCENT[color];
@@ -63,3 +61,15 @@ export const isLightAccent = (color: AuthorColor): boolean => LIGHT.has(color);
  */
 export const onAccentClass = (color: AuthorColor): 'text-black' | 'text-white' =>
   isLightAccent(color) ? 'text-black' : 'text-white';
+
+/**
+ * `--selection` and `--on-selection` for a page whose items are selected in the viewer's own
+ * reviewer colour, like their comments (BER-99): selected cards, the selection box.
+ */
+export const selectionStyle = (color: AuthorColor) =>
+  ({
+    '--selection': accentColor(color),
+    '--on-selection': isLightAccent(color)
+      ? 'var(--color-on-primary)'
+      : 'var(--color-primary-hover)',
+  }) as CSSProperties;

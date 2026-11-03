@@ -65,7 +65,7 @@ export function SlideCounter({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        'flex shrink-0 items-center gap-2 pr-2 text-base leading-5 text-fg tabular-nums',
+        'flex shrink-0 items-center gap-0.5 pr-1.5 text-sm leading-5 text-fg tabular-nums',
         className,
       )}
     >
@@ -79,7 +79,7 @@ export function SlideCounter({ className }: { className?: string }) {
         title="Zu Folie springen"
         maxLength={Math.max(3, String(total).length)}
         value={shown}
-        style={{ width: `calc(${Math.max(1, shown.length)}ch + 0.75rem)` }}
+        style={{ width: `calc(${Math.max(1, shown.length)}ch + 0.5rem)` }}
         onFocus={(event) => event.currentTarget.select()}
         onChange={(event) => {
           selectPendingRef.current = false;
@@ -97,7 +97,7 @@ export function SlideCounter({ className }: { className?: string }) {
           // As wide as its digits (style below), so the number keeps the pill's even padding. No
           // border: a soft fill on hover hints that it is a field, the focus ring (global
           // :focus-visible – text fields match it on click too) marks editing.
-          'h-8 min-w-8 rounded-control bg-transparent px-1.5 text-center leading-5 text-fg-muted transition-colors',
+          'h-7 min-w-6 rounded-control bg-transparent px-1 text-center leading-5 text-fg-muted transition-colors',
           'hover:bg-surface-2 focus:bg-hover focus:text-fg focus-visible:outline-offset-0',
         )}
       />

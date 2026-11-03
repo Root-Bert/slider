@@ -1,4 +1,5 @@
 import type {
+  InstanceAiUsage,
   InstanceHistory,
   InstanceInterval,
   InstanceOverview,
@@ -18,6 +19,7 @@ const INSTANCE_KEY = ['instance'] as const;
 const instanceKeys = {
   overview: [...INSTANCE_KEY, 'overview'] as const,
   timeline: (query: string) => [...INSTANCE_KEY, 'timeline', query] as const,
+  aiUsage: (query: string) => [...INSTANCE_KEY, 'ai-usage', query] as const,
   history: [...INSTANCE_KEY, 'history'] as const,
   users: (q: string, offset: number) => [...INSTANCE_KEY, 'users', q, offset] as const,
   workspaces: (q: string, offset: number) => [...INSTANCE_KEY, 'workspaces', q, offset] as const,
@@ -49,6 +51,15 @@ export const useInstanceTimeline = (query: string, { refetchInterval }: Refresh 
   useQuery({
     queryKey: instanceKeys.timeline(query),
     queryFn: () => api.get<InstanceTimeline>(`/instance/timeline?${query}`),
+    placeholderData: keepPreviousData,
+    refetchInterval,
+  });
+
+/** What the AI used in the chart's window – the timeline's query; the previous window stays meanwhile. */
+export const useInstanceAiUsage = (query: string, { refetchInterval }: Refresh = {}) =>
+  useQuery({
+    queryKey: instanceKeys.aiUsage(query),
+    queryFn: () => api.get<InstanceAiUsage>(`/instance/ai-usage?${query}`),
     placeholderData: keepPreviousData,
     refetchInterval,
   });

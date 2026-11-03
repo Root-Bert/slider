@@ -216,6 +216,13 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
     return c.redirect(target.toString(), 302);
   };
 
+  /** `path` of the web app with these query parameters set, as path and query. */
+  const withQuery = (path: string, params: Record<string, string>) => {
+    const url = new URL(path, config.webOrigin);
+    for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);
+    return url.pathname + url.search;
+  };
+
   /**
    * Back to the start page with the link prefilled and the reason, so A3 can explain it. A login
    * started in a deck (the sync banner's "sign in again") goes back to that deck instead; one
@@ -224,18 +231,12 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
    */
   const connectFailed = (c: Context, returnTo: string, kind: MicrosoftErrorKind) => {
     const back = new URL(returnTo, config.webOrigin);
-    if (back.pathname.startsWith('/d/')) {
-      back.searchParams.set('msError', kind);
-      return toWeb(c, back.pathname + back.search);
-    }
+    if (back.pathname.startsWith('/d/')) return toWeb(c, withQuery(returnTo, { msError: kind }));
     if (back.pathname !== DEFAULT_RETURN_TO) {
       return linkFailed(c, back.pathname === ACCOUNT_PATH ? returnTo : ACCOUNT_PATH, kind);
     }
-    const target = new URL(DEFAULT_RETURN_TO, config.webOrigin);
     const link = back.searchParams.get('link');
-    if (link) target.searchParams.set('link', link);
-    target.searchParams.set('msError', kind);
-    return toWeb(c, target.pathname + target.search);
+    return toWeb(c, withQuery(DEFAULT_RETURN_TO, { ...(link ? { link } : {}), msError: kind }));
   };
 
   const loginFailed = (c: Context, error: LoginError, returnTo?: string) =>
@@ -343,37 +344,24 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
   };
 
   /** Linking from /konto failed: back there with `?linkError=`. */
-  const linkFailed = (c: Context, returnTo: string, error: LoginError) => {
-    const back = new URL(returnTo, config.webOrigin);
-    back.searchParams.set('linkError', error);
-    return toWeb(c, back.pathname + back.search);
-  };
+  const linkErrorPath = (returnTo: string, error: LoginError) =>
+    withQuery(returnTo, { linkError: error });
+  const linkFailed = (c: Context, returnTo: string, error: LoginError) =>
+    toWeb(c, linkErrorPath(returnTo, error));
+
+  /** A rate limit per hour. */
+  const hourly = (limit: number) =>
+    fixedWindow({ limit, windowMs: 60 * 60_000, clock: deps.clock });
 
   /** Login Flow v2 sign-ins in progress: where they return to, and for a link whose account. */
   const nextcloudFlows = new Map<
     string,
     { returnTo: string; linkTo: string | null; expiresAt: number }
   >();
-  const nextcloudFlowLimit = fixedWindow({
-    limit: NEXTCLOUD_FLOWS_PER_HOUR,
-    windowMs: 60 * 60_000,
-    clock: deps.clock,
-  });
-  const ssoDiscoveryLimit = fixedWindow({
-    limit: SSO_DISCOVERIES_PER_HOUR,
-    windowMs: 60 * 60_000,
-    clock: deps.clock,
-  });
-  const ssoLoginLimit = fixedWindow({
-    limit: SSO_LOGINS_PER_HOUR,
-    windowMs: 60 * 60_000,
-    clock: deps.clock,
-  });
-  const nextcloudSignupMailLimit = fixedWindow({
-    limit: NEXTCLOUD_SIGNUP_MAILS_PER_ADDRESS,
-    windowMs: 60 * 60_000,
-    clock: deps.clock,
-  });
+  const nextcloudFlowLimit = hourly(NEXTCLOUD_FLOWS_PER_HOUR);
+  const ssoDiscoveryLimit = hourly(SSO_DISCOVERIES_PER_HOUR);
+  const ssoLoginLimit = hourly(SSO_LOGINS_PER_HOUR);
+  const nextcloudSignupMailLimit = hourly(NEXTCLOUD_SIGNUP_MAILS_PER_ADDRESS);
 
   /**
    * A new account through a Nextcloud: its mailbox confirms the address first
@@ -397,21 +385,8 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
     }
     return null;
   };
-  const emailLoginAddressLimit = fixedWindow({
-    limit: EMAIL_LOGIN_MAILS_PER_ADDRESS,
-    windowMs: 60 * 60_000,
-    clock: deps.clock,
-  });
-  const emailLoginClientLimit = fixedWindow({
-    limit: EMAIL_LOGIN_MAILS_PER_CLIENT,
-    windowMs: 60 * 60_000,
-    clock: deps.clock,
-  });
-  const linkErrorPath = (returnTo: string, error: LoginError) => {
-    const back = new URL(returnTo, config.webOrigin);
-    back.searchParams.set('linkError', error);
-    return back.pathname + back.search;
-  };
+  const emailLoginAddressLimit = hourly(EMAIL_LOGIN_MAILS_PER_ADDRESS);
+  const emailLoginClientLimit = hourly(EMAIL_LOGIN_MAILS_PER_CLIENT);
 
   return (
     new Hono<OptionalViewerEnv>()
@@ -624,13 +599,11 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
           ? await deps.googleDrive.findConnection(userId, connectionId)
           : null;
         if (!connection?.refreshToken) {
-          const again = new URL(returnTo, config.webOrigin);
-          again.searchParams.set('google', 'pick');
-          if (fileId) again.searchParams.set('googleFile', fileId);
-          return c.redirect(
-            googleDriveConnectUrl(again.pathname + again.search, connection?.id),
-            302,
-          );
+          const again = withQuery(returnTo, {
+            google: 'pick',
+            ...(fileId ? { googleFile: fileId } : {}),
+          });
+          return c.redirect(googleDriveConnectUrl(again, connection?.id), 302);
         }
         const pkce = await createPkce();
         await writeState(c, GOOGLE_DRIVE_COOKIE, {
@@ -653,11 +626,7 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
           return oidcCallback('google')(c);
         }
         removeCookie(c, config, GOOGLE_DRIVE_COOKIE);
-        const fail = (kind: string) => {
-          const back = new URL(saved.returnTo, config.webOrigin);
-          back.searchParams.set('googleError', kind);
-          return toWeb(c, back.pathname + back.search);
-        };
+        const fail = (kind: string) => toWeb(c, withQuery(saved.returnTo, { googleError: kind }));
         if (query['error']) {
           // Closing Google's picker (or its consent) just leads back.
           if (saved.mode === 'pick' && query['error'] === 'access_denied') {
@@ -684,10 +653,10 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
             deps.log.warn('Google Drive pick failed', error);
             return fail(error instanceof GoogleAuthError ? error.kind : 'failed');
           }
-          const back = new URL(saved.returnTo, config.webOrigin);
-          back.searchParams.set('googlePicked', fileId);
-          back.searchParams.set('googleConnection', connectionId);
-          return toWeb(c, back.pathname + back.search);
+          return toWeb(
+            c,
+            withQuery(saved.returnTo, { googlePicked: fileId, googleConnection: connectionId }),
+          );
         }
         try {
           const { claims } = await deps.googleDrive.completeConnect(

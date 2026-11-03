@@ -4,11 +4,12 @@ import { runPdfTask } from './pdf-jobs';
 
 /**
  * Width of the full slide image and of its thumbnail, in pixels (BER-94). The thumbnail serves
- * every slide shown up to 320 CSS px wide (filmstrip, minimap, deck cards) – sharp at 2× – the
- * full image everything larger – up to a 4K screen in the slide show, at full width.
+ * every slide shown up to 640 CSS px wide (filmstrip, minimap, deck cards, which reach about
+ * 640 px in a one or two column grid) – sharp at 2× – the full image everything larger – up to a
+ * 4K screen in the slide show, at full width.
  */
 export const PAGE_IMAGE_WIDTH = 3840;
-export const PAGE_THUMBNAIL_WIDTH = 640;
+export const PAGE_THUMBNAIL_WIDTH = 1280;
 /**
  * Tallest page drawn, in pixels at {@link PAGE_IMAGE_WIDTH} (a 1:4 page): the canvas is that tall,
  * so a sliver-thin slide size in an uploaded deck would otherwise ask for gigabytes. Such a PDF is
@@ -41,20 +42,6 @@ export interface PageImages {
 export type PagePicture = 'slide' | 'quick' | 'backdrop';
 
 /**
- * An element's cutout (`OdpDocument.toCutoutBytes`, drawn by {@link drawCutout}): its area and its
- * outline as masks – PNG, black, opaque where LibreOffice drew – cut to `box`, the part of the
- * slide (0–1) either covers. `null`: nothing drawn (no area, no outline).
- */
-export interface CutoutImages {
-  fill: Uint8Array | null;
-  stroke: Uint8Array | null;
-  box: { x: number; y: number; w: number; h: number } | null;
-  /** What lies over the element, as drawn (PNG, see-through around it), cut to `aboveBox`. */
-  above: Uint8Array | null;
-  aboveBox: { x: number; y: number; w: number; h: number } | null;
-}
-
-/**
  * Width a slide taken apart for the layers view is drawn at: each layer is seen tilted and
  * smaller than the slide, and a slide holds a few dozen of them.
  */
@@ -76,21 +63,19 @@ export interface LayerImages {
 /**
  * Draws a slide taken apart from its PDF – its first page the slide without its elements when
  * `background` – in a worker with a deadline, in the line of what someone waits for when
- * `interactive`, else after it (a slide beside the one looked at).
+ * `interactive`, else after it (a slide beside the one looked at); `width` px wide.
  */
 export function drawLayers(
   pdf: Uint8Array,
-  { interactive = true, background = true } = {},
+  {
+    interactive = true,
+    background = true,
+    width = LAYER_IMAGE_WIDTH,
+  }: { interactive?: boolean; background?: boolean; width?: number } = {},
 ): Promise<LayerImages> {
-  return runPdfTask({ kind: 'layers', bytes: pdf, background }, undefined, { interactive });
-}
-
-/**
- * Draws an element's cutout from its PDF (area, outline, and what lies over it if anything does),
- * in a worker with a deadline.
- */
-export function drawCutout(pdf: Uint8Array): Promise<CutoutImages> {
-  return runPdfTask({ kind: 'cutout', bytes: pdf }, undefined, { interactive: true });
+  return runPdfTask({ kind: 'layers', bytes: pdf, background, width }, undefined, {
+    interactive,
+  });
 }
 
 // Office PDFs embed their fonts; the standard fonts only back up the rare page that does not.
@@ -125,12 +110,18 @@ export function rasterizePdf(
     expectedPages,
     picture,
     interactive,
+    background,
   }: {
     expectedPages?: number;
     picture?: PagePicture;
     /** Someone waits for it on screen: drawn in a line of its own, not after imports. */
     interactive?: boolean;
+    /** Nobody waits for it (a re-render, a sync): drawn after the imports. */
+    background?: boolean;
   } = {},
 ): Promise<number> {
-  return runPdfTask({ kind: 'pages', bytes: pdf, expectedPages, picture }, onPage, { interactive });
+  return runPdfTask({ kind: 'pages', bytes: pdf, expectedPages, picture }, onPage, {
+    interactive,
+    background,
+  });
 }

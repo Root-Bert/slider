@@ -15,7 +15,7 @@ type Part = Omit<LegendItem, 'value'> & {
  * Part-to-whole as one stacked bar – segments apart by a 2px gap, never outlined – with a legend
  * below that names every part with its value, so nothing hangs on colour or on hovering.
  */
-function PartsBar({ parts, label }: { parts: readonly Part[]; label: string }) {
+export function PartsBar({ parts, label }: { parts: readonly Part[]; label: string }) {
   const total = parts.reduce((sum, part) => sum + part.amount, 0);
   const named = parts.map((part) => ({ ...part, value: part.value ?? formatCount(part.amount) }));
   return (
@@ -42,7 +42,7 @@ function PartsBar({ parts, label }: { parts: readonly Part[]; label: string }) {
 }
 
 /** The number a card leads with, and what it counts. */
-function Figure({ value, caption }: { value: string; caption: string }) {
+export function Figure({ value, caption }: { value: string; caption: string }) {
   return (
     <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
       <span className="text-2xl leading-none font-semibold whitespace-nowrap text-fg">{value}</span>
@@ -60,7 +60,7 @@ export function StorageCard({ overview }: { overview: InstanceOverview }) {
   const total = storageTotal(overview);
   return (
     <Section title="Speicher" density="compact">
-      <Figure value={formatFileSize(total)} caption="alle Reviews und Aufnahmen" />
+      <Figure value={formatFileSize(total)} caption="alle Präsentationen und Aufnahmen" />
       <PartsBar label="Speicher nach Art der Datei" parts={storageParts(storage)} />
     </Section>
   );

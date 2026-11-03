@@ -35,7 +35,7 @@ export function LeaveGuard() {
   return (
     <ConfirmDialog
       title="Entwurf verwerfen?"
-      description="Dein Kommentar ist noch nicht gesendet. Wenn du die Review jetzt verlässt, gehen Text, Aufnahme oder Zeichnung verloren – ein laufender Upload bricht ab."
+      description="Dein Kommentar ist noch nicht gesendet. Wenn du die Präsentation jetzt verlässt, gehen Text, Aufnahme oder Zeichnung verloren – ein laufender Upload bricht ab."
       confirmLabel="Verwerfen und verlassen"
       cancelLabel="Weiterschreiben"
       onConfirm={() => blocker.proceed()}

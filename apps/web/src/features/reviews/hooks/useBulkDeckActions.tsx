@@ -1,21 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Deck } from '@slider/shared';
-import { pluralize } from '@/lib/format';
+import { pluralize, withCount } from '@/lib/format';
 import { useDeckStatuses, useInvalidateDecks, useRerenderDecks, useUpdateDecks } from '@/lib/api';
 import type { MenuAction, ShowToast } from '@/ui';
 import { DeleteDeckDialog } from '../components/DeleteDeckDialog';
 import { MoveDecksDialog } from '../components/MoveDecksDialog';
-import { failureMessage, movedMessage, withCount } from '../lib/bulk-messages';
+import { failureMessage, movedMessage } from '../lib/bulk-messages';
 import { bulkRerenderProgress } from '../lib/bulk-rerender';
 import { usePinnedDecks } from './usePinnedDecks';
 import { MAX_PINNED } from '../lib/pinned-decks';
 
 const NO_IDS: readonly string[] = [];
 
-const reviews = (count: number) => pluralize(count, 'Review', 'Reviews');
+const reviews = (count: number) => pluralize(count, 'Präsentation', 'Präsentationen');
 
-const NOT_MANAGED = 'Gilt nur für Reviews, die du verwaltest.';
-const NOT_COMMENTABLE = 'Gilt nur für Reviews, die du kommentieren darfst.';
+const NOT_MANAGED = 'Gilt nur für Präsentationen, die du verwaltest.';
+const NOT_COMMENTABLE = 'Gilt nur für Präsentationen, die du kommentieren darfst.';
 
 /**
  * "Neu rendern" for several decks (BER-94): starts each, then follows their status until none
@@ -109,7 +109,9 @@ export function useBulkDeckActions(
       const unpinned = decks.filter((deck) => !pins.isPinned(deck.id));
       const left = unpinned.filter((deck) => !pins.pin(deck.id)).length;
       if (left > 0) {
-        onNotify(`Höchstens ${MAX_PINNED} Reviews angepinnt – ${reviews(left)} nicht angepinnt.`);
+        onNotify(
+          `Höchstens ${MAX_PINNED} Präsentationen angepinnt – ${reviews(left)} nicht angepinnt.`,
+        );
       }
     }
     onDone();

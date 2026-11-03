@@ -5,6 +5,7 @@
  */
 
 import {
+  rectCorners,
   isTextStroke,
   type AccentColor,
   type Point,
@@ -103,13 +104,7 @@ export function eraserHits(stroke: Stroke, p: Point, width: number, height: numb
   const px = ({ x, y }: Point) => ({ x: x * width, y: y * height });
   const box = boxOf(stroke);
   const points = box
-    ? [
-        { x: box.x, y: box.y },
-        { x: box.x + box.w, y: box.y },
-        { x: box.x + box.w, y: box.y + box.h },
-        { x: box.x, y: box.y + box.h },
-        { x: box.x, y: box.y },
-      ].map(px)
+    ? [...rectCorners(box), { x: box.x, y: box.y }].map(px)
     : stroke.points.map(px);
   const reach = STROKE_STYLE[stroke.tool].width / 2 + ERASER_REACH;
   return points.some(

@@ -1,17 +1,22 @@
 import { useEffect, useEffectEvent, type RefObject } from 'react';
+import { flushSync } from 'react-dom';
 import { rafThrottle } from '@/lib/dom';
 import { wheelPixels } from '@/lib/wheel';
-import { resolvedSplit, type TrackGeometry } from '../lib/timeline-layout';
-import { pinchSplit, SPLIT_MAX, wheelFactor, wheelSplit } from '../lib/split';
+import type { TrackGeometry } from '../lib/timeline-layout';
+import { pinchSplit, wheelFactor, wheelSplit } from '../lib/split';
 import { normalizeClientPoint } from '../../lib/geometry';
 import {
   NO_COVER,
   panBy,
+  SLIDE_ZOOM_MIN,
+  snappedCentre,
   startView,
   zoomAround,
   type Cover,
   type SlideZoom,
 } from '../../stage/lib/slide-zoom';
+
+type View = Pick<SlideZoom, 'scale' | 'x' | 'y'>;
 import { useViewerDispatch, useViewerState } from '../../state/viewer-state';
 import type { SizeAnchor } from '../timeline-context';
 import { isModKey } from '@/lib/keyboard';
@@ -23,14 +28,23 @@ interface GestureEvent extends UIEvent {
   clientY: number;
 }
 
-/** The slide frame under an event's target – where a zoom past the largest slides goes. */
-const frameOf = (target: EventTarget | null) =>
+/** The slide frame under an event's target – where a zoom over a slide goes. */
+export const frameOf = (target: EventTarget | null) =>
   target instanceof Element ? target.closest<HTMLElement>('[data-slide-frame]') : null;
 
 /** How much a frame's slide overflows it (`SlideFrame`): set while it is cropped unzoomed. */
-const coverIn = (frame: HTMLElement): Cover | null => {
+export const coverIn = (frame: HTMLElement): Cover | null => {
   const [x, y] = frame.dataset.slideCover?.split(',').map(Number) ?? [];
   return x && y ? { x, y } : null;
+};
+
+/** A text field under the pointer that can still scroll the way the wheel goes. */
+const scrollsItself = (target: Element, deltaY: number) => {
+  const field = target.closest('textarea');
+  if (!field || field.scrollHeight <= field.clientHeight) return false;
+  return deltaY < 0
+    ? field.scrollTop > 0
+    : field.scrollTop + field.clientHeight < field.scrollHeight;
 };
 
 /** Where the pointer is on a slide frame, 0–1 each way. */
@@ -39,15 +53,17 @@ const focusIn = (frame: HTMLElement, clientX: number, clientY: number) =>
 
 /**
  * Wheel and pinch on the timeline (BER-96):
- * - Pinch and Ctrl/⌘ + wheel move the split handle – bigger or smaller slides, like zooming a
- *   video timeline – anchored horizontally at the pointer. Chrome, Firefox and Edge report
- *   trackpad pinch as a wheel event with `ctrlKey`; Safari sends `gesture*` events.
- * - Zooming in further once the slides are as big as they get zooms into the slide under the
- *   pointer (`stage/lib/slide-zoom`): the slide keeps its size and shows a part of itself. Zooming
- *   out first undoes that, then shrinks the slides again.
+ * - Pinch and Ctrl/⌘ + wheel over a slide zoom into that slide (`stage/lib/slide-zoom`): it keeps
+ *   its size and shows a part of itself, around the pointer. Zooming out ends at 1× – the rest of
+ *   the interface never moves. Chrome, Firefox and Edge report trackpad pinch as a wheel event
+ *   with `ctrlKey`; Safari sends `gesture*` events.
+ * - Elsewhere on the timeline they move the split handle – bigger or smaller slides, like zooming
+ *   a video timeline – anchored horizontally at the pointer.
  * - A plain wheel over the zoomed slide moves the part it shows, both ways. A slide cropped by
  *   its frame (portrait pages in the 16:9 view) moves up and down the same way until it reaches
  *   its edge.
+ * - Up and down over the band of slides swipes its tracks (`onTrackWheel`: variants over the
+ *   slides, notes under them).
  * - Everything else scrolls natively: up/down never moves the timeline sideways – a sideways
  *   swipe (or Shift + wheel) does.
  */
@@ -56,16 +72,23 @@ export function useTimelineWheel({
   geometry,
   anchorRef,
   enabled,
+  onTrackWheel,
 }: {
   scrollerRef: RefObject<HTMLElement | null>;
   geometry: TrackGeometry | null;
   anchorRef: RefObject<SizeAnchor | null>;
   /** Off on phones: slides always fill the width there (no split handle). */
   enabled: boolean;
+  /**
+   * Up and down over the band of slides: swipes its tracks (`useTrackSwipe`) – `true` when it took
+   * the wheel.
+   */
+  onTrackWheel?: (event: WheelEvent) => boolean;
 }) {
   const { split, slideZooms } = useViewerState();
   const dispatch = useViewerDispatch();
   const current = useEffectEvent(() => ({ split, geometry, slideZooms }));
+  const trackWheel = useEffectEvent((event: WheelEvent) => onTrackWheel?.(event) ?? false);
 
   useEffect(() => {
     const scroller = scrollerRef.current;
@@ -75,17 +98,21 @@ export function useTimelineWheel({
     let pending: number | null = null;
     // Zoom changes waiting, by slide; `null`: that slide's zoom ends.
     const pendingZooms = new Map<string, SlideZoom | null>();
-    const flush = rafThrottle(() => {
-      for (const [slideId, zoom] of pendingZooms) {
-        dispatch({ type: 'slideZoomChanged', slideId, zoom });
-      }
-      pendingZooms.clear();
-      if (pending === null) return;
-      // Nothing changes (already at an end): drop the anchor so it can't leak into a later change.
-      if (pending === current().split) anchorRef.current = null;
-      else dispatch({ type: 'splitChanged', split: pending });
-      pending = null;
-    });
+    // Drawn in the frame it is dispatched in (`flushSync`) – left to React's scheduler, it would
+    // show a frame later.
+    const flush = rafThrottle(() =>
+      flushSync(() => {
+        for (const [slideId, zoom] of pendingZooms) {
+          dispatch({ type: 'slideZoomChanged', slideId, zoom });
+        }
+        pendingZooms.clear();
+        if (pending === null) return;
+        // Nothing changes (already at an end): drop the anchor so it can't leak into a later change.
+        if (pending === current().split) anchorRef.current = null;
+        else dispatch({ type: 'splitChanged', split: pending });
+        pending = null;
+      }),
+    );
     const anchorAt = (clientX: number) => {
       const viewportX = clientX - scroller.getBoundingClientRect().left;
       anchorRef.current = { contentX: scroller.scrollLeft + viewportX, viewportX };
@@ -95,23 +122,20 @@ export function useTimelineWheel({
       const id = frame.dataset.slideFrame!;
       return pendingZooms.has(id) ? pendingZooms.get(id)! : (current().slideZooms.get(id) ?? null);
     };
-    const atLargest = () => {
-      const { split: base, geometry: geo } = current();
-      return geo !== null && resolvedSplit(pending ?? base, geo) >= SPLIT_MAX;
-    };
-    /** Zooms the slide in `frame` by `factor` – unless it isn't zoomed and that would be no zoom-in past the largest slides. */
+    /** Zooms the slide in `frame` by `factor` around the pointer; furthest out, zooming out does nothing. */
     const zoomSlide = (frame: HTMLElement, factor: number, clientX: number, clientY: number) => {
       const zoom = zoomIn(frame);
-      // At 1× (a cropped slide keeps its view there) zooming out shrinks the slides again.
-      if ((!zoom || zoom.scale <= 1) && (factor <= 1 || !atLargest())) return false;
+      if ((zoom?.scale ?? 1) <= SLIDE_ZOOM_MIN && factor <= 1) return;
       const cover = coverIn(frame) ?? NO_COVER;
       const view = zoomAround(zoom, factor, focusIn(frame, clientX, clientY), cover);
       const slideId = frame.dataset.slideFrame!;
       pendingZooms.set(slideId, view && { slideId, ...view });
       flush.schedule();
-      return true;
     };
 
+    // Per slide, a pan by the wheel as shown and as it went before the middle caught it.
+    const wheeled = new Map<string, { shown: View; free: View }>();
+    const sameView = (a: View, b: View) => a.scale === b.scale && a.x === b.x && a.y === b.y;
     const onWheel = (event: WheelEvent) => {
       // Already taken (the minimap scrolls its own overflowing row).
       if (event.defaultPrevented) return;
@@ -120,7 +144,10 @@ export function useTimelineWheel({
         event.preventDefault();
         const frame = frameOf(event.target);
         const factor = wheelFactor(event.deltaY, event.deltaMode);
-        if (frame && zoomSlide(frame, factor, event.clientX, event.clientY)) return;
+        if (frame) {
+          zoomSlide(frame, factor, event.clientX, event.clientY);
+          return;
+        }
         const { split: base, geometry: geo } = current();
         if (!geo) return;
         anchorAt(event.clientX);
@@ -132,7 +159,7 @@ export function useTimelineWheel({
       const frame = frameOf(target);
       const zoom = frame && zoomIn(frame);
       const cover = frame && coverIn(frame);
-      const zoomed = zoom !== null && zoom.scale > 1;
+      const zoomed = zoom !== null && zoom.scale !== 1;
       // Cropped only, the slide moves up and down – a sideways swipe scrolls the timeline.
       const vertical = Math.abs(event.deltaY) > Math.abs(event.deltaX) && !event.shiftKey;
       if (frame && (zoomed || (cover && vertical))) {
@@ -145,43 +172,50 @@ export function useTimelineWheel({
           : 0;
         const dy = sideways ? 0 : wheelPixels(event.deltaY, event.deltaMode);
         const from = zoom ?? startView(cover!);
-        const view = panBy(from, dx / box.width, dy / box.height, cover ?? NO_COVER);
+        const slideId = frame.dataset.slideFrame!;
+        // Caught in the middle (zoomed out), it moves on from where the wheel would have taken it
+        // – else it could not be scrolled out of the catch in small steps.
+        const caught = wheeled.get(slideId);
+        const base = caught && sameView(caught.shown, from) ? caught.free : from;
+        const free = panBy(base, dx / box.width, dy / box.height, cover ?? NO_COVER);
+        const view = snappedCentre(free, box.width, box.height, cover ?? NO_COVER);
+        wheeled.set(slideId, { shown: view, free });
         // Only cropped, at its edge: the wheel does what it does elsewhere.
         const moved = view.x !== from.x || view.y !== from.y;
         if (zoomed || moved) {
           event.preventDefault();
           if (moved) {
-            const slideId = frame.dataset.slideFrame!;
             pendingZooms.set(slideId, { slideId, ...view });
             flush.schedule();
           }
           return;
         }
       }
+      // Up and down over the band: its tracks (variants over the slides, notes under them) – not
+      // while a notes field still scrolls that way itself.
+      if (vertical && target?.closest('[data-track], [data-track-dots]') && !scrollsItself(target, event.deltaY))
+        trackWheel(event);
     };
 
     let gestureStart: number | null = null;
-    // A pinch over a slide that zooms it: the slide's frame, its zoom when that began and the
-    // gesture's scale then (a pinch can grow the slides to their largest, then zoom on).
+    // A pinch over a slide zooms it: the slide's frame and its zoom when the pinch began.
     let gestureFrame: HTMLElement | null = null;
-    let gestureZoom: { from: SlideZoom | null; scale: number } | null = null;
+    let gestureZoom: SlideZoom | null = null;
     const onGestureStart = (event: Event) => {
       event.preventDefault();
       gestureStart = current().split;
       gestureFrame = frameOf(event.target);
-      const zoom = gestureFrame && zoomIn(gestureFrame);
-      // A cropped slide's view at 1× is no zoom: pinching resizes the slides first.
-      gestureZoom = zoom && zoom.scale > 1 ? { from: zoom, scale: 1 } : null;
+      gestureZoom = gestureFrame && zoomIn(gestureFrame);
     };
     const onGestureChange = (event: Event) => {
       event.preventDefault();
       const geo = current().geometry;
       if (!geo) return;
       const gesture = event as GestureEvent;
-      if (gestureFrame && gestureZoom) {
+      if (gestureFrame) {
         const focus = focusIn(gestureFrame, gesture.clientX, gesture.clientY);
         const cover = coverIn(gestureFrame) ?? NO_COVER;
-        const view = zoomAround(gestureZoom.from, gesture.scale / gestureZoom.scale, focus, cover);
+        const view = zoomAround(gestureZoom, gesture.scale, focus, cover);
         const slideId = gestureFrame.dataset.slideFrame!;
         pendingZooms.set(slideId, view && { slideId, ...view });
         flush.schedule();
@@ -189,9 +223,6 @@ export function useTimelineWheel({
       }
       anchorAt(gesture.clientX);
       pending = pinchSplit(gestureStart, gesture.scale, geo);
-      if (gestureFrame && gesture.scale > 1 && pending >= SPLIT_MAX) {
-        gestureZoom = { from: zoomIn(gestureFrame), scale: gesture.scale };
-      }
       flush.schedule();
     };
     const preventDefault = (event: Event) => event.preventDefault();

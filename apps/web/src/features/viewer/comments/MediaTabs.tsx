@@ -47,27 +47,45 @@ const REPLY_LABELS: Record<MediaReply['kind'], { label: string; title: string }>
 
 /**
  * Audio / Video / Skizze icons beside a reply field. Text needs no button – typing is the text
- * reply. Mic and camera open the recorder, Skizze the sheet to draw on – in `MediaReplyDialog`,
- * which outlives this field (the card may be windowed out or turn compact meanwhile).
+ * reply. The mic records a voice memo right in the field (`VoiceMemoBar`); camera and Skizze open
+ * the recorder or the sheet in `MediaReplyDialog`, which outlives this field (the card may be
+ * windowed out or turn compact meanwhile).
  */
-export function MediaReplyButtons({ root, size = 'sm' }: { root: Comment; size?: 'sm' | 'md' }) {
+export function MediaReplyButtons({
+  root,
+  voice,
+  size = 'sm',
+}: {
+  root: Comment;
+  /** The field's own voice memo (`VoiceMemoBar`): the mic records right there, no dialog. */
+  voice: { on: boolean; start: () => void; discard: () => void };
+  size?: 'sm' | 'md';
+}) {
   const dispatch = useViewerDispatch();
   return (
     <>
       {MEDIA_KINDS.filter((kind) => kind.id !== 'text').map((kind) => {
         const id = kind.id as MediaReply['kind'];
+        const mic = id === 'audio';
+        const on = mic && voice.on;
         return (
           <IconButton
             key={id}
             icon={kind.icon}
-            label={REPLY_LABELS[id].label}
-            title={REPLY_LABELS[id].title}
+            label={on ? 'Sprachmemo löschen' : REPLY_LABELS[id].label}
+            title={on ? 'Sprachmemo löschen' : REPLY_LABELS[id].title}
             variant="subtle"
             size={size === 'sm' ? 'compact' : 'sm'}
             iconSize={18}
-            onClick={() =>
-              dispatch({ type: 'mediaReplyOpened', reply: { threadId: root.id, kind: id } })
-            }
+            active={on}
+            onClick={() => {
+              if (mic) {
+                if (voice.on) voice.discard();
+                else voice.start();
+                return;
+              }
+              dispatch({ type: 'mediaReplyOpened', reply: { threadId: root.id, kind: id } });
+            }}
           />
         );
       })}

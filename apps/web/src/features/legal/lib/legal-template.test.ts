@@ -19,7 +19,7 @@ const allValues = Object.fromEntries(
 ) as TemplateValues;
 
 describe('legal templates', () => {
-  it('leave neither markers nor gaps once every field is filled', () => {
+  it('leave neither markers nor gaps once filled, nor what the instance does not use', () => {
     for (const on of [true, false]) {
       for (const template of [privacyTemplate, imprintTemplate]) {
         const text = fillTemplate(template, allValues, allOptions(on));
@@ -27,9 +27,7 @@ describe('legal templates', () => {
         expect(findGaps(text)).toEqual([]);
       }
     }
-  });
 
-  it('drop what the instance does not use', () => {
     const off = fillTemplate(privacyTemplate, allValues, allOptions(false));
     for (const word of [
       'Unsplash',
@@ -54,15 +52,12 @@ describe('legal templates', () => {
     ]) {
       expect(on).toContain(word);
     }
+    // The login methods stay one list.
+    expect(on).toContain('- Microsoft-Konto (Microsoft Ireland Operations Ltd.)\n- Google-Konto');
+    expect(on).toContain('Ireland Ltd.)\n- Firmen-Login (SSO) über <oidcProvider>\n');
   });
 
-  it('keep the login methods one list', () => {
-    const text = fillTemplate(privacyTemplate, allValues, allOptions(true));
-    expect(text).toContain('- Microsoft-Konto (Microsoft Ireland Operations Ltd.)\n- Google-Konto');
-    expect(text).toContain('Ireland Ltd.)\n- Firmen-Login (SSO) über <oidcProvider>\n');
-  });
-
-  it('show an empty field as a gap and take optional parts out', () => {
+  it('show an empty field as a gap and take optional parts out, line breaks kept', () => {
     const text = fillTemplate(imprintTemplate, {}, {});
     expect(findGaps(text)).toEqual([
       '[Name oder Firma]',
@@ -73,22 +68,17 @@ describe('legal templates', () => {
     expect(text).not.toContain('Telefon');
     expect(text).not.toContain('Umsatzsteuer');
     expect(text).toContain('E-Mail: [E-Mail-Adresse]\n\n## Verbraucherstreitbeilegung');
-  });
-
-  it('keep the line break after a block kept inline', () => {
-    const text = fillTemplate(imprintTemplate, { phone: '0123', vatId: 'DE1' }, {});
-    expect(text).toContain(
+    // After a block kept inline.
+    const filled = fillTemplate(imprintTemplate, { phone: '0123', vatId: 'DE1' }, {});
+    expect(filled).toContain(
       'Telefon: 0123\n\n## Umsatzsteuer\n\nUmsatzsteuer-Identifikationsnummer nach § 27a UStG: DE1\n\n## Verbraucher',
     );
   });
 });
 
 describe('gaps', () => {
-  it('are found once each, never a link', () => {
+  it('are found once each, never a link, and filled everywhere or taken out with their line', () => {
     expect(findGaps('[A] und [B], wieder [A], [Link](https://x.de)')).toEqual(['[A]', '[B]']);
-  });
-
-  it('are filled everywhere, or taken out with their empty line', () => {
     expect(fillGap('E-Mail: [E]\nWieder [E]', '[E]', ' a@b.de ')).toBe(
       'E-Mail: a@b.de\nWieder a@b.de',
     );

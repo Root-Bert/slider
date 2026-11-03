@@ -18,16 +18,16 @@ export function NoResults({
   if (!hasDecks) {
     return (
       <EmptyState
-        title="Noch keine Reviews"
+        title="Noch keine Präsentationen"
         message={
           onAdd
             ? 'Füge eine Präsentation per Link hinzu oder lade eine Datei hoch, um gemeinsam daran zu arbeiten.'
-            : 'In diesem Workspace gibt es noch keine Reviews. Sobald jemand eine anlegt, erscheint sie hier.'
+            : 'In diesem Workspace gibt es noch keine Präsentationen. Sobald jemand eine anlegt, erscheint sie hier.'
         }
         action={
           onAdd && (
             <Button icon="add" onClick={onAdd}>
-              Neue Review
+              Neue Präsentation
             </Button>
           )
         }
@@ -43,9 +43,9 @@ export function NoResults({
     );
   }
   const messages: Record<ReviewTab, string> = {
-    all: 'Alle Reviews sind archiviert.',
+    all: 'Alle Präsentationen sind archiviert.',
     open: 'Keine offenen Kommentare – alles erledigt.',
-    archive: 'Archivierte Reviews erscheinen hier.',
+    archive: 'Archivierte Präsentationen erscheinen hier.',
   };
   return <EmptyState title="Hier ist nichts" message={messages[tab]} />;
 }

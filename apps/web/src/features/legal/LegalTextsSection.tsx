@@ -1,17 +1,9 @@
 import { useId, useState } from 'react';
 import type { LegalTexts, SetupStatus } from '@slider/shared';
-import { useLegalTexts, useSaveLegalTexts } from '@/lib/api';
 import { routes } from '@/lib/routes';
-import {
-  AutosizeTextarea,
-  Button,
-  ErrorText,
-  Section,
-  Spinner,
-  TextLink,
-  type ShowToast,
-} from '@/ui';
+import { AutosizeTextarea, Button, ErrorText, Section, Spinner, TextLink } from '@/ui';
 import { GapList } from './GapList';
+import { LEGAL_LABELS, type LegalTextsDraft } from './lib/legal-draft';
 import { fillTemplate } from './lib/legal-template';
 import { TemplateFiller } from './TemplateFiller';
 import privacyTemplate from './templates/datenschutz.md?raw';
@@ -20,28 +12,24 @@ import imprintTemplate from './templates/impressum.md?raw';
 type Settings = NonNullable<SetupStatus['settings']>;
 
 const FIELDS = [
-  { kind: 'imprint', label: 'Impressum', to: routes.imprint() },
-  {
-    kind: 'privacy',
-    label: 'Datenschutzerklärung',
-    to: routes.privacy(),
-  },
+  { kind: 'imprint', label: LEGAL_LABELS.imprint, to: routes.imprint() },
+  { kind: 'privacy', label: LEGAL_LABELS.privacy, to: routes.privacy() },
 ] as const;
 
 /**
  * Instance admin, on `/einrichtung`: writes imprint and privacy policy (BER-141), shown at
  * `/impressum` and `/datenschutz` and linked under every public page and mail. The templates are
  * filled in a form – the operator's details once, what this instance uses switched on from its
- * settings – and what is left as `[…]` is set gap by gap.
+ * settings – and what is left as `[…]` is set gap by gap. Saved with the page's other settings.
  */
 export function LegalTextsSection({
+  legal,
   settings,
-  onNotify,
 }: {
+  legal: LegalTextsDraft;
   settings?: Settings | undefined;
-  onNotify: ShowToast;
 }) {
-  const stored = useLegalTexts();
+  const { stored } = legal;
   return (
     <Section
       title="Impressum & Datenschutz"
@@ -52,29 +40,25 @@ export function LegalTextsSection({
       ) : stored.isError ? (
         <ErrorText>{stored.error.message}</ErrorText>
       ) : (
-        <LegalTextsEditor stored={stored.data} settings={settings} onNotify={onNotify} />
+        <LegalTextsEditor legal={legal} stored={stored.data} settings={settings} />
       )}
     </Section>
   );
 }
 
-/** Starts from the saved texts; after saving, they are the new saved ones. */
+/** Mounted once the saved texts are there: with none yet, the form opens on its own. */
 function LegalTextsEditor({
+  legal,
   stored,
   settings,
-  onNotify,
 }: {
+  legal: LegalTextsDraft;
   stored: LegalTexts;
   settings: Settings | undefined;
-  onNotify: ShowToast;
 }) {
-  const save = useSaveLegalTexts();
-  const [draft, setDraft] = useState<LegalTexts>(stored);
+  const { draft, update } = legal;
   const empty = !draft.imprint?.trim() && !draft.privacy?.trim();
   const [filling, setFilling] = useState(empty);
-  const changed =
-    (draft.privacy ?? '') !== (stored.privacy ?? '') ||
-    (draft.imprint ?? '') !== (stored.imprint ?? '');
 
   return (
     <>
@@ -84,7 +68,7 @@ function LegalTextsEditor({
           replaces={!empty}
           onClose={() => setFilling(false)}
           onFill={(values, options) => {
-            setDraft({
+            update({
               imprint: fillTemplate(imprintTemplate, values, options),
               privacy: fillTemplate(privacyTemplate, values, options),
             });
@@ -103,23 +87,10 @@ function LegalTextsEditor({
           key={field.kind}
           label={field.label}
           value={draft[field.kind] ?? ''}
-          onChange={(text) => setDraft((current) => ({ ...current, [field.kind]: text }))}
+          onChange={(text) => update({ [field.kind]: text })}
           viewTo={stored[field.kind] ? field.to : null}
         />
       ))}
-      {save.error && <ErrorText>{save.error.message}</ErrorText>}
-      <div>
-        <Button
-          variant="secondary"
-          disabled={!changed}
-          loading={save.isPending}
-          onClick={() =>
-            save.mutate(draft, { onSuccess: () => onNotify('Impressum & Datenschutz gespeichert') })
-          }
-        >
-          Speichern
-        </Button>
-      </div>
     </>
   );
 }

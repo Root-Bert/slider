@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { createMiddleware } from 'hono/factory';
 import {
@@ -6,29 +6,38 @@ import {
   MAX_COMMENT_IMAGES,
   MAX_IMAGE_BYTES,
   type MediaUsage,
+  setCommentRecordingInputSchema,
 } from '@slider/shared';
 import { requireDeckAccess } from '../auth/access';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import type { AppDeps } from '../deps';
 import { ApiError, badRequest, notFound } from '../http/errors';
 import { parseRange } from '../http/range';
-import { clientAddress, fixedWindow } from '../http/rate-limit';
-import { createMediaComment, getMediaForViewer, getMediaUsage } from '../services/media';
+import { assertWithinLimit, clientAddress, fixedWindow } from '../http/rate-limit';
+import { loadComment } from '../services/comments';
+import { takeRecordingUpload } from './deck-tus';
+import {
+  createMediaComment,
+  getMediaForViewer,
+  getMediaUsage,
+  retryTranscript,
+  setCommentRecording,
+} from '../services/media';
 
 const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
 
 /**
- * Recordings and images per account and hour. Each one may be ~210 MB that the server buffers
+ * Recordings and images per account and hour. Each one may be ~600 MB that the server buffers
  * and stores; generous for reviewing, but one account cannot fill memory or disk in a loop.
  */
 export const MEDIA_UPLOADS_PER_HOUR = { limited: 60, unlimited: 300 } as const;
 /** Uploads one account may have in flight at once – each is buffered whole in memory. */
 export const MEDIA_UPLOADS_IN_FLIGHT = 2;
 /**
- * All accounts together: bounds the memory of parallel uploads (up to ~210 MB each – a recording
- * plus ten images – held twice while parsed and copied).
+ * All accounts together: bounds the memory of parallel uploads. A recording of 512 MB takes
+ * about 1–1.5 GB while stored (the file, its encrypted copy; in one request the body too).
  */
-export const MEDIA_UPLOADS_IN_FLIGHT_TOTAL = 5;
+export const MEDIA_UPLOADS_IN_FLIGHT_TOTAL = 2;
 /** Per address: several people behind one office NAT share it. */
 const CLIENT_FACTOR = 5;
 const HOUR_MS = 60 * 60_000;
@@ -43,7 +52,10 @@ const tooMany = (message: string) => new ApiError(429, 'rate_limited', message);
  * access cannot make the server buffer anything), the hourly budget must not be spent, and the
  * account – and the server as a whole – may only stream a few uploads at a time.
  */
-function mediaUploadGuard(deps: AppDeps) {
+function mediaUploadGuard(
+  deps: AppDeps,
+  deckIdOf: (c: Context<ViewerEnv>) => Promise<string> | string,
+) {
   const perUser = deps.config.limited
     ? MEDIA_UPLOADS_PER_HOUR.limited
     : MEDIA_UPLOADS_PER_HOUR.unlimited;
@@ -58,7 +70,7 @@ function mediaUploadGuard(deps: AppDeps) {
 
   return createMiddleware<ViewerEnv>(async (c, next) => {
     const userId = c.var.viewer.author.id;
-    await requireDeckAccess(deps, c.var.viewer, c.req.param('deckId') ?? '', 'comment');
+    await requireDeckAccess(deps, c.var.viewer, await deckIdOf(c), 'comment');
     const user = byUser.hit(userId);
     const client = byClient.hit(clientAddress(c));
     if (!user.allowed || !client.allowed) {
@@ -96,8 +108,35 @@ function mediaUploadGuard(deps: AppDeps) {
 /** Voice and video comments (BER-116), and images (drawn, pasted or picked) with an optional voice memo. */
 export function mediaRoutes(deps: AppDeps) {
   const viewer = viewerMiddleware(deps);
+  // Each try is a paid request on the workspace's speech key, and they go one after another.
+  const retryWindow = fixedWindow({ limit: 10, windowMs: HOUR_MS, clock: deps.clock });
+  const transcriptRetries = createMiddleware<ViewerEnv>(async (c, next) => {
+    assertWithinLimit(
+      c,
+      retryWindow.hit(c.var.viewer.author.id),
+      'Zu viele neue Versuche. Bitte warte einen Moment.',
+    );
+    await next();
+  });
   const maxBytes = deps.config.media.maxBytes;
-  const guard = mediaUploadGuard(deps);
+  const guard = mediaUploadGuard(deps, (c) => c.req.param('deckId') ?? '');
+  // The comment's deck – an unknown comment is a 404 before anything is read.
+  const commentGuard = mediaUploadGuard(
+    deps,
+    async (c) => (await loadComment(deps, c.req.param('commentId') ?? '')).deckId,
+  );
+  const recordingTooLarge = bodyLimit({
+    maxSize: maxBytes + MULTIPART_OVERHEAD_BYTES,
+    onError: (c) =>
+      c.json(
+        new ApiError(
+          413,
+          'file_too_large',
+          `Die Aufnahme ist zu groß (maximal ${Math.floor(maxBytes / 1024 / 1024)} MB).`,
+        ).toBody(),
+        413,
+      ),
+  });
 
   return (
     new Hono<ViewerEnv>()
@@ -123,9 +162,11 @@ export function mediaRoutes(deps: AppDeps) {
             throw badRequest('Die Aufnahme konnte nicht gelesen werden.');
           });
           const file = body['file'];
+          // A big recording came over tus before (`deck-tus.ts`): its upload's id instead.
+          const upload = body['upload'];
           const images = [body['image'] ?? []].flat().filter((part) => part instanceof File);
           const comment = body['comment'];
-          if (!(file instanceof File) && images.length === 0)
+          if (!(file instanceof File) && typeof upload !== 'string' && images.length === 0)
             throw badRequest(
               'Bitte die Aufnahme im Feld „file“ oder ein Bild im Feld „image“ mitsenden.',
             );
@@ -139,27 +180,76 @@ export function mediaRoutes(deps: AppDeps) {
             throw badRequest('Das Feld „comment“ ist kein gültiges JSON.');
           }
           const input = createMediaCommentInputSchema.parse(json);
-          const created = await createMediaComment(
-            deps,
-            c.var.viewer,
-            c.req.param('deckId'),
-            input,
-            {
+          const deckId = c.req.param('deckId');
+          const sent =
+            typeof upload === 'string' && !(file instanceof File)
+              ? await takeRecordingUpload(deps, upload, c.var.viewer.author.id, { deckId })
+              : null;
+          try {
+            const created = await createMediaComment(deps, c.var.viewer, deckId, input, {
+              ...(sent && { recording: { bytes: sent.bytes } }),
               ...(file instanceof File && {
                 recording: { bytes: new Uint8Array(await file.arrayBuffer()) },
               }),
               images: await Promise.all(
                 images.map(async (image) => ({ bytes: new Uint8Array(await image.arrayBuffer()) })),
               ),
-            },
-          );
-          return c.json(created, 201);
+            });
+            await sent?.done();
+            return c.json(created, 201);
+          } catch (error) {
+            await sent?.done(error);
+            throw error;
+          }
         },
       )
+
+      // Editing with a new recording: it replaces the comment's own, the text goes along.
+      .put('/comments/:commentId/recording', viewer, commentGuard, recordingTooLarge, async (c) => {
+        const body = await c.req.parseBody().catch(() => {
+          throw badRequest('Die Aufnahme konnte nicht gelesen werden.');
+        });
+        const file = body['file'];
+        const upload = body['upload'];
+        const comment = body['comment'];
+        if (!(file instanceof File) && typeof upload !== 'string')
+          throw badRequest('Bitte die Aufnahme im Feld „file“ mitsenden.');
+        if (typeof comment !== 'string') throw badRequest('Das Feld „comment“ fehlt.');
+        let json: unknown;
+        try {
+          json = JSON.parse(comment);
+        } catch {
+          throw badRequest('Das Feld „comment“ ist kein gültiges JSON.');
+        }
+        const input = setCommentRecordingInputSchema.parse(json);
+        const commentId = c.req.param('commentId');
+        const sent =
+          file instanceof File
+            ? null
+            : await takeRecordingUpload(deps, String(upload), c.var.viewer.author.id, {
+                commentId,
+              });
+        try {
+          const comment = await setCommentRecording(deps, c.var.viewer, commentId, input, {
+            bytes: sent ? sent.bytes : new Uint8Array(await (file as File).arrayBuffer()),
+          });
+          await sent?.done();
+          return c.json(comment);
+        } catch (error) {
+          await sent?.done(error);
+          throw error;
+        }
+      })
 
       .get('/decks/:deckId/media-usage', viewer, async (c) =>
         c.json<MediaUsage>(await getMediaUsage(deps, c.var.viewer, c.req.param('deckId'))),
       )
+
+      // The transcript made anew (it failed, or speech to text came later); it follows live.
+      .post('/media/:mediaId/transcript', viewer, transcriptRetries, async (c) => {
+        await retryTranscript(deps, c.var.viewer, c.req.param('mediaId'));
+        return c.body(null, 204);
+      })
 
       // A permanent link with a permission check on every request (unlike `/files/*`).
       .get('/media/:mediaId', viewer, async (c) => {

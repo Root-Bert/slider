@@ -115,15 +115,6 @@ export function countByFolder(decks: readonly Deck[]): Map<string, number> {
   return counts;
 }
 
-/** Totals for the page subline ("6 Reviews | 30 offene Kommentare"), excluding the archive. */
-export function activeTotals(decks: readonly Deck[]) {
-  const active = decks.filter(TAB_PREDICATES.all);
-  return {
-    reviews: active.length,
-    openComments: active.reduce((sum, deck) => sum + deck.openCommentCount, 0),
-  };
-}
-
 /**
  * "Der Ordner ist leer" only for an open folder without any deck – a folder whose decks just
  * don't match the tab ("Offen", "Archiv") gets the tab's own empty state instead.

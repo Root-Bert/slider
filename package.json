@@ -1,7 +1,7 @@
 {
   "name": "slider",
   "private": true,
-  "license": "AGPL-3.0-only",
+  "license": "EUPL-1.2",
   "description": "Review PowerPoint decks precisely: mark, comment, version.",
   "type": "module",
   "packageManager": "bun@1.3.13",
@@ -22,7 +22,10 @@
     "test": "vitest run",
     "e2e": "playwright test -c e2e/playwright.config.ts",
     "e2e:bundle": "E2E_BUNDLE=1 playwright test -c e2e/playwright.config.ts",
+    "e2e:live": "playwright test -c e2e/playwright.live.config.ts",
+    "e2e:live:bundle": "E2E_BUNDLE=1 playwright test -c e2e/playwright.live.config.ts live/offline.spec.ts",
     "lint": "eslint .",
+    "security:secrets": "sh scripts/check-secrets.sh",
     "format": "prettier --write .",
     "seed": "bun run --filter @slider/api seed",
     "sample": "bun run --filter @slider/pptx sample"
@@ -39,5 +42,8 @@
     "typescript": "~6.0",
     "typescript-eslint": "^8.71.1",
     "vitest": "^5.0.3"
+  },
+  "overrides": {
+    "zod": "^4.6.7"
   }
 }

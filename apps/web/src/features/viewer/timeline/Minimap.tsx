@@ -1,4 +1,4 @@
-import type { Slide, SlideOperation } from '@slider/shared';
+import type { Slide } from '@slider/shared';
 import {
   memo,
   useCallback,
@@ -13,6 +13,7 @@ import {
   type RefObject,
 } from 'react';
 import { accentColor } from '@/lib/accent';
+import { SwapImage } from '../stage/SwapImage';
 import { cn, ContextMenu, Icon, type MenuAction } from '@/ui';
 import { afterCommit, rafThrottle } from '@/lib/dom';
 import { wheelPixels } from '@/lib/wheel';
@@ -37,12 +38,12 @@ import {
 import { createClickGuard } from './lib/click-guard';
 import type { TrackLayout } from './lib/timeline-layout';
 import { useEditing } from '../editing/editing-context';
+import { useSlideActions } from '../editing/hooks/useSlideActions';
 import { useFrameAspects } from '../state/frame-format';
 import { useRevisionData } from '../state/revision-data';
 import { useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
-import { useViewerToast } from '../state/viewer-toast';
 import { isModKey } from '@/lib/keyboard';
 
 /** A pointer that moves this far after pressing drags the bracket instead of clicking. */
@@ -51,6 +52,8 @@ const DRAG_SLOP = 4;
 const BRACKET_OUTSET = 3;
 /** On an editable deck the bracket is grabbed this close to its left or right edge. */
 const BRACKET_EDGE = 8;
+/** A thumbnail picked, the row eases to centre it while the track scrolls to its slide (ms). */
+const CENTRED_MS = 800;
 /** Width of the "Gelöscht (n)" entry after the last thumbnail (Figma D2). */
 const DELETED_W = 112;
 const DELETED_W_NARROW = 72;
@@ -73,7 +76,6 @@ interface MinimapProps {
 export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
   const { slides: deckSlides, gapThreads, threads } = useViewerData();
   const editing = useEditing();
-  const toast = useViewerToast();
   // The order of a dropped slide, until the slides come back from the server in it.
   const [pendingOrder, setPendingOrder] = useState<readonly string[] | null>(null);
   const slides = useMemo(() => {
@@ -92,6 +94,8 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
   const dispatch = useViewerDispatch();
   const registry = useStageRegistry();
   const listRef = useRef<HTMLDivElement>(null);
+  // A thumbnail picked: the row centres it, and following the track leaves it until then.
+  const centredUntil = useRef(0);
   const bracketRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
     pointerId: number;
@@ -148,7 +152,9 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
-    const throttled = rafThrottle(() => updateBracket(!dragRef.current?.active));
+    const throttled = rafThrottle(() =>
+      updateBracket(!dragRef.current?.active && performance.now() > centredUntil.current),
+    );
     scroller.addEventListener('scroll', throttled.schedule, { passive: true });
     const observer = new ResizeObserver(throttled.schedule);
     observer.observe(scroller);
@@ -183,6 +189,8 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
     const index = activeSlideId ? slides.findIndex((slide) => slide.id === activeSlideId) : -1;
     const box = mini?.slides[index];
     if (!list || !box || !mini.scrolls) return;
+    // Picked in the row: centred there already.
+    if (performance.now() < centredUntil.current) return;
     const next = followScrollLeft(
       MINIMAP_PAD + box.x,
       box.w,
@@ -197,34 +205,41 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
   const select = useCallback(
     (slideId: string) => {
       if (clickGuard.consume()) return;
+      // In the middle of the row – the first and last as far as it goes.
+      const list = listRef.current;
+      const box = mini?.slides[slides.findIndex((slide) => slide.id === slideId)];
+      if (list && box && mini.scrolls) {
+        const centre = MINIMAP_PAD + box.x + box.w / 2 - list.clientWidth / 2;
+        const left = Math.min(Math.max(centre, 0), list.scrollWidth - list.clientWidth);
+        centredUntil.current = performance.now() + CENTRED_MS;
+        if (Math.abs(left - list.scrollLeft) >= 1)
+          list.scrollTo({ left, behavior: smoothScroll() });
+      }
       dispatch({ type: 'activeSlideChanged', slideId });
       registry.revealSlide(slideId, { align: 'nearest' });
     },
-    [clickGuard, dispatch, registry],
+    [clickGuard, dispatch, registry, mini, slides],
   );
 
   // ── Changing the deck's slides (editable decks, BER-181) ──
-  /** File positions (hidden slides included) by slide id. */
-  const fileIndex = useMemo(
-    () => new Map((editing.state?.slides ?? []).map((slide) => [slide.slideId, slide.index])),
+  /** The slides' page ids (what operations name them by) by slide id. */
+  const pageIds = useMemo(
+    () => new Map((editing.state?.slides ?? []).map((slide) => [slide.slideId, slide.pageId])),
     [editing.state],
   );
-  const applyTo = (slideId: string, operation: (slideIndex: number) => SlideOperation) => {
-    const index = fileIndex.get(slideId);
-    return index === undefined ? Promise.resolve(false) : editing.apply([operation(index)]);
-  };
   /** Moves the slide at `from` in front of the one at `insertion` (row positions). */
   const moveSlide = async (from: number, insertion: number) => {
     const order = movedOrder(slides, from, insertion);
     const slide = slides[from];
-    const index = slide && fileIndex.get(slide.id);
+    const pageId = slide && pageIds.get(slide.id);
+    if (!order || !slide || pageId === undefined) return;
+    // Right after the slide of the file before the one it goes in front of (hidden ones count).
+    const others = (editing.state?.slides ?? []).filter((item) => item.slideId !== slide.id);
     const next = slides[insertion];
-    const target = next ? fileIndex.get(next.id) : editing.state?.slides.length;
-    if (!order || !slide || index === undefined || target === undefined) return;
+    const at = next ? others.findIndex((item) => item.slideId === next.id) : others.length;
+    if (at === -1) return;
     setPendingOrder(order.map((item) => item.id));
-    await editing.apply([
-      { type: 'moveSlide', slideIndex: index, to: target > index ? target - 1 : target },
-    ]);
+    await editing.apply([{ type: 'moveSlide', pageId, after: others[at - 1]?.pageId ?? null }]);
     setPendingOrder(null);
   };
 
@@ -243,34 +258,8 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
   }, []);
   const menuIndex = menu ? slides.findIndex((slide) => slide.id === menu.slideId) : -1;
   const menuSlide = slides[menuIndex];
-  const busy = editing.busy ? 'Die letzte Änderung läuft noch.' : null;
-  const menuActions: MenuAction[] = menuSlide
-    ? [
-        {
-          label: menuSlide.hidden ? 'Folie einblenden' : 'Folie ausblenden',
-          icon: menuSlide.hidden ? 'visibility' : 'visibilityOff',
-          disabled: !!busy,
-          title: busy ?? undefined,
-          onSelect: () =>
-            void applyTo(menuSlide.id, (slideIndex) => ({
-              type: 'setSlideHidden',
-              slideIndex,
-              hidden: !menuSlide.hidden,
-            })),
-        },
-        {
-          label: 'Folie löschen',
-          icon: 'delete',
-          tone: 'danger',
-          disabled: !!busy || slides.length <= 1,
-          title: busy ?? (slides.length <= 1 ? 'Die letzte Folie bleibt.' : undefined),
-          onSelect: () =>
-            void applyTo(menuSlide.id, (slideIndex) => ({ type: 'deleteSlide', slideIndex })).then(
-              (ok) => ok && toast('Folie gelöscht'),
-            ),
-        },
-      ]
-    : [];
+  const slideActions = useSlideActions();
+  const menuActions: MenuAction[] = menu && menuSlide ? slideActions(menuSlide) : [];
 
   // On an editable deck a thumbnail dragged sideways moves its slide; the bracket lying over the
   // thumbnails is then grabbed at its edges.
@@ -492,7 +481,9 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
       >
         {mini && (
           <ol
-            className="relative"
+            // The band lets the pointer through (`Timeline`): the thumbnails take it, the row's
+            // room beside them stays free for a slide element reaching down into it.
+            className="pointer-events-auto relative"
             style={{ width: mini.contentW + 2 * MINIMAP_PAD + deletedRoom, height: rowH }}
           >
             {slides.map((slide, index) => {
@@ -755,14 +746,15 @@ const Thumbnail = memo(function Thumbnail({
           dragged && 'shadow-[0_0_0_2px_var(--color-fg-muted),0_8px_24px_rgb(0_0_0/0.5)]',
         )}
       >
-        <img
+        {/* Drawn anew after an edit: turns into the new picture without a blank frame. */}
+        <SwapImage
           src={slide.thumbnailUrl}
           alt=""
           loading="lazy"
           decoding="async"
           draggable={false}
           // A portrait page in a 16:9 frame shows its top, like on the track.
-          className="size-full object-cover object-top"
+          className="object-cover object-top"
         />
         {badge && (
           <ChangeBadge
@@ -775,7 +767,7 @@ const Thumbnail = memo(function Thumbnail({
           // Subtle open-comment count; a dot would read as a stray control on small thumbnails.
           <span
             aria-hidden
-            className="absolute right-0.5 bottom-0.5 rounded-thumb bg-scrim px-0.75 text-micro leading-3 font-medium text-fg tabular-nums"
+            className="absolute right-0.5 bottom-0.5 rounded-thumb bg-scrim dark-ink px-0.75 text-micro leading-3 font-medium text-fg tabular-nums"
           >
             {count}
           </span>

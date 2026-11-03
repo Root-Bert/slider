@@ -64,5 +64,9 @@ export const sourceUnreachable = (
   message = 'Der Link konnte gerade nicht geladen werden. Bitte versuche es gleich noch einmal.',
 ) => new ApiError(502, 'source_unreachable', message);
 
+/** A cloud link that leads to a folder rather than a file. */
+export const LINK_IS_A_FOLDER_MESSAGE =
+  'Unter diesem Link liegt ein Ordner – wähle eine Datei darin.';
+
 export const LINK_NOT_A_POWERPOINT_MESSAGE =
   'Unter diesem Link liegt keine PowerPoint-Datei (.pptx) und kein PDF.';

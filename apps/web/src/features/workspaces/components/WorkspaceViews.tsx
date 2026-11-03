@@ -1,3 +1,4 @@
+import { useLayoutEffect } from 'react';
 import { Link } from 'react-router';
 import { routes } from '@/lib/routes';
 import { cn } from '@/ui';
@@ -6,13 +7,13 @@ const VIEWS = [
   // Written out in full so Tailwind finds the classes; the names are styled in index.css.
   {
     key: 'reviews',
-    label: 'Reviews',
+    label: 'Präsentationen',
     to: routes.workspace,
     name: '[view-transition-name:workspace-view-reviews]',
   },
   {
     key: 'material',
-    label: 'Workspace',
+    label: 'Bibliothek',
     to: routes.workspaceMaterial,
     name: '[view-transition-name:workspace-view-material]',
   },
@@ -23,8 +24,11 @@ export type WorkspaceView = (typeof VIEWS)[number]['key'];
 /** Longer than the switch's view transition (see `styles/index.css`), so it isn't cut short. */
 const SWITCH_MS = 600;
 
+/** Set by a click on the other view, taken by the view that mounts next. */
+let switching = false;
+
 /**
- * The page title of a workspace's views, "Reviews  Workspace": the open one in full size and
+ * The page title of a workspace's views, "Projekte  Bibliothek": the open one in full size and
  * colour, the other smaller and lighter, a link to it. Switching morphs the two labels into
  * each other (view transition) while the page below crossfades. Meant as `PageHeader`'s title
  * with `titleRow`.
@@ -36,6 +40,15 @@ export function WorkspaceViews({
   workspaceId: string;
   current: WorkspaceView;
 }) {
+  // The other view starts at the top. Without this it kept the scroll offset (a trackpad nudge
+  // of 1px is enough): on a view too short to scroll, Safari only clamps it to 0 a moment after
+  // the switch, and the whole page dropped by that much. Before paint – and inside the view
+  // transition's update, so its new snapshot already shows the page at the top.
+  useLayoutEffect(() => {
+    if (!switching) return;
+    switching = false;
+    window.scrollTo(0, 0);
+  }, []);
   return (
     <span className="flex min-w-0 items-baseline gap-5">
       {VIEWS.map((view) =>
@@ -49,6 +62,7 @@ export function WorkspaceViews({
             to={view.to(workspaceId)}
             viewTransition
             onClick={() => {
+              switching = true;
               // Picks the light switch transition instead of the import stage's (index.css).
               const root = document.documentElement;
               root.dataset.transition = 'workspace-view';

@@ -12,5 +12,12 @@
 export * from './types';
 export { openPptx, withoutExternalLinks, type PptxPackage } from './package';
 export { svgForRenderHash } from './render/svg';
+export {
+  masterDeck,
+  MAX_MASTER_LAYOUTS,
+  NO_LAYOUTS,
+  type MasterDeck,
+  type MasterLayout,
+} from './master-deck';
 export * from './matching';
 export { normaliseText, textHash } from './hash';

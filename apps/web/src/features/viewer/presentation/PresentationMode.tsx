@@ -6,16 +6,28 @@ import {
   useState,
   type PointerEvent,
 } from 'react';
+import type { Slide, SlideLayers } from '@slider/shared';
+import { useQueryClient } from '@tanstack/react-query';
+import { slideLayersQuery } from '@/lib/api';
 import { cn, IconButton } from '@/ui';
+import { useEditing } from '../editing/editing-context';
+import { useTransitionOf } from '../editing/transition/picked-transitions';
+import { playTransition } from '../editing/transition/transition-frames';
 import { useRestoreFocus } from '../hooks/useRestoreFocus';
 import { slideSrcSet } from '../stage/lib/slide-image';
 import { useViewerData } from '../state/viewer-data';
+import { morphPictures, morphPlan, type MorphPlan } from './lib/morph';
 import { presentationKey, presentationStart, presentedSlides } from './lib/presentation';
+import { MorphStage } from './MorphStage';
 
 /** How long the controls and the pointer stay after the mouse last moved. */
 const IDLE_MS = 2500;
 /** A touch moving this far sideways is a swipe, not a tap. */
 const SWIPE_PX = 50;
+/** How long a transition plays – LibreOffice's „mittel“. */
+const TRANSITION_MS = 700;
+/** The morph takes a little longer: things travel. */
+const MORPH_MS = 1000;
 
 interface PresentationModeProps {
   /** The slide it starts on (a hidden one hands over to the next one shown). */
@@ -27,8 +39,10 @@ interface PresentationModeProps {
 /**
  * The deck as a slide show: fullscreen, one slide at a time on black, nothing else – no
  * comments, no tools. Clicks, taps, swipes and PowerPoint's keys move on (`presentationKey`);
- * after the last slide a black end screen, the next step ends it. The controls show while the
- * mouse moves. Takes every key while it is open, so the viewer's shortcuts stay quiet.
+ * after the last slide a black end screen, the next step ends it. A step on to the next slide plays
+ * the transition it comes in with (as LibreOffice and PowerPoint do); going back or jumping does
+ * not. The controls show while the mouse moves. Takes every key while it is open, so the viewer's
+ * shortcuts stay quiet.
  */
 export function PresentationMode({ startSlideId, onExit }: PresentationModeProps) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -36,6 +50,15 @@ export function PresentationMode({ startSlideId, onExit }: PresentationModeProps
   const [slides] = useState(() => presentedSlides(viewerSlides));
   const [index, setIndex] = useState(() => presentationStart(viewerSlides, slides, startSlideId));
   const [black, setBlack] = useState(false);
+  const transitionOf = useTransitionOf();
+  // The editor's (a pick shows before the server has it), else the slide's as everyone sees it.
+  const transitionFor = (slide: Slide) => transitionOf(slide.id) ?? slide.transition ?? 'none';
+  // The slide being left while the next one comes in with its transition.
+  const [leaving, setLeaving] = useState<string | null>(null);
+  const pictures = useRef(new Map<string, HTMLImageElement>());
+  const morph = useMorph(slides, index, transitionFor);
+  // The morph playing (it stands for the transition then).
+  const [morphing, setMorphing] = useState<MorphPlan | null>(null);
   // When the mouse last moved: the controls and the pointer show until it rests.
   const [movedAt, setMovedAt] = useState<number | null>(null);
   const controlsShown = movedAt !== null;
@@ -52,9 +75,40 @@ export function PresentationMode({ startSlideId, onExit }: PresentationModeProps
   const exitFromEffect = useEffectEvent(exit);
   const go = (next: number) => {
     setBlack(false);
-    if (next > slides.length) exit();
-    else setIndex(Math.max(0, next));
+    if (next > slides.length) {
+      exit();
+      return;
+    }
+    const to = Math.max(0, next);
+    const incoming = slides[to];
+    const transition = incoming && to === index + 1 && !black ? transitionFor(incoming) : null;
+    // Its pictures not there yet (or no edit rights to take slides apart): a crossfade.
+    const plan =
+      transition === 'morph' && incoming && slides[index]
+        ? morph.plan(slides[index].id, incoming.id)
+        : null;
+    setMorphing(plan);
+    setLeaving(transition && transition !== 'none' && !plan ? (slides[index]?.id ?? null) : null);
+    setIndex(to);
   };
+
+  // The next slide comes in over the one left; that one goes once the transition is over.
+  useLayoutEffect(() => {
+    const incoming = slides[index];
+    const into = incoming && pictures.current.get(incoming.id);
+    const from = leaving && pictures.current.get(leaving);
+    if (!incoming || !into || !from) return;
+    const transition = transitionFor(incoming);
+    if (transition === 'none') return;
+    const stop = playTransition(transition, into, from, TRANSITION_MS);
+    const timer = window.setTimeout(() => setLeaving(null), TRANSITION_MS);
+    return () => {
+      window.clearTimeout(timer);
+      stop();
+    };
+    // Only a new step plays it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index, leaving]);
   const step = (by: 1 | -1) => {
     // A black screen goes back to the slide first, like in PowerPoint.
     if (black) setBlack(false);
@@ -176,7 +230,7 @@ export function PresentationMode({ startSlideId, onExit }: PresentationModeProps
   // The current slide and its neighbours stay mounted: the next one is loaded before it shows.
   const mounted = slides
     .map((slide, at) => ({ slide, at }))
-    .filter(({ at }) => Math.abs(at - index) <= 1);
+    .filter(({ slide, at }) => Math.abs(at - index) <= 1 || slide.id === leaving);
 
   return (
     <div
@@ -201,6 +255,10 @@ export function PresentationMode({ startSlideId, onExit }: PresentationModeProps
       {mounted.map(({ slide, at }) => (
         <img
           key={slide.id}
+          ref={(element) => {
+            if (element) pictures.current.set(slide.id, element);
+            else pictures.current.delete(slide.id);
+          }}
           src={slide.imageUrl}
           {...slideSrcSet(slide, 'screen')}
           alt={at === index ? `Folie ${at + 1}` : ''}
@@ -208,10 +266,21 @@ export function PresentationMode({ startSlideId, onExit }: PresentationModeProps
           draggable={false}
           className={cn(
             'absolute inset-0 size-full object-contain',
-            (at !== index || black) && 'invisible',
+            at === index && 'z-1',
+            ((at !== index && slide.id !== leaving) || black) && 'invisible',
           )}
         />
       ))}
+
+      {morphing && !black && (
+        <MorphStage
+          key={`${morphing.from}>${morphing.to}`}
+          plan={morphing}
+          aspect={morph.aspect}
+          duration={MORPH_MS}
+          onDone={() => setMorphing(null)}
+        />
+      )}
 
       {ended && (
         <p className="absolute inset-x-0 top-8 text-center text-sm text-white/60">
@@ -255,4 +324,68 @@ export function PresentationMode({ startSlideId, onExit }: PresentationModeProps
       </div>
     </div>
   );
+}
+
+const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function decode(url: string): Promise<void> {
+  const image = new Image();
+  image.src = url;
+  return image.decode().catch(() => undefined);
+}
+
+/**
+ * The morph's pictures, taken apart ahead (`morph.ts`): the slide shown and the next one when it
+ * comes in with a morph, asked for and decoded while the slide is on screen. Gives the plan from
+ * one slide to the next once both are in – `null` before, or for whom the deck cannot be taken
+ * apart (no edit rights: no elements), or with reduced motion.
+ */
+function useMorph(
+  slides: readonly Slide[],
+  index: number,
+  transitionFor: (slide: Slide) => string,
+) {
+  const editing = useEditing();
+  const queryClient = useQueryClient();
+  const seq = editing.state?.seq;
+  const deckId = useViewerData().deck.id;
+  const ready = useRef(new Map<string, SlideLayers>());
+  const next = slides[index + 1];
+  const wanted =
+    seq !== undefined && next && transitionFor(next) === 'morph' && !reducedMotion()
+      ? [slides[index]!.id, next.id]
+      : [];
+  const key = wanted.join(' ');
+  useEffect(() => {
+    if (seq === undefined || !key) return;
+    let cancelled = false;
+    for (const slideId of key.split(' ')) {
+      if (ready.current.has(`${slideId}@${seq}`)) continue;
+      void queryClient
+        .fetchQuery(slideLayersQuery(deckId, slideId, seq, 'interactive'))
+        .then(async (layers) => {
+          await Promise.all(
+            [layers.background, ...layers.layers.map((layer) => layer.url)]
+              .filter((url): url is string => !!url)
+              .map(decode),
+          );
+          if (!cancelled) ready.current.set(`${slideId}@${seq}`, layers);
+        })
+        .catch(() => undefined);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [deckId, key, queryClient, seq]);
+
+  const plan = (fromId: string, toId: string): MorphPlan | null => {
+    if (seq === undefined || reducedMotion()) return null;
+    const from = ready.current.get(`${fromId}@${seq}`);
+    const to = ready.current.get(`${toId}@${seq}`);
+    if (!from || !to) return null;
+    const made = morphPlan(from, editing.elementsOf(fromId), to, editing.elementsOf(toId));
+    return morphPictures(made).length > 0 ? made : null;
+  };
+  const { width, height } = editing.pageSize;
+  return { plan, aspect: height > 0 ? width / height : 16 / 9 };
 }

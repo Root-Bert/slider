@@ -10,22 +10,34 @@ import {
   type ReactNode,
 } from 'react';
 import { accentColor } from '@/lib/accent';
-import { isPendingComment } from '@/lib/api/comment-cache';
+import { isPendingComment } from '@/lib/api/comment-outbox';
 import { pluralize } from '@/lib/format';
-import { AutosizeTextarea, AvatarStack, Button, cn, IconButton, ToolbarDivider } from '@/ui';
+import {
+  AutosizeTextarea,
+  AvatarStack,
+  Button,
+  cn,
+  IconButton,
+  ToolbarDivider,
+  selectedOutlineClass,
+} from '@/ui';
 import { isRemovedInSource, type Thread } from './lib/comment-selectors';
 import { MediaReplyButtons } from './MediaTabs';
+import { VoiceMemoBar } from '../media/VoiceMemoBar';
 import { useKeepThreadListed } from './hooks/useKeepThreadListed';
 import { useMentions } from './hooks/useMentions';
 import { useReplyDraft } from './hooks/useReplyDraft';
 import { MentionMenu } from './MentionMenu';
 import { LiveThreadMarker } from '../live/LiveThreadMarker';
+import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch } from '../state/viewer-state';
 import { AuthorLine } from './AuthorLine';
 import { CommentContent } from './CommentContent';
+import { AskAiButton } from './AskAiButton';
 import { ResolveButton } from './ResolveButton';
 import { RemovedInSourceNote } from './RevisionNotes';
 import { useCommentMenu } from './hooks/useCommentMenu';
+import { useCommentSelection } from './comment-selection';
 import { useCommentProposals } from './hooks/useCommentProposals';
 import { AiProposalCard } from './AiProposalCard';
 import { ReactionChips, ReactionPicker } from './Reactions';
@@ -58,10 +70,13 @@ export const CommentCard = memo(function CommentCard({
   fadeDone,
 }: CommentCardProps) {
   const dispatch = useViewerDispatch();
+  const selection = useCommentSelection();
+  const selected = selection.selected.has(thread.id);
   const [expanded, setExpanded] = useState(false);
   const repliesId = useId();
   const { root, replies } = thread;
   const proposalsOf = useCommentProposals(deckId);
+  const { aiAuthor } = useViewerData();
   const done = root.status === 'done';
   const highlighted = expanded || emphasis === 'focused' || emphasis === 'hovered';
   const aiAnswers = [root, ...replies]
@@ -70,6 +85,8 @@ export const CommentCard = memo(function CommentCard({
   const aiWorking = aiAnswers.some((proposal) => proposal.status === 'running');
   // Only a change it made (taken back or not) is one; otherwise it just answered.
   const aiChanged = aiAnswers.some((proposal) => ['applied', 'reverted'].includes(proposal.status));
+  // Its latest answer asks back: the thread waits for the people.
+  const aiAsks = aiAnswers.filter((proposal) => proposal.status !== 'running').at(-1)?.asks;
   const stacked = (replies.length > 0 || aiAnswers.length > 0) && !expanded;
   const canReply = canResolve;
   const removed = isRemovedInSource(root);
@@ -96,9 +113,14 @@ export const CommentCard = memo(function CommentCard({
     <article
       data-comment-card={thread.id}
       data-hover-thread={thread.id}
+      data-selected={selected || undefined}
+      // Not saved yet (written offline): dimmed like a reply on its way.
+      aria-busy={isPendingComment(root) || undefined}
+      onContextMenuCapture={(event) => selection.onContextMenuCapture(thread.id, event)}
       className={cn(
         // Raised while hovered or focused, so the reply bar overlaps the cards below.
         'group relative transition-opacity duration-200 focus-within:z-(--z-overlay) hover:z-(--z-overlay)',
+        isPendingComment(root) && 'opacity-60',
         emphasis === 'focused' && 'z-(--z-overlay)',
         (emphasis === 'dimmed' || (done && fadeDone)) && 'opacity-45',
         emphasis === 'dimmed' && done && fadeDone && 'opacity-30',
@@ -121,8 +143,6 @@ export const CommentCard = memo(function CommentCard({
         // The AI at work: its light glows under the glass while it runs round the rim (below).
         <span aria-hidden className="ai-glow pointer-events-none absolute -inset-1 rounded-panel" />
       )}
-      {/* The reaction picker sits beside the glass, not in it: a backdrop-filter is a backdrop
-          root, and the picker's own blur would see nothing above the card's edge. */}
       <div className="group/message relative">
         <div
           onContextMenu={menu.onContextMenu}
@@ -130,14 +150,17 @@ export const CommentCard = memo(function CommentCard({
             'glass relative flex flex-col gap-2 rounded-panel px-3.5 py-3 transition-[background-color,box-shadow] duration-200 group-hover/message:bg-glass-hover',
             highlighted &&
               'shadow-[inset_0_0_0_1px_var(--card-accent),0_0_20px_color-mix(in_srgb,var(--card-accent)_50%,transparent)]!',
+            // Selected under the slides, in the viewer's colour like the decks in "Präsentationen".
+            selected && selectedOutlineClass,
           )}
         >
           <button
             type="button"
             aria-label={`Thread von ${root.author.name} öffnen`}
-            onClick={() =>
-              dispatch({ type: 'threadFocused', threadId: thread.id, openPanel: true })
-            }
+            onClick={(event) => {
+              if (selection.onModifiedClick(thread.id, event)) return;
+              dispatch({ type: 'threadFocused', threadId: thread.id, openPanel: true });
+            }}
             className="absolute inset-0 rounded-panel"
           />
           {aiWorking && (
@@ -148,23 +171,31 @@ export const CommentCard = memo(function CommentCard({
           )}
           <AuthorLine
             comment={root}
+            afterTime={<ReactionPicker comment={root} />}
             trailing={
               expanded ? (
-                <Button
-                  variant="soft"
-                  size="2xs"
-                  weight="normal"
-                  trailingIcon="expandLess"
-                  expanded
-                  aria-controls={repliesId}
-                  onClick={collapse}
-                  className="relative z-(--z-raised) -my-0.5"
-                >
-                  Zuklappen
-                </Button>
+                <span className="flex items-center gap-1">
+                  {canResolve && <AskAiButton comment={root} deckId={deckId} className="-my-1" />}
+                  <Button
+                    variant="soft"
+                    size="2xs"
+                    weight="normal"
+                    trailingIcon="expandLess"
+                    expanded
+                    aria-controls={repliesId}
+                    onClick={collapse}
+                    className="relative z-(--z-raised) -my-0.5"
+                  >
+                    Zuklappen
+                  </Button>
+                </span>
               ) : (
                 canResolve && (
-                  <ResolveButton comment={root} deckId={deckId} className="-my-1 -mr-1.5" />
+                  <span className="-my-1 -mr-1.5 flex items-center">
+                    {/* Collapsed, the thread's last message is the one to act on. */}
+                    <AskAiButton comment={replies.at(-1) ?? root} deckId={deckId} />
+                    <ResolveButton comment={root} deckId={deckId} />
+                  </span>
                 )
               )
             }
@@ -183,10 +214,12 @@ export const CommentCard = memo(function CommentCard({
                 {[
                   replies.length > 0 && pluralize(replies.length, 'Antwort', 'Antworten'),
                   aiWorking
-                    ? 'KI arbeitet …'
-                    : aiChanged
-                      ? 'KI hat geändert'
-                      : aiAnswers.length > 0 && 'KI hat geantwortet',
+                    ? `${aiAuthor.name} arbeitet …`
+                    : aiAsks
+                      ? `${aiAuthor.name} fragt nach`
+                      : aiChanged
+                        ? `${aiAuthor.name} hat geändert`
+                        : aiAnswers.length > 0 && `${aiAuthor.name} hat geantwortet`,
                 ]
                   .filter(Boolean)
                   .join(' | ')}
@@ -207,8 +240,6 @@ export const CommentCard = memo(function CommentCard({
             </footer>
           )}
         </div>
-        {/* Above the top edge, clear of „Zuklappen“ and ✓. */}
-        <ReactionPicker comment={root} className="-top-7.5 right-3" />
       </div>
 
       {expanded && (
@@ -293,6 +324,7 @@ function InlineReply({
   deckId: string;
 }) {
   const dispatch = useViewerDispatch();
+  const { canComment } = useViewerData();
   const menu = useCommentMenu({
     comment: reply,
     deckId,
@@ -300,7 +332,6 @@ function InlineReply({
     onEdit: () => dispatch({ type: 'commentEditRequested', threadId, commentId: reply.id }),
   });
   return (
-    // The picker beside the glass, not in it – see the root card.
     <div className="group/message relative">
       <article
         onContextMenu={menu.onContextMenu}
@@ -310,12 +341,17 @@ function InlineReply({
           isPendingComment(reply) && 'opacity-60',
         )}
       >
-        <AuthorLine comment={reply} />
+        <AuthorLine
+          comment={reply}
+          afterTime={<ReactionPicker comment={reply} />}
+          trailing={
+            canComment && <AskAiButton comment={reply} deckId={deckId} className="-my-1 -mr-1.5" />
+          }
+        />
         <CommentContent comment={reply} bodyClassName="text-fg-muted" />
         <ReactionChips comment={reply} />
         {menu.menus}
       </article>
-      {!isPendingComment(reply) && <ReactionPicker comment={reply} className="-top-3.5 right-3" />}
     </div>
   );
 }
@@ -345,15 +381,16 @@ function ReplyBar({
   onCancel: (() => void) | undefined;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
-  const { body, setBody, canSend, submit, onKeyDown, textareaRef } = useReplyDraft(root, deckId, {
-    onCancel: () => {
-      setBody('');
-      textareaRef.current?.blur();
-      onCancel?.();
-    },
-  });
+  const { body, setBody, canSend, submit, onKeyDown, textareaRef, voice, uploading } =
+    useReplyDraft(root, deckId, {
+      onCancel: () => {
+        setBody('');
+        textareaRef.current?.blur();
+        onCancel?.();
+      },
+    });
   const mentions = useMentions(body, setBody, textareaRef);
-  const hasDraft = body.length > 0;
+  const hasDraft = body.length > 0 || voice.on;
   useKeepThreadListed(root.id, hasDraft);
 
   // Each sent reply pushes the field down; keep it in view while it has focus.
@@ -368,7 +405,7 @@ function ReplyBar({
       onSubmit={submit}
       style={{ top: `calc(100% + ${offset}px)` }}
       className={cn(
-        'glass absolute inset-x-0 flex scroll-mb-4 items-end gap-0.5 rounded-control py-1 pr-1 pl-3',
+        'glass-elevated absolute inset-x-0 flex scroll-mb-4 items-end gap-0.5 rounded-control py-1 pr-1 pl-3',
         'transition-[opacity,visibility,box-shadow] duration-150',
         'focus-within:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--card-accent)_45%,transparent)]!',
         'before:absolute before:inset-x-0 before:bottom-full before:h-4',
@@ -377,25 +414,37 @@ function ReplyBar({
           : 'invisible opacity-0 group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100',
       )}
     >
-      <div className="relative min-w-0 flex-1 py-[5px]">
-        <MentionMenu mentions={mentions} />
-        <AutosizeTextarea
-          {...mentions.fieldProps}
-          ref={textareaRef}
-          aria-label={`Antwort an ${root.author.name}`}
-          maxLength={MAX_COMMENT_BODY_LENGTH}
-          placeholder="Antworten mit …"
-          value={body}
-          maxHeight={120}
-          onChange={(event) => {
-            mentions.fieldProps.onChange(event);
-            if (event.target.value.length > 0) onCompose();
-          }}
-          onKeyDown={(event) => {
-            if (!mentions.onKeyDown(event)) onKeyDown(event);
-          }}
-          className="text-body leading-4.5 text-fg placeholder:text-fg-subtle"
-        />
+      <div className="relative flex min-w-0 flex-1 flex-col gap-1.5 py-[5px]">
+        {voice.on && (
+          <VoiceMemoBar
+            onChange={voice.onChange}
+            onRecordingChange={voice.onRecordingChange}
+            onDiscard={voice.discard}
+            onSend={(options) => submit(undefined, options)}
+            disabled={uploading}
+          />
+        )}
+        {/* The memo is the reply: no note beside it. */}
+        {!voice.on && <MentionMenu mentions={mentions} />}
+        {!voice.on && (
+          <AutosizeTextarea
+            {...mentions.fieldProps}
+            ref={textareaRef}
+            aria-label={`Antwort an ${root.author.name}`}
+            maxLength={MAX_COMMENT_BODY_LENGTH}
+            placeholder="Antworten mit …"
+            value={body}
+            maxHeight={120}
+            onChange={(event) => {
+              mentions.fieldProps.onChange(event);
+              if (event.target.value.length > 0) onCompose();
+            }}
+            onKeyDown={(event) => {
+              if (!mentions.onKeyDown(event)) onKeyDown(event);
+            }}
+            className="text-body leading-4.5 text-fg placeholder:text-fg-subtle"
+          />
+        )}
       </div>
       {hasDraft && (
         <IconButton
@@ -409,7 +458,7 @@ function ReplyBar({
           disabled={!canSend}
         />
       )}
-      <MediaReplyButtons root={root} />
+      <MediaReplyButtons root={root} voice={voice} />
       <ToolbarDivider size="sm" className="mb-1.5" />
       <ResolveButton comment={root} deckId={deckId} />
     </form>

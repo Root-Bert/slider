@@ -6,13 +6,24 @@ import { buildPptx, LAYOUT_NAMES } from './fixtures/build-pptx';
 import { defined, openDeck } from './helpers';
 
 describe('presentation structure', () => {
-  it('lists slides in sldIdLst order with their ids, paths and size', async () => {
+  it('lists slides in sldIdLst order with ids, paths, size, hidden flags, sections and guides', async () => {
     const { presentation } = await openDeck({
       size: { cx: 9_144_000, cy: 6_858_000 },
       slides: [
         { sldId: 300, title: 'First' },
-        { sldId: 257, title: 'Second' },
+        { sldId: 257, title: 'Second', hidden: true },
         { sldId: 1024, title: 'Third' },
+      ],
+      sections: [
+        { name: 'Intro', slides: [0] },
+        { name: 'Analyse & Ausblick', slides: [1, 2] },
+      ],
+      // 4:3 is 5760 × 4320 master units; the last one lies off the slide.
+      guides: [
+        { orient: 'horz', pos: 2160 },
+        { orient: 'vert', pos: 288 },
+        { orient: 'vert', pos: 288 },
+        { orient: 'vert', pos: 9000 },
       ],
     });
 
@@ -22,69 +33,48 @@ describe('presentation structure', () => {
       { sldId: 257, index: 1, path: 'ppt/slides/slide2.xml' },
       { sldId: 1024, index: 2, path: 'ppt/slides/slide3.xml' },
     ]);
-  });
-
-  it('flags hidden slides', async () => {
-    const { presentation } = await openDeck({
-      slides: [{ title: 'Visible' }, { title: 'Backup', hidden: true }],
-    });
-
-    expect(presentation.slides.map((slide) => slide.hidden)).toEqual([false, true]);
-  });
-
-  it('reads sections with the sldIds they contain', async () => {
-    const { presentation } = await openDeck({
-      slides: [{ title: 'A' }, { title: 'B' }, { title: 'C' }],
-      sections: [
-        { name: 'Intro', slides: [0] },
-        { name: 'Analyse & Ausblick', slides: [1, 2] },
-      ],
-    });
-
+    expect(presentation.slides.map((slide) => slide.hidden)).toEqual([false, true, false]);
     expect(presentation.sections).toEqual([
-      { name: 'Intro', slideIds: [256] },
-      { name: 'Analyse & Ausblick', slideIds: [257, 258] },
+      { name: 'Intro', slideIds: [300] },
+      { name: 'Analyse & Ausblick', slideIds: [257, 1024] },
     ]);
-  });
-
-  it('has no sections when the deck defines none', async () => {
-    const { presentation } = await openDeck({ slides: [{ title: 'A' }] });
-    expect(presentation.sections).toEqual([]);
-  });
-
-  it('gives every slide the drawing guides, normalised, next to sections', async () => {
-    const { presentation } = await openDeck({
-      slides: [{ title: 'A' }, { title: 'B' }],
-      sections: [{ name: 'Intro', slides: [0, 1] }],
-      // 16:9 is 7680 × 4320 master units; the last one lies off the slide.
-      guides: [
-        { orient: 'horz', pos: 2160 },
-        { orient: 'vert', pos: 384 },
-        { orient: 'vert', pos: 384 },
-        { orient: 'vert', pos: 9000 },
-      ],
-    });
-
     for (const slide of presentation.slides) {
       expect(slide.guides).toEqual([
         { orientation: 'horizontal', position: 0.5 },
         { orientation: 'vertical', position: 0.05 },
       ]);
     }
-    expect(presentation.sections).toHaveLength(1);
   });
 
-  it('has no guides when the deck defines none', async () => {
-    const { presentation } = await openDeck({ slides: [{ title: 'A' }] });
-    expect(defined(presentation.slides[0]).guides).toEqual([]);
+  it('has no sections or guides when the deck defines none, and reads raw package bytes', async () => {
+    const pptx = await openDeck({ slides: [{ title: 'A' }] });
+    expect(pptx.presentation.sections).toEqual([]);
+    expect(defined(pptx.presentation.slides[0]).guides).toEqual([]);
+    expect(
+      new TextDecoder().decode(defined(await pptx.readFile('ppt/presentation.xml'))),
+    ).toContain('p:sldIdLst');
+    expect(await pptx.readFile('ppt/missing.xml')).toBeNull();
+  });
+
+  it('refuses a slide list that names one slide part twice', async () => {
+    const zip = await JSZip.loadAsync(
+      await buildPptx({ slides: [{ title: 'A' }, { title: 'B' }] }),
+    );
+    const relsPath = 'ppt/_rels/presentation.xml.rels';
+    const rels = defined(await zip.file(relsPath)?.async('string'), 'presentation rels');
+    zip.file(relsPath, rels.replace('slides/slide2.xml', 'slides/slide1.xml'));
+
+    await expect(openPptx(await zip.generateAsync({ type: 'uint8array' }))).rejects.toMatchObject({
+      code: 'corrupt',
+    });
   });
 });
 
 describe('slide metadata', () => {
-  it('takes the title from the title or ctrTitle placeholder', async () => {
+  it('takes the title from the title or ctrTitle placeholder, names the layout, reads the background', async () => {
     const { presentation } = await openDeck({
       slides: [
-        { layout: 'title', title: 'Q4 Strategie', body: 'Untertitel' },
+        { layout: 'title', title: 'Q4 Strategie', body: 'Untertitel', background: '0F172A' },
         { title: 'Agenda', body: ['Punkt 1'] },
         { body: ['Only body text'] },
       ],
@@ -95,16 +85,16 @@ describe('slide metadata', () => {
       'Agenda',
       null,
     ]);
-  });
-
-  it('names the layout of each slide', async () => {
-    const { presentation } = await openDeck({
-      slides: [{ layout: 'title', title: 'A' }, { title: 'B' }],
-    });
-
     expect(presentation.slides.map((slide) => slide.layoutName)).toEqual([
       LAYOUT_NAMES.title,
       LAYOUT_NAMES.content,
+      LAYOUT_NAMES.content,
+    ]);
+    // The slide's own background, else the master's (theme colour bg1).
+    expect(presentation.slides.map((slide) => slide.background)).toEqual([
+      '#0f172a',
+      '#ffffff',
+      '#ffffff',
     ]);
   });
 
@@ -122,14 +112,6 @@ describe('slide metadata', () => {
     expect(first).toMatch(/^[0-9a-f]{8}$/);
     expect(second).toBe(first);
     expect(third).not.toBe(first);
-  });
-
-  it('uses the slide background, falling back to the master (theme colour bg1)', async () => {
-    const { presentation } = await openDeck({
-      slides: [{ title: 'Dark', background: '0F172A' }, { title: 'Default' }],
-    });
-
-    expect(presentation.slides.map((slide) => slide.background)).toEqual(['#0f172a', '#ffffff']);
   });
 
   it('exposes table cells as rows and as tab-separated text', async () => {
@@ -157,28 +139,6 @@ describe('slide metadata', () => {
       ['DACH', '12,4'],
     ]);
     expect(table.text).toBe('Region\tUmsatz\nDACH\t12,4');
-  });
-
-  it('reads raw bytes of package entries', async () => {
-    const pptx = await openDeck({ slides: [{ title: 'A' }] });
-
-    expect(
-      new TextDecoder().decode(defined(await pptx.readFile('ppt/presentation.xml'))),
-    ).toContain('p:sldIdLst');
-    expect(await pptx.readFile('ppt/missing.xml')).toBeNull();
-  });
-
-  it('refuses a slide list that names one slide part twice', async () => {
-    const zip = await JSZip.loadAsync(
-      await buildPptx({ slides: [{ title: 'A' }, { title: 'B' }] }),
-    );
-    const relsPath = 'ppt/_rels/presentation.xml.rels';
-    const rels = defined(await zip.file(relsPath)?.async('string'), 'presentation rels');
-    zip.file(relsPath, rels.replace('slides/slide2.xml', 'slides/slide1.xml'));
-
-    await expect(openPptx(await zip.generateAsync({ type: 'uint8array' }))).rejects.toMatchObject({
-      code: 'corrupt',
-    });
   });
 });
 

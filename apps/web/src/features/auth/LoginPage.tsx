@@ -31,9 +31,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const joining = returnTo.startsWith('/join/');
 
   return (
-    <CenteredLayout
-      docTitle={mode === 'register' ? 'Konto erstellen | Slider' : 'Anmelden | Slider'}
-    >
+    <CenteredLayout docTitle={mode === 'register' ? 'Konto erstellen | Slider' : 'Anmelden | Slider'}>
       <div className="mx-auto flex w-full max-w-[420px] flex-col gap-6">
         {isLoginError(errorCode) && <LoginErrorBanner code={errorCode} />}
         {searchParams.get('confirm') === 'nextcloud' && <ConfirmMailBanner />}

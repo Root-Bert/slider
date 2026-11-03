@@ -1,0 +1,1037 @@
+---
+import { accentColor } from '@/lib/accent';
+import { Icon } from '@/ui/Icon';
+import Button from '../Button.astro';
+import AiMark from '../AiMark.astro';
+import Credit from '../Credit.astro';
+import { t, type Lang } from '~/i18n';
+import { APP_URL } from '~/lib/links';
+import { person, type PersonName } from '~/lib/people';
+import { PHOTOS, photoSrcset, photoUrl } from '~/lib/photos';
+import FieldMap from '../slides/FieldMap.astro';
+import Finance from '../slides/Finance.astro';
+import FloorPlan from '../slides/FloorPlan.astro';
+import Gantt from '../slides/Gantt.astro';
+import Lecture from '../slides/Lecture.astro';
+import Matrix from '../slides/Matrix.astro';
+
+/**
+ * The hero: the question, your answer in a big speech bubble, and the slide it is about on a
+ * stack of slides, the way Slider's logo stacks two. Send your opinion, the AI works it in, and the
+ * better version lands on top of the stack; the first one slides back. "Again" plays it once more.
+ *
+ * Every visit shows another slide (picked in the browser, never the same twice in a row): the office
+ * dog proposal or one of the Figma Site Kit slides, from consulting to a lecture to a floor plan.
+ * Each comes with what two people already said, its own example opinions and its version 2: one
+ * sentence on the left, the slide zoomed into what matters on the right.
+ */
+interface Props {
+  lang: Lang;
+}
+
+const { lang } = Astro.props;
+const o = t(lang).opinion;
+const s = o.slide;
+const dog = PHOTOS.retriever;
+
+type Spot = { x: number; y: number };
+/**
+ * How version 2 answers you, one per chip (in chip order): `visual` makes the picture big, `message`
+ * says the point in one big sentence and what happens next, `polished` keeps the content and tidies it.
+ */
+type Answer = 'visual' | 'message' | 'polished';
+const ANSWERS: readonly Answer[] = ['visual', 'message', 'polished'];
+/**
+ * The scenes. `focus` is the point of the 960 × 540 slide version 2 zooms into (and how far),
+ * `spots` where the two opinions already there sit on version 1, as shares of its box.
+ */
+const SCENES = [
+  { id: 'dog', bg: '#ffd84d', answers: ['message', 'visual', 'polished'], spots: [{ x: 0.08, y: 0.66 }, { x: 0.5, y: 0.13 }] },
+  { id: 'strategy', Deck: Matrix, bg: 'var(--color-accent-cyan)', focus: { x: 330, y: 330, z: 1.6 }, spots: [{ x: 0.36, y: 0.5 }, { x: 0.7, y: 0.6 }] },
+  { id: 'lecture', Deck: Lecture, bg: 'var(--color-accent-violet)', focus: { x: 735, y: 300, z: 1.5 }, spots: [{ x: 0.06, y: 0.3 }, { x: 0.18, y: 0.62 }] },
+  { id: 'finance', Deck: Finance, bg: 'var(--color-accent-green)', focus: { x: 300, y: 330, z: 1.35 }, spots: [{ x: 0.12, y: 0.24 }, { x: 0.72, y: 0.36 }] },
+  { id: 'build', Deck: FloorPlan, bg: '#ffd84d', focus: { x: 430, y: 240, z: 1.7 }, spots: [{ x: 0.3, y: 0.6 }, { x: 0.62, y: 0.22 }] },
+  { id: 'project', Deck: Gantt, bg: '#fff', focus: { x: 470, y: 320, z: 1.35 }, spots: [{ x: 0.5, y: 0.52 }, { x: 0.3, y: 0.8 }] },
+  { id: 'field', Deck: FieldMap, bg: 'var(--color-accent-cyan)', focus: { x: 290, y: 255, z: 1.5 }, spots: [{ x: 0.22, y: 0.44 }, { x: 0.6, y: 0.22 }] },
+] as const satisfies readonly { id: keyof typeof o.scenes; bg: string; spots: readonly Spot[]; answers?: readonly Answer[]; Deck?: unknown; focus?: { x: number; y: number; z: number } }[];
+const examples = Object.fromEntries(SCENES.map(({ id }) => [id, o.scenes[id].examples]));
+const answers = Object.fromEntries(SCENES.map((scene) => [scene.id, 'answers' in scene ? scene.answers : ANSWERS]));
+---
+
+<section class="op" data-opinion data-state="ask" data-scene="dog" data-answer="polished" data-examples={JSON.stringify(examples)} data-answers={JSON.stringify(answers)}>
+  <div class="op-copy">
+    <p class="op-kind">{o.kind}</p>
+    <h1 class="op-title">
+      <span class="op-ask">{o.askLead} {o.askMark}</span>
+      <span class="op-done" aria-hidden="true">{o.doneLead} {o.doneMark}</span>
+    </h1>
+  </div>
+
+  <div class="op-stack" data-op-slide>
+    <span class="op-card op-deco is-blue" aria-hidden="true"></span>
+    <span class="op-card op-deco is-violet" aria-hidden="true"></span>
+
+    <!-- Version 1: what everyone has seen a hundred times. -->
+    <div class="op-card op-v1" data-live="opinion" data-op-v1>
+      {
+        SCENES.map((scene) => (
+          <Fragment>
+            {'Deck' in scene ? (
+              <div class="ps is-deck" role="img" aria-label={o.scenes[scene.id].statement} data-of={scene.id} hidden>
+                <div class="deck">
+                  <scene.Deck />
+                </div>
+              </div>
+            ) : (
+              <div class="ps" aria-label={s.title} role="img" data-of={scene.id}>
+                <p class="v1-kicker">{s.kicker}</p>
+                <p class="v1-title">{s.title}</p>
+                <ul class="v1-bullets">{s.bullets.map((b) => <li>{b}</li>)}</ul>
+                <img class="v1-photo" src={photoUrl(dog, 420, 5 / 6)} srcset={photoSrcset(dog, 420, 5 / 6)} alt="" loading="lazy" draggable="false" style={`background: ${dog.color}`} />
+                <p class="v1-source">{s.source}</p>
+                <p class="v1-number">3</p>
+              </div>
+            )}
+            {o.scenes[scene.id].people.map((c, i) => {
+              const who = person(c.by as PersonName);
+              const spot = scene.spots[i]!;
+              return (
+                <span
+                  class="bub-cursor op-said"
+                  data-of={scene.id}
+                  hidden={scene.id !== 'dog'}
+                  style={`left: ${spot.x * 100}%; top: ${spot.y * 100}%; --c: ${accentColor(who.color)}; --ink: ${who.color === 'blue' || who.color === 'violet' ? '#fff' : '#000'}; --i: ${i}`}
+                >
+                  <span>
+                    <b>{c.by}</b> {c.text}
+                  </span>
+                </span>
+              );
+            })}
+          </Fragment>
+        ))
+      }
+      <span class="op-mine" data-op-mine style="left: 30%; top: 40%" aria-hidden="true"></span>
+    </div>
+
+    <!-- Version 2: lands on top once your opinion is in. -->
+    <div class="op-card op-v2" aria-hidden="true" data-op-v2>
+      {
+        SCENES.map((scene) => {
+          const sc = o.scenes[scene.id];
+          return (
+            <div class="ps" data-of={scene.id} hidden={scene.id !== 'dog'} style={`--v2: ${scene.bg}`}>
+              <p class="v2-kicker">{o.version}</p>
+              <p class="v2-statement">{sc.statement}</p>
+              <p class="v2-reasons">{sc.reasons.map((r) => <span>{r}</span>)}</p>
+              <p class="v2-next">{sc.next}</p>
+              {'Deck' in scene ? (
+                <div class="v2-zoom" style={`--fx: ${scene.focus.x}; --fy: ${scene.focus.y}; --z: ${scene.focus.z}`}>
+                  <div class="deck">
+                    <scene.Deck />
+                  </div>
+                </div>
+              ) : (
+                <img class="v2-photo" src={photoUrl(dog, 760, 48 / 56.25)} srcset={photoSrcset(dog, 760, 48 / 56.25)} alt="" loading="lazy" draggable="false" style={`background: ${dog.color}`} />
+              )}
+            </div>
+          );
+        })
+      }
+      <!-- What you said, done: version 2 answers your comment, whatever you typed or picked. -->
+      <span class="bub-cursor op-said op-heard" data-op-heard-at style="--c: var(--me, var(--color-accent-blue)); --ink: var(--me-ink, #fff); left: 30%; top: 40%">
+        <span><b data-op-name>{o.you}</b> <span data-op-heard></span></span>
+      </span>
+    </div>
+  </div>
+
+  <form class="op-box" data-op-box>
+    <div class="op-box-head">
+      <span class="op-face" data-op-face>{o.you.charAt(0)}</span>
+      <b data-op-name>{o.you}</b>
+      <span class="op-hint">{o.where}</span>
+      <span class="op-when">{o.now}</span>
+    </div>
+
+    <div class="op-write">
+      <textarea data-op-input rows="2" maxlength="200" aria-label={`${o.askLead} ${o.askMark}`} placeholder={o.scenes.dog.examples[0]}></textarea>
+      <button type="submit" class="op-send" aria-label={o.send}>
+        <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M11 20V7.8l-5.6 5.6L4 12l8-8 8 8-1.4 1.4L13 7.8V20Z"></path></svg>
+      </button>
+    </div>
+    <div class="op-chips">
+      {SCENES.map(({ id }) => o.scenes[id].chips.map((chip) => <button type="button" data-op-chip data-of={id} hidden={id !== 'dog'}>{chip}</button>))}
+    </div>
+
+    <p class="op-said-text" data-op-said></p>
+    <div class="op-status">
+      <AiMark size={24} />
+      <span class="op-working">{o.working}<span class="op-dots"><i></i><i></i><i></i></span></span>
+      <span class="op-revised"><Icon name="check" size={16} /> {o.revised}</span>
+    </div>
+    <div class="op-after">
+      <p>{o.doneSub}</p>
+      <div class="op-actions">
+        <Button href={`${APP_URL}/`} variant="inverse">{t(lang).nav.start}</Button>
+        <button type="button" class="op-again" data-op-again>{o.again}</button>
+      </div>
+    </div>
+  </form>
+
+  <Credit photo={dog} lang={lang} class="op-credit" data-of="dog" />
+</section>
+
+<script is:inline>
+  // Pick this visit's slide before the stack deals itself in (never the same twice in a row), drop
+  // the others, and scale the 960 × 540 slides to the card: `--k` is card width / 960.
+  (() => {
+    const root = document.currentScript.previousElementSibling;
+    const ids = [...new Set([...root.querySelectorAll('[data-of]')].map((el) => el.dataset.of))];
+    let last = null;
+    try {
+      last = localStorage.getItem('slider-hero');
+    } catch {}
+    const pool = ids.filter((id) => id !== last);
+    const pick = pool[Math.floor(Math.random() * pool.length)] ?? ids[0];
+    try {
+      localStorage.setItem('slider-hero', pick);
+    } catch {}
+    root.dataset.scene = pick;
+    for (const el of root.querySelectorAll('[data-of]')) {
+      if (el.dataset.of === pick) el.hidden = false;
+      else el.remove();
+    }
+    const stack = root.querySelector('[data-op-slide]');
+    const v1 = root.querySelector('[data-op-v1]');
+    const fit = () => stack.style.setProperty('--k', String(v1.clientWidth / 960));
+    fit();
+    new ResizeObserver(fit).observe(v1);
+  })();
+</script>
+
+<style>
+  .op {
+    --ease: var(--ease-emphasized);
+    --step: clamp(10px, 1.6vw, 22px);
+    max-width: 1440px;
+    min-height: calc(100svh - 72px);
+    margin: 0 auto;
+    padding: clamp(24px, 6vh, 72px) 32px 40px;
+    display: grid;
+    /* The slide's column takes two thirds: the slide is the hero, the question sits beside it. */
+    grid-template-columns: minmax(0, 10fr) minmax(0, 21fr);
+    grid-template-rows: auto 1fr auto;
+    grid-template-areas:
+      'copy stack'
+      'box stack'
+      '. credit';
+    column-gap: clamp(24px, 2.2vw, 40px);
+    align-content: center;
+  }
+
+  /* ── The question, big ──────────────────────────────────────────────────────────────────── */
+  .op-copy {
+    grid-area: copy;
+  }
+  .op-kind {
+    text-wrap: pretty;
+    font-size: 17px;
+    font-weight: 500;
+    color: var(--color-fg-muted);
+  }
+  .op-title {
+    display: grid;
+    margin-top: 20px;
+    font-size: clamp(44px, 5.6vw, 92px);
+    font-weight: 800;
+    line-height: 0.95;
+    letter-spacing: -0.05em;
+  }
+  .op-title > span {
+    grid-area: 1 / 1;
+    text-wrap: balance;
+    transition:
+      opacity 500ms ease,
+      translate 700ms var(--ease);
+  }
+  .op-done,
+  [data-state='done'] .op-ask {
+    opacity: 0;
+    translate: 0 0.2em;
+  }
+  [data-state='done'] .op-done {
+    opacity: 1;
+    translate: none;
+  }
+
+  /* ── The stack: slides behind peek out down and to the left, like the logo ──────────────── */
+  .op-stack {
+    grid-area: stack;
+    align-self: center;
+    display: grid;
+    padding: 0 0 calc(var(--step) * 3) calc(var(--step) * 3);
+  }
+  .op-card {
+    --d: 0;
+    grid-area: 1 / 1;
+    position: relative;
+    z-index: calc(10 - var(--d));
+    aspect-ratio: 16 / 9;
+    border-radius: clamp(14px, 1.6vw, 24px);
+    container-type: inline-size;
+    translate: calc(var(--d) * var(--step) * -1) calc(var(--d) * var(--step));
+    transition:
+      translate 900ms var(--ease),
+      rotate 900ms var(--ease),
+      opacity 500ms ease;
+  }
+  .op-deco.is-blue {
+    --d: 1;
+    background: var(--color-accent-blue);
+  }
+  .op-deco.is-violet {
+    --d: 2;
+    background: var(--color-accent-violet);
+  }
+  [data-state='done'] .op-v1 {
+    --d: 1;
+  }
+  [data-state='done'] .op-deco.is-blue {
+    --d: 2;
+  }
+  [data-state='done'] .op-deco.is-violet {
+    --d: 3;
+    opacity: 0;
+  }
+  /* Version 2 waits up and to the right, then lands on top. */
+  .op-v2 {
+    opacity: 0;
+    translate: 30% -24%;
+    rotate: 7deg;
+    pointer-events: none;
+  }
+  [data-state='done'] .op-v2 {
+    opacity: 1;
+    translate: 0 0;
+    rotate: 0deg;
+    pointer-events: auto;
+  }
+
+  .ps {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: inherit;
+    font-family: Inter, sans-serif;
+    box-shadow: 0 40px 90px -40px rgb(0 0 0 / 0.55);
+  }
+  .ps > * {
+    position: absolute;
+    margin: 0;
+    transition: opacity 400ms ease;
+  }
+  /* The first version slides back: like the slides behind it, only its colour shows. */
+  [data-state='done'] .op-v1 .ps > *,
+  [data-state='done'] .op-v1 .op-said,
+  [data-state='done'] .op-v1 .op-mine {
+    opacity: 0;
+  }
+
+  /* Version 1: white, five bullets, a small photo. */
+  .op-v1 .ps {
+    background: #fff;
+    color: #1e293b;
+    box-shadow:
+      0 0 0 1px rgb(0 0 0 / 0.06),
+      0 40px 90px -40px rgb(0 0 0 / 0.55);
+    cursor: crosshair;
+  }
+  .v1-kicker {
+    left: 6cqw;
+    top: 4.6cqw;
+    font-size: 1.3cqw;
+    font-weight: 600;
+    color: #64748b;
+  }
+  .v1-title {
+    left: 6cqw;
+    top: 7.6cqw;
+    font-size: 3.5cqw;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .v1-bullets {
+    left: 6cqw;
+    top: 15cqw;
+    width: 52cqw;
+    padding-left: 1.2em;
+    list-style: disc;
+    font-size: 1.6cqw;
+    line-height: 1.45;
+    color: #334155;
+  }
+  .v1-bullets li + li {
+    margin-top: 0.55em;
+  }
+  .v1-photo {
+    left: 66cqw;
+    top: 15cqw;
+    width: 26cqw;
+    height: 31cqw;
+    border-radius: 1cqw;
+    object-fit: cover;
+  }
+  .v1-source,
+  .v1-number {
+    top: 51.5cqw;
+    font-size: 1.05cqw;
+    color: #94a3b8;
+  }
+  .v1-source {
+    left: 6cqw;
+  }
+  .v1-number {
+    right: 4cqw;
+  }
+
+  /* A Figma Site Kit slide, drawn at 960 × 540 and scaled to the card (`--k`, set by the script). */
+  .deck {
+    top: 0;
+    left: 0;
+    width: 960px;
+    height: 540px;
+    transform-origin: 0 0;
+    scale: var(--k, 0.8);
+  }
+  .op-v1 .ps.is-deck {
+    background: #fff;
+  }
+
+  /* Version 2: one sentence in the scene's colour, the dog or the slide zoomed in big. */
+  .op-v2 .ps {
+    background: var(--v2, #ffd84d);
+    color: #1d1d1f;
+  }
+  .v2-kicker {
+    left: 6cqw;
+    top: 5.4cqw;
+    padding: 0.45em 1em;
+    border-radius: 99px;
+    background: #1d1d1f;
+    color: var(--v2, #ffd84d);
+    font-size: 1.4cqw;
+    font-weight: 600;
+  }
+  .v2-statement {
+    left: 6cqw;
+    top: 13cqw;
+    width: 42cqw;
+    font-size: 5.8cqw;
+    font-weight: 800;
+    line-height: 0.98;
+    letter-spacing: -0.045em;
+  }
+  .v2-reasons {
+    left: 6cqw;
+    bottom: 5.4cqw;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8cqw;
+    width: 42cqw;
+    font-size: 1.6cqw;
+    font-weight: 600;
+  }
+  .v2-reasons span {
+    padding: 0.45em 1em;
+    border-radius: 99px;
+    background: #1d1d1f;
+    color: var(--v2, #ffd84d);
+  }
+  /* The slide zoomed into its point: (--fx, --fy) of the 960 × 540 slide sits in the middle. */
+  .v2-zoom {
+    right: 0;
+    top: 0;
+    width: 48cqw;
+    height: 100%;
+    overflow: hidden;
+    background: #fff;
+  }
+  .v2-zoom .deck {
+    position: absolute;
+    left: calc(var(--mid, 24cqw) - var(--fx) * var(--k, 0.8) * var(--z) * var(--zm, 1) * 1px);
+    top: calc(28.125cqw - var(--fy) * var(--k, 0.8) * var(--z) * var(--zm, 1) * 1px);
+    scale: calc(var(--k, 0.8) * var(--z) * var(--zm, 1));
+  }
+  .v2-photo {
+    right: 0;
+    top: 0;
+    width: 48cqw;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .v2-next {
+    display: none;
+  }
+
+  /* Picture too small, too much text, too busy: the picture fills the slide, the point sits on it. */
+  [data-answer='visual'] .v2-zoom,
+  [data-answer='visual'] .v2-photo {
+    width: 100%;
+    --mid: 50cqw;
+    --zm: 1.35;
+  }
+  [data-answer='visual'] .v2-statement {
+    z-index: 1;
+    top: 11cqw;
+    width: auto;
+    max-width: 50cqw;
+    padding: 0.35em 0.5em 0.4em;
+    border-radius: 1.4cqw;
+    background: var(--v2, #ffd84d);
+    font-size: 3.6cqw;
+    box-shadow: 0 1.5cqw 4cqw -1.5cqw rgb(0 0 0 / 0.35);
+  }
+  [data-answer='visual'] .v2-kicker {
+    z-index: 1;
+  }
+  [data-answer='visual'] .v2-reasons {
+    display: none;
+  }
+  /* What is the point? The point, big, and what happens next. No picture. */
+  [data-answer='message'] .v2-zoom,
+  [data-answer='message'] .v2-photo,
+  [data-answer='message'] .v2-reasons {
+    display: none;
+  }
+  [data-answer='message'] .v2-statement {
+    top: 13cqw;
+    width: 84cqw;
+    font-size: 8.4cqw;
+  }
+  [data-answer='message'] .v2-next {
+    display: block;
+    left: 6cqw;
+    bottom: 5.4cqw;
+    padding: 0.5em 1.1em;
+    border-radius: 99px;
+    background: #1d1d1f;
+    color: var(--v2, #ffd84d);
+    font-size: 2.4cqw;
+    font-weight: 700;
+  }
+  [data-answer='message'] .v2-next::before {
+    content: '→ ';
+  }
+
+  /* What the others already said, as speech bubbles (`.bub-cursor`), and your spot. */
+  .op-said {
+    z-index: 2;
+    transition: opacity 400ms ease;
+    animation: op-pop 500ms var(--ease) backwards;
+    animation-delay: calc(900ms + var(--i) * 350ms);
+  }
+  .op-said > span {
+    height: auto;
+    padding: 7px 12px;
+    border-radius: 3px 14px 14px 14px;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.3;
+  }
+  .op-said b {
+    margin-right: 4px;
+    font-weight: 700;
+  }
+  .op-mine {
+    position: absolute;
+    z-index: 3;
+    width: 22px;
+    height: 22px;
+    border-radius: 3px 11px 11px 11px;
+    background: var(--me, var(--color-accent-blue));
+    box-shadow:
+      0 0 0 2px #fff,
+      0 4px 12px rgb(0 0 0 / 0.25);
+    pointer-events: none;
+    transition:
+      left 350ms var(--ease),
+      top 350ms var(--ease),
+      opacity 400ms ease;
+    animation: op-pop 500ms var(--ease) 1700ms backwards;
+  }
+  .op-mine::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    animation: op-ping 1.8s ease-out infinite;
+  }
+  [data-state='working'] .op-mine::after,
+  [data-state='done'] .op-mine::after {
+    animation: none;
+  }
+  @keyframes op-ping {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--me, var(--color-accent-blue)) 60%, transparent);
+    }
+    100% {
+      box-shadow: 0 0 0 20px transparent;
+    }
+  }
+
+  /* Your comment on version 2, at the spot you picked, like everyone's comments: it lands a beat
+     after the slide. Far right, it points the other way so it stays on the slide. */
+  .op-heard {
+    max-width: 60%;
+    animation: none;
+    opacity: 0;
+    scale: 0.6;
+    transform-origin: 0 0;
+    transition:
+      opacity 300ms ease,
+      scale 500ms var(--ease);
+  }
+  .op-heard.is-left {
+    translate: -100% 0;
+    transform-origin: 100% 0;
+  }
+  .op-heard.is-left > span {
+    border-radius: 14px 3px 14px 14px;
+  }
+  .op-heard > span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  [data-state='done'] .op-heard {
+    opacity: 1;
+    scale: 1;
+    transition-delay: 700ms;
+  }
+
+  /* ── Your answer: a big speech bubble, pointing at the slide ────────────────────────────── */
+  .op-box {
+    grid-area: box;
+    align-self: end;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin: 40px 0 calc(var(--step) * 3);
+    padding: 22px 22px 22px 26px;
+    border-radius: 30px 30px 6px 30px;
+    background: var(--color-accent-blue);
+    color: #fff;
+    box-shadow: 0 40px 90px -40px rgb(0 0 0 / 0.55);
+  }
+  .op-box-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 15px;
+  }
+  .op-face {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--me, var(--color-accent-blue));
+    color: var(--me-ink, #fff);
+    box-shadow: 0 0 0 2px #fff;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .op-hint,
+  .op-when {
+    margin-left: auto;
+    font-size: 13px;
+    opacity: 0.55;
+  }
+  .op-when {
+    display: none;
+  }
+  .op-write {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+  }
+  .op-write textarea {
+    flex: 1;
+    min-width: 0;
+    resize: none;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: clamp(26px, 2.5vw, 38px);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.035em;
+    caret-color: #fff;
+  }
+  .op-write textarea::placeholder {
+    color: inherit;
+    opacity: 0.5;
+  }
+  .op-send {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: #fff;
+    color: var(--color-accent-blue);
+    box-shadow: -4px 4px 0 rgb(255 255 255 / 0.4);
+    cursor: pointer;
+    transition:
+      translate 200ms var(--ease),
+      box-shadow 200ms var(--ease);
+  }
+  .op-send:hover {
+    translate: 2px -2px;
+    box-shadow: -7px 7px 0 rgb(255 255 255 / 0.4);
+  }
+  .op-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .op-chips button {
+    height: 36px;
+    padding: 0 14px;
+    border-radius: 99px;
+    font-size: 14px;
+    font-weight: 500;
+    color: inherit;
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.4);
+    cursor: pointer;
+    transition:
+      background-color 150ms,
+      box-shadow 150ms;
+  }
+  .op-chips button:hover {
+    background: rgb(255 255 255 / 0.14);
+    box-shadow: inset 0 0 0 1px #fff;
+  }
+
+  /* After sending: your words stay, the AI answers, then what it all means. */
+  .op-said-text,
+  .op-status,
+  .op-after {
+    display: none;
+  }
+  .op-said-text {
+    font-size: clamp(26px, 2.4vw, 36px);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.035em;
+    overflow-wrap: anywhere;
+  }
+  .op-status {
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    opacity: 0.75;
+  }
+  .op-dots {
+    display: inline-flex;
+    gap: 3px;
+    margin-left: 6px;
+  }
+  .op-dots i {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: op-dot 1s ease-in-out infinite;
+  }
+  .op-dots i:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+  .op-dots i:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+  @keyframes op-dot {
+    50% {
+      translate: 0 -3px;
+      opacity: 0.4;
+    }
+  }
+  .op-revised {
+    display: none;
+    align-items: center;
+    gap: 6px;
+  }
+  .op-after p {
+    font-size: 16px;
+    line-height: 1.5;
+    opacity: 0.72;
+  }
+  .op-actions {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    margin-top: 18px;
+  }
+  .op-again {
+    font-size: 15px;
+    font-weight: 500;
+    color: inherit;
+    opacity: 0.65;
+    cursor: pointer;
+  }
+  .op-again:hover {
+    opacity: 1;
+  }
+
+  [data-state='working'] .op-write,
+  [data-state='working'] .op-chips,
+  [data-state='working'] .op-hint,
+  [data-state='done'] .op-write,
+  [data-state='done'] .op-chips,
+  [data-state='done'] .op-hint {
+    display: none;
+  }
+  [data-state='working'] .op-when,
+  [data-state='done'] .op-when {
+    display: inline;
+  }
+  [data-state='working'] .op-said-text,
+  [data-state='done'] .op-said-text {
+    display: block;
+  }
+  [data-state='working'] .op-status,
+  [data-state='done'] .op-status {
+    display: flex;
+    animation: op-in 400ms var(--ease) both;
+  }
+  [data-state='done'] .op-working {
+    display: none;
+  }
+  [data-state='done'] .op-revised {
+    display: inline-flex;
+  }
+  [data-state='done'] .op-after {
+    display: block;
+    animation: op-in 600ms var(--ease) 300ms both;
+  }
+  @keyframes op-in {
+    from {
+      opacity: 0;
+      translate: 0 8px;
+    }
+  }
+
+  .op :global(.op-credit) {
+    grid-area: credit;
+    margin-top: 4px;
+    text-align: right;
+  }
+
+  /* ── Entrance: the question, then the stack deals itself, then your bubble ─────────────── */
+  .op-copy,
+  .op-box {
+    animation: op-rise 900ms var(--ease) backwards;
+  }
+  .op-box {
+    animation-delay: 1300ms;
+  }
+  .op-card:not(.op-v2) {
+    animation: op-deal 900ms var(--ease) backwards;
+  }
+  .op-deco.is-blue {
+    animation-delay: 180ms;
+  }
+  .op-v1 {
+    animation-delay: 360ms;
+  }
+  @keyframes op-rise {
+    from {
+      opacity: 0;
+      translate: 0 24px;
+    }
+  }
+  @keyframes op-deal {
+    from {
+      opacity: 0;
+      translate: 30% -20%;
+      rotate: 6deg;
+    }
+  }
+  @keyframes op-pop {
+    from {
+      opacity: 0;
+      scale: 0.6;
+    }
+  }
+
+  /* Small laptops: the question needs its room back. */
+  @media (max-width: 1279px) {
+    .op {
+      grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+      column-gap: 32px;
+    }
+  }
+
+  /* ── Tablet and phone: question, stack, bubble ──────────────────────────────────────────── */
+  @media (max-width: 1023px) {
+    .op {
+      min-height: 0;
+      padding: 32px 16px 24px;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: none;
+      grid-template-areas: 'copy' 'stack' 'box' 'credit';
+    }
+    .op-stack {
+      margin-top: 32px;
+    }
+    .op-box {
+      margin: 8px 0 0;
+    }
+    .op :global(.op-credit) {
+      margin-top: 14px;
+      text-align: left;
+    }
+  }
+  @media (max-width: 767px) {
+    .op-said {
+      display: none;
+    }
+    .op-box {
+      padding: 18px;
+      border-radius: 24px 24px 24px 6px;
+    }
+    .op-hint {
+      display: none;
+    }
+    .op-send {
+      width: 48px;
+      height: 48px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .op *,
+    .op {
+      animation: none !important;
+      transition-duration: 1ms !important;
+    }
+  }
+</style>
+
+<script>
+  /** Who you are comes from the live comments (scripts/live.ts): the same name and colour everywhere. */
+  type Me = { name: string; color: string };
+  const named = (me: Me | undefined) => {
+    if (!me) return;
+    for (const tag of document.querySelectorAll('[data-op-name]')) tag.textContent = me.name;
+    for (const face of document.querySelectorAll('[data-op-face]')) face.textContent = me.name.charAt(0).toUpperCase();
+  };
+  named((window as { __sliderMe?: Me }).__sliderMe);
+  addEventListener('site-live:me', (event) => named((event as CustomEvent<Me>).detail));
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-opinion]')) {
+    const v1 = root.querySelector<HTMLElement>('[data-op-v1]')!;
+    const box = root.querySelector<HTMLFormElement>('[data-op-box]')!;
+    const input = root.querySelector<HTMLTextAreaElement>('[data-op-input]')!;
+    const said = root.querySelector<HTMLElement>('[data-op-said]')!;
+    const mine = root.querySelector<HTMLElement>('[data-op-mine]')!;
+    const heard = root.querySelector<HTMLElement>('[data-op-heard]')!;
+    const heardAt = root.querySelector<HTMLElement>('[data-op-heard-at]')!;
+    // This visit's scene was picked by the inline script above; its example opinions get typed.
+    const byScene = JSON.parse(root.dataset.examples ?? '{}') as Record<string, string[]>;
+    const examples = byScene[root.dataset.scene ?? 'dog'] ?? [];
+    input.placeholder = examples[0] ?? '';
+    const spot = { x: 0.3, y: 0.4 };
+    let picked = false;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+
+    // The placeholder types one honest opinion after another until you start yourself.
+    let typing: ReturnType<typeof setTimeout> | undefined;
+    const typeExamples = (n = 0, at = 0) => {
+      const text = examples[n % examples.length] ?? '';
+      if (input.value) return;
+      input.placeholder = text.slice(0, at) || ' ';
+      const done = at >= text.length;
+      typing = setTimeout(() => (done ? typeExamples(n + 1, 0) : typeExamples(n, at + 1)), done ? 1800 : 55);
+    };
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      typing = setTimeout(() => typeExamples(1, 0), 4000);
+    }
+    input.addEventListener('input', () => {
+      clearTimeout(typing);
+      input.placeholder = examples[0] ?? '';
+    });
+
+    // A click on the first version puts your bubble there.
+    v1.addEventListener('click', (event) => {
+      if (root.dataset.state !== 'ask') return;
+      const r = v1.getBoundingClientRect();
+      spot.x = Math.min(0.96, Math.max(0.02, (event.clientX - r.left) / r.width));
+      spot.y = Math.min(0.94, Math.max(0.04, (event.clientY - r.top) / r.height));
+      picked = true;
+      mine.style.left = `${spot.x * 100}%`;
+      mine.style.top = `${spot.y * 100}%`;
+      input.focus({ preventScroll: true });
+    });
+
+    // Version 2 answers what you said: a chip has its own answer; typed words take the answer of the
+    // chip they share most words with (the first chip's when none).
+    const answersBy = JSON.parse(root.dataset.answers ?? '{}') as Record<string, string[]>;
+    const answers = answersBy[root.dataset.scene ?? 'dog'] ?? [];
+    const chips = [...root.querySelectorAll<HTMLButtonElement>('[data-op-chip]')].filter(
+      (chip) => chip.dataset.of === (root.dataset.scene ?? 'dog'),
+    );
+    const wordsOf = (text: string) => new Set(text.toLowerCase().match(/\p{L}{3,}/gu) ?? []);
+    const answerFor = (text: string) => {
+      const typed = wordsOf(text);
+      let best = 0;
+      let most = 0;
+      chips.forEach((chip, i) => {
+        const shared = [...wordsOf(chip.textContent ?? '')].filter((word) => typed.has(word)).length;
+        if (shared > most) [best, most] = [i, shared];
+      });
+      return best;
+    };
+
+    const send = (text: string, chip?: number) => {
+      const words = text.trim();
+      if (!words || root.dataset.state !== 'ask') return;
+      root.dataset.answer = answers[chip ?? answerFor(words)] ?? 'polished';
+      clearTimeout(typing);
+      said.textContent = words;
+      heard.textContent = words;
+      // Not clicked on the slide: your comment sits lower right on version 2, clear of its sentence.
+      const at = picked ? spot : { x: 0.72, y: 0.66 };
+      heardAt.style.left = `${at.x * 100}%`;
+      heardAt.style.top = `${at.y * 100}%`;
+      heardAt.classList.toggle('is-left', at.x > 0.6);
+      root.dataset.state = 'working';
+      dispatchEvent(
+        new CustomEvent('site-live:comment', { detail: { a: 'opinion', x: spot.x, y: spot.y, text: words } }),
+      );
+      timers.push(setTimeout(() => (root.dataset.state = 'done'), 1600));
+    };
+
+    box.addEventListener('submit', (event) => {
+      event.preventDefault();
+      send(input.value);
+    });
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        send(input.value);
+      }
+    });
+    chips.forEach((chip, i) => chip.addEventListener('click', () => send(chip.textContent ?? '', i)));
+    root.querySelector('[data-op-again]')?.addEventListener('click', () => {
+      timers.splice(0).forEach(clearTimeout);
+      input.value = '';
+      root.dataset.state = 'ask';
+      input.focus({ preventScroll: true });
+    });
+  }
+</script>

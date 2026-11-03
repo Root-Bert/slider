@@ -36,7 +36,6 @@ import {
  */
 
 export const CORPUS_DIR = fileURLToPath(new URL('./decks/', import.meta.url));
-export const REAL_DIR = fileURLToPath(new URL('./real/', import.meta.url));
 
 const NEW_SLIDE: CorpusSlide = {
   label: 'neu',
