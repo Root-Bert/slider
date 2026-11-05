@@ -4,6 +4,7 @@ export * from './auth';
 export * from './billing';
 export * from './comments';
 export * from './deck-access';
+export * from './deck-creation';
 export * from './editing';
 export * from './decks';
 export * from './folders';

@@ -16,13 +16,17 @@ test('uploading a PPTX imports it and opens the viewer', async ({ page }) => {
   await expect(page.getByRole('heading', { level: 1, name: 'slider-demo' })).toBeVisible({
     timeout: 30_000,
   });
+  // Material (Folie 0) sits before the slides, so the last ones are reached through the overview.
+  const overview = page.getByRole('navigation', { name: 'Folienübersicht' });
+  await expect(overview.getByRole('button', { name: 'Material (Folie 0) anzeigen' })).toBeVisible();
+  const slideButtons = overview.locator('button:not([data-board-thumb])');
+  await expect(slideButtons).toHaveCount(5);
   for (const [index, title] of SAMPLE_SLIDES.entries()) {
+    await slideButtons.nth(index).click();
     await expect(
       page.getByRole('group', { name: `Folie ${index + 1} von 5: ${title}` }),
     ).toBeVisible();
   }
-  const overview = page.getByRole('navigation', { name: 'Folienübersicht' });
-  await expect(overview.getByRole('button')).toHaveCount(5);
   // Comments that came with the PowerPoint file.
   await expect(
     page.getByRole('region', { name: 'Kommentare' }).getByRole('article').first(),

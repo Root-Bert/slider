@@ -174,11 +174,11 @@ const FONT =
   "'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
 /**
- * The mark at `width` px (24×20 proportions). The size is set in CSS too – Apple Mail ignores the
+ * The mark at `width` px (the brand guide's 96.2 × 89 proportions). The size is set in CSS too – Apple Mail ignores the
  * attributes and would show the 3× PNG at full size.
  */
 const mark = (width: number) => {
-  const height = Math.round((width * 20) / 24);
+  const height = Math.round((width * 89) / 96.2);
   return `<img src="cid:${LOGO_CID}" width="${width}" height="${height}" alt="" style="display:block;width:${width}px;height:${height}px;max-width:${width}px;border:0;outline:none;">`;
 };
 

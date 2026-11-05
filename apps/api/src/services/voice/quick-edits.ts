@@ -1,11 +1,20 @@
 import { z } from 'zod';
-import { freeFontName, lineBetween, NEW_LINE_STROKE, NO_EFFECTS } from '@slider/shared';
+import { slidePlaceholders, type OdpDocument } from '@slider/odp';
+import {
+  freeFontName,
+  lineBetween,
+  NEW_LINE_STROKE,
+  NO_EFFECTS,
+  slideTransitionSchema,
+} from '@slider/shared';
 import { DEFAULT_STYLE, plainParagraph } from '@slider/shared/live-text';
 import type {
   AddElementOperation,
   ElementBox,
+  ElementEffects,
   EditableElement,
   EditableSlide,
+  FillLayer,
   LiveTextStyle,
   NewShape,
   RichParagraph,
@@ -126,7 +135,55 @@ export const quickEditSchema = z.object({
   underline: z.boolean().nullish(),
   align: z.enum(['left', 'center', 'right', 'justify']).nullish(),
   order: z.enum(['front', 'back']).nullish(),
+  /** The element – or with `slide` the slide – deleted. */
   delete: z.boolean().nullish(),
+  /** These elements of one slide grouped, instead of `element` (⌘G); `name`: the group's. */
+  group: z.array(reference).min(2).max(50).nullish(),
+  /** A group taken apart (⇧⌘G). */
+  ungroup: z.boolean().nullish(),
+  locked: z.boolean().nullish(),
+  /** Effects as the editor's „Effekte“ make them: on (its default look) or off. */
+  shadow: z.boolean().nullish(),
+  /** On, off, or on in this colour. */
+  glow: z.union([z.boolean(), hex]).nullish(),
+  soft_edge: z.boolean().nullish(),
+  /** Frosted glass: what lies behind shows blurred through its fill. */
+  backdrop_blur: z.boolean().nullish(),
+  /** A rectangle's corners rounded by this many pt (0: sharp). */
+  corner_radius: z.number().min(0).max(2000).nullish(),
+  /** Turned clockwise to this many degrees. */
+  rotation: z.number().min(-360).max(360).nullish(),
+  /** Mirrored (once more: back) – pictures and drawn shapes. */
+  mirror: z.enum(['horizontal', 'vertical']).nullish(),
+  /** How a picture fills its frame: cropped to it, or stretched. */
+  picture_fit: z.enum(['fill', 'stretch']).nullish(),
+  /** A slide (its number, 1 = first, as before these edits) changed, instead of `element`. */
+  slide: z.number().int().min(1).max(10_000).nullish(),
+  /**
+   * A new slide instead of `element`: right after slide `after` (0: first), of a layout (by its
+   * name; none: as the slide before) or a copy of slide `copy_of` – `title` and `text` (its body,
+   * one string per point) go into its placeholders.
+   */
+  new_slide: z
+    .object({
+      after: z.number().int().min(0).max(10_000),
+      layout: z.string().min(1).max(200).nullish(),
+      copy_of: z.number().int().min(1).max(10_000).nullish(),
+    })
+    .nullish(),
+  /** A new slide's title. */
+  title: z.string().max(1_000).nullish(),
+  /** A slide's own background colour – `master`: as in the master again. */
+  background: z.union([hex, z.literal('master')]).nullish(),
+  transition: slideTransitionSchema.nullish(),
+  /** A slide's speaker notes anew, one string per paragraph (empty: none). */
+  notes: z.array(z.string().max(5_000)).max(200).nullish(),
+  /** A slide hidden (true) or shown again. */
+  hidden: z.boolean().nullish(),
+  /** A slide moved right after slide n (0: first). */
+  move_after: z.number().int().min(0).max(10_000).nullish(),
+  /** A slide copied, the copy right after it. */
+  duplicate: z.boolean().nullish(),
 });
 export type QuickEdit = z.infer<typeof quickEditSchema>;
 
@@ -137,9 +194,13 @@ export function readQuickEdits(input: unknown): QuickEdit[] | null {
   return list.success && list.data.every(saysWhich) ? list.data : null;
 }
 
-/** An edit names one element, or makes one: exactly one of `element`, `add`, `copy_of`. */
+/**
+ * An edit names one element or slide, or makes one: exactly one of `element`, `add`, `copy_of`,
+ * `group`, `slide` and `new_slide`.
+ */
 export const saysWhich = (edit: QuickEdit): boolean =>
-  [edit.element, edit.add, edit.copy_of].filter(given).length === 1;
+  [edit.element, edit.add, edit.copy_of, edit.group, edit.slide, edit.new_slide].filter(given)
+    .length === 1;
 
 const TEXT_STYLE_KEYS = [
   'font_size',
@@ -334,6 +395,27 @@ export type QuickSlide = Pick<EditableSlide, 'elements'> & { pageId?: string | n
 export interface QuickPlan {
   operations: SlideOperation[];
   added: { name: string | null; id: string }[];
+  /**
+   * Texts for the placeholders of slides the operations add – their ids are known only once the
+   * slide is there (`applyQuickEdits` fills them in).
+   */
+  fills: QuickFill[];
+}
+
+/** What goes into a new slide's title and body placeholders. */
+export interface QuickFill {
+  pageId: string;
+  title: string | null;
+  text: string[] | null;
+}
+
+/** A layout a new slide can take: a master page, its placeholders and the slides on it. */
+export interface QuickLayout {
+  name: string;
+  displayName: string | null;
+  kinds: readonly string[];
+  /** Page ids of the slides on it. */
+  pages: readonly string[];
 }
 
 /** Why the edits cannot be made so – `index`: the edit that cannot (`-1`: none in particular). */
@@ -372,8 +454,12 @@ export interface QuickOptions {
   page?: { width: number; height: number };
   /** The slide (of `slides`) new elements go on when they name no element there. */
   on?: number;
-  /** The id of a new element (the editor's: `sl…`). */
+  /** The id of a new element or slide (the editor's: `sl…`). */
   newId?: () => string;
+  /** The layouts a new slide can take (none: no new slide but copies). */
+  layouts?: readonly QuickLayout[];
+  /** Kinds of edits refused, and why – e.g. the slide tools the full AI has for them. */
+  refuse?: (edit: QuickEdit) => string | null;
 }
 
 /**
@@ -420,11 +506,43 @@ export function quickPlan(
     );
   const operations: SlideOperation[] = [];
   const added: QuickPlan['added'] = [];
+  const fills: QuickFill[] = [];
   const kinds = new Map<string, NewKind>();
-  for (const [index, asked] of edits.entries()) {
+  for (const [at, edit] of edits.entries()) {
+    if (!edit.slide && !edit.new_slide) continue;
+    const other = Object.keys(edit).find(
+      (key) => !SLIDE_KEYS.has(key) && given(edit[key as keyof QuickEdit]),
+    );
+    if (other) return { problem: `a slide has no ${other} – give it its elements`, index: at };
+  }
+  for (const [asked, index] of slideTexts(edits, slides)) {
     const fail = (problem: string): QuickProblem => ({ problem, index });
-    if (!saysWhich(asked)) return fail('give exactly one of element, add and copy_of');
+    if (!saysWhich(asked)) {
+      return fail('give exactly one of element, add, copy_of, group, slide and new_slide');
+    }
+    const refused = options.refuse?.(asked);
+    if (refused) return fail(refused);
     const edit = resolved(asked, resolve);
+    if (edit.slide || edit.new_slide) {
+      const made = slideEdit(edit, slides, options.layouts ?? [], newId);
+      if ('problem' in made) return fail(made.problem);
+      operations.push(...made.operations);
+      if (made.fill) fills.push(made.fill);
+      continue;
+    }
+    if (edit.group) {
+      const slide = slideOf(edit.group[0]!);
+      if (!slide || !edit.group.every((id) => slide.elements.some((each) => each.id === id))) {
+        return fail('the elements grouped must all be on one slide');
+      }
+      if (new Set(edit.group).size < 2) return fail('a group needs two elements or more');
+      if (asked.name && names.has(asked.name)) return fail(`the name ${asked.name} is taken`);
+      const id = newId();
+      operations.push({ type: 'groupElements', elementIds: [...edit.group], newElementId: id });
+      if (asked.name) names.set(asked.name, id);
+      added.push({ name: asked.name ?? null, id });
+      continue;
+    }
     if (edit.add || edit.copy_of) {
       const anchor =
         edit.copy_of ??
@@ -480,7 +598,241 @@ export function quickPlan(
     }
     operations.push(...made);
   }
-  return operations.length > 0 ? { operations, added } : { problem: 'nothing to do', index: -1 };
+  return operations.length > 0
+    ? { operations, added, fills }
+    : { problem: 'nothing to do', index: -1 };
+}
+
+/** The layout a new slide asks for by name – or, none named, the one fitting what goes in. */
+function layoutFor(
+  asked: string | null | undefined,
+  layouts: readonly QuickLayout[],
+  like: string,
+  wants: { title: boolean; text: boolean },
+): QuickLayout | string {
+  if (layouts.length === 0) return 'this deck has no layouts for a new slide';
+  if (asked) {
+    const key = asked
+      .replace(/[„“"']/g, '')
+      .trim()
+      .toLowerCase();
+    const found = layouts.find(
+      (layout) => layout.name.toLowerCase() === key || layout.displayName?.toLowerCase() === key,
+    );
+    return found ?? `there is no layout ${asked} – the layouts: ${layoutNames(layouts)}`;
+  }
+  const fits = (layout: QuickLayout) =>
+    (!wants.title || layout.kinds.includes('title')) &&
+    (!wants.text || layout.kinds.includes('outline'));
+  const before = layouts.find((layout) => layout.pages.includes(like));
+  if (before && fits(before)) return before;
+  // The fitting one most slides are on – a deck's content layout rather than its title slide's.
+  const fitting = layouts.filter(fits).sort((a, b) => b.pages.length - a.pages.length);
+  return fitting[0] ?? before ?? layouts[0]!;
+}
+
+const layoutNames = (layouts: readonly QuickLayout[]) =>
+  layouts.map((layout) => `„${layout.displayName ?? layout.name}“`).join(', ');
+
+/** The operations of an edit of a slide, or of a new one – and what goes into a new one. */
+function slideEdit(
+  edit: QuickEdit,
+  slides: readonly QuickSlide[],
+  layouts: readonly QuickLayout[],
+  newId: () => string,
+): { operations: SlideOperation[]; fill: QuickFill | null } | QuickProblem {
+  const problem = (text: string): QuickProblem => ({ problem: text, index: -1 });
+  const pageOf = (number: number): string | null => slides[number - 1]?.pageId ?? null;
+  const operations: SlideOperation[] = [];
+  let pageId: string;
+  let fill: QuickFill | null = null;
+  if (edit.new_slide) {
+    const { after, copy_of: copyOf, layout } = edit.new_slide;
+    if (after > slides.length) return problem(`there is no slide ${after}`);
+    const afterPage = after === 0 ? null : pageOf(after);
+    const like = pageOf(Math.max(1, after));
+    if ((after > 0 && !afterPage) || !like) return problem('slides cannot be added here');
+    pageId = newId();
+    if (copyOf) {
+      const source = pageOf(copyOf);
+      if (!source) return problem(`there is no slide ${copyOf} to copy`);
+      operations.push({
+        type: 'duplicateSlide',
+        pageId: source,
+        newPageId: pageId,
+        after: afterPage,
+      });
+    } else {
+      const chosen = layoutFor(layout, layouts, like, {
+        title: given(edit.title),
+        text: given(edit.text) && edit.text.length > 0,
+      });
+      if (typeof chosen === 'string') return problem(chosen);
+      operations.push({
+        type: 'addSlide',
+        like,
+        newPageId: pageId,
+        after: afterPage,
+        master: chosen.name,
+      });
+    }
+    if (given(edit.title) || given(edit.text)) {
+      fill = { pageId, title: edit.title ?? null, text: edit.text ?? null };
+    }
+  } else {
+    const page = pageOf(edit.slide!);
+    if (!page) return problem(`there is no slide ${edit.slide}`);
+    pageId = page;
+    if (given(edit.title) || given(edit.text)) {
+      return problem('a slide’s texts are its elements’ – change them by their ids');
+    }
+    if (edit.delete) return { operations: [{ type: 'deleteSlide', pageId }], fill: null };
+    if (edit.duplicate) {
+      operations.push({ type: 'duplicateSlide', pageId, newPageId: newId(), after: pageId });
+    }
+    if (given(edit.move_after)) {
+      if (edit.move_after > slides.length) return problem(`there is no slide ${edit.move_after}`);
+      const after = edit.move_after === 0 ? null : pageOf(edit.move_after);
+      if (after === pageId) return problem('a slide cannot go right after itself');
+      operations.push({ type: 'moveSlide', pageId, after });
+    }
+  }
+  if (given(edit.hidden)) operations.push({ type: 'setSlideHidden', pageId, hidden: edit.hidden });
+  if (given(edit.background)) {
+    operations.push({
+      type: 'setSlideBackground',
+      pageId,
+      color: edit.background === 'master' ? null : edit.background.toLowerCase(),
+    });
+  }
+  if (given(edit.transition)) {
+    operations.push({ type: 'setSlideTransition', pageId, transition: edit.transition });
+  }
+  if (given(edit.notes)) {
+    operations.push({ type: 'setSlideNotes', pageId, text: edit.notes.join('\n') });
+  }
+  if (operations.length === 0) return problem('the edit says nothing to do with the slide');
+  return { operations, fill };
+}
+
+/** The deck's layouts for new slides: its master pages, their placeholders, the slides on them. */
+export function quickLayouts(document: OdpDocument): QuickLayout[] {
+  const pages = document.pageIds();
+  const users = new Map<string, string[]>();
+  pages.forEach((pageId, index) => {
+    const master = /draw:master-page-name="([^"]*)"/.exec(document.slideXml(index))?.[1];
+    if (master) users.set(master, [...(users.get(master) ?? []), pageId]);
+  });
+  return document.masterPages().map((page) => ({
+    name: page.name,
+    displayName: page.displayName,
+    // What a new slide of it gets (a title master's subtitle stands for its text frame).
+    kinds: [...new Set(slidePlaceholders(page).map((placeholder) => placeholder.kind))],
+    pages: users.get(page.name) ?? [],
+  }));
+}
+
+/** The layouts in a line each, for the fast models: „name“ (its placeholders). */
+export function layoutLines(layouts: readonly QuickLayout[]): string[] {
+  return layouts
+    .slice(0, 30)
+    .map(
+      (layout) =>
+        `„${layout.displayName ?? layout.name}“ (${layout.kinds.map((kind) => (kind === 'outline' ? 'text' : kind)).join(', ') || 'empty'})`,
+    );
+}
+
+/**
+ * The edits applied to `document` one after another, as the editor's operations – texts for a
+ * new slide's placeholders once it is there. The operations made, or why not (the document then
+ * half changed: throw it away).
+ */
+export function applyQuickEdits(
+  document: OdpDocument,
+  edits: readonly QuickEdit[],
+  margins: ContentArea | null,
+  options: Omit<QuickOptions, 'layouts'> = {},
+): QuickPlan | QuickProblem {
+  const page = options.page ?? document.pageSize();
+  const plan = quickPlan(edits, document.slides(), margins, {
+    ...options,
+    page,
+    layouts: quickLayouts(document),
+  });
+  if ('problem' in plan) return plan;
+  document.apply(plan.operations);
+  const operations = [...plan.operations];
+  for (const fill of plan.fills) {
+    const slides = document.slides();
+    const slide = slides.find((each) => each.pageId === fill.pageId);
+    if (!slide) return { problem: 'the new slide is not there', index: -1 };
+    const title = slide.elements.find((element) => element.role === 'title');
+    const body =
+      slide.elements.find((element) => element.role === 'outline') ??
+      slide.elements.find((element) => element.role === 'subtitle');
+    if (fill.title !== null && !title) {
+      return { problem: 'the new slide’s layout has no title', index: -1 };
+    }
+    if (fill.text !== null && fill.text.length > 0 && !body) {
+      return { problem: 'the new slide’s layout has no text placeholder', index: -1 };
+    }
+    const texts: QuickEdit[] = [
+      ...(fill.title !== null && title ? [{ element: title.id, text: [fill.title] }] : []),
+      ...(fill.text !== null && fill.text.length > 0 && body
+        ? [{ element: body.id, text: fill.text }]
+        : []),
+    ];
+    if (texts.length === 0) continue;
+    const filled = quickPlan(texts, slides, margins, { ...options, page });
+    if ('problem' in filled) return filled;
+    document.apply(filled.operations);
+    operations.push(...filled.operations);
+  }
+  return { operations, added: plan.added, fills: plan.fills };
+}
+
+/** What an edit of a slide (or a new one) may say. */
+const SLIDE_KEYS = new Set([
+  'slide',
+  'new_slide',
+  'title',
+  'text',
+  'background',
+  'transition',
+  'notes',
+  'hidden',
+  'move_after',
+  'duplicate',
+  'delete',
+  'text_color',
+]);
+
+/**
+ * A slide's `text_color` (its background turned dark: light text) as an edit of each of its
+ * texts the editor writes, after it.
+ */
+function slideTexts(
+  edits: readonly QuickEdit[],
+  slides: readonly QuickSlide[],
+): [edit: QuickEdit, index: number][] {
+  return edits.flatMap((edit, index): [QuickEdit, number][] => {
+    if (!edit.slide || !given(edit.text_color)) return [[edit, index]];
+    const texts = (slides[edit.slide - 1]?.elements ?? []).filter(
+      (element) => element.live && element.paragraphs?.some((paragraph) => paragraph.trim()),
+    );
+    const rest = { ...edit, text_color: null };
+    // Nothing else of the slide said: only its texts.
+    const more = Object.keys(rest).some(
+      (key) => key !== 'slide' && given(rest[key as keyof QuickEdit]),
+    );
+    return [
+      ...(more ? [[rest, index] as [QuickEdit, number]] : []),
+      ...texts.map((element): [QuickEdit, number] => [
+        { element: element.id, text_color: edit.text_color },
+        index,
+      ]),
+    ];
+  });
 }
 
 /** The edit with the names of new elements it refers to replaced by their ids. */
@@ -491,6 +843,7 @@ function resolved(edit: QuickEdit, resolve: (ref: string) => string): QuickEdit 
     ...edit,
     ...(edit.element ? { element: resolve(edit.element) } : {}),
     ...(edit.copy_of ? { copy_of: resolve(edit.copy_of) } : {}),
+    ...(edit.group ? { group: edit.group.map(resolve) } : {}),
     ...(edit.next_to
       ? { next_to: { ...edit.next_to, element: resolve(edit.next_to.element) } }
       : {}),
@@ -696,6 +1049,22 @@ function newElementOperations(
     tilt: null,
     flip: text ? null : { x: false, y: false },
   };
+  // Effects, corners, a turn asked with it: as of any element.
+  const extra = {
+    shadow: edit.shadow,
+    glow: edit.glow,
+    soft_edge: edit.soft_edge,
+    backdrop_blur: edit.backdrop_blur,
+    corner_radius: edit.corner_radius,
+    rotation: edit.rotation,
+    mirror: edit.mirror,
+    locked: edit.locked,
+  };
+  if (Object.values(extra).some(given)) {
+    const rest = elementOperations(extra, element, place.elements.length + 1, boxes, place.area);
+    if (!rest) return problem('the new element cannot be changed so');
+    operations.push(...rest);
+  }
   return { operations, element };
 }
 
@@ -920,6 +1289,22 @@ function elementOperations(
     if (!box) return null;
     operations.push({ type: 'setBox', elementId: id, box });
   }
+  if (given(edit.rotation) || given(edit.mirror)) {
+    if (!element.movable) return null;
+    const flip = element.flip;
+    if (given(edit.mirror) && !flip) return null;
+    const turned = {
+      ...(given(edit.rotation) ? { rotation: edit.rotation } : {}),
+      ...(given(edit.mirror) && flip
+        ? {
+            flip: edit.mirror === 'horizontal' ? { ...flip, x: !flip.x } : { ...flip, y: !flip.y },
+          }
+        : {}),
+    };
+    const moved = operations.find((operation) => operation.type === 'setBox');
+    if (moved) Object.assign(moved, turned);
+    else operations.push({ type: 'setBox', elementId: id, box: { ...element.bbox }, ...turned });
+  }
   if (given(edit.fill) || given(edit.border) || given(edit.vertical_align)) {
     // Fill and border only where the editor sets them; the text's place in a text frame too.
     if ((given(edit.fill) || given(edit.border)) && !element.look) return null;
@@ -965,7 +1350,93 @@ function elementOperations(
       to: edit.order === 'back' ? 0 : Math.max(0, count - 1),
     });
   }
+  const effects = effectsAsked(edit, element);
+  if (effects === null) return null;
+  if (effects) operations.push(effects);
+  if (given(edit.heads)) {
+    if (element.kind !== 'line') return null;
+    operations.push({ type: 'setShapeStyle', elementId: id, heads: edit.heads });
+  }
+  if (given(edit.corner_radius)) {
+    if (element.kind !== 'shape') return null;
+    operations.push({ type: 'setCornerRadius', elementId: id, radius: edit.corner_radius });
+  }
+  if (given(edit.picture_fit)) {
+    if (element.kind !== 'image') return null;
+    operations.push({ type: 'setImageFit', elementId: id, fit: edit.picture_fit });
+  }
+  if (given(edit.locked))
+    operations.push({ type: 'setLocked', elementId: id, locked: edit.locked });
+  if (edit.ungroup) {
+    if (element.kind !== 'group') return null;
+    operations.push({ type: 'ungroupElements', elementId: id });
+  }
   return operations;
+}
+
+/** Effects as the editor's „Effekte“ add them (`EffectControls`): their first look. */
+const NEW_SHADOW = { x: 0, y: 4, blur: 12, color: '#000000', opacity: 0.25 };
+const NEW_SOFT_EDGE = 6;
+const NEW_GLOW = { radius: 8, color: '#ffcc00', opacity: 0.6 };
+const NEW_BACKDROP = 12;
+/** How opaque a fill is made when a backdrop blur comes and nothing would show through it. */
+const GLASS_OPACITY = 0.4;
+
+/**
+ * The effects an edit asks for, as the editor sets them – `undefined`: it asks for none, `null`:
+ * the element takes none (a line, a picture, …). A backdrop blur coming makes a fill nothing would
+ * show through see-through, as the editor does.
+ */
+function effectsAsked(
+  edit: QuickEdit,
+  element: EditableElement,
+): SlideOperation | null | undefined {
+  if (![edit.shadow, edit.glow, edit.soft_edge, edit.backdrop_blur].some(given)) return undefined;
+  const look = element.look;
+  if (!look || element.kind === 'line' || element.kind === 'image' || element.kind === 'group') {
+    return null;
+  }
+  const now = look.effects ?? NO_EFFECTS;
+  const effects: ElementEffects = {
+    ...now,
+    ...(given(edit.shadow) ? { shadow: edit.shadow ? (now.shadow ?? NEW_SHADOW) : null } : {}),
+    ...(given(edit.soft_edge) ? { blur: edit.soft_edge ? (now.blur ?? NEW_SOFT_EDGE) : null } : {}),
+    ...(given(edit.glow)
+      ? {
+          glow:
+            edit.glow === false
+              ? null
+              : {
+                  ...(now.glow ?? NEW_GLOW),
+                  ...(typeof edit.glow === 'string' ? { color: edit.glow.toLowerCase() } : {}),
+                },
+        }
+      : {}),
+    ...(given(edit.backdrop_blur)
+      ? { backdrop: edit.backdrop_blur ? (now.backdrop ?? NEW_BACKDROP) : null }
+      : {}),
+  };
+  const glass = effects.backdrop !== null && now.backdrop === null ? glassFills(look) : undefined;
+  return {
+    type: 'setShapeStyle',
+    elementId: element.id,
+    effects,
+    ...(glass ? { fills: glass } : {}),
+  };
+}
+
+/** The fill a backdrop blur comes with so it shows: see-through white, or its colour so. */
+function glassFills(look: NonNullable<EditableElement['look']>): FillLayer[] | undefined {
+  const shown = look.fills.filter((layer) => layer.visible);
+  if (shown.length === 0 && !look.fill) {
+    return [{ type: 'solid', color: '#ffffff', opacity: GLASS_OPACITY, visible: true }];
+  }
+  if (shown.length === 0 && look.fill) {
+    return [{ type: 'solid', color: look.fill, opacity: GLASS_OPACITY, visible: true }];
+  }
+  const [only] = shown;
+  if (shown.length !== 1 || only?.type !== 'solid' || only.opacity < 1) return undefined;
+  return look.fills.map((layer) => (layer === only ? { ...layer, opacity: GLASS_OPACITY } : layer));
 }
 
 /**
@@ -1057,6 +1528,25 @@ export function quickSummary(edits: readonly QuickEdit[]): string {
   const made = new Map<string, number>();
   const named = new Set(edits.flatMap((edit) => (edit.name ? [edit.name] : [])));
   for (const edit of edits) {
+    if (edit.new_slide) {
+      did.add(edit.new_slide.copy_of ? 'Folie kopiert' : 'Folie eingefügt');
+      continue;
+    }
+    if (edit.slide) {
+      if (edit.delete) did.add('Folie gelöscht');
+      if (edit.duplicate) did.add('Folie dupliziert');
+      if (given(edit.move_after)) did.add('Folie verschoben');
+      if (given(edit.hidden)) did.add(edit.hidden ? 'Folie ausgeblendet' : 'Folie eingeblendet');
+      if (given(edit.background)) did.add('Hintergrund geändert');
+      if (given(edit.text_color)) did.add('Schrift angepasst');
+      if (given(edit.transition)) did.add('Übergang geändert');
+      if (given(edit.notes)) did.add('Notizen geändert');
+      continue;
+    }
+    if (edit.group) {
+      did.add('gruppiert');
+      continue;
+    }
     const kind = edit.copy_of ? 'copy' : edit.add;
     if (kind) {
       made.set(kind, (made.get(kind) ?? 0) + 1);
@@ -1076,6 +1566,16 @@ export function quickSummary(edits: readonly QuickEdit[]): string {
     }
     if (given(edit.order))
       did.add(edit.order === 'front' ? 'nach vorn geholt' : 'nach hinten gelegt');
+    if ([edit.shadow, edit.glow, edit.soft_edge, edit.backdrop_blur].some(given)) {
+      did.add('Effekte geändert');
+    }
+    if (given(edit.rotation)) did.add('gedreht');
+    if (given(edit.mirror)) did.add('gespiegelt');
+    if (given(edit.corner_radius)) did.add('Ecken geändert');
+    if (given(edit.heads)) did.add('Pfeilspitzen geändert');
+    if (given(edit.picture_fit)) did.add('Bildeinpassung geändert');
+    if (given(edit.locked)) did.add(edit.locked ? 'gesperrt' : 'entsperrt');
+    if (edit.ungroup) did.add('Gruppierung aufgehoben');
   }
   const list = [
     ...[...made].map(([kind, n]) => {

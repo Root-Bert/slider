@@ -276,6 +276,11 @@ export const SlideFrame = memo(function SlideFrame({
   // ⇧/⌘ (`add`) the comment on boxes being written takes this box too – or lets it go again.
   const commentAt = (point: Point, box: SlideBox | null, add = false) => {
     const shape = box && shapeOfBox(slide, box);
+    // Speaking to the AI: a box picked goes to it, as one drawn round it does.
+    if (shape && !add && placeAiBox) {
+      placeAiBox(slide.id, boxAnchor(shape));
+      return;
+    }
     const anchor = shape && add ? toggleDraftBox(draft, slide.id, shape) : null;
     startComment(anchor ?? (shape ? boxAnchor(shape) : { type: 'point', point, shapeRef: null }));
   };
@@ -455,7 +460,7 @@ export const SlideFrame = memo(function SlideFrame({
             </div>
             {around && !small && !stage && <OffSlideLayer slideId={slide.id} frame={around} />}
             {!small && !stage && (
-              // Bearbeiten composes the slide per element (CLAUDE.md §1).
+              // Bearbeiten composes the slide per element (docs/do-not-break.md).
               <SlideCompositor
                 slideId={slide.id}
                 rounded={view && !zoomedOut ? '' : 'rounded-panel'}

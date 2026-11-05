@@ -3,9 +3,11 @@ import type { Deck } from '@slider/shared';
 import { useDeckStatus, useInvalidateSlideImages, useRerenderDeck, useUpdateDeck } from '@/lib/api';
 import { ContextMenu, Menu, type IconButtonVariant, type MenuAction, type ShowToast } from '@/ui';
 import { formatFileSize } from '@/lib/format';
+import { useShowRun } from '@/features/viewer';
 import { usePinnedDecks } from '../hooks/usePinnedDecks';
 import { usePanelPresence } from '../hooks/usePanelPresence';
 import { DeckAccessDialog } from './DeckAccessDialog';
+import { DeckRunDialog } from './DeckRunDialog';
 import { DeckStorageDialog } from './DeckStorageDialog';
 import { DeleteDeckDialog } from './DeleteDeckDialog';
 import { MoveDecksDialog } from './MoveDecksDialog';
@@ -102,9 +104,12 @@ export function DeckActions({
   const [deleting, setDeleting] = useState(false);
   const [moving, setMoving] = useState(false);
   const [storage, setStorage] = useState(false);
+  const [showingRun, setShowingRun] = useState(false);
+  const run = useShowRun(deck.id);
   const [restricting, setRestricting] = useState(false);
   // In the thumbnail or under the row the overview animates out before it goes.
   const storagePanel = usePanelPresence(storage, Boolean(panelSlot?.element));
+  const runPanel = usePanelPresence(showingRun && run !== null, Boolean(panelSlot?.element));
   const update = useUpdateDeck(deck.id);
   const rerender = useRerender(deck, onNotify);
   const pins = usePinnedDecks(deck.workspaceId);
@@ -137,13 +142,34 @@ export function DeckActions({
     deck.permissions.canComment && deck.import.status === 'ready'
       ? [{ label: rerender.label, icon: 'image', onSelect: rerender.start }]
       : [];
+  // The completed runs stored with this deck.
+  const runAction: MenuAction[] = run
+    ? [
+        {
+          label: 'Durchgänge …',
+          icon: 'schedule',
+          onSelect: () => {
+            setStorage(false);
+            setShowingRun(true);
+          },
+        },
+      ]
+    : [];
   // Reviewers and members on other people's decks can only pin them (BER-129).
   const manageActions: MenuAction[] = [
     { label: 'Umbenennen', icon: 'edit', onSelect: onRename },
     { label: 'Verschieben …', icon: 'folder', onSelect: () => setMoving(true) },
     { label: 'Zugriff einschränken …', icon: 'lock', onSelect: () => setRestricting(true) },
     ...rerenderAction,
-    { label: 'Speicherplatz …', icon: 'cloud', onSelect: () => setStorage(true) },
+    ...runAction,
+    {
+      label: 'Speicherplatz …',
+      icon: 'cloud',
+      onSelect: () => {
+        setShowingRun(false);
+        setStorage(true);
+      },
+    },
     archived
       ? { label: 'Wiederherstellen', icon: 'history', onSelect: toggleArchived }
       : { label: 'Archivieren', icon: 'archive', onSelect: toggleArchived },
@@ -151,7 +177,7 @@ export function DeckActions({
   ];
   const actions = deck.permissions.canManage
     ? [pinAction, ...manageActions]
-    : [pinAction, ...rerenderAction];
+    : [pinAction, ...rerenderAction, ...runAction];
 
   return (
     <>
@@ -192,6 +218,16 @@ export function DeckActions({
           onClosed={storagePanel.onClosed}
           onClose={() => setStorage(false)}
           onPruned={(freed) => onNotify(`${formatFileSize(freed)} freigegeben`)}
+        />
+      )}
+      {runPanel.mounted && run && (
+        <DeckRunDialog
+          deck={deck}
+          run={run}
+          slot={panelSlot}
+          closing={runPanel.closing}
+          onClosed={runPanel.onClosed}
+          onClose={() => setShowingRun(false)}
         />
       )}
       {restricting && (

@@ -1,5 +1,15 @@
 import { loginPath } from './return-to';
 
+/**
+ * Navigation state of a new deck: it opens on Folie 0 („Material“), where its material goes
+ * before Folie 1's prompt builds it (`navigate(routes.deck(id), { state: OPEN_ON_BOARD })`).
+ */
+export const OPEN_ON_BOARD = { board: true } as const;
+
+/** Whether a deck page was opened with {@link OPEN_ON_BOARD}. */
+export const opensOnBoard = (state: unknown): boolean =>
+  typeof state === 'object' && state !== null && (state as { board?: unknown }).board === true;
+
 /** Typed URL builders – the only place that knows the URL structure. */
 export const routes = {
   /** Redirects to the last used workspace (or the onboarding without one). */

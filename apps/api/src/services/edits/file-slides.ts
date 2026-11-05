@@ -1,5 +1,6 @@
 import type { OdpDocument, OdpGuide, OdpSlide } from '@slider/odp';
 import type { AppDeps } from '../../deps';
+import { quickLayouts, type QuickLayout } from '../voice/quick-edits';
 import { openFile, readFile } from './target';
 
 /*
@@ -21,6 +22,8 @@ export interface FileSlides {
   layoutGuides: (OdpGuide[] | null)[];
   /** The file's snap lines (`OdpDocument.guides`): a slide's guides when its layout has none. */
   snapLines: OdpGuide[];
+  /** The layouts a new slide can take (`quickLayouts`). */
+  layouts: QuickLayout[];
 }
 
 /**
@@ -60,6 +63,7 @@ export async function describeFile(document: OdpDocument, key: string | null): P
     hadPageIds,
     layoutGuides: document.layoutGuides(),
     snapLines: await document.guides(),
+    layouts: quickLayouts(document),
   };
   if (key !== null) remember(key, read);
   return read;

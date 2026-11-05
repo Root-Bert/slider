@@ -13,7 +13,7 @@
  * Exits non-zero when a slide differs by more than `LIVE_PARITY_MAX` (default 0.015 = 1.5 %).
  *
  * `--compose` also measures each element on its own (its box and a margin for its outline), by
- * kind – the guard of the per-element editor (CLAUDE.md §1): an element whose share of differing
+ * kind – the guard of the per-element editor (docs/do-not-break.md): an element whose share of differing
  * pixels passes `LIVE_PARITY_ELEMENT_MAX` (default 0.02) fails the run (`gated`) – a browser-drawn
  * element, and any holding text (its lines sit where LibreOffice's do: `layoutSize`, `lineBox`,
  * `baselineShift` in `live/css.ts`). Listed apart and gated by their slide (`slide`): elements

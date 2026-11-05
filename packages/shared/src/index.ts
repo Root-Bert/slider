@@ -29,3 +29,7 @@ export * from './image-fit';
 export * from './zip-entry';
 export * from './voice';
 export * from './site-live';
+export * from './materials';
+export * from './deck-creation';
+
+export * from './show-runs';

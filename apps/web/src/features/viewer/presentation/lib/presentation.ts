@@ -1,4 +1,8 @@
 import type { Slide } from '@slider/shared';
+import { isApplePlatform } from '@/lib/platform';
+
+/** ⌥P on Apple platforms, Alt P elsewhere: the presenter view. */
+export const presenterShortcut = () => (isApplePlatform() ? '⌥P' : 'Alt P');
 
 /**
  * The slides a presentation shows: like PowerPoint without the hidden ones, even while the

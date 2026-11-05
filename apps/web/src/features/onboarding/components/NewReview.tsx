@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import type { Deck, Workspace } from '@slider/shared';
-import { routes } from '@/lib/routes';
+import { OPEN_ON_BOARD, routes } from '@/lib/routes';
 import { AppHeader } from '@/shell/AppHeader';
 import { LoginErrorBanner } from '@/features/auth';
 import { rememberWorkspace, WorkspaceMark } from '@/features/workspaces';
@@ -40,6 +40,9 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   // The page cross-fades into the deck page, where the import stage builds up (index.css).
   const openDeck = (deck: Deck) => void navigate(routes.deck(deck.id), { viewTransition: true });
+  // A new deck opens on Folie 0, where its material goes before Folie 1's prompt builds it.
+  const openNewDeck = (deck: Deck) =>
+    void navigate(routes.deck(deck.id), { viewTransition: true, state: OPEN_ON_BOARD });
 
   const link = useLinkImport(workspace.id, openDeck);
   const upload = useDeckUpload(workspace.id, openDeck);
@@ -223,7 +226,7 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
             {!link.noAccess && !picking && (
               <div {...riseIn(0)} className={cn(riseIn(0).className, 'flex flex-col gap-8 pb-2')}>
                 <BlankDeckCard
-                  onCreate={() => blank.mutate(masterId || undefined, { onSuccess: openDeck })}
+                  onCreate={() => blank.mutate(masterId || undefined, { onSuccess: openNewDeck })}
                   pending={blank.isPending}
                   error={blank.error?.message ?? null}
                   masters={masters}

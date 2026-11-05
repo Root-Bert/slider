@@ -1,8 +1,9 @@
-import { inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import {
   AI_RUNNING_LIMIT_MS,
   rectArea,
   shapeRefForRect,
+  threadForRequest,
   type AiProposal,
   type Anchor,
   type Slide,
@@ -16,7 +17,7 @@ import {
   type VoiceSession,
 } from '@slider/shared';
 import { requireDeckAccess } from '../../auth/access';
-import { aiProposals, type DeckRow } from '../../db/schema';
+import { aiProposals, comments, type DeckRow } from '../../db/schema';
 import type { AppDeps } from '../../deps';
 import { ApiError, badRequest, forbidden, notFound } from '../../http/errors';
 import { deckDesign, uniqueGuides } from '../ai-context';
@@ -47,6 +48,7 @@ import {
   workspaceVoiceConnection,
 } from '../integration-keys';
 import { listSlides } from '../slides';
+import { aboutSeveralSlides } from '../quick-requests';
 import {
   isArtefact,
   MAX_COMMENT_CHARS,
@@ -60,6 +62,7 @@ import {
 } from './router';
 import {
   placesAgree,
+  layoutLines,
   quickOperations,
   quickSummary,
   readQuickEdits,
@@ -116,6 +119,17 @@ const VOCABULARY = [
   'Abstand',
   'verteilen',
   'Layout',
+  'Footer',
+  'Header',
+  'Fußzeile',
+  'Kopfzeile',
+  'Headline',
+  'Logo',
+  'Icon',
+  'Textfeld',
+  'Platzhalter',
+  'Aufzählung',
+  'Bullet Points',
 ];
 
 interface SegmentRecord extends Omit<VoiceSegmentResult, 'seqs'> {
@@ -146,6 +160,11 @@ interface ItemRecord {
   threadId: string;
   /** A reply in the thread of an earlier item (`add_to`): that item. */
   parent: ItemRecord | null;
+  /**
+   * A reply in an open thread from before (another session, someone else's) about the same
+   * element: its request stops a run still at work there and is asked with the thread.
+   */
+  joined: boolean;
   slideId: string | null;
   /** Where on the slide, in words for the router. */
   place: string;
@@ -189,9 +208,9 @@ interface Session {
   waiting: WaitingPiece[];
   hearing: boolean;
   /**
-   * Requests to the AI at work or waiting: one about the same elements of a slide as an earlier
-   * one (or about the slide as a whole) waits for it – it sees what that one changed –, others
-   * go at once, side by side.
+   * Requests to the AI at work or waiting: one about the same target as an earlier one (see
+   * {@link enqueue}) waits for it – it sees what that one changed –, others go at once, side by
+   * side.
    */
   jobs: Job[];
   /** Changes made at once go one after another (each in a second or two). */
@@ -204,11 +223,15 @@ interface Session {
 }
 
 interface Job {
+  /** {@link DECK}: about all slides. */
   slideId: string;
-  /** `null`: the slide as a whole. */
+  /** `null`: the slide (or, on {@link DECK}, every slide) as a whole. */
   elements: ReadonlySet<string> | null;
   done: Promise<void>;
 }
+
+/** The job of a request about all slides (or none in particular). */
+const DECK = '\u0000deck';
 
 const sessions = new Map<string, Session>();
 let commandCount = 0;
@@ -738,7 +761,7 @@ async function editingFor(
         },
       };
     }
-    return { slides: editable, page, ...session.design.value };
+    return { slides: editable, page, ...session.design.value, layouts: layoutLines(file.layouts) };
   } catch (error) {
     // Without it the router still makes comments – the AI does every change then.
     if (!(error instanceof ApiError)) deps.log.warn(`Voice ${session.id}: no edit context`, error);
@@ -760,6 +783,8 @@ async function act(
   switch (action.type) {
     case 'new': {
       if (!action.text) return;
+      // About what an open thread is about already: it goes on there.
+      if (await joinOpenThread(deps, session, action, record, meta, slides)) return;
       const created = await newItem(deps, session, action, meta, slides);
       if (!created) return;
       created.segments.push(...record.seqs);
@@ -844,6 +869,7 @@ async function newItem(
     commentId: comment.id,
     threadId: comment.id,
     parent: null,
+    joined: false,
     slideId: placed.slideId ?? placed.queueSlideId,
     place: placed.place,
     elements: placed.elements,
@@ -861,6 +887,105 @@ async function newItem(
   };
   session.items.push(item);
   return item;
+}
+
+/**
+ * A new request about the element(s) or area an open thread on the slide is about already
+ * (`threadForRequest`: the same box, from this session or before, anyone's): a reply there, asked
+ * with the thread as its context – no second pin on the same thing. Returns whether it went so.
+ */
+async function joinOpenThread(
+  deps: AppDeps,
+  session: Session,
+  action: RouterAction,
+  record: SegmentRecord,
+  meta: VoiceSegmentMeta,
+  slides: readonly Slide[],
+): Promise<boolean> {
+  const placed = placeOf(action, meta, slides);
+  if (!placed?.slideId || placed.anchor.type !== 'rect') return false;
+  const roots = await deps.db
+    .select({
+      id: comments.id,
+      slideId: comments.slideId,
+      parentId: comments.parentId,
+      status: comments.status,
+      anchor: comments.anchor,
+      createdAt: comments.createdAt,
+    })
+    .from(comments)
+    .where(
+      and(
+        eq(comments.deckId, session.deck.id),
+        eq(comments.slideId, placed.slideId),
+        isNull(comments.parentId),
+        eq(comments.status, 'open'),
+      ),
+    );
+  const shapes = slides.find((slide) => slide.id === placed.slideId)?.shapes ?? [];
+  const thread = threadForRequest(roots, placed.slideId, placed.anchor, shapes);
+  if (!thread) return false;
+  // One of this session's own: an addition to it, as `add_to`.
+  const own = session.items.find(
+    (item) => item.commentId === thread.id && !item.parent && item.phase !== 'dropped',
+  );
+  if (own) {
+    await addTo(deps, session, own, action, record);
+    return true;
+  }
+  const reply = await createComment(deps, session.viewer, session.deck.id, {
+    slideId: null,
+    parentId: thread.id,
+    body: clipText(action.text!),
+    anchor: { type: 'slide' },
+    strokes: [],
+  });
+  const item: ItemRecord = {
+    label: `K${session.items.length + 1}`,
+    commentId: reply.id,
+    threadId: thread.id,
+    parent: null,
+    joined: true,
+    slideId: placed.slideId,
+    place: placed.place,
+    elements: placed.elements,
+    text: reply.body,
+    edits: null,
+    settled: false,
+    phase: 'draft',
+    proposalId: null,
+    note: null,
+    segments: [...record.seqs],
+    hasRecording: false,
+    additions: [],
+    supersededBy: null,
+    createdAt: deps.clock.now(),
+  };
+  session.items.push(item);
+  if (action.finished) finish(deps, session, item, readQuickEdits(action.edits));
+  return true;
+}
+
+/**
+ * A run still at work in the thread an item joined (asked by someone else, or before): stopped,
+ * the item's request asked with the thread – as a reply sent while the AI works does.
+ */
+async function stopRunsIn(deps: AppDeps, session: Session, item: ItemRecord) {
+  if (!item.joined) return;
+  const running = await deps.db
+    .select({ id: aiProposals.id })
+    .from(aiProposals)
+    .innerJoin(comments, eq(comments.id, aiProposals.commentId))
+    .where(
+      and(
+        eq(aiProposals.status, 'running'),
+        or(eq(comments.id, item.threadId), eq(comments.parentId, item.threadId)),
+      ),
+    );
+  for (const { id } of running) {
+    // Done meanwhile: the request is asked on top of its change.
+    await cancelProposal(deps, session.viewer, session.deck.id, id).catch(() => undefined);
+  }
 }
 
 interface Placement {
@@ -972,6 +1097,7 @@ async function addTo(
     commentId: reply.id,
     threadId: root.threadId,
     parent: root,
+    joined: false,
     slideId: root.slideId,
     place: root.place,
     elements: root.elements,
@@ -1065,25 +1191,27 @@ function quick(deps: AppDeps, session: Session, item: ItemRecord, edits: QuickEd
         ? (await listSlides(deps.db, session.deck)).findIndex((slide) => slide.id === item.slideId)
         : 0;
       if (on === -1) throw new QuickMisfit('Die Folie ist nicht mehr da.');
-      const operations = quickOperations(
-        edits,
-        file.slides,
-        margins
-          ? {
-              left: margins.left / 100,
-              top: margins.top / 100,
-              right: 1 - margins.right / 100,
-              bottom: 1 - margins.bottom / 100,
-            }
-          : null,
-        { page: file.pageSize, on },
-      );
+      const area = margins
+        ? {
+            left: margins.left / 100,
+            top: margins.top / 100,
+            right: 1 - margins.right / 100,
+            bottom: 1 - margins.bottom / 100,
+          }
+        : null;
+      // Made on the deck as it is when written; planned here only to know they can be.
+      const operations = quickOperations(edits, file.slides, area, {
+        page: file.pageSize,
+        on,
+        layouts: file.layouts,
+      });
       if (!operations) throw new QuickMisfit('Nicht als einfache Änderung machbar.');
+      await stopRunsIn(deps, session, item);
       const proposal = await applyQuickProposal(
         deps,
         session.viewer,
         session.deck.id,
-        { commentId: item.commentId, operations, summary: quickSummary(edits) },
+        { commentId: item.commentId, edits, margins: area, on, summary: quickSummary(edits) },
         { heard: new Map([[item.commentId, heardText(session, item)]]) },
       );
       item.phase = 'asked';
@@ -1108,18 +1236,30 @@ function quick(deps: AppDeps, session: Session, item: ItemRecord, edits: QuickEd
 }
 
 /**
- * A request to the AI, once the earlier ones about the same elements of its slide (or about the
- * slide as a whole) are done – others at work meanwhile go on beside it.
+ * A request to the AI, once the earlier ones about the same target are done – all others at
+ * work meanwhile go on beside it: the deck merges each run's change by element and attribute,
+ * a real clash is done again on the deck as it is (rebase), and each run hears between its
+ * turns what the others changed. The same target:
+ * - both about elements: some of the same elements, on the same slide;
+ * - both about a slide as a whole (background, layout, „alles auf der Folie“ – no elements): the
+ *   same slide – either may rewrite all of it –, or either about all slides („auf allen
+ *   Folien“: as a whole on every slide).
+ * One about elements and one about a slide as a whole never wait for each other.
  */
 function enqueue(deps: AppDeps, session: Session, item: ItemRecord, work: () => Promise<void>) {
-  const slideId = item.slideId ?? 'deck';
   const elements = item.elements.length > 0 ? new Set(item.elements) : null;
-  const overlaps = (other: Job) =>
-    other.slideId === slideId &&
-    (other.elements === null ||
-      elements === null ||
-      [...elements].some((id) => other.elements!.has(id)));
-  const before = session.jobs.filter(overlaps).map((job) => job.done);
+  const thread = [item, ...item.additions].map((said) => said.text).join('\n');
+  const slideId =
+    item.slideId === null || (elements === null && aboutSeveralSlides(thread))
+      ? DECK
+      : item.slideId;
+  const sameTarget = (other: Job) =>
+    elements === null || other.elements === null
+      ? elements === null &&
+        other.elements === null &&
+        (other.slideId === slideId || other.slideId === DECK || slideId === DECK)
+      : other.slideId === slideId && [...elements].some((id) => other.elements!.has(id));
+  const before = session.jobs.filter(sameTarget).map((job) => job.done);
   const job: Job = {
     slideId,
     elements,
@@ -1147,6 +1287,7 @@ async function ask(deps: AppDeps, session: Session, item: ItemRecord) {
     const heard = new Map(
       [item, ...additions].map((said) => [said.commentId, heardText(session, said)] as const),
     );
+    await stopRunsIn(deps, session, item);
     const proposal = await createProposal(
       deps,
       session.viewer,

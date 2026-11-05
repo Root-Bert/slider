@@ -4,6 +4,7 @@ import { usePickStockPhoto } from '@/lib/api';
 import { Button, cn, Icon, IconButton, SegmentedControl, useFileDrop } from '@/ui';
 import { SidePanel, SidePanelHeader } from '../components/SidePanel';
 import { useRestoreFocus } from '../hooks/useRestoreFocus';
+import { useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
 import { useViewerToast } from '../state/viewer-toast';
@@ -82,10 +83,13 @@ function SlideBackgroundPanelView({ pageId, slideId }: { pageId: string; slideId
   const { width, height } = editing.pageSize;
   const aspect = height > 0 ? width / height : 16 / 9;
 
+  const registry = useStageRegistry();
   useRestoreFocus();
+  // Its slide comes clear of the panel, as a thread's does (Folie 0 before it can push it under).
   useEffect(() => {
     panelRef.current?.focus({ preventScroll: true });
-  }, []);
+    registry.revealSlide(slideId, { align: 'nearest' });
+  }, [registry, slideId]);
   // The layers as they are now: a part chosen on the slide is taken a while after it began.
   const now = useRef({ fills, change });
   useEffect(() => {

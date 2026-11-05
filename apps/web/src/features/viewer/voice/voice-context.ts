@@ -28,6 +28,12 @@ export interface VoiceState {
   dismiss: () => void;
   /** All the live stream heard so far ('' without one) – a box for the AI takes what follows. */
   heard: () => string;
+  /**
+   * A field takes what is said from now on (`useHeardWords`): no piece goes to the session until
+   * the returned release. `strict`: a piece without live words is dropped too, never sent (Folie
+   * 1's prompt – the AI must not act on the deck); else it goes on as ever (a box for the AI).
+   */
+  claim: (options?: { strict?: boolean }) => () => void;
   /** The microphone's level, 0…1 – read by the meter alone (`subscribeLevel`). */
   level: () => number;
   subscribeLevel: (listener: () => void) => () => void;

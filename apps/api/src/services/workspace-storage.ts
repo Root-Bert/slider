@@ -3,6 +3,7 @@ import type { StorageBreakdown } from '@slider/shared';
 import type { Executor } from '../db/client';
 import {
   decks,
+  deckMaterials,
   media,
   revisions,
   workspaceFonts,
@@ -50,55 +51,67 @@ export async function workspaceStorage(
   const result = new Map(workspaceIds.map((id) => [id, emptyBreakdown()]));
   if (workspaceIds.length === 0) return result;
   const ids = [...workspaceIds];
-  const [fileRows, reservedRows, mediaRows, fontRows, masterRows] = await Promise.all([
-    db
-      .select({
-        id: decks.workspaceId,
-        originals: sql<string | number | null>`sum((${decks.filesBytes}->>'originals')::bigint)`,
-        slideImages: sql<
-          string | number | null
-        >`sum((${decks.filesBytes}->>'slideImages')::bigint)`,
-        other: sql<string | number | null>`sum((${decks.filesBytes}->>'other')::bigint)`,
-      })
-      .from(decks)
-      .where(inArray(decks.workspaceId, ids))
-      .groupBy(decks.workspaceId),
-    db
-      .select({
-        id: decks.workspaceId,
-        bytes: sql<string | number | null>`sum(${revisions.reservedBytes})`,
-      })
-      .from(revisions)
-      .innerJoin(decks, eq(decks.id, revisions.deckId))
-      .where(and(inArray(decks.workspaceId, ids), isNotNull(revisions.reservedBytes)))
-      .groupBy(decks.workspaceId),
-    db
-      .select({
-        id: decks.workspaceId,
-        kind: media.kind,
-        bytes: sql<string | number | null>`sum(${media.sizeBytes})`,
-      })
-      .from(media)
-      .innerJoin(decks, eq(decks.id, media.deckId))
-      .where(inArray(decks.workspaceId, ids))
-      .groupBy(decks.workspaceId, media.kind),
-    db
-      .select({
-        id: workspaceFonts.workspaceId,
-        bytes: sql<string | number | null>`sum(${workspaceFonts.sizeBytes})`,
-      })
-      .from(workspaceFonts)
-      .where(inArray(workspaceFonts.workspaceId, ids))
-      .groupBy(workspaceFonts.workspaceId),
-    db
-      .select({
-        id: workspaceMasters.workspaceId,
-        bytes: sql<string | number | null>`sum(${workspaceMasters.sizeBytes})`,
-      })
-      .from(workspaceMasters)
-      .where(inArray(workspaceMasters.workspaceId, ids))
-      .groupBy(workspaceMasters.workspaceId),
-  ]);
+  const [fileRows, reservedRows, mediaRows, fontRows, masterRows, materialRows] = await Promise.all(
+    [
+      db
+        .select({
+          id: decks.workspaceId,
+          originals: sql<string | number | null>`sum((${decks.filesBytes}->>'originals')::bigint)`,
+          slideImages: sql<
+            string | number | null
+          >`sum((${decks.filesBytes}->>'slideImages')::bigint)`,
+          other: sql<string | number | null>`sum((${decks.filesBytes}->>'other')::bigint)`,
+        })
+        .from(decks)
+        .where(inArray(decks.workspaceId, ids))
+        .groupBy(decks.workspaceId),
+      db
+        .select({
+          id: decks.workspaceId,
+          bytes: sql<string | number | null>`sum(${revisions.reservedBytes})`,
+        })
+        .from(revisions)
+        .innerJoin(decks, eq(decks.id, revisions.deckId))
+        .where(and(inArray(decks.workspaceId, ids), isNotNull(revisions.reservedBytes)))
+        .groupBy(decks.workspaceId),
+      db
+        .select({
+          id: decks.workspaceId,
+          kind: media.kind,
+          bytes: sql<string | number | null>`sum(${media.sizeBytes})`,
+        })
+        .from(media)
+        .innerJoin(decks, eq(decks.id, media.deckId))
+        .where(inArray(decks.workspaceId, ids))
+        .groupBy(decks.workspaceId, media.kind),
+      db
+        .select({
+          id: workspaceFonts.workspaceId,
+          bytes: sql<string | number | null>`sum(${workspaceFonts.sizeBytes})`,
+        })
+        .from(workspaceFonts)
+        .where(inArray(workspaceFonts.workspaceId, ids))
+        .groupBy(workspaceFonts.workspaceId),
+      db
+        .select({
+          id: workspaceMasters.workspaceId,
+          bytes: sql<string | number | null>`sum(${workspaceMasters.sizeBytes})`,
+        })
+        .from(workspaceMasters)
+        .where(inArray(workspaceMasters.workspaceId, ids))
+        .groupBy(workspaceMasters.workspaceId),
+      // Files on the decks' boards (Folie 0).
+      db
+        .select({
+          id: decks.workspaceId,
+          bytes: sql<string | number | null>`sum(${deckMaterials.sizeBytes})`,
+        })
+        .from(deckMaterials)
+        .innerJoin(decks, eq(decks.id, deckMaterials.deckId))
+        .where(inArray(decks.workspaceId, ids))
+        .groupBy(decks.workspaceId),
+    ],
+  );
   for (const row of fileRows) {
     const entry = result.get(row.id);
     if (!entry) continue;
@@ -110,8 +123,8 @@ export async function workspaceStorage(
     const entry = result.get(row.id);
     if (entry) entry.originals += Number(row.bytes ?? 0);
   }
-  // The workspace's own fonts and slide masters count as other files.
-  for (const row of [...fontRows, ...masterRows]) {
+  // The workspace's own fonts, slide masters and the boards' files count as other files.
+  for (const row of [...fontRows, ...masterRows, ...materialRows]) {
     const entry = result.get(row.id);
     if (entry) entry.other += Number(row.bytes ?? 0);
   }

@@ -10,7 +10,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router';
 import { selectionStyle } from '@/lib/accent';
 import { pluralize } from '@/lib/format';
-import { routes } from '@/lib/routes';
+import { OPEN_ON_BOARD, routes } from '@/lib/routes';
 import { useCollectionSelection } from '@/lib/collection-selection';
 import { isOnControl } from '@/lib/marquee-select';
 import { readString, writeString } from '@/lib/storage';
@@ -491,7 +491,10 @@ export function Component() {
                         onSelect: () =>
                           createDeck.mutate(master.id, {
                             onSuccess: (deck) =>
-                              void navigate(routes.deck(deck.id), { viewTransition: true }),
+                              void navigate(routes.deck(deck.id), {
+                                viewTransition: true,
+                                state: OPEN_ON_BOARD,
+                              }),
                             onError: (error) => showToast(error.message, 'danger'),
                           }),
                       }

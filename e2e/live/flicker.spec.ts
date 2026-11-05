@@ -3,7 +3,7 @@ import { expect, test } from '../support';
 
 /*
  * Every frame the screen shows while the editor turns an edit into LibreOffice's new picture
- * (CLAUDE.md §1 „No flicker after an edit“): a CDP screencast from the gesture until the slide is
+ * (docs/do-not-break.md „No flicker after an edit“): a CDP screencast from the gesture until the slide is
  * its picture alone again, each frame probed at a few points of the slide. An element moved never
  * shows at its old place again once it showed at the new one, and is at the new one in every frame
  * after; no frame is blank; what the edit did not touch stays as it was. One test, its scenarios in
@@ -336,7 +336,7 @@ test('edits never show a stale or empty frame', async ({ page, browser }) => {
   test.slow();
   test.setTimeout(240_000);
   const decoder = await browser.newPage();
-  // Bearbeiten composed per element (CLAUDE.md §1).
+  // Bearbeiten composed per element (docs/do-not-break.md).
   await scenarios(page, decoder);
   await decoder.close();
 });
@@ -1304,7 +1304,7 @@ const quantile = (values: number[], q: number) => {
 
 /*
  * Two editors in one deck (two tabs: the editor tells them apart by tab, as two people): what one
- * does shows on the other's slide at once – drawn by the browser from the step (CLAUDE.md §1
+ * does shows on the other's slide at once – drawn by the browser from the step (docs/do-not-break.md
  * „Someone else's edits draw in the same frame“), the other's own edits never jumping back, and
  * no stale or blank frame there either.
  */

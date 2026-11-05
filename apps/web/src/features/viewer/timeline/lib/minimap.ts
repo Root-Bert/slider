@@ -11,6 +11,8 @@ import { unitAt, xAt, type TrackLayout } from './timeline-layout';
 /** All thumbnails are this high, whatever the deck's length (85×48 for 16:9), 8px apart. */
 export const THUMB_H = 48;
 export const THUMB_GAP = 8;
+/** Width of Folie 0's tile („Material“) before the first thumbnail: a 16:9 thumbnail's. */
+export const BOARD_THUMB_W = Math.round((THUMB_H * 16) / 9);
 /** Room around the thumbnails for the active frame and the bracket (each side). */
 export const MINIMAP_PAD = 4;
 /** Height of the minimap row: its thumbnails with their padding. */
@@ -33,11 +35,16 @@ export interface MinimapLayout {
  * Thumbnails of a fixed height side by side: a short deck leaves the rest of the row free, a long
  * one scrolls when it is wider than `availableW`.
  */
-export function layoutMinimap(aspectRatios: readonly number[], availableW: number): MinimapLayout {
+export function layoutMinimap(
+  aspectRatios: readonly number[],
+  availableW: number,
+  /** Room before the first thumbnail: Folie 0's tile („Material“) with its gap; 0 = none. */
+  lead = 0,
+): MinimapLayout {
   const h = THUMB_H;
-  if (aspectRatios.length === 0) return { h, slides: [], contentW: 0, scrolls: false };
+  if (aspectRatios.length === 0) return { h, slides: [], contentW: lead, scrolls: false };
   const slides: MinimapLayout['slides'] = [];
-  let x = 0;
+  let x = lead;
   for (const ar of aspectRatios) {
     const w = Math.round(h * ar);
     slides.push({ x, w });

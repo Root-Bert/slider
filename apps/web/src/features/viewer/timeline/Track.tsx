@@ -8,6 +8,9 @@ import { GapDivider, gapButtons, gapDotsLift } from '../stage/GapDivider';
 import { useLayers } from '../editing/layers/layers-context';
 import { useEditing } from '../editing/editing-context';
 import { SlideFrame } from '../stage/SlideFrame';
+import { useDeckCreation } from '@/lib/api';
+import { MaterialBoard } from '../board/MaterialBoard';
+import { CreatePrompt } from '../creation/CreatePrompt';
 import { useRevisionData } from '../state/revision-data';
 import { useViewerData } from '../state/viewer-data';
 import { isBoxModeActive, useHoveredThreadId, useViewerState } from '../state/viewer-state';
@@ -39,7 +42,7 @@ interface TrackProps {
  * then are the tracks beside it drawn.
  */
 export function Track({ layout, range, snap, stack, swipe }: TrackProps) {
-  const { slides, gapThreads, canComment, viewer, variantsOf } = useViewerData();
+  const { deck, slides, gapThreads, canComment, viewer, variantsOf } = useViewerData();
   // Editing: a click picks an element instead of starting a comment.
   const editing = useEditing();
   // „Ebenen“: the active slide shows taken apart in 3D – the others as they are, few planes to draw.
@@ -58,6 +61,9 @@ export function Track({ layout, range, snap, stack, swipe }: TrackProps) {
     statusFilter,
   } = useViewerState();
   const hoveredThreadId = useHoveredThreadId();
+  // The prompt on Folie 1 of a new deck: for who edits it, on its one blank slide.
+  const creation = useDeckCreation(deck.id, !deck.template).data;
+  const prompt = !!creation?.prompt && editing.available && slides.length === 1 && !editing.active;
   const boxes = isBoxModeActive({ boxMode, boxModeFlipped });
   const { badges, deletedSlides, deletedThreads, revisionNumber } = useRevisionData();
   const { marksBySlide } = useCommentThreads();
@@ -107,6 +113,23 @@ export function Track({ layout, range, snap, stack, swipe }: TrackProps) {
   /** What track `level` holds over the slides shown (windowing). */
   const levelItems = (level: number): ReactNode[] => {
     const items: ReactNode[] = [];
+    // Folie 0, „Material“: on the slides' track, while the first slides are rendered.
+    if (level === 0 && layout.leading && range.first === 0)
+      items.push(
+        <MaterialBoard key="board" x={layout.leading.x} w={layout.leading.w} h={height} />,
+      );
+    // Folie 1 of a new deck, still blank: the prompt to have the AI build it.
+    const first = layout.slides[0];
+    if (level === 0 && range.first === 0 && prompt && first)
+      items.push(
+        <CreatePrompt
+          key="create-prompt"
+          x={first.x}
+          w={first.w}
+          h={height}
+          templateId={creation?.templateId ?? null}
+        />,
+      );
     for (let index = range.first; index <= range.last; index++) {
       const slide = slides[index];
       const box = layout.slides[index];

@@ -9,7 +9,17 @@ import {
   type LiveEvent,
   type WorkspaceRole,
 } from '@slider/shared';
-import { comments, deckAccessGrants, decks, media, workspaceMembers } from '../src/db/schema';
+import {
+  comments,
+  deckAccessGrants,
+  decks,
+  media,
+  deckMaterials,
+  showRuns,
+  users,
+  workspaces,
+  workspaceMembers,
+} from '../src/db/schema';
 import { LiveHub } from '../src/realtime/live-hub';
 import { blobKeys } from '../src/storage/blob-storage';
 import { fileUrl } from '../src/storage/file-urls';
@@ -63,7 +73,12 @@ const listedDeckIds = async (cookie?: string, query = '') => {
 };
 
 /** A comment of the dev owner with a recording, straight in the database. */
-async function commentWithRecording(): Promise<{ commentId: string; mediaId: string }> {
+async function commentWithRecording(): Promise<{
+  commentId: string;
+  mediaId: string;
+  materialId: string;
+  runId: string;
+}> {
   const posted = await ctx.request(`/api/decks/${deck.deckId}/comments`, {
     method: 'POST',
     json: pinComment(deck.slideIds[0] ?? ''),
@@ -86,11 +101,43 @@ async function commentWithRecording(): Promise<{ commentId: string; mediaId: str
     storageKey,
     sha256: 'abc',
   });
-  return { commentId, mediaId };
+  const materialId = crypto.randomUUID();
+  const materialKey = blobKeys.material(deck.deckId, materialId);
+  await ctx.deps.media.put(materialKey, new Uint8Array([4, 5, 6]));
+  await ctx.deps.db.insert(deckMaterials).values({
+    id: materialId,
+    deckId: deck.deckId,
+    author: { id: ctx.ownerId, name: 'Owner', type: 'owner', color: 'blue' },
+    name: 'Private.bin',
+    kind: 'other',
+    mimeType: 'application/octet-stream',
+    sizeBytes: 3,
+    storageKey: materialKey,
+    previewKey: materialKey,
+    sha256: 'material-hash',
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  });
+  const runId = crypto.randomUUID();
+  const recordingKey = `decks/${deck.deckId}/runs/${runId}.webm`;
+  await ctx.deps.storage.put(recordingKey, new Uint8Array([7, 8, 9]));
+  await ctx.deps.db.insert(showRuns).values({
+    id: runId,
+    deckId: deck.deckId,
+    at: ctx.clock.now(),
+    summary: { at: ctx.clock.now().toISOString(), total: 1000, rows: [] },
+    recordingKey,
+  });
+  return { commentId, mediaId, materialId, runId };
 }
 
 /** Every way to reach a deck's content, as one person: their status codes, by endpoint. */
-async function reach(cookie: string, ids: { commentId: string; mediaId: string }) {
+async function reach(
+  cookie: string,
+  ids: { commentId: string; mediaId: string; materialId: string; runId: string },
+) {
   const { deckId, revisionId } = deck;
   const get = async (path: string) => (await ctx.request(path, { cookie })).status;
   return {
@@ -101,6 +148,18 @@ async function reach(cookie: string, ids: { commentId: string; mediaId: string }
     status: await get(`/api/decks/${deckId}/status`),
     revisions: await get(`/api/decks/${deckId}/revisions`),
     diff: await get(`/api/decks/${deckId}/revisions/${revisionId}/diff`),
+    board: await get(`/api/decks/${deckId}/board`),
+    creation: await get(`/api/decks/${deckId}/creation`),
+    runs: await get(`/api/decks/${deckId}/runs`),
+    recording: await get(`/api/decks/${deckId}/runs/${ids.runId}/recording`),
+    recordingHead: (
+      await ctx.request(`/api/decks/${deckId}/runs/${ids.runId}/recording`, {
+        method: 'HEAD',
+        cookie,
+      })
+    ).status,
+    material: await get(`/api/materials/${ids.materialId}/file`),
+    preview: await get(`/api/materials/${ids.materialId}/preview`),
     mediaUsage: await get(`/api/decks/${deckId}/media-usage`),
     media: await get(`/api/media/${ids.mediaId}`),
     file: await get(fileUrl(deck.imageKeys[0] ?? '')),
@@ -140,6 +199,13 @@ const OPEN = {
   status: 200,
   revisions: 200,
   diff: 200,
+  board: 200,
+  creation: 200,
+  runs: 200,
+  recording: 200,
+  recordingHead: 200,
+  material: 200,
+  preview: 200,
   mediaUsage: 200,
   media: 200,
   file: 200,
@@ -162,9 +228,77 @@ describe('restricting a deck to selected accounts', () => {
     const ids = await commentWithRecording();
     expect(await reach(ben.cookie, ids)).toEqual(OPEN);
 
+    const outsider = await signedInUser(ctx, { name: 'Outside', email: 'outside@foreign.test' });
+    expect(await reach(outsider.cookie, ids)).toEqual(
+      Object.fromEntries(Object.keys(OPEN).map((key) => [key, 404])),
+    );
+    const observer = await member('Observer', 'viewer');
+    expect(await reach(observer.cookie, ids)).toEqual({ ...OPEN, comment: 403, resolve: 403 });
+    const protectedWrites = [
+      [
+        'POST',
+        `/api/decks/${deck.deckId}/runs`,
+        { id: crypto.randomUUID(), run: { at: ctx.clock.now().toISOString(), total: 0, rows: [] } },
+      ],
+      [
+        'POST',
+        `/api/decks/${deck.deckId}/creation`,
+        { description: 'Create a deck', kind: 'keynote', pages: 5, templateId: null },
+      ],
+      ['POST', `/api/decks/${deck.deckId}/creation/cancel`, undefined],
+      ['POST', `/api/decks/${deck.deckId}/creation/dismiss`, undefined],
+      [
+        'POST',
+        `/api/decks/${deck.deckId}/board/items`,
+        { id: crypto.randomUUID(), kind: 'box', text: 'Unauthorized', x: 0, y: 0, w: 100, h: 100 },
+      ],
+    ] as const;
+    for (const [method, url, json] of protectedWrites) {
+      expect((await ctx.request(url, { method, json, cookie: outsider.cookie })).status, url).toBe(
+        404,
+      );
+      expect((await ctx.request(url, { method, json, cookie: observer.cookie })).status, url).toBe(
+        403,
+      );
+    }
+
+    // Previously issued URLs cease to authorize requests after a role or account is revoked.
+    await ctx.deps.db
+      .update(workspaces)
+      .set({ blockedAt: ctx.clock.now() })
+      .where(eq(workspaces.id, ctx.workspaceId));
+    expect(await reach(ben.cookie, ids)).toEqual(
+      Object.fromEntries(Object.keys(OPEN).map((key) => [key, 403])),
+    );
+    await ctx.deps.db
+      .update(workspaces)
+      .set({ blockedAt: null })
+      .where(eq(workspaces.id, ctx.workspaceId));
+    await ctx.deps.db
+      .update(users)
+      .set({ blockedAt: ctx.clock.now() })
+      .where(eq(users.id, outsider.user.id));
+    // Disable the development fallback for this check: production never impersonates an owner.
+    ctx.deps.config.auth.devLogin = false;
+    expect(await reach(outsider.cookie, ids)).toEqual(
+      Object.fromEntries(Object.keys(OPEN).map((key) => [key, 401])),
+    );
+    ctx.deps.config.auth.devLogin = true;
+
     const access = await restrict(deck.deckId, [anna.user.id]);
     expect(access).toEqual({ restricted: true, userIds: [anna.user.id] });
 
+    for (const [method, url, json] of protectedWrites) {
+      expect(
+        (await ctx.request(url, { method, json, cookie: ben.cookie })).status,
+        `${url} after restriction`,
+      ).toBe(404);
+    }
+    // A recording id is scoped to its deck, even when both decks are readable.
+    const otherDeck = await createReadyDeck(ctx);
+    expect(
+      (await ctx.request(`/api/decks/${otherDeck.deckId}/runs/${ids.runId}/recording`)).status,
+    ).toBe(404);
     const kept = await reach(ben.cookie, ids);
     expect(kept).toEqual(Object.fromEntries(Object.keys(OPEN).map((key) => [key, 404])));
     expect(await listedDeckIds(ben.cookie)).not.toContain(deck.deckId);

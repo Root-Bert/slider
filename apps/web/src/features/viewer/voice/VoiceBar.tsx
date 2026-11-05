@@ -1,6 +1,7 @@
 import type { Author, VoiceItem, VoiceItemState, VoiceSession } from '@slider/shared';
-import { useState, type AnimationEvent, type KeyboardEvent } from 'react';
+import { useEffect, useState, type AnimationEvent, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { isTextTarget } from '@/lib/dom';
 import { ringColor } from '@/lib/accent';
 import {
   Avatar,
@@ -42,6 +43,13 @@ const STATUS_TEXT: Record<VoiceStatus, string> = {
   ended: 'Gesendet',
 };
 
+/** A Space press shorter than this is a tap (pause / go on); longer, it is the hand. */
+const SPACE_TAP_MS = 250;
+
+/** A focused button takes Space itself (presses it). */
+const isButtonTarget = (target: EventTarget | null) =>
+  target instanceof HTMLElement && target.closest('button, [role="button"], a, summary') !== null;
+
 const BUSY: ReadonlySet<VoiceItemState> = new Set(['draft', 'queued', 'working']);
 /** The live caption: the latest pieces heard, this many at most. */
 const CAPTION_PIECES = 4;
@@ -78,12 +86,54 @@ function useRecognitions(session: VoiceSession | null): number {
 export function VoiceBar({ slot = null }: { slot?: HTMLElement | null }) {
   const voice = useVoice();
   const { aiAuthor, slideIndex, viewer } = useViewerData();
-  const sidePanelOpen = isSidePanelOpen(useViewerState());
+  const viewerState = useViewerState();
+  const sidePanelOpen = isSidePanelOpen(viewerState);
+  // A box for the AI open: what is said now shows in its field only, not here as well.
+  const boxOpen = viewerState.draft?.aiBox !== undefined;
   const dispatch = useViewerDispatch();
   const goToSlide = useGoToSlide();
   const [listOpen, setListOpen] = useState(false);
   const { status, session, speaking, sending, error } = voice;
   const recognitions = useRecognitions(session);
+  // Space tapped (not held – held it is the hand that moves the view): pause / go on listening.
+  const { pause, resume } = voice;
+  useEffect(() => {
+    if (status !== 'listening' && status !== 'paused') return;
+    let downAt: number | null = null;
+    let dragged = false;
+    const onDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== ' ' || event.repeat || event.metaKey || event.ctrlKey || event.altKey)
+        return;
+      if (isTextTarget(event.target) || isButtonTarget(event.target)) return;
+      downAt = event.timeStamp;
+      dragged = false;
+    };
+    const onMove = (event: PointerEvent) => {
+      if (downAt !== null && event.buttons) dragged = true;
+    };
+    const onUp = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== ' ' || downAt === null) return;
+      const tapped = event.timeStamp - downAt < SPACE_TAP_MS && !dragged;
+      downAt = null;
+      if (!tapped) return;
+      if (status === 'listening') pause();
+      else resume();
+    };
+    window.addEventListener('keydown', onDown);
+    window.addEventListener('keyup', onUp);
+    window.addEventListener('pointermove', onMove);
+    return () => {
+      window.removeEventListener('keydown', onDown);
+      window.removeEventListener('keyup', onUp);
+      window.removeEventListener('pointermove', onMove);
+    };
+  }, [status, pause, resume]);
+
+  // Sent: the bar goes at once – the comments carry on with the AI's work. A problem stays to read.
+  const { dismiss } = voice;
+  useEffect(() => {
+    if (status === 'ended' && error === null) dismiss();
+  }, [status, error, dismiss]);
 
   // Still shown while it shrinks back into the handle.
   const visible = status !== 'off' || error !== null;
@@ -133,14 +183,16 @@ export function VoiceBar({ slot = null }: { slot?: HTMLElement | null }) {
     status === 'ended' && busy > 0 ? `${aiAuthor.name} arbeitet weiter …` : STATUS_TEXT[status];
   const line =
     problem ??
-    (listening && caption
-      ? caption
-      : listening && speaking
-        ? 'Du sprichst …'
-        : listening && waiting
-          ? 'Schreibt mit …'
-          : statusLine);
-  const showsCaption = problem === null && listening && !!caption;
+    (listening && boxOpen
+      ? ''
+      : listening && caption
+        ? caption
+        : listening && speaking
+          ? 'Du sprichst …'
+          : listening && waiting
+            ? 'Schreibt mit …'
+            : statusLine);
+  const showsCaption = problem === null && listening && !boxOpen && !!caption;
   const hint = `Geh durch die Folien und zeig mit der Maus, was du meinst. Fertige Gedanken gehen sofort an ${aiAuthor.name}. Senden beendet das Zuhören – was du gesagt hast, wird noch fertig bearbeitet. Auch: „nächste Folie“, „vergiss das“, „mach das rückgängig“, „Stopp“.${session ? ` Spracherkennung: ${session.speechService}.` : ''}`;
 
   const open = (item: VoiceItem) => {

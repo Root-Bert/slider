@@ -582,6 +582,111 @@
       "when": 1793724083816,
       "tag": "0082_ai_usage_no_cost",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1793752457000,
+      "tag": "0083_comment_ai_summary",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1793787966523,
+      "tag": "0084_integration_create_model",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1793788307350,
+      "tag": "0085_material_board",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1793800000000,
+      "tag": "0086_deck_creation",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1793810000000,
+      "tag": "0087_board_note_material",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1793820000000,
+      "tag": "0088_board_text_to_note",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1793830000000,
+      "tag": "0089_board_note_materials",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1793840000000,
+      "tag": "0090_board_note_bound",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1793850000000,
+      "tag": "0091_board_note_on_file_frame",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1793860000000,
+      "tag": "0092_board_frames",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1793870000000,
+      "tag": "0093_board_item_color",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1793880000000,
+      "tag": "0094_material_folder",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1793890000000,
+      "tag": "0095_board_item_rich",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1793900000000,
+      "tag": "0096_board_boxes",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1793910000000,
+      "tag": "0097_show_runs",
+      "breakpoints": true
     }
   ]
 }

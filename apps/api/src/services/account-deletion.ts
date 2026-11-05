@@ -9,6 +9,8 @@ import { emailHash } from '../crypto/content-crypto';
 import type { Executor } from '../db/client';
 import {
   comments,
+  deckBoardItems,
+  deckMaterials,
   decks,
   media,
   googleConnections,
@@ -435,6 +437,15 @@ async function anonymiseComments(
     .where(sql`${comments.author}->>'id' = ${userId}`)
     .returning({ deckId: comments.deckId });
   await tx.update(comments).set({ resolvedBy: deleted.id }).where(eq(comments.resolvedBy, userId));
+  // What they put on decks' boards (Folie 0) stays, under the same deleted author.
+  await tx
+    .update(deckMaterials)
+    .set({ author: deleted })
+    .where(sql`${deckMaterials.author}->>'id' = ${userId}`);
+  await tx
+    .update(deckBoardItems)
+    .set({ author: deleted })
+    .where(sql`${deckBoardItems.author}->>'id' = ${userId}`);
   const touched = new Set(authored.map((row) => row.deckId));
 
   // Mentions are plain `@Name` text (BER-105). Too short a name would match other words. Also

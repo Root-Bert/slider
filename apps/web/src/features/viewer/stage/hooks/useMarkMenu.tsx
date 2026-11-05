@@ -1,8 +1,8 @@
 import { isPathStroke, type Comment, type Point } from '@slider/shared';
 import { useState, type MouseEvent } from 'react';
-import { useEraseDrawing, useUpdateComment } from '@/lib/api';
+import { useDeleteComment, useEraseDrawing, useUpdateComment } from '@/lib/api';
 import { isPendingComment } from '@/lib/api/comment-outbox';
-import { ContextMenu, type MenuAction } from '@/ui';
+import { ConfirmDialog, ContextMenu, type MenuAction } from '@/ui';
 import { useAskAi } from '../../editing/hooks/useAskAi';
 import { useCommentProposals } from '../../comments/hooks/useCommentProposals';
 import {
@@ -12,6 +12,7 @@ import {
   textAnnotation,
   type Thread,
 } from '../../comments/lib/comment-selectors';
+import { useViewerData } from '../../state/viewer-data';
 import { useViewerToast } from '../../state/viewer-toast';
 
 interface MarkMenuOptions {
@@ -23,7 +24,8 @@ interface MarkMenuOptions {
 /**
  * Right click on a mark on the slide – drawing, text, pin or box (BER-136): "Kommentar schreiben" /
  * "Kommentar öffnen", „An die KI geben“ (its thread's last message, as on its card) and, on one's
- * own drawing or text, "Zeichnung löschen" / "Text löschen". Only the mark goes: a drawing – or a
+ * own drawing or text, "Zeichnung löschen" / "Text löschen", and "Kommentar löschen" (the whole
+ * thread, confirmed as on its card – own comments, any for deck managers). Only the mark goes: a drawing – or a
  * sticker – without a comment of its own is deleted, one with a comment loses its drawing and keeps
  * a pin where its badge was. Shift + right click keeps the browser's own menu.
  */
@@ -33,7 +35,10 @@ export function useMarkMenu({ deckId, isOwn }: MarkMenuOptions) {
   const showToast = useViewerToast();
   const ai = useAskAi();
   const proposalsOf = useCommentProposals(deckId);
+  const remove = useDeleteComment(deckId);
+  const { canManage } = useViewerData();
   const [menu, setMenu] = useState<{ x: number; y: number; actions: MenuAction[] } | null>(null);
+  const [deleting, setDeleting] = useState<Comment | null>(null);
 
   const removeMark = (thread: Thread) => {
     const { root } = thread;
@@ -81,16 +86,48 @@ export function useMarkMenu({ deckId, isOwn }: MarkMenuOptions) {
         tone: 'danger',
         onSelect: () => removeMark(thread),
       });
+    if (isOwn(root) || canManage)
+      actions.push({
+        label: 'Kommentar löschen',
+        icon: 'delete',
+        tone: 'danger',
+        onSelect: () => {
+          if (!remove.isPending) remove.reset();
+          setDeleting(root);
+        },
+      });
     setMenu({ x: event.clientX, y: event.clientY, actions });
   };
 
-  const contextMenu = menu && (
-    <ContextMenu
-      label="Aktionen für die Markierung"
-      actions={menu.actions}
-      at={{ x: menu.x, y: menu.y }}
-      onClose={() => setMenu(null)}
-    />
+  const contextMenu = (
+    <>
+      {menu && (
+        <ContextMenu
+          label="Aktionen für die Markierung"
+          actions={menu.actions}
+          at={{ x: menu.x, y: menu.y }}
+          onClose={() => setMenu(null)}
+        />
+      )}
+      {/* As the card's „Löschen“: the thread goes with its marks. */}
+      <ConfirmDialog
+        open={deleting !== null}
+        onClose={() => setDeleting(null)}
+        title="Kommentar löschen?"
+        description="Der ganze Thread mit allen Antworten wird gelöscht."
+        confirmLabel="Löschen"
+        confirmIcon="delete"
+        onConfirm={() =>
+          deleting &&
+          remove.mutate(
+            { commentId: deleting.id, keepDrawing: false },
+            { onSuccess: () => setDeleting(null) },
+          )
+        }
+        pending={remove.isPending}
+        error={remove.isError && remove.error.message}
+      />
+    </>
   );
   return { onContextMenu, contextMenu };
 }

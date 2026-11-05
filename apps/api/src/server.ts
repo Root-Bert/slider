@@ -19,6 +19,7 @@ import { configurePdfJobs, stopPdfJobs, warmPdfWorker } from './import/pdf-jobs'
 import { createSlidesExtras } from './import/slides-extras';
 import {
   createLibreOfficeDocumentPdf,
+  createMaterialPdf,
   createLibreOfficePdf,
   findSoffice,
   stopRunningConversions,
@@ -51,6 +52,7 @@ import type { AppDeps } from './deps';
 import { deckFontAdopter } from './services/deck-fonts';
 import { RetentionSweeper } from './services/retention';
 import { resumeTranscripts } from './services/transcripts';
+import { resumeExtractions } from './services/material-extract';
 import { SyncService } from './sync/sync-service';
 
 /** Exit code that asks `supervisor.ts` to start the server again (settings were saved); same there. */
@@ -160,6 +162,15 @@ async function main(): Promise<void> {
   const documentPdf = soffice
     ? createLibreOfficeDocumentPdf({ binary: soffice, log, timeoutMs: config.libreOfficeTimeoutMs })
     : null;
+  // Word and PowerPoint files on decks' boards: their text is read from a PDF of them.
+  const materialPdf = soffice
+    ? createMaterialPdf({
+        binary: soffice,
+        log,
+        timeoutMs: config.libreOfficeTimeoutMs,
+        pool: officePool,
+      })
+    : null;
   // PDFs are read in worker threads, cut off after this long (plus a second per page).
   configurePdfJobs({ timeoutMs: config.pdfTimeoutMs });
   // … one of them started ahead, so the first edit finds pdf.js loaded.
@@ -253,6 +264,7 @@ async function main(): Promise<void> {
     sync,
     rendering: { renderers: { officePdf, libreOfficePdf }, progress: renderProgress },
     documentPdf,
+    materialPdf,
     oidc,
     google,
     billing: config.billing ? new StripeBilling(config.billing) : null,
@@ -274,6 +286,7 @@ async function main(): Promise<void> {
   sweeper.start();
   // Recordings a stopped server left without their transcript.
   await resumeTranscripts(deps);
+  await resumeExtractions(deps);
   const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
     log.info(
       `Slider API listening on http://localhost:${info.port} (data: ${config.dataDir}, media: ${config.media.dir})`,

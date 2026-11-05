@@ -3,11 +3,7 @@ import type { EditableSlide } from '@slider/shared';
 import type { AppDeps } from '../deps';
 import type { DeckDesign } from './ai-context';
 import { runToolCall, type AiConnection } from './ai-providers';
-import {
-  readQuickEdits,
-  type ContentArea,
-  type QuickEdit,
-} from './voice/quick-edits';
+import { readQuickEdits, type ContentArea, type QuickEdit } from './voice/quick-edits';
 import { designLines, EDIT_ITEM_SCHEMA, elementLine } from './voice/router';
 
 /*
@@ -27,11 +23,11 @@ const TIMEOUT_MS = 12_000;
 
 export const QUICK_SYSTEM = `People review a presentation in Slider and ask in comments for changes to a slide. An AI that designs slides works on each request – thoroughly, but it takes half a minute. You come first: when the request is nothing but plain changes of listed elements that the editor itself can make, you give them as edits and they are applied at once.
 
-Plain changes: moving or resizing („nach oben links“, „größer“, „unter den Titel“, „links bündig mit dem Titel“), fill or border colour, text size, font, colour, bold, italic, underline, alignment, the text replaced by exact words the person gives, to the front or back, deleting – and plain new elements the request names: shapes („zwei Kreise hier“, „ein Rechteck unter den Titel“), a text box with exact words, a line or arrow between two elements („Pfeil vom Bild zum Text“).
+Plain changes: moving or resizing („nach oben links“, „größer“, „unter den Titel“, „links bündig mit dem Titel“), fill or border colour, text size, font, colour, bold, italic, underline, alignment, the text replaced by exact words the person gives, to the front or back, deleting, grouping, ungrouping, locking, shadow, glow, soft edge, frosted glass, rounded corners, turning, mirroring – plain new elements the request names: shapes („zwei Kreise hier“, „ein Rechteck unter den Titel“), a text box with exact words, a line or arrow between two elements („Pfeil vom Bild zum Text“) – and plain changes of slides: a new slide (a layout from the list, or a copy) with exactly the title and points given, a slide duplicated, moved, hidden, shown, deleted, its background one colour or as in the master, its transition, its speaker notes with exact words.
 
-Everything else gets no edits – call \`edit\` with an empty list and the designing AI does it: new content you would have to make up (text, a list, a new slide), wording the person did not give word for word (shorter, better, translated, a title as a statement), pictures, charts, tables, layout or design work („schöner“, „aufräumen“, „passt das?“), several slides, questions. Edits do the whole request or nothing: when one part of it cannot be said as edits, give none – every sentence of the last message must be done by your edits. The whole thread counts: a reply goes on with the request before it, so when that one is about several slides or new content, the reply is too. When unsure, give none – a wrong change is worse than waiting.
+Everything else gets no edits – call \`edit\` with an empty list and the designing AI does it: new content you would have to make up (text, a list, a slide about a topic), wording the person did not give word for word (shorter, better, translated, a title as a statement), pictures, charts, tables, gradients, layout or design work („schöner“, „aufräumen“, „passt das?“, a background „that fits“), changes on several slides alike, questions. Edits do the whole request or nothing: when one part of it cannot be said as edits, give none – every sentence of the last message must be done by your edits. The whole thread counts: a reply goes on with the request before it, so when that one is about several slides or new content, the reply is too. When unsure, give none – a wrong change is worse than waiting.
 
-Writing edits: each names one \`element\` (its id from the list) and only what changes. \`place\`: a place on the slide in words – top_left, top, top_right, left, center, right, bottom_left, bottom, bottom_right; worked out for you inside the margins, clear of the others. \`align_with\` lines it up with other elements by an edge or the middle; \`size_like\` makes it as wide and/or high as another – both worked out for you. \`box\`: only for an exact place or size the request gives (% of the slide). „Größer“/„kleiner“ for text is \`font_scale\` (1.25 / 0.8 unless said), for a box its \`box\`. Colours as #rrggbb – the template's colours when the request names one of them. The comment names the element it is about („on element …“); „das“, „hier“ mean that one. \`add\` makes a new element instead of \`element\` – text, rectangle, ellipse (a circle: w and h the same size in cm, so h = w × the slide's width / height), isosceles-triangle, diamond, hexagon, right-arrow, star5, line, arrow – with \`box\` („hier“: around the point or area the comment marks, clear of other elements; several side by side with equal gaps), \`place\` or \`next_to\` another element (then a \`box\` gives only the size), and border, text as for any element; a line or arrow goes \`from\` one element \`to\` another. Give it a \`name\` when a later edit refers to it. Make new shapes look designed: always a \`fill\` – one of the template's colours, else a colour the slide already uses, else a calm blue like #2563eb (no white, grey or bare outline unless asked); several alike the same size (\`size_like\` the first) with equal gaps, lined up; a sensible size (a circle about 2–4 cm); inside the content area, never at the slide's edge.`;
+Writing edits: each names one \`element\` (its id from the list) and only what changes. \`place\`: a place on the slide in words – top_left, top, top_right, left, center, right, bottom_left, bottom, bottom_right; worked out for you inside the margins, clear of the others. \`align_with\` lines it up with other elements by an edge or the middle; \`size_like\` makes it as wide and/or high as another – both worked out for you. \`box\`: only for an exact place or size the request gives (% of the slide). „Größer“/„kleiner“ for text is \`font_scale\` (1.25 / 0.8 unless said), for a box its \`box\`. Colours as #rrggbb – the template's colours when the request names one of them. The comment names the element it is about („on element …“); „das“, „hier“ mean that one. \`add\` makes a new element instead of \`element\` – text, rectangle, ellipse (a circle: w and h the same size in cm, so h = w × the slide's width / height), isosceles-triangle, diamond, hexagon, right-arrow, star5, line, arrow – with \`box\` („hier“: around the point or area the comment marks, clear of other elements; several side by side with equal gaps), \`place\` or \`next_to\` another element (then a \`box\` gives only the size), and border, text as for any element; a line or arrow goes \`from\` one element \`to\` another. Give it a \`name\` when a later edit refers to it. Make new shapes look designed: always a \`fill\` – one of the template's colours, else a colour the slide already uses, else a calm blue like #2563eb (no white, grey or bare outline unless asked); several alike the same size (\`size_like\` the first) with equal gaps, lined up; a sensible size (a circle about 2–4 cm); inside the content area, never at the slide's edge. \`group\`: the ids instead of \`element\`. A slide's change names \`slide\` (its number) instead of \`element\` – \`background\`, \`transition\`, \`notes\`, \`hidden\`, \`move_after\` (0: first), \`duplicate\`, \`delete\` – a background turned dark gets light text: \`text_color\` with it (dark text on a light one); a new slide is \`new_slide\` {after, layout or copy_of} with \`title\` and \`text\` (one string per point) exactly as said („mit Titel Agenda und den Punkten A, B, C“); a slide about a topic („eine Folie zu unseren Zielen“) needs content made up: no edits.`;
 
 const QUICK_TOOL: Anthropic.Beta.BetaTool & { input_schema: Anthropic.Beta.BetaTool.InputSchema } =
   {
@@ -77,13 +73,20 @@ export function marginsOf(
   };
 }
 
-/** What the fast model reads: the slide's page and design, its elements, the thread. */
+/** Slide titles named to the fast model at most. */
+const MAX_TITLES = 100;
+
+/** What the fast model reads: the deck's slides, the slide's page and design, its elements, the thread. */
 export function quickPrompt(input: {
   slide: EditableSlide;
   number: number;
   page: { width: number; height: number };
   design: DeckDesign;
   thread: string;
+  /** The deck's slides, in order. */
+  slides?: readonly { title: string; hidden: boolean }[];
+  /** The layouts a new slide can take, a line each. */
+  layouts?: readonly string[];
 }): string {
   const area = marginsOf(input.design, input.page);
   const lines = designLines({
@@ -102,9 +105,24 @@ export function quickPrompt(input: {
       position: guide.position * 100,
     })),
     palette: input.design.palette,
+    layouts: input.layouts,
   });
   const elements = input.slide.elements.slice(0, MAX_ELEMENTS).map(elementLine);
+  const slides = input.slides ?? [];
   return [
+    ...(slides.length > 0
+      ? [
+          `The presentation's slides (${slides.length}):`,
+          ...slides
+            .slice(0, MAX_TITLES)
+            .map(
+              (slide, index) =>
+                `${index + 1}: ${slide.title.replace(/\s+/g, ' ').slice(0, 80) || '(no title)'}${slide.hidden ? ' (hidden)' : ''}`,
+            ),
+          ...(slides.length > MAX_TITLES ? ['…'] : []),
+          '',
+        ]
+      : []),
     ...lines,
     '',
     `Slide ${input.number}, its elements (id „name“ (kind): text; box x, y, w, h in % of the slide; looks):`,

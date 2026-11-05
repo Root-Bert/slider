@@ -66,6 +66,10 @@ export function toCommentDto(
     resolvedAt: row.resolvedAt?.toISOString() ?? null,
     source: row.source,
     sourceStatus: row.removedInSourceAt ? 'removed_in_pptx' : 'present',
+    aiSummary:
+      row.aiSummary && row.aiSummaryAt
+        ? { text: row.aiSummary, at: row.aiSummaryAt.toISOString() }
+        : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

@@ -10,7 +10,11 @@ import {
   type MouseEvent,
   type ReactNode,
 } from 'react';
+import { useLocation } from 'react-router';
 import { cn, SelectionBox, useIsNarrow } from '@/ui';
+import { useDeckCreation } from '@/lib/api';
+import { opensOnBoard } from '@/lib/routes';
+import { smoothScroll } from '@/lib/motion';
 import { selectionStyle } from '@/lib/accent';
 import { rafThrottle } from '@/lib/dom';
 import { useMarqueeSelect } from '@/lib/marquee-select';
@@ -33,7 +37,9 @@ import {
   revealScrollLeft,
   computeTrackGeometry,
   layoutTrack,
+  leadingWidth,
   slideHeightAt,
+  splitForHeight,
   splitForWidth,
   TRACK_PAD_TOP,
   trackStack,
@@ -61,6 +67,8 @@ import { useEditing } from '../editing/editing-context';
 const KEEPS_PANEL =
   'button, a, input, textarea, select, label, [contenteditable], [role="button"], [data-comment-card], [data-connector-blob], [data-gap-bubble]';
 /** Presses here never start a selection box: the header (slides, controls) and the composer. */
+/** Room kept between a card glided to and the edges of the comment area. */
+const CARD_MARGIN = 24;
 const NO_BOX = `${KEEPS_PANEL}, [data-timeline-header], [data-composer]`;
 
 /** How fast the minimap folds. */
@@ -68,6 +76,8 @@ const MINIMAP_FOLD_MS = 200;
 
 /** Slides grow to at least this width when a drawing tool is picked. */
 const DRAW_MIN_W = 640;
+/** …and to this height while Folie 1 of a new deck shows the prompt to build it. */
+const PROMPT_MIN_H = 560;
 /** Less comment area than this left under the band counts as closed. */
 const COMMENTS_CLOSED_H = 32;
 
@@ -121,6 +131,9 @@ export function Timeline({
   const anchorRef = useRef<SizeAnchor | null>(null);
   const [connectorLayer, setConnectorLayer] = useState<HTMLDivElement | null>(null);
   const [initialSlideId] = useState(activeSlideId);
+  // A new deck opens on Folie 0 (`OPEN_ON_BOARD`): its material goes there first.
+  const location = useLocation();
+  const [openOnBoard] = useState(() => opensOnBoard(location.state));
   // A split drag resizes from here: the viewer store only gets the split on release, so the
   // rest of the viewer (controls, panels, avatars) doesn't re-render with every frame of it.
   const [draggedSplit, setDraggedSplit] = useState<number | null>(null);
@@ -177,10 +190,19 @@ export function Timeline({
   useEffect(() => {
     dispatch({ type: 'commentsClosedSet', closed: commentsClosed });
   }, [dispatch, commentsClosed]);
+  // Folie 0, „Material“: the board before slide 1 – every deck has one, a template none.
+  const hasBoard = !deck.template;
   const layout = useMemo(
     () =>
-      slideH ? layoutTrack(aspectRatios, slideH, hasDeleted ? trailingWidth(slideH) : 0) : null,
-    [aspectRatios, slideH, hasDeleted],
+      slideH
+        ? layoutTrack(
+            aspectRatios,
+            slideH,
+            hasDeleted ? trailingWidth(slideH) : 0,
+            hasBoard ? leadingWidth(slideH) : 0,
+          )
+        : null,
+    [aspectRatios, slideH, hasDeleted, hasBoard],
   );
 
   // Comments selected as the decks in "Präsentationen" are: a box drawn over them on the comment
@@ -310,8 +332,10 @@ export function Timeline({
     prevLayout.current = layout;
     const width = scroller.clientWidth;
     if (!prev) {
-      // Deep link (`?slide=`): centred on the first paint, without animation.
-      if (initialSlideId)
+      // Deep link (`?slide=`): centred on the first paint, without animation. A new deck: the
+      // board before slide 1.
+      if (openOnBoard && layout.leading) registry.scrollTrackTo(0, 'instant');
+      else if (initialSlideId)
         registry.revealSlide(initialSlideId, { behavior: 'instant', align: 'center' });
     } else if (prev.h !== layout.h) {
       const anchor: SizeAnchor =
@@ -325,7 +349,7 @@ export function Timeline({
       );
     }
     updateRange();
-  }, [layout, clientW, registry, initialSlideId]);
+  }, [layout, clientW, registry, initialSlideId, openOnBoard]);
 
   // Scrolling: update the window.
   useEffect(() => {
@@ -340,6 +364,41 @@ export function Timeline({
   }, []);
   // … and the slide most in view becomes active.
   useScrollActiveSlide(scrollerRef);
+
+  // A comment picked (its mark on the slide, a list, a search hit): the comment area glides to its
+  // card, as the slide glides into view – only when the card is not fully in view already.
+  const { focusedThreadId } = viewerState;
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!focusedThreadId || !scroller) return;
+    // After the frame that dims the others and lays the cards out.
+    const frame = requestAnimationFrame(() => {
+      const card = scroller.querySelector<HTMLElement>(
+        `[data-comment-card="${CSS.escape(focusedThreadId)}"]`,
+      );
+      if (!card) return;
+      const view = scroller.getBoundingClientRect();
+      const header = scroller.querySelector<HTMLElement>('[data-timeline-header]');
+      const top = Math.max(view.top, header?.getBoundingClientRect().bottom ?? view.top);
+      const box = card.getBoundingClientRect();
+      let dy = 0;
+      if (box.top < top + CARD_MARGIN) dy = box.top - top - CARD_MARGIN;
+      else if (box.bottom > view.bottom - CARD_MARGIN)
+        // Its top stays in view when it is taller than the room.
+        dy = Math.min(box.bottom - view.bottom + CARD_MARGIN, box.top - top - CARD_MARGIN);
+      let dx = 0;
+      if (box.left < view.left + CARD_MARGIN) dx = box.left - view.left - CARD_MARGIN;
+      else if (box.right > view.right - CARD_MARGIN && box.width < view.width)
+        dx = box.right - view.right + CARD_MARGIN;
+      if (Math.abs(dy) < 1 && Math.abs(dx) < 1) return;
+      scroller.scrollTo({
+        top: scroller.scrollTop + dy,
+        left: scroller.scrollLeft + dx,
+        behavior: smoothScroll(),
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [focusedThreadId]);
 
   // A new revision reorders the track, someone else puts a slide in before it: the active slide
   // (kept by its id) stays where it is on screen – no glide away and back – else in view.
@@ -382,6 +441,23 @@ export function Timeline({
   useEffect(() => {
     if (tool) growForDrawing();
   }, [tool]);
+
+  // Folie 1's prompt to build a new deck (`CreatePrompt`) needs room: the slides grow to it once,
+  // the track's left edge kept where it is (the board, when the deck opened there).
+  const creationPrompt = useDeckCreation(deck.id, !deck.template).data?.prompt ?? false;
+  const showsPrompt = creationPrompt && editing.available && slides.length === 1;
+  const growForPrompt = useEffectEvent(() => {
+    if (narrow || !geometry || !layout || layout.h >= PROMPT_MIN_H) return;
+    const target = splitForHeight(PROMPT_MIN_H, geometry);
+    if (slideHeightAt(target, geometry) <= layout.h + 0.5) return;
+    const scroller = scrollerRef.current;
+    if (scroller) anchorRef.current = { contentX: scroller.scrollLeft, viewportX: 0 };
+    dispatch({ type: 'splitChanged', split: target });
+  });
+  const hasLayout = layout !== null;
+  useEffect(() => {
+    if (showsPrompt && hasLayout) growForPrompt();
+  }, [showsPrompt, hasLayout]);
 
   const context = useMemo(
     () => geometry && layout && { geometry, layout, anchorRef, scrollerRef },
@@ -428,7 +504,7 @@ export function Timeline({
                 }
           }
           className={cn(
-            'dot-grid relative min-h-full min-w-full',
+            'relative isolate min-h-full min-w-full bg-canvas',
             layout && 'w-(--content-w)',
             layout && sidePanelOpen && 'md:w-[calc(var(--content-w)+424px)]',
           )}
@@ -436,6 +512,20 @@ export function Timeline({
         >
           {/* Connector lines: in the content, so they scroll sideways with slides and cards in
               the same frame; sticky, so vertically they stay with the header's marks. */}
+          {/* The dots belong to the comment area: none round the slides and thumbnails (Folie 0's
+              own dots stand for themselves), faded in over the controls row, full below. Sticky,
+              under everything (`isolate`), so cards and lines scroll over it. */}
+          {slideH !== null && metrics && (
+            <div aria-hidden className="pointer-events-none sticky top-0 -z-1 h-0">
+              <div
+                className="dot-grid absolute inset-x-0 top-0"
+                style={{
+                  height: metrics.viewportH,
+                  maskImage: `linear-gradient(to bottom, transparent ${TRACK_PAD_TOP + slideH + foldH}px, black ${TRACK_PAD_TOP + slideH + foldH + metrics.controlsH}px)`,
+                }}
+              />
+            </div>
+          )}
           <div
             ref={setConnectorLayer}
             data-connector-layer

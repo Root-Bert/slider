@@ -252,6 +252,12 @@ function CropOnSlide({
     if (!picked) finish();
   }, [picked]);
 
+  // ↵ takes the part and, on a shape one can type in, starts its text – here, not left to the
+  // editor's ↵: whose listener comes first changes with its renders.
+  const typeOn = useEffectEvent(() => {
+    if (take && !ground && element.live !== null)
+      editing.startText({ slideId, elementId: element.id });
+  });
   useEffect(() => {
     pictureFit.finishWith(() => finish());
     const onKey = (event: KeyboardEvent) => {
@@ -259,6 +265,7 @@ function CropOnSlide({
       event.preventDefault();
       event.stopImmediatePropagation();
       finish();
+      if (event.key === 'Enter') typeOn();
     };
     window.addEventListener('keydown', onKey, true);
     return () => {

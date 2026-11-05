@@ -53,13 +53,62 @@ export function coverCrop(source: Size, target: Size): Rect {
   return { x: (source.width - width) / 2, y: (source.height - height) / 2, width, height };
 }
 
-function playingVideo(stream: MediaStream): HTMLVideoElement {
+export function playingVideo(stream: MediaStream): HTMLVideoElement {
   const video = document.createElement('video');
   video.muted = true;
   video.playsInline = true;
   video.srcObject = stream;
   void video.play().catch(() => undefined);
   return video;
+}
+
+/**
+ * The camera as a rounded rectangle lifted off what is under it (a soft shadow, a hairline edge),
+ * its middle filling `bubble` – the screen recording's and the slide show recording's alike.
+ */
+export function drawCameraBubble(
+  context: CanvasRenderingContext2D,
+  cameraVideo: HTMLVideoElement,
+  bubble: Rect,
+) {
+  const { videoWidth, videoHeight } = cameraVideo;
+  if (videoWidth > 0) {
+    // Cover: the middle of the camera picture fills the rounded rectangle.
+    const crop = coverCrop({ width: videoWidth, height: videoHeight }, bubble);
+    const radius = bubble.height * BUBBLE_CORNER;
+    // Lifted off the screen like the app's floating panels: a soft shadow under it…
+    context.save();
+    context.shadowColor = `rgb(0 0 0 / ${FLOAT_SHADOW_ALPHA})`;
+    context.shadowBlur = bubble.height * 0.12;
+    context.shadowOffsetY = bubble.height * 0.03;
+    context.beginPath();
+    context.roundRect(bubble.x, bubble.y, bubble.width, bubble.height, radius);
+    context.fillStyle = CANVAS;
+    context.fill();
+    context.restore();
+    context.save();
+    context.beginPath();
+    context.roundRect(bubble.x, bubble.y, bubble.width, bubble.height, radius);
+    context.clip();
+    context.drawImage(
+      cameraVideo,
+      crop.x,
+      crop.y,
+      crop.width,
+      crop.height,
+      bubble.x,
+      bubble.y,
+      bubble.width,
+      bubble.height,
+    );
+    context.restore();
+    // …and a hairline edge instead of a ring.
+    context.beginPath();
+    context.roundRect(bubble.x + 0.5, bubble.y + 0.5, bubble.width - 1, bubble.height - 1, radius);
+    context.lineWidth = 1;
+    context.strokeStyle = `rgb(255 255 255 / ${HAIRLINE_STRONG_ALPHA})`;
+    context.stroke();
+  }
 }
 
 /**
@@ -90,50 +139,7 @@ export function composeScreenAndCamera(screen: MediaStream, camera: MediaStream)
       );
       context.drawImage(screenVideo, at.x, at.y, at.width, at.height);
     }
-    const { videoWidth, videoHeight } = cameraVideo;
-    if (videoWidth > 0) {
-      // Cover: the middle of the camera picture fills the rounded rectangle.
-      const crop = coverCrop({ width: videoWidth, height: videoHeight }, bubble);
-      const radius = bubble.height * BUBBLE_CORNER;
-      // Lifted off the screen like the app's floating panels: a soft shadow under it…
-      context.save();
-      context.shadowColor = `rgb(0 0 0 / ${FLOAT_SHADOW_ALPHA})`;
-      context.shadowBlur = bubble.height * 0.12;
-      context.shadowOffsetY = bubble.height * 0.03;
-      context.beginPath();
-      context.roundRect(bubble.x, bubble.y, bubble.width, bubble.height, radius);
-      context.fillStyle = CANVAS;
-      context.fill();
-      context.restore();
-      context.save();
-      context.beginPath();
-      context.roundRect(bubble.x, bubble.y, bubble.width, bubble.height, radius);
-      context.clip();
-      context.drawImage(
-        cameraVideo,
-        crop.x,
-        crop.y,
-        crop.width,
-        crop.height,
-        bubble.x,
-        bubble.y,
-        bubble.width,
-        bubble.height,
-      );
-      context.restore();
-      // …and a hairline edge instead of a ring.
-      context.beginPath();
-      context.roundRect(
-        bubble.x + 0.5,
-        bubble.y + 0.5,
-        bubble.width - 1,
-        bubble.height - 1,
-        radius,
-      );
-      context.lineWidth = 1;
-      context.strokeStyle = `rgb(255 255 255 / ${HAIRLINE_STRONG_ALPHA})`;
-      context.stroke();
-    }
+    drawCameraBubble(context, cameraVideo, bubble);
   };
 
   const clock = new Worker(new URL('./frame-clock.worker.ts', import.meta.url), {

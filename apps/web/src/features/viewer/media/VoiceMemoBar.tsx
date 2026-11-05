@@ -8,8 +8,8 @@ import { LiveLevels } from './RecorderPanel';
 import { useRecorder, type Recording } from './hooks/useRecorder';
 
 /**
- * A voice memo right in a reply field, like a messenger's: recording starts at once, stop leaves
- * the memo to listen to, the bin drops it. It takes the field's place – the memo is the reply – and
+ * A voice memo right in a reply field, like a messenger's: recording starts at once, pause on the
+ * left, send on the right (or stop, which leaves the memo to listen to; then the bin drops it). It takes the field's place – the memo is the reply – and
  * the field's send button sends it, no dialog. Keyboard on the bar: Space pauses and resumes
  * (afterwards plays), ↵ stops, then sends (⌘↵ to the AI as well).
  */
@@ -18,6 +18,7 @@ export function VoiceMemoBar({
   onRecordingChange,
   onDiscard,
   onSend,
+  onSendNow,
   disabled = false,
 }: {
   /** The finished memo, or `null` while there is none. */
@@ -28,6 +29,8 @@ export function VoiceMemoBar({
   onDiscard: () => void;
   /** ↵ on the finished memo; `askAi` with ⌘↵. */
   onSend?: (options: { askAi: boolean }) => void;
+  /** Send while recording: the memo ends and goes once it is there (the draft sends it). */
+  onSendNow?: { run: (askAi: boolean) => void; ai: boolean };
   disabled?: boolean;
 }) {
   const { state, levels, elapsedMs, stop, pause, resume, reset } = useRecorder('audio', {
@@ -98,7 +101,8 @@ export function VoiceMemoBar({
       onKeyDown={onKeyDown}
       className="flex min-w-0 items-center gap-1.5 rounded-control outline-none"
     >
-      {discard}
+      {/* While it records: pause and send – paused (or done) it can be thrown away. */}
+      {(!recordingNow || paused) && discard}
       {state.status === 'error' ? (
         <>
           <ErrorText role="alert" size="xs" className="min-w-0 flex-1">
@@ -117,6 +121,14 @@ export function VoiceMemoBar({
         />
       ) : recordingNow ? (
         <>
+          <IconButton
+            size="compact"
+            variant="subtle"
+            icon={paused ? 'playArrow' : 'pause'}
+            label={paused ? 'Aufnahme fortsetzen' : 'Aufnahme pausieren'}
+            title={paused ? 'Fortsetzen (Leertaste)' : 'Pausieren (Leertaste)'}
+            onClick={paused ? resume : pause}
+          />
           <span
             aria-hidden
             className={cn('size-2 shrink-0 rounded-full bg-danger', !paused && 'animate-pulse')}
@@ -131,24 +143,45 @@ export function VoiceMemoBar({
             {formatDuration(elapsedMs)}
           </span>
           <LiveLevels levels={levels} paused={paused} />
-          <IconButton
-            size="compact"
-            shape="round"
-            variant="subtle"
-            icon={paused ? 'playArrow' : 'pause'}
-            label={paused ? 'Aufnahme fortsetzen' : 'Aufnahme pausieren'}
-            title={paused ? 'Fortsetzen (Leertaste)' : 'Pausieren (Leertaste)'}
-            onClick={paused ? resume : pause}
-          />
-          <IconButton
-            size="compact"
-            shape="round"
-            variant="danger"
-            icon="stop"
-            label="Aufnahme beenden"
-            title="Aufnahme beenden (↵)"
-            onClick={stop}
-          />
+          {onSendNow ? (
+            // As the reply field's own: ✨ sends and asks the AI, the arrow only sends.
+            <span className="flex shrink-0 items-center gap-0.5">
+              {onSendNow.ai && (
+                <IconButton
+                  size="compact"
+                  icon="autoAwesome"
+                  label="Senden und die KI die Folie ändern lassen"
+                  title="Senden und an die KI geben"
+                  disabled={disabled}
+                  onClick={() => {
+                    stop();
+                    onSendNow.run(true);
+                  }}
+                />
+              )}
+              <IconButton
+                size="compact"
+                icon="arrowUpward"
+                iconTone="success"
+                label="Antwort senden"
+                title="Senden"
+                disabled={disabled}
+                onClick={() => {
+                  stop();
+                  onSendNow.run(false);
+                }}
+              />
+            </span>
+          ) : (
+            <IconButton
+              size="compact"
+              variant="danger"
+              icon="stop"
+              label="Aufnahme beenden"
+              title="Aufnahme beenden (↵)"
+              onClick={stop}
+            />
+          )}
         </>
       ) : (
         <p

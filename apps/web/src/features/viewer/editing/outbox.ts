@@ -53,6 +53,8 @@ export type OutboxStore<E extends QueuedEntry = OutboxEntry> = Store<E>;
 const STORE = 'edits';
 /** Comments made while the server was out of reach (`lib/api/comment-outbox.ts`). */
 export const COMMENT_STORE = 'comments';
+/** Changes to a deck's board (Folie 0) made while the server was out of reach (`lib/api/board.ts`). */
+export const BOARD_STORE = 'board';
 const TAB_LOCK = 'slider-tab:';
 
 /** Asks for a Web Lock (`navigator.locks.request`); `undefined` without Web Locks. */
@@ -162,10 +164,11 @@ function database(): Promise<IDBDatabase | null> {
   opened ??= new Promise<IDBDatabase | null>((resolve) => {
     try {
       // 2: comments beside the edits – an outbox of 1 keeps its edits, and gets their store.
-      const request = indexedDB.open(OUTBOX_DB, 2);
+      // 3: the boards' changes beside them.
+      const request = indexedDB.open(OUTBOX_DB, 3);
       request.onupgradeneeded = () => {
         const db = request.result;
-        for (const name of [STORE, COMMENT_STORE]) {
+        for (const name of [STORE, COMMENT_STORE, BOARD_STORE]) {
           if (db.objectStoreNames?.contains(name)) continue;
           db.createObjectStore(name, { keyPath: 'id' }).createIndex('deckId', 'deckId');
         }

@@ -31,6 +31,7 @@ import {
   MINIMAP_PAD,
   minimapAsTrack,
   movedOrder,
+  BOARD_THUMB_W,
   scrollLeftForBracket,
   THUMB_GAP,
   THUMB_H,
@@ -74,7 +75,7 @@ interface MinimapProps {
  * moves with the split handle, right under the track.
  */
 export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
-  const { slides: deckSlides, gapThreads, threads } = useViewerData();
+  const { slides: deckSlides, gapThreads, threads, deck } = useViewerData();
   const editing = useEditing();
   // The order of a dropped slide, until the slides come back from the server in it.
   const [pendingOrder, setPendingOrder] = useState<readonly string[] | null>(null);
@@ -111,12 +112,14 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
 
   const rowH = THUMB_H + 2 * MINIMAP_PAD;
   const { aspectRatios } = useFrameAspects();
+  // Folie 0's tile before the thumbnails, as the board lies before slide 1 (not in a template).
+  const lead = deck.template ? 0 : BOARD_THUMB_W + THUMB_GAP;
   const mini = useMemo(
     () =>
       availableW > 0
-        ? layoutMinimap(aspectRatios, availableW - 2 * MINIMAP_PAD - deletedRoom)
+        ? layoutMinimap(aspectRatios, availableW - 2 * MINIMAP_PAD - deletedRoom, lead)
         : null,
-    [aspectRatios, availableW, deletedRoom],
+    [aspectRatios, availableW, deletedRoom, lead],
   );
   const miniTrack = useMemo(() => mini && minimapAsTrack(mini), [mini]);
 
@@ -216,7 +219,12 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
           list.scrollTo({ left, behavior: smoothScroll() });
       }
       dispatch({ type: 'activeSlideChanged', slideId });
-      registry.revealSlide(slideId, { align: 'nearest' });
+      // The big track too: in the middle – the first at the left edge (Folie 0 before it is not a
+      // slide to centre around), the last at the right.
+      const index = slides.findIndex((slide) => slide.id === slideId);
+      registry.revealSlide(slideId, {
+        align: index === 0 ? 'start' : index === slides.length - 1 ? 'end' : 'center',
+      });
     },
     [clickGuard, dispatch, registry, mini, slides],
   );
@@ -447,7 +455,7 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
     slideDrag && mini && dragFrom !== -1 ? movedOrder(slides, dragFrom, slideDrag.insertion) : null;
   const previewX = new Map<string, number>();
   if (preview && mini) {
-    let x = 0;
+    let x = lead;
     for (const slide of preview) {
       previewX.set(slide.id, x);
       x += (mini.slides[slides.indexOf(slide)]?.w ?? 0) + THUMB_GAP;
@@ -486,6 +494,36 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
             className="pointer-events-auto relative"
             style={{ width: mini.contentW + 2 * MINIMAP_PAD + deletedRoom, height: rowH }}
           >
+            {lead > 0 && (
+              <li
+                className="absolute"
+                style={{
+                  left: MINIMAP_PAD,
+                  top: (rowH - mini.h) / 2,
+                  width: BOARD_THUMB_W,
+                  height: mini.h,
+                }}
+              >
+                <button
+                  type="button"
+                  data-board-thumb
+                  aria-label="Material (Folie 0) anzeigen"
+                  title="Material"
+                  onClick={() => {
+                    if (clickGuard.consume()) return;
+                    registry.endProgrammaticScroll();
+                    scrollerRef.current?.scrollTo({ left: 0, behavior: smoothScroll() });
+                    document
+                      .querySelector<HTMLElement>('[data-material-board] [tabindex]')
+                      ?.focus({ preventScroll: true });
+                  }}
+                  className="flex size-full items-center justify-center rounded-thumb bg-surface-2 text-fg-muted ring-hairline transition-colors hover:bg-selected hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-white"
+                >
+                  {/* The icon alone; its name is in the label and the tooltip. */}
+                  <Icon name="attachFile" size={18} />
+                </button>
+              </li>
+            )}
             {slides.map((slide, index) => {
               const box = mini.slides[index];
               if (!box) return null;

@@ -361,6 +361,19 @@ export async function deckFileFromMaster(
   masterId: string,
 ): Promise<Uint8Array> {
   await requireMasterUploader(deps, userId, workspaceId);
+  return deckBytesFromMaster(deps, workspaceId, masterId);
+}
+
+/**
+ * A new deck's file of the workspace's design `masterId`: one slide of its first layout. Who
+ * may ask is checked by the caller (a new deck: who may upload; a deck built from the prompt on
+ * Folie 1: who edits it).
+ */
+export async function deckBytesFromMaster(
+  deps: AppDeps,
+  workspaceId: string,
+  masterId: string,
+): Promise<Uint8Array> {
   const [row] = await deps.db
     .select()
     .from(workspaceMasters)

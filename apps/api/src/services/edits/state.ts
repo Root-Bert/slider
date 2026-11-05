@@ -1,8 +1,9 @@
-import type { DeckEditState, Viewer } from '@slider/shared';
+import type { DeckEditState, DeckNotes, Viewer } from '@slider/shared';
 import { imageSize, OdpDocument } from '@slider/odp';
 import { requireDeckAccess } from '../../auth/access';
 import type { AppDeps } from '../../deps';
 import { deckFonts } from '../../import/libreoffice';
+import { isOdpKey } from '../../import/odp-deck';
 import { notFound } from '../../http/errors';
 import { cutOutSource } from '../cut-outs';
 import { photoSource } from '../stock-photos';
@@ -85,6 +86,39 @@ export async function getEditState(
   };
 }
 
+/**
+ * The speaker notes alone, for anyone who may view the deck (the presenter view reads them) –
+ * nothing else of the edit state. None while the deck is not an ODP or still being processed.
+ */
+export async function getDeckNotes(
+  deps: AppDeps,
+  viewer: Viewer,
+  deckId: string,
+): Promise<DeckNotes> {
+  const deck = await requireDeckAccess(deps, viewer, deckId, 'view');
+  const revision = await currentRevision(deps.db, deck);
+  if (
+    !revision ||
+    deck.importState.status !== 'ready' ||
+    revision.status !== 'ready' ||
+    !isOdpKey(revision.pptxKey)
+  ) {
+    return { slides: [] };
+  }
+  const [file, slideIds] = await Promise.all([
+    fileSlides(deps, revision.pptxKey),
+    slideIdsOf(deps.db, revision.id),
+  ]);
+  return {
+    slides: file.slides.flatMap((slide) => {
+      const slideId = slideIds[slide.index];
+      return slideId
+        ? [{ slideId, notes: slide.notes, ...(slide.notesRich && { notesRich: slide.notesRich }) }]
+        : [];
+    }),
+  };
+}
+
 /** The deck's file as it is now (download), with its name. */
 export async function editedFile(
   deps: AppDeps,
@@ -102,7 +136,11 @@ export async function editedFile(
 }
 
 /** A template being designed is named by its title: its file keeps the name it started with. */
-export const fileBase = (deck: { fileName: string | null; title: string | null; isTemplate: boolean }) =>
+export const fileBase = (deck: {
+  fileName: string | null;
+  title: string | null;
+  isTemplate: boolean;
+}) =>
   deck.isTemplate && deck.title?.trim()
     ? deck.title.trim()
     : (deck.fileName ?? deck.title ?? 'Präsentation').replace(/\.[^./]+$/, '');

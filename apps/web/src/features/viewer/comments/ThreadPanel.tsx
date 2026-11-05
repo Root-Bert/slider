@@ -16,6 +16,7 @@ import { ReplyComposer } from './ReplyComposer';
 import { ResolveButton } from './ResolveButton';
 import { ThreadMessage } from './ThreadMessage';
 import { AiProposalCard } from './AiProposalCard';
+import { ThreadSummary } from './ThreadSummary';
 import { useCommentProposals } from './hooks/useCommentProposals';
 import { VIEW_ONLY_HINT } from './lib/view-only';
 
@@ -109,6 +110,7 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
         data-thread-history
         className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-5 pt-3.5 pb-4"
       >
+        {root.aiSummary && <ThreadSummary summary={root.aiSummary} className="mb-3" />}
         <ThreadMessage comment={root} deckId={deck.id} isRoot onDeleted={close} />
         {proposalsOf(root.id).map((proposal) => (
           <AiProposalCard key={proposal.id} proposal={proposal} className="mt-2 ml-[39px]" />

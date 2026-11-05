@@ -372,7 +372,7 @@ export function applyToElement(
         : {
             ...element,
             cornerRadius: operation.radius,
-            // Drawn by the browser: its corners round in the same frame (CLAUDE.md §1).
+            // Drawn by the browser: its corners round in the same frame (docs/do-not-break.md).
             ...(element.paint?.outline === 'rect' && {
               paint: { ...element.paint, radius: Math.max(0, operation.radius) },
             }),

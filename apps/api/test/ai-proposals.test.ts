@@ -60,6 +60,8 @@ class FakeAnthropic {
   /** Answers of the fast model to quick requests (forced tool call): no edits unless scripted. */
   quick: unknown[] = [];
   quickRequests: Anthropic.Beta.MessageCreateParams[] = [];
+  /** The thread summaries asked for (forced `thread_summary`), each answered „Stand n“. */
+  summaryRequests: Anthropic.Beta.MessageCreateParams[] = [];
   aborted = 0;
 
   readonly client = (apiKey: string): Anthropic =>
@@ -79,6 +81,13 @@ class FakeAnthropic {
             body: Anthropic.Beta.MessageCreateParams,
             options?: { signal?: AbortSignal },
           ) => {
+            if (body.tool_choice?.type === 'tool' && body.tool_choice.name === 'thread_summary') {
+              this.summaryRequests.push(structuredClone(body));
+              const input = { text: `Stand ${this.summaryRequests.length}` };
+              return {
+                finalMessage: async () => message([toolUse('thread_summary', input)], 'tool_use'),
+              };
+            }
             if (body.tool_choice?.type === 'tool') {
               this.quickRequests.push(structuredClone(body));
               const input = this.quick.shift() ?? { edits: [] };
@@ -324,6 +333,12 @@ describe('AI proposals', { timeout: 60_000 }, () => {
         'change_elements',
         'add_comment',
         'ask_back',
+        // The deck's board (Folie 0): read through tools only.
+        'list_materials',
+        'read_material',
+        'read_sheet',
+        'search_materials',
+        'view_material',
       ]);
       expect(first.max_tokens).toBe(128_000);
       expect(first.output_config?.task_budget).toMatchObject({ type: 'tokens' });
@@ -1014,6 +1029,8 @@ describe('AI proposals', { timeout: 60_000 }, () => {
                 { add: 'arrow', from: { element: 'a' }, to: { element: 'b' } },
                 { add: 'text', next_to: { element: 'b', side: 'right' }, text: ['Ziel'], width: 5 },
                 { element: 'b', text: ['B'], text_color: '#ffffff' },
+                // The slide's own settings in the same call.
+                { slide: 3, transition: 'fade' },
               ],
             }),
           ],
@@ -1059,6 +1076,7 @@ describe('AI proposals', { timeout: 60_000 }, () => {
       expect(arrow.bbox.x).toBeGreaterThan(a.bbox.x + a.bbox.w);
       expect(arrow.bbox.x + arrow.bbox.w).toBeLessThan(b.bbox.x);
       expect(label.paragraphs).toEqual(['Ziel']);
+      expect(after.slides[2]!.transition).toBe('fade');
       // In the slide's body text, as the editor's new text box.
       const note = after.slides[2]!.elements.find((element) => element.name === 'Hinweis')!;
       expect(label.live?.paragraphs[0]?.runs[0]?.font).toBe(note.live?.paragraphs[0]?.mark.font);
@@ -1080,6 +1098,63 @@ describe('AI proposals', { timeout: 60_000 }, () => {
         2,
       );
       expect(JSON.stringify(italic)).toMatch(/"italic":true/);
+      // Every action the editor has goes the quick way: elements grouped, a new slide with its
+      // title and points (a bullet list, in a layout with a text placeholder), its background, a
+      // copy of it – none of them asks the AI that designs.
+      const editState = async () =>
+        deckEditStateSchema.parse(await (await ctx.request(`/api/decks/${deckId}/edit`)).json());
+      const quickly = async (prompt: string, edits: unknown[], summary: string) => {
+        anthropic.quick = [{ edits }];
+        await ask(ctx, deckId, state.slides[2]!.slideId, prompt);
+        expect(await settled(ctx, deckId)).toMatchObject({ status: 'applied', summary });
+        return editState();
+      };
+      const grouped = await quickly(
+        'Gruppier die beiden Kreise',
+        [{ group: [a.id, b.id] }],
+        'Direkt umgesetzt: gruppiert.',
+      );
+      const group = grouped.slides[2]!.elements.find((element) => element.kind === 'group');
+      expect(group?.children?.map((part) => part.id)).toEqual([a.id, b.id]);
+      const count = grouped.slides.length;
+      const inserted = await quickly(
+        'Neue Folie nach Folie 1 mit Titel Agenda und den Punkten A, B, C',
+        [{ new_slide: { after: 1 }, title: 'Agenda', text: ['A', 'B', 'C'] }],
+        'Direkt umgesetzt: Folie eingefügt.',
+      );
+      expect(inserted.slides).toHaveLength(count + 1);
+      const agenda = inserted.slides[1]!;
+      expect(agenda.elements.find((element) => element.role === 'title')?.paragraphs).toEqual([
+        'Agenda',
+      ]);
+      const points = agenda.elements.find((element) => element.role === 'outline')!;
+      expect(points.paragraphs).toEqual(['A', 'B', 'C']);
+      expect(points.live?.paragraphs.every((paragraph) => paragraph.bullet)).toBe(true);
+      const coloured = await quickly(
+        'Hintergrund von Folie 2 dunkelblau',
+        [{ slide: 2, background: '#1E3A8A', text_color: '#ffffff' }],
+        'Direkt umgesetzt: Hintergrund geändert und Schrift angepasst.',
+      );
+      expect(coloured.slides[1]!.background).toBe('#1e3a8a');
+      // Its texts light on it, each as the editor writes it.
+      expect(
+        coloured.slides[1]!.elements.flatMap((element) =>
+          (element.live?.paragraphs ?? []).flatMap((paragraph) =>
+            paragraph.runs.map((run) => run.color),
+          ),
+        ),
+      ).toEqual(['#ffffff', '#ffffff', '#ffffff', '#ffffff']);
+      const copied = await quickly(
+        'Folie 2 duplizieren',
+        [{ slide: 2, duplicate: true }],
+        'Direkt umgesetzt: Folie dupliziert.',
+      );
+      expect(copied.slides).toHaveLength(count + 2);
+      expect(
+        copied.slides[2]!.elements.find((element) => element.role === 'title')?.paragraphs,
+      ).toEqual(['Agenda']);
+      expect(copied.slides[2]!.background).toBe('#1e3a8a');
+      expect(anthropic.requests).toHaveLength(0);
       // Edits that do not fit the slide: the AI that designs does the request.
       anthropic.quick = [{ edits: [{ element: 'nope', bold: true }] }];
       anthropic.steps = [message([text('Erledigt.')], 'end_turn')];
@@ -1769,6 +1844,45 @@ describe('AI proposals', { timeout: 60_000 }, () => {
       expect(JSON.stringify(anthropic.requests.at(-1)!.messages)).toContain(
         'stopped by the people before you finished',
       );
+
+      // More than three requests in a thread (the stopped one not counted): a summary at its
+      // top, written anew after each further one settles – the root's, sent with the comments.
+      const rootId = running!.commentId!;
+      const rootOf = async () =>
+        (
+          (await (await ctx.request(`/api/decks/${deckId}/comments`)).json()) as {
+            id: string;
+            aiSummary?: { text: string; at: string } | null;
+          }[]
+        ).find((each) => each.id === rootId)!;
+      const askAgain = async (body: string) => {
+        anthropic.steps = [message([text(`${body} erledigt.`)], 'end_turn')];
+        const replyId = await comment(ctx, deckId, slide.slideId, body, rootId);
+        const res = await ctx.request(`/api/decks/${deckId}/ai/proposals`, {
+          method: 'POST',
+          json: { commentId: replyId },
+        });
+        expect(res.status).toBe(202);
+        await settled(ctx, deckId);
+      };
+      await askAgain('Und kürzer');
+      await askAgain('Jetzt fett');
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(anthropic.summaryRequests).toHaveLength(0);
+      expect((await rootOf()).aiSummary).toBeNull();
+      await askAgain('Und blau');
+      await vi.waitFor(async () => expect((await rootOf()).aiSummary?.text).toBe('Stand 1'), {
+        timeout: 5000,
+      });
+      const summaryAsk = JSON.stringify(anthropic.summaryRequests[0]);
+      expect(summaryAsk).toContain('Und blau');
+      expect(summaryAsk).toContain('Und blau erledigt.');
+      expect(summaryAsk).toContain('language of the');
+      await askAgain('Etwas größer');
+      await vi.waitFor(async () => expect((await rootOf()).aiSummary?.text).toBe('Stand 2'), {
+        timeout: 5000,
+      });
+      expect(anthropic.summaryRequests[0]!.model).toBe('claude-haiku-5-5');
     }
   });
 
@@ -1957,12 +2071,23 @@ describe('AI proposals', { timeout: 60_000 }, () => {
           writeShown(2, (xml) => xml.replace('>Agenda<', '>Heute<')),
           async () => {
             await handEdit(ctx, deckId, 1, 'Content 2', ['Von Hand']);
-            return message([text('Titel geändert.')], 'end_turn');
+            return message([toolUse('read_text', { slides: [2] })], 'tool_use');
           },
+          message([text('Titel geändert.')], 'end_turn'),
         ];
         await ask(ctx, deckId, state.slides[1]!.slideId, 'Anderer Titel');
         const done = await settled(ctx, deckId);
         expect(done).toMatchObject({ status: 'applied', error: null, summary: 'Titel geändert.' });
+        // Between its turns it heard what was changed meanwhile – at the end of its next input.
+        const content2 = state.slides[1]!.elements.find((element) => element.name === 'Content 2')!;
+        expect(JSON.stringify(anthropic.requests[1]!.messages)).not.toContain('Meanwhile');
+        const heard = anthropic.requests[2]!.messages.findLast((m) => m.role === 'user')!;
+        expect(JSON.stringify((heard.content as { type: string }[]).at(-1))).toContain(
+          `Meanwhile on the deck`,
+        );
+        expect(JSON.stringify(heard)).toContain(
+          `slide 2, element ${content2.id} (Content 2): text changed (Robert Hofmann)`,
+        );
         const merged = await editState(ctx, deckId);
         expect(paragraphsOf(merged, 1, 'Title 1')).toEqual(['Heute']);
         expect(paragraphsOf(merged, 1, 'Content 2')).toEqual(['Von Hand']);
@@ -2048,10 +2173,11 @@ describe('AI proposals', { timeout: 60_000 }, () => {
               },
               { timeout: 10_000, interval: 50 },
             );
-            return message([text('Rot.')], 'end_turn');
+            return message([toolUse('read_text', { slides: [2] })], 'tool_use');
           },
           writeShown(3, restyle, style('#0000ff')),
           message([text('Blau.')], 'end_turn'),
+          message([text('Rot.')], 'end_turn'),
         ];
         await ask(ctx, deckId, state.slides[1]!.slideId, 'Titel rot');
         await vi.waitFor(
@@ -2067,6 +2193,10 @@ describe('AI proposals', { timeout: 60_000 }, () => {
         );
         expect(JSON.stringify(anthropic.requests[2]!.messages[0])).toContain('slide 2: ');
         expect(JSON.stringify(anthropic.requests[2]!.messages[0])).toContain('Titel rot');
+        // … and the first, in its next turn, what the second did meanwhile.
+        expect(JSON.stringify(anthropic.requests[4]!.messages.at(-1))).toContain(
+          'slide 3: changed (request „Titel blau“ by Robert Hofmann)',
+        );
 
         // The second went in first with its name; the first's style got a name of its own.
         const content = await contentXml(ctx, deckId);

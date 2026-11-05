@@ -156,6 +156,8 @@ export function useTimelineWheel({
         return;
       }
       const target = event.target instanceof Element ? event.target : null;
+      // A panel over the slides that scrolls itself (the prompt on Folie 1): the browser scrolls it.
+      if (target?.closest('[data-own-wheel]')) return;
       const frame = frameOf(target);
       const zoom = frame && zoomIn(frame);
       const cover = frame && coverIn(frame);

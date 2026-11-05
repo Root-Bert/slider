@@ -14,6 +14,7 @@ import { KpiTile } from './KpiTile';
 /** How the dashboard names what the AI was used for, and its colour in the bar. */
 const FEATURES: Record<AiFeature, { label: string; color: string }> = {
   edit: { label: 'Folien ändern', color: 'bg-accent-blue' },
+  create: { label: 'Präsentationen erstellen', color: 'bg-sage' },
   voice: { label: 'Sprechen mit der KI', color: 'bg-accent-green' },
   live: { label: 'Live-Untertitel', color: 'bg-accent-cyan' },
   recording: { label: 'Aufnahmen abschreiben', color: 'bg-accent-yellow' },

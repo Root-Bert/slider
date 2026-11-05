@@ -8,17 +8,17 @@ import {
   type MouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { accentAlpha, accentColor } from '@/lib/accent';
+import { accentColor } from '@/lib/accent';
 import { cn, Icon } from '@/ui';
 import { FRAME_ATTR, resized, useRectEdit, type RectCorner } from './hooks/useRectEdit';
 import { focusCommentField, SEND_TO_AI } from '../comments/lib/composer-focus';
 import {
   MIN_TEXT_WIDTH,
   normalizeTextRect,
-  TEXT_BOX_LOOK,
   TEXT_BOX_RADIUS,
   TEXT_CLASS,
 } from './lib/text-box';
+import { textShadow, textSurface } from './lib/text-box-surface';
 import { NAME_TAG_CLASS } from './lib/mark-chrome';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, type TextBoxDraft, type TextBoxPatch } from '../state/viewer-state';
@@ -33,28 +33,6 @@ import { isModEnter, isModKey } from '@/lib/keyboard';
  * same way in both, centred horizontally and vertically in the box – and the sketch canvas draws
  * it from the same numbers.
  */
-
-const percent = (share: number) => `${Math.round(share * 100)}%`;
-
-/**
- * Dark like the rest of the app, readable on light and dark slides. The text is the author's
- * accent lifted towards white – pure blue or red alone is too dark on the dark backdrop.
- */
-const textSurface = (color: AuthorColor): CSSProperties => ({
-  color: `color-mix(in srgb, ${accentColor(color)} ${percent(TEXT_BOX_LOOK.textLift)}, white)`,
-  backgroundColor: `color-mix(in srgb, var(--color-glass-solid) ${percent(TEXT_BOX_LOOK.fillAlpha)}, transparent)`,
-});
-
-/**
- * Lifted off the slide while emphasised or dragged; a soft edge and shadow at rest. With its resize
- * brackets (`CornerBrackets`) their line is its edge.
- */
-const textShadow = (color: AuthorColor, lit: boolean, bracketed = false): string =>
-  bracketed
-    ? 'var(--shadow-mark)'
-    : lit
-      ? `0 0 0 2px ${accentColor(color)}, var(--shadow-mark)`
-      : `0 0 0 1px ${accentAlpha(color, Math.round(TEXT_BOX_LOOK.edgeAlpha * 100))}, 0 1px 4px var(--color-well-dark)`;
 
 /** Every corner of a text box resizes. */
 const ALL_CORNERS = CORNERS.map(({ corner }) => corner);
@@ -417,8 +395,21 @@ export function TextBoxField({
                   .querySelector<HTMLFormElement>('form[data-composer]')
                   ?.dispatchEvent(new Event(SEND_TO_AI));
               }
-              // ↵ and Tab jump to the composer's comment field (Shift+Tab there comes back);
-              // ⇧↵ is a new line.
+              // ↵ sends, as in the comment field (⇧↵ is a new line); Tab jumps to the composer's
+              // comment field (Shift+Tab there comes back).
+              if (
+                event.key === 'Enter' &&
+                !event.shiftKey &&
+                !isModKey(event) &&
+                !event.nativeEvent.isComposing
+              ) {
+                const form = document.querySelector<HTMLFormElement>('form[data-composer]');
+                if (form) {
+                  event.preventDefault();
+                  form.requestSubmit();
+                  return;
+                }
+              }
               const toComment =
                 (event.key === 'Tab' || event.key === 'Enter') &&
                 !event.shiftKey &&

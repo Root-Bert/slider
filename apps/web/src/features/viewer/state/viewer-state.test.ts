@@ -1,4 +1,4 @@
-import type { Anchor, Rect, Stroke } from '@slider/shared';
+import { threadForRequest, type Anchor, type Rect, type Stroke } from '@slider/shared';
 import type { Thread } from '../comments/lib/comment-selectors';
 import { workingThreadAt } from '../voice/lib/ai-additions';
 import { describe, expect, it } from 'vitest';
@@ -280,6 +280,39 @@ describe('viewerReducer', () => {
     expect(workingThreadAt(threads, new Set(['t3']), 'me', at(aiMoved.rect))).toBeNull();
     expect(workingThreadAt(threads, busy, 'me', at({ x: 0.8, y: 0.8, w: 0.1, h: 0.1 }))).toBeNull();
     expect(workingThreadAt(threads, busy, 'me', { ...at(rect.rect), slideId: 's2' })).toBeNull();
+    // A box for the AI over what an open thread is about (anyone's, at work or not) goes on in it:
+    // about the same area (strong overlap), the same element when both are bound – the closest,
+    // then the newest. Resolved threads, other elements, a loose overlap: a thread of its own.
+    const root = (id: string, at: Anchor, status: 'open' | 'done' = 'open', createdAt = '1') => ({
+      id,
+      slideId: 's1',
+      parentId: null,
+      status,
+      anchor: at,
+      createdAt,
+    });
+    const free = {
+      type: 'rect' as const,
+      rect: { x: 0.1, y: 0.1, w: 0.4, h: 0.2 },
+      shapeRef: null,
+    };
+    const near = { ...free, rect: { x: 0.12, y: 0.11, w: 0.38, h: 0.2 } };
+    const onE1 = { ...near, shapeRef: { shapeId: 'e1', offset: { x: 0.5, y: 0.5 } } };
+    const onE2 = { ...free, shapeRef: { shapeId: 'e2', offset: { x: 0.5, y: 0.5 } } };
+    expect(threadForRequest([root('a', free), root('b', free, 'open', '2')], 's1', near)?.id).toBe(
+      'b',
+    );
+    expect(threadForRequest([root('a', free, 'done')], 's1', near)).toBeNull();
+    expect(threadForRequest([root('a', onE2)], 's1', onE1)).toBeNull();
+    expect(threadForRequest([root('a', onE2)], 's1', near)?.id).toBe('a');
+    expect(
+      threadForRequest([root('a', free)], 's1', {
+        ...free,
+        rect: { x: 0.3, y: 0.1, w: 0.4, h: 0.2 },
+      }),
+    ).toBeNull();
+    expect(threadForRequest([root('a', free)], 's2', near)).toBeNull();
+    expect(threadForRequest([root('a', { type: 'slide' })], 's1', near)).toBeNull();
 
     // Strokes drawn for it and text written on the slide count as content.
     const drawn = run({ type: 'strokeAdded', slideId: 's1', stroke: stroke(0.1) });

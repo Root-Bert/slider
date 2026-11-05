@@ -1,9 +1,11 @@
+import { generatePicture } from '../src/services/image-generation';
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OdpDocument, OdpError } from '@slider/odp';
 import {
   applyEditResultSchema,
   deckEditStateSchema,
+  deckNotesSchema,
   deckSchema,
   integrationsSchema,
   slideLayersSchema,
@@ -24,7 +26,7 @@ import {
   toBase64,
 } from '@slider/shared/live-text';
 import * as Y from 'yjs';
-import { deckEdits, decks, revisions } from '../src/db/schema';
+import { aiUsage, deckEdits, decks, revisions, workspaceMembers } from '../src/db/schema';
 import { fromAddress, RecordingMailer, type Mailer } from '../src/mail/mailer';
 import { LiveHub } from '../src/realtime/live-hub';
 import { sweepOldEditImages } from '../src/services/old-edit-images';
@@ -1063,6 +1065,24 @@ describe('editing an ODP deck', () => {
     expect(square).toMatchObject({ width: 2, height: 2 });
     expect(asked.at(-1)?.body).toMatchObject({ size: '1024x1024' });
 
+    // The same image generated while building a deck belongs to creation usage.
+    await generatePicture(
+      ctx.deps,
+      { id: deck.id, workspaceId: ctx.workspaceId },
+      'A lighthouse',
+      1,
+      'create',
+    );
+    await ctx.deps.background?.idle();
+    expect(
+      await ctx.deps.db.select({ feature: aiUsage.feature, images: aiUsage.images }).from(aiUsage),
+    ).toEqual(
+      expect.arrayContaining([
+        { feature: 'image', images: 1 },
+        { feature: 'create', images: 1 },
+      ]),
+    );
+
     // FLUX: a task, asked about until it is ready, the picture fetched from where it lies.
     const flux = await addKey({ provider: 'black-forest-labs', apiKey: 'bfl-good-12345678' });
     const { id } = integrationsSchema
@@ -1149,6 +1169,38 @@ describe('editing an ODP deck', () => {
       { runs: [{ text: 'Pause.' }], list: { kind: 'bullet', level: 1 } },
     ]);
     expect(calls).toEqual([]);
+    // The notes are read by everyone who may open the deck (the presenter view) – a reviewer
+    // gets them, and nothing else of the edit state; strangers get nothing.
+    const reviewer = await signedInUser(ctx, { name: 'Rita', email: 'rita@example.org' });
+    await ctx.deps.db
+      .insert(workspaceMembers)
+      .values({ workspaceId: ctx.workspaceId, userId: reviewer.user.id, role: 'reviewer' });
+    const read = await ctx.request(`/api/decks/${deckId}/notes`, { cookie: reviewer.cookie });
+    expect(read.status).toBe(200);
+    const readNotes = deckNotesSchema.parse(await read.json());
+    expect(Object.keys(readNotes.slides[0]!).sort()).toEqual(['notes', 'slideId']);
+    expect(readNotes.slides[2]).toEqual({
+      slideId: noted.slides[2]!.slideId,
+      notes: 'Langsam.\nPause.',
+      notesRich: noted.slides[2]!.notesRich,
+    });
+    expect(
+      (await ctx.request(`/api/decks/${deckId}/edit`, { cookie: reviewer.cookie })).status,
+    ).toBe(403);
+    // Changing them stays with edit rights.
+    const refused = await ctx.request(`/api/decks/${deckId}/edit/operations`, {
+      method: 'POST',
+      json: {
+        operations: [{ type: 'setSlideNotes', pageId: pages[2]!, text: 'Nein' }],
+        baseSeq: noted.seq,
+      },
+      cookie: reviewer.cookie,
+    });
+    expect(refused.status).toBe(403);
+    const stranger = await signedInUser(ctx, { name: 'Tom', email: 'tom@example.org' });
+    expect(
+      (await ctx.request(`/api/decks/${deckId}/notes`, { cookie: stranger.cookie })).status,
+    ).toBe(404);
     // Taking its slide's place: the slide becomes the variant, comments stay with each.
     const swapped = applyEditResultSchema.parse(
       await (

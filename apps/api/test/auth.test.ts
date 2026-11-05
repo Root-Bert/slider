@@ -232,6 +232,51 @@ describe('sessions', () => {
     const { deckId } = await createReadyDeck(ctx);
     expect((await ctx.request(`/api/decks/${deckId}`)).status).toBe(401);
 
+    // Every registered private API route must authenticate, including newly added routes.
+    // Public login/contact endpoints and short-lived bearer-capability endpoints are separate.
+    const publicRoute = (method: string, route: string) =>
+      /^\/api\/(?:auth\/|setup(?:\/|$)|site-live(?:\/|$)|contact$|data-requests(?:\/|$)|join\/|billing\/webhook$|csp-report$|health$)/.test(
+        route,
+      ) ||
+      (method === 'GET' && route === '/api/legal') ||
+      (method === 'POST' &&
+        /^\/api\/live\/:key(?:\/leave|\/text\/:elementId(?:\/leave)?)?$/.test(route));
+    const privateRoutes = new Map(
+      ctx.app.routes
+        .filter(
+          (route) =>
+            /^(GET|POST|PUT|PATCH|DELETE)$/.test(route.method) &&
+            route.path.startsWith('/api/') &&
+            !publicRoute(route.method, route.path),
+        )
+        .map((route) => [`${route.method} ${route.path}`, route]),
+    );
+    expect(privateRoutes.size).toBeGreaterThan(100);
+    for (const route of privateRoutes.values()) {
+      const url = route.path.replace(
+        /:([A-Za-z0-9_]+)(?:\{([^}]+)\})?/g,
+        (_match, name: string, pattern: string | undefined) =>
+          pattern
+            ? pattern.split('|')[0]!
+            : name === 'deckId'
+              ? deckId
+              : name === 'part'
+                ? 'file'
+                : '00000000-0000-4000-8000-000000000001',
+      );
+      const response = await ctx.request(url, {
+        method: route.method,
+        headers: { 'Tus-Resumable': '1.0.0' },
+      });
+      expect(response.status, `${route.method} ${route.path} must require a session`).toBe(401);
+      if (route.method === 'GET')
+        expect(
+          (await ctx.request(url, { method: 'HEAD', headers: { 'Tus-Resumable': '1.0.0' } }))
+            .status,
+          `HEAD ${route.path}`,
+        ).toBe(401);
+    }
+
     const { user, cookie } = await signedInUser(ctx, {
       name: 'Robert Hofmann',
       email: 'robert@example.org',

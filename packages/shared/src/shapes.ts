@@ -1,5 +1,5 @@
 import { offsetInRect, pointInRect, rectArea, rectCenter, type Point, type Rect } from './geometry';
-import type { Guide, Shape, ShapeRef } from './model';
+import type { Anchor, Guide, Shape, ShapeRef } from './model';
 import { DEFAULT_ASPECT, turnedBoxContains, type TurnedBox } from './turned-box';
 
 /**
@@ -195,4 +195,63 @@ export function guideOverflows(
     if (overflow.length > 0) result.push({ shape, overflow });
   }
   return result;
+}
+
+/** Intersection over union of two boxes: 1 the same, 0 apart. */
+export function boxOverlap(a: Rect, b: Rect): number {
+  const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+  const h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+  if (w <= 0 || h <= 0) return 0;
+  const common = w * h;
+  return common / (rectArea(a) + rectArea(b) - common);
+}
+
+/** From this overlap on, a box for the AI is about the same area as a thread's box. */
+export const SAME_AREA_OVERLAP = 0.6;
+
+/** What {@link threadForRequest} reads of a root comment. */
+export interface RequestThreadRoot {
+  id: string;
+  slideId: string | null;
+  parentId: string | null;
+  status: 'open' | 'done';
+  anchor: Anchor;
+  createdAt: string | Date;
+}
+
+/**
+ * The open thread a new request to the AI on `slideId` (speaking to it, a box for it) belongs
+ * to – it goes there as a reply, the thread its context – or `null`: a new thread. Kept narrow:
+ * only a box (its shape where it is bound to one, `shapes` given) that covers about the same area
+ * as a thread's single box on the same slide, both bound to the same element if both are bound.
+ * Resolved threads stay closed; the closest match wins, then the newest.
+ */
+export function threadForRequest<T extends RequestThreadRoot>(
+  roots: readonly T[],
+  slideId: string | null,
+  anchor: Anchor,
+  shapes: readonly Shape[] = [],
+): T | null {
+  if (anchor.type !== 'rect' || anchor.more?.length || slideId === null) return null;
+  const at = (rect: Rect, ref: ShapeRef | null) =>
+    ref && shapes.length > 0 ? resolveRectAnchor(shapes, rect, ref) : rect;
+  const box = at(anchor.rect, anchor.shapeRef);
+  let best: { root: T; overlap: number; time: number } | null = null;
+  for (const root of roots) {
+    const other = root.anchor;
+    if (root.parentId !== null || root.status !== 'open' || root.slideId !== slideId) continue;
+    if (other.type !== 'rect' || other.more?.length) continue;
+    if (anchor.shapeRef && other.shapeRef && anchor.shapeRef.shapeId !== other.shapeRef.shapeId)
+      continue;
+    const overlap = boxOverlap(box, at(other.rect, other.shapeRef));
+    if (overlap < SAME_AREA_OVERLAP) continue;
+    const time = new Date(root.createdAt).getTime();
+    if (
+      !best ||
+      overlap > best.overlap + 1e-6 ||
+      (Math.abs(overlap - best.overlap) <= 1e-6 && time > best.time)
+    )
+      best = { root, overlap, time };
+  }
+  return best?.root ?? null;
 }

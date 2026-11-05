@@ -2,9 +2,13 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { deckSchema, integrationsSchema } from '@slider/shared';
-import { instanceSettings, integrationKeys, workspaces } from '../src/db/schema';
+import { aiUsage, instanceSettings, integrationKeys, workspaces } from '../src/db/schema';
 import { keyProblem, ProviderHttpError, transcribe } from '../src/services/ai-providers';
-import { workspaceAiConnection, workspaceSpeechConnection } from '../src/services/integration-keys';
+import {
+  aiConnectionFor,
+  workspaceAiConnection,
+  workspaceSpeechConnection,
+} from '../src/services/integration-keys';
 import { photoSource, searchPhotos } from '../src/services/stock-photos';
 import { createReadyDeck, createTestContext, type TestContext } from './helpers';
 
@@ -87,7 +91,7 @@ const connection = { provider: 'gemini' as const, baseUrl: null };
 describe('a workspace’s AI keys', () => {
   it('stores several keys, one active, each on a model its provider offers – a refused one asked again', async () => {
     {
-      const { call, keys } = await setup();
+      const { ctx: context, call, keys } = await setup();
       expect(await keys()).toEqual([]);
 
       // The first key is checked, starts on the recommended model and becomes the active one.
@@ -128,6 +132,35 @@ describe('a workspace’s AI keys', () => {
       expect(
         (await call(`/keys/${gemini.id}`, { method: 'PATCH', json: { model: 'gpt-5.5' } })).status,
       ).toBe(400);
+
+      // Creating decks: none of its own runs on the one model; one set, saved and used for it
+      // only – each request written down as `create`; none it does not offer; `null` back.
+      const runsOn = async (purpose: 'review' | 'create') =>
+        (await aiConnectionFor(context.deps, context.workspaceId, purpose)).connection;
+      expect((await keys())[0]!.createModel).toBeNull();
+      expect((await runsOn('create'))?.model).toBe('gemini-3.0-flash');
+      await call(`/keys/${gemini.id}`, {
+        method: 'PATCH',
+        json: { createModel: 'gemini-3.0-pro' },
+      });
+      expect((await keys())[0]).toMatchObject({
+        model: 'gemini-3.0-flash',
+        createModel: 'gemini-3.0-pro',
+      });
+      expect((await runsOn('review'))?.model).toBe('gemini-3.0-flash');
+      const creating = await runsOn('create');
+      expect(creating?.model).toBe('gemini-3.0-pro');
+      creating?.meter?.({ feature: 'edit', model: 'gemini-3.0-pro', inputTokens: 5 });
+      await context.deps.background?.idle();
+      expect(
+        (await context.deps.db.select().from(aiUsage)).map((row) => [row.feature, row.model]),
+      ).toEqual([['create', 'gemini-3.0-pro']]);
+      expect(
+        (await call(`/keys/${gemini.id}`, { method: 'PATCH', json: { createModel: 'gpt-5.5' } }))
+          .status,
+      ).toBe(400);
+      await call(`/keys/${gemini.id}`, { method: 'PATCH', json: { createModel: null } });
+      expect((await runsOn('create'))?.model).toBe('gemini-3.0-flash');
 
       // Removing the active one leaves the AI off until another is set active.
       await call(`/keys/${gemini.id}`, { method: 'DELETE' });
@@ -496,7 +529,13 @@ describe('the instance’s integrations', () => {
       ).toBe(200);
       const exceptions = integrationsSchema.parse((await instance('')).body).areas.ai.exceptions;
       expect(exceptions).toEqual([
-        { workspaceId: context.workspaceId, name: expect.any(String), rule: pick, model: null },
+        {
+          workspaceId: context.workspaceId,
+          name: expect.any(String),
+          rule: pick,
+          model: null,
+          createModel: null,
+        },
       ]);
       expect((await call('/instance/ai/models')).body).toMatchObject({
         models: [{ id: 'claude-opus-5-5' }, { id: 'claude-sonnet-5-5' }],
@@ -510,6 +549,25 @@ describe('the instance’s integrations', () => {
         inherited: { model: 'claude-opus-5-5', defaultModel: 'claude-sonnet-5-5' },
       });
       expect(await runsOn()).toMatchObject({ provider: 'anthropic', model: 'claude-opus-5-5' });
+
+      // Its model to create decks on, picked apart: saved with the model, and without it again
+      // decks are created on the model it runs on.
+      const creates = async () =>
+        (await aiConnectionFor(context.deps, context.workspaceId, 'create')).connection?.model;
+      expect(await creates()).toBe('claude-opus-5-5');
+      await call('/instance/ai/model', {
+        method: 'PUT',
+        json: { createModel: 'claude-sonnet-5-5' },
+      });
+      expect((await integrations()).areas.ai.inherited).toMatchObject({
+        model: 'claude-opus-5-5',
+        createModel: 'claude-sonnet-5-5',
+        defaultCreateModel: null,
+      });
+      expect(await creates()).toBe('claude-sonnet-5-5');
+      expect((await runsOn())?.model).toBe('claude-opus-5-5');
+      await call('/instance/ai/model', { method: 'PUT', json: { createModel: null } });
+      expect(await creates()).toBe('claude-opus-5-5');
 
       // Another key of the instance: its model applies again.
       await instance('/keys', {
@@ -582,6 +640,27 @@ describe('the instance’s integrations', () => {
         (await call('/instance/ai/model', { method: 'PUT', json: { model: 'claude-sonnet-5-5' } }))
           .status,
       ).toBe(403);
+
+      // The model to create decks on, fixed apart beside it – the other model kept; only for
+      // the AI.
+      const creates = async () =>
+        (await aiConnectionFor(context.deps, context.workspaceId, 'create')).connection?.model;
+      await apart({ rule: fixed, createModel: 'claude-sonnet-5-5' });
+      expect(
+        integrationsSchema.parse((await instance('')).body).areas.ai.exceptions[0],
+      ).toMatchObject({ model: 'claude-opus-5-5', createModel: 'claude-sonnet-5-5' });
+      expect(await creates()).toBe('claude-sonnet-5-5');
+      expect(await runsOn()).toMatchObject({ model: 'claude-opus-5-5' });
+      expect(
+        (
+          await instance('/speech', {
+            method: 'PATCH',
+            json: { workspaceId: context.workspaceId, rule: fixed, createModel: 'x' },
+          })
+        ).status,
+      ).toBe(400);
+      await apart({ rule: fixed, createModel: null });
+      expect(await creates()).toBe('claude-opus-5-5');
 
       // Model free: the instance's is the default – a pick of the workspace goes before it.
       const pick = { ownKeys: false, inherit: 'key' };
@@ -758,6 +837,8 @@ describe('the instance’s integrations', () => {
         provider: 'self-hosted',
         model: 'whisper-large-v3-turbo',
         defaultModel: 'whisper-large-v3-turbo',
+        createModel: null,
+        defaultCreateModel: null,
       });
       const ofInstance = integrationsSchema.parse((await instance('')).body);
       expect(ofInstance.areas.speech.inherited).toBeNull();

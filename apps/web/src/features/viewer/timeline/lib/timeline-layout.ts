@@ -137,29 +137,45 @@ export interface TrackLayout {
   contentW: number;
   /** Extra slot after the last divider – the "Gelöschte Folien" entry (BER-109). */
   trailing?: { x: number; w: number };
+  /** Folie 0, „Material“: the deck's board before the first slide, a divider's width apart. */
+  leading?: { x: number; w: number };
 }
 
 /** Width of the "Gelöschte Folien" slot at the end of a track of slide height `h`. */
 export const trailingWidth = (h: number) => Math.round(Math.min(260, Math.max(112, h * 0.6)));
+
+/** Width of the board (Folie 0) on a track of slide height `h`: a 16:9 slide's. */
+export const leadingWidth = (h: number) => Math.round((h * 16) / 9);
 
 export function layoutTrack(
   aspectRatios: readonly number[],
   h: number,
   /** Width of a slot after the last slide's divider; 0 = none. */
   trailingW = 0,
+  /** Width of the board before the first slide (Folie 0); 0 = none. */
+  leadingW = 0,
 ): TrackLayout {
   const g = gapWidth(h);
   const slides: TrackLayout['slides'] = [];
   const gaps: TrackLayout['gaps'] = [];
-  let x = TRACK_PAD_X;
+  const leading = leadingW > 0 ? { x: TRACK_PAD_X, w: leadingW } : undefined;
+  let x = TRACK_PAD_X + (leading ? leadingW + g : 0);
   for (const ar of aspectRatios) {
     const w = h * ar;
     slides.push({ x, w });
     gaps.push({ x: x + w, w: g });
     x += w + g;
   }
-  if (trailingW <= 0) return { h, slides, gaps, contentW: x + TRACK_PAD_X };
-  return { h, slides, gaps, trailing: { x, w: trailingW }, contentW: x + trailingW + TRACK_PAD_X };
+  const lead = leading ? { leading } : {};
+  if (trailingW <= 0) return { h, slides, gaps, contentW: x + TRACK_PAD_X, ...lead };
+  return {
+    h,
+    slides,
+    gaps,
+    trailing: { x, w: trailingW },
+    contentW: x + trailingW + TRACK_PAD_X,
+    ...lead,
+  };
 }
 
 /** Share of a slot (slide + gap) in unit space that belongs to the slide. */
@@ -213,7 +229,7 @@ export function anchoredScrollLeft(
   return clampScroll(xAt(next, unitAt(prev, contentX)) - viewportX, next, viewportW);
 }
 
-export type RevealAlign = 'nearest' | 'center' | 'start';
+export type RevealAlign = 'nearest' | 'center' | 'start' | 'end';
 /** Margin kept around a slide revealed with `nearest`. */
 export const REVEAL_MARGIN = 48;
 
@@ -229,6 +245,7 @@ export function revealScrollLeft(
   let left = scrollLeft;
   if (align === 'center') left = slide.x + slide.w / 2 - viewportW / 2;
   else if (align === 'start') left = slide.x - TRACK_PAD_X;
+  else if (align === 'end') left = slide.x + slide.w + TRACK_PAD_X - viewportW;
   else {
     const margin = Math.min(REVEAL_MARGIN, Math.max(0, (viewportW - slide.w) / 2));
     if (slide.x < scrollLeft + margin) left = slide.x - margin;

@@ -40,6 +40,7 @@ import { useCommentMenu } from './hooks/useCommentMenu';
 import { useCommentSelection } from './comment-selection';
 import { useCommentProposals } from './hooks/useCommentProposals';
 import { AiProposalCard } from './AiProposalCard';
+import { ThreadSummary } from './ThreadSummary';
 import { ReactionChips, ReactionPicker } from './Reactions';
 
 export type CardEmphasis = 'normal' | 'focused' | 'hovered' | 'dimmed';
@@ -207,6 +208,7 @@ export const CommentCard = memo(function CommentCard({
             bodyClassName={cn(removed && 'text-fg-subtle line-through decoration-fg-faint')}
           />
           <ReactionChips comment={root} />
+          {root.aiSummary && <ThreadSummary summary={root.aiSummary} compact />}
           {stacked && (
             <footer className="flex items-center gap-2 pt-0.5">
               <AvatarStack authors={thread.repliers} size={16} max={3} />
@@ -414,13 +416,14 @@ function ReplyBar({
           : 'invisible opacity-0 group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100',
       )}
     >
-      <div className="relative flex min-w-0 flex-1 flex-col gap-1.5 py-[5px]">
+      <div className="relative flex min-w-0 flex-1 flex-col gap-1.5 overflow-hidden py-[5px]">
         {voice.on && (
           <VoiceMemoBar
             onChange={voice.onChange}
             onRecordingChange={voice.onRecordingChange}
             onDiscard={voice.discard}
             onSend={(options) => submit(undefined, options)}
+            onSendNow={voice.sendNow}
             disabled={uploading}
           />
         )}
@@ -446,7 +449,7 @@ function ReplyBar({
           />
         )}
       </div>
-      {hasDraft && (
+      {hasDraft && !voice.running && (
         <IconButton
           type="submit"
           icon="arrowUpward"
@@ -458,9 +461,15 @@ function ReplyBar({
           disabled={!canSend}
         />
       )}
-      <MediaReplyButtons root={root} voice={voice} />
-      <ToolbarDivider size="sm" className="mb-1.5" />
-      <ResolveButton comment={root} deckId={deckId} />
+      {/* The memo has the row: its own pause, send and bin – the other kinds and Erledigen come
+          back once it is sent or dropped. */}
+      {!voice.on && (
+        <>
+          <MediaReplyButtons root={root} voice={voice} />
+          <ToolbarDivider size="sm" className="mb-1.5" />
+          <ResolveButton comment={root} deckId={deckId} />
+        </>
+      )}
     </form>
   );
 }

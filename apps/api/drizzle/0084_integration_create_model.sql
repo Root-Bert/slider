@@ -1,0 +1,1 @@
+ALTER TABLE "integration_keys" ADD COLUMN "create_model" text;

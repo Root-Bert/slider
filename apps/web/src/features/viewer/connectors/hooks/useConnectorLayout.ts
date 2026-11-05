@@ -59,6 +59,8 @@ export interface ConnectorLayout {
 /** What React renders per line; its geometry is written straight to the DOM (see below). */
 export type ConnectorLine = Omit<MeasuredConnector, 'd'>;
 
+/** How far above a gap comment's card its line turns towards it. */
+const GAP_TURN = 12;
 const EMPTY: ConnectorLayout = { lines: [], height: 0, cutouts: [] };
 const NO_LINES: ConnectorLine[] = [];
 
@@ -266,22 +268,32 @@ export function useConnectorLayout({
         const requests: ConnectorRequest[] = [];
         for (const item of route.items) {
           if (item.source.kind === 'gap') {
-            // Straight down the divider from its marker to the gap bubble.
+            // Down the divider from its marker, then across to its card in the slide's column
+            // (or to the column's bubble while the cards don't fit).
             const marker = nextGap?.querySelector('[data-gap-marker]');
-            const bubble = scroller.querySelector(
-              `[data-gap-bubble="${CSS.escape(item.source.gapKey)}"]`,
-            );
-            if (!marker || !bubble) continue;
+            const card = cards.get(item.threadId);
+            if (!marker || (!card && !blob)) continue;
             const x = centreX(marker, origin);
             const from = marker.getBoundingClientRect().bottom - origin.top;
-            const box = relative(bubble.getBoundingClientRect(), origin);
-            if (box.top < commentTop + VISIBLE_SLACK) continue;
+            const target = card
+              ? { x: card.left + (compact ? COMPACT_ENTRY_X : CARD_ENTRY_X), y: card.top }
+              : { x: (blob!.left + blob!.right) / 2, y: blob!.top };
+            if (target.y < commentTop + VISIBLE_SLACK) continue;
+            const turn = target.y - GAP_TURN;
             connectors.push({
               id: item.threadId,
-              points: [
-                { x, y: from },
-                { x, y: box.top },
-              ],
+              points:
+                Math.abs(target.x - x) < 1
+                  ? [
+                      { x, y: from },
+                      { x, y: target.y },
+                    ]
+                  : [
+                      { x, y: from },
+                      { x, y: turn },
+                      { x: target.x, y: turn },
+                      { x: target.x, y: target.y },
+                    ],
             });
             continue;
           }

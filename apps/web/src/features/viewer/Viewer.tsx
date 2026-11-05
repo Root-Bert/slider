@@ -3,6 +3,7 @@ import { ctrlClickIsClick } from '@/lib/dom';
 import { cn, Toast, Toolbar, ToolbarDivider, useFullscreen, useToast } from '@/ui';
 import { CommentFilterBar } from './comments/CommentFilterBar';
 import { Composer } from './comments/Composer';
+import { CreationProgress } from './creation/CreationProgress';
 import { MediaReplyDialog } from './comments/MediaTabs';
 import { useAskAiShortcut } from './comments/hooks/useAskAiShortcut';
 import { useThreadZoom } from './comments/hooks/useThreadZoom';
@@ -28,6 +29,9 @@ import { CursorLayer } from './live/CursorLayer';
 import { useLive } from './live/hooks/useLive';
 import { PresentButton } from './presentation/PresentButton';
 import { PresentationMode } from './presentation/PresentationMode';
+import { PresenterView } from './presentation/PresenterView';
+import { AudienceShow } from './presentation/AudienceShow';
+import { useIsAudienceWindow } from './presentation/show-hooks';
 import { EditingProvider } from './editing/EditingProvider';
 import { FillRefresh } from './editing/fills/FillRefresh';
 import { TiltRefreshes } from './editing/tilt/TiltRefreshes';
@@ -58,6 +62,11 @@ const CONTROLS_ID = 'viewer-controls';
  * floating controls and panels stay visible in fullscreen.
  */
 export function Viewer() {
+  // Opened from the presenter view: the audience's slide show alone.
+  return useIsAudienceWindow() ? <AudienceShow /> : <ViewerMain />;
+}
+
+function ViewerMain() {
   const rootRef = useRef<HTMLDivElement>(null);
   const { deck, slideIndex } = useViewerData();
   const viewerState = useViewerState();
@@ -69,18 +78,24 @@ export function Viewer() {
   // Where the find bar docks: the split handle's spot (desktop), `null` on a phone.
   const [findSlot, setFindSlot] = useState<HTMLElement | null>(null);
 
-  // The slide show (P, or the button in the deck pill): over everything, back on its last slide.
-  const [presenting, setPresenting] = useState(false);
+  // The slide show (P, or the button in the deck pill) or the presenter view (⌥P, its right-click
+  // menu): over everything, back on its last slide.
+  const [presenting, setPresenting] = useState<'show' | 'presenter' | null>(null);
   const goTo = useGoToSlide();
-  const startPresenting = () => setPresenting(true);
+  const startPresenting = () => setPresenting('show');
+  const startPresenterView = () => setPresenting('presenter');
   const stopPresenting = (slideId: string | null) => {
-    setPresenting(false);
+    setPresenting(null);
     const index = slideId ? slideIndex.get(slideId) : undefined;
     if (index !== undefined) goTo(index);
   };
 
   // No button any more – F still toggles fullscreen (the hook is all it costs).
-  useViewerShortcuts({ onToggleFullscreen: toggleFullscreen, onPresent: startPresenting });
+  useViewerShortcuts({
+    onToggleFullscreen: toggleFullscreen,
+    onPresent: startPresenting,
+    onPresenterView: startPresenterView,
+  });
   useSlideUrlSync(activeSlideId);
   useThreadHover();
   useLive();
@@ -131,7 +146,10 @@ export function Viewer() {
                       <Toolbar role={false} className="shrink-0">
                         <MinimapToggle />
                         <WideFramesToggle />
-                        <PresentButton onPresent={startPresenting} />
+                        <PresentButton
+                          onPresent={startPresenting}
+                          onPresenterView={startPresenterView}
+                        />
                         <ShareButton />
                         <ToolbarDivider />
                         {/* Gives way on a narrow band, with its divider. */}
@@ -153,6 +171,8 @@ export function Viewer() {
               <CursorLayer />
 
               <Composer />
+              {/* A new deck built by the AI from Folie 1's prompt: its progress, bottom left. */}
+              <CreationProgress />
               <AskAiShortcut />
               <ThreadZoom />
               <ThreadPanel />
@@ -180,8 +200,11 @@ export function Viewer() {
               <LeaveGuard />
               {/* Above the thread panel and popovers (`--z-toast`). */}
               <Toast toast={toast} />
-              {presenting && (
+              {presenting === 'show' && (
                 <PresentationMode startSlideId={activeSlideId} onExit={stopPresenting} />
+              )}
+              {presenting === 'presenter' && (
+                <PresenterView startSlideId={activeSlideId} onExit={stopPresenting} />
               )}
             </div>
           </VoiceProvider>

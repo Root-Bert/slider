@@ -92,16 +92,19 @@ export function ReactionChips({
 }
 
 /**
- * 👍 / 👎 / egal floating after the time in the author line while the message is hovered or has
+ * 👍 / 👎 / egal floating above the author line while the message is hovered or has
  * focus (thread panel, cards) – the chips under the text then only show what was picked. Needs a
  * `group/message` ancestor.
  */
 export function ReactionPicker({
   comment,
-  className = '-top-2.5 left-2',
+  className = 'bottom-full left-0 mb-1',
 }: {
   comment: Comment;
-  /** Where it floats; by default just after the time in the author line (`afterTime`), a little above it. */
+  /**
+   * Where it floats; by default above the author line, starting after the time (`afterTime`) – on
+   * the line itself it covered the line's own buttons (✨, Erledigen) in a narrow card.
+   */
   className?: string;
 }) {
   const { mine, canReact, toggle } = useCommentReaction(comment);

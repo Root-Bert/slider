@@ -33,6 +33,11 @@ if grep -qx website <<<"$services" &&
   ! docker image inspect slider-website:local >/dev/null 2>&1; then
   docker compose build website
 fi
+# Speech to text on this server (COMPOSE_PROFILES=stt in deploy/.env): its image holds the model,
+# so it is built once and kept – `up --no-build` below would fail without it.
+if grep -qx stt <<<"$services" && ! docker image inspect slider-stt:local >/dev/null 2>&1; then
+  docker compose build stt
+fi
 docker compose up -d --no-build --remove-orphans
 
 echo "→ waiting for Slider"

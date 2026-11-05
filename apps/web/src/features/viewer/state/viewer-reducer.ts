@@ -43,6 +43,7 @@ export function createInitialState(options: {
     showLayoutGrid: false,
     layoutGridPanelOpen: false,
     sharePanelOpen: false,
+    boardPanelOpen: false,
     layoutGridAxis: null,
     showHiddenSlides: options.showHiddenSlides ?? false,
     showMinimap: options.showMinimap ?? true,
@@ -224,6 +225,22 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
         : next.deletedPanelOpen
           ? { ...next, deletedPanelOpen: false }
           : next;
+    case 'boardPanelSet':
+      if (action.open === next.boardPanelOpen) return next;
+      return action.open
+        ? {
+            ...next,
+            boardPanelOpen: true,
+            threadPanelOpen: false,
+            focusedThreadId: null,
+            editingCommentId: null,
+            deletedPanelOpen: false,
+            layersPanelOpen: false,
+            backgroundPanelPageId: null,
+            layoutGridPanelOpen: false,
+            sharePanelOpen: false,
+          }
+        : { ...next, boardPanelOpen: false };
     case 'sharePanelSet':
       if (action.open === next.sharePanelOpen) return next;
       return action.open

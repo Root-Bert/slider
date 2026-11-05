@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
-  type ReactNode,
 } from 'react';
 import {
   Button,
@@ -43,6 +42,11 @@ interface RecorderPanelProps {
    * recorder was opened by a mic beside a field, the bin takes that mic's place.
    */
   onDiscard?: () => void;
+  /**
+   * Sends while recording: the take ends and goes at once (the composer sends it, to the AI where
+   * there is one). Without it the running take has a stop button there instead.
+   */
+  onSend?: { run: (askAi: boolean) => void; ai: boolean };
 }
 
 const NO_SCREEN = 'Bildschirm teilen geht in diesem Browser nicht';
@@ -96,6 +100,7 @@ function RecorderBody({
   autoStart = false,
   autoFocus = false,
   onDiscard,
+  onSend,
   source,
   onSourceChange,
 }: RecorderPanelProps & {
@@ -184,7 +189,7 @@ function RecorderBody({
     />
   );
 
-  // Audio: a bar of its own. Video: in the middle of the preview – the picture to come is the start.
+  // A bar of its own, as wide as the panel – under the preview for video, as the panels' buttons.
   const startButton = (
     <Button
       ref={recordButtonRef}
@@ -192,7 +197,7 @@ function RecorderBody({
       onClick={() => void start()}
       disabled={state.status === 'requesting'}
       title="Aufnahme starten (Leertaste)"
-      className={kind === 'audio' ? 'w-full' : 'shadow-float'}
+      className="w-full"
     >
       {state.status === 'requesting' ? (
         <Spinner size={16} />
@@ -244,13 +249,9 @@ function RecorderBody({
       )}
 
       {kind === 'video' && !recording && state.status !== 'error' && (
-        <CameraPreview
-          stream={stream}
-          source={source}
-          recording={recordingNow}
-          start={recordingNow ? null : startButton}
-        />
+        <CameraPreview stream={stream} source={source} recording={recordingNow} />
       )}
+      {kind === 'video' && !recording && !recordingNow && state.status !== 'error' && startButton}
 
       {state.status === 'error' ? (
         <div className="flex items-start gap-2 rounded-control-sm bg-danger/10 px-3 py-2">
@@ -283,20 +284,13 @@ function RecorderBody({
           </div>
         </div>
       ) : recordingNow ? (
-        <div className="flex items-center gap-3 rounded-control bg-well-dark py-1.5 pr-3 pl-1.5">
+        // Pause on the left, send (or stop) on the right – nothing to throw the take away while it
+        // runs: Abbrechen does that.
+        <div className="flex items-center gap-3 rounded-control bg-well-dark py-1.5 pr-1.5 pl-1.5">
           <IconButton
             ref={recordButtonRef}
-            variant="danger"
-            size="lg"
-            shape="round"
-            icon="stop"
-            label="Aufnahme beenden"
-            title="Aufnahme beenden (↵)"
-            onClick={stop}
-          />
-          <IconButton
-            size="compact"
-            shape="round"
+            size="sm"
+            variant="subtle"
             icon={paused ? 'playArrow' : 'pause'}
             label={paused ? 'Aufnahme fortsetzen' : 'Aufnahme pausieren'}
             title={paused ? 'Fortsetzen (Leertaste)' : 'Pausieren (Leertaste)'}
@@ -312,7 +306,43 @@ function RecorderBody({
           >
             {formatDuration(elapsedMs)} / {formatDuration(MAX_MEDIA_DURATION_MS)}
           </span>
-          {discard}
+          {onSend ? (
+            // As the composer's own: ✨ sends and asks the AI, the arrow only sends.
+            <span className="flex shrink-0 items-center gap-1">
+              {onSend.ai && (
+                <IconButton
+                  size="sm"
+                  icon="autoAwesome"
+                  label="Senden und die KI die Folie ändern lassen"
+                  title="Senden und an die KI geben"
+                  onClick={() => {
+                    stop();
+                    onSend.run(true);
+                  }}
+                />
+              )}
+              <IconButton
+                size="sm"
+                variant="primary"
+                icon="send"
+                label="Senden"
+                title="Senden"
+                onClick={() => {
+                  stop();
+                  onSend.run(false);
+                }}
+              />
+            </span>
+          ) : (
+            <IconButton
+              variant="danger"
+              size="sm"
+              icon="stop"
+              label="Aufnahme beenden"
+              title="Aufnahme beenden (↵)"
+              onClick={stop}
+            />
+          )}
         </div>
       ) : (
         kind === 'audio' && startButton
@@ -354,20 +384,17 @@ export function LiveLevels({ levels, paused }: { levels: readonly number[]; paus
 }
 
 /**
- * The picture to come, and before the take its start in the middle: the camera live (alone or as
- * the bubble of „Beides“), the screen only once it is picked at the start.
+ * The picture to come: the camera live (alone or as the bubble of „Beides“), the screen only once
+ * it is picked at the start.
  */
 function CameraPreview({
   stream,
   source,
   recording,
-  start,
 }: {
   stream: MediaStream | null;
   source: VideoSource;
   recording: boolean;
-  /** The start button, shown over the picture until the take begins. */
-  start: ReactNode;
 }) {
   // A callback ref: the preview's video element changes between the full frame and the bubble.
   const videoRef = useCallback(
@@ -406,18 +433,16 @@ function CameraPreview({
           )}
         </div>
       )}
-      {start && (
+      {screenToCome && (
         <div
           className={cn(
-            'absolute inset-0 flex flex-col items-center gap-2',
+            'absolute inset-0 flex flex-col items-center gap-1.5 text-fg-subtle',
             // Above the bubble of „Beides“, in the middle otherwise.
-            bubbleOnly ? 'justify-start pt-[9%]' : 'justify-center',
+            bubbleOnly ? 'justify-start pt-[12%]' : 'justify-center',
           )}
         >
-          {start}
-          {screenToCome && (
-            <span className="text-caption text-fg-subtle">Bildschirm wählst du beim Start</span>
-          )}
+          <Icon name="screenShare" size={22} />
+          <span className="text-caption">Bildschirm wählst du beim Start</span>
         </div>
       )}
     </div>

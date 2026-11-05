@@ -20,6 +20,7 @@ import { useViewerDispatch, type Draft } from '../state/viewer-state';
 import { useViewerToast } from '../state/viewer-toast';
 import { VoiceAvatar } from '../voice/VoiceBar';
 import { useVoice } from '../voice/voice-context';
+import { useHeardWords } from '../voice/hooks/useHeardWords';
 import { runningIn, type SendAiBox } from './hooks/useSendAiBox';
 import { useComposerPosition } from './hooks/useComposerPosition';
 import { useFloatingFollow } from './hooks/useFloatingFollow';
@@ -47,18 +48,7 @@ export function AiBoxComposer({ draft, onSend }: { draft: Draft; onSend: SendAiB
   const [body, setBody] = useState('');
 
   // What the live stream hears from now on is the box's: taken into the field as it comes.
-  const taken = useRef(voice.heard().length);
-  const heard = voice.live?.text ?? '';
-  useEffect(() => {
-    if (heard.length < taken.current) taken.current = heard.length;
-    if (heard.length === taken.current) return;
-    const words = heard.slice(taken.current);
-    taken.current = heard.length;
-    setBody((now) => {
-      if (!now.trim()) return words.trimStart();
-      return /\s$/.test(now) || /^\s/.test(words) ? now + words : `${now} ${words}`;
-    });
-  }, [heard]);
+  useHeardWords(setBody);
 
   const text = body.trim();
   // Sent, dropped (Esc) or its request stopped: nothing more to send as it closes.

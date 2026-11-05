@@ -105,14 +105,18 @@ export function useRemoveIntegrationKey(workspaceId: string | null) {
   });
 }
 
-/** The model a workspace runs the instance's key on; `null`: the instance's. */
+/**
+ * The model a workspace runs the instance's key on, or (AI) creates decks on; `null`: the
+ * instance's.
+ */
 export function useSetInheritedModel(workspaceId: string | null) {
   const settle = useSettle(workspaceId);
   return useMutation({
-    mutationFn: ({ kind, model }: SetInheritedModelInput & { kind: IntegrationKind }) =>
-      api.put<Integrations>(`/workspaces/${workspaceId}/integrations/instance/${kind}/model`, {
-        model,
-      }),
+    mutationFn: ({ kind, ...input }: SetInheritedModelInput & { kind: IntegrationKind }) =>
+      api.put<Integrations>(
+        `/workspaces/${workspaceId}/integrations/instance/${kind}/model`,
+        input,
+      ),
     onSuccess: settle,
   });
 }
@@ -133,6 +137,8 @@ export function useSetIntegrationPolicy() {
       rule: IntegrationRule | null;
       /** A workspace apart: the model of the instance's active key there; `null` its own. */
       model?: string | null;
+      /** A workspace apart (AI): the model it creates decks on there; `null` the key's own. */
+      createModel?: string | null;
     }) => api.patch<Integrations>(`/instance/integrations/${kind}`, input),
     onSuccess: settle,
   });

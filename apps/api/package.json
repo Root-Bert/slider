@@ -30,6 +30,7 @@
     "pdfjs-dist": "^6.4.299",
     "postgres": "^3.4.9",
     "stripe": "^23.0.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "yjs": "13.6.27",
     "zod": "^4.6.7"
   },

@@ -128,8 +128,8 @@ export function DeckStorageDialog({
   );
 }
 
-/** The overview in the card's thumbnail or under the row, scrolling inside. */
-function StoragePanel({
+/** The overview in the card's thumbnail or under the row, scrolling inside (storage, the last run). */
+export function StoragePanel({
   kind,
   title,
   onClose,

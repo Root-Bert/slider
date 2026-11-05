@@ -29,11 +29,23 @@ export function useLive() {
       }, COMMENTS_REFETCH_DELAY_MS);
     };
     // Edited by someone (or the AI's proposals changed): the slides and the editor's state reload.
-    const onDeckChange = (change: 'slides' | 'proposals') => {
+    // Something on the board (Folie 0) changed: it reloads.
+    // A deck built from the prompt on Folie 1 moved on: its progress reloads – with the slides,
+    // as the prompt shows only while the deck is blank.
+    const onDeckChange = (change: 'slides' | 'proposals' | 'board' | 'creation') => {
       const keys =
         change === 'slides'
-          ? [queryKeys.slides(deckId), queryKeys.edit(deckId), queryKeys.deck(deckId)]
-          : [queryKeys.proposals(deckId)];
+          ? [
+              queryKeys.slides(deckId),
+              queryKeys.edit(deckId),
+              queryKeys.deck(deckId),
+              queryKeys.creation(deckId),
+            ]
+          : change === 'board'
+            ? [queryKeys.board(deckId)]
+            : change === 'creation'
+              ? [queryKeys.creation(deckId)]
+              : [queryKeys.proposals(deckId)];
       for (const queryKey of keys) void queryClient.invalidateQueries({ queryKey });
     };
     const disconnect = connectLive(deckId, refetchComments, onDeckChange);

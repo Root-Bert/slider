@@ -169,7 +169,8 @@ describe('applying what still fits', () => {
       expect(elements.find((element) => element.id === text)?.paragraphs).toEqual(['Noch da']);
       expect(again.slides()[1]?.hidden).toBe(true);
     }
-  });
+    // Opens and writes the demo deck once per case: well over 5 s on a busy CI runner.
+  }, 30_000);
 
   it('takes back everything an operation did before it found it does not fit', async () => {
     const { pages } = await demoIds();

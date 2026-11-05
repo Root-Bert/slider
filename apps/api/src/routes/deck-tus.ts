@@ -50,18 +50,19 @@ interface TusUpload {
   userId: string;
   fileName: string;
   size: number;
-  /** A deck file (absent in uploads of an earlier run: one) or a voice/video comment's recording. */
+  /** A deck file (absent in uploads of an earlier run: one), a recording or a board's file. */
   purpose?: TusPurpose;
   /** A new deck in this workspace … */
   workspaceId: string | null;
-  /** … or a new version of this deck (a recording: a new comment on it). */
+  /** … or a new version of this deck (a recording: a new comment on it; a material: its board). */
   deckId: string | null;
   /** A recording replacing this comment's own. */
   commentId?: string | null;
   touchedAt: number;
 }
 
-type TusPurpose = 'deck' | 'recording';
+/** A deck file, a voice/video comment's recording, or a file put on a deck's board (Folie 0). */
+type TusPurpose = 'deck' | 'recording' | 'material';
 
 const ID_PATTERN = /^[0-9a-f-]{36}$/;
 
@@ -244,6 +245,40 @@ export async function takeRecordingUpload(
   }
 }
 
+/**
+ * A file for a deck's board sent over tus (`purpose material`): its bytes, its name, and
+ * `done(error?)` as for a recording. Only its uploader's, only for the deck it was begun for.
+ */
+export async function takeMaterialUpload(
+  deps: AppDeps,
+  id: string,
+  userId: string,
+  deckId: string,
+): Promise<{
+  bytes: Uint8Array<ArrayBuffer>;
+  fileName: string;
+  done: (error?: unknown) => Promise<void>;
+}> {
+  const store = tusUploads(deps);
+  const upload = await store.get(id, userId);
+  if (upload.purpose !== 'material' || upload.deckId !== deckId) {
+    throw badRequest('Dieser Upload ist kein Material dieser Präsentation.');
+  }
+  await claimComplete(store, upload);
+  const done = (error?: unknown) => store.release(upload, error);
+  try {
+    const file = await readFile(store.file(upload.id));
+    return {
+      bytes: new Uint8Array(file.buffer, file.byteOffset, file.byteLength),
+      fileName: upload.fileName,
+      done,
+    };
+  } catch (error) {
+    await done(error);
+    throw error;
+  }
+}
+
 export function deckTusRoutes(deps: AppDeps) {
   const viewer = viewerMiddleware(deps);
   const imports = importLimit(deps);
@@ -251,12 +286,15 @@ export function deckTusRoutes(deps: AppDeps) {
   const maxBytes = deps.config.maxUploadBytes;
   const maxMediaBytes = deps.config.media.maxBytes;
   const store = tusUploads(deps);
-  // A deck counts in the hourly import budget; a recording in the media budget, when it is sent.
+  // A deck counts in the hourly import budget; a recording in the media budget, when it is sent;
+  // a board's file in the deck's storage.
   const deckImports = createMiddleware<ViewerEnv>((c, next) =>
-    purposeOf(c) === 'recording' ? next() : imports(c, next),
+    purposeOf(c) === 'deck' ? imports(c, next) : next(),
   );
-  const purposeOf = (c: Context): TusPurpose =>
-    readMetadata(c.req.header('upload-metadata')).purpose === 'recording' ? 'recording' : 'deck';
+  const purposeOf = (c: Context): TusPurpose => {
+    const { purpose } = readMetadata(c.req.header('upload-metadata'));
+    return purpose === 'recording' || purpose === 'material' ? purpose : 'deck';
+  };
 
   // Every answer names the protocol; a client of another version is refused (OPTIONS aside).
   const tus = createMiddleware(async (c, next) => {
@@ -282,6 +320,14 @@ export function deckTusRoutes(deps: AppDeps) {
       const commented = commentId ? (await loadComment(deps, commentId)).deckId : deckId;
       if (!commented) throw badRequest('Zu welcher Präsentation gehört die Aufnahme?');
       await requireDeckAccess(deps, c.var.viewer, commented, 'comment');
+      return next();
+    }
+    if (purposeOf(c) === 'material') {
+      if (size > maxBytes) throw fileTooLarge(maxBytes);
+      if (!deckId) throw badRequest('Zu welcher Präsentation gehört das Material?');
+      if (!filename) throw badRequest('Der Dateiname fehlt.');
+      // Who may comment may put material on the board.
+      await requireDeckAccess(deps, c.var.viewer, deckId, 'comment');
       return next();
     }
     requireOwner(c.var.viewer);
@@ -332,7 +378,7 @@ export function deckTusRoutes(deps: AppDeps) {
           fileName: filename ?? '',
           purpose,
           size: Number(c.req.header('upload-length')),
-          workspaceId: deckId || purpose === 'recording' ? null : workspaceId || null,
+          workspaceId: deckId || purpose !== 'deck' ? null : workspaceId || null,
           deckId: purpose === 'recording' && commentId ? null : deckId || null,
           commentId: purpose === 'recording' ? commentId || null : null,
           touchedAt: 0,
@@ -421,6 +467,9 @@ export function deckTusRoutes(deps: AppDeps) {
         const upload = await store.get(c.req.param('id'), viewer.author.id);
         if (upload.purpose === 'recording') {
           throw badRequest('Eine Aufnahme kommt mit ihrem Kommentar (Feld „upload“).');
+        }
+        if (upload.purpose === 'material') {
+          throw badRequest('Material kommt mit seiner eigenen Anfrage (Feld „upload“).');
         }
         await claimComplete(store, upload);
         try {

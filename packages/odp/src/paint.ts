@@ -13,7 +13,7 @@ import { lengthToCm } from './units';
 import { attr, childrenOf, firstChild, tagOf, type XmlNode } from './xml';
 
 /*
- * Which elements the browser draws whole in Bearbeiten (the per-element editor, CLAUDE.md §1):
+ * Which elements the browser draws whole in Bearbeiten (the per-element editor, docs/do-not-break.md):
  * a strict whitelist, so what it draws is what LibreOffice draws – checked per element by
  * `live-parity --compose`. Anything not named here is LibreOffice's picture of it.
  */

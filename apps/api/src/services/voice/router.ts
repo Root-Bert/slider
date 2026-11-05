@@ -31,21 +31,81 @@ Actions:
 - continue: the piece goes on with a comment still being said – \`item\` and its complete new \`text\` (what it said so far and what is new, merged into one comment).
 - finish: a comment being said is complete – \`item\`. A comment is complete when the person moved on (another element, another slide, another topic) or clearly ended the thought. Finish it as soon as it stands on its own – don't wait for more: the AI can start sooner. A request complete in one piece („mach die Box nach oben links“, „den Titel fett“, „die Aufzählung kleiner und die Box gleich hoch“) is a new comment with \`finished\`: true in the same step – a complete sentence is finished. When a piece is clearly cut off mid-thought, keep the comment open instead.
 - new, continue and add_to take \`finished\`: true finishes the comment in the same step.
-- edits: new, continue and add_to (with \`finished\`: true) also take \`edits\` when the comment asks only for plain changes of listed elements that the editor itself can make – moving or resizing („nach oben links“, „größer“, „unter den Titel“, „links bündig mit dem Titel“), fill or border colour, text size, font, colour, bold, italic, underline, alignment, the text replaced by words the person dictates, to the front or back, deleting – and adding plain new elements the person names: shapes („zwei Kreise hier“, „ein Rechteck unter den Titel“), a text box with dictated words, a line or an arrow between two elements („ein Pfeil vom Bild zum Text“). Edits are applied at once – the person sees the change within a second instead of waiting for the AI that edits the slides –, so give them whenever the request is that plain. Edits do the whole request or nothing: when one part of it cannot be said as edits, give none – the AI does all of it. Everything else gets no edits, the AI does it: new content you would have to make up (text, a list, a new slide), wording the person did not dictate (shorter, better, translated), pictures, charts, tables, layout and design judgement („schöner“, „aufräumen“, „passend“, „mehr Luft“), arranging several elements in a way you cannot work out exactly, anything unclear. When unsure, no edits. A follow-up correction („nee, weiter rechts“, „noch größer“) to a change made so is an add_to with edits, worked out from the element as it is now (the list shows it changed).
+- edits: new, continue and add_to (with \`finished\`: true) also take \`edits\` when the comment asks only for plain changes of listed elements that the editor itself can make – moving or resizing („nach oben links“, „größer“, „unter den Titel“, „links bündig mit dem Titel“), fill or border colour, text size, font, colour, bold, italic, underline, alignment, the text replaced by words the person dictates, to the front or back, deleting – and adding plain new elements the person names: shapes („zwei Kreise hier“, „ein Rechteck unter den Titel“), a text box with dictated words, a line or an arrow between two elements („ein Pfeil vom Bild zum Text“); grouping, ungrouping, locking, shadow, glow, soft edge, frosted glass, rounded corners, turning, mirroring – and plain changes of slides: a new slide (a layout from the list, or a copy of a slide) with the title and points the person dictates, a slide duplicated, moved, hidden, shown, deleted, its background one colour or as in the master, its transition, its speaker notes as dictated. Edits are applied at once – the person sees the change within a second instead of waiting for the AI that edits the slides –, so give them whenever the request is that plain. Edits do the whole request or nothing: when one part of it cannot be said as edits, give none – the AI does all of it. Everything else gets no edits, the AI does it: new content you would have to make up (text, a list, a slide about a topic), wording the person did not dictate (shorter, better, translated), pictures, charts, tables, gradients, layout and design judgement („schöner“, „aufräumen“, „passend“, „mehr Luft“, a background „that fits“), arranging several elements in a way you cannot work out exactly, anything unclear. When unsure, no edits. A follow-up correction („nee, weiter rechts“, „noch größer“) to a change made so is an add_to with edits, worked out from the element as it is now (the list shows it changed).
 - add_to: the person adds to a comment that is finished already – about the same thing or place („und beim Titel noch …“, „ach, und die Farbe auch“) – \`item\` and the addition as \`text\`. It becomes a reply in that comment's thread, and the AI takes it up with the comment. A new thing at another place is a new comment, not an addition.
 - drop: the person takes a comment back („nee, vergiss das“, „streich das wieder“) – \`item\`.
 - undo: the person wants the AI's change of a comment taken back („mach das rückgängig“) – \`item\`.
 - go_to_slide: the person asks to go to a slide („nächste Folie“, „zurück“, „geh zu Folie fünf“) – \`slide\`. Only for such requests: going through the slides by hand is not one.
 - stop_session: the person ends speaking to you („Stopp, ich bin fertig“, „das war's“).
 
-Writing edits: each names one \`element\` (its id) and only what changes. \`place\`: for a place on the slide in words – „nach oben links“, „nach rechts“, „in die Mitte“, „unten rechts in die Ecke“: top_left, top, top_right, left, center, right, bottom_left, bottom, bottom_right. It is worked out for you: the corner or edge of the content area inside the slide's margins, clear of the other elements (below the title when it sits there). With \`place\` or \`next_to\`, \`box\` only when the size changes too (its x and y are then ignored). \`align_with\`: lined up with other elements – „rechtsbündig mit dem Titel“ (right), „links bündig mit dem Text“ (left), „mittig unter dem Bild“ (center_x), „auf einer Höhe mit der Box“ (top), „oben bündig“ (top); \`size_like\`: „so hoch wie die Aufzählung“ (height), „gleich groß wie das Bild“ (width and height) – both worked out for you, with \`place\` or \`box\` or alone. \`box\`: the element's new place and size in % of the slide – x and y of its top left corner from the slide's top left, w and h – for any other place or size („unter den Titel“, „neben das Bild“, „doppelt so breit“); keep w and h when it only moves, keep it on the slide, line it up with what is there (the same left edge as the title, the same top as its neighbour, the same gap) and never put it over other elements. Colours as #rrggbb – the template's colours first, the nearest fitting one for „blau“, „rot“; \`none\` takes the fill or border away. Keep text readable: a fill turned dark gets light text (\`text_color\`, e.g. white or the template's light colour), one turned light gets dark text. \`font_size\` in pt sets all its text; for text of mixed sizes use \`font_scale\` instead („größer“ about 1.3, „deutlich größer“ about 1.6, „kleiner“ about 0.8). \`text\`: its text anew, one string per paragraph, exactly as dictated. \`order\`: front or back. \`delete\`: true. \`add\`: a new element instead of \`element\` – text, rectangle, ellipse (a circle: w and h the same size in cm, so h = w × the slide's width / height), isosceles-triangle, diamond, hexagon, right-arrow, star5, line, arrow – with \`box\` („hier“: around where the pointer rested, clear of other elements; several side by side with equal gaps), \`place\` or \`next_to\` another element, and the rest as for any element (border, text). A line or arrow goes \`from\` one element \`to\` another. Give it a \`name\` when a later edit refers to it. Make new shapes look designed: always a \`fill\` – one of the template's colours, else a colour the slide already uses, else a calm blue like #2563eb (no white, grey or bare outline unless asked); several alike the same size (\`size_like\` the first) with equal gaps, lined up; a sensible size (a circle about 2–4 cm); inside the content area, never at the slide's edge. The comment's text is written as always – it stays as the record of the request.
+Writing edits: each names one \`element\` (its id) and only what changes. \`place\`: for a place on the slide in words – „nach oben links“, „nach rechts“, „in die Mitte“, „unten rechts in die Ecke“: top_left, top, top_right, left, center, right, bottom_left, bottom, bottom_right. It is worked out for you: the corner or edge of the content area inside the slide's margins, clear of the other elements (below the title when it sits there). With \`place\` or \`next_to\`, \`box\` only when the size changes too (its x and y are then ignored). \`align_with\`: lined up with other elements – „rechtsbündig mit dem Titel“ (right), „links bündig mit dem Text“ (left), „mittig unter dem Bild“ (center_x), „auf einer Höhe mit der Box“ (top), „oben bündig“ (top); \`size_like\`: „so hoch wie die Aufzählung“ (height), „gleich groß wie das Bild“ (width and height) – both worked out for you, with \`place\` or \`box\` or alone. \`box\`: the element's new place and size in % of the slide – x and y of its top left corner from the slide's top left, w and h – for any other place or size („unter den Titel“, „neben das Bild“, „doppelt so breit“); keep w and h when it only moves, keep it on the slide, line it up with what is there (the same left edge as the title, the same top as its neighbour, the same gap) and never put it over other elements. Colours as #rrggbb – the template's colours first, the nearest fitting one for „blau“, „rot“; \`none\` takes the fill or border away. Keep text readable: a fill turned dark gets light text (\`text_color\`, e.g. white or the template's light colour), one turned light gets dark text. \`font_size\` in pt sets all its text; for text of mixed sizes use \`font_scale\` instead („größer“ about 1.3, „deutlich größer“ about 1.6, „kleiner“ about 0.8). \`text\`: its text anew, one string per paragraph, exactly as dictated. \`order\`: front or back. \`delete\`: true. \`add\`: a new element instead of \`element\` – text, rectangle, ellipse (a circle: w and h the same size in cm, so h = w × the slide's width / height), isosceles-triangle, diamond, hexagon, right-arrow, star5, line, arrow – with \`box\` („hier“: around where the pointer rested, clear of other elements; several side by side with equal gaps), \`place\` or \`next_to\` another element, and the rest as for any element (border, text). A line or arrow goes \`from\` one element \`to\` another. Give it a \`name\` when a later edit refers to it. Make new shapes look designed: always a \`fill\` – one of the template's colours, else a colour the slide already uses, else a calm blue like #2563eb (no white, grey or bare outline unless asked); several alike the same size (\`size_like\` the first) with equal gaps, lined up; a sensible size (a circle about 2–4 cm); inside the content area, never at the slide's edge. \`group\`: the ids instead of \`element\`. A slide's change names \`slide\` (its number) instead of \`element\` – \`background\`, \`transition\`, \`notes\`, \`hidden\`, \`move_after\` (0: first), \`duplicate\`, \`delete\` – a background turned dark gets light text: \`text_color\` with it (dark text on a light one); a new slide is \`new_slide\` {after, layout or copy_of} with \`title\` and \`text\` (one string per point) exactly as said („mit Titel Agenda und den Punkten A, B, C“); a slide about a topic („eine Folie zu unseren Zielen“) needs content made up: no edits. The comment's text is written as always – it stays as the record of the request.
 
 Writing a comment's text: in the language the person speaks, as their remark or request to the AI that edits the slides – clear and complete, without filler words, false starts or recognition errors, keeping everything they meant (what, where, how, why). Speech recognition mishears words that sound alike: where a word makes no sense in its place, write the similar-sounding word that does (e.g. „größer und fit“ → „größer und fett“) – never a different meaning. People mix in English design words (alignen, Shapes, Slide, centern, Font, Spacing, Layout) – recognition often turns them into German look-alikes: „horizontal Leine“ → „horizontal alignen“ (ausrichten), „zentern“ → „zentrieren“; the elements and what is asked of them tell you which makes sense. Name what „hier“, „das“, „dieses“ point at (e.g. „Den Titel „Agenda“ größer …“). Add nothing they did not say. Keep their voice: a request stays a request, a question a question.`;
+
+/** More of an element the editor sets – in the edits here and in `change_elements`. */
+export const MORE_ELEMENT_PROPERTIES = {
+  group: {
+    type: 'array',
+    items: { type: 'string' },
+    description: 'Instead of element: these elements (2 or more, one slide) grouped.',
+  },
+  ungroup: { type: 'boolean', description: 'A group taken apart.' },
+  locked: { type: 'boolean' },
+  shadow: { type: 'boolean' },
+  glow: { description: 'true, false, or its colour #rrggbb.' },
+  soft_edge: { type: 'boolean' },
+  backdrop_blur: { type: 'boolean', description: 'Frosted glass: blurred background through it.' },
+  corner_radius: { type: 'number', description: 'A rectangle’s rounded corners, pt (0: sharp).' },
+  rotation: { type: 'number', description: 'Turned to this many degrees, clockwise.' },
+  mirror: { type: 'string', enum: ['horizontal', 'vertical'] },
+  picture_fit: {
+    type: 'string',
+    enum: ['fill', 'stretch'],
+    description: 'A picture in its frame.',
+  },
+} as const;
+
+/** A slide's own settings – in the edits here and in `change_elements`. */
+export const SLIDE_SETTING_PROPERTIES = {
+  background: { type: 'string', description: '#rrggbb, or "master": as in the master.' },
+  transition: {
+    type: 'string',
+    enum: ['none', 'fade', 'fadeBlack', 'push', 'cover', 'wipe', 'dissolve', 'zoom', 'morph'],
+  },
+  notes: {
+    type: 'array',
+    items: { type: 'string' },
+    description: 'Speaker notes anew, one string per paragraph.',
+  },
+  hidden: { type: 'boolean', description: 'Hidden in the show (false: shown again).' },
+} as const;
 
 /** One plain change of an element the editor makes itself – for the router and quick requests. */
 export const EDIT_ITEM_SCHEMA: Anthropic.Beta.BetaTool.InputSchema = {
   type: 'object',
   properties: {
+    slide: {
+      type: 'integer',
+      minimum: 1,
+      description:
+        'Instead of element: this slide changed – background, transition, notes, hidden, move_after, duplicate, delete.',
+    },
+    new_slide: {
+      type: 'object',
+      description:
+        'Instead of element: a new slide after slide `after` (0: first), of `layout` (a name from the list; none: fitting) or a copy of slide `copy_of`; with `title` and `text` (its points).',
+      properties: {
+        after: { type: 'integer', minimum: 0 },
+        layout: { type: 'string' },
+        copy_of: { type: 'integer', minimum: 1 },
+      },
+      required: ['after'],
+    },
+    title: { type: 'string', description: 'A new slide’s title.' },
+    ...SLIDE_SETTING_PROPERTIES,
+    move_after: { type: 'integer', minimum: 0, description: 'The slide moved after slide n.' },
+    duplicate: { type: 'boolean', description: 'The slide copied, the copy right after it.' },
+    ...MORE_ELEMENT_PROPERTIES,
     element: {
       type: 'string',
       description: 'An element id from the list (or the name of one added before).',
@@ -138,7 +198,7 @@ export const EDIT_ITEM_SCHEMA: Anthropic.Beta.BetaTool.InputSchema = {
     text: {
       type: 'array',
       items: { type: 'string' },
-      description: 'Its text anew, one string per paragraph.',
+      description: 'Its text anew, one string per paragraph (a new slide: its points).',
     },
     font_size: { type: 'number', description: 'pt, all of its text.' },
     font_scale: { type: 'number', description: 'Every text size times this.' },
@@ -149,7 +209,8 @@ export const EDIT_ITEM_SCHEMA: Anthropic.Beta.BetaTool.InputSchema = {
     underline: { type: 'boolean' },
     align: { type: 'string', enum: ['left', 'center', 'right', 'justify'] },
     order: { type: 'string', enum: ['front', 'back'] },
-    delete: { type: 'boolean' },
+    heads: { type: 'string', enum: ['none', 'start', 'end', 'both'], description: 'A line’s.' },
+    delete: { type: 'boolean', description: 'The element (or with slide: the slide) deleted.' },
   },
 };
 
@@ -322,6 +383,8 @@ export interface RouterEditing {
   guides: readonly { orientation: 'horizontal' | 'vertical'; position: number }[];
   /** The template's colours. */
   palette: readonly { color: string; name: string }[];
+  /** The layouts a new slide can take, a line each (`layoutLines`). */
+  layouts?: readonly string[];
 }
 
 const pct = (value: number) => `${Math.round(value * 100)}%`;
@@ -434,6 +497,9 @@ export function designLines(editing: RouterEditing): string[] {
     lines.push(
       `The template's colours: ${editing.palette.map((entry) => (entry.name ? `${entry.name} ${entry.color}` : entry.color)).join(', ')}.`,
     );
+  }
+  if (editing.layouts && editing.layouts.length > 0) {
+    lines.push(`Layouts for a new slide: ${editing.layouts.join(', ')}.`);
   }
   return lines;
 }

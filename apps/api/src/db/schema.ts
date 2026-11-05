@@ -16,6 +16,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import type {
+  ShowRun,
   AccentColor,
   AiFeature,
   AiProposalStatus,
@@ -33,6 +34,13 @@ import type {
   Guide,
   ImportState,
   MediaKind,
+  MaterialKind,
+  DeckCreationStatus,
+  DeckKind,
+  OutlineSlide,
+  MaterialReadState,
+  MaterialSheet,
+  BoardItemKind,
   RevisionStatus,
   RevisionTrigger,
   Shape,
@@ -408,9 +416,12 @@ export const workspaces = pgTable('workspaces', {
   /**
    * Per kind, the model it runs the instance's key on, where the instance lets it pick one – for
    * that key only: once the instance sets another active, the instance's model applies again.
+   * `createModel` (AI): the one a deck is created on; each left out: the instance's.
    */
   integrationModels: jsonb('integration_models')
-    .$type<Partial<Record<IntegrationKind, { keyId: string; model: string }>>>()
+    .$type<
+      Partial<Record<IntegrationKind, { keyId: string; model?: string; createModel?: string }>>
+    >()
     .notNull()
     .default({}),
 });
@@ -562,6 +573,8 @@ export const integrationKeys = pgTable(
     hint: text('hint').notNull(),
     /** The model it runs on; empty for photos. */
     model: text('model').notNull(),
+    /** AI only: the model a deck is created on („Präsentation erstellen“); `null`: `model`. */
+    createModel: text('create_model'),
     active: boolean('active').notNull().default(false),
     setById: text('set_by_id').references((): AnyPgColumn => users.id, { onDelete: 'set null' }),
     setByName: text('set_by_name'),
@@ -1166,6 +1179,12 @@ export const comments = pgTable(
     externalStatus: text('external_status').$type<CommentStatus>(),
     /** PowerPoint comments deleted in the file are kept and flagged, never deleted (BER-114). */
     removedInSourceAt: timestamptz('removed_in_source_at'),
+    /**
+     * Roots only: where the thread stands, in short, once it asked the AI more than three times –
+     * written by the AI after each further request settles (`thread-summaries.ts`). Encrypted.
+     */
+    aiSummary: encryptedText('comments', 'ai_summary'),
+    aiSummaryAt: timestamptz('ai_summary_at'),
     createdAt: createdAt(),
     updatedAt: timestamptz('updated_at').notNull().defaultNow(),
   },
@@ -1274,6 +1293,142 @@ export const media = pgTable(
   ],
 );
 
+/**
+ * Files on a deck's board – Folie 0, „Material“ (`services/materials.ts`). Never part of the
+ * deck's file: the ODP, exports and the slide count never see them. The bytes lie in the media
+ * store under the deck's prefix (gone with the deck); their text, once read, in
+ * `material_chunks`. Where a card lies on the board (`x`, `y`) and how big (`w`, `h`) in board
+ * units; `expanded` for a card opened up on the board (later).
+ */
+export const deckMaterials = pgTable(
+  'deck_materials',
+  {
+    id: text('id').primaryKey(),
+    deckId: text('deck_id')
+      .notNull()
+      .references(() => decks.id, { onDelete: 'cascade' }),
+    /** Snapshot of who put it down, like `comments.author`. */
+    author: jsonb('author').$type<Author>().notNull(),
+    /** The file's name; encrypted at rest (BER-149). */
+    name: encryptedText('deck_materials', 'name').notNull(),
+    kind: text('kind').$type<MaterialKind>().notNull(),
+    mimeType: text('mime_type').notNull(),
+    sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+    storageKey: text('storage_key').notNull(),
+    /** A small JPEG of it (first PDF page, the picture itself) in the media store. */
+    previewKey: text('preview_key'),
+    sha256: text('sha256').notNull(),
+    x: doublePrecision('x').notNull(),
+    y: doublePrecision('y').notNull(),
+    w: doublePrecision('w').notNull(),
+    h: doublePrecision('h').notNull(),
+    expanded: boolean('expanded').notNull().default(false),
+    /** Came from a folder on the board (`deck_board_items` kind `folder`): that folder. */
+    folderId: text('folder_id'),
+    /** How far its text is read (`MaterialReadState`). */
+    readState: text('read_state').$type<MaterialReadState>().notNull().default('none'),
+    /** The beginning of its text (or its sheets), for the AI's list. Encrypted. */
+    summary: encryptedText('deck_materials', 'summary'),
+    /** Pages of a PDF or document, slides of a presentation, sheets of a spreadsheet. */
+    pages: integer('pages'),
+    /** A spreadsheet's sheets with their sizes; encrypted, empty stays `[]`. */
+    sheets: encryptedJsonList<MaterialSheet>('deck_materials', 'sheets').notNull().default([]),
+    createdAt: createdAt(),
+    updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('deck_materials_deck_idx').on(t.deckId, t.createdAt)],
+);
+
+/** Notes and links on a deck's board (Folie 0), beside its files. */
+export const deckBoardItems = pgTable(
+  'deck_board_items',
+  {
+    id: text('id').primaryKey(),
+    deckId: text('deck_id')
+      .notNull()
+      .references(() => decks.id, { onDelete: 'cascade' }),
+    author: jsonb('author').$type<Author>().notNull(),
+    kind: text('kind').$type<BoardItemKind>().notNull(),
+    /** A note's text, a link's title. Encrypted; blank stays blank. */
+    text: encryptedText('deck_board_items', 'text').notNull(),
+    /** A link's address; encrypted. */
+    url: encryptedText('deck_board_items', 'url'),
+    /**
+     * A note's things on the board (files, links, notes – their ids). None: a note on its own,
+     * `x`…`h` its box (a sticker). One: the note is beside it, no box. Several: its box drawn round
+     * them. It goes with the last of them (`deleteBoardItem`).
+     */
+    boundIds: jsonb('bound_ids').$type<string[]>().notNull().default([]),
+    /** A note's or frame's colour of its own; `null`: its author's. */
+    color: text('color').$type<AccentColor>(),
+    /** A sticker's rich text (Lexical's editor state); `text` holds it as Markdown. Sealed. */
+    rich: encryptedJson<unknown>('deck_board_items', 'rich'),
+    x: doublePrecision('x').notNull(),
+    y: doublePrecision('y').notNull(),
+    w: doublePrecision('w').notNull(),
+    h: doublePrecision('h').notNull(),
+    createdAt: createdAt(),
+    updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('deck_board_items_deck_idx').on(t.deckId, t.createdAt)],
+);
+
+/**
+ * The text of a file on the board, in pieces of a few thousand characters (a PDF page, a part of
+ * a long one, a block of a sheet's rows) – what the AI reads and searches (`material-tools.ts`).
+ * Encrypted at rest like every content (BER-149), so the search reads and compares the pieces
+ * of one deck in the server, not in SQL.
+ */
+export const materialChunks = pgTable(
+  'material_chunks',
+  {
+    materialId: text('material_id')
+      .notNull()
+      .references(() => deckMaterials.id, { onDelete: 'cascade' }),
+    deckId: text('deck_id')
+      .notNull()
+      .references(() => decks.id, { onDelete: 'cascade' }),
+    seq: integer('seq').notNull(),
+    /** The page (1-based) it is from; `null` for a sheet or a text file. */
+    page: integer('page'),
+    /** The sheet it is from; encrypted. */
+    sheet: encryptedText('material_chunks', 'sheet'),
+    text: encryptedText('material_chunks', 'text').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.materialId, t.seq] }),
+    index('material_chunks_deck_idx').on(t.deckId),
+  ],
+);
+
+/**
+ * A new deck built by the AI from the prompt on Folie 1 (`services/deck-creation`): offered when
+ * a deck is made blank, then what was asked and how far the run got. One per deck.
+ */
+export const deckCreations = pgTable('deck_creations', {
+  deckId: text('deck_id')
+    .primaryKey()
+    .references(() => decks.id, { onDelete: 'cascade' }),
+  status: text('status').$type<DeckCreationStatus>().notNull(),
+  kind: text('kind').$type<DeckKind>(),
+  pages: integer('pages'),
+  /** The workspace's template (`workspace_masters`) asked for; `null`: Slider's own look. */
+  templateId: text('template_id'),
+  /** What the deck is to be about, as typed or said; encrypted. */
+  description: encryptedText('deck_creations', 'description'),
+  outline: encryptedJson<OutlineSlide[]>('deck_creations', 'outline'),
+  built: integer('built').notNull().default(0),
+  /**
+   * The deck's edit step when it was last idle with nothing built (offered, or ended before a
+   * slide): any step since means someone started on the deck, and the prompt no longer shows.
+   */
+  idleSeq: integer('idle_seq').notNull().default(0),
+  error: text('error'),
+  createdAt: createdAt(),
+  updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+});
+export type DeckCreationRow = typeof deckCreations.$inferSelect;
+
 export type UserRow = typeof users.$inferSelect;
 export type SessionRow = typeof sessions.$inferSelect;
 export type MicrosoftConnectionRow = typeof microsoftConnections.$inferSelect;
@@ -1348,3 +1503,25 @@ export type CommentRow = typeof comments.$inferSelect;
 export type NewCommentRow = typeof comments.$inferInsert;
 export type CommentReactionRow = typeof commentReactions.$inferSelect;
 export type MediaRow = typeof media.$inferSelect;
+export type DeckMaterialRow = typeof deckMaterials.$inferSelect;
+export type DeckBoardItemRow = typeof deckBoardItems.$inferSelect;
+
+/** Completed presentations; at most five per deck, recording in the deck's blob folder. */
+export const showRuns = pgTable(
+  'show_runs',
+  {
+    id: text('id').primaryKey(),
+    deckId: text('deck_id').notNull(),
+    at: timestamptz('at').notNull(),
+    summary: encryptedJson<ShowRun>('show_runs', 'summary').notNull(),
+    recordingKey: text('recording_key'),
+  },
+  (table) => [
+    index('show_runs_deck_idx').on(table.deckId),
+    foreignKey({
+      columns: [table.deckId],
+      foreignColumns: [decks.id],
+      name: 'show_runs_deck_id_fkey',
+    }).onDelete('cascade'),
+  ],
+);

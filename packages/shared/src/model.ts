@@ -696,6 +696,11 @@ export const commentSchema = z.object({
   source: commentSourceSchema,
   /** Whether the comment still exists in the PowerPoint file; always `present` for app comments. */
   sourceStatus: commentSourceStatusSchema.optional(),
+  /**
+   * Roots only: where the thread stands, in 1–3 sentences in its language – written by the AI
+   * once the thread asked it more than three times, anew after each further request.
+   */
+  aiSummary: z.object({ text: z.string(), at: z.iso.datetime() }).nullable().optional(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });

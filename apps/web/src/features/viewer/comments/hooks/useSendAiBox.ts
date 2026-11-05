@@ -1,4 +1,4 @@
-import type { AiProposal } from '@slider/shared';
+import { threadForRequest, type AiProposal } from '@slider/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Draft } from '../../state/viewer-state';
 import { queryKeys, useCancelProposal, useCreateComment } from '@/lib/api';
@@ -33,21 +33,33 @@ export function runningIn(
  * Sending a box for the AI – from the composer that stays (the box's field goes at once, no wait
  * for the server): the comment, then the AI asked on it; its pin shows the AI at work. A box
  * adding to a request still at work (`Draft.aiThreadId`) is a reply in its thread: the AI is
- * stopped and asked again with it, as an addition said aloud is (voice `finish`).
+ * stopped and asked again with it, as an addition said aloud is (voice `finish`). So is a box over
+ * what an open thread on the slide is about already (`threadForRequest`, anyone's): no second pin
+ * on the same thing – the thread is the AI's context.
  */
 export function useSendAiBox(): SendAiBox {
-  const { deck, threads, viewer } = useViewerData();
+  const { deck, slides, threads, viewer } = useViewerData();
   const dispatch = useViewerDispatch();
   const queryClient = useQueryClient();
   const createComment = useCreateComment(deck.id, viewer.author);
   const cancel = useCancelProposal(deck.id);
   const ai = useAskAi();
   const toast = useViewerToast();
+  const sameThreadAs = (draft: Draft) => {
+    const shapes = slides.find((slide) => slide.id === draft.slideId)?.shapes;
+    const root = threadForRequest(
+      threads.map((each) => each.root),
+      draft.slideId,
+      draft.anchor,
+      shapes,
+    );
+    return root ? threads.find((each) => each.id === root.id) : undefined;
+  };
   return (draft, body, close = true) => {
     if (close) dispatch({ type: 'draftSubmitted' });
     const thread = draft.aiThreadId
       ? threads.find((each) => each.id === draft.aiThreadId)
-      : undefined;
+      : sameThreadAs(draft);
     if (thread) {
       const running = runningIn(
         queryClient.getQueryData<AiProposal[]>(queryKeys.proposals(deck.id)),

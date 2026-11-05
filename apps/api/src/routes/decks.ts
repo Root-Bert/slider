@@ -21,6 +21,7 @@ import {
   updateDeckTemplateInputSchema,
 } from '@slider/shared';
 import { blankOdp } from '@slider/odp';
+import { offerCreation } from '../services/deck-creation';
 import {
   deckAccess,
   requireDeckAccess,
@@ -402,6 +403,8 @@ export function decksRoutes(deps: AppDeps) {
           { ownerId: viewer.author.id, workspaceId },
           { fileName: BLANK_DECK_FILE_NAME, bytes, source: 'upload', masterId: masterId ?? null },
         );
+        // Folie 1 offers to build it with the AI while it is still blank.
+        await offerCreation(deps.db, deck.id);
         return c.json(deck, 201);
       })
 

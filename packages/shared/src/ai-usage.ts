@@ -7,8 +7,16 @@ import { z } from 'zod';
  * No money: list prices are guesses, only what is measured is shown.
  */
 
-/** What a request was for – the dashboard names them. */
-export const AI_FEATURES = ['edit', 'summary', 'voice', 'live', 'recording', 'image'] as const;
+/** What a request was for – the dashboard names them. `create`: a deck created by the AI. */
+export const AI_FEATURES = [
+  'edit',
+  'create',
+  'summary',
+  'voice',
+  'live',
+  'recording',
+  'image',
+] as const;
 export const aiFeatureSchema = z.enum(AI_FEATURES);
 export type AiFeature = z.infer<typeof aiFeatureSchema>;
 

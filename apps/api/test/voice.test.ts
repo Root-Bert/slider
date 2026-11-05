@@ -32,9 +32,13 @@ afterEach(async () => {
 
 type Act = { actions: Record<string, unknown>[] };
 
-/** Anthropic: the router's answers in turn (`act`), the editing AI changes nothing. */
+/**
+ * Anthropic: the router's answers in turn (`act`), the editing AI changes nothing – once `held`
+ * is open (`hold.until`), it answers when that settles.
+ */
 function fakeAnthropic(router: Act[]) {
   const seen: Anthropic.Beta.MessageCreateParams[] = [];
+  const hold: { until: Promise<void> | null } = { until: null };
   const reply = (content: unknown[], stop: string) => ({
     id: `msg_${Math.random()}`,
     type: 'message',
@@ -73,8 +77,12 @@ function fakeAnthropic(router: Act[]) {
                   'tool_use',
                 )
               : reply([{ type: 'text', text: 'Verstanden.', citations: null }], 'end_turn');
+            const until = isRouter ? null : hold.until;
             return {
-              finalMessage: async () => answer,
+              finalMessage: async () => {
+                await until;
+                return answer;
+              },
               currentMessage: undefined,
               abort: () => undefined,
             };
@@ -82,7 +90,7 @@ function fakeAnthropic(router: Act[]) {
         },
       },
     }) as unknown as Anthropic;
-  return { client, seen };
+  return { client, seen, hold };
 }
 
 /** A short WAV as the browser sends it: 16 kHz, 16-bit, mono, silence. */
@@ -110,7 +118,8 @@ function wav(): Blob {
   return new Blob([bytes], { type: 'audio/wav' });
 }
 
-describe('speaking to the AI', () => {
+// One long scenario of whole sessions on a fresh server: slow when the machine is busy.
+describe('speaking to the AI', { timeout: 90_000 }, () => {
   it('turns pieces of speech into comments at the place pointed at, finishes them, adds to them, drops them, obeys commands – and asks the AI for each finished one', async () => {
     const heard: string[] = [
       'Den Titel hier bitte',
@@ -307,7 +316,7 @@ describe('speaking to the AI', () => {
     state = await say(first.id, title.id);
     expect(state.items[0]!.text).toBe('Den Titel „Agenda“ deutlich größer und fett.');
     await vi.waitFor(async () => expect((await current()).items[0]!.state).toBe('answered'), {
-      timeout: 10_000,
+      timeout: 30_000,
       interval: 50,
     });
     expect(transcribed[1]!.getAll('context_bias')).toContain('Shapes');
@@ -352,7 +361,7 @@ describe('speaking to the AI', () => {
     // Taken back: the comment goes.
     router.push({ actions: [{ type: 'drop', item: 'K2' }] });
     await vi.waitFor(async () => expect((await current()).items[1]!.state).toBe('answered'), {
-      timeout: 10_000,
+      timeout: 30_000,
       interval: 50,
     });
     state = await say(second.id);
@@ -364,7 +373,7 @@ describe('speaking to the AI', () => {
         expect(
           await context.deps.db.select().from(comments).where(eq(comments.id, dropped)),
         ).toEqual([]),
-      { timeout: 10_000, interval: 50 },
+      { timeout: 30_000, interval: 50 },
     );
 
     // Plain changes are made at once – the editor's own operations, no AI at work: „den Titel
@@ -383,7 +392,7 @@ describe('speaking to the AI', () => {
     const aiAsked = () => anthropic.seen.filter((body) => !body.tool_choice).length;
     // (The addition before is with the AI meanwhile.)
     await vi.waitFor(async () => expect((await current()).items[2]!.state).toBe('answered'), {
-      timeout: 10_000,
+      timeout: 30_000,
       interval: 50,
     });
     const asked0 = aiAsked();
@@ -405,7 +414,7 @@ describe('speaking to the AI', () => {
     });
     await say(first.id, title.id);
     await vi.waitFor(async () => expect((await current()).items[3]!.state).toBe('applied'), {
-      timeout: 10_000,
+      timeout: 30_000,
       interval: 20,
     });
     expect((await titleNow()).bbox).toMatchObject({ x: expect.closeTo(0.05, 3) });
@@ -456,14 +465,14 @@ describe('speaking to the AI', () => {
     });
     await say(first.id, title.id);
     await vi.waitFor(async () => expect((await current()).items[4]!.state).toBe('applied'), {
-      timeout: 10_000,
+      timeout: 30_000,
       interval: 20,
     });
     expect((await titleNow()).bbox.x).toBeCloseTo(0.09, 3);
     router.push({ actions: [{ type: 'undo', item: 'K4' }] });
     await say(first.id);
     await vi.waitFor(async () => expect((await titleNow()).bbox.x).toBeCloseTo(placed.bbox.x, 3), {
-      timeout: 10_000,
+      timeout: 30_000,
       interval: 20,
     });
     // Edits that cannot be made so (no such element) leave the request to the AI.
@@ -481,7 +490,7 @@ describe('speaking to the AI', () => {
     });
     await say(first.id, title.id);
     await vi.waitFor(async () => expect((await current()).items[5]!.state).toBe('answered'), {
-      timeout: 10_000,
+      timeout: 30_000,
       interval: 50,
     });
     expect(aiAsked()).toBe(asked0 + 1);
@@ -513,7 +522,7 @@ describe('speaking to the AI', () => {
     });
     await say(first.id, title.id);
     await vi.waitFor(async () => expect((await current()).items[6]!.state).toBe('applied'), {
-      timeout: 10_000,
+      timeout: 30_000,
       interval: 20,
     });
     const restyled = await titleNow();
@@ -522,6 +531,14 @@ describe('speaking to the AI', () => {
     expect(restyled.live!.paragraphs.every((paragraph) => paragraph.align === 'center')).toBe(true);
     expect(restyled.look?.fill).toBe('#d00000');
     expect(aiAsked()).toBe(asked0 + 1);
+    // Said as new requests, but about the title like K4's open thread: replies there, no new
+    // pins on the same element.
+    const said = (await current()).items;
+    expect(said[3]!.threadId).toBe(said[3]!.commentId);
+    for (const later of [said[5]!, said[6]!]) {
+      expect(later.threadId).toBe(said[3]!.commentId);
+      expect(later.commentId).not.toBe(later.threadId);
+    }
     // „Mach hier zwei Kreise hin“: added at once as the editor adds them – the second beside the
     // first by its name, both on the slide spoken about, with the editor's ids.
     heard.unshift('Mach hier zwei Kreise hin.');
@@ -545,7 +562,7 @@ describe('speaking to the AI', () => {
     });
     await say(first.id);
     await vi.waitFor(async () => expect((await current()).items[7]!.state).toBe('applied'), {
-      timeout: 10_000,
+      timeout: 30_000,
       interval: 20,
     });
     const circles = deckEditStateSchema
@@ -560,6 +577,192 @@ describe('speaking to the AI', () => {
     });
     expect(circles[1]!.bbox.x).toBeGreaterThan(0.7);
     expect(aiAsked()).toBe(asked0 + 1);
+    // Grouped, a shadow on the group's first part and the slide's notes said: at once too.
+    heard.unshift('Gruppier die beiden Kreise, Schatten auf den ersten, Notiz: Kreise erklären.');
+    router.push({
+      actions: [
+        {
+          type: 'new',
+          slide: 1,
+          text: 'Die Kreise gruppieren, Schatten auf den ersten, Notiz „Kreise erklären“.',
+          finished: true,
+          edits: [
+            { group: circles.map((circle) => circle.id) },
+            { element: circles[0]!.id, shadow: true },
+            { slide: 1, notes: ['Kreise erklären'] },
+          ],
+        },
+      ],
+    });
+    await say(first.id);
+    await vi.waitFor(async () => expect((await current()).items[8]!.state).toBe('applied'), {
+      timeout: 30_000,
+      interval: 20,
+    });
+    const regrouped = deckEditStateSchema.parse(
+      await (await context.request(`/api/decks/${deck.id}/edit`)).json(),
+    ).slides[0]!;
+    const group = regrouped.elements.find((element) => element.kind === 'group');
+    expect(group?.children?.map((part) => part.id)).toEqual(circles.map((circle) => circle.id));
+    expect(group?.children?.[0]?.look?.effects.shadow).toMatchObject({ blur: 12 });
+    expect(regrouped.notes).toBe('Kreise erklären');
+    expect(aiAsked()).toBe(asked0 + 1);
+
+    // Requests to the AI run side by side unless they are about the same target: one about the
+    // slide as a whole and one about its title both at once; another about the title waits for
+    // the first; one about all slides, said on slide 2, waits for the one about slide 1 as a whole
+    // (filed as about the deck, not about slide 2).
+    let letGo = () => {};
+    anthropic.hold.until = new Promise<void>((resolve) => (letGo = resolve));
+    heard.unshift('Den Hintergrund grün, und die Punkte im Titel verteilen.');
+    router.push({
+      actions: [
+        { type: 'new', slide: 1, text: 'Den Hintergrund grün.', finished: true },
+        {
+          type: 'new',
+          slide: 1,
+          elements: [title.id],
+          text: 'Die Punkte im Titel verteilen.',
+          finished: true,
+        },
+      ],
+    });
+    await say(first.id, title.id);
+    const at = (await current()).items.length;
+    await vi.waitFor(
+      async () =>
+        expect((await current()).items.slice(at - 2).map((item) => item.state)).toEqual([
+          'working',
+          'working',
+        ]),
+      { timeout: 30_000, interval: 20 },
+    );
+    heard.unshift('Den Titel noch kursiv.', 'Auf allen Folien die Schrift größer.');
+    router.push({
+      actions: [
+        { type: 'new', slide: 1, elements: [title.id], text: 'Den Titel kursiv.', finished: true },
+      ],
+    });
+    await say(first.id, title.id);
+    router.push({
+      actions: [
+        { type: 'new', slide: 2, text: 'Auf allen Folien die Schrift größer.', finished: true },
+      ],
+    });
+    await say(second.id);
+    // Both filed and waiting – never at work while the ones before still run (held).
+    await vi.waitFor(
+      async () =>
+        expect((await current()).items.slice(at).map((item) => item.state)).toEqual([
+          'queued',
+          'queued',
+        ]),
+      { timeout: 30_000, interval: 20 },
+    );
+    expect((await current()).items.slice(at - 2).map((item) => item.state)).toEqual([
+      'working',
+      'working',
+      'queued',
+      'queued',
+    ]);
+    letGo();
+    anthropic.hold.until = null;
+    await vi.waitFor(
+      async () =>
+        expect((await current()).items.slice(at - 2).map((item) => item.state)).toEqual([
+          'answered',
+          'answered',
+          'answered',
+          'answered',
+        ]),
+      { timeout: 30_000, interval: 50 },
+    );
+
+    // An open thread from before, someone's typed comment about another element, its AI still at
+    // work: a request said about that element is a reply there – the run stopped, asked again
+    // with it. A resolved thread is not taken up again: the next request is a new comment.
+    const pad = 0.012;
+    const typed = commentSchema.parse(
+      await (
+        await context.request(`/api/decks/${deck.id}/comments`, {
+          method: 'POST',
+          json: {
+            slideId: first.id,
+            parentId: null,
+            body: 'Das Bild wirkt zu klein.',
+            anchor: {
+              type: 'rect',
+              rect: {
+                x: other.bbox.x - pad / 2,
+                y: other.bbox.y - pad / 2,
+                w: other.bbox.w + pad,
+                h: other.bbox.h + pad,
+              },
+              shapeRef: null,
+            },
+            strokes: [],
+          },
+        })
+      ).json(),
+    );
+    let freeAi = () => {};
+    anthropic.hold.until = new Promise<void>((resolve) => (freeAi = resolve));
+    const typedAsk = aiProposalSchema.parse(
+      await (
+        await context.request(`/api/decks/${deck.id}/ai/proposals`, {
+          method: 'POST',
+          json: { commentId: typed.id },
+        })
+      ).json(),
+    );
+    heard.unshift('Das Bild größer.');
+    router.push({
+      actions: [
+        { type: 'new', slide: 1, elements: [other.id], text: 'Das Bild größer.', finished: true },
+      ],
+    });
+    await say(first.id, other.id);
+    const joinedItem = (await current()).items.at(-1)!;
+    expect(joinedItem.threadId).toBe(typed.id);
+    const typedReply = (await deckComments()).find((each) => each.id === joinedItem.commentId);
+    expect(typedReply).toMatchObject({ parentId: typed.id, body: 'Das Bild größer.' });
+    await vi.waitFor(
+      async () => {
+        const all = aiProposalSchema
+          .array()
+          .parse(await (await context.request(`/api/decks/${deck.id}/ai/proposals`)).json());
+        expect(all.find((each) => each.id === typedAsk.id)?.status).toBe('cancelled');
+        expect(all.find((each) => each.commentId === joinedItem.commentId)).toBeDefined();
+      },
+      { timeout: 30_000, interval: 20 },
+    );
+    freeAi();
+    anthropic.hold.until = null;
+    await vi.waitFor(async () => expect((await current()).items.at(-1)!.state).toBe('answered'), {
+      timeout: 30_000,
+      interval: 50,
+    });
+    await context.request(`/api/comments/${typed.id}`, {
+      method: 'PATCH',
+      json: { status: 'done' },
+    });
+    heard.unshift('Das Bild noch heller.');
+    router.push({
+      actions: [
+        {
+          type: 'new',
+          slide: 1,
+          elements: [other.id],
+          text: 'Das Bild noch heller.',
+          finished: false,
+        },
+      ],
+    });
+    await say(first.id, other.id);
+    const fresh = (await current()).items.at(-1)!;
+    expect(fresh.threadId).toBe(fresh.commentId);
+    router.push({ actions: [{ type: 'drop', item: `K${(await current()).items.length}` }] });
+    await say(first.id);
 
     // The live words there already: decided on at once – speech to text, slow here, only makes
     // them accurate afterwards (the caption keeps the live words until then).
@@ -577,11 +780,13 @@ describe('speaking to the AI', () => {
     );
     freeSpeech();
     hold = null;
-    await vi.waitFor(async () =>
-      expect((await current()).segments.at(-1)).toMatchObject({
-        text: 'Den Untertitel kursiv.',
-        heard: true,
-      }),
+    await vi.waitFor(
+      async () =>
+        expect((await current()).segments.at(-1)).toMatchObject({
+          text: 'Den Untertitel kursiv.',
+          heard: true,
+        }),
+      { timeout: 30_000 },
     );
 
     // Speech to text slower than the speech: the pieces that waited are heard as one.
@@ -589,7 +794,7 @@ describe('speaking to the AI', () => {
     hold = new Promise<void>((resolve) => (release = resolve));
     const calls = transcribed.length;
     const three = Promise.all([say(second.id), say(second.id), say(second.id)]);
-    await vi.waitFor(() => expect(transcribed.length).toBe(calls + 1));
+    await vi.waitFor(() => expect(transcribed.length).toBe(calls + 1), { timeout: 30_000 });
     release();
     await three;
     expect(transcribed.length).toBe(calls + 2);

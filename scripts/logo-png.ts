@@ -1,13 +1,13 @@
 /**
  * Renders every SVG in brand/logo/'s layout folders (scripts/logo-files.py writes them) to a PNG
  * next to it, with a transparent background: wide layouts 4000 px wide, the mark and the stacked
- * logo 2048 px wide, the app icon 1024 – and the web app's icons from `apps/web/public/app-icon*.svg`:
- * the rounded one for the manifest's `any` (192, 512); the full-bleed one (the brand guide's
- * "Dock-Export", content 1.08× the app icon's) for `maskable` (192, 512 – Chrome on macOS masks it
- * to the Dock's shape, Android to its own) and for iOS (180, which rounds the corners itself).
+ * logo 2048 px wide. The web app's icons come from the original 1024 px Icon Composer export
+ * at `brand/logo/icon/slider-app-icon.png`: manifest `any` (192, 512) and Apple touch (180).
+ * This export already has rounded corners; it must not be declared `maskable`.
  * Run from the repository root:
  *
  *   bun scripts/logo-png.ts
+ *   bun scripts/logo-png.ts --app-only
  */
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
@@ -15,7 +15,9 @@ import { chromium } from '@playwright/test';
 const DIR = 'brand/logo';
 const browser = await chromium.launch();
 const page = await browser.newPage();
-const files = (await readdir(DIR, { recursive: true })).filter((f) => f.endsWith('.svg')).sort();
+const files = process.argv.includes('--app-only')
+  ? []
+  : (await readdir(DIR, { recursive: true })).filter((f) => f.endsWith('.svg')).sort();
 for (const file of files) {
   const svg = await readFile(`${DIR}/${file}`, 'utf8');
   const [, w = '0', h = '0'] = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(svg) ?? [];
@@ -32,22 +34,23 @@ for (const file of files) {
 }
 
 const PUBLIC = 'apps/web/public';
-const rounded = await readFile(`${PUBLIC}/app-icon.svg`, 'utf8');
-const fullBleed = await readFile(`${PUBLIC}/app-icon-maskable.svg`, 'utf8');
-const icons: [string, string, number][] = [
-  ['icon-192.png', rounded, 192],
-  ['icon-512.png', rounded, 512],
-  ['icon-maskable-192.png', fullBleed, 192],
-  ['icon-maskable-512.png', fullBleed, 512],
-  ['apple-touch-icon.png', fullBleed, 180],
+const original = await readFile(`${DIR}/icon/slider-app-icon.png`);
+const src = `data:image/png;base64,${original.toString('base64')}`;
+const icons: [string, number][] = [
+  ['icon-192.png', 192],
+  ['icon-512.png', 512],
+  ['apple-touch-icon.png', 180],
 ];
-for (const [name, svg, size] of icons) {
+for (const [name, size] of icons) {
   await page.setViewportSize({ width: size, height: size });
-  const src = `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
   await page.setContent(
     `<body style="margin:0;background:transparent"><img src="${src}" width="${size}" height="${size}" style="display:block"></body>`,
   );
-  await writeFile(`${PUBLIC}/${name}`, await page.screenshot({ type: 'png', omitBackground: true }));
+  await page.locator('img').evaluate((img: HTMLImageElement) => img.decode());
+  await writeFile(
+    `${PUBLIC}/${name}`,
+    await page.screenshot({ type: 'png', omitBackground: true }),
+  );
   console.info(`wrote ${PUBLIC}/${name} (${size} × ${size})`);
 }
 await browser.close();

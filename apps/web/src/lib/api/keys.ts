@@ -15,6 +15,10 @@ export const queryKeys = {
   folders: (workspaceId: string) => ['folders', workspaceId] as const,
   slides: (deckId: string) => ['decks', deckId, 'slides'] as const,
   comments: (deckId: string) => ['decks', deckId, 'comments'] as const,
+  /** The deck's board (Folie 0, „Material“): its files, notes and links. */
+  board: (deckId: string) => ['decks', deckId, 'board'] as const,
+  /** A deck built by the AI from the prompt on Folie 1: the prompt, the outline, the progress. */
+  creation: (deckId: string) => ['decks', deckId, 'creation'] as const,
   people: (deckId: string) => ['decks', deckId, 'people'] as const,
   status: (deckId: string) => ['decks', deckId, 'status'] as const,
   /**
@@ -33,6 +37,7 @@ export const queryKeys = {
   edit: (deckId: string) => ['decks', deckId, 'edit'] as const,
   /** The layouts of a deck's own design, with their pictures (managers only). */
   deckLayouts: (deckId: string) => ['decks', deckId, 'layouts'] as const,
+  deckNotes: (deckId: string) => ['decks', deckId, 'notes'] as const,
   /**
    * A slide taken apart at an edit step – never changes, so outside the deck's keys: what
    * refreshes the deck (`useLive`) does not ask for it again.

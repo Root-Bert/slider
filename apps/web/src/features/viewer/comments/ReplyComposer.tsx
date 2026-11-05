@@ -63,6 +63,7 @@ export function ReplyComposer({
           onRecordingChange={draft.voice.onRecordingChange}
           onDiscard={draft.voice.discard}
           onSend={(options) => submit(undefined, options)}
+          onSendNow={draft.voice.sendNow}
           disabled={draft.uploading}
         />
       )}
@@ -119,8 +120,8 @@ export function ReplyComposer({
           <span className="shrink-0 text-caption text-fg-subtle">jetzt</span>
         </header>
         <div className="flex items-end gap-2 rounded-control bg-well-dark py-1.5 pr-2 pl-3">
-          <div className="min-w-0 flex-1 py-[3px]">{field}</div>
-          {attach}
+          <div className="min-w-0 flex-1 overflow-hidden py-[3px]">{field}</div>
+          {!draft.voice.on && attach}
           <IconButton
             icon="close"
             label="Antwort verwerfen"
@@ -153,9 +154,10 @@ export function ReplyComposer({
     >
       <div className="flex items-end gap-2">
         <div className="field-well focus-field flex min-h-10 min-w-0 flex-1 items-end gap-0.5 rounded-control py-1.5 pr-1 pl-3.5">
-          <div className="min-w-0 flex-1 py-[5px]">{field}</div>
-          {attach}
-          <MediaReplyButtons root={root} voice={draft.voice} />
+          <div className="min-w-0 flex-1 overflow-hidden py-[5px]">{field}</div>
+          {/* The memo has the row: its own pause, send and bin. */}
+          {!draft.voice.on && attach}
+          {!draft.voice.on && <MediaReplyButtons root={root} voice={draft.voice} />}
         </div>
         {askAi('sm', 'mb-1')}
         <IconButton

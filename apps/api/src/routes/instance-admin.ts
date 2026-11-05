@@ -101,10 +101,13 @@ export function instanceAdminRoutes(deps: AppDeps) {
     )
     .patch('/instance/integrations/:kind', async (c) => {
       const kind = integrationKindSchema.parse(c.req.param('kind'));
-      const { workspaceId, rule, model } = await readJson(c, updateIntegrationPolicyInputSchema);
+      const { workspaceId, rule, model, createModel } = await readJson(
+        c,
+        updateIntegrationPolicyInputSchema,
+      );
       // A model is checked with the key's service.
-      if (model) limit(c);
-      return c.json(await setIntegrationPolicy(deps, kind, workspaceId, rule, model));
+      if (model || createModel) limit(c);
+      return c.json(await setIntegrationPolicy(deps, kind, workspaceId, rule, model, createModel));
     })
     .post('/instance/integrations/keys', async (c) => {
       limit(c);

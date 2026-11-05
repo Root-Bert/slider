@@ -1,5 +1,12 @@
 import type { Comment } from '@slider/shared';
-import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from 'react';
 import { useCreateReply } from '@/lib/api';
 import { isAbort, useCreateMediaComment } from '../../media/hooks/useMediaComment';
 import { asUploads, useImageAttachments } from '../../media/hooks/useImageAttachments';
@@ -144,6 +151,16 @@ export function useReplyDraft(root: Comment, deckId: string, options: ReplyDraft
     }
   };
 
+  // The memo's send while it records: it ends, and the reply goes once the memo is there.
+  const sendWhenRecorded = useRef<{ askAi: boolean } | null>(null);
+  const sendRecorded = useEffectEvent((askAi: boolean) => submit(undefined, { askAi }));
+  useEffect(() => {
+    const send = sendWhenRecorded.current;
+    if (!send || !recording || recordingRunning) return;
+    sendWhenRecorded.current = null;
+    sendRecorded(send.askAi);
+  }, [recording, recordingRunning]);
+
   return {
     author: viewer.author,
     /** ⌘↵ would ask the AI as well. */
@@ -159,10 +176,18 @@ export function useReplyDraft(root: Comment, deckId: string, options: ReplyDraft
     voice: {
       on: voice,
       held: voice && (recording !== null || recordingRunning),
+      /** Still recording (or paused): its own send is the bar's. */
+      running: voice && recordingRunning,
       start: startVoice,
       discard: discardVoice,
       onChange: setRecording,
       onRecordingChange: setRecordingRunning,
+      sendNow: {
+        run: (askAi: boolean) => {
+          sendWhenRecorded.current = { askAi };
+        },
+        ai: ai.available && root.slideId !== null,
+      },
     },
     /** The pasted or picked images, and the upload of a reply with them. */
     images,

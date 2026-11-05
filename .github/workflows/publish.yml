@@ -3,8 +3,8 @@ name: Publish
 # Publishing a release here (the private development repository) also publishes its code to the
 # public repository Root-Bert/slider: one commit per release on top of the previous one, by
 # "Slider", tagged like here – none of this repository's history goes along, nor blog drafts. The public
-# repository's release.yml then creates the GitHub release from the tag. Runs only here, never in
-# the public repository or a fork.
+# repository's CI then runs every check on the tag and creates the GitHub release only if all pass.
+# Runs only here, never in the public repository or a fork.
 #
 # Repository secret: PUBLIC_REPO_KEY (private SSH key; its public half is a deploy key with write
 # access on Root-Bert/slider, the only one allowed to push there).
@@ -26,8 +26,21 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The full CI on the release tag first: nothing is published (nor deployed, deploy.yml waits for
+  # this workflow) unless every check passes.
+  ci:
+    name: CI
+    if: github.repository == 'Root-Bert/slider-dev'
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ github.event.release.tag_name || inputs.tag }}
+    # The public repository's release job needs write; it never runs here.
+    permissions:
+      contents: write
+
   publish:
     name: Publish to the public repository
+    needs: ci
     if: github.repository == 'Root-Bert/slider-dev'
     runs-on: ubuntu-latest
     env:
@@ -39,8 +52,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # Must succeed before loading the public repository's write key or pushing any code.
-      # CI runs concurrently with publishing, so its scan alone cannot protect this boundary.
+      # Must succeed before loading the public repository's write key or pushing any code – right
+      # here, on the very checkout that is pushed.
       - name: Block publishing if the history contains secrets
         run: >-
           docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo" -w /repo

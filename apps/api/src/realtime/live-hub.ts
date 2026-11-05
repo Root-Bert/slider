@@ -302,6 +302,16 @@ export class LiveHub {
     this.broadcast(deckId, { type: 'proposals' });
   }
 
+  /** Something on the deck's board (Folie 0) came, moved, changed or went – or its text was read. */
+  boardChanged(deckId: string): void {
+    this.broadcast(deckId, { type: 'board' });
+  }
+
+  /** A deck built from the prompt on Folie 1 moved on: outline written, a slide built, done. */
+  creationChanged(deckId: string): void {
+    this.broadcast(deckId, { type: 'creation' });
+  }
+
   /**
    * Changes with {@link commentsChanged}: the refetches one change sets off may share one query,
    * but never one that started before the change. Kept per deck only while it has connections

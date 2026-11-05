@@ -118,6 +118,10 @@ export const blobKeys = {
   /** In the media store; same deck prefix, so deleting a deck clears its recordings too. */
   media: (deckId: string, mediaId: string, extension: string) =>
     `decks/${deckId}/media/${mediaId}.${extension}`,
+  /** A file on the deck's board (Folie 0) in the media store, and its small picture. */
+  material: (deckId: string, materialId: string) => `decks/${deckId}/materials/${materialId}`,
+  materialPreview: (deckId: string, materialId: string) =>
+    `decks/${deckId}/materials/${materialId}-preview.jpg`,
   workspacePrefix: (workspaceId: string) => `workspaces/${workspaceId}/`,
   workspaceLogo: (workspaceId: string, extension: string) =>
     `workspaces/${workspaceId}/logo-${crypto.randomUUID()}.${extension}`,

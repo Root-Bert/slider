@@ -111,17 +111,27 @@ import { touchDeck } from './decks';
 import { elementAlone } from './edit-backgrounds';
 import { bakeTilt } from './tilt-pictures';
 import { summarizeTranscriptsLater } from './transcripts';
+import { summarizeThreadLater } from './thread-summaries';
 import {
   NEW_KINDS,
   NEXT_TO_SIDES,
+  applyQuickEdits,
+  layoutLines,
   placesAgree,
   quickEditSchema,
-  quickOperations,
+  quickLayouts,
   quickPlan,
   quickSummary,
+  type ContentArea,
   type QuickEdit,
+  type QuickPlan,
+  type QuickProblem,
 } from './voice/quick-edits';
 import { aboutSeveralSlides, marginsOf, quickEdits, quickPrompt } from './quick-requests';
+import { MORE_ELEMENT_PROPERTIES, SLIDE_SETTING_PROPERTIES } from './voice/router';
+import { changedMeanwhile, meanwhileNote, type Seen } from './ai-meanwhile';
+import { MATERIAL_TOOL_NAMES, MATERIAL_TOOLS, runMaterialTool } from './material-tools';
+import { materialsBrief } from './ai-context';
 
 /*
  * The AI edits the deck (BER-183): asked from a comment (⌘↵), it works on the ODP's XML
@@ -260,6 +270,7 @@ What you know and how to learn more:
 - zoom_slide shows a part of a slide close up, sharp – small text, spacing, edges.
 - view_layout shows a layout big with its placeholders: a template's (list_layouts) or one of the deck's master pages.
 - list_comments lists the deck's open comments – what people want elsewhere.
+- The deck's material – files, notes and links people put on its board (Folie 0, before slide 1; never part of the deck) – is listed in your first message when there is any, but not its contents: list_materials lists it, read_material reads a file's text page by page, read_sheet gives a spreadsheet's cells with their addresses, search_materials finds words in all of it, view_material looks at a picture or a page. When the request refers to figures, facts or wording from the material („die Zahlen aus der Excel“), read them there – take figures exactly as they are, never guess them.
 Look up what the request needs; you need not look at everything. Ask for everything you want to see in one answer – several looks called together run at the same time – rather than one look per turn: each turn takes time.
 
 Writing:
@@ -290,7 +301,7 @@ Noticing and asking:
 
 When the slides are right, or when the request cannot be done, stop. What you wrote is applied right away; the people can take it back with one click. Then reply in the language of the request with one short sentence saying what you changed (or why nothing) – the slides show the rest. Then, at most one short sentence each: that you left a comment about something you noticed (where, in a few words), and your question. Address the person directly, without preamble.`;
 
-const STOCK_SYSTEM = `
+export const STOCK_SYSTEM = `
 
 Stock photos (Unsplash): when the request asks for a photo or picture you do not have – a new one, a better or different one – search_photos finds photos (you see small previews) and add_photo makes one available as a file path for write_slide and edit_slide, cut to the frame's proportions. Search with a short English query for what the photo should show; search again only if nothing fits. Pass the best photo and up to two good alternatives to add_photo: the people can switch to an alternative with one click. Put the photo into a draw:frame with the proportions you gave (replacing an existing picture: its draw:image inside the existing frame, same size). The photographer's credit is added to the frame automatically – do not write it on the slide. Never use stock photos for logos, charts, screenshots or people the deck names.`;
 
@@ -298,7 +309,7 @@ const CUT_OUT_SYSTEM = `
 
 Cutting out: when the request asks to remove a picture's background – a person, a product, a logo on a white or coloured box – cut_out makes a copy of the picture with its background transparent (the subject stays as it is) and gives you its path; the original stays in the file. Put the copy where the original was: the xlink:href of its draw:image, same frame. Look at the result it shows: only the main subject is kept, so a picture whose background belongs to it (a screenshot, a chart, a scene) is not for cutting out. When only one thing of several is wanted – the wordmark without the symbol, one person of a group – or the whole picture lost a part that matters, pass the area around that thing (view_picture shows the picture and its size in pixels). A copy of an area has that area's proportions: size its frame to them.`;
 
-const GENERATE_SYSTEM = `
+export const GENERATE_SYSTEM = `
 
 Generated pictures: generate_image makes a new picture from a description with the workspace's image model and gives you its path for write_slide and edit_slide, cut to the frame's proportions. Use it when the request asks for a picture to be generated, created or drawn, for an illustration or a scene no real photo shows – and for any new picture when there are no stock photos. Describe in English what the picture shows, its style, light and colours (fitting the deck's look), and that it has no text or lettering in it. Look at the result it shows: if it does not fit, generate once more with a better description. Put it into a draw:frame with the proportions you gave (replacing an existing picture: its draw:image inside the existing frame, same size). Never generate logos, charts, screenshots or people the deck names.`;
 
@@ -318,7 +329,7 @@ const slideNumber = {
   description: 'The slide’s number in the deck (1 = first).',
 } as const;
 
-const TOOLS: Anthropic.Beta.BetaTool[] = [
+export const TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: 'view_slide',
     description:
@@ -547,7 +558,7 @@ const TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: 'change_elements',
     description:
-      'Changes and adds elements of a slide as the editor does – far quicker than writing XML, and the result is what a person makes in the editor (the deck’s text style, editable at once): where they are and how big, fill, border, their text and its font, size, colour, weight and alignment, order, deleting. A change names an existing element by its xml:id (inspect_slide and the element list give them) and only what changes. `add` makes a new element instead – a text box, a shape (rectangle, ellipse – a circle when width = height –, triangle, diamond, hexagon, block arrow, star) or a line/arrow – on top, with everything else of the change (fill, border, text and its look); `copy_of` makes a copy of an element (its look and text), changed by the rest. Give a new one a `name`: later changes of the same call refer to it by that name (element, next_to, align_with, size_like, from, to), and the result gives its xml:id. Place a new one by `box`, or relative to others: `next_to` (beside or below another, a gap between, lined up with it), then `align_with`; its size by width/height, `size_like` or the box. A line or arrow runs `from` an element or a point `to` another – between two elements it starts and ends at their facing edges, straight across when they lie side by side. Changes apply in order; all apply or none. One the editor cannot make (a field, a table cell, a style of only part of the text) comes back as an error – do it with edit_slide then.',
+      'Changes and adds elements of a slide as the editor does – far quicker than writing XML, and the result is what a person makes in the editor (the deck’s text style, editable at once): where they are and how big, fill, border, their text and its font, size, colour, weight and alignment, order, deleting, grouping (`group`: the ids) and ungrouping, locking, effects (shadow, glow, soft edge, frosted glass), rounded corners, turning, mirroring, a line’s heads, a picture’s fit – and the slide’s own background colour, transition, notes, hidden (an item with `slide`). A change names an existing element by its xml:id (inspect_slide and the element list give them) and only what changes. `add` makes a new element instead – a text box, a shape (rectangle, ellipse – a circle when width = height –, triangle, diamond, hexagon, block arrow, star) or a line/arrow – on top, with everything else of the change (fill, border, text and its look); `copy_of` makes a copy of an element (its look and text), changed by the rest. Give a new one a `name`: later changes of the same call refer to it by that name (element, next_to, align_with, size_like, from, to), and the result gives its xml:id. Place a new one by `box`, or relative to others: `next_to` (beside or below another, a gap between, lined up with it), then `align_with`; its size by width/height, `size_like` or the box. A line or arrow runs `from` an element or a point `to` another – between two elements it starts and ends at their facing edges, straight across when they lie side by side. Changes apply in order; all apply or none. One the editor cannot make (a field, a table cell, a style of only part of the text) comes back as an error – do it with edit_slide then.',
     input_schema: {
       type: 'object',
       properties: {
@@ -628,7 +639,7 @@ const TOOLS: Anthropic.Beta.BetaTool[] = [
               heads: {
                 type: 'string',
                 enum: ['none', 'start', 'end', 'both'],
-                description: 'A new line’s arrow heads (arrow: end, line: none unless given).',
+                description: 'A line’s arrow heads (a new arrow: end, line: none unless given).',
               },
               box: {
                 type: 'object',
@@ -702,6 +713,14 @@ const TOOLS: Anthropic.Beta.BetaTool[] = [
               align: { type: 'string', enum: ['left', 'center', 'right', 'justify'] },
               order: { type: 'string', enum: ['front', 'back'] },
               delete: { type: 'boolean' },
+              ...MORE_ELEMENT_PROPERTIES,
+              slide: {
+                type: 'integer',
+                minimum: 1,
+                description:
+                  'Instead of element: the slide of this call itself – its background (one colour), transition, speaker notes, hidden.',
+              },
+              ...SLIDE_SETTING_PROPERTIES,
             },
           },
         },
@@ -765,7 +784,7 @@ const CUT_OUT_TOOLS: Anthropic.Beta.BetaTool[] = [
   },
 ];
 
-const GENERATE_TOOLS: Anthropic.Beta.BetaTool[] = [
+export const GENERATE_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: 'generate_image',
     description:
@@ -785,7 +804,7 @@ const GENERATE_TOOLS: Anthropic.Beta.BetaTool[] = [
   },
 ];
 
-const STOCK_TOOLS: Anthropic.Beta.BetaTool[] = [
+export const STOCK_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: 'search_photos',
     description:
@@ -926,7 +945,19 @@ const cmEnd = z.union([
   z.object({ x: z.number(), y: z.number() }),
 ]);
 const elementChange = quickEditSchema
-  .omit({ place: true, box: true, size: true, next_to: true, from: true, to: true })
+  .omit({
+    place: true,
+    box: true,
+    size: true,
+    next_to: true,
+    from: true,
+    to: true,
+    // Slides come, move and go with their own tools.
+    new_slide: true,
+    title: true,
+    move_after: true,
+    duplicate: true,
+  })
   .extend({
     box: z
       .object({
@@ -994,7 +1025,7 @@ function report(deps: AppDeps, proposal: ProposalRow, step: string, preview?: st
 }
 
 /** What the thread says the AI does while it runs a group of tools. */
-function stepOf(calls: readonly Anthropic.Beta.BetaToolUseBlock[]): string {
+export function stepOf(calls: readonly Anthropic.Beta.BetaToolUseBlock[]): string {
   const call = calls.find((each) => WRITING_TOOLS.has(each.name)) ?? calls[0];
   const input = (call?.input ?? {}) as { slide?: unknown };
   const slide = typeof input.slide === 'number' ? input.slide : null;
@@ -1492,7 +1523,7 @@ async function threadPictures(
  * they stay with a slide that moves – the slides it wrote, added, moved or removed, how they
  * look, the styles it added.
  */
-class DeckCopy {
+export class DeckCopy {
   private bytes: Uint8Array;
   private document: OdpDocument;
   private readonly drawn = new Map<string, Uint8Array | null>();
@@ -1506,6 +1537,7 @@ class DeckCopy {
   private photoSearches = 0;
   /** Pictures generated so far. */
   private generated = 0;
+  usageFeature: 'image' | 'create' = 'image';
   private readonly found = new Map<string, StockPhotoRecord>();
   /**
    * Stock photos, cut-out and generated pictures made available by path (edit pictures of the deck); of
@@ -1641,12 +1673,28 @@ class DeckCopy {
     deck.photo = this.photo;
     deck.photoSearches = this.photoSearches;
     deck.generated = this.generated;
+    deck.usageFeature = this.usageFeature;
     deck.taken = this.taken;
     return { deck, conflicts: outcome.conflicts };
   }
 
   get slides() {
     return this.document.slides();
+  }
+
+  /** The revision as the copy was made from it – its step and file then. */
+  get revision(): EditTarget['revision'] {
+    return this.target.revision;
+  }
+
+  /** One of the tools reading the deck's board (Folie 0); `null` for any other tool. */
+  materialTool(name: string, input: unknown) {
+    return runMaterialTool(this.deps, this.target.deck.id, name, input);
+  }
+
+  /** The first message's lines about the deck's board; `null` when nothing lies there. */
+  materialsBrief(): Promise<string | null> {
+    return materialsBrief(this.deps, this.target.deck.id);
   }
 
   private index(slide: number): number {
@@ -2159,7 +2207,13 @@ class DeckCopy {
       throw new ToolProblem('No more pictures – take one of those generated.');
     }
     this.generated += 1;
-    const bytes = await generatePicture(this.deps, this.target.deck, prompt, aspect);
+    const bytes = await generatePicture(
+      this.deps,
+      this.target.deck,
+      prompt,
+      aspect,
+      this.usageFeature,
+    );
     const stored = await storeEditImage(this.deps, this.target.deck.id, bytes);
     // Only names it here; write puts it into the file once a slide shows it.
     const path = this.document.addPicture(bytes, stored.mediaType);
@@ -2397,7 +2451,19 @@ class DeckCopy {
         ...(to ? { to: end(to) } : {}),
       };
     });
-    const plan = quickPlan(edits, [info], null, { page: size });
+    // On this slide – its settings too; other slides have tools of their own.
+    const plan = quickPlan(edits, this.slides, null, {
+      page: size,
+      on: index,
+      refuse: (edit) =>
+        edit.group?.some((id) => !names.has(id) && !info.elements.some((each) => each.id === id))
+          ? `slide ${slide} has no such elements to group`
+          : edit.slide && edit.slide !== slide
+            ? `this call changes slide ${slide} – its settings with slide ${slide}`
+            : edit.slide && edit.delete
+              ? 'delete_slide deletes a slide'
+              : null,
+    });
     if ('problem' in plan) {
       const which =
         plan.index === -1
@@ -2429,38 +2495,54 @@ class DeckCopy {
     return this.slides[index];
   }
 
+  /** The layouts a new slide can take, a line each. */
+  layouts(): string[] {
+    return layoutLines(quickLayouts(this.document));
+  }
+
   /**
    * A quick request's edits applied to slide `index` – places worked out inside the design's
    * margins – without drawing it. `false` when they do not fit or change nothing: the AI does
    * the request then, on the copy as it was.
    */
   async applyQuick(index: number, edits: readonly QuickEdit[]): Promise<boolean> {
-    const info = this.slides[index];
-    const pageId = info?.pageId;
-    if (!info || !pageId) return false;
+    if (!this.slides[index]?.pageId) return false;
     const page = this.document.pageSize();
-    const operations = quickOperations(edits, [info], marginsOf(this.design, page), { page });
-    if (!operations) return false;
-    const before = this.document.slideXml(index);
     const made = new Set<string>();
+    const written = new Set<string>();
+    let moved = new Set<string>();
     try {
       await this.change((document) => {
-        const outcome = document.applyWhatFits(operations);
-        if (outcome.dropped.length > 0 || outcome.applied.length === 0) {
-          throw new ToolProblem(outcome.reason ?? 'does not fit');
+        const before = new Map(
+          document.pageIds().map((pageId, at) => [pageId, document.slideXml(at)] as const),
+        );
+        const plan = applyQuickEdits(document, edits, marginsOf(this.design, page), {
+          page,
+          on: index,
+        });
+        if ('problem' in plan) throw new ToolProblem(plan.problem);
+        moved = movedBy(plan.operations);
+        document.pageIds().forEach((pageId, at) => {
+          if (before.get(pageId) === document.slideXml(at)) return;
+          written.add(pageId);
+          for (const name of this.base.stylesXml(document.styleNamesOf(at)).missing) {
+            made.add(name);
+          }
+        });
+        // Slides deleted and moved count as changed too.
+        const gone = [...before.keys()].some((pageId) => !document.pageIds().includes(pageId));
+        if (written.size === 0 && moved.size === 0 && !gone) {
+          throw new ToolProblem('changes nothing');
         }
-        for (const name of this.base.stylesXml(document.styleNamesOf(index)).missing) {
-          made.add(name);
-        }
-        return pageId;
+        return null;
       }, false);
     } catch (error) {
       if (error instanceof ToolProblem || error instanceof OdpError) return false;
       throw error;
     }
-    if (this.document.slideXml(index) === before) return false;
     for (const name of made) this.ownStyles.add(name);
-    this.written.add(pageId);
+    for (const pageId of written) this.written.add(pageId);
+    for (const pageId of moved) this.moved.add(pageId);
     return true;
   }
 
@@ -2793,7 +2875,7 @@ interface Note {
 }
 
 /** What the AI says besides its change: comments to leave, and whether its reply asks back. */
-class Remarks {
+export class Remarks {
   readonly notes: Note[] = [];
   asks = false;
 }
@@ -2857,7 +2939,7 @@ function stickerStroke(
 }
 
 /** What a call whose input came as broken JSON gets back. */
-const UNREADABLE_CALL =
+export const UNREADABLE_CALL =
   'Your input for this call was not valid JSON – most likely a " or \\ inside the XML left unescaped. Nothing was done: send the call again, with every " in a string written as \\".';
 
 /** Tools that only look at the deck: several of them in one answer run side by side. */
@@ -2874,6 +2956,7 @@ const LOOKING_TOOLS = new Set([
   'view_picture',
   'list_layouts',
   'read_styles',
+  ...MATERIAL_TOOL_NAMES,
 ]);
 
 /** An answer's calls in groups to run: neighbouring looks together, every other call alone. */
@@ -2888,7 +2971,7 @@ export function callGroups<T extends { name: string }>(calls: readonly T[]): T[]
   return groups;
 }
 
-async function runTool(
+export async function runTool(
   deck: DeckCopy,
   remarks: Remarks,
   call: Anthropic.Beta.BetaToolUseBlock,
@@ -2903,6 +2986,8 @@ async function runTool(
     ...(isError ? { is_error: true } : {}),
   });
   try {
+    const material = await deck.materialTool(call.name, call.input);
+    if (material) return result(material.content, material.isError);
     if (call.name === 'view_slide') {
       const input = viewInput.parse(call.input);
       return result(await deck.view(input.slide));
@@ -3154,6 +3239,9 @@ async function firstLook(
   const blocks: Anthropic.Beta.BetaContentBlockParam[] = [
     { type: 'text', text: `The design of the deck – keep to it:\n${deck.brief()}` },
   ];
+  // What lies on the deck's board: names and a line each – the contents only through the tools.
+  const materials = await deck.materialsBrief();
+  if (materials) blocks.push({ type: 'text', text: materials });
   try {
     const from = Math.max(
       1,
@@ -3226,6 +3314,8 @@ async function quickly(
           page: deck.base.pageSize(),
           design: deck.design,
           thread: proposal.prompt,
+          slides: deck.slides,
+          layouts: deck.layouts(),
         }),
         signal,
       );
@@ -3319,6 +3409,8 @@ async function runProposal(
     deck.thread = await threadRoot(deps, proposal.commentId);
     deck.onDrawn = shown;
     if (variant) place = await variantPlace(deck, place);
+    /** The deck's step it last looked at: what others change after it is told between turns. */
+    let seen: Seen = { seq: deck.revision.editSeq, key: deck.revision.pptxKey };
     const messages: Anthropic.Beta.BetaMessageParam[] = [];
     /**
      * The first message – the design brief, the deck at a glance, the slide drawn – made when the
@@ -3379,11 +3471,23 @@ async function runProposal(
       for (let turn = 0; turn < turns; turn += 1) {
         // Stopped through another instance of the API too: no further paid turn.
         if (await stopped(deps, proposal, signal)) return { refused: false, summary: null };
+        // Others changed the deck since it last looked: a few lines at the end of its input.
+        const meanwhile = await changedMeanwhile(deps, deck.revision.id, deck.base, seen);
+        seen = meanwhile.seen;
+        const note = meanwhileNote(meanwhile.lines);
+        const last = messages.findLast((each) => each.role === 'user');
+        if (note && last) {
+          if (typeof last.content === 'string') {
+            last.content = [{ type: 'text', text: last.content }];
+          }
+          last.content.push({ type: 'text', text: note });
+        }
         report(deps, proposal, checking ? 'Prüft das Ergebnis' : 'Überlegt');
         const message = await runTurn(deps, connection, {
           system: systemPrompt(stock, cutOut, generate),
           tools: [
             ...TOOLS,
+            ...MATERIAL_TOOLS,
             ...(cutOut ? CUT_OUT_TOOLS : []),
             ...(stock ? STOCK_TOOLS : []),
             ...(generate ? GENERATE_TOOLS : []),
@@ -3554,6 +3658,8 @@ async function runProposal(
           const rebased = await deck.rebase(viewer);
           deck = rebased.deck;
           deck.onDrawn = shown;
+          // The rebased copy shows what others changed: told from here on only what comes next.
+          seen = { seq: deck.revision.editSeq, key: deck.revision.pptxKey };
           talk = rebased.conflicts.length > 0;
           if (talk) await tell(await conflictNote(deck, rebased.conflicts));
           continue;
@@ -3580,6 +3686,8 @@ async function runProposal(
     clock.done();
     progressOf.delete(proposal.id);
     await Promise.all(previews.map((key) => deps.storage.delete(key).catch(() => {})));
+    // Settled: a thread that asked often gets its summary anew.
+    summarizeThreadLater(deps, proposal.commentId);
   }
 }
 
@@ -3733,7 +3841,16 @@ export async function applyQuickProposal(
   deps: AppDeps,
   viewer: Viewer,
   deckId: string,
-  input: { commentId: string; operations: readonly SlideOperation[]; summary: string },
+  input: {
+    commentId: string;
+    /** Made into the editor's operations on the deck as it is (`applyQuickEdits`). */
+    edits: readonly QuickEdit[];
+    /** The content area inside the margins, shares of the slide – `null`: none set. */
+    margins: ContentArea | null;
+    /** The slide (0-based, in the file) new elements go on that name none there. */
+    on: number;
+    summary: string;
+  },
   { heard }: { heard?: ReadonlyMap<string, string> } = {},
 ): Promise<AiProposal> {
   const target = await editTarget(deps, viewer, deckId);
@@ -3743,7 +3860,7 @@ export async function applyQuickProposal(
   let written: Written | null = null;
   for (let attempt = 1; !written; attempt += 1) {
     const current = attempt === 1 ? target : await editTarget(deps, viewer, deckId);
-    const changes = await quickChanges(deps, current, input.operations);
+    const changes = await quickChanges(deps, current, input);
     try {
       written = await writeChanges(deps, viewer, target.deck.id, changes, 'apply');
     } catch (error) {
@@ -3773,51 +3890,80 @@ export async function applyQuickProposal(
     })
     .returning();
   deps.live?.proposalsChanged(target.deck.id);
+  summarizeThreadLater(deps, thread.asking.id);
   return toDto(row as ProposalRow, now, viewer.author.name);
 }
 
 /**
- * The operations applied to a copy of the deck's file, as a change of the AI: the slides they
- * changed, before and after, with the styles they made.
+ * The edits made on a copy of the deck's file, as a change of the AI: the slides they changed,
+ * added, moved or deleted, before and after, with the styles they made.
  */
 async function quickChanges(
   deps: AppDeps,
   target: EditTarget,
-  operations: readonly SlideOperation[],
+  input: { edits: readonly QuickEdit[]; margins: ContentArea | null; on: number },
 ): Promise<AiSlideChange[]> {
   const bytes = await readFile(deps, target.revision.pptxKey);
   const [base, document] = await Promise.all([OdpDocument.open(bytes), OdpDocument.open(bytes)]);
   // Page ids as every other reading of this file gets them (`ensureIds` is the same each time).
   base.ensureIds();
   document.ensureIds();
-  // Styles it makes are named its own, so they never meet another change's.
+  // Styles and slides it makes are named its own, so they never meet another change's.
   document.idPrefix = `vq${crypto.randomUUID().slice(0, 8)}-`;
-  const outcome = await withFileProblems(() => document.applyWhatFits(operations));
-  if (outcome.dropped.length > 0 || outcome.applied.length === 0) {
-    throw new QuickMisfit(outcome.reason ?? 'Die Änderung passt nicht mehr.');
+  let plan: QuickPlan | QuickProblem;
+  try {
+    plan = applyQuickEdits(document, input.edits, input.margins, { on: input.on });
+  } catch (error) {
+    if (error instanceof OdpError) throw new QuickMisfit(error.message);
+    throw error;
   }
-  const pages = base.pageIds();
-  const changed = document
-    .pageIds()
-    .flatMap((pageId, index) =>
-      pageId && pages[index] === pageId && base.slideXml(index) !== document.slideXml(index)
-        ? [{ pageId, index }]
-        : [],
-    );
-  if (changed.length === 0) throw new QuickMisfit('Die Änderung ändert nichts.');
+  if ('problem' in plan) throw new QuickMisfit(plan.problem);
+  const changes = slideChanges(base, document, movedBy(plan.operations));
+  if (changes.length === 0) throw new QuickMisfit('Die Änderung ändert nichts.');
+  return changes;
+}
+
+/** The slides an AI's operations moved on purpose (`moveSlide`), by page id. */
+const movedBy = (operations: readonly SlideOperation[]): Set<string> =>
+  new Set(operations.flatMap((each) => (each.type === 'moveSlide' ? [each.pageId] : [])));
+
+/**
+ * The slides `document` has otherwise than `base`, as a change of the AI: changed, added or gone
+ * – and those of `moved` at another place – with the styles their XML names that `base` lacks.
+ */
+function slideChanges(
+  base: OdpDocument,
+  document: OdpDocument,
+  moved: ReadonlySet<string>,
+): AiSlideChange[] {
+  const before = base.pageIds();
+  const after = document.pageIds();
+  const touched = [...new Set([...after, ...before])].flatMap((pageId) => {
+    if (!pageId) return [];
+    const from = before.indexOf(pageId);
+    const to = after.indexOf(pageId);
+    const old = from === -1 ? null : base.slideXml(from);
+    const now = to === -1 ? null : document.slideXml(to);
+    if (old === now && (from === to || !moved.has(pageId))) return [];
+    return [{ pageId, from, to, old, now }];
+  });
   // The styles its slides name that the file did not have: they come along with the change.
-  const named = [...new Set(changed.flatMap(({ index }) => document.styleNamesOf(index)))];
+  const named = [
+    ...new Set(touched.flatMap(({ to }) => (to === -1 ? [] : document.styleNamesOf(to)))),
+  ];
   const made = base.stylesXml(named).missing;
   const styles = made.length > 0 ? document.stylesXml(made).xml : [];
-  return changed.map(({ pageId, index }) => ({
-    pageId,
-    index,
-    before: base.slideXml(index),
-    after: document.slideXml(index),
-    beforeIndex: index,
-    afterIndex: index,
-    styles,
-  }));
+  return touched
+    .map(({ pageId, from, to, old, now }) => ({
+      pageId,
+      index: to === -1 ? from : to,
+      before: old,
+      after: now,
+      beforeIndex: from === -1 ? null : from,
+      afterIndex: to === -1 ? null : to,
+      styles,
+    }))
+    .sort((a, b) => a.index - b.index);
 }
 
 // ── Stopping ─────────────────────────────────────────────────────────────
@@ -4145,7 +4291,7 @@ function isOwnStep(proposal: ProposalRow, step: DeckEditRow): boolean {
  * the same things it throws a {@link MergeConflict} with `changedSince`. Returns the new step
  * and the change as it went in.
  */
-async function writeChanges(
+export async function writeChanges(
   deps: AppDeps,
   viewer: Viewer,
   deckId: string,

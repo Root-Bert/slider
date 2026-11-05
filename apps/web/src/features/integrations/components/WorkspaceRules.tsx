@@ -18,6 +18,7 @@ import {
   type ShowToast,
 } from '@/ui';
 import { ruleSummary } from '../lib/providers';
+import { AI_MODEL_ROLES, createModelOptions } from '../lib/ai-models';
 
 /**
  * The instance's rules of a kind: one for all workspaces, below it single workspaces treated
@@ -44,10 +45,10 @@ export function WorkspaceRules({
     workspaceId: string | null,
     rule: IntegrationRule | null,
     done: string,
-    model?: string | null,
+    models?: { model?: string | null; createModel?: string | null },
   ) =>
     policy.mutate(
-      { kind, workspaceId, rule, model },
+      { kind, workspaceId, rule, ...models },
       {
         onSuccess: () => onNotify(done),
         onError: (error) => onNotify(error.message, 'danger'),
@@ -112,16 +113,19 @@ export function WorkspaceRules({
                     name={exception.name}
                     apiKey={activeKey}
                     model={exception.model}
+                    createModel={exception.createModel}
                     free={exception.rule.inherit === 'key'}
                     disabled={policy.isPending}
-                    onChange={(model, label) =>
+                    onChange={(models, label) =>
                       save(
                         exception.workspaceId,
                         exception.rule,
-                        exception.rule.inherit === 'key'
-                          ? `${exception.name} startet jetzt mit ${label}`
-                          : `${exception.name} nutzt jetzt ${label}`,
-                        model,
+                        models.createModel !== undefined
+                          ? `${exception.name}: ${AI_MODEL_ROLES.create.label} nutzt jetzt ${label}`
+                          : exception.rule.inherit === 'key'
+                            ? `${exception.name} startet jetzt mit ${label}`
+                            : `${exception.name} nutzt jetzt ${label}`,
+                        models,
                       )
                     }
                   />
@@ -297,18 +301,27 @@ function Labeled({ caption, children }: { caption: string; children: ReactNode }
 function KeyModel({ apiKey: key }: { apiKey: IntegrationKey }) {
   // Shared with the key's own row above: asked once.
   const models = useIntegrationModels(null, key.id, true);
-  const name = models.data?.models.find((each) => each.id === key.model)?.name ?? key.model;
-  return <span className="text-sm text-fg-subtle">{name}</span>;
+  const nameOf = (id: string) => models.data?.models.find((each) => each.id === id)?.name ?? id;
+  return (
+    <span className="text-sm text-fg-subtle">
+      {nameOf(key.model)}
+      {key.kind === 'ai' &&
+        key.createModel &&
+        `, ${AI_MODEL_ROLES.create.label}: ${nameOf(key.createModel)}`}
+    </span>
+  );
 }
 
 /**
  * The model of the instance's key in a workspace apart – fixed there, or (`free`) the one it
- * starts on until it picks its own. Empty: the key's own, as for all.
+ * starts on until it picks its own. Empty: the key's own, as for all. The AI's model to create
+ * decks on beside it, alike.
  */
 function ModelPick({
   name,
   apiKey: key,
   model,
+  createModel,
   free,
   disabled,
   onChange,
@@ -316,9 +329,10 @@ function ModelPick({
   name: string;
   apiKey: IntegrationKey;
   model: string | null;
+  createModel: string | null;
   free: boolean;
   disabled: boolean;
-  onChange: (model: string | null, label: string) => void;
+  onChange: (models: { model?: string | null; createModel?: string | null }, label: string) => void;
 }) {
   const models = useIntegrationModels(null, key.id, true);
   const offered = models.data?.models ?? [];
@@ -333,18 +347,53 @@ function ModelPick({
   if (model && !offered.some((each) => each.id === model)) {
     options.push({ value: model, label: model });
   }
+  const isAi = key.kind === 'ai';
+  // Decks are created on the key's own for that, else on the model it runs on there.
+  const createStandard = key.createModel ?? model ?? key.model;
+  const pick = (
+    <Select
+      className="min-w-0"
+      aria-label={
+        free
+          ? `Modell, mit dem ${name} startet`
+          : isAi
+            ? `Modell für ${AI_MODEL_ROLES.review.label} in ${name}`
+            : `Modell für ${name}`
+      }
+      size="sm"
+      value={model ?? ''}
+      disabled={disabled}
+      options={options}
+      onChange={(value) => onChange({ model: value || null }, nameOf(value || key.model))}
+    />
+  );
   return (
-    <span className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-fg-muted">
-      {free && 'Startet mit'}
-      <Select
-        className="min-w-0"
-        aria-label={free ? `Modell, mit dem ${name} startet` : `Modell für ${name}`}
-        size="sm"
-        value={model ?? ''}
-        disabled={disabled}
-        options={options}
-        onChange={(value) => onChange(value || null, nameOf(value || key.model))}
-      />
+    <span className="flex min-w-0 flex-col gap-2 text-sm text-fg-muted">
+      <span className="flex min-w-0 flex-wrap items-center gap-2">
+        {free ? 'Startet mit' : isAi && `${AI_MODEL_ROLES.review.label}:`}
+        {pick}
+      </span>
+      {isAi && (
+        <span className="flex min-w-0 flex-wrap items-center gap-2">
+          {AI_MODEL_ROLES.create.label}:
+          <Select
+            className="min-w-0"
+            aria-label={`Modell für ${AI_MODEL_ROLES.create.label} in ${name}`}
+            size="sm"
+            value={createModel ?? ''}
+            disabled={disabled}
+            options={createModelOptions(
+              offered,
+              key.createModel ? `${nameOf(key.createModel)} (wie alle)` : 'Wie oben',
+              createStandard,
+              createModel,
+            )}
+            onChange={(value) =>
+              onChange({ createModel: value || null }, nameOf(value || createStandard))
+            }
+          />
+        </span>
+      )}
       {models.isError && (
         <ErrorText>Die Modelle ließen sich nicht laden: {models.error.message}</ErrorText>
       )}

@@ -8,6 +8,7 @@ import {
   type PagePicture,
 } from './pdf-pages';
 import type { PdfDeckData } from './pdf-render';
+import type { PdfText } from './pdf-text';
 
 /*
  * Untrusted PDFs – uploaded, linked, or made by a conversion – are parsed and drawn by pdf.js,
@@ -55,13 +56,24 @@ export class PdfTimedOut extends Error {
 export type PdfTask =
   | { kind: 'deck'; bytes: Uint8Array }
   | { kind: 'pages'; bytes: Uint8Array; expectedPages?: number; picture?: PagePicture }
-  | { kind: 'layers'; bytes: Uint8Array; background: boolean; width?: number };
+  | { kind: 'layers'; bytes: Uint8Array; background: boolean; width?: number }
+  /** The text of a file on a deck's board, and its first page drawn small (`pdf-text.ts`). */
+  | { kind: 'text'; bytes: Uint8Array }
+  /** One page drawn as a JPEG `width` px wide (`page` 1-based). */
+  | { kind: 'page'; bytes: Uint8Array; page: number; width: number };
 
 type PdfResult<T extends PdfTask> = T extends { kind: 'deck' }
   ? PdfDeckData
   : T extends { kind: 'layers' }
     ? LayerImages
-    : number;
+    : T extends { kind: 'text' }
+      ? PdfText
+      : T extends { kind: 'page' }
+        ? Uint8Array
+        : number;
+
+/** What a worker answers with in the end. */
+type AnyPdfResult = PdfDeckData | LayerImages | PdfText | Uint8Array | number;
 
 export type OnPdfPage = (page: PageImages, index: number) => Promise<void>;
 
@@ -84,8 +96,10 @@ export type ToPdfWorker =
       picture?: PagePicture;
       /** Layers: the first page is the slide without its elements. */
       background?: boolean;
-      /** Layers: drawn this wide (px) instead of `LAYER_IMAGE_WIDTH`. */
+      /** Layers: drawn this wide (px) instead of `LAYER_IMAGE_WIDTH`; a page: this wide. */
       width?: number;
+      /** A page: which (1-based). */
+      page?: number;
     }
   /** The page sent last is stored: draw the next one. */
   | { type: 'next' };
@@ -95,7 +109,7 @@ export type FromPdfWorker =
   /** The PDF is open and has this many pages: the deadline grows by their allowance. */
   | { type: 'opened'; pages: number }
   | { type: 'page'; index: number; image: Uint8Array; thumbnail: Uint8Array }
-  | { type: 'done'; result: PdfDeckData | LayerImages | number }
+  | { type: 'done'; result: AnyPdfResult }
   | { type: 'error'; error: WorkerError };
 
 export const toWorkerError = (error: unknown): WorkerError => {
@@ -272,15 +286,16 @@ export function runPdfTask<T extends PdfTask>(
   }, background);
 }
 
-async function runInProcess(
-  task: PdfTask,
-  onPage?: OnPdfPage,
-): Promise<PdfDeckData | LayerImages | number> {
+async function runInProcess(task: PdfTask, onPage?: OnPdfPage): Promise<AnyPdfResult> {
   // Loaded only here: in production pdf.js never comes onto the main thread.
   const { drawLayerPages, drawPdfPages, readPdfDeck } = await import('./pdf-render');
   // pdf.js takes ownership of (detaches) the buffer it is given.
   const bytes = task.bytes.slice();
   if (task.kind === 'deck') return readPdfDeck(bytes);
+  if (task.kind === 'text' || task.kind === 'page') {
+    const { drawPdfPage, readPdfText } = await import('./pdf-text');
+    return task.kind === 'text' ? readPdfText(bytes) : drawPdfPage(bytes, task.page, task.width);
+  }
   if (task.kind === 'layers') return drawLayerPages(bytes, task.background, task.width);
   return drawPdfPages(bytes, onPage ?? (async () => {}), {
     expectedPages: task.expectedPages,
@@ -300,7 +315,7 @@ function runInWorker(
   timeoutMs: number,
   workerUrl: URL,
   reuse = false,
-): Promise<PdfDeckData | LayerImages | number> {
+): Promise<AnyPdfResult> {
   return new Promise((resolve, reject) => {
     const worker = takeWorker(workerUrl, reuse);
     let settled = false;
@@ -308,7 +323,7 @@ function runInWorker(
     let remaining = timeoutMs;
     let since = Date.now();
     // Settles only once the thread is gone: its slot is not free while it still burns a core.
-    const finish = (error: Error | null, result?: PdfDeckData | LayerImages | number) => {
+    const finish = (error: Error | null, result?: AnyPdfResult) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -374,7 +389,8 @@ function runInWorker(
         bytes,
         expectedPages: task.kind === 'pages' ? task.expectedPages : undefined,
         background: task.kind === 'layers' ? task.background : undefined,
-        width: task.kind === 'layers' ? task.width : undefined,
+        width: task.kind === 'layers' || task.kind === 'page' ? task.width : undefined,
+        page: task.kind === 'page' ? task.page : undefined,
         picture: task.kind === 'pages' ? task.picture : undefined,
       } satisfies ToPdfWorker,
       [bytes.buffer],

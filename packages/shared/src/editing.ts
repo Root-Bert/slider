@@ -382,8 +382,8 @@ export const stockLink = (url: string, source: PhotoProvider = 'unsplash'): stri
   !url.startsWith('https://')
     ? STOCK_HOMES[source]
     : source === 'unsplash'
-    ? `${url}${url.includes('?') ? '&' : '?'}utm_source=Slider&utm_medium=referral`
-    : url;
+      ? `${url}${url.includes('?') ? '&' : '?'}utm_source=Slider&utm_medium=referral`
+      : url;
 
 /** The photo services themselves, linked from every credit. */
 export const STOCK_HOMES: Record<PhotoProvider, string> = {
@@ -544,7 +544,7 @@ export const editableElementSchema = z.object({
   /** A picture element's picture and how it fills its frame (`setImageFit`). Left out: no picture. */
   picture: elementPictureSchema.optional(),
   /**
-   * Drawn by the browser in Bearbeiten (the per-element editor, CLAUDE.md §1): its outline, its
+   * Drawn by the browser in Bearbeiten (the per-element editor, docs/do-not-break.md): its outline, its
    * fill and line from `live`. Left out: LibreOffice draws it (a picture of it alone).
    */
   paint: elementPaintSchema.optional(),
@@ -1192,6 +1192,21 @@ export const deckEditStateSchema = z.object({
   slides: z.array(editSlideSchema),
 });
 export type DeckEditState = z.infer<typeof deckEditStateSchema>;
+
+/**
+ * A deck's speaker notes, slide by slide – for everyone who may open it (the presenter view);
+ * changing them stays with edit rights (`setSlideNotes`).
+ */
+export const deckNotesSchema = z.object({
+  slides: z.array(
+    z.object({
+      slideId: z.string(),
+      notes: z.string(),
+      notesRich: z.array(notesParagraphSchema).optional(),
+    }),
+  ),
+});
+export type DeckNotes = z.infer<typeof deckNotesSchema>;
 
 /**
  * What „Exportieren“ hands out: the deck's file (a template as `.otp`), its PDF, or one slide

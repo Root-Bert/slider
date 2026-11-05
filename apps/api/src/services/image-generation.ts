@@ -54,10 +54,20 @@ export async function generatePicture(
   deck: { id: string; workspaceId: string },
   prompt: string,
   aspect: number | null,
+  feature: 'image' | 'create' = 'image',
 ): Promise<Uint8Array> {
   const found = await workspaceImageConnection(deps, deck.workspaceId);
   if (!found.connection) throw badRequest(found.error);
-  const { connection, keyId } = found;
+  const { keyId } = found;
+  const base = found.connection;
+  const connection =
+    feature === 'create' && base.meter
+      ? {
+          ...base,
+          meter: (report: Parameters<NonNullable<typeof base.meter>>[0]) =>
+            base.meter!({ ...report, feature }),
+        }
+      : base;
   let bytes: Uint8Array;
   try {
     bytes = await generateImage(deps, connection, prompt, shapeOf(aspect));

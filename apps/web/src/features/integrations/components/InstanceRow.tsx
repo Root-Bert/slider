@@ -6,6 +6,8 @@ import {
 } from '@slider/shared';
 import { useInheritedModels, useSetInheritedModel, useUpdateIntegrationKey } from '@/lib/api';
 import { Badge, Button, ErrorText, Select, Spinner, type ShowToast } from '@/ui';
+import { AI_MODEL_ROLES, createModelOptions } from '../lib/ai-models';
+import { ModelLine } from './ModelLine';
 import { ProviderLogo } from './ProviderLogo';
 
 /**
@@ -58,6 +60,11 @@ export function InstanceRow({
     options.push({ value: inherited.model, label: inherited.model });
   }
   const error = update.error ?? setModel.error;
+  const nameOf = (id: string) => offered.find((m) => m.id === id)?.name ?? id;
+  // The AI's second model, to create decks on: without one, the first.
+  const isAi = kind === 'ai';
+  const createStandard = inherited.defaultCreateModel ?? inherited.model;
+  const createModel = inherited.createModel ?? inherited.model;
 
   return (
     <li className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0">
@@ -84,12 +91,15 @@ export function InstanceRow({
         )}
       </div>
       {inherited.model && (
-        <div className="flex flex-wrap items-center gap-2 text-sm text-fg-muted">
+        <ModelLine role={isAi ? 'review' : null}>
           {pickModel ? (
             <>
-              Modell:
               <Select
-                aria-label="Modell für den Key der Instanz"
+                aria-label={
+                  isAi
+                    ? `Modell für ${AI_MODEL_ROLES.review.label} mit dem Key der Instanz`
+                    : 'Modell für den Key der Instanz'
+                }
                 size="sm"
                 value={inherited.model === inherited.defaultModel ? '' : inherited.model}
                 disabled={setModel.isPending}
@@ -111,11 +121,42 @@ export function InstanceRow({
               )}
             </>
           ) : (
-            <>
-              Modell: <span className="text-fg">{inherited.model}</span>
-            </>
+            <span className="text-fg">{inherited.model}</span>
           )}
-        </div>
+        </ModelLine>
+      )}
+      {isAi && inherited.model && (
+        <ModelLine role="create">
+          {pickModel ? (
+            <Select
+              aria-label={`Modell für ${AI_MODEL_ROLES.create.label} mit dem Key der Instanz`}
+              size="sm"
+              value={createModel === createStandard ? '' : createModel}
+              disabled={setModel.isPending}
+              options={createModelOptions(
+                offered,
+                inherited.defaultCreateModel
+                  ? `${nameOf(inherited.defaultCreateModel)} (Standard der Instanz)`
+                  : `Wie oben (${nameOf(inherited.model)})`,
+                createStandard,
+                createModel === createStandard ? null : createModel,
+              )}
+              onChange={(model) =>
+                setModel.mutate(
+                  { kind, createModel: model || null },
+                  {
+                    onSuccess: () =>
+                      onNotify(
+                        `${AI_MODEL_ROLES.create.label} nutzt hier jetzt ${nameOf(model || createStandard)}`,
+                      ),
+                  },
+                )
+              }
+            />
+          ) : (
+            <span className="text-fg">{createModel}</span>
+          )}
+        </ModelLine>
       )}
       {error && <ErrorText>{error.message}</ErrorText>}
       {models.isError && (

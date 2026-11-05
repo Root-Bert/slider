@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { expect, test } from '../support';
 
 /*
- * A deck opened once reopens offline in Bearbeiten and stays editable (CLAUDE.md §1 „Undo is
+ * A deck opened once reopens offline in Bearbeiten and stays editable (docs/do-not-break.md „Undo is
  * instant and works offline“): its slide composed from what the service worker kept – an element
  * LibreOffice draws at its place now, though its picture is from before it moved –, a box moved,
  * undone and done again without a connection; back online, the server has it where it ended.

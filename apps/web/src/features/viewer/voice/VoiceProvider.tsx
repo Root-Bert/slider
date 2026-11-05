@@ -88,8 +88,9 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   });
 
   const run = useRef<Run | null>(null);
-  // A box for the AI is open: what is said meanwhile is its own – no pieces go to the session.
-  const boxOpen = useRef(false);
+  // A field takes what is said (a box for the AI, the prompt on Folie 1): no pieces go to the
+  // session meanwhile (`claim`). `strict`: not even without live words – the piece is dropped.
+  const claims = useRef({ open: 0, strict: 0 });
   const boxCount = useRef(0);
   const stopRef = useRef<() => void>(() => {});
 
@@ -167,11 +168,13 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       if (!current) return;
       const seq = current.seq;
       current.seq += 1;
-      if (boxOpen.current && current.live) {
-        // Said to a box for the AI (its field takes the live words): only its place in the live
-        // words is kept, so the next piece's words do not begin with it. Without live words what
-        // is said goes on as ever.
-        current.liveMarks = { ...current.liveMarks, [seq]: current.live.heard.length };
+      if (claims.current.open > 0 && (current.live || claims.current.strict > 0)) {
+        // Said to a field that takes the live words (a box for the AI, Folie 1's prompt): only
+        // its place in the live words is kept, so the next piece's words do not begin with it.
+        // Without live words what is said goes on as ever – except to a strict claim.
+        if (current.live) {
+          current.liveMarks = { ...current.liveMarks, [seq]: current.live.heard.length };
+        }
         return;
       }
       current.pieces.set(seq, audio);
@@ -448,16 +451,24 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
   // A box for the AI open: what was being said goes on as before, what is said from now on is
   // the box's – up to its close (sent, dropped), where the piece being said is cut again.
+  const claim = useCallback((options: { strict?: boolean } = {}) => {
+    run.current?.segmenter.flush();
+    claims.current.open += 1;
+    if (options.strict) claims.current.strict += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      run.current?.segmenter.flush();
+      claims.current.open -= 1;
+      if (options.strict) claims.current.strict -= 1;
+    };
+  }, []);
   const aiBox = draft?.aiBox;
   useEffect(() => {
     if (aiBox === undefined) return;
-    run.current?.segmenter.flush();
-    boxOpen.current = true;
-    return () => {
-      run.current?.segmenter.flush();
-      boxOpen.current = false;
-    };
-  }, [aiBox]);
+    return claim();
+  }, [aiBox, claim]);
 
   // The pointer, for what was on screen (over a slide only, see `locateCursor`).
   useEffect(() => {
@@ -582,6 +593,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   const value = useMemo<VoiceState>(
     () => ({
       heard: () => run.current?.live?.heard ?? '',
+      claim,
       status,
       speaking,
       sending,
@@ -599,7 +611,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         return () => levelListeners.current.delete(listener);
       },
     }),
-    [dismiss, error, live, pause, resume, sending, session, speaking, status, stop, toggle],
+    [claim, dismiss, error, live, pause, resume, sending, session, speaking, status, stop, toggle],
   );
 
   return (

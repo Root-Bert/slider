@@ -6,7 +6,14 @@ import {
   type FrameShape as Shape,
   type Rect,
 } from '@slider/shared';
-import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { isTextTarget } from '@/lib/dom';
 import { typesCharacter } from '@/lib/keyboard';
 import { Button, cn, GlassPanel, iconButtonClasses } from '@/ui';
@@ -333,6 +340,21 @@ export function KindChooser({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const below = rect.y + rect.h < 0.8;
+  // Centred under the frame, but kept on the slide: a frame near its edge would push the row out,
+  // where the stage cuts it off.
+  const [shift, setShift] = useState(0);
+  useLayoutEffect(() => {
+    const row = panel.current;
+    const slide = row?.offsetParent;
+    if (!row || !slide) return;
+    const bounds = slide.getBoundingClientRect();
+    const own = row.getBoundingClientRect();
+    const left = own.left - shift;
+    const right = own.right - shift;
+    const next =
+      left < bounds.left ? bounds.left - left : right > bounds.right ? bounds.right - right : 0;
+    if (next !== shift) setShift(next);
+  }, [rect.x, rect.w, shift]);
   return (
     <GlassPanel
       ref={panel}
@@ -343,7 +365,7 @@ export function KindChooser({
       tabIndex={-1}
       className="absolute z-1 flex -translate-x-1/2 items-center gap-1 p-1 outline-none"
       style={{
-        left: `${(rect.x + rect.w / 2) * 100}%`,
+        left: `calc(${(rect.x + rect.w / 2) * 100}% + ${shift}px)`,
         top: below ? `calc(${(rect.y + rect.h) * 100}% + 8px)` : undefined,
         bottom: below ? undefined : `calc(${(1 - rect.y) * 100}% + 8px)`,
       }}

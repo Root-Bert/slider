@@ -27,7 +27,7 @@ import { useCroppedGround } from '../picture-fit';
 import { moved } from '../live/model';
 
 /*
- * Bearbeiten composed per element (CLAUDE.md §1): LibreOffice's slide without its elements, then
+ * Bearbeiten composed per element (docs/do-not-break.md): LibreOffice's slide without its elements, then
  * the elements bottom first – what the browser draws whole (`paint`) from the element as it is
  * now, the others as LibreOffice's picture of each alone (their live text by the browser over it).
  * Moved, resized, refilled or deleted, an element the browser draws shows so in the same frame:

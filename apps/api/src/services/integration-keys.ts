@@ -22,6 +22,7 @@ import {
   listLiveModels,
   recommendedModel,
   type AiConnection,
+  type AiUsageReport,
 } from './ai-providers';
 import { usageMeter } from './ai-usage';
 
@@ -35,11 +36,18 @@ import { usageMeter } from './ai-usage';
 /** Where the policy is kept: beside the instance's other settings, read live – no restart. */
 const POLICY_KEY = 'INTEGRATION_POLICY';
 
-/** A model the instance runs its key on in one workspace – for that key only. */
+/**
+ * The models the instance runs its key on in one workspace – for that key only: `model` for
+ * everything, `createModel` (AI) to create decks on; each left out: the key's own.
+ */
 export interface AssignedModel {
   keyId: string;
-  model: string;
+  model?: string;
+  createModel?: string;
 }
+
+/** Which of a key's models: the one for everything, or (AI) the one decks are created on. */
+export type ModelField = 'model' | 'createModel';
 
 /**
  * Per kind, the rule for all workspaces and those for single ones apart – each of those with the
@@ -58,8 +66,14 @@ function parseModel(stored: unknown): AssignedModel | null {
   if (!stored || typeof stored !== 'object' || !('model' in stored)) return null;
   const { model } = stored;
   if (!model || typeof model !== 'object') return null;
-  const { keyId, model: name } = model as Partial<Record<string, unknown>>;
-  return typeof keyId === 'string' && typeof name === 'string' ? { keyId, model: name } : null;
+  const { keyId, model: name, createModel } = model as Partial<Record<string, unknown>>;
+  if (typeof keyId !== 'string') return null;
+  const assigned: AssignedModel = {
+    keyId,
+    ...(typeof name === 'string' && name && { model: name }),
+    ...(typeof createModel === 'string' && createModel && { createModel }),
+  };
+  return assigned.model || assigned.createModel ? assigned : null;
 }
 
 /** A stored rule; once only `true`/`false` – whether workspaces may set their own. */
@@ -160,22 +174,27 @@ export async function savePolicy(
     .onConflictDoUpdate({ target: instanceSettings.key, set: { value, updatedAt: now } });
 }
 
-/** The model the instance set for its key `keyId` in a workspace apart – `null`: none. */
+/**
+ * The model the instance set for its key `keyId` in a workspace apart – `null`: none. `field`:
+ * the one for everything, or the one decks are created on.
+ */
 export const assignedModel = (
   policy: IntegrationPolicy,
   kind: IntegrationKind,
   workspaceId: string,
   keyId: string,
+  field: ModelField = 'model',
 ): string | null => {
   const assigned = policy[kind].models[workspaceId];
   return assigned && assigned.keyId === keyId && workspaceId in policy[kind].exceptions
-    ? assigned.model
+    ? (assigned[field] ?? null)
     : null;
 };
 
 /**
  * The instance's key as a workspace runs on it: on the model the instance set for it there, or
  * the key's own – and where the rule lets the workspace pick, on its pick, made for this key.
+ * The same for the model decks are created on, each apart.
  */
 export async function inheritedRow(
   deps: { db: Executor },
@@ -184,15 +203,25 @@ export async function inheritedRow(
   instance: IntegrationKeyRow,
 ): Promise<IntegrationKeyRow> {
   if (instance.kind === 'photos') return instance;
-  const assigned = assignedModel(policy, instance.kind, workspaceId, instance.id);
-  const base = assigned ? { ...instance, model: assigned } : instance;
+  const base = {
+    ...instance,
+    model: assignedModel(policy, instance.kind, workspaceId, instance.id) ?? instance.model,
+    createModel:
+      assignedModel(policy, instance.kind, workspaceId, instance.id, 'createModel') ??
+      instance.createModel,
+  };
   if (ruleFor(policy, instance.kind, workspaceId).inherit !== 'key') return base;
   const [found] = await deps.db
     .select({ models: workspaces.integrationModels })
     .from(workspaces)
     .where(eq(workspaces.id, workspaceId));
   const pick = found?.models[instance.kind];
-  return pick && pick.keyId === instance.id ? { ...instance, model: pick.model } : base;
+  if (!pick || pick.keyId !== instance.id) return base;
+  return {
+    ...base,
+    model: pick.model ?? base.model,
+    createModel: pick.createModel ?? base.createModel,
+  };
 }
 
 /** The keys of one place – a workspace, or the instance (`null`) – newest first. */
@@ -293,7 +322,7 @@ const MISSING = {
 } as const;
 
 /** `keyId`: the key it runs on. */
-type WorkspaceConnection =
+export type WorkspaceConnection =
   { connection: AiConnection; keyId: string; error: null } | { connection: null; error: string };
 
 /**
@@ -346,9 +375,43 @@ function connectionOf(
   };
 }
 
-/** The key for a workspace's AI request, with its id – or why there is none (German). */
+/**
+ * What the AI does for a workspace, each on its own model of the same key (AI settings):
+ * `review` – reviews, comments, changes asked of it, everything until now; `create` – creating a
+ * deck („Präsentation erstellen“).
+ */
+export type AiPurpose = 'review' | 'create';
+
+/**
+ * The key for a workspace's AI request, with its id – or why there is none (German). `create`:
+ * on the model set to create decks on (else the key's one model), every request it makes
+ * written down as `create` – whatever feature the call itself names.
+ */
+export async function aiConnectionFor(
+  deps: AppDeps,
+  workspaceId: string,
+  purpose: AiPurpose = 'review',
+): Promise<WorkspaceConnection> {
+  const found = await effectiveKey(deps, workspaceId, 'ai');
+  if (!found.row) return { connection: null, error: MISSING.ai[found.why] };
+  const usable = usableConnection(deps, workspaceId, found.row);
+  if (purpose === 'review' || !usable.connection) return usable;
+  const { meter } = usable.connection;
+  return {
+    ...usable,
+    connection: {
+      ...usable.connection,
+      model: found.row.createModel || found.row.model,
+      ...(meter && {
+        meter: (report: AiUsageReport) => meter({ ...report, feature: 'create' }),
+      }),
+    },
+  };
+}
+
+/** The key for a workspace's AI request (reviews, comments, changes) – or why there is none. */
 export const workspaceAiConnection = (deps: AppDeps, workspaceId: string) =>
-  workspaceConnection(deps, workspaceId, 'ai');
+  aiConnectionFor(deps, workspaceId, 'review');
 
 /** Where a workspace's recordings become text – or why nowhere (German). */
 export const workspaceSpeechConnection = (deps: AppDeps, workspaceId: string) =>

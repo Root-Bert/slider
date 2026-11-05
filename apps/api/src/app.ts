@@ -1,3 +1,4 @@
+import { showRunRoutes } from './routes/show-runs';
 import { Hono } from 'hono';
 import { compress } from 'hono/compress';
 import { cors } from 'hono/cors';
@@ -16,6 +17,8 @@ import { sameOriginWrites } from './http/same-origin';
 import { serveWebApp } from './http/static';
 import { authRoutes } from './routes/auth';
 import { billingRoutes } from './routes/billing';
+import { materialsRoutes } from './routes/materials';
+import { deckCreationRoutes } from './routes/deck-creation';
 import { commentsRoutes } from './routes/comments';
 import { decksRoutes } from './routes/decks';
 import { deckTusRoutes } from './routes/deck-tus';
@@ -98,6 +101,9 @@ export function createApp(appDeps: AppDeps) {
     .route('/', integrationsRoutes(deps))
     .route('/', storageRoutes(deps))
     .route('/', commentsRoutes(deps))
+    .route('/', materialsRoutes(deps))
+    .route('/', deckCreationRoutes(deps))
+    .route('/', showRunRoutes(deps))
     .route('/', liveRoutes(deps, live, presence, texts))
     .route('/', mediaRoutes(deps))
     .route('/', voiceRoutes(deps))

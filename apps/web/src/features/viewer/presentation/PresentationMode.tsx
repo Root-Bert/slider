@@ -1,11 +1,4 @@
-import {
-  useEffect,
-  useEffectEvent,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type PointerEvent,
-} from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
 import type { Slide, SlideLayers } from '@slider/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { slideLayersQuery } from '@/lib/api';
@@ -17,8 +10,24 @@ import { useRestoreFocus } from '../hooks/useRestoreFocus';
 import { slideSrcSet } from '../stage/lib/slide-image';
 import { useViewerData } from '../state/viewer-data';
 import { morphPictures, morphPlan, type MorphPlan } from './lib/morph';
-import { presentationKey, presentationStart, presentedSlides } from './lib/presentation';
+import { presentationStart, presentedSlides } from './lib/presentation';
+import { atIndex, atMessage, FULLSCREEN_MESSAGE } from './lib/show-sync';
 import { MorphStage } from './MorphStage';
+import { useBoxColor, useShowBoxes } from './show-boxes';
+import { ShowBoxLayer } from './ShowBoxLayer';
+import { RecordControls } from './RecordControls';
+import { useShowRecording } from './show-recording';
+import { useSaveShowRun, showRunOf } from './lib/show-runs';
+import { useViewerToast } from '../state/viewer-toast';
+import type { ShowScene } from './lib/show-recorder';
+import {
+  useShowChannel,
+  useShowClock,
+  useShowFullscreen,
+  useShowKeys,
+  useShowMessages,
+  useWakeLock,
+} from './show-hooks';
 
 /** How long the controls and the pointer stay after the mouse last moved. */
 const IDLE_MS = 2500;
@@ -34,6 +43,11 @@ interface PresentationModeProps {
   startSlideId: string | null;
   /** Ended (Esc, ✕, leaving fullscreen, past the last slide): with the slide it was on. */
   onExit: (slideId: string | null) => void;
+  /**
+   * The audience's window opened from the presenter view: follows it (and leads it when stepped
+   * here), never asks for fullscreen by itself.
+   */
+  audience?: boolean;
 }
 
 /**
@@ -44,7 +58,11 @@ interface PresentationModeProps {
  * not. The controls show while the mouse moves. Takes every key while it is open, so the viewer's
  * shortcuts stay quiet.
  */
-export function PresentationMode({ startSlideId, onExit }: PresentationModeProps) {
+export function PresentationMode({
+  startSlideId,
+  onExit,
+  audience = false,
+}: PresentationModeProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const { slides: viewerSlides, deck } = useViewerData();
   const [slides] = useState(() => presentedSlides(viewerSlides));
@@ -62,8 +80,6 @@ export function PresentationMode({ startSlideId, onExit }: PresentationModeProps
   // When the mouse last moved: the controls and the pointer show until it rests.
   const [movedAt, setMovedAt] = useState<number | null>(null);
   const controlsShown = movedAt !== null;
-  // A number typed before Enter: the slide to jump to.
-  const typed = useRef('');
   const pointerStart = useRef<{ x: number; y: number } | null>(null);
   useRestoreFocus();
 
@@ -71,8 +87,13 @@ export function PresentationMode({ startSlideId, onExit }: PresentationModeProps
   const ended = index >= slides.length;
   const current = slides[Math.min(index, slides.length - 1)] ?? null;
 
-  const exit = () => onExit(current?.id ?? null);
-  const exitFromEffect = useEffectEvent(exit);
+  const show = useShowChannel(deck.id);
+  const finishing = useRef<() => void>(() => undefined);
+  const exit = () => {
+    if (audience) show.post({ type: 'end' });
+    finishing.current();
+    onExit(current?.id ?? null);
+  };
   const go = (next: number) => {
     setBlack(false);
     if (next > slides.length) {
@@ -115,91 +136,113 @@ export function PresentationMode({ startSlideId, onExit }: PresentationModeProps
     else go(index + by);
   };
 
-  const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
-    // Nothing reaches the viewer behind (shortcuts, find, tools)…
-    event.stopImmediatePropagation();
-    // …but the browser keeps its own shortcuts.
-    if (event.metaKey || event.ctrlKey || event.altKey) return;
-    const action = presentationKey(event.key);
-    if (!action) return;
-    event.preventDefault();
-    if (action.type !== 'digit' && !(action.type === 'next' && event.key === 'Enter')) {
-      typed.current = '';
-    }
-    switch (action.type) {
-      case 'digit':
-        typed.current = (typed.current + action.digit).slice(-4);
-        return;
-      case 'next':
-        if (event.key === 'Enter' && typed.current) {
-          const number = Number(typed.current);
-          typed.current = '';
-          if (number >= 1) go(Math.min(number, slides.length) - 1);
-          return;
-        }
-        step(1);
-        return;
-      case 'previous':
-        step(-1);
-        return;
-      case 'first':
-        go(0);
-        return;
-      case 'last':
-        go(slides.length - 1);
-        return;
-      case 'black':
-        setBlack((on) => !on);
-        return;
-      case 'exit':
-        exit();
-        return;
-    }
+  const boxes = useShowBoxes(show, ended ? null : (current?.id ?? null));
+  const boxColor = useBoxColor();
+  useShowKeys({
+    step,
+    go,
+    count: slides.length,
+    toggleBlack: () => setBlack((on) => !on),
+    exit,
+    clear: boxes.clear,
   });
 
+  // The audience's window: where the presenter view moves, it follows – and the other way round.
+  // A step taken on a message is not told back (rapid steps would bounce).
+  const fromOther = useRef(false);
+  useShowMessages(show, (message) => {
+    if (!audience) return;
+    if (message.type === 'end') {
+      onExit(current?.id ?? null);
+      return;
+    }
+    if (message.type !== 'at') return;
+    const target = atIndex(slides, message);
+    if (target === null || (target === index && message.black === black)) return;
+    fromOther.current = true;
+    if (target !== index) go(target);
+    setBlack(message.black);
+  });
+  const told = useRef(false);
   useEffect(() => {
-    const listener = (event: KeyboardEvent) => onKeyDown(event);
-    // Capture on the window: before the viewer's own listeners.
-    window.addEventListener('keydown', listener, { capture: true });
-    return () => window.removeEventListener('keydown', listener, { capture: true });
-  }, []);
+    if (!audience) return;
+    // First: ask where the show is, instead of telling.
+    if (!told.current) {
+      told.current = true;
+      show.post({ type: 'hello' });
+      return;
+    }
+    if (fromOther.current) {
+      fromOther.current = false;
+      return;
+    }
+    show.post(atMessage(slides, index, black));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index, black]);
 
-  // Fullscreen on the show itself – still within the click or key press that started it. The
-  // browser's own way out (Esc, the system's gesture) ends the show, too.
-  useLayoutEffect(() => {
-    const root = rootRef.current;
-    root?.focus({ preventScroll: true });
-    if (!root || !document.fullscreenEnabled) return;
-    let entered = false;
-    const onChange = () => {
-      if (document.fullscreenElement === root) entered = true;
-      else if (entered) exitFromEffect();
+  // A window of its own goes fullscreen on the first click in it (or when the presenter view
+  // hands it the right to); leaving fullscreen there only leaves fullscreen.
+  useShowFullscreen(rootRef, exit, !audience);
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    if (!audience) return;
+    const onChange = () => setFullscreen(document.fullscreenElement === rootRef.current);
+    const onDelegated = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin || event.data !== FULLSCREEN_MESSAGE) return;
+      void rootRef.current?.requestFullscreen().catch(() => undefined);
     };
     document.addEventListener('fullscreenchange', onChange);
-    void root.requestFullscreen().catch(() => undefined);
+    window.addEventListener('message', onDelegated);
     return () => {
       document.removeEventListener('fullscreenchange', onChange);
-      if (document.fullscreenElement === root)
-        void document.exitFullscreen().catch(() => undefined);
+      window.removeEventListener('message', onDelegated);
     };
-  }, []);
+  }, [audience]);
+  const enterFullscreen = () => {
+    if (!document.fullscreenEnabled || document.fullscreenElement) return false;
+    void rootRef.current?.requestFullscreen().catch(() => undefined);
+    return true;
+  };
 
-  // The screen stays on while presenting (where the browser allows it).
+  useWakeLock();
+
+  // „Aufnehmen“ (not in the audience's window: the presenter view records there): what the
+  // audience sees, with the stopwatch that only a recording starts here.
+  const clock = useShowClock(ended ? null : (current?.id ?? null));
+  const scene = useRef<ShowScene>({ slide: null, black: false, transition: 'none', boxes: [] });
   useEffect(() => {
-    let lock: WakeLockSentinel | null = null;
-    let released = false;
-    void navigator.wakeLock
-      ?.request('screen')
-      .then((sentinel) => {
-        if (released) void sentinel.release();
-        else lock = sentinel;
-      })
-      .catch(() => undefined);
-    return () => {
-      released = true;
-      void lock?.release().catch(() => undefined);
+    scene.current = {
+      slide: ended ? null : current,
+      black,
+      transition: current ? transitionFor(current) : 'none',
+      boxes: boxes.boxes,
     };
-  }, []);
+  });
+  const recording = useShowRecording({
+    clock,
+    title: deck.title,
+    aspect: current?.aspectRatio ?? 16 / 9,
+    color: boxColor,
+    scene,
+  });
+  const toast = useViewerToast();
+  const saveRun = useSaveShowRun(deck.id);
+  const savedRun = useRef(false);
+  useEffect(() => {
+    finishing.current = () => {
+      if (savedRun.current) return;
+      savedRun.current = true;
+      if (!ended || !clock.started) return;
+      const run = showRunOf(slides, clock.marks(), clock.elapsed(), new Date());
+      void recording
+        .complete()
+        .then((blob) => saveRun(run, blob))
+        .then(
+          () => toast('Durchgang gespeichert'),
+          (error: Error) => toast(error.message, 'danger'),
+        );
+    };
+  });
 
   // The controls and the pointer go once the mouse rests.
   useEffect(() => {
@@ -218,6 +261,8 @@ export function PresentationMode({ startSlideId, onExit }: PresentationModeProps
     const start = pointerStart.current;
     pointerStart.current = null;
     if (!start || (event.target as Element).closest('button')) return;
+    // Its own window not yet fullscreen: the first click makes it so, it does not step on.
+    if (audience && enterFullscreen()) return;
     const dx = event.clientX - start.x;
     if (event.pointerType === 'touch') {
       if (Math.abs(dx) >= SWIPE_PX) step(dx < 0 ? 1 : -1);
@@ -282,6 +327,25 @@ export function PresentationMode({ startSlideId, onExit }: PresentationModeProps
         />
       )}
 
+      {/* Boxes drawn on the slide (a drag; a click still steps on): over the slide's own box. */}
+      {!ended && !black && current && (
+        <div
+          className="pointer-events-none absolute inset-0 z-3 m-auto"
+          style={{
+            width: `min(100vw, calc(100vh * ${current.aspectRatio}))`,
+            aspectRatio: `${current.aspectRatio}`,
+          }}
+        >
+          <ShowBoxLayer
+            boxes={boxes.boxes}
+            now={boxes.now}
+            color={boxColor}
+            onDraw={boxes.add}
+            className={controlsShown ? 'cursor-crosshair' : 'cursor-none'}
+          />
+        </div>
+      )}
+
       {ended && (
         <p className="absolute inset-x-0 top-8 text-center text-sm text-white/60">
           Ende der Präsentation. Zum Beenden klicken.
@@ -294,7 +358,7 @@ export function PresentationMode({ startSlideId, onExit }: PresentationModeProps
 
       <div
         className={cn(
-          'absolute bottom-4 left-4 flex items-center gap-1 rounded-full bg-black/60 p-1 text-white/80 transition-opacity duration-300',
+          'absolute bottom-4 left-4 z-4 flex items-center gap-1 rounded-full p-1 text-fg-muted transition-opacity duration-300 glass-dark',
           controlsShown ? 'opacity-100' : 'pointer-events-none opacity-0',
         )}
       >
@@ -314,6 +378,10 @@ export function PresentationMode({ startSlideId, onExit }: PresentationModeProps
           size="sm"
           onClick={() => go(index + 1)}
         />
+        {audience && !fullscreen && (
+          <IconButton icon="openInFull" label="Vollbild" size="sm" onClick={enterFullscreen} />
+        )}
+        {!audience && <RecordControls recording={recording} />}
         <IconButton
           icon="close"
           label="Präsentation beenden"

@@ -1,7 +1,5 @@
 import type { Slide } from '@slider/shared';
 import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { pluralize } from '@/lib/format';
-import { CountBubble } from '@/ui';
 import { threadsOf, useCommentThreads } from '../comments/hooks/useCommentThreads';
 import { afterCommit } from '@/lib/dom';
 import { prefersReducedMotion } from '@/lib/motion';
@@ -71,7 +69,10 @@ export function CommentColumns({ layout, range, narrow }: CommentColumnsProps) {
         layout,
         (index) => {
           const slide = slides[index];
-          const count = slide ? threadsOf(bySlide, slide.id).length : 0;
+          const count = slide
+            ? threadsOf(bySlide, slide.id).length +
+              (byGap.get(gapKey(slide.id, slides[index + 1]?.id ?? null))?.length ?? 0)
+            : 0;
           return count > 0 && !narrow ? naturalWidth(count) : 0;
         },
         (index) => {
@@ -89,6 +90,10 @@ export function CommentColumns({ layout, range, narrow }: CommentColumnsProps) {
     const gap = layout.gaps[index];
     if (!slide || !box || !gap) continue;
     const threads = threadsOf(bySlide, slide.id);
+    // Comments between this slide and the next: cards like any, after the slide's own, their
+    // card naming the gap („Zwischen Folie 2 und 3“).
+    const key = gapKey(slide.id, slides[index + 1]?.id ?? null);
+    const gapThreads = byGap.get(key) ?? NO_THREADS;
     columns.push(
       <SlideColumn
         key={slide.id}
@@ -98,22 +103,10 @@ export function CommentColumns({ layout, range, narrow }: CommentColumnsProps) {
         width={box.w}
         padTop={padTop}
         threads={threads}
+        gapThreads={gapThreads}
         narrow={narrow}
       />,
     );
-    const key = gapKey(slide.id, slides[index + 1]?.id ?? null);
-    const gapThreads = byGap.get(key);
-    if (gapThreads)
-      columns.push(
-        <GapColumn
-          key={key}
-          gapKey={key}
-          x={gap.x}
-          width={gap.w}
-          padTop={padTop}
-          threads={gapThreads}
-        />,
-      );
   }
 
   return (
@@ -137,8 +130,12 @@ interface SlideColumnProps {
   width: number;
   padTop: number;
   threads: Thread[];
+  /** Comments in the gap after the slide: shown after its own. */
+  gapThreads: Thread[];
   narrow: boolean;
 }
+
+const NO_THREADS: Thread[] = [];
 
 const SlideColumn = memo(function SlideColumn({
   slide,
@@ -146,17 +143,23 @@ const SlideColumn = memo(function SlideColumn({
   x,
   width,
   padTop,
-  threads,
+  threads: own,
+  gapThreads,
   narrow,
 }: SlideColumnProps) {
+  const threads = useMemo(
+    () => (gapThreads.length > 0 ? [...own, ...gapThreads] : own),
+    [own, gapThreads],
+  );
   const mode = narrow ? 'full' : cardMode(width);
+  // The gap's cards go last, on the right – the gap lies right of the slide.
   const sorted = useMemo(
-    () => sortThreadsClockwise(threads, slide.shapes, slide.aspectRatio),
-    [threads, slide.shapes, slide.aspectRatio],
+    () => [...sortThreadsClockwise(own, slide.shapes, slide.aspectRatio), ...gapThreads],
+    [own, gapThreads, slide.shapes, slide.aspectRatio],
   );
   const leftCount = useMemo(
-    () => countLeftExits(threads, slide.shapes, slide.aspectRatio),
-    [threads, slide.shapes, slide.aspectRatio],
+    () => countLeftExits(own, slide.shapes, slide.aspectRatio),
+    [own, slide.shapes, slide.aspectRatio],
   );
 
   let content: ReactNode = null;
@@ -404,49 +407,6 @@ function StackedCards({ slide, threads }: { slide: Slide; threads: Thread[] }) {
     </ul>
   );
 }
-
-/**
- * Gap comments ("hier fehlt eine Folie") under their ⊕ divider: one count bubble in the author's
- * colour. Clicking opens the first thread in the panel.
- */
-const GapColumn = memo(function GapColumn({
-  gapKey: key,
-  x,
-  width,
-  padTop,
-  threads,
-}: {
-  gapKey: string;
-  x: number;
-  width: number;
-  padTop: number;
-  threads: Thread[];
-}) {
-  const dispatch = useViewerDispatch();
-  const first = threads[0]!;
-  const open = threads.some((thread) => thread.root.status === 'open');
-  const label = `${pluralize(threads.length, 'Kommentar', 'Kommentare')} zwischen den Folien`;
-  return (
-    <div
-      data-gap-column={key}
-      className="flex justify-center"
-      style={{ gridArea: '1 / 1', marginLeft: x, width, paddingTop: padTop }}
-    >
-      <CountBubble
-        count={threads.length}
-        color={first.root.author.color}
-        dim={!open}
-        size="md"
-        data-gap-bubble={key}
-        data-hover-thread={first.id}
-        onClick={() => dispatch({ type: 'threadFocused', threadId: first.id, openPanel: true })}
-        aria-label={label}
-        title={label}
-        className="max-w-full"
-      />
-    </div>
-  );
-});
 
 /** Props every card gets from the viewer state (emphasis, permissions, gap location, fading). */
 function useCardProps() {

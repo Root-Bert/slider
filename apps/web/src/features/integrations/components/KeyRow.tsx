@@ -14,6 +14,8 @@ import {
   type ShowToast,
 } from '@/ui';
 import { serviceName } from '../lib/providers';
+import { AI_MODEL_ROLES, createModelOptions } from '../lib/ai-models';
+import { ModelLine } from './ModelLine';
 import { ProviderLogo } from './ProviderLogo';
 
 /**
@@ -42,6 +44,9 @@ export function KeyRow({
   const options = models.data?.models.some((model) => model.id === key.model)
     ? models.data.models
     : [{ id: key.model, name: key.model }, ...(models.data?.models ?? [])];
+  const nameOf = (id: string) => options.find((model) => model.id === id)?.name ?? id;
+  // The AI's second model, to create decks on: none of its own runs on the first.
+  const isAi = key.kind === 'ai';
   const pending = (field: 'active' | 'recheck') =>
     update.isPending && update.variables?.[field] !== undefined;
   const toggle = key.active ? (
@@ -110,10 +115,11 @@ export function KeyRow({
         </span>
       </div>
       {hasModel && (
-        <div className="flex flex-wrap items-center gap-2 text-sm text-fg-muted">
-          Modell:
+        <ModelLine role={isAi ? 'review' : null} end={toggle}>
           <Select
-            aria-label={`Modell für ${name}`}
+            aria-label={
+              isAi ? `Modell für ${AI_MODEL_ROLES.review.label} mit ${name}` : `Modell für ${name}`
+            }
             size="sm"
             value={key.model}
             disabled={update.isPending}
@@ -129,8 +135,34 @@ export function KeyRow({
           {models.isFetching && !models.data && (
             <Spinner size="sm" label="Modelle werden geladen" />
           )}
-          <span className="ml-auto">{toggle}</span>
-        </div>
+        </ModelLine>
+      )}
+      {isAi && (
+        <ModelLine role="create">
+          <Select
+            aria-label={`Modell für ${AI_MODEL_ROLES.create.label} mit ${name}`}
+            size="sm"
+            value={key.createModel ?? ''}
+            disabled={update.isPending}
+            options={createModelOptions(
+              models.data?.models ?? [],
+              `Wie oben (${nameOf(key.model)})`,
+              key.model,
+              key.createModel,
+            )}
+            onChange={(model) =>
+              update.mutate(
+                { keyId: key.id, createModel: model || null },
+                {
+                  onSuccess: () =>
+                    onNotify(
+                      `${AI_MODEL_ROLES.create.label} nutzt jetzt ${nameOf(model || key.model)}`,
+                    ),
+                },
+              )
+            }
+          />
+        </ModelLine>
       )}
       {update.error && <ErrorText>{update.error.message}</ErrorText>}
       {models.isError && !key.error && (

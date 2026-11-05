@@ -135,6 +135,10 @@ export type LiveEvent =
   | { type: 'slides'; step?: LiveStep }
   /** An AI proposal of the deck started, finished or was taken (BER-183) – refetch them. */
   | { type: 'proposals' }
+  /** Something on the deck's board (Folie 0, „Material“) came, moved, changed or went – refetch it. */
+  | { type: 'board' }
+  /** A deck being built from the prompt on Folie 1 moved on (outline, a slide, done) – refetch it. */
+  | { type: 'creation' }
   /** Someone typed in a text others type in too: a Y update of its shared text. */
   | { type: 'text'; elementId: string; update: string };
 

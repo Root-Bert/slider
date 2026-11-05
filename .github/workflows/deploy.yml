@@ -1,6 +1,8 @@
 name: Deploy
 
-# Publishing a GitHub release deploys its tag to the production server; pushes deploy nothing.
+# A release deploys its tag to the production server once publish.yml has finished – its full CI
+# passed and the code is in the public repository; a failed check deploys nothing. Pushes deploy
+# nothing.
 # The product website is not part of it: it deploys on every push to main (deploy-website.yml).
 # The job copies the tagged checkout to /opt/slider on the server, writes deploy/.env from a
 # secret and runs deploy/deploy.sh there (build, restart, wait for the health check). Nothing has
@@ -9,11 +11,13 @@ name: Deploy
 #
 # Repository secrets: DEPLOY_HOST (server IP), DEPLOY_KNOWN_HOSTS (its SSH host key line),
 # DEPLOY_SSH_KEY (private key whose public half is in root's authorized_keys there, prefixed with
-# `restrict `), DEPLOY_ENV (the whole deploy/.env).
+# `restrict `), DEPLOY_ENV (the whole deploy/.env). Repository variable DEPLOY_SETTINGS (optional):
+# more lines for deploy/.env that are no secret.
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: [Publish]
+    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
@@ -31,13 +35,15 @@ concurrency:
 jobs:
   deploy:
     name: Deploy to the server
-    if: github.repository == 'Root-Bert/slider-dev'
+    if: >-
+      github.repository == 'Root-Bert/slider-dev' && (github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'release'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.release.tag_name || inputs.tag }}
+          ref: ${{ github.event.workflow_run.head_branch || inputs.tag }}
           persist-credentials: false
 
       - name: Set up SSH
@@ -60,10 +66,21 @@ jobs:
             --exclude=/.git/ --exclude=node_modules/ --exclude=/deploy/.env --exclude=/deploy/fonts/ \
             ./ server:/opt/slider/
 
+      # DEPLOY_ENV (secret) holds the keys; DEPLOY_SETTINGS (repository variable, optional) adds
+      # settings that are no secret – e.g. COMPOSE_PROFILES=stt and SPEECH_URL – and can be read
+      # and changed without rewriting the whole secret.
       - name: Write deploy/.env
         env:
           DEPLOY_ENV: ${{ secrets.DEPLOY_ENV }}
-        run: printf '%s\n' "$DEPLOY_ENV" | ssh server 'umask 077 && cat > /opt/slider/deploy/.env'
+          DEPLOY_SETTINGS: ${{ vars.DEPLOY_SETTINGS }}
+        # COMPOSE_PROFILES named in both are joined (rembg in the secret + stt here = both).
+        run: |
+          profiles=$(printf '%s\n%s\n' "$DEPLOY_ENV" "$DEPLOY_SETTINGS" |
+            sed -n 's/^COMPOSE_PROFILES=//p' | tr ',' '\n' | sed '/^$/d' | sort -u | paste -sd, -)
+          {
+            printf '%s\n%s\n' "$DEPLOY_ENV" "$DEPLOY_SETTINGS" | grep -v '^COMPOSE_PROFILES='
+            if [ -n "$profiles" ]; then printf 'COMPOSE_PROFILES=%s\n' "$profiles"; fi
+          } | ssh server 'umask 077 && cat > /opt/slider/deploy/.env'
 
       - name: Build and start
         run: ssh server /opt/slider/deploy/deploy.sh

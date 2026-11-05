@@ -12,6 +12,7 @@ import type {
   CreateAiProposalInput,
   DeckEditState,
   DeckLayouts,
+  DeckNotes,
   GenerateEditImageInput,
   RevertEditInput,
   SendExportInput,
@@ -43,6 +44,17 @@ export const useDeckEdit = (deckId: string, enabled = true) =>
   useQuery({
     queryKey: queryKeys.edit(deckId),
     queryFn: () => api.get<DeckEditState>(`/decks/${deckId}/edit`),
+    enabled,
+  });
+
+/**
+ * The speaker notes alone – for whoever may open the deck without editing it (the presenter
+ * view); the editor has them in its edit state.
+ */
+export const useDeckNotes = (deckId: string, enabled = true) =>
+  useQuery({
+    queryKey: queryKeys.deckNotes(deckId),
+    queryFn: () => api.get<DeckNotes>(`/decks/${deckId}/notes`),
     enabled,
   });
 

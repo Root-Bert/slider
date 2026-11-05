@@ -176,6 +176,11 @@ export interface ViewerState {
    * the thread, the deleted slides, the layers, a background or the layout grid would be.
    */
   sharePanelOpen: boolean;
+  /**
+   * Something picked on the board (Folie 0): its file, link or note in the side panel – where the
+   * thread or the others would be (`MaterialBoard` keeps what is picked).
+   */
+  boardPanelOpen: boolean;
   /** The direction of the grid being set (its fields in use): only it shows meanwhile. */
   layoutGridAxis: 'columns' | 'rows' | null;
   /** Slides hidden in PowerPoint: out of sight by default, H or the toolbar shows them. */
@@ -264,6 +269,7 @@ export type ViewerAction =
   | { type: 'layoutGridToggled' }
   | { type: 'layoutGridPanelSet'; open: boolean }
   | { type: 'sharePanelSet'; open: boolean }
+  | { type: 'boardPanelSet'; open: boolean }
   | { type: 'layoutGridAxisSet'; axis: 'columns' | 'rows' | null }
   | { type: 'showHiddenSlidesToggled' }
   | { type: 'showMinimapToggled' }

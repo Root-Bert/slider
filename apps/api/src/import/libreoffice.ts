@@ -451,6 +451,59 @@ export function createLibreOfficeDocumentPdf(options: LibreOfficeOptions): Docum
   };
 }
 
+/**
+ * Files on a deck's board (Folie 0) LibreOffice reads, with the one import filter each is read
+ * with and the PDF export of its kind – their text is read from that PDF (`material-extract.ts`).
+ */
+export const MATERIAL_PDF_FILTERS = {
+  docx: ['MS Word 2007 XML', 'writer_pdf_Export'],
+  docm: ['MS Word 2007 XML VBA', 'writer_pdf_Export'],
+  doc: ['MS Word 97', 'writer_pdf_Export'],
+  odt: ['writer8', 'writer_pdf_Export'],
+  rtf: ['Rich Text Format', 'writer_pdf_Export'],
+  pptx: [PPTX_IMPORT_FILTER, 'impress_pdf_Export'],
+  pptm: ['Impress MS PowerPoint 2007 XML VBA', 'impress_pdf_Export'],
+  ppsx: ['Impress MS PowerPoint 2007 XML AutoPlay', 'impress_pdf_Export'],
+  ppt: ['MS PowerPoint 97', 'impress_pdf_Export'],
+  odp: [ODP_IMPORT_FILTER, 'impress_pdf_Export'],
+} as const;
+export type MaterialPdfKind = keyof typeof MATERIAL_PDF_FILTERS;
+
+/** A Word or PowerPoint file (or its OpenDocument twin) of a deck's board as a PDF. */
+export type MaterialToPdf = (bytes: Uint8Array, kind: MaterialPdfKind) => Promise<Uint8Array>;
+
+/**
+ * {@link MaterialToPdf} with the pool of running LibreOffices – nobody waits for it on screen, so
+ * in the line after the editor's drawings (`background`) – else with a LibreOffice of its own.
+ * Office files go without their external links, an ODP without its links, as decks do; the
+ * pool reads every file with links never updated.
+ */
+export function createMaterialPdf(options: LibreOfficeOptions): MaterialToPdf {
+  const convert = converter(options);
+  return async (bytes, kind) => {
+    const [importFilter, exportFilter] = MATERIAL_PDF_FILTERS[kind];
+    const ooxml = kind.endsWith('x') || kind.endsWith('m');
+    const safe = ooxml
+      ? await withoutExternalLinks(bytes)
+      : kind === 'odp'
+        ? await withoutOdpLinks(bytes)
+        : bytes;
+    if (options.pool && !stopping) {
+      try {
+        return await options.pool.convert(safe, {
+          extension: kind,
+          importFilter,
+          exportFilter,
+          priority: 'background',
+        });
+      } catch (error) {
+        if (!(error instanceof PoolUnavailable)) throw error;
+      }
+    }
+    return convert(safe, kind, importFilter, 'pdf', [], 'background');
+  };
+}
+
 const DECK_EXTENSIONS = new Set(['odp', 'pptx', 'pptm', 'ppsx']);
 
 function converter({

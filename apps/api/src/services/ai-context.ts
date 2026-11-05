@@ -1,5 +1,5 @@
 import { createCanvas, loadImage } from '@napi-rs/canvas';
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import type { OdpMasterPage, OdpSlide } from '@slider/odp';
 import {
   freeFontName,
@@ -11,10 +11,11 @@ import {
   type LiveTextStyle,
   type TemplateColor,
 } from '@slider/shared';
-import { decks, workspaceMasters } from '../db/schema';
+import { deckBoardItems, decks, workspaceMasters } from '../db/schema';
 import type { AppDeps } from '../deps';
 import type { EditTarget } from './edits';
 import { workspaceFontsOf } from './workspace-fonts';
+import { describeMaterial, materialsOf, notesOn } from './material-tools';
 
 /*
  * What the AI knows of a deck besides its XML (BER-183): the design it is made in – colours,
@@ -1373,4 +1374,35 @@ export async function zoomArea(
     bytes: new Uint8Array(await canvas.encode('webp', 90)),
     area: { x: round(x), y: round(y), width: round(width), height: round(height) },
   };
+}
+
+/** Files of the board the AI's first message names at most. */
+const BRIEF_FILES = 40;
+
+/**
+ * The first message's few lines about the deck's board (Folie 0): what lies there – each file's
+ * name, kind, size and the beginning of its text – never what it says; the contents come only
+ * through the material tools (`material-tools.ts`). `null` when the board is empty.
+ */
+export async function materialsBrief(deps: AppDeps, deckId: string): Promise<string | null> {
+  const [rows, items] = await Promise.all([
+    materialsOf(deps, deckId),
+    deps.db
+      .select()
+      .from(deckBoardItems)
+      .where(eq(deckBoardItems.deckId, deckId))
+      .orderBy(asc(deckBoardItems.createdAt)),
+  ]);
+  if (rows.length === 0 && items.length === 0) return null;
+  const lines = rows.slice(0, BRIEF_FILES).map((row) => {
+    const summary = row.summary?.replace(/\s+/g, ' ').trim();
+    // The notes people put on it, short: what they point at matters for the request.
+    const notes = notesOn(items, row.id).map((note) => `\n  ${note.slice(0, 300)}`);
+    return `- ${describeMaterial(row)}${summary ? ` – ${summary.slice(0, 160)}` : ''}${notes.join('')}`;
+  });
+  if (rows.length > BRIEF_FILES) lines.push(`- … and ${rows.length - BRIEF_FILES} more`);
+  const files = new Set(rows.map((row) => row.id));
+  const loose = items.filter((item) => !item.boundIds.some((id) => files.has(id))).length;
+  if (loose > 0) lines.push(`- ${loose} note(s) and link(s) on the board itself`);
+  return `Material on the deck's board (Folie 0, before slide 1 – never part of the deck): ${rows.length} file(s). Their contents are not in this message: read what the request needs with read_material, read_sheet, search_materials and view_material (list_materials lists everything, notes and links included).\n${lines.join('\n')}`;
 }

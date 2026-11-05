@@ -148,23 +148,50 @@ export function BlankDeckCard({
 /**
  * The designs to start on, as their pictures: „Ohne Vorlage“ (a white slide) first, then each
  * design's first layout with its name below – the picked one ringed, ticked and its name on a
- * pill. Radio buttons underneath, so the arrow keys step through them.
+ * pill. Radio buttons underneath, so the arrow keys step through them. Also the „Stil“ of the
+ * prompt on Folie 1 (`compact`, smaller tiles under a small heading).
  */
-function MasterChoice({
+export function MasterChoice({
   masters,
   masterId,
   onChange,
+  legend = 'Vorlage',
+  name = 'blank-deck-master',
+  compact = false,
 }: {
   masters: readonly WorkspaceMaster[];
   /** `''`: without a slide master. */
   masterId: string;
   onChange: (masterId: string) => void;
+  legend?: string;
+  /** The radio buttons' group name – one per choice on the page. */
+  name?: string;
+  compact?: boolean;
 }) {
+  const tile = { name, compact };
   return (
-    <fieldset className="mt-4 flex flex-col gap-4">
-      <legend className="mb-4 text-base font-medium text-fg">Vorlage</legend>
-      <div className="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3 lg:grid-cols-4">
-        <MasterTile name="Ohne Vorlage" selected={masterId === ''} onSelect={() => onChange('')}>
+    <fieldset className={cn('flex flex-col', compact ? 'gap-2' : 'mt-4 gap-4')}>
+      <legend
+        className={cn(
+          compact ? 'mb-2 text-xs font-medium text-fg-muted' : 'mb-4 text-base font-medium text-fg',
+        )}
+      >
+        {legend}
+      </legend>
+      <div
+        className={cn(
+          'grid',
+          compact
+            ? 'grid-cols-[repeat(auto-fill,minmax(7.5rem,1fr))] gap-3'
+            : 'grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3 lg:grid-cols-4',
+        )}
+      >
+        <MasterTile
+          {...tile}
+          label="Ohne Vorlage"
+          selected={masterId === ''}
+          onSelect={() => onChange('')}
+        >
           <span className="flex size-full flex-col gap-1.5 bg-primary-hover p-[12%]">
             <span className="h-2 w-2/5 rounded-mark bg-canvas opacity-15" />
             <span className="h-1 w-3/4 rounded-mark bg-canvas opacity-8" />
@@ -174,7 +201,8 @@ function MasterChoice({
         {masters.map((master) => (
           <MasterTile
             key={master.id}
-            name={master.name}
+            {...tile}
+            label={master.name}
             selected={masterId === master.id}
             onSelect={() => onChange(master.id)}
           >
@@ -188,27 +216,37 @@ function MasterChoice({
 
 function MasterTile({
   name,
+  label,
+  compact,
   selected,
   onSelect,
   children,
 }: {
   name: string;
+  label: string;
+  compact: boolean;
   selected: boolean;
   onSelect: () => void;
   children: ReactNode;
 }) {
   return (
-    <label className="group flex min-w-0 cursor-pointer flex-col items-center gap-2.5">
+    <label
+      className={cn(
+        'group flex min-w-0 cursor-pointer flex-col items-center',
+        compact ? 'gap-1.5' : 'gap-2.5',
+      )}
+    >
       <input
         type="radio"
-        name="blank-deck-master"
+        name={name}
         checked={selected}
         onChange={onSelect}
         className="peer sr-only"
       />
       <span
         className={cn(
-          'relative block aspect-video w-full overflow-hidden rounded-panel shadow-mark ring-2 ring-transparent transition-[box-shadow,scale] duration-300',
+          'relative block aspect-video w-full overflow-hidden shadow-mark ring-2 ring-transparent transition-[box-shadow,scale] duration-300',
+          compact ? 'rounded-chip' : 'rounded-panel',
           'group-hover:scale-[0.97] group-hover:ring-fg peer-focus-visible:ring-fg',
           selected && selectedCardClass,
         )}
@@ -218,11 +256,12 @@ function MasterTile({
       </span>
       <span
         className={cn(
-          'max-w-full truncate rounded-badge px-2 py-0.5 text-sm transition-colors duration-150',
+          'max-w-full truncate rounded-badge px-2 py-0.5 transition-colors duration-150',
+          compact ? 'text-xs' : 'text-sm',
           selected ? 'bg-(--selection) text-(--on-selection)' : 'text-fg-muted group-hover:text-fg',
         )}
       >
-        {name}
+        {label}
       </span>
     </label>
   );

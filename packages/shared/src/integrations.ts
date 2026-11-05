@@ -148,6 +148,8 @@ export const integrationKeySchema = z.object({
   hint: z.string(),
   /** The model it runs on (AI, speech, pictures); empty for photos. */
   model: z.string(),
+  /** AI: the model a deck is created on („Präsentation erstellen“); `null`: `model`. */
+  createModel: z.string().nullable(),
   active: z.boolean(),
   setByName: z.string(),
   setAt: z.iso.datetime(),
@@ -185,6 +187,8 @@ export const integrationExceptionSchema = z.object({
    * one, its default. `null`: the key's own.
    */
   model: z.string().nullable(),
+  /** AI: the model a deck is created on there; `null`: the key's own. */
+  createModel: z.string().nullable(),
 });
 export type IntegrationException = z.infer<typeof integrationExceptionSchema>;
 
@@ -195,6 +199,10 @@ export const inheritedIntegrationSchema = z.object({
   model: z.string(),
   /** The instance's model for it. */
   defaultModel: z.string(),
+  /** AI: the model a deck is created on here; `null`: `model`. */
+  createModel: z.string().nullable(),
+  /** AI: the instance's model to create decks on; `null`: the model it runs on. */
+  defaultCreateModel: z.string().nullable(),
 });
 export type InheritedIntegration = z.infer<typeof inheritedIntegrationSchema>;
 
@@ -241,14 +249,18 @@ export const updateIntegrationPolicyInputSchema = z
     rule: integrationRuleSchema.nullable(),
     /** A workspace apart: the model of the instance's active key there; `null` its own. */
     model: z.string().trim().min(1).max(200).nullable().optional(),
+    /** A workspace apart (AI): the model it creates decks on there; `null` the key's own. */
+    createModel: z.string().trim().min(1).max(200).nullable().optional(),
   })
   .superRefine((input, context) => {
-    if (input.model !== undefined && !input.workspaceId) {
-      context.addIssue({
-        code: 'custom',
-        message: 'Ein eigenes Modell gibt es nur für einzelne Workspaces.',
-        path: ['model'],
-      });
+    for (const field of ['model', 'createModel'] as const) {
+      if (input[field] !== undefined && !input.workspaceId) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Ein eigenes Modell gibt es nur für einzelne Workspaces.',
+          path: [field],
+        });
+      }
     }
     if (!input.rule && !input.workspaceId) {
       context.addIssue({ code: 'custom', message: 'Die Regel für alle fehlt.', path: ['rule'] });
@@ -265,11 +277,15 @@ export type UpdateIntegrationPolicyInput = z.input<typeof updateIntegrationPolic
 
 /**
  * `PUT /workspaces/:id/integrations/instance/:kind/model` – the model the workspace runs the
- * instance's key on, where the rule lets it pick; `null`: the instance's.
+ * instance's key on, where the rule lets it pick, and (AI) the one it creates decks on; `null`:
+ * the instance's; left out: as it is.
  */
-export const setInheritedModelInputSchema = z.object({
-  model: z.string().trim().min(1).max(200).nullable(),
-});
+export const setInheritedModelInputSchema = z
+  .object({
+    model: z.string().trim().min(1).max(200).nullable().optional(),
+    createModel: z.string().trim().min(1).max(200).nullable().optional(),
+  })
+  .refine((input) => input.model !== undefined || input.createModel !== undefined);
 export type SetInheritedModelInput = z.infer<typeof setInheritedModelInputSchema>;
 
 /** `GET …/integrations/keys/:keyId/models` – what the key may run on, newest first. */
@@ -328,11 +344,16 @@ export const updateIntegrationKeyInputSchema = z
   .object({
     active: z.boolean().optional(),
     model: z.string().trim().min(1).max(200).optional(),
+    /** AI: the model a deck is created on; `null`: `model`. */
+    createModel: z.string().trim().min(1).max(200).nullable().optional(),
     /** A refused key asked again – e.g. once the account was topped up. */
     recheck: z.literal(true).optional(),
   })
   .refine(
     (input) =>
-      input.active !== undefined || input.model !== undefined || input.recheck !== undefined,
+      input.active !== undefined ||
+      input.model !== undefined ||
+      input.createModel !== undefined ||
+      input.recheck !== undefined,
   );
 export type UpdateIntegrationKeyInput = z.infer<typeof updateIntegrationKeyInputSchema>;

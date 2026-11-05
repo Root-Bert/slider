@@ -41,13 +41,9 @@ Solange es keinen Admin gibt, kommt jedes neue Konto nur bis zur Abfrage des Tok
 ändert der Admin alles unter Einstellungen → **Instanz** → Einrichtung. Werte in `deploy/.env`
 haben immer Vorrang und erscheinen dort schreibgeschützt.
 
-Die Seite **Instanz** (`/instanz`) zeigt dem Admin, wie groß die Instanz ist (Personen,
-Workspaces, Reviews, Speicher), dazu alle Workspaces mit Größe und Plan, nie ihre Inhalte,
-und alle Konten mit Name und E-Mail. Dort lassen sich Konten und Workspaces **sperren**: Ein
-gesperrtes Konto meldet sich nirgends mehr an, einen gesperrten Workspace öffnet niemand mehr,
-nur Austreten geht. Gelöscht wird dabei nichts. Wo die Pläne sich unterscheiden
-(`PLAN_FREE_*`), schaltet der Admin einen Workspace auch ohne Stripe in den Paid-Plan frei,
-etwa bei Zahlung per Rechnung.
+**Instanz** (`/instanz`) zeigt Größe, Workspaces und Konten (nie Inhalte). Konten und Workspaces
+lassen sich dort **sperren** (nichts wird gelöscht) und, wo `PLAN_FREE_*` gilt, ohne Stripe in den
+Paid-Plan freischalten.
 
 Wer sich registrieren darf, regelt `SIGNUP`: Standard ist `open` (jede:r mit einem der Logins).
 Für eine Firmen-Instanz besser `invite`, `domains` oder `company`.
@@ -93,39 +89,31 @@ und 465, dann 587 nehmen.
 
 ## Fotos (optional)
 
-„Foto suchen“ im Editor und Fotos, die die KI für eine Folie aussucht, kommen von Unsplash. Auf
+Fotos im Editor und für die KI kommen von Unsplash. Auf
 [unsplash.com/oauth/applications](https://unsplash.com/oauth/applications) eine App anlegen und
-ihren Access Key als `UNSPLASH_ACCESS_KEY` setzen (den Secret Key braucht Slider nicht). Eine
-neue App ist im Demo-Modus: 50 Anfragen pro Stunde. Für mehr bei Unsplash „Production“
-beantragen, mit Screenshots der Fotonennung im Editor und im Kommentar der KI. Slider hält sich an
-die Regeln von Unsplash: Der Key bleibt auf dem Server, Vorschaubilder kommen direkt von
-`images.unsplash.com`, Fotograf und Unsplash werden verlinkt genannt (auch als Bildbeschreibung
-in der Datei), und ein Foto wird Unsplash einmal als verwendet gemeldet – sofort, wenn es jemand
-im Editor nimmt, bei der KI, wenn der Kommentar erledigt ist oder die Datei Slider verlässt.
-Datenschutzerklärung: „Vorlagen ausfüllen“ nimmt den Absatz „Fotosuche“ auf, sobald der Key gesetzt ist.
+ihren Access Key als `UNSPLASH_ACCESS_KEY` setzen (Secret Key unnötig). Neue Apps sind im
+Demo-Modus (50 Anfragen pro Stunde); für mehr „Production“ beantragen, mit Screenshots der
+Fotonennung im Editor und im Kommentar der KI. Slider hält die Unsplash-Regeln ein (Key nur auf
+dem Server, Hotlinks, verlinkte Nennung, einmalige Meldung pro Foto). Die Datenschutz-Vorlage
+nimmt den Absatz „Fotosuche“ auf, sobald der Key gesetzt ist.
 
 ## Freistellen (optional)
 
-Die KI kann den Hintergrund von Bildern entfernen (Personen, Produkte, Logos). Das macht
-[rembg](https://github.com/danielgatis/rembg) mit dem offenen Modell IS-Net auf dem eigenen
-Server, kein Bild verlässt ihn. Starten mit `docker compose --profile rembg up -d` und in
-`.env` `REMBG_URL=http://rembg:7000` setzen. Der Container braucht bis zu 2 GB RAM und 2 Kerne
-(so begrenzt), ein Bild dauert je nach Server einige Sekunden; Slider schickt eins nach dem
-anderen. Ohne `REMBG_URL` bietet Slider der KI das Werkzeug nicht an.
+Die KI kann Bildhintergründe entfernen, mit [rembg](https://github.com/danielgatis/rembg)
+(Modell IS-Net) auf dem eigenen Server. Starten mit `docker compose --profile rembg up -d` und
+`REMBG_URL=http://rembg:7000` in `.env`. Bis zu 2 GB RAM und 2 Kerne, einige Sekunden pro Bild.
+Ohne `REMBG_URL` hat die KI das Werkzeug nicht.
 
 ## Sprache zu Text (optional)
 
-Statt eines Anbieters kann der eigene Server Aufnahmen in Text umwandeln: Whisper large-v3-turbo
-(offenes Modell, rund 100 Sprachen, Deutsch und Englisch sehr gut) über faster-whisper. Keine
-Aufnahme verlässt den Server, ein API-Key ist nicht nötig. Starten mit
+Der eigene Server kann Aufnahmen in Text umwandeln: Whisper large-v3-turbo über faster-whisper,
+ohne API-Key, keine Aufnahme verlässt den Server. Starten mit
 `docker compose --profile stt up -d` (der erste Build lädt das Modell, ~1,6 GB) und in `.env`
 `SPEECH_URL=http://stt:8000/v1` setzen, dann `docker compose up -d slider`.
 
-Der Container braucht etwa 2 GB RAM (auf 3 GB begrenzt) und bis zu 4 Kerne. Ohne Grafikkarte
-dauert eine Aufnahme etwa drei Viertel ihrer Länge (gemessen: 90 Sekunden in 66 auf 4 Kernen
-eines Apple M4, ältere Server-CPUs eher länger); Slider schickt eine nach der anderen. Der eigene Server gilt überall, wo kein Key für Sprache zu Text aktiv ist – in der
-Einrichtung unter „Integrationen“ steht dann „Auf diesem Server“. Ein aktiver Key (Instanz oder
-Workspace) geht vor.
+Etwa 2 GB RAM (Limit 3 GB), bis zu 4 Kerne; ohne Grafikkarte dauert eine Aufnahme rund drei
+Viertel ihrer Länge. Der eigene Server gilt überall, wo kein Key für Sprache zu Text aktiv ist
+(„Integrationen“ zeigt „Auf diesem Server“); ein aktiver Key geht vor.
 
 Anderes Modell: `docker compose build --build-arg WHISPER_MODEL=large-v3 stt` (genauer,
 doppelt so langsam, ~4 GB RAM) und `SPEECH_MODEL=whisper-large-v3` in `.env`.

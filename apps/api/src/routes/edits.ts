@@ -41,6 +41,7 @@ import {
   editedSlidePdf,
   editedSlidePng,
   filePicture,
+  getDeckNotes,
   getEditState,
   revertEdit,
   sendExport,
@@ -137,6 +138,10 @@ export function editsRoutes(deps: AppDeps) {
     new Hono<ViewerEnv>()
       .get('/decks/:deckId/edit', viewer, async (c) =>
         c.json(await getEditState(deps, c.var.viewer, c.req.param('deckId'))),
+      )
+      // The speaker notes alone: for everyone who may view the deck (the presenter view).
+      .get('/decks/:deckId/notes', viewer, async (c) =>
+        c.json(await getDeckNotes(deps, c.var.viewer, c.req.param('deckId'))),
       )
       .get('/decks/:deckId/layouts', viewer, async (c) =>
         c.json(await getDeckLayouts(deps, c.var.viewer, c.req.param('deckId'))),

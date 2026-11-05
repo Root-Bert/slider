@@ -118,7 +118,7 @@ interface Connection {
   heartbeat: ReturnType<typeof setInterval>;
   onComments: () => void;
   /** The deck was edited, or an AI proposal changed (BER-180, BER-183). */
-  onDeckChange: (change: 'slides' | 'proposals') => void;
+  onDeckChange: (change: 'slides' | 'proposals' | 'board' | 'creation') => void;
   closed: boolean;
   /** The tab is hidden: the stream is let go until it shows again (`suspend`). */
   suspended: boolean;
@@ -132,7 +132,7 @@ let current: Connection | null = null;
 export function connectLive(
   deckId: string,
   onComments: () => void,
-  onDeckChange: (change: 'slides' | 'proposals') => void = () => undefined,
+  onDeckChange: (change: 'slides' | 'proposals' | 'board' | 'creation') => void = () => undefined,
 ): () => void {
   // `encodeURIComponent` leaves `.`/`..` alone, and the browser would resolve them out of the
   // path (`/decks/../live`) – like `apiRequest`, such an id never reaches the server.
@@ -331,6 +331,8 @@ function handle(connection: Connection, event: LiveEvent) {
       connection.onDeckChange(event.type);
       return;
     case 'proposals':
+    case 'board':
+    case 'creation':
       connection.onDeckChange(event.type);
       return;
     case 'text':

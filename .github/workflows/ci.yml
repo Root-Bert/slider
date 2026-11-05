@@ -1,18 +1,30 @@
 name: CI
 
-# Every release and every manual run: lint, typecheck, the focused test suite on PGlite,
-# Postgres driver/migration checks, build, e2e, Caddyfiles, secret scan, and the container image built and
-# smoke-tested. No image is published: self-hosters build it from their checkout
-# (docs/self-hosting.md).
+# Two sizes of the same workflow:
 #
-# A release starts it by its tag, not by the release event: here the tag is pushed when the release
-# is created, in the public repository by publish.yml – whose release, made by release.yml with
-# the workflow token, would start no workflow. Pushes to main and pull requests start no run.
+# - Full, in the development repository: lint, typecheck, build, the Vitest suite (API on PGlite in
+#   five groups), e2e, Postgres driver/migrations, Caddyfiles, secret scan and the container image
+#   built and smoke-tested. It runs by hand (Actions → CI → Run workflow) and is called by
+#   publish.yml before anything is published or deployed – a release whose checks fail goes
+#   nowhere.
+# - Light, in the public repository Root-Bert/slider, on every release tag publish.yml pushes there:
+#   the published tree is complete and builds – lint, typecheck, build, the container image (amd64
+#   and arm64) and the secret scan. Only when these pass does its last job turn the tag into a
+#   GitHub release.
+#
+# No image is published: self-hosters build it from their checkout (docs/self-hosting.md). Pushes
+# to main and pull requests start no run; a tag pushed here starts nothing (publish.yml calls it).
 
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Tag or commit to check (publish.yml passes the release tag)
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -24,9 +36,12 @@ concurrency:
 jobs:
   verify:
     name: Lint, typecheck, build
+    if: github.event_name != 'push' || github.repository == 'Root-Bert/slider'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
@@ -39,26 +54,34 @@ jobs:
       - run: bun run typecheck
       - run: bun run build
 
-  # The Vitest suite on four runners: the API tests in three groups of about equal length
+  # The Vitest suite on six runners: the API tests in five groups of about equal length
   # (scripts/api-test-group.ts – each test starts its own database, so they dominate), everything
-  # else together. Vitest would use one worker on a 2-core runner; the tests wait enough for two.
+  # else together. The API tests run one at a time: on a 2-core runner two of them, each with its
+  # own LibreOffice, ran out of time.
   test:
     name: Tests (${{ matrix.name }})
+    if: github.repository != 'Root-Bert/slider' && github.event_name != 'push'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: API 1/3
-            run: bunx vitest run --project api $(bun scripts/api-test-group.ts 1 3)
-          - name: API 2/3
-            run: bunx vitest run --project api $(bun scripts/api-test-group.ts 2 3)
-          - name: API 3/3
-            run: bunx vitest run --project api $(bun scripts/api-test-group.ts 3 3)
+          - name: API 1/5
+            run: bunx vitest run --project api $(bun scripts/api-test-group.ts 1 5) --maxWorkers=1
+          - name: API 2/5
+            run: bunx vitest run --project api $(bun scripts/api-test-group.ts 2 5) --maxWorkers=1
+          - name: API 3/5
+            run: bunx vitest run --project api $(bun scripts/api-test-group.ts 3 5) --maxWorkers=1
+          - name: API 4/5
+            run: bunx vitest run --project api $(bun scripts/api-test-group.ts 4 5) --maxWorkers=1
+          - name: API 5/5
+            run: bunx vitest run --project api $(bun scripts/api-test-group.ts 5 5) --maxWorkers=1
           - name: web, packages
-            run: bunx vitest run --project web --project web-dom --project pptx --project odp --project shared
+            run: bunx vitest run --project web --project web-dom --project pptx --project odp --project shared --maxWorkers=2
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
@@ -67,14 +90,17 @@ jobs:
         with:
           node-version-file: .nvmrc
       - run: bun install --frozen-lockfile
-      - run: ${{ matrix.run }} --maxWorkers=2
+      - run: ${{ matrix.run }}
 
   e2e:
     name: End-to-end (Playwright)
+    if: github.repository != 'Root-Bert/slider' && github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
@@ -116,6 +142,7 @@ jobs:
   # Business behavior is covered by the PGlite suite above instead of repeated here.
   postgres:
     name: Postgres driver and migrations
+    if: github.repository != 'Root-Bert/slider' && github.event_name != 'push'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -134,6 +161,8 @@ jobs:
       TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
@@ -149,6 +178,7 @@ jobs:
   # minutes are free, or on a manual run. Each architecture has its own build cache scope.
   image-smoke:
     name: Container image ${{ matrix.arch }} (build + smoke test)
+    if: github.event_name != 'push' || github.repository == 'Root-Bert/slider'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
@@ -160,6 +190,8 @@ jobs:
       SMOKE_WAIT: ${{ matrix.arch == 'arm64' && 600 || 90 }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
       - if: matrix.arch == 'arm64'
         uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
@@ -180,17 +212,22 @@ jobs:
   # parsed and provisioned by the caddy:2 image Compose runs – with and without Cloudflare.
   caddy:
     name: Caddyfiles (caddy adapt)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - run: scripts/check-caddyfiles.sh
-
-  secrets:
-    name: Secret scan
+    if: github.repository != 'Root-Bert/slider' && github.event_name != 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: ${{ inputs.ref }}
+      - run: scripts/check-caddyfiles.sh
+
+  secrets:
+    name: Secret scan
+    if: github.event_name != 'push' || github.repository == 'Root-Bert/slider'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
           fetch-depth: 0
       # Full-history scan with the gitleaks CLI. (gitleaks-action breaks on a repo's first push,
       # where the root commit has no parent to diff against.)
@@ -198,3 +235,22 @@ jobs:
         run: >-
           docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo"
           ghcr.io/gitleaks/gitleaks:v8.30.1 git --redact --verbose /repo
+
+  release:
+    name: Create the GitHub release
+    needs: [verify, image-smoke, secrets]
+    if: github.repository == 'Root-Bert/slider' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          gh release create "$GITHUB_REF_NAME" --verify-tag --notes-from-tag \
+            --title "$(git tag -l --format='%(contents:subject)' "$GITHUB_REF_NAME")"
