@@ -69,11 +69,6 @@ export function tagOf(node: XmlNode): string | null {
   return null;
 }
 
-export const isElement = (node: XmlNode, tag?: string): boolean => {
-  const name = tagOf(node);
-  return name !== null && (tag === undefined || name === tag);
-};
-
 export function childrenOf(node: XmlNode): XmlNode[] {
   const tag = tagOf(node);
   if (!tag) return [];

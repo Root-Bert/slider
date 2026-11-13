@@ -59,7 +59,7 @@ test('comment, reply and resolve – all of it survives a reload', async ({ page
   await page.reload();
   await expect(page.getByRole('group', { name: /^Folie 1 von 5/ })).toBeVisible();
 
-  await page.getByRole('radio', { name: /^Erledigt/ }).click();
+  await page.getByRole('checkbox', { name: /^Erledigt/ }).click();
   const doneCard = comments.getByRole('article').filter({ hasText: text });
   await expect(doneCard).toBeVisible();
   await doneCard.getByRole('button', { name: 'Thread von Robert Hofmann öffnen' }).click();

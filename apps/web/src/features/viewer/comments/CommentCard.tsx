@@ -194,7 +194,8 @@ export const CommentCard = memo(function CommentCard({
                 canResolve && (
                   <span className="-my-1 -mr-1.5 flex items-center">
                     {/* Collapsed, the thread's last message is the one to act on. */}
-                    <AskAiButton comment={replies.at(-1) ?? root} deckId={deckId} />
+                    {/* Done is done: asking the AI again takes opening the thread. */}
+                    {!done && <AskAiButton comment={replies.at(-1) ?? root} deckId={deckId} />}
                     <ResolveButton comment={root} deckId={deckId} />
                   </span>
                 )

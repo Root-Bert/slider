@@ -5,12 +5,12 @@ import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import postgres from 'postgres';
 import { inject } from 'vitest';
-import type { CreateCommentInput, Shape } from '@slider/shared';
+import { DESKTOP_PAGE_COOKIE, type CreateCommentInput, type Shape } from '@slider/shared';
 import type { ParsedPresentation, ParsedSlide } from '@slider/pptx';
 import { createApp } from '../src/app';
+import { desktopPageToken } from '../src/http/desktop-guard';
 import { BackgroundWork } from '../src/background-work';
-import { GoogleTokens } from '../src/auth/google';
-import { MicrosoftTokens } from '../src/auth/microsoft';
+import { MicrosoftLogin } from '../src/auth/microsoft';
 import { NextcloudAccounts } from '../src/auth/nextcloud';
 import { OidcClient } from '../src/auth/oidc';
 import type { WebAuthn } from '../src/auth/passkeys';
@@ -24,12 +24,9 @@ import {
   openDatabase,
   openSnapshot,
   type DatabaseHandle,
-  type Executor,
 } from '../src/db/client';
-import { encryptToken } from '../src/auth/token-crypto';
 import {
   decks,
-  microsoftConnections,
   revisions,
   sessions,
   slides,
@@ -40,9 +37,7 @@ import {
 import type { BillingProvider } from '../src/billing/stripe-billing';
 import type { AppDeps, InstanceControl } from '../src/deps';
 import { importDeck } from '../src/import/import-deck';
-import { createSlidesExtras, type SlidesExtrasReader } from '../src/import/slides-extras';
 import type { DocumentToPdf, PptxToPdf } from '../src/import/libreoffice';
-import type { OfficePdf } from '../src/import/office-pages';
 import type { OpenPptx } from '../src/import/pptx';
 import {
   importJobKey,
@@ -100,7 +95,6 @@ export const testConfig = (overrides: Partial<Config> = {}): Config => ({
   inviteRateLimit: 1000,
   microsoft: null,
   nextcloud: { server: null, login: null, loginAnyServer: false },
-  googleDrive: null,
   media: { dir: '/unused', maxBytes: 1024 * 1024 },
   // The real plans (free: 5 people, 2 GB, decks unlimited); tests that need more pass `plans`.
   limited: true,
@@ -245,8 +239,6 @@ export async function openTestDatabase(
 export async function createTestContext(
   options: {
     openPptx?: OpenPptx;
-    /** Office's PDF of a deck (BER-94); without it every slide gets the SVG preview. */
-    officePdf?: OfficePdf;
     /** LibreOffice's PDF of a PPTX (BER-94); a fake – LibreOffice is not needed for tests. */
     libreOfficePdf?: PptxToPdf;
     /** LibreOffice's PDF of a Word, Excel or text file; a fake too. Without it those are refused. */
@@ -256,7 +248,7 @@ export async function createTestContext(
     lookup?: LookupAll;
     /** DNS TXT records for workspaces' company logins (BER-162); none without it. */
     resolveTxt?: ResolveTxt;
-    /** Replaces individual source adapters, e.g. with a fake OneDrive (no network). */
+    /** Replaces individual source adapters, e.g. with a fake link source (no network). */
     sources?: Partial<SourceAdapters>;
     /** e.g. a `RecordingMailer` – invitations are only mailed with a configured mailer. */
     mailer?: Mailer;
@@ -266,6 +258,8 @@ export async function createTestContext(
     anthropic?: (apiKey: string) => Anthropic;
     /** A fake OpenAI-compatible AI service: answers instead of the network. */
     aiFetch?: (input: string, init?: RequestInit) => Promise<Response>;
+    /** The desktop app's Slider server (BER-201): answers instead of the network. */
+    cloudFetch?: (input: string, init?: RequestInit) => Promise<Response>;
     /** A fake Unsplash: stock photos without network. */
     stockPhotos?: StockPhotoSource;
     /** A fake rembg: pictures cut out without network. */
@@ -305,11 +299,9 @@ export async function createTestContext(
   }
   const workspaceId = await ensurePersonalWorkspace(db, owner.id);
   const openPptx = options.openPptx ?? stubPptx();
-  const renderers = { officePdf: options.officePdf, libreOfficePdf: options.libreOfficePdf };
+  const renderers = { libreOfficePdf: options.libreOfficePdf };
   const renderProgress = new RenderProgress();
   const config = testConfig(options.config);
-  // Needs the source adapters, which are made below.
-  let slidesExtras: SlidesExtrasReader = async () => null;
   const queue = new InProcessQueue<ImportJob>(
     (job) =>
       importDeck(
@@ -320,7 +312,6 @@ export async function createTestContext(
           clock,
           log: silentLogger,
           ...renderers,
-          slidesExtras: (deck, revision) => slidesExtras(deck, revision),
           renderProgress,
         },
         job,
@@ -329,10 +320,8 @@ export async function createTestContext(
     { priority: importJobPriority, key: importJobKey },
   );
   const fetch = options.fetch ?? offlineFetch;
-  const microsoft = new MicrosoftTokens({
+  const microsoft = new MicrosoftLogin({
     config: config.microsoft,
-    secret: config.secret,
-    db,
     clock,
     log: silentLogger,
     fetch,
@@ -348,26 +337,15 @@ export async function createTestContext(
     fetch,
     lookup: options.lookup ?? publicLookup,
   });
-  const googleDrive = new GoogleTokens({
-    config: config.googleDrive,
-    secret: config.secret,
-    db,
-    clock,
-    log: silentLogger,
-    fetch,
-  });
   const sources: SourceAdapters = {
     ...createSourceAdapters({
       config,
-      tokens: microsoft,
       fetch,
       lookup: options.lookup ?? publicLookup,
       nextcloud,
-      google: googleDrive,
     }),
     ...options.sources,
   };
-  slidesExtras = createSlidesExtras(sources, silentLogger);
   const sync = new SyncService({
     db,
     storage,
@@ -376,7 +354,6 @@ export async function createTestContext(
     clock,
     log: silentLogger,
     config,
-    connections: microsoft,
     documentPdf: options.documentPdf,
     waitMs: options.syncWaitMs,
   });
@@ -389,7 +366,6 @@ export async function createTestContext(
     sources,
     microsoft,
     nextcloud,
-    googleDrive,
     clock,
     log: silentLogger,
     sync,
@@ -400,6 +376,7 @@ export async function createTestContext(
     webauthn: options.webauthn,
     anthropic: options.anthropic,
     aiFetch: options.aiFetch,
+    cloudFetch: options.cloudFetch,
     stockPhotos: options.stockPhotos,
     cutOuts: options.cutOuts,
     ssoNetwork: {
@@ -428,6 +405,10 @@ export async function createTestContext(
       const headers = new Headers(rest.headers);
       if (json !== undefined) headers.set('Content-Type', 'application/json');
       if (cookie) headers.set('Cookie', cookie);
+      // The desktop's local server answers its pages only: Electron gives them this cookie.
+      else if (deps.config.desktop && !headers.has('Cookie')) {
+        headers.set('Cookie', `${DESKTOP_PAGE_COOKIE}=${desktopPageToken(deps.config.secret)}`);
+      }
       return app.request(url, {
         ...rest,
         headers,
@@ -544,41 +525,3 @@ export const fakeJwt = (claims: Record<string, unknown>) =>
     Buffer.from(JSON.stringify(claims)).toString('base64url'),
     'signature',
   ].join('.');
-
-/**
- * A Microsoft connection of `userId` straight in the database (its refresh token encrypted with
- * the test secret); returns its id. `refreshToken: null` → one Microsoft refused.
- */
-export async function connectMicrosoft(
-  db: Executor,
-  userId: string,
-  {
-    refreshToken = 'rt-1',
-    subject = `ms-${userId}`,
-    account = null,
-    lastUsedAt = null,
-    createdAt = new Date(),
-    identitySubject = null,
-  }: {
-    refreshToken?: string | null;
-    subject?: string;
-    account?: string | null;
-    lastUsedAt?: Date | null;
-    createdAt?: Date;
-    identitySubject?: string | null;
-  } = {},
-): Promise<string> {
-  const id = crypto.randomUUID();
-  await db.insert(microsoftConnections).values({
-    id,
-    userId,
-    subject,
-    account,
-    identitySubject,
-    refreshToken:
-      refreshToken === null ? null : await encryptToken(testConfig().secret, refreshToken),
-    lastUsedAt,
-    createdAt,
-  });
-  return id;
-}

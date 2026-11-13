@@ -20,8 +20,9 @@ import {
   workspaces,
 } from '../src/db/schema';
 import type { PptxToPdf } from '../src/import/libreoffice';
-import { odpLayoutName } from '../src/import/master-deck';
+import { odpLayoutName, themeTemplateColors } from '../src/import/master-deck';
 import { deckDesign } from '../src/services/ai-context';
+import { backfillMasterColors } from '../src/services/workspace-masters';
 import { DEMO_ODP, fakeOdpPdf, odpForm } from './odp-helpers';
 import { createTestContext, signedInUser } from './helpers';
 import { makeSlidesPdf } from './pdf';
@@ -64,6 +65,20 @@ const GRID = {
   rows: { count: 1, gutter: 0, margin: 0.5 },
 };
 
+/** The demo files' theme as a template's colours, in PowerPoint's picker order. */
+const DEMO_COLORS = [
+  { color: '#ffffff', name: 'Hintergrund 1' },
+  { color: '#000000', name: 'Text 1' },
+  { color: '#f1f5f9', name: 'Hintergrund 2' },
+  { color: '#0f172a', name: 'Text 2' },
+  { color: '#2563eb', name: 'Akzent 1' },
+  { color: '#0ea5e9', name: 'Akzent 2' },
+  { color: '#10b981', name: 'Akzent 3' },
+  { color: '#f59e0b', name: 'Akzent 4' },
+  { color: '#ef4444', name: 'Akzent 5' },
+  { color: '#8b5cf6', name: 'Akzent 6' },
+];
+
 const form = (bytes: Uint8Array, name: string) => {
   const body = new FormData();
   body.append('file', new File([bytes as Uint8Array<ArrayBuffer>], name));
@@ -86,9 +101,29 @@ it('reads a template’s layouts under their own names, draws master pages with 
         ['Slider', 'Title and Content'],
       ]);
       expect(master!.aspectRatio).toBeCloseTo(16 / 9);
+      // Its theme's colours, for Bibliothek → Farben and the decks made from it.
+      expect(master!.colors).toEqual(DEMO_COLORS);
 
       // Without LibreOffice: Slider's own preview, placeholders filled in.
       const [row] = await ctx.deps.db.select().from(workspaceMasters);
+      // Uploaded before the colours were read: they come at the next start, once.
+      await ctx.deps.db.update(workspaceMasters).set({ colors: [] });
+      expect(await backfillMasterColors(ctx.deps)).toBe(1);
+      expect((await ctx.deps.db.select().from(workspaceMasters))[0]!.colors).toEqual(DEMO_COLORS);
+      expect(await backfillMasterColors(ctx.deps)).toBe(0);
+      // Each colour once, a slot missing left out.
+      expect(
+        themeTemplateColors(
+          new Map([
+            ['dk1', '#000000'],
+            ['dk2', '#000000'],
+            ['accent2', '#FF0000'],
+          ]),
+        ),
+      ).toEqual([
+        { color: '#000000', name: 'Text 1' },
+        { color: '#ff0000', name: 'Akzent 2' },
+      ]);
       const picture = new TextDecoder().decode(
         (await ctx.deps.storage.get(row!.layouts[0]!.imageKey))!,
       );
@@ -125,6 +160,8 @@ it('reads a template’s layouts under their own names, draws master pages with 
       expect(response.status).toBe(200);
       const [master] = (await response.json()) as WorkspaceMaster[];
       expect(master).toMatchObject({ name: 'Hausdesign', format: 'odp', fileExtension: 'otp' });
+      // LibreOffice's theme (`loext:theme`) read the same way.
+      expect(master!.colors).toEqual(DEMO_COLORS);
       // Kept as the template it is; LibreOffice draws a presentation made of it.
       const [row] = await ctx.deps.db.select().from(workspaceMasters);
       expect(row!.fileKey).toMatch(/\.otp$/);
@@ -243,9 +280,9 @@ it('refuses files without masters, lets viewers only look and admins remove, and
       }
       expect(status).toBe(429);
       expect((await ctx.request(`${url}/draft`, { method: 'POST' })).status).toBe(429);
-      expect(
-        (await ctx.request('/api/decks/any/template/save', { method: 'POST' })).status,
-      ).toBe(429);
+      expect((await ctx.request('/api/decks/any/template/save', { method: 'POST' })).status).toBe(
+        429,
+      );
     } finally {
       await ctx.cleanup();
     }
@@ -581,8 +618,8 @@ it('builds a deck on a design, finds it again, and takes a template’s layout i
       expect(res.status).toBe(201);
       const made = deckSchema.parse(await res.json());
       expect(await masterOf(made.id)).toBe(master!.id);
-      // Its pickers offer the template's colours – none set: the general ones – and its own.
-      expect(made.colors).toEqual({ template: null, custom: [] });
+      // Its pickers offer the template's colours – an uploaded one's theme – and its own.
+      expect(made.colors).toEqual({ template: DEMO_COLORS, custom: [] });
       // A template uploaded as a file has no grid of its own: the standard one.
       expect(made.grid).toBeNull();
       await ctx.deps.db

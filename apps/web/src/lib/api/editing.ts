@@ -9,11 +9,15 @@ import type {
   AiProposal,
   ApplyEditInput,
   ApplyEditResult,
+  Author,
+  CommentReaction,
+  CommentReactionKind,
   CreateAiProposalInput,
   DeckEditState,
   DeckLayouts,
   DeckNotes,
   GenerateEditImageInput,
+  ImageSymbol,
   RevertEditInput,
   SendExportInput,
   SlideLayers,
@@ -227,11 +231,14 @@ export const useComposedLayers = (
   });
 };
 
+/** A picture for the editor, kept for `replaceImage` – a symbol with which it is (`ImageSymbol`). */
 export function useUploadEditImage(deckId: string) {
   return useMutation({
-    mutationFn: (file: File) => {
+    mutationFn: (input: File | { file: File; symbol: ImageSymbol }) => {
       const body = new FormData();
+      const file = input instanceof File ? input : input.file;
       body.append('file', file);
+      if (!(input instanceof File)) body.append('symbol', JSON.stringify(input.symbol));
       return api.post<UploadedEditImage>(`/decks/${deckId}/edit/images`, body);
     },
   });
@@ -381,6 +388,54 @@ export function useResolveProposal(deckId: string) {
       );
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
+  });
+}
+
+/**
+ * Sets one's own reaction to an answer of the AI (👍 / 👎 / egal), `null` takes it back – as
+ * `useReactToComment` for a comment. Optimistic like `useResolveProposal`: shown at once, rolled
+ * back alone on an error; the others hear it live. Quick clicks go one after another, and only the
+ * last one's answer is shown – an earlier one's would take back the later click shown already.
+ */
+export function useReactToProposal(deckId: string, author: Author) {
+  const queryClient = useQueryClient();
+  const key = queryKeys.proposals(deckId);
+  const mutationKey = ['proposal-reaction', deckId];
+  const show = (proposalId: string, reactions: CommentReaction[] | undefined) =>
+    queryClient.setQueryData<AiProposal[]>(key, (list) =>
+      list?.map((item) => (item.id === proposalId ? { ...item, reactions } : item)),
+    );
+  /** Another click on the same answer still under way. */
+  const later = (proposalId: string) =>
+    queryClient.isMutating({
+      mutationKey,
+      predicate: (mutation) =>
+        (mutation.state.variables as { proposalId?: string } | undefined)?.proposalId ===
+        proposalId,
+    }) > 1;
+  return useMutation({
+    mutationKey,
+    scope: { id: `proposal-reaction:${deckId}` },
+    mutationFn: ({ proposalId, kind }: { proposalId: string; kind: CommentReactionKind | null }) =>
+      api.put<CommentReaction[]>(`/decks/${deckId}/ai/proposals/${proposalId}/reaction`, { kind }),
+    onMutate: async ({ proposalId, kind }) => {
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient
+        .getQueryData<AiProposal[]>(key)
+        ?.find((item) => item.id === proposalId)?.reactions;
+      const others = (previous ?? []).filter((reaction) => reaction.author.id !== author.id);
+      show(proposalId, kind ? [...others, { kind, author }] : others);
+      return { previous };
+    },
+    onError: (_error, { proposalId }, context) => {
+      if (later(proposalId)) return;
+      // `previous` may be an earlier click not confirmed either: the server's answers say.
+      show(proposalId, context?.previous);
+      void queryClient.invalidateQueries({ queryKey: key });
+    },
+    onSuccess: (reactions, { proposalId }) => {
+      if (!later(proposalId)) show(proposalId, reactions);
+    },
   });
 }
 

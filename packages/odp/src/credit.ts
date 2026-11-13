@@ -1,4 +1,4 @@
-import type { ImageCredit, PhotoProvider } from '@slider/shared';
+import type { ImageCredit, ImageSymbol, PhotoProvider } from '@slider/shared';
 import {
   attr,
   buildPart,
@@ -17,7 +17,9 @@ import {
 /*
  * Stock photos keep their credit in the file: the frame's description (`svg:desc`, the „Alt
  * text“ of office suites) names the photographer and links the photo, so it travels with the
- * picture wherever the file goes – and Slider reads it back to show the credit.
+ * picture wherever the file goes – and Slider reads it back to show the credit. Slider's symbols
+ * keep there which they are and their colour (an alt text naming them too), so a symbol picked
+ * again is offered other colours and symbols.
  */
 
 /** Each photo service by the name its credits carry, and the host its links lead to. */
@@ -33,10 +35,16 @@ const CREDITS = Object.entries(SOURCES).map(([source, { name, host }]) => {
     pattern: new RegExp(String.raw`^Foto von (.+) \(${link}\) auf ${name} \(${link}\)$`),
   };
 });
-const isCredit = (text: string) => CREDITS.some(({ pattern }) => pattern.test(text));
+const SYMBOL = /^Symbol „(.+)“ \(([\w.-]+\/[\w.-]+), (#[0-9a-fA-F]{6})\)$/;
+/** A description Slider wrote: it goes when the picture changes. */
+const isOwn = (text: string) =>
+  SYMBOL.test(text) || CREDITS.some(({ pattern }) => pattern.test(text));
 
 export const creditText = (credit: ImageCredit): string =>
   `Foto von ${credit.name} (${credit.profileUrl}) auf ${SOURCES[credit.source ?? 'unsplash'].name} (${credit.photoUrl})`;
+
+export const symbolText = (symbol: ImageSymbol): string =>
+  `Symbol „${symbol.label}“ (${symbol.id}, ${symbol.color.toUpperCase()})`;
 
 const descriptionsOf = (frame: XmlNode) =>
   childrenOf(frame).filter((child) => tagOf(child) === 'svg:desc');
@@ -61,21 +69,35 @@ export function readCredit(frame: XmlNode): ImageCredit | null {
   return null;
 }
 
-/**
- * Sets a frame's credit when its picture changed: an old credit goes; a new one comes after the
- * picture and its title – where ODF puts the description – and replaces any description (it was
- * about the old picture). Without a credit, descriptions written by people stay.
- */
-export function writeCredit(frame: XmlNode, credit: ImageCredit | null): void {
+/** The symbol a picture frame shows, if it is one of Slider's. */
+export function readSymbol(frame: XmlNode): ImageSymbol | null {
   for (const description of descriptionsOf(frame)) {
-    if (credit || isCredit(textIn(description).trim())) removeChild(frame, description);
+    const match = SYMBOL.exec(textIn(description).trim());
+    if (match) return { label: match[1]!, id: match[2]!, color: match[3]!.toLowerCase() };
   }
-  if (!credit) return;
+  return null;
+}
+
+/**
+ * Sets a frame's credit (or symbol) when its picture changed: an old one goes; a new one comes
+ * after the picture and its title – where ODF puts the description – and replaces any description
+ * (it was about the old picture). Without either, descriptions written by people stay.
+ */
+export function writeCredit(
+  frame: XmlNode,
+  credit: ImageCredit | null,
+  symbol: ImageSymbol | null = null,
+): void {
+  const text = credit ? creditText(credit) : symbol ? symbolText(symbol) : null;
+  for (const description of descriptionsOf(frame)) {
+    if (text || isOwn(textIn(description).trim())) removeChild(frame, description);
+  }
+  if (!text) return;
   const children = childrenOf(frame);
   const after = children.findLastIndex((child) =>
     ['draw:image', 'svg:title', 'draw:text-box'].includes(tagOf(child) ?? ''),
   );
-  children.splice(after + 1, 0, element('svg:desc', {}, [textNode(creditText(credit))]));
+  children.splice(after + 1, 0, element('svg:desc', {}, [textNode(text)]));
 }
 
 /** The frames below `root` that show the picture `path`. */

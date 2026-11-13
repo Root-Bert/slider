@@ -122,7 +122,7 @@ export function DomainSection({
   return (
     <Section
       title="Beitritt per Domain"
-      description="Wie bei Slack: Wer sich mit einer Adresse eurer Firma anmeldet, sieht den Workspace und kann ohne Einladung beitreten."
+      description="Wer sich mit einer Adresse eurer Firma anmeldet, sieht den Workspace und kann ohne Einladung beitreten."
     >
       <Toggle
         checked={workspace.joinDomain !== null}

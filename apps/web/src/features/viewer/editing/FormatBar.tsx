@@ -18,6 +18,7 @@ import {
 import { useFloatingFollow } from '../comments/hooks/useFloatingFollow';
 import { usePushAside } from '../hooks/usePushAside';
 import { denormalizeRect, placeBelowOrAbove, placePopover, type Placement } from '../lib/geometry';
+import { fittedToText } from '../stage/lib/rect-edit';
 import { useStageRegistry } from '../state/stage-registry';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerToast } from '../state/viewer-toast';
@@ -29,12 +30,13 @@ import { PhotoCredit } from './photos/PhotoCredit';
 import { GenerateImage } from './photos/GenerateImage';
 import { photoSearchTakesTab } from './photos/photo-search-tab';
 import { StockPhotoSearch } from './photos/StockPhotoSearch';
+import { IconSearch } from './icons/IconSearch';
 import { typedAhead } from './typed-ahead';
-import { KIND_TABS, setPickedTab, usePickedTab, type PanelTab } from './panel-tab';
+import { isSymbolFrame, KIND_TABS, setPickedTab, usePickedTab, type PanelTab } from './panel-tab';
 import { canMove, keepFocus, TEXT_TOOLBAR_ATTR } from './live/model';
 import { FillControls } from './fills/FillControls';
 import { EffectControls } from './fills/EffectControls';
-import { BorderControls, CornerControls, HeadControls, TextControls } from './StyleControls';
+import { BorderControls, CornerControls, HeadControls, Line, TextControls } from './StyleControls';
 import { useAutoZoom } from './useAutoZoom';
 import { PlaceholderControl } from '../template/PlaceholderControl';
 import { ArrangeControls } from './ArrangeControls';
@@ -52,6 +54,19 @@ const TABS: { id: PanelTab; icon: IconName; label: string }[] = [
   { id: 'image', icon: 'image', label: 'Bild' },
   { id: 'arrange', icon: 'alignCenter', label: 'Anordnen' },
 ];
+/** A symbol's picture part: its colours and other symbols. */
+const SYMBOL_TAB = {
+  id: 'image',
+  icon: 'shapes',
+  label: 'Symbol',
+} as const satisfies (typeof TABS)[number];
+
+/**
+ * A picture that is a symbol – named so in the file, or a frame taken as „Symbol“ (still empty, or
+ * filled here just now): its panel offers colours and other symbols, not a picture's controls.
+ */
+const isSymbol = (element: EditableElement) =>
+  element.kind === 'image' && (Boolean(element.symbol) || isSymbolFrame(element.id));
 
 /** The tabs an element has: what can be changed on it. */
 function tabsOf(element: EditableElement): PanelTab[] {
@@ -152,7 +167,7 @@ export function FramePanelPreview({
       slideId={slideId}
       tab={tab}
       onTab={() => {}}
-      framePreview={{ typed, rect, onTake, onShape, onShapeShown }}
+      framePreview={{ typed, rect, onTake, onShape, onShapeShown, symbols: kind === 'symbol' }}
     />,
     document.body,
   );
@@ -183,6 +198,8 @@ function FormatBarView({
     onTake: () => void;
     onShape?: (shape: FrameShape) => void;
     onShapeShown?: (shape: FrameShape | null) => void;
+    /** „Symbol“: the picture's part shows the symbols' search. */
+    symbols?: boolean;
   };
 }) {
   const editing = useEditing();
@@ -215,7 +232,12 @@ function FormatBarView({
           y: around.y + (dragged?.group?.dy ?? 0),
         }
       : (dragged?.rect ?? shownBox(element));
-  const label = group ? `${group.length} Elemente` : elementLabel(element);
+  const symbol = !group && (framePreview ? Boolean(framePreview.symbols) : isSymbol(element));
+  const label = group
+    ? `${group.length} Elemente`
+    : symbol && !element.symbol
+      ? 'Symbol'
+      : elementLabel(element);
   // The element last copied: the handle shows it (not in a frame's preview).
   const clip = framePreview ? null : editing.clipboard;
   const { x, y, w, h } = rect;
@@ -277,10 +299,14 @@ function FormatBarView({
       setPlace((current) => (same(current, next) ? current : next));
       setTabsPlace((current) => (same(current, rowAt) ? current : rowAt));
     };
-    // Re-placed before the frame paints, so panel and row do not trail their element.
+    // Re-placed before the frame paints on a scroll or a window resize, so panel and row do not
+    // trail their element. A size the observer reports is placed without `flushSync`: rendered in
+    // the middle of its round, everything else waiting would be drawn too (a text fitted shrinks
+    // the panel, its observer is made anew) – sizes the browser can no longer report that frame
+    // („ResizeObserver loop completed with undelivered notifications“). They float there anyway.
     const placeAgain = () => flushSync(placeNow);
     placeNow();
-    const observer = new ResizeObserver(placeAgain);
+    const observer = new ResizeObserver(placeNow);
     observer.observe(panel);
     observer.observe(slide);
     if (tabsRef.current) observer.observe(tabsRef.current);
@@ -338,33 +364,36 @@ function FormatBarView({
 
   const tabRow = tabs.length > 1 && (
     <div role="tablist" aria-label="Was bearbeiten" data-panel-tabs="" className="flex gap-1">
-      {TABS.filter((item) => tabs.includes(item.id)).map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          role="tab"
-          aria-selected={shown === item.id}
-          title={item.label}
-          // „Text“ taken again on a text that is picked: typing in it starts (at its end).
-          onClick={() => {
-            if (item.id === 'text' && shown === 'text' && live && !group && !framePreview) {
-              if (editing.textEditing !== element.id) {
-                editing.startText({ slideId, elementId: element.id });
-              }
-            } else onTab(item.id);
-          }}
-          className={cn(
-            'flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-control-sm px-2.5 text-xs font-medium whitespace-nowrap',
-            narrow && 'flex-1',
-            shown === item.id
-              ? 'bg-selected text-fg'
-              : 'text-fg-muted hover:bg-hover hover:text-fg',
-          )}
-        >
-          <Icon name={item.icon} size={16} />
-          <span className={cn(narrow && shown !== item.id && 'sr-only')}>{item.label}</span>
-        </button>
-      ))}
+      {TABS.filter((item) => tabs.includes(item.id)).map((tabbed) => {
+        const item = tabbed.id === 'image' && symbol ? SYMBOL_TAB : tabbed;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            aria-selected={shown === item.id}
+            title={item.label}
+            // „Text“ taken again on a text that is picked: typing in it starts (at its end).
+            onClick={() => {
+              if (item.id === 'text' && shown === 'text' && live && !group && !framePreview) {
+                if (editing.textEditing !== element.id) {
+                  editing.startText({ slideId, elementId: element.id });
+                }
+              } else onTab(item.id);
+            }}
+            className={cn(
+              'flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-control-sm px-2.5 text-xs font-medium whitespace-nowrap',
+              narrow && 'flex-1',
+              shown === item.id
+                ? 'bg-selected text-fg'
+                : 'text-fg-muted hover:bg-hover hover:text-fg',
+            )}
+          >
+            <Icon name={item.icon} size={16} />
+            <span className={cn(narrow && shown !== item.id && 'sr-only')}>{item.label}</span>
+          </button>
+        );
+      })}
     </div>
   );
   return (
@@ -537,7 +566,7 @@ function FormatBarView({
         <div inert={!!framePreview} className="flex flex-col gap-3">
           {!group && <PlaceholderControl element={element} />}
           {shown === 'text' && live && <TextControls element={element} live={live} />}
-          {shown === 'text' && live && <FitHeight element={element} />}
+          {shown === 'text' && live && <FitToText element={element} />}
           {shown === 'text' && !live && <PlainText element={element} />}
           {/* A line has no area: its line and its heads. */}
           {shown === 'fill' && element.look && !element.line && (
@@ -557,10 +586,14 @@ function FormatBarView({
           )}
           {shown === 'image' && (
             <SwapImage
+              // A frame's preview keeps its element from „Bild“ to „Symbol“: each opens anew.
+              key={symbol ? 'symbols' : 'picture'}
               element={element}
               slideId={slideId}
               large={large}
+              symbol={symbol}
               previewQuery={framePreview?.typed}
+              preview={inFrame}
             />
           )}
           {shown === 'arrange' && (
@@ -573,37 +606,60 @@ function FormatBarView({
   );
 }
 
-/** A height off by less than this (of the slide) is the text's: nothing to fit. */
+/** A side off by less than this (of the slide) is the text's: nothing to fit. */
 const FIT_TOLERANCE = 0.003;
 
 /**
- * A text box or shape whose height is not its text's – higher, or lower (one growing with its
- * text LibreOffice draws as high as it anyway, other programs may not): „Höhe an Text anpassen“
- * sets the height LibreOffice lays the text out in, padding in (`TextSizeMeasure`, as the
- * corner's double click fits it). Fitted, it is gone.
+ * A text box or shape whose size is not its text's: „An Text anpassen“ sets its width to its
+ * longest line, its height to the one LibreOffice lays the text out in at its width (higher or
+ * lower – one growing with its text LibreOffice draws as high as it anyway, other programs may
+ * not), or both, as the corner's double click does (`TextSizeMeasure`, padding in). Its top left
+ * corner stays where it shows, turned too. A width is offered only when the text's line fits on
+ * the slide from there (a paragraph in one line would run off it); one fitted already is off; all
+ * fitted, the row is gone.
  */
-function FitHeight({ element }: { element: EditableElement }) {
+function FitToText({ element }: { element: EditableElement }) {
   const editing = useEditing();
-  const height = editing.textHeightOf(element.id);
-  if (height === null || !element.resizable) return null;
-  const off = height - element.bbox.h;
-  if (Math.abs(off) < FIT_TOLERANCE) return null;
-  const cm = Math.abs(off) * editing.pageSize.height;
+  const fit = editing.textFitOf(element.id);
+  if (fit === null || !element.resizable) return null;
+  const box = element.bbox;
+  const off = (a: number, b: number) => Math.abs(a - b) >= FIT_TOLERANCE;
+  const widthFits = fit.width <= Math.max(box.w, 1 - box.x) + FIT_TOLERANCE;
+  const width = widthFits && off(fit.width, box.w);
+  const height = off(fit.height, box.h);
+  const both = widthFits && (off(fit.width, box.w) || off(fit.fittedHeight, box.h));
+  if (!width && !height && !both) return null;
+  // Turned, its top left corner stays where it shows – as the corner's double click does.
+  const aspect = editing.pageSize.width / editing.pageSize.height;
+  const set = (size: { w?: number; h?: number }) => {
+    const text = { width: size.w ?? box.w, heightAt: () => size.h ?? box.h };
+    const next = fittedToText(box, 'se', text, element.rotation, aspect);
+    void editing.apply([{ type: 'setBox', elementId: element.id, box: next }]);
+  };
   return (
-    <Button
-      size="sm"
-      variant="secondary"
-      icon="expandAll"
-      disabled={editing.busy}
-      title={`Der Rahmen ist ${cm.toFixed(1).replace('.', ',')} cm ${off > 0 ? 'niedriger' : 'höher'} als sein Text.`}
-      onClick={() =>
-        void editing.apply([
-          { type: 'setBox', elementId: element.id, box: { ...element.bbox, h: height } },
-        ])
-      }
-    >
-      Höhe an Text anpassen
-    </Button>
+    <Line label="An Text anpassen">
+      <IconButton
+        icon="fitWidth"
+        label="Breite an Text anpassen"
+        size="compact"
+        disabled={editing.busy || !width}
+        onClick={() => set({ w: fit.width })}
+      />
+      <IconButton
+        icon="fitHeight"
+        label="Höhe an Text anpassen"
+        size="compact"
+        disabled={editing.busy || !height}
+        onClick={() => set({ h: fit.height })}
+      />
+      <IconButton
+        icon="fitSize"
+        label="Breite und Höhe an Text anpassen"
+        size="compact"
+        disabled={editing.busy || !both}
+        onClick={() => set({ w: fit.width, h: fit.fittedHeight })}
+      />
+    </Line>
   );
 }
 
@@ -616,13 +672,18 @@ function SwapImage({
   element,
   slideId,
   large,
+  symbol,
   previewQuery,
+  preview,
 }: {
   element: EditableElement;
   slideId: string;
   large: boolean;
+  /** A symbol (`isSymbol`, or a frame's preview on „Symbol“): its colours and other symbols only. */
+  symbol: boolean;
   /** A frame's preview (`FramePanelPreview`): what was typed on its kind, searched already. */
-  previewQuery?: string;
+  previewQuery?: string | undefined;
+  preview: boolean;
 }) {
   const editing = useEditing();
   const stock = editing.state?.stockPhotos ?? false;
@@ -635,7 +696,7 @@ function SwapImage({
   // The search is open from the start, with photos at random – the editor's keys stay its own
   // until it is opened by hand (`StockPhotoSearch`); its button folds it away, as „Generieren“
   // its description.
-  const [open, setOpen] = useState<'search' | 'generate' | null>(
+  const [open, setOpen] = useState<'search' | 'generate' | 'icons' | null>(
     stock ? 'search' : (ahead || previewQuery !== undefined) && generation ? 'generate' : null,
   );
   const [searchedByHand, setSearchedByHand] = useState(Boolean(ahead));
@@ -668,7 +729,24 @@ function SwapImage({
     }
   };
   const shown = editing.offline ? null : open;
-  const toggle = (what: 'search' | 'generate') => setOpen((now) => (now === what ? null : what));
+  const toggle = (what: 'search' | 'generate' | 'icons') =>
+    setOpen((now) => (now === what ? null : what));
+  // A symbol: the symbols' search, with what was typed on its frame – the keys go there at once
+  // only in a new frame (not its preview, where the frame's chooser has them); a symbol picked
+  // again keeps them for the editor until its field is clicked.
+  if (symbol) {
+    if (editing.offline) return <p className="text-caption text-fg-subtle">{OFFLINE_HINT}</p>;
+    return (
+      <IconSearch
+        element={element}
+        large={large}
+        autoFocus={!preview && !element.symbol}
+        initialQuery={ahead}
+        query={preview ? previewQuery : undefined}
+        onPicked={() => {}}
+      />
+    );
+  }
   return (
     <>
       <input
@@ -682,18 +760,18 @@ function SwapImage({
           if (file) void swap(file);
         }}
       />
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button
           size="sm"
           variant="secondary"
-          icon={stock || generation ? 'upload' : 'image'}
+          icon="upload"
           loading={upload.isPending}
           disabled={editing.offline}
           title={editing.offline ? OFFLINE_HINT : 'Das neue Bild wird in den Rahmen eingepasst.'}
           onClick={() => fileRef.current?.click()}
           className="flex-1"
         >
-          {stock || generation ? 'Datei' : 'Bild tauschen'}
+          Datei
         </Button>
         {stock && (
           <Button
@@ -716,6 +794,22 @@ function SwapImage({
             Foto suchen
           </Button>
         )}
+        <Button
+          size="sm"
+          variant={shown === 'icons' ? 'primary' : 'secondary'}
+          icon="shapes"
+          aria-expanded={shown === 'icons'}
+          disabled={editing.offline}
+          title={
+            editing.offline
+              ? OFFLINE_HINT
+              : 'Ein Icon oder Piktogramm in einer Farbe der Präsentation – es wird in den Rahmen eingepasst.'
+          }
+          onClick={() => toggle('icons')}
+          className="flex-1"
+        >
+          Symbole
+        </Button>
         {generation && (
           <Button
             size="sm"
@@ -766,6 +860,9 @@ function SwapImage({
           query={previewQuery}
           onPicked={() => setOpen(null)}
         />
+      )}
+      {shown === 'icons' && (
+        <IconSearch element={element} large={large} onPicked={() => setOpen(null)} />
       )}
       {generation && shown === 'generate' && (
         <GenerateImage

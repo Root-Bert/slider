@@ -1,11 +1,18 @@
 import { useSearchParams } from 'react-router';
+import { useAuthProviders } from '@/lib/api';
 import { routes } from '@/lib/routes';
 import { SettingsLayout } from '@/shell/layouts/SettingsLayout';
 import { isLoginError, LoginErrorBanner, useAccount } from '@/features/auth';
 import { Avatar, Section, TextField, useToast } from '@/ui';
-import { LoginsSection, NameField, PasskeysSection } from './components/AccountSections';
+import {
+  CloudLoginSection,
+  LoginsSection,
+  NameField,
+  PasskeysSection,
+} from './components/AccountSections';
 import { DeleteAccountSection, ExportDataSection } from './components/DataSections';
 import { StorageSection } from './components/StorageSection';
+import { AppConnectionsSection } from './components/AppConnectionsSection';
 
 /** The groups inside a card, split by hairlines. */
 const GROUPS =
@@ -13,8 +20,9 @@ const GROUPS =
 
 /**
  * `/konto` – "Konto & Anmeldung": who you are, how you sign in ("Anmeldung": Microsoft, Google,
- * SSO, passkeys), where Slider reads files from ("Speicherorte": Microsoft, Nextcloud), and your
- * data: download it, delete the account (BER-145). `?linkError=` after a failed "Verbinden";
+ * SSO, passkeys), where Slider reads files from ("Speicherorte": Nextcloud), AI apps let in over
+ * MCP („KI-Apps“), and your data: download it, delete the account (BER-145). `?linkError=` after
+ * a failed "Verbinden";
  * `?nextcloud=<server>&returnTo=` to connect that Nextcloud again (a review's banner). Your
  * colour, how decks open and the instance settings live on `/einstellungen`.
  */
@@ -23,6 +31,8 @@ export function Component() {
   const [toast, showToast] = useToast();
   const [searchParams] = useSearchParams();
   const linkError = searchParams.get('linkError');
+  // The desktop app signs in to its Slider server, not to this local one (BER-201).
+  const desktop = useAuthProviders().data?.desktop ?? false;
 
   return (
     <SettingsLayout
@@ -45,10 +55,15 @@ export function Component() {
       </Section>
 
       <Section title="Anmeldung" description="Mit jedem dieser Wege kommst du in dieses Konto.">
-        <div className={GROUPS}>
-          <LoginsSection />
-          <PasskeysSection onNotify={showToast} />
-        </div>
+        {desktop ? (
+          // A passkey here would guard nothing: this local server has no login.
+          <CloudLoginSection />
+        ) : (
+          <div className={GROUPS}>
+            <LoginsSection />
+            <PasskeysSection onNotify={showToast} />
+          </div>
+        )}
       </Section>
 
       <StorageSection
@@ -56,6 +71,7 @@ export function Component() {
         reconnect={searchParams.get('nextcloud')}
         returnTo={searchParams.get('returnTo')}
       />
+      <AppConnectionsSection onNotify={showToast} />
       <ExportDataSection />
       <DeleteAccountSection email={user.email} />
     </SettingsLayout>

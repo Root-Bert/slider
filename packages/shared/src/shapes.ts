@@ -1,5 +1,5 @@
 import { offsetInRect, pointInRect, rectArea, rectCenter, type Point, type Rect } from './geometry';
-import type { Anchor, Guide, Shape, ShapeRef } from './model';
+import { AI_AUTHOR, type Anchor, type Guide, type Shape, type ShapeRef } from './model';
 import { DEFAULT_ASPECT, turnedBoxContains, type TurnedBox } from './turned-box';
 
 /**
@@ -215,6 +215,8 @@ export interface RequestThreadRoot {
   slideId: string | null;
   parentId: string | null;
   status: 'open' | 'done';
+  /** Who resolved it – a thread the AI's change resolved still takes requests. */
+  resolvedBy?: string | null;
   anchor: Anchor;
   createdAt: string | Date;
 }
@@ -224,7 +226,8 @@ export interface RequestThreadRoot {
  * to – it goes there as a reply, the thread its context – or `null`: a new thread. Kept narrow:
  * only a box (its shape where it is bound to one, `shapes` given) that covers about the same area
  * as a thread's single box on the same slide, both bound to the same element if both are bound.
- * Resolved threads stay closed; the closest match wins, then the newest.
+ * Threads people resolved stay closed, one the AI's change resolved goes on; the closest match
+ * wins, then the newest.
  */
 export function threadForRequest<T extends RequestThreadRoot>(
   roots: readonly T[],
@@ -239,7 +242,8 @@ export function threadForRequest<T extends RequestThreadRoot>(
   let best: { root: T; overlap: number; time: number } | null = null;
   for (const root of roots) {
     const other = root.anchor;
-    if (root.parentId !== null || root.status !== 'open' || root.slideId !== slideId) continue;
+    if (root.parentId !== null || root.slideId !== slideId) continue;
+    if (root.status !== 'open' && root.resolvedBy !== AI_AUTHOR.id) continue;
     if (other.type !== 'rect' || other.more?.length) continue;
     if (anchor.shapeRef && other.shapeRef && anchor.shapeRef.shapeId !== other.shapeRef.shapeId)
       continue;

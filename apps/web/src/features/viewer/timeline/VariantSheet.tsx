@@ -1,13 +1,14 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useAiProposals } from '@/lib/api';
-import { AutosizeTextarea, Button, Icon, IconButton, useFocusLoop } from '@/ui';
+import { Button, Icon, IconButton, Spinner, useFocusLoop } from '@/ui';
 import { AiProposalCard } from '../comments/AiProposalCard';
 import { SidePanel, SidePanelHeader } from '../components/SidePanel';
 import { useEditing } from '../editing/editing-context';
 import { useRestoreFocus } from '../hooks/useRestoreFocus';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerToast } from '../state/viewer-toast';
-import { useVariantAsk } from './hooks/useVariantFlow';
+import { useVariantAsk, useVariantCopy } from './hooks/useVariantFlow';
+import { VariantComposer } from './VariantAsk';
 import {
   madeByProposal,
   setVariantSheet,
@@ -34,6 +35,7 @@ function VariantSheetView({ slideId }: { slideId: string }) {
   const toast = useViewerToast();
   const request = useVariantRequest(slideId);
   const { prompt, setPrompt, typed, submit, pending } = useVariantAsk(slideId);
+  const copy = useVariantCopy();
   // The run this sheet asked for (or found at work on the slide when it opened).
   // Kept once the request is done (`useVariantFlow` drops it).
   const [proposalId, setProposalId] = useState(request?.proposalId ?? null);
@@ -99,7 +101,10 @@ function VariantSheetView({ slideId }: { slideId: string }) {
             {proposal ? (
               <AiProposalCard proposal={proposal} />
             ) : (
-              <p className="text-sm text-fg-muted">Variante wird erstellt …</p>
+              <p className="glass flex items-center gap-2 rounded-panel px-3.5 py-3 text-sm text-fg-muted">
+                <Spinner size="sm" label="Die KI erstellt die Variante" />
+                Variante wird erstellt …
+              </p>
             )}
             {variant && (
               <img
@@ -119,32 +124,14 @@ function VariantSheetView({ slideId }: { slideId: string }) {
           </>
         ) : (
           <>
-            <div className="field-well focus-field rounded-control-sm px-3 py-2">
-              <AutosizeTextarea
-                autoFocus
-                aria-label="Was soll anders sein?"
-                placeholder="Was soll anders sein? z. B. dunkler, mit Bild rechts"
-                maxLength={4_000}
-                value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
-                onKeyDown={(event) => {
-                  // ↵ creates, ⇧↵ is a new line – as on the tile.
-                  if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-                    event.preventDefault();
-                    send();
-                  }
-                }}
-                className="min-h-15 text-sm leading-5 text-fg"
-              />
-            </div>
-            <Button
-              variant="primary"
-              icon={typed ? 'autoAwesome' : 'difference'}
-              disabled={editing.busy}
-              onClick={send}
-            >
-              {typed ? 'Mit KI erstellen' : 'Kopie erstellen'}
-            </Button>
+            <VariantComposer
+              ask={{ prompt, setPrompt, typed }}
+              onSubmit={send}
+              onCopy={() => {
+                close();
+                copy(slideId);
+              }}
+            />
           </>
         )}
       </div>

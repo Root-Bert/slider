@@ -8,6 +8,9 @@ export const fr: Dict = {
     pricingTitle: 'Tarifs',
     pricingDescription:
       'Un prix par espace de travail, jamais par personne : gratuit pour les petites équipes, 79 € par mois jusqu’à 100 personnes, 249 € avec l’IA incluse, gratuit sur votre propre serveur.',
+    downloadTitle: 'Télécharger',
+    downloadDescription:
+      'Slider en application pour Mac et Linux : fonctionne hors ligne, vos présentations restent sur votre ordinateur, l’IA utilise vos propres clés.',
   },
   nav: {
     home: 'Accueil',
@@ -26,7 +29,8 @@ export const fr: Dict = {
     askMark: 'cette diapositive ?',
     doneLead: 'Voilà comment',
     doneMark: 'fonctionne Slider.',
-    doneSub: 'Chacun donne son avis directement sur la diapositive. Vous en faites une meilleure version. Dans le navigateur, open source et hébergé dans l’UE.',
+    doneSub:
+      'Chacun donne son avis directement sur la diapositive. Vous en faites une meilleure version. Dans le navigateur, open source et hébergé dans l’UE.',
     you: 'Vous',
     where: 'Cliquez sur la diapositive pour choisir l’endroit.',
     send: 'Envoyer',
@@ -54,7 +58,11 @@ export const fr: Dict = {
           { by: 'Lara', text: 'Ouf, ça fait beaucoup de texte.' },
           { by: 'Paul', text: 'Et il est où, le chien ?!' },
         ],
-        examples: ['Beaucoup trop de texte.', 'Le chien doit être plus grand !', 'Que proposez-vous au juste ?'],
+        examples: [
+          'Beaucoup trop de texte.',
+          'Le chien doit être plus grand !',
+          'Que proposez-vous au juste ?',
+        ],
         chips: ['Trop de texte', 'Chien plus grand !', 'Je suis partant'],
         statement: 'Adoptons un chien de bureau.',
         reasons: ['Moins de stress', 'Plus de pauses', 'Essai de 3 mois'],
@@ -65,7 +73,11 @@ export const fr: Dict = {
           { by: 'Ingrid', text: 'Lesquels, les trois ?' },
           { by: 'Marcel', text: 'Je ne vois que des bulles.' },
         ],
-        examples: ['Que suis-je censé voir ici ?', 'La recommandation en haut.', 'Trop de couleurs.'],
+        examples: [
+          'Que suis-je censé voir ici ?',
+          'La recommandation en haut.',
+          'Trop de couleurs.',
+        ],
         chips: ['Trop chargé', 'Recommandation d’abord', 'Convaincu'],
         statement: 'Trois produits font 80 % de la valeur.',
         reasons: ['Un seul message', 'Trois bulles', 'Recommandation en haut'],
@@ -76,7 +88,11 @@ export const fr: Dict = {
           { by: 'Benni', text: 'Où est l’idée clé ?' },
           { by: 'Anna', text: 'Les formules sont minuscules.' },
         ],
-        examples: ['D’abord le graphique, puis la formule.', 'Que dois-je retenir ?', 'Plus gros, s’il vous plaît.'],
+        examples: [
+          'D’abord le graphique, puis la formule.',
+          'Que dois-je retenir ?',
+          'Plus gros, s’il vous plaît.',
+        ],
         chips: ['Formules trop petites', 'L’idée clé ?', 'Bien expliqué'],
         statement: 'Plus de dépenses publiques font monter les taux.',
         reasons: ['Une phrase', 'Grand graphique', 'Formule ensuite'],
@@ -87,7 +103,11 @@ export const fr: Dict = {
           { by: 'Albert', text: 'Quel est le message ?' },
           { by: 'Gesa', text: 'Personne ne lit ce tableau.' },
         ],
-        examples: ['Trop de choses à droite.', 'Donnez-moi juste le chiffre.', 'D’où vient le +22 ?'],
+        examples: [
+          'Trop de choses à droite.',
+          'Donnez-moi juste le chiffre.',
+          'D’où vient le +22 ?',
+        ],
         chips: ['Trop de chiffres', 'Le message ?', 'Ça me va'],
         statement: 'Les prix battent les coûts de l’énergie.',
         reasons: ['Un chiffre', 'Grand pont', 'Tableau en annexe'],
@@ -98,7 +118,11 @@ export const fr: Dict = {
           { by: 'Marlon', text: 'Où est le problème ?' },
           { by: 'Rose', text: 'Le plan est trop petit.' },
         ],
-        examples: ['Qu’est-ce qui change pour nous ?', 'Montrez seulement la cuisine.', 'Quand déménage-t-on ?'],
+        examples: [
+          'Qu’est-ce qui change pour nous ?',
+          'Montrez seulement la cuisine.',
+          'Quand déménage-t-on ?',
+        ],
         chips: ['Plan trop petit', 'Qu’est-ce qui change ?', 'Parfait'],
         statement: 'La cuisine passe au centre.',
         reasons: ['Une pièce', 'Grand plan', 'Date claire'],
@@ -137,12 +161,36 @@ export const fr: Dict = {
     next: 'Diapositive suivante',
     prev: 'Diapositive précédente',
     cards: [
-      { by: 'Carolin', q: 'Faut-il installer quelque chose ?', a: 'Non. Slider fonctionne dans le navigateur. Un lien suffit, et tout le monde est là.' },
-      { by: 'Anna', q: 'Je peux apporter mon PowerPoint ?', a: 'Oui. Ouvrez vos fichiers PowerPoint et ODF, commentez, modifiez et téléchargez-les à nouveau.' },
-      { by: 'Benni', q: 'Au fait, que fait l’IA ?', a: 'Elle lit tous les commentaires et propose la version suivante. C’est vous qui décidez.' },
-      { by: 'Thomas', q: 'Combien ça coûte ?', a: 'Rien pour les petites équipes. Ensuite un prix fixe par espace de travail, jamais par personne.' },
-      { by: 'Gesa', q: 'Où sont mes données ?', a: 'Dans l’UE, sans traqueurs ni publicité. Ou sur votre propre serveur : Slider est open source.' },
-      { by: 'Robert', q: 'Et vous, qu’en pensez-vous ?', a: 'Cliquez n’importe où sur cette page et dites-le. Tous ceux qui sont là le voient.' },
+      {
+        by: 'Carolin',
+        q: 'Faut-il installer quelque chose ?',
+        a: 'Non. Slider fonctionne dans le navigateur. Un lien suffit, et tout le monde est là.',
+      },
+      {
+        by: 'Anna',
+        q: 'Je peux apporter mon PowerPoint ?',
+        a: 'Oui. Ouvrez vos fichiers PowerPoint et ODF, commentez, modifiez et téléchargez-les à nouveau.',
+      },
+      {
+        by: 'Benni',
+        q: 'Au fait, que fait l’IA ?',
+        a: 'Elle lit tous les commentaires et propose la version suivante. C’est vous qui décidez.',
+      },
+      {
+        by: 'Thomas',
+        q: 'Combien ça coûte ?',
+        a: 'Rien pour les petites équipes. Ensuite un prix fixe par espace de travail, jamais par personne.',
+      },
+      {
+        by: 'Gesa',
+        q: 'Où sont mes données ?',
+        a: 'Dans l’UE, sans traqueurs ni publicité. Ou sur votre propre serveur : Slider est open source.',
+      },
+      {
+        by: 'Robert',
+        q: 'Et vous, qu’en pensez-vous ?',
+        a: 'Cliquez n’importe où sur cette page et dites-le. Tous ceux qui sont là le voient.',
+      },
     ],
   },
   /** Photo credits: „Foto von X auf Unsplash“. */
@@ -189,11 +237,7 @@ export const fr: Dict = {
         pitch: 'Un prix fixe. À 100 personnes, c’est seulement 0,79 € par personne.',
         note: 'Commencez avec Free, la mise à niveau arrive bientôt.',
         lead: 'Tout de Free, plus :',
-        features: [
-          'Jusqu’à 100 personnes',
-          '100 Go de stockage',
-          'Factures pour la comptabilité',
-        ],
+        features: ['Jusqu’à 100 personnes', '100 Go de stockage', 'Factures pour la comptabilité'],
       },
       ai: {
         pitch: 'L’IA intégrée. Pas de clé, pas de tokens à gérer, on s’occupe de tout.',
@@ -223,6 +267,27 @@ export const fr: Dict = {
     selfBody: 'Hébergez Slider vous-même, gratuitement et sans limites. Un docker compose up.',
     selfButton: 'Voir sur GitHub',
     license: 'Open source sous EUPL-1.2. Besoin de support ou d’une licence commerciale ?',
+  },
+  /** The desktop app's download page (not linked until a release carries the files). */
+  download: {
+    title: 'Slider sur votre ordinateur.',
+    sub: 'Le même Slider que dans le navigateur, en application. Il fonctionne hors ligne, vos présentations restent sur cet ordinateur et l’IA utilise vos propres clés.',
+    cardTitle: 'Télécharger Slider',
+    cardBody:
+      'L’application se tient à jour toute seule. Connectée, elle synchronise vos espaces de travail avec le serveur.',
+    macTitle: 'Mac',
+    macButton: 'Télécharger pour Mac',
+    macNote:
+      'Pour les Mac avec puce Apple (M1 ou plus récente) sous macOS 12 ou plus récent, vérifiée par Apple. LibreOffice, qui permet à Slider de lire et d’écrire les fichiers de présentation, se charge au premier lancement s’il manque.',
+    linuxTitle: 'Linux',
+    linuxButton: 'Télécharger pour Linux',
+    debButton: 'Télécharger pour Ubuntu et Debian',
+    linuxNote:
+      'Le premier fichier fonctionne sur tout Linux, le second installe Slider comme les autres logiciels. Installez LibreOffice avec votre gestionnaire de paquets, par exemple « sudo apt install libreoffice ».',
+    armNote: 'Un ordinateur avec une puce ARM ?',
+    armLink: 'Les deux existent aussi pour lui.',
+    browser: 'Plutôt dans le navigateur ?',
+    browserButton: 'Ouvrir Slider',
   },
   live: {
     comment: 'Commenter',

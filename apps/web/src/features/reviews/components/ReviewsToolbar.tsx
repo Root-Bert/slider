@@ -12,8 +12,8 @@ interface ReviewsToolbarProps {
   onSortChange: (sort: DeckSort) => void;
   view: DeckView;
   onViewChange: (view: DeckView) => void;
-  /** Sits right next to the tabs – the "Neue Review" button. */
-  action?: ReactNode;
+  /** Sits right next to the tabs – the "Neue Präsentation" button, only its icon when asked. */
+  action?: ((iconOnly: boolean) => ReactNode) | undefined;
   /** Sits left of the sort select – the deck search. */
   search?: ReactNode;
 }
@@ -44,14 +44,15 @@ export function ReviewsToolbar({
 
   return (
     <ViewToolbar
-      filter={
+      filter={(iconOnly) => (
         <SegmentedControl
           label="Präsentationen filtern"
           segments={segments}
           value={tab}
           onChange={onTabChange}
+          iconOnly={iconOnly}
         />
-      }
+      )}
       action={action}
       search={search}
       sort={

@@ -2,7 +2,8 @@ import { clamp, type Rect } from '@slider/shared';
 import { useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { loadWorkPreferences, type WorkPreferences } from '@/lib/preferences/work-preferences';
-import { useViewerDispatch, useViewerState } from '../../state/viewer-state';
+import { useViewerDispatch } from '../../state/viewer-state';
+import { useViewerStore } from '../../state/viewer-store';
 import { isCropped, NO_COVER, startView, type Cover, type SlideZoom } from '../lib/slide-zoom';
 
 /** A box is zoomed in on when its longer side on screen is shorter than this (px) … */
@@ -78,7 +79,7 @@ export function useZoomToRect(
   target: ZoomTarget | null,
   preference: keyof Pick<WorkPreferences, 'autoZoom' | 'commentZoom'>,
 ) {
-  const { slideZooms } = useViewerState();
+  const store = useViewerStore();
   const dispatch = useViewerDispatch();
   const key = target?.key ?? null;
   const slideId = target?.slideId ?? null;
@@ -86,9 +87,9 @@ export function useZoomToRect(
   const auto = useRef<{ slideId: string; before: SlideZoom | null; zoom: SlideZoom } | null>(null);
   // Glides running, by slide: their next frame.
   const animations = useRef(new Map<string, number>());
-  const latest = useRef({ target, slideZooms });
+  const latest = useRef(target);
   useEffect(() => {
-    latest.current = { target, slideZooms };
+    latest.current = target;
   });
 
   useEffect(() => {
@@ -129,7 +130,8 @@ export function useZoomToRect(
       animations.current.set(id, requestAnimationFrame(step));
     };
 
-    const { target, slideZooms } = latest.current;
+    const target = latest.current;
+    const { slideZooms } = store.getState();
     const previous = auto.current;
     // Still the zoom this set (or gliding towards it), maybe moved around – not zoomed by hand.
     const ours = (id: string) =>
@@ -184,7 +186,7 @@ export function useZoomToRect(
     if (previous?.slideId !== slideId) restore();
     auto.current = { slideId, before, zoom };
     glide(slideId, slideZooms.get(slideId) ?? null, zoom, cover);
-  }, [key, slideId, preference, dispatch]);
+  }, [key, slideId, preference, dispatch, store]);
 
   // Unmounted mid-glide: the frames stop.
   useEffect(() => {

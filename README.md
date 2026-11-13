@@ -1,9 +1,11 @@
 # Slider
 
-Feedback on presentations, right on the slide. Link a PowerPoint from OneDrive, SharePoint,
-Google Drive or Nextcloud, or upload a `.pptx`. Your team pins comments, frames, arrows and
+Feedback on presentations, right on the slide. Link a presentation from Nextcloud or a plain
+link, or upload a `.pptx`. Your team pins comments, frames, arrows and
 drawings to the exact spot on a slide, replies and ticks them off. Linked decks update when the
-file changes, and comments stay on their slides.
+file changes, and comments stay on their slides. Edit the slides right in the browser, let the
+AI turn comments into the next version, or work offline in the desktop app. Collect research
+next to the slides and ask about it, and connect Claude or ChatGPT over MCP.
 
 Hosted version: [slider.bertro.dev](https://slider.bertro.dev) | Website:
 [bertro.dev/slider](https://bertro.dev/slider)
@@ -25,6 +27,14 @@ OIDC). Then sign in and enter the token once more to become admin.
 
 Full guide (German): [docs/self-hosting.md](docs/self-hosting.md).
 
+## Desktop app
+
+Slider for Mac (Apple Silicon) and Linux (x64 and arm64, AppImage and deb) is on the
+[latest release](https://github.com/Root-Bert/slider/releases/latest). It works offline, keeps
+presentations on your computer and can sign in to slider.bertro.dev or your own server
+(„Anderer Server“ on the account page). On a Mac it loads LibreOffice on first start if none is
+installed; on Linux install it with your package manager.
+
 ## Develop
 
 Requirements: [Bun](https://bun.com) ≥ 1.3 and Node.js ≥ 22. The database is embedded (PGlite),
@@ -36,8 +46,9 @@ bun run dev        # API on :8787, web app on http://localhost:5173
 bun run seed       # optional: demo workspace (wipes the local database)
 ```
 
-Logins and link import are optional locally: copy `.env.example` to `.env` and fill in what you
-need. Uploaded decks look best with LibreOffice installed (`brew install --cask libreoffice`).
+Logins are optional locally: copy `.env.example` to `.env` and fill in what you need. Slides are
+drawn and edited with LibreOffice (`brew install --cask libreoffice`); without it decks show a
+built-in preview and the editor stays closed.
 
 | Command             | What it does                                     |
 | ------------------- | ------------------------------------------------ |
@@ -48,6 +59,7 @@ need. Uploaded decks look best with LibreOffice installed (`brew install --cask 
 | `bun run typecheck` | TypeScript for every workspace                   |
 | `bun run build`     | Production build                                 |
 | `bun run start`     | Run the production build (`NODE_ENV=production`) |
+| `bun run desktop`   | Build and start the desktop app (Electron)       |
 
 ## Contributing
 

@@ -263,6 +263,8 @@ export function fittedToText(
 export interface SnapLines {
   x: readonly number[];
   y: readonly number[];
+  /** Other elements' boxes (what each covers): a moved box is caught at equal gaps between them. */
+  boxes?: readonly Rect[];
 }
 
 /** The slide's own lines a box (and a gradient's end) is caught at: its edges and middles. */
@@ -281,6 +283,7 @@ export function withSlideLines(lines: SnapLines | null): SnapLines {
 export function boxLines(boxes: readonly TurnedBox[], aspect: number): SnapLines {
   const x: number[] = [];
   const y: number[] = [];
+  const covers: Rect[] = [];
   for (const box of boxes) {
     let { x: left, y: top, w, h } = box.bbox;
     if (isTurned(box)) {
@@ -295,15 +298,10 @@ export function boxLines(boxes: readonly TurnedBox[], aspect: number): SnapLines
     if (left > 1 || top > 1 || left + w < 0 || top + h < 0) continue;
     x.push(left, left + w / 2, left + w);
     y.push(top, top + h / 2, top + h);
+    covers.push({ x: left, y: top, w, h });
   }
-  return { x, y };
+  return { x, y, boxes: covers };
 }
-
-/** Both sets of lines in one. */
-export const joinLines = (a: SnapLines, b: SnapLines): SnapLines => ({
-  x: [...a.x, ...b.x],
-  y: [...a.y, ...b.y],
-});
 
 /** Of `lines`, those `rect` lies on – a side or its middle – to be drawn while it is dragged. */
 export function caughtLines(rect: Rect, lines: SnapLines): SnapLines {
@@ -315,6 +313,139 @@ export function caughtLines(rect: Rect, lines: SnapLines): SnapLines {
     y: on([rect.y, rect.y + rect.h / 2, rect.y + rect.h], lines.y),
   };
 }
+
+/**
+ * Of `lines.boxes`, those on a line `rect` lies on (`caughtLines`) or at one of its equal gaps
+ * (`gaps`: its `caughtGaps`, worked out already).
+ */
+export function caughtBoxes(
+  rect: Rect,
+  lines: SnapLines,
+  gaps: readonly BoxGap[] = caughtGaps(rect, lines),
+): Rect[] {
+  const on = caughtLines(rect, lines);
+  const hits = (edges: number[], at: readonly number[]) =>
+    edges.some((edge) => at.some((line) => Math.abs(edge - line) < 1e-6));
+  const spaced = new Set(gaps.flatMap((gap) => [gap.from, gap.to]));
+  return (lines.boxes ?? []).filter(
+    (box) =>
+      spaced.has(box) ||
+      hits([box.x, box.x + box.w / 2, box.x + box.w], on.x) ||
+      hits([box.y, box.y + box.h / 2, box.y + box.h], on.y),
+  );
+}
+
+type Axis = 'x' | 'y';
+const across = (axis: Axis): Axis => (axis === 'x' ? 'y' : 'x');
+const spanOf = (rect: Rect, axis: Axis): [number, number] =>
+  axis === 'x' ? [rect.x, rect.x + rect.w] : [rect.y, rect.y + rect.h];
+const overlaps = (a: [number, number], b: [number, number]) =>
+  a[0] < b[1] - 1e-6 && a[1] > b[0] + 1e-6;
+/** Two gaps this close (of the slide) are the same – a file's sizes are rounded. */
+const SAME_GAP = 1e-4;
+
+/** A gap between two neighbours along `axis`: from `from`'s end (`start`) to `to`'s start (`end`). */
+export interface BoxGap {
+  axis: Axis;
+  from: Rect;
+  to: Rect;
+  start: number;
+  end: number;
+  /** Across the gap, where it is drawn: what both boxes share that way. */
+  across: [number, number];
+}
+
+/** The gaps between neighbours in `row` along `axis` – each box to the next after it, side by side. */
+function neighbourGaps(row: readonly Rect[], axis: Axis): BoxGap[] {
+  const gaps: BoxGap[] = [];
+  for (const from of row) {
+    const end = spanOf(from, axis)[1];
+    const cross = spanOf(from, across(axis));
+    let to: Rect | null = null;
+    for (const box of row) {
+      const start = spanOf(box, axis)[0];
+      if (box === from || start < end - 1e-6 || !overlaps(cross, spanOf(box, across(axis))))
+        continue;
+      if (!to || start < spanOf(to, axis)[0]) to = box;
+    }
+    if (!to) continue;
+    const gap: [number, number] = [end, spanOf(to, axis)[0]];
+    if (gap[1] - gap[0] <= 1e-6) continue;
+    if (row.some((box) => overlaps(spanOf(box, axis), gap))) continue;
+    const other = spanOf(to, across(axis));
+    const shared: [number, number] = [Math.max(cross[0], other[0]), Math.min(cross[1], other[1])];
+    gaps.push({ axis, from, to, start: gap[0], end: gap[1], across: shared });
+  }
+  return gaps;
+}
+
+/** Of `boxes`, those beside `rect` along `axis`: overlapping it the other way. */
+const rowOf = (rect: Rect, boxes: readonly Rect[], axis: Axis) =>
+  boxes.filter((box) => overlaps(spanOf(box, across(axis)), spanOf(rect, across(axis))));
+
+/**
+ * The gaps `rect` keeps equal along `axis` (Figma's equal spacing): a gap to its neighbour the
+ * same as another between the boxes beside it – also both its own, centred between two – and all
+ * gaps of that size in the row, to be drawn. None: `[]`.
+ */
+function equalGaps(rect: Rect, boxes: readonly Rect[], axis: Axis): BoxGap[] {
+  const row = rowOf(rect, boxes, axis);
+  if (row.length < 2) return [];
+  const all = neighbourGaps([...row, rect], axis);
+  const size = (gap: BoxGap) => gap.end - gap.start;
+  const same = (a: BoxGap, b: BoxGap) => Math.abs(size(a) - size(b)) < SAME_GAP;
+  const own = all.filter(
+    (gap) =>
+      (gap.from === rect || gap.to === rect) &&
+      all.some((other) => other !== gap && same(other, gap)),
+  );
+  return all.filter((gap) => own.some((mine) => same(gap, mine)));
+}
+
+/** The equal gaps `rect` keeps to the boxes beside it (`lines.boxes`), either way – to be drawn. */
+export function caughtGaps(rect: Rect, lines: SnapLines): BoxGap[] {
+  const boxes = lines.boxes ?? [];
+  return [...equalGaps(rect, boxes, 'x'), ...equalGaps(rect, boxes, 'y')];
+}
+
+/**
+ * How far to shift `rect` along `axis` so it keeps an equal gap (`equalGaps`) – centred between
+ * two boxes, or a gap between others carried on next to one – within `tolerance`.
+ */
+function gapCatch(
+  rect: Rect,
+  boxes: readonly Rect[] | undefined,
+  axis: Axis,
+  tolerance: number,
+): { shift: number; line: number } | null {
+  if (!boxes) return null;
+  const row = rowOf(rect, boxes, axis);
+  if (row.length < 2) return null;
+  const sizes = neighbourGaps(row, axis).map((gap) => gap.end - gap.start);
+  const [from, to] = spanOf(rect, axis);
+  const length = to - from;
+  const starts: number[] = [];
+  for (const box of row) {
+    const [start, end] = spanOf(box, axis);
+    for (const size of sizes) starts.push(end + size, start - size - length);
+    for (const next of row) {
+      const room = spanOf(next, axis)[0] - end - length;
+      if (room > 1e-6) starts.push(end + room / 2);
+    }
+  }
+  let best: { shift: number; line: number } | null = null;
+  for (const start of starts) {
+    const shift = start - from;
+    if (Math.abs(shift) >= tolerance || (best && Math.abs(shift) >= Math.abs(best.shift))) continue;
+    const there = axis === 'x' ? { ...rect, x: start } : { ...rect, y: start };
+    if (equalGaps(there, boxes, axis).length) best = { shift, line: start };
+  }
+  return best;
+}
+
+/** The closer of two catches. */
+const closer = <T extends { shift: number }>(a: T | null, b: T | null) =>
+  !a ? b : !b ? a : Math.abs(b.shift) < Math.abs(a.shift) ? b : a;
 
 /** A side within this (of the slide) of a line lies on it: grown, it goes on to the next one. */
 const ON_LINE = 5e-4;
@@ -376,8 +507,20 @@ export function snappedToLines(
   tolerance: RectSize,
 ): { rect: Rect; caught: string | null } {
   if (kind === 'move') {
-    const x = nearestCatch([rect.x, rect.x + rect.w / 2, rect.x + rect.w], lines.x, tolerance.w);
-    const y = nearestCatch([rect.y, rect.y + rect.h / 2, rect.y + rect.h], lines.y, tolerance.h);
+    const lineX = nearestCatch(
+      [rect.x, rect.x + rect.w / 2, rect.x + rect.w],
+      lines.x,
+      tolerance.w,
+    );
+    const lineY = nearestCatch(
+      [rect.y, rect.y + rect.h / 2, rect.y + rect.h],
+      lines.y,
+      tolerance.h,
+    );
+    // Equal gaps to the boxes beside it catch it too, found where the lines put it the other way.
+    const onLines = { ...rect, x: rect.x + (lineX?.shift ?? 0), y: rect.y + (lineY?.shift ?? 0) };
+    const x = closer(lineX, gapCatch({ ...onLines, x: rect.x }, lines.boxes, 'x', tolerance.w));
+    const y = closer(lineY, gapCatch({ ...onLines, y: rect.y }, lines.boxes, 'y', tolerance.h));
     return {
       rect: { ...rect, x: rect.x + (x?.shift ?? 0), y: rect.y + (y?.shift ?? 0) },
       caught: catchKey(x, y),

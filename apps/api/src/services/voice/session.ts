@@ -1,5 +1,6 @@
 import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import {
+  AI_AUTHOR,
   AI_RUNNING_LIMIT_MS,
   rectArea,
   shapeRefForRect,
@@ -910,6 +911,7 @@ async function joinOpenThread(
       slideId: comments.slideId,
       parentId: comments.parentId,
       status: comments.status,
+      resolvedBy: comments.resolvedBy,
       anchor: comments.anchor,
       createdAt: comments.createdAt,
     })
@@ -919,7 +921,8 @@ async function joinOpenThread(
         eq(comments.deckId, session.deck.id),
         eq(comments.slideId, placed.slideId),
         isNull(comments.parentId),
-        eq(comments.status, 'open'),
+        // Also those the AI's change resolved: they go on (`threadForRequest`).
+        or(eq(comments.status, 'open'), eq(comments.resolvedBy, AI_AUTHOR.id)),
       ),
     );
   const shapes = slides.find((slide) => slide.id === placed.slideId)?.shapes ?? [];

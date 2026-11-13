@@ -2,9 +2,9 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
-  useReducer,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from 'react';
 import { loadStoredBoxMode, storeBoxMode } from '@/lib/preferences/box-mode';
@@ -12,6 +12,7 @@ import { loadStoredSplit, storeSplit } from '@/lib/preferences/split';
 import { loadStoredWideFrames, storeWideFrames } from '@/lib/preferences/wide-frames';
 import { loadWorkPreferences } from '@/lib/preferences/work-preferences';
 import { createStageRegistry, StageRegistryContext } from './stage-registry';
+import { createViewerStore, ViewerStoreContext } from './viewer-store';
 import {
   nearestShownSlideId,
   opensWithHiddenSlides,
@@ -23,7 +24,6 @@ import {
   createInitialState,
   ViewerDispatchContext,
   ViewerHoverContext,
-  viewerReducer,
   ViewerSetHoverContext,
   ViewerStateContext,
 } from './viewer-state';
@@ -31,6 +31,8 @@ import {
 interface ViewerStoreProviderProps {
   data: ViewerData;
   initialSlideId: string | null;
+  /** Opens on the material page (`?material`, a new deck). */
+  initialMaterial?: boolean;
   children: ReactNode;
 }
 
@@ -41,9 +43,10 @@ interface ViewerStoreProviderProps {
 export function ViewerStoreProvider({
   data: all,
   initialSlideId,
+  initialMaterial = false,
   children,
 }: ViewerStoreProviderProps) {
-  const [state, dispatch] = useReducer(viewerReducer, null, () => {
+  const [store] = useState(() => {
     // The zooms are read where they happen (`useZoomToRect`), so a change applies at once.
     const {
       hideMinimap,
@@ -52,17 +55,22 @@ export function ViewerStoreProvider({
       ...preferences
     } = loadWorkPreferences();
     const initial = initialSlideId && all.slideIndex.has(initialSlideId) ? initialSlideId : null;
-    return createInitialState({
-      activeSlideId:
-        initial ?? all.slides.find((slide) => !slide.hidden)?.id ?? all.slides[0]?.id ?? null,
-      split: loadStoredSplit(),
-      boxMode: loadStoredBoxMode(),
-      wideFrames: loadStoredWideFrames(),
-      ...preferences,
-      showHiddenSlides: opensWithHiddenSlides(all, initial, preferences.showHiddenSlides),
-      showMinimap: !hideMinimap,
-    });
+    return createViewerStore(
+      createInitialState({
+        materialOpen: initialMaterial && !all.deck.template,
+        activeSlideId:
+          initial ?? all.slides.find((slide) => !slide.hidden)?.id ?? all.slides[0]?.id ?? null,
+        split: loadStoredSplit(),
+        boxMode: loadStoredBoxMode(),
+        wideFrames: loadStoredWideFrames(),
+        ...preferences,
+        showHiddenSlides: opensWithHiddenSlides(all, initial, preferences.showHiddenSlides),
+        showMinimap: !hideMinimap,
+      }),
+    );
   });
+  const state = useSyncExternalStore(store.subscribe, store.getControls, store.getControls);
+  const dispatch = store.dispatch;
   const data = useMemo(
     () => (state.showHiddenSlides ? all : withoutHiddenSlides(all)),
     [all, state.showHiddenSlides],
@@ -103,13 +111,13 @@ export function ViewerStoreProvider({
       slideIds: slides.map((slide) => slide.id),
       fallbackSlideId: fallback,
     });
-  }, [all, data]);
+  }, [all, data, dispatch]);
 
   // A thread deleted meanwhile (by someone else, or in another tab): its panel closes instead of
   // leaving an empty strip on the right.
   useLayoutEffect(() => {
     dispatch({ type: 'threadsReplaced', threadIds: new Set(all.threadById.keys()) });
-  }, [all.threadById]);
+  }, [all.threadById, dispatch]);
 
   return (
     <ViewerDataContext value={data}>
@@ -117,7 +125,9 @@ export function ViewerStoreProvider({
         <ViewerDispatchContext value={dispatch}>
           <ViewerSetHoverContext value={setHoveredThreadId}>
             <ViewerStateContext value={state}>
-              <ViewerHoverContext value={hoveredThreadId}>{children}</ViewerHoverContext>
+              <ViewerStoreContext value={store}>
+                <ViewerHoverContext value={hoveredThreadId}>{children}</ViewerHoverContext>
+              </ViewerStoreContext>
             </ViewerStateContext>
           </ViewerSetHoverContext>
         </ViewerDispatchContext>

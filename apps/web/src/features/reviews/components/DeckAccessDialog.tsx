@@ -240,7 +240,7 @@ function ChoiceRow({
     <label
       className={cn(
         'flex items-center gap-3 rounded-control px-3 py-2.5 transition-colors',
-        'has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-mention',
+        'has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-focus',
         checked ? 'bg-surface-2' : 'hover:bg-surface-1',
       )}
     >
@@ -325,7 +325,7 @@ function CheckBox({ checked, locked }: { checked: boolean; locked: boolean }) {
       aria-hidden
       className={cn(
         'flex size-[18px] shrink-0 items-center justify-center rounded-badge transition-colors',
-        'peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-mention',
+        'peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus',
         checked ? 'bg-primary text-on-primary' : 'shadow-[inset_0_0_0_1.5px_var(--color-fg-faint)]',
         locked && 'opacity-50',
       )}

@@ -35,3 +35,5 @@ RUN cd apps/site && bun run build
 FROM caddy:2
 COPY deploy/website/Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /app/apps/site/dist /srv/slider
+# The personal page at the domain root (apps/home: one static page, no build).
+COPY apps/home /srv

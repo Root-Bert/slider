@@ -86,10 +86,10 @@ function UsageWarnings({ details, isAdmin }: { details: WorkspaceUsageDetails; i
         variant="tinted"
         title="Der Workspace liegt über dem Limit seines Plans"
       >
-        Bis er wieder hineinpasst, gehen keine neuen Präsentationen, Uploads und Importe, kein Abgleich mit
-        der Quelldatei, keine Einladungen und keine neuen Kommentare oder Antworten. Lesen, Löschen
-        und Personen entfernen geht weiter. Um das zu ändern: Personen entfernen oder Einladungen
-        zurückziehen, Präsentationen oder Aufnahmen löschen – oder upgraden.
+        Bis er wieder hineinpasst, gehen keine neuen Präsentationen, Uploads und Importe, kein
+        Abgleich mit der Quelldatei, keine Einladungen und keine neuen Kommentare oder Antworten.
+        Lesen, Löschen und Personen entfernen geht weiter. Um das zu ändern: Personen entfernen oder
+        Einladungen zurückziehen, Präsentationen oder Aufnahmen löschen – oder upgraden.
       </Notice>
     );
   }

@@ -1,61 +1,51 @@
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { rememberLinkLogin } from '../lib/link-login';
-import { useLinkImport } from './useLinkImport';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { INVALID_LINK_MESSAGE, useLinkImport } from './useLinkImport';
 
-const LINK = 'https://contoso.sharepoint.com/sites/x/Shared%20Documents/secret.pptx';
+const NEXTCLOUD_LINK = 'https://cloud.example.org/s/AbCdEfGh';
 
-function setup(search: string) {
-  const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: 'd1' }), { status: 201 }));
+function setup() {
+  const fetchMock = vi.fn(
+    async () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            code: 'nextcloud_login_required',
+            message: 'Verbinde dein Nextcloud-Konto.',
+            nextcloudServer: 'https://cloud.example.org',
+          },
+        }),
+        { status: 401, headers: { 'content-type': 'application/json' } },
+      ),
+  );
   vi.stubGlobal('fetch', fetchMock);
   const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[`/neu${search}`]}>{children}</MemoryRouter>
-    </QueryClientProvider>
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
-  const onImported = vi.fn();
-  const hook = renderHook(() => useLinkImport('ws1', onImported), { wrapper });
-  return { fetchMock, onImported, hook };
+  const hook = renderHook(() => useLinkImport('ws1', vi.fn()), { wrapper });
+  return { fetchMock, hook };
 }
 
-const importCalls = (fetchMock: ReturnType<typeof vi.fn>) =>
-  fetchMock.mock.calls.filter(([path]) => String(path).endsWith('/decks/link'));
-
-describe('useLinkImport – back from the Microsoft login', () => {
-  beforeEach(() => sessionStorage.clear());
+describe('useLinkImport', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('a crafted /neu?link=… or a login from another workspace only prefills, never imports', async () => {
-    const { fetchMock, hook } = setup(`?link=${encodeURIComponent(LINK)}&workspace=ws1`);
-    expect(hook.result.current.url).toBe(LINK);
-    await act(async () => {});
-    expect(importCalls(fetchMock)).toHaveLength(0);
-    expect(hook.result.current.pending).toBe(false);
+  it('refuses OneDrive and Google links; a Nextcloud link without access asks to connect that Nextcloud', async () => {
+    const { fetchMock, hook } = setup();
+    act(() => hook.result.current.change('https://1drv.ms/p/c/abc123/EaB3kQ'));
+    act(() => hook.result.current.submit());
+    expect(hook.result.current.error).toBe(INVALID_LINK_MESSAGE);
+    expect(fetchMock).not.toHaveBeenCalled();
 
-    rememberLinkLogin(LINK, 'other-ws');
-    const other = setup(`?link=${encodeURIComponent(LINK)}`);
-    await act(async () => {});
-    expect(importCalls(other.fetchMock)).toHaveLength(0);
-  });
-
-  it('imports once after this tab’s own login, and remembers the link before leaving for it', async () => {
-    rememberLinkLogin(LINK, 'ws1');
-    const { fetchMock, onImported } = setup(`?link=${encodeURIComponent(LINK)}`);
-    await waitFor(() => expect(onImported).toHaveBeenCalledOnce());
-    expect(importCalls(fetchMock)).toHaveLength(1);
-    expect(sessionStorage.length).toBe(0);
-
-    // "Mit Microsoft anmelden" remembers the link before leaving for the login.
-    const assign = vi.fn();
-    vi.stubGlobal('location', { ...window.location, assign });
-    const { hook } = setup(`?link=${encodeURIComponent(LINK)}&msError=denied`);
-    expect(hook.result.current.noAccess?.loginUrl).toBeTruthy();
-    act(() => hook.result.current.signIn());
-    expect(assign).toHaveBeenCalledWith(hook.result.current.noAccess?.loginUrl);
-    expect(sessionStorage.getItem('slider.linkLogin')).toContain('ws1');
+    act(() => hook.result.current.change(NEXTCLOUD_LINK));
+    act(() => hook.result.current.submit());
+    await waitFor(() => expect(hook.result.current.noAccess).not.toBeNull());
+    expect(hook.result.current.noAccess).toMatchObject({
+      kind: 'nextcloud',
+      host: 'cloud.example.org',
+      nextcloudServer: 'https://cloud.example.org',
+    });
   });
 });

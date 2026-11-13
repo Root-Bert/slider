@@ -150,6 +150,7 @@ export function connectLive(
       textCaret: null,
       picked: null,
       drag: null,
+      onMaterial: false,
     },
     dirty: true,
     inFlight: false,
@@ -393,7 +394,8 @@ export function setPresence(next: Partial<LivePresenceInput>) {
     sameCursor(presence.cursor, connection.presence.cursor) &&
     JSON.stringify(presence.textCaret) === JSON.stringify(connection.presence.textCaret) &&
     presence.picked === connection.presence.picked &&
-    JSON.stringify(presence.drag) === JSON.stringify(connection.presence.drag)
+    JSON.stringify(presence.drag) === JSON.stringify(connection.presence.drag) &&
+    presence.onMaterial === connection.presence.onMaterial
   ) {
     return;
   }

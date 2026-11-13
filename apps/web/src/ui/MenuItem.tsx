@@ -12,7 +12,7 @@ import { Icon, type IconName } from './Icon';
 interface MenuItemOwnProps<T extends ElementType> {
   /**
    * `button` (default), `a` (full page navigation), a router `Link`, or `div` for a static,
-   * non-interactive row (e.g. "Microsoft verbunden").
+   * non-interactive row (e.g. a status line).
    */
   as?: T;
   /** An icon name (18px, `text-fg-subtle` unless danger) or any node (avatar, brand mark). */
@@ -101,7 +101,7 @@ export function MenuItem<T extends ElementType = 'button'>({
           (disabled
             ? 'cursor-default'
             : // The tint alone is ~1.3:1 on glass: keyboard focus adds the inset mention ring.
-              'hover:bg-hover focus-visible:bg-hover focus-visible:ring-2 focus-visible:ring-mention focus-visible:outline-none focus-visible:ring-inset'),
+              'hover:bg-hover focus-visible:bg-hover focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none focus-visible:ring-inset'),
         disabled && dimDisabled && 'opacity-40',
         selected && 'bg-surface-2',
         danger ? 'text-danger' : 'text-fg',

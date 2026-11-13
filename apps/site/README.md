@@ -40,8 +40,9 @@ WEBSITE_DOMAIN=bertro.dev
 ```
 
 `docker compose up -d --build` then builds the site from the checkout into a small container,
-and Caddy routes `https://bertro.dev/slider/…` to it; every other path on the domain redirects
-to `/slider/`. DNS for `bertro.dev` must point at the server, like `slider.bertro.dev`.
+and Caddy routes `https://bertro.dev/slider/…` to it. The domain root is the personal page
+(`apps/home`, one static HTML file and its `assets/`, copied in as is); every other path redirects
+there. DNS for `bertro.dev` must point at the server, like `slider.bertro.dev`.
 
 ## License
 

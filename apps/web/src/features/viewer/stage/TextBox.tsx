@@ -12,12 +12,7 @@ import { accentColor } from '@/lib/accent';
 import { cn, Icon } from '@/ui';
 import { FRAME_ATTR, resized, useRectEdit, type RectCorner } from './hooks/useRectEdit';
 import { focusCommentField, SEND_TO_AI } from '../comments/lib/composer-focus';
-import {
-  MIN_TEXT_WIDTH,
-  normalizeTextRect,
-  TEXT_BOX_RADIUS,
-  TEXT_CLASS,
-} from './lib/text-box';
+import { MIN_TEXT_WIDTH, normalizeTextRect, TEXT_BOX_RADIUS, TEXT_CLASS } from './lib/text-box';
 import { textShadow, textSurface } from './lib/text-box-surface';
 import { NAME_TAG_CLASS } from './lib/mark-chrome';
 import { useViewerData } from '../state/viewer-data';

@@ -1,7 +1,7 @@
 import { readJson, writeJson } from '../storage';
 
 /**
- * Status filter of the comment list ("Alle", "Offen", "KI" – threads the AI edited, "Erledigt"),
+ * Status filter of the comment list ("Alle", "Offen", "KI" – threads the AI asks back in, "Erledigt"),
  * or "Ausgeblendet": no comments at all – the slides alone, to just look at them.
  */
 export type StatusFilter = 'hidden' | 'all' | 'open' | 'ai' | 'done';

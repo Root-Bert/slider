@@ -2,14 +2,16 @@ import { asc, eq, sql } from 'drizzle-orm';
 import JSZip from 'jszip';
 import { withoutCredentials } from '@slider/shared';
 import {
+  aiProposalReactions,
   aiProposals,
+  appConnections,
   commentReactions,
   comments,
   deckEdits,
   decks,
-  media,
-  microsoftConnections,
   googleConnections,
+  materialQuestions,
+  media,
   nextcloudConnections,
   passkeys,
   revisions,
@@ -26,12 +28,12 @@ import { inviteEntries, invitesTo } from './data-requests';
 
 /**
  * Everything Slider stores about an account, as a ZIP (BER-145: DSGVO Art. 15 copy and Art. 20
- * portability): `konto.json` (profile, logins, passkeys, Microsoft accounts, sessions,
+ * portability): `konto.json` (profile, logins, passkeys, Nextcloud accounts, KI-Apps, sessions,
  * workspaces), `praesentationen.json` + the original file of each deck they own in a
  * workspace they are still in,
  * `kommentare.json` (what they wrote, in any deck), `reaktionen.json` (their 👍 / 👎 / egal),
- * `ki-auftraege.json` (what they asked the AI), `bearbeitungen.json` (their edit steps) and
- * `aufnahmen/` (their recordings).
+ * `ki-auftraege.json` (what they asked the AI), `fragen.json` (their questions about material
+ * and the answers), `bearbeitungen.json` (their edit steps) and `aufnahmen/` (their recordings).
  * Secrets are left out: tokens, passkey keys, session hashes.
  */
 export async function exportAccount(
@@ -46,7 +48,6 @@ export async function exportAccount(
   const [
     logins,
     keys,
-    microsoft,
     nextcloud,
     google,
     sessionRows,
@@ -58,11 +59,13 @@ export async function exportAccount(
     invites,
     asked,
     edited,
+    apps,
+    questions,
   ] = await Promise.all([
     db.select().from(userIdentities).where(eq(userIdentities.userId, userId)),
     db.select().from(passkeys).where(eq(passkeys.userId, userId)),
-    db.select().from(microsoftConnections).where(eq(microsoftConnections.userId, userId)),
     db.select().from(nextcloudConnections).where(eq(nextcloudConnections.userId, userId)),
+    // Retired: kept only until Google could be reached to revoke the grant.
     db.select().from(googleConnections).where(eq(googleConnections.userId, userId)),
     db.select().from(sessions).where(eq(sessions.userId, userId)),
     db
@@ -103,6 +106,18 @@ export async function exportAccount(
       .innerJoin(decks, eq(decks.id, deckEdits.deckId))
       .where(eq(deckEdits.authorId, userId))
       .orderBy(asc(deckEdits.createdAt)),
+    db
+      .select({ connection: appConnections, workspace: workspaces.name })
+      .from(appConnections)
+      .leftJoin(workspaces, eq(workspaces.id, appConnections.workspaceId))
+      .where(eq(appConnections.userId, userId))
+      .orderBy(asc(appConnections.createdAt)),
+    db
+      .select({ question: materialQuestions, deckTitle: decks.title })
+      .from(materialQuestions)
+      .innerJoin(decks, eq(decks.id, materialQuestions.deckId))
+      .where(eq(materialQuestions.userId, userId))
+      .orderBy(asc(materialQuestions.createdAt)),
   ]);
 
   const zip = new JSZip();
@@ -130,12 +145,6 @@ export async function exportAccount(
         createdAt: row.createdAt.toISOString(),
         lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
       })),
-      microsoftAccounts: microsoft.map((row) => ({
-        account: row.account,
-        connected: row.refreshToken !== null,
-        createdAt: row.createdAt.toISOString(),
-        lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
-      })),
       nextcloudAccounts: nextcloud.map((row) => ({
         server: row.serverUrl,
         account: row.loginName,
@@ -143,11 +152,21 @@ export async function exportAccount(
         createdAt: row.createdAt.toISOString(),
         lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
       })),
-      googleAccounts: google.map((row) => ({
-        account: row.account,
-        connected: row.refreshToken !== null,
-        createdAt: row.createdAt.toISOString(),
-        lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
+      ...(google.length > 0 && {
+        googleAccounts: google.map((row) => ({
+          account: row.account,
+          connected: row.refreshToken !== null,
+          createdAt: row.createdAt.toISOString(),
+          lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
+        })),
+      }),
+      // „KI-Apps“: which app, for which workspace – never the tokens' hashes.
+      aiApps: apps.map(({ connection, workspace }) => ({
+        name: connection.name,
+        kind: connection.kind,
+        workspace: connection.workspaceId ? { id: connection.workspaceId, name: workspace } : null,
+        createdAt: connection.createdAt.toISOString(),
+        lastUsedAt: connection.lastUsedAt?.toISOString() ?? null,
       })),
       sessions: sessionRows.map((row) => ({
         createdAt: row.createdAt.toISOString(),
@@ -210,16 +229,29 @@ export async function exportAccount(
     ),
   );
 
+  // Those to the AI's answers, too.
+  const answerReactions = await db
+    .select({ reaction: aiProposalReactions, deckId: aiProposals.deckId })
+    .from(aiProposalReactions)
+    .innerJoin(aiProposals, eq(aiProposals.id, aiProposalReactions.proposalId))
+    .where(eq(aiProposalReactions.userId, userId))
+    .orderBy(asc(aiProposalReactions.createdAt));
   zip.file(
     'reaktionen.json',
-    json(
-      reactions.map(({ reaction, deckId }) => ({
+    json([
+      ...reactions.map(({ reaction, deckId }) => ({
         commentId: reaction.commentId,
         deckId,
         kind: reaction.kind,
         createdAt: reaction.createdAt.toISOString(),
       })),
-    ),
+      ...answerReactions.map(({ reaction, deckId }) => ({
+        aiProposalId: reaction.proposalId,
+        deckId,
+        kind: reaction.kind,
+        createdAt: reaction.createdAt.toISOString(),
+      })),
+    ]),
   );
 
   const recordingEntries = [];
@@ -257,6 +289,19 @@ export async function exportAccount(
     ),
   );
   zip.file(
+    'fragen.json',
+    json(
+      questions.map(({ question, deckTitle }) => ({
+        id: question.id,
+        deck: { id: question.deckId, title: deckTitle },
+        question: question.question,
+        answer: question.answer,
+        state: question.state,
+        createdAt: question.createdAt.toISOString(),
+      })),
+    ),
+  );
+  zip.file(
     'bearbeitungen.json',
     json(
       edited.map(({ edit, deckTitle }) => ({
@@ -284,13 +329,14 @@ const safeName = (name: string) =>
 
 const README = `Deine Daten aus Slider
 
-konto.json            Profil, Anmeldewege, Passkeys, verbundene Microsoft-, Nextcloud- und Google-Konten, Sitzungen, Workspaces
+konto.json            Profil, Anmeldewege, Passkeys, verbundene Nextcloud-Konten, KI-Apps, Sitzungen, Workspaces
 praesentationen.json  Präsentationen, die dir gehören; die Originaldateien liegen in praesentationen/
 kommentare.json       Kommentare und Antworten, die du geschrieben hast – in allen Präsentationen
-reaktionen.json       Deine Reaktionen auf Kommentare (up = Daumen hoch, down = Daumen runter, neutral = egal)
+reaktionen.json       Deine Reaktionen auf Kommentare und KI-Antworten (up = Daumen hoch, down = Daumen runter, neutral = egal)
 aufnahmen.json        Sprach- und Videoaufnahmen sowie Bilder zu deinen Kommentaren (Dateien in aufnahmen/)
 einladungen.json      Einladungen in Workspaces an deine Adresse
 ki-auftraege.json     Was du die KI an Präsentationen hast ändern lassen
+fragen.json           Deine Notizen, die du der KI übergeben hast (⌘↵), und ihre Antworten
 bearbeitungen.json    Deine Bearbeitungsschritte in Präsentationen
 
 Zugangsdaten (Tokens, Passkey-Schlüssel) sind aus Sicherheitsgründen nicht enthalten.

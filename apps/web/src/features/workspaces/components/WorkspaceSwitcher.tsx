@@ -58,7 +58,7 @@ export function WorkspaceSwitcher() {
               {current?.name ?? 'Workspaces'}
             </span>
             {invites.length > 0 && (
-              <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-thumb bg-info px-1 text-tiny font-semibold text-primary-hover">
+              <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-thumb bg-primary px-1 text-tiny font-semibold text-on-primary">
                 {invites.length}
               </span>
             )}

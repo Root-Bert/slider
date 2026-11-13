@@ -6,20 +6,14 @@ import {
   type EditableElement,
   type StockPhoto,
 } from '@slider/shared';
-import {
-  useEffect,
-  useEffectEvent,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-} from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { usePickStockPhoto, useStockSearch } from '@/lib/api';
-import { isTypingTarget } from '@/lib/dom';
-import { isModKey, typesCharacter } from '@/lib/keyboard';
+import { isModKey } from '@/lib/keyboard';
 import { cn, Spinner, TextField, useDebounced } from '@/ui';
 import { useViewerData } from '../../state/viewer-data';
 import { useViewerToast } from '../../state/viewer-toast';
 import { useEditing } from '../editing-context';
+import { useTypeIntoField } from '../hooks/useTypeIntoField';
 import { photoPreviews } from './photo-previews';
 
 /**
@@ -158,43 +152,25 @@ export function PhotoSearch({
   // Opened by hand, focus outside a field: typing writes the search, Tab and ↓ go into the
   // photos. Space, Delete, ← → and ⌘ keys stay with the editor and the picture.
   const fieldRef = useRef<HTMLInputElement>(null);
-  const onWindowKeyDown = useEffectEvent((event: KeyboardEvent) => {
-    if (event.defaultPrevented || event.isComposing || isTypingTarget(event.target)) return;
+  useTypeIntoField(fieldRef, autoFocus, (event) => {
     const unfocused = event.target === document.body || event.target === document.documentElement;
-    if (
+    const intoPhotos =
       unfocused &&
       photos.length > 0 &&
       ((event.key === 'Tab' && !event.shiftKey) || event.key === 'ArrowDown') &&
       !isModKey(event) &&
-      !event.altKey
-    ) {
-      event.preventDefault();
-      event.stopPropagation();
-      focusPhoto(current);
-      return;
-    }
-    if (!typesCharacter(event) || event.key === ' ') return;
-    if (event.target instanceof Element && event.target.closest('dialog')) return;
-    const field = fieldRef.current;
-    if (!field) return;
-    // The key goes on into the field; the viewer's letter shortcuts skip it.
+      !event.altKey;
+    if (!intoPhotos) return false;
+    event.preventDefault();
     event.stopPropagation();
-    field.focus();
-    field.setSelectionRange(field.value.length, field.value.length);
+    focusPhoto(current);
+    return true;
   });
   // Typed already: the caret after it.
   useEffect(() => {
     const field = fieldRef.current;
     if (autoFocus && field && document.activeElement === field)
       field.setSelectionRange(field.value.length, field.value.length);
-  }, [autoFocus]);
-  useEffect(() => {
-    // Opened with the panel: nothing taken from the editor's keys.
-    if (!autoFocus) return;
-    const listener = (event: KeyboardEvent) => onWindowKeyDown(event);
-    // Capture: before the viewer's shortcuts.
-    window.addEventListener('keydown', listener, true);
-    return () => window.removeEventListener('keydown', listener, true);
   }, [autoFocus]);
 
   const pick = async (photo: StockPhoto) => {

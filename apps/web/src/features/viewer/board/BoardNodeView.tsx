@@ -8,6 +8,7 @@ import {
 } from '@slider/shared';
 import { NodeResizeControl, useStore, type ControlPosition, type NodeProps } from '@xyflow/react';
 import {
+  Fragment,
   lazy,
   memo,
   Suspense,
@@ -35,6 +36,8 @@ import {
   STICKER_TEXT,
   type BoardNode,
 } from './board-nodes';
+import { NoteAnswer } from './NoteAnswer';
+import { notePlaceholder } from './note-answers';
 import type { RichValue } from './RichSticker';
 import { RichText } from './rich-text';
 
@@ -46,7 +49,7 @@ const RichStickerEditor = lazy(() => import('./RichSticker'));
 import type { UploadingMaterial } from './useBoard';
 
 /*
- * A file, link, note or frame on the board (Folie 0) as a React Flow node, and once picked the
+ * A file, link, note or frame on the board (the material page) as a React Flow node, and once picked the
  * editor's selection look – the line on its edge (`FrameOutline`), its corner brackets opening as
  * the pointer nears them; grabbed by React Flow's resize controls (`NodeResizeControl`). A note on
  * its own is a sticker (as „Text auf Folie“: its look, typed in right in its box); notes on one
@@ -139,7 +142,10 @@ export const BoardNodeView = memo(function BoardNodeView({
     return (
       <div className="flex w-60 flex-col gap-2" data-notes-of={item.id}>
         {data.notes.map((note) => (
-          <NoteCard key={note.id} item={note} />
+          <Fragment key={note.id}>
+            <NoteCard item={note} />
+            <AnswerUnder item={note} className="ml-4" />
+          </Fragment>
         ))}
       </div>
     );
@@ -168,6 +174,13 @@ export const BoardNodeView = memo(function BoardNodeView({
         <LinkCard item={item} />
       ) : (
         <Sticker item={item} lit={lit || target} />
+      )}
+      {!isMaterial(item) && (item.kind === 'note' || item.kind === 'box') && (
+        // Hanging under the note as a reply under a comment, at least as wide as a note's card.
+        <AnswerUnder
+          item={item}
+          className="absolute top-full left-0 mt-2 w-[max(100%,15rem)] max-w-[max(100%,24rem)]"
+        />
       )}
       {mark && (
         // Marked as a comment's element on a slide.
@@ -269,12 +282,16 @@ function Sticker({ item, lit }: { item: BoardItem; lit: boolean }) {
     >
       {typing ? (
         <Suspense
-          fallback={<p className="whitespace-pre-wrap opacity-50">{item.text || 'Notiz …'}</p>}
+          fallback={
+            <p className="whitespace-pre-wrap opacity-50">{item.text || notePlaceholder()}</p>
+          }
         >
           <RichStickerEditor
             rich={item.rich}
             text={item.text}
+            placeholder={notePlaceholder()}
             onDone={(value: RichValue) => board.onNoteDone(item, value)}
+            onAsk={(value: RichValue) => board.onNoteAsk(item, value)}
             onCancel={() => board.onNoteCancel(item)}
           />
         </Suspense>
@@ -581,6 +598,7 @@ function NoteCard({ item }: { item: BoardItem }) {
           rows={2}
           className="field-sizing-content min-h-5 w-full text-body leading-4.5 text-fg"
           onDone={(text) => board.onNoteDone(item, { text, plain: text, rich: null })}
+          onAsk={(text) => board.onNoteAsk(item, { text, plain: text, rich: null })}
           onCancel={() => board.onNoteCancel(item)}
         />
       ) : (
@@ -589,6 +607,14 @@ function NoteCard({ item }: { item: BoardItem }) {
       {picked && board.editing !== item.id && board.mayEdit(item) && <CardColors item={item} />}
     </article>
   );
+}
+
+/** The AI's answer under a note, once asked (⌘↵). */
+function AnswerUnder({ item, className }: { item: BoardItem; className?: string }) {
+  const board = useContext(BoardNodeContext)!;
+  const answer = board.answerOf(item.id);
+  if (!answer) return null;
+  return <NoteAnswer answer={answer} actions={board.answers} className={className} />;
 }
 
 /** A picked card's colours, under it. */
@@ -613,28 +639,31 @@ function CardColors({ item }: { item: BoardItem }) {
 
 /**
  * Typing a note's or frame's text right where it shows, as in a sticker on a slide: ↵ takes it, ⇧↵
- * a new line, Esc drops it; left with text (a click elsewhere) it is taken too, left empty it goes
- * (a new one at once, one's own after asking).
+ * a new line, ⌘↵ takes it and asks the AI (`onAsk`), Esc drops it; left with text (a click
+ * elsewhere) it is taken too, left empty it goes (a new one at once, one's own after asking).
  */
 function TextEditor({
   initial,
   className,
   rows,
   onDone,
+  onAsk,
   onCancel,
 }: {
   initial: string;
   className: string;
   rows?: number;
   onDone: (text: string) => void;
+  onAsk?: (text: string) => void;
   onCancel: () => void;
 }) {
   const [text, setText] = useState(initial);
   const ended = useRef(false);
-  const end = (how: 'done' | 'cancel') => {
+  const end = (how: 'done' | 'ask' | 'cancel') => {
     if (ended.current) return;
     ended.current = true;
     if (how === 'cancel' || (!text.trim() && !initial)) onCancel();
+    else if (how === 'ask' && onAsk) onAsk(text.trim());
     else onDone(text.trim());
   };
   return (
@@ -642,6 +671,8 @@ function TextEditor({
       ref={focusHere}
       value={text}
       aria-label="Notiz"
+      aria-keyshortcuts={onAsk ? 'Meta+Enter' : undefined}
+      placeholder={notePlaceholder()}
       spellCheck
       rows={rows}
       // Typed in, not dragged, panned or scrolled by the board.
@@ -660,7 +691,7 @@ function TextEditor({
           end('cancel');
         } else if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
           event.preventDefault();
-          end('done');
+          end(event.metaKey || event.ctrlKey ? 'ask' : 'done');
         }
       }}
     />

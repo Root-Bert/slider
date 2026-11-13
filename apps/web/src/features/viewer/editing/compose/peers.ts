@@ -23,9 +23,14 @@ export function usePeersOn(elementIds: readonly string[]): {
   const key = useLiveKey((snapshot) => {
     const drags: LiveDrag[] = [];
     const picks: PeerPick[] = [];
+    // One frame per person and element: one's own other tab, or a tab just reloaded whose old
+    // presence has not gone yet, may have picked it too.
+    const framed = new Set<string>();
     for (const peer of snapshot.peers.values()) {
       if (peer.drag && ids.has(peer.drag.elementId)) drags.push(peer.drag);
-      if (peer.picked && ids.has(peer.picked)) {
+      const once = `${peer.picked}\n${peer.author.id}`;
+      if (peer.picked && ids.has(peer.picked) && !framed.has(once)) {
+        framed.add(once);
         picks.push({
           elementId: peer.picked,
           name: peer.author.name,

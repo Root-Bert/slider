@@ -1,6 +1,6 @@
 @import 'tailwindcss';
 @import '@fontsource-variable/inter';
-/* React Flow's layout only (Folie 0, `features/viewer/board/`); its look is Slider's, below. */
+/* React Flow's layout only (the material page, `features/viewer/board/`); its look is Slider's, below. */
 @import '@xyflow/react/dist/base.css' layer(components);
 
 /*
@@ -40,6 +40,8 @@
   --color-surface-4: rgb(255 255 255 / 0.2);
   --color-handle: rgb(255 255 255 / 0.25);
   --color-border-focus: rgb(255 255 255 / 0.35);
+  /* Keyboard focus ring: white, no brand colour. */
+  --color-focus: rgb(255 255 255 / 0.7);
 
   /* Lines */
   --color-hairline: rgb(255 255 255 / 0.08);
@@ -68,9 +70,9 @@
   /* Status */
   --color-success: #2ecc71;
   --color-warning: #f5a623;
-  --color-info: #4d9fff;
+  --color-info: #ffffff;
   --color-danger: #ff3b30;
-  --color-mention: #5c8aff;
+  --color-mention: #ffffff;
 
   /* Slider's own orange and its mark (`ui/Logo.tsx`): the slides are the orange laid over the
      ground (back 69 %, front 53 % over black; 30 % / 50 % over white in the light theme), their
@@ -91,8 +93,6 @@
   /* Brand */
   --color-powerpoint: #d35230;
   --color-libreoffice: #18a303;
-  --color-onedrive: #0078d4;
-  --color-sharepoint: #038387;
 
   /* Reviewer accents – pins, connector lines, drawings (BER-99) */
   /* Spread for maximal distinctness (OKLab), incl. against PowerPoint orange. */
@@ -207,7 +207,7 @@
   --animate-pop-in: pop-in 180ms var(--ease-overshoot);
   --animate-shimmer: shimmer 1.6s linear infinite;
   --animate-slide-in-x: slide-in-x 220ms var(--ease-settle);
-  /* Content coming back after something gave it room (e.g. the OneDrive picker closing). */
+  /* Content coming back after something gave it room (e.g. the Nextcloud picker closing). */
   --animate-rise-in: rise-in 320ms var(--ease-settle) backwards;
   /* Friendly little jump, e.g. the logo when clicked while already home. */
   --animate-hop: hop 420ms var(--ease-hop);
@@ -577,7 +577,7 @@
   background-size: 22px 22px;
 }
 
-/* Folie 0 („Material“, React Flow): the selection box as the editor's frame-select, React Flow's
+/* The material page (React Flow): the selection box as the editor's frame-select, React Flow's
    own chrome away – the group frame (picked cards move together anyway) and the resize controls'
    look (the picked card's brackets show where to grab, `BoardNodeView`). */
 .material-board {
@@ -1194,7 +1194,7 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-mention);
+    outline: 2px solid var(--color-focus);
     outline-offset: 2px;
   }
 
@@ -2700,6 +2700,7 @@
   --color-surface-4: rgb(0 0 0 / 0.15);
   --color-handle: rgb(0 0 0 / 0.2);
   --color-border-focus: rgb(0 0 0 / 0.3);
+  --color-focus: rgb(0 0 0 / 0.6);
 
   --color-hairline: rgb(0 0 0 / 0.08);
   --color-hairline-strong: rgb(0 0 0 / 0.14);
@@ -2726,7 +2727,8 @@
   /* Status colours a step darker, readable as text on light grounds. */
   --color-success: #1e9e55;
   --color-warning: #c97a00;
-  --color-info: #1f7ae0;
+  --color-info: #000000;
+  --color-mention: #000000;
   --color-danger: #e0281e;
 
   --shadow-float: 0 8px 32px rgb(0 0 0 / 0.14);

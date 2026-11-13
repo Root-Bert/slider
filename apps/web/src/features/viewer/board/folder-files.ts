@@ -1,7 +1,7 @@
 /*
- * A folder put on the board (Folie 0): its files, found in a drop (`DataTransferItem` entries) or
- * picked („Ordner hinzufügen“, `webkitdirectory`), every one inside it, its subfolders' too – none
- * hidden or of the system's own (`.DS_Store`, `Thumbs.db`, `__MACOSX`).
+ * A folder put on the board (the material page): its files, found in a drop (`DataTransferItem`
+ * entries), every one inside it, its subfolders' too – none hidden or of the system's own
+ * (`.DS_Store`, `Thumbs.db`, `__MACOSX`).
  */
 
 /** A folder's card on the board. */
@@ -17,16 +17,6 @@ export function isHiddenFile(path: string): boolean {
   return path
     .split('/')
     .some((part) => part.startsWith('.') || part === '__MACOSX' || SYSTEM.has(part.toLowerCase()));
-}
-
-/** Picked with `webkitdirectory`: the folder's name (the first part of each path) and its files. */
-export function pickedFolder(files: readonly File[]): { name: string; files: File[] } | null {
-  const first = files[0]?.webkitRelativePath.split('/')[0];
-  if (!first) return null;
-  return {
-    name: first,
-    files: files.filter((file) => !isHiddenFile(file.webkitRelativePath || file.name)),
-  };
 }
 
 const readAll = (reader: FileSystemDirectoryReader) =>

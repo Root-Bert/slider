@@ -11,7 +11,7 @@ import { PREVIEW_WIDTH } from '../import/pdf-text';
 import { blobKeys } from '../storage/blob-storage';
 
 /*
- * Reading the text of a deck's board's files (Folie 0) in the background, one file after the
+ * Reading the text of a deck's material files in the background, one file after the
  * other: a PDF with pdf.js (in its worker), Word and PowerPoint files as a PDF made by
  * LibreOffice (its pool), spreadsheets and CSV with SheetJS (each sheet a table), text as it is.
  * Pictures have no text – the AI looks at them (`view_material`); they only get a small picture,

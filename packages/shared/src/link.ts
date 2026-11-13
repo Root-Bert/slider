@@ -1,22 +1,16 @@
 /**
- * Recognises the PowerPoint links Slider can import (BER-92): OneDrive and SharePoint share links,
- * Nextcloud shares and file links (BER-135), Google Slides and Google Drive files (BER-119), and
- * plain https URLs that point straight at a `.pptx` file.
+ * Recognises the links Slider can import: Nextcloud shares and file links (BER-135), and plain
+ * https URLs that point straight at a `.pptx` or PDF file.
  * Runs in the browser (instant feedback in the input) and on the server (authoritative check).
  */
 
-export type ShareLinkKind = 'onedrive' | 'sharepoint' | 'nextcloud' | 'google' | 'url';
+export type ShareLinkKind = 'nextcloud' | 'url';
 
 export interface ParsedShareLink {
   kind: ShareLinkKind;
   url: URL;
   host: string;
 }
-
-const isSharePointHost = (host: string) =>
-  host === 'sharepoint.com' || host.endsWith('.sharepoint.com');
-
-const isOneDriveHost = (host: string) => host === '1drv.ms' || host === 'onedrive.live.com';
 
 /** A Nextcloud link, taken apart: exactly one of `share` and `fileId` is set. */
 export interface NextcloudLink {
@@ -47,38 +41,6 @@ export function parseNextcloudLink(url: URL): NextcloudLink | null {
   const app = NEXTCLOUD_FILES_APP.exec(url.pathname);
   const fileId = app?.[2] ?? (app ? url.searchParams.get('fileid') : null);
   if (app && fileId && /^\d+$/.test(fileId)) return { base: url.origin + (app[1] ?? ''), fileId };
-  return null;
-}
-
-/** A Google file, taken apart. */
-export interface GoogleLink {
-  /** The Drive file id – the same for Slides and Drive URLs of one file. */
-  fileId: string;
-  /** `docs.google.com/presentation/…`: a Google Slides file (exported); else a file in Drive. */
-  slides: boolean;
-}
-
-const GOOGLE_FILE_ID = /^[A-Za-z0-9_-]{10,200}$/;
-
-/**
- * `docs.google.com/presentation/d/<id>/edit…` (also with `/u/0/`),
- * `drive.google.com/file/d/<id>/view…` and `drive.google.com/open?id=<id>`. Published pages
- * (`/presentation/d/e/…`) carry no file id and are not recognised.
- */
-export function parseGoogleLink(url: URL): GoogleLink | null {
-  const host = url.hostname.toLowerCase();
-  if (host === 'docs.google.com') {
-    const match = /^(?:\/u\/\d+)?\/presentation(?:\/u\/\d+)?\/d\/([^/]+)/.exec(url.pathname);
-    const id = match?.[1];
-    // `/d/e/<published id>` is a published web page, not a file id.
-    return id && id !== 'e' && GOOGLE_FILE_ID.test(id) ? { fileId: id, slides: true } : null;
-  }
-  if (host === 'drive.google.com') {
-    const match = /^(?:\/u\/\d+)?\/file\/d\/([^/]+)/.exec(url.pathname);
-    const id =
-      match?.[1] ?? (/^\/(?:open|uc)\/?$/.test(url.pathname) ? url.searchParams.get('id') : null);
-    return id && GOOGLE_FILE_ID.test(id) ? { fileId: id, slides: false } : null;
-  }
   return null;
 }
 
@@ -166,22 +128,6 @@ export function parseShareLink(
   if (url.protocol !== 'https:') return null;
 
   const host = url.hostname.toLowerCase();
-
-  if (isOneDriveHost(host)) return { kind: 'onedrive', url, host };
-
-  if (isSharePointHost(host)) {
-    // A share link: `/:p:/` a PowerPoint, `/:b:/` a PDF, `/:w:/` Word, `/:x:/` Excel, `/:i:/` a
-    // picture … – any file goes, like in the picker (the import converts it or says why not).
-    // A shared folder (`/:f:/`) is resolved and refused with its own message.
-    const isShare = /^\/:[a-z]:\//i.test(url.pathname);
-    const isDocViewer = url.pathname.includes('/_layouts/15/Doc.aspx');
-    // A file URL copied from the library (…/Shared Documents/deck.pptx) resolves like a share link.
-    if (isShare || isDocViewer || pointsAtDeckFile(url)) return { kind: 'sharepoint', url, host };
-    // Other SharePoint URLs (sites, lists, library pages) point at no file.
-    return null;
-  }
-
-  if (parseGoogleLink(url)) return { kind: 'google', url, host };
 
   if (parseNextcloudLink(url)) return { kind: 'nextcloud', url, host };
 

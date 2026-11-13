@@ -8,6 +8,9 @@ export const de: Dict = {
     pricingTitle: 'Preise',
     pricingDescription:
       'Preis pro Workspace, nie pro Kopf: kostenlos für kleine Teams, 79 € im Monat für bis zu 100 Personen, 249 € mit KI inklusive, kostenlos auf deinem eigenen Server.',
+    downloadTitle: 'Download',
+    downloadDescription:
+      'Slider als App für Mac und Linux: läuft auch offline, deine Präsentationen bleiben auf deinem Computer, die KI läuft mit deinen eigenen Schlüsseln.',
   },
   nav: {
     home: 'Start',
@@ -26,7 +29,8 @@ export const de: Dict = {
     askMark: 'dieser Folie?',
     doneLead: 'Genau so',
     doneMark: 'funktioniert Slider.',
-    doneSub: 'Alle sagen ihre Meinung direkt auf der Folie. Du machst daraus die bessere Version. Im Browser, Open Source und gehostet in der EU.',
+    doneSub:
+      'Alle sagen ihre Meinung direkt auf der Folie. Du machst daraus die bessere Version. Im Browser, Open Source und gehostet in der EU.',
     you: 'Du',
     where: 'Klick auf die Folie, um die Stelle zu wählen.',
     send: 'Senden',
@@ -65,7 +69,11 @@ export const de: Dict = {
           { by: 'Ingrid', text: 'Welche drei?' },
           { by: 'Marcel', text: 'Ich sehe nur Blasen.' },
         ],
-        examples: ['Was soll ich hier sehen?', 'Die Empfehlung gehört nach oben.', 'Zu viele Farben.'],
+        examples: [
+          'Was soll ich hier sehen?',
+          'Die Empfehlung gehört nach oben.',
+          'Zu viele Farben.',
+        ],
         chips: ['Zu voll', 'Empfehlung zuerst', 'Überzeugt'],
         statement: 'Drei Produkte bringen 80 % des Werts.',
         reasons: ['Eine Aussage', 'Nur drei Blasen', 'Empfehlung oben'],
@@ -76,7 +84,11 @@ export const de: Dict = {
           { by: 'Benni', text: 'Was ist die Pointe?' },
           { by: 'Anna', text: 'Die Formeln sind winzig.' },
         ],
-        examples: ['Erst das Bild, dann die Formel.', 'Was soll ich mir merken?', 'Schrift größer bitte.'],
+        examples: [
+          'Erst das Bild, dann die Formel.',
+          'Was soll ich mir merken?',
+          'Schrift größer bitte.',
+        ],
         chips: ['Formeln zu klein', 'Pointe?', 'Klar erklärt'],
         statement: 'Mehr Staatsausgaben heben den Zins.',
         reasons: ['Ein Satz', 'Grafik groß', 'Formel danach'],
@@ -137,12 +149,36 @@ export const de: Dict = {
     next: 'Nächste Folie',
     prev: 'Vorige Folie',
     cards: [
-      { by: 'Carolin', q: 'Muss ich dafür was installieren?', a: 'Nein. Slider läuft im Browser. Ein Link genügt, und alle sind dabei.' },
-      { by: 'Anna', q: 'Kann ich meine PowerPoint mitbringen?', a: 'Ja. PowerPoint- und ODF-Dateien öffnen, kommentieren, bearbeiten und wieder herunterladen.' },
-      { by: 'Benni', q: 'Was macht eigentlich die KI?', a: 'Sie liest alle Kommentare und schlägt die nächste Version vor. Entscheiden tust du.' },
-      { by: 'Thomas', q: 'Was kostet das?', a: 'Für kleine Teams nichts. Danach ein fester Preis pro Workspace, nie pro Kopf.' },
-      { by: 'Gesa', q: 'Wo liegen meine Daten?', a: 'In der EU, ohne Tracker und ohne Werbung. Oder auf deinem eigenen Server: Slider ist Open Source.' },
-      { by: 'Robert', q: 'Und was hältst du davon?', a: 'Klick irgendwo auf diese Seite und sag es. Alle, die gerade hier sind, sehen es.' },
+      {
+        by: 'Carolin',
+        q: 'Muss ich dafür was installieren?',
+        a: 'Nein. Slider läuft im Browser. Ein Link genügt, und alle sind dabei.',
+      },
+      {
+        by: 'Anna',
+        q: 'Kann ich meine PowerPoint mitbringen?',
+        a: 'Ja. PowerPoint- und ODF-Dateien öffnen, kommentieren, bearbeiten und wieder herunterladen.',
+      },
+      {
+        by: 'Benni',
+        q: 'Was macht eigentlich die KI?',
+        a: 'Sie liest alle Kommentare und schlägt die nächste Version vor. Entscheiden tust du.',
+      },
+      {
+        by: 'Thomas',
+        q: 'Was kostet das?',
+        a: 'Für kleine Teams nichts. Danach ein fester Preis pro Workspace, nie pro Kopf.',
+      },
+      {
+        by: 'Gesa',
+        q: 'Wo liegen meine Daten?',
+        a: 'In der EU, ohne Tracker und ohne Werbung. Oder auf deinem eigenen Server: Slider ist Open Source.',
+      },
+      {
+        by: 'Robert',
+        q: 'Und was hältst du davon?',
+        a: 'Klick irgendwo auf diese Seite und sag es. Alle, die gerade hier sind, sehen es.',
+      },
     ],
   },
   /** Photo credits: „Foto von X auf Unsplash“. */
@@ -189,11 +225,7 @@ export const de: Dict = {
         pitch: 'Ein fester Preis. Bei 100 Personen sind das nur 0,79 € pro Kopf.',
         note: 'Starte heute mit Free, das Upgrade kommt bald.',
         lead: 'Alles aus Free, dazu:',
-        features: [
-          'Bis zu 100 Personen',
-          '100 GB Speicher',
-          'Rechnungen für die Buchhaltung',
-        ],
+        features: ['Bis zu 100 Personen', '100 GB Speicher', 'Rechnungen für die Buchhaltung'],
       },
       ai: {
         pitch: 'KI eingebaut. Kein eigener Schlüssel, keine Tokens, wir betreiben alles für dich.',
@@ -223,6 +255,27 @@ export const de: Dict = {
     selfBody: 'Betreib Slider selbst, kostenlos und ohne Limits. Ein docker compose up.',
     selfButton: 'Auf GitHub ansehen',
     license: 'Open Source unter der EUPL-1.2. Support oder eine kommerzielle Lizenz?',
+  },
+  /** The desktop app's download page (not linked until a release carries the files). */
+  download: {
+    title: 'Slider auf deinem Computer.',
+    sub: 'Dasselbe Slider wie im Browser, als App. Es läuft auch offline, deine Präsentationen bleiben auf diesem Computer und die KI läuft mit deinen eigenen Schlüsseln.',
+    cardTitle: 'Slider laden',
+    cardBody:
+      'Die App hält sich selbst aktuell. Angemeldet gleicht sie deine Workspaces mit dem Server ab.',
+    macTitle: 'Mac',
+    macButton: 'Für den Mac laden',
+    macNote:
+      'Für Macs mit Apple Chip (M1 oder neuer) ab macOS 12, von Apple geprüft. LibreOffice, mit dem Slider Präsentationsdateien liest und schreibt, lädt die App beim ersten Start, falls es fehlt.',
+    linuxTitle: 'Linux',
+    linuxButton: 'Für Linux laden',
+    debButton: 'Für Ubuntu und Debian laden',
+    linuxNote:
+      'Die erste Datei startet auf jedem Linux, die zweite installiert Slider wie andere Programme. LibreOffice installierst du über die Paketverwaltung, etwa mit „sudo apt install libreoffice“.',
+    armNote: 'Rechner mit ARM Chip?',
+    armLink: 'Beide gibt es auch dafür.',
+    browser: 'Lieber im Browser?',
+    browserButton: 'Slider öffnen',
   },
   live: {
     comment: 'Kommentieren',

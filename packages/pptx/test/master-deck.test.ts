@@ -54,6 +54,19 @@ describe('masterDeck', () => {
       );
     });
     await expect(masterDeck(bytes)).rejects.toThrow('no slide layouts');
+
+    // The theme's colours – from a later master's theme when the first has none.
+    expect(read.colors.get('accent1')).toMatch(/2563eb/i);
+    const twoMasters = await JSZip.loadAsync(
+      await buildPptx({
+        slides: [{ title: 'Erste' }, { title: 'Zweite', foreignLayout: 'Fremd' }],
+      }),
+    );
+    const masterRels = 'ppt/slideMasters/_rels/slideMaster1.xml.rels';
+    const rels = await twoMasters.file(masterRels)!.async('string');
+    twoMasters.file(masterRels, rels.replace(/<Relationship [^>]*theme1\.xml"\/>/, ''));
+    const themeless = await masterDeck(await twoMasters.generateAsync({ type: 'uint8array' }));
+    expect(themeless.colors.get('accent1')).toMatch(/2563eb/i);
   });
 
   it('keeps a template a template, draws it as a presentation, takes a layout’s own prompt', async () => {

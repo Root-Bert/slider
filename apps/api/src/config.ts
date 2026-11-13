@@ -18,6 +18,21 @@ import { DEFAULT_PLAN_LIMITS, UNLIMITED_PLAN, type PlanLimits } from './services
 export interface Config {
   env: 'development' | 'production' | 'test';
   port: number;
+  /**
+   * `HOST`: the address the server listens on; unset: every interface. The desktop app listens on
+   * `127.0.0.1` only – without a login, anyone reaching the port would act as its owner.
+   */
+  host?: string | null;
+  /**
+   * `SLIDER_DESKTOP`: the API runs inside the desktop app for one person on this machine – no
+   * login (dev login allowed in production), nothing deleted for being unused, loopback only.
+   */
+  desktop?: boolean;
+  /**
+   * `SLIDER_CLOUD_URL`, desktop only: the Slider server „Anmelden“ signs in to (BER-201), by
+   * default `https://slider.bertro.dev`; `null` off the desktop.
+   */
+  cloudUrl?: string | null;
   /** Holds `db/` (PGlite) and `blobs/` (file storage). */
   dataDir: string;
   /**
@@ -43,15 +58,10 @@ export interface Config {
   retention: RetentionConfig;
   /** Requests per minute and IP on `/api/invites/*`. */
   inviteRateLimit: number;
-  /** Entra app for OneDrive/SharePoint links (BER-92); `null` until MS_CLIENT_ID and MS_CLIENT_SECRET are set. */
+  /** Entra app for „Weiter mit Microsoft“ (BER-129); `null` until MS_CLIENT_ID and MS_CLIENT_SECRET are set. */
   microsoft: MicrosoftConfig | null;
   /** Nextcloud as a source (BER-135). */
   nextcloud: NextcloudConfig;
-  /**
-   * Google Drive as a source (BER-119): on with the Google login. `null` without it (public Google
-   * links still import).
-   */
-  googleDrive: GoogleDriveConfig | null;
   /** Voice and video comments (BER-116). */
   media: MediaConfig;
   /**
@@ -204,13 +214,6 @@ export interface OidcConfig {
 
 export const GOOGLE_ISSUER = 'https://accounts.google.com';
 
-export interface GoogleDriveConfig {
-  clientId: string;
-  clientSecret: string;
-  /** The same callback as the login (`/api/auth/google/callback`): one URI to register. */
-  redirectUri: string;
-}
-
 export interface SmtpConfig {
   /** e.g. `smtps://user:pass@mail.example.com:465` */
   url: string;
@@ -263,6 +266,8 @@ export const normalizeNextcloudServer = (url: string): string =>
     .replace(/\/index\.php$/, '')
     .replace(/\/+$/, '');
 
+/** The hosted Slider: where the desktop app signs in unless told otherwise. */
+const DEFAULT_CLOUD_URL = 'https://slider.bertro.dev';
 const DEV_SECRET = 'slider-dev-secret-do-not-use-in-production';
 const DEFAULT_DATA_DIR = fileURLToPath(new URL('../.data', import.meta.url));
 /** `.env` lives in the repo root, so relative paths in it are meant from there – not from `apps/api`. */
@@ -278,6 +283,9 @@ const booleanEnv = z.enum(['true', 'false', '1', '0']).transform((v) => v === 't
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().min(1).max(65535).default(8787),
+  HOST: z.string().min(1).optional(),
+  SLIDER_DESKTOP: booleanEnv.optional(),
+  SLIDER_CLOUD_URL: z.url({ protocol: /^https?$/ }).optional(),
   DATA_DIR: z.string().min(1).default(DEFAULT_DATA_DIR),
   SLIDER_SECRET: z
     .string()
@@ -468,13 +476,6 @@ export function loadConfig(
           authorizeParams: { prompt: 'select_account' },
         }
       : null;
-  const googleDrive: GoogleDriveConfig | null = google
-    ? {
-        clientId: google.clientId,
-        clientSecret: google.clientSecret,
-        redirectUri: google.redirectUri,
-      }
-    : null;
   if (Boolean(parsed.NEXTCLOUD_CLIENT_ID) !== Boolean(parsed.NEXTCLOUD_CLIENT_SECRET)) {
     throw new Error('NEXTCLOUD_CLIENT_ID and NEXTCLOUD_CLIENT_SECRET must be set together.');
   }
@@ -496,10 +497,19 @@ export function loadConfig(
     parsed.SMTP_URL && parsed.MAIL_FROM ? { url: parsed.SMTP_URL, from: parsed.MAIL_FROM } : null;
   const hasLoginProvider = Boolean(microsoft || oidc || google || nextcloudLogin);
   // Production without any login starts anyway: the setup page (`/einrichtung`) configures one.
-  if (parsed.NODE_ENV === 'production' && parsed.AUTH_DEV_LOGIN) {
+  const desktop = parsed.SLIDER_DESKTOP ?? false;
+  if (parsed.NODE_ENV === 'production' && parsed.AUTH_DEV_LOGIN && !desktop) {
     throw new Error('AUTH_DEV_LOGIN cannot be enabled in production.');
   }
-  const devLogin = parsed.NODE_ENV !== 'production' && (parsed.AUTH_DEV_LOGIN ?? !hasLoginProvider);
+  // The desktop app is one person on their own machine: no login, like development.
+  const devLogin =
+    (parsed.NODE_ENV !== 'production' || desktop) && (parsed.AUTH_DEV_LOGIN ?? !hasLoginProvider);
+  const host = parsed.HOST ?? (desktop ? '127.0.0.1' : null);
+  if (desktop && devLogin && host !== '127.0.0.1' && host !== '::1' && host !== 'localhost') {
+    throw new Error(
+      'SLIDER_DESKTOP without a login listens on this machine only (HOST=127.0.0.1).',
+    );
+  }
   const signupDomains = (parsed.SIGNUP_DOMAINS ?? '')
     .split(',')
     .map((domain) => domain.trim().toLowerCase().replace(/^@/, ''))
@@ -533,6 +543,9 @@ export function loadConfig(
   return {
     env: parsed.NODE_ENV,
     port: parsed.PORT,
+    host,
+    desktop,
+    cloudUrl: desktop ? (parsed.SLIDER_CLOUD_URL ?? DEFAULT_CLOUD_URL).replace(/\/+$/, '') : null,
     dataDir,
     secret: secret ?? DEV_SECRET,
     webOrigin,
@@ -548,7 +561,8 @@ export function loadConfig(
     },
     smtp,
     contactEmail: parsed.CONTACT_EMAIL ?? null,
-    retention: { deleteUnused: parsed.DELETE_UNUSED ?? true },
+    // On the desktop, the decks are the person's own files: nothing goes for being unused.
+    retention: { deleteUnused: parsed.DELETE_UNUSED ?? !desktop },
     inviteRateLimit: parsed.INVITE_RATE_LIMIT,
     microsoft,
     nextcloud: {
@@ -556,7 +570,6 @@ export function loadConfig(
       login: nextcloudLogin,
       loginAnyServer: parsed.NEXTCLOUD_LOGIN_ANY,
     },
-    googleDrive,
     media: {
       dir: parsed.MEDIA_DIR
         ? path.resolve(REPO_ROOT, expandHome(parsed.MEDIA_DIR))

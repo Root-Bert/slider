@@ -33,6 +33,7 @@ import { SlideCompositor } from '../editing/compose/SlideCompositor';
 import { PromptLayer } from '../editing/live/PromptLayer';
 import { PhotoPreviewLayer } from '../editing/photos/PhotoPreviewLayer';
 import { useViewerData } from '../state/viewer-data';
+import { useSlideZoom } from '../state/viewer-store';
 import { GuideEditor } from '../template/GuideEditor';
 import { LayoutGridLayer } from '../template/LayoutGridLayer';
 import { useLayoutGrid } from '../template/useLayoutGridLines';
@@ -56,14 +57,7 @@ import { SnapPulse } from './SnapPulse';
 import { TextBoxEditor } from './TextBox';
 import { slideSrcSet, THUMB_MAX_W } from './lib/slide-image';
 import { SwapImage } from './SwapImage';
-import {
-  coverOf,
-  isCropped,
-  NO_COVER,
-  startView,
-  zoomedBox,
-  type SlideZoom,
-} from './lib/slide-zoom';
+import { coverOf, isCropped, NO_COVER, startView, zoomedBox } from './lib/slide-zoom';
 
 interface SlideFrameProps {
   slide: Slide;
@@ -99,8 +93,6 @@ interface SlideFrameProps {
   showGuides: boolean;
   /** „Layout-Ansicht“: the layout grid over it (not on thumbnails). */
   showLayoutGrid: boolean;
-  /** Zoom inside this slide (pinch over it) – only set when it is this slide's. */
-  zoom: SlideZoom | null;
   /** „Ebenen“ is on: the slide shows taken apart in 3D instead of its picture. */
   layered?: boolean;
 }
@@ -136,10 +128,10 @@ export const SlideFrame = memo(function SlideFrame({
   boxMode,
   showGuides,
   showLayoutGrid,
-  zoom,
   layered = false,
 }: SlideFrameProps) {
   const boxRef = useRef<HTMLDivElement>(null);
+  const zoom = useSlideZoom(slide.id);
   const dispatch = useViewerDispatch();
   const placeAiBox = usePlaceAiBox();
   // A template being designed keeps its guides itself, each layout its own.
@@ -439,6 +431,8 @@ export const SlideFrame = memo(function SlideFrame({
                   // A new element asks again: the failed one is done for.
                   key={attempt}
                   src={src}
+                  // The minimap's preview stands in while a remounted full image decodes.
+                  initialSrc={small ? undefined : slide.thumbnailUrl}
                   {...slideSrcSet(slide, view ? zoomedBox(view, w, h, cover).width : w)}
                   alt={slide.title ?? label}
                   // No `loading="lazy"`: the timeline only mounts slides near the viewport, and lazy

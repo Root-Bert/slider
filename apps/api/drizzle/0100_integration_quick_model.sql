@@ -1,0 +1,1 @@
+ALTER TABLE "integration_keys" ADD COLUMN "quick_model" text;

@@ -12,8 +12,7 @@ export function setSessionErrorHandler(client: QueryClient, handler: (error: unk
 }
 
 /**
- * For API calls that bypass the query and mutation caches (the XHR upload, the OneDrive picker
- * session): an ended session goes to the login here too, instead of only an inline error.
+ * For API calls that bypass the query and mutation caches (the XHR upload): an ended session goes to the login here too, instead of only an inline error.
  */
 export function reportSessionError(client: QueryClient, error: unknown) {
   sessionErrorHandlers.get(client)?.(error);

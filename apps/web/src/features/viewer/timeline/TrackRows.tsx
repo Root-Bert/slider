@@ -1,7 +1,7 @@
 import { notesText } from '@slider/shared';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useAiProposals, useResolveProposal } from '@/lib/api';
-import { AutosizeTextarea, Avatar, Button, cn, Icon, IconButton, Spinner, usePopover } from '@/ui';
+import { Avatar, cn, Icon, IconButton, Spinner, usePopover } from '@/ui';
 import { AiProposalCard } from '../comments/AiProposalCard';
 import { Divider } from '../editing/StyleControls';
 import { useEditing } from '../editing/editing-context';
@@ -9,12 +9,14 @@ import { useAskAi } from '../editing/hooks/useAskAi';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerToast } from '../state/viewer-toast';
 import { useVariantAsk, useVariantCopy } from './hooks/useVariantFlow';
-import { useTrackDots } from './TrackDots';
+import { useTrackDots } from './lib/track-dots';
+import { VariantComposer, VariantGround } from './VariantAsk';
 import {
   madeByProposal,
   setVariantPrompt,
   useVariantPrompted,
   useVariantRequest,
+  variantStep,
 } from './lib/variant-requests';
 import { notesFromDom, notesFromText, notesToHtml } from './lib/notes-html';
 
@@ -132,6 +134,7 @@ export const VariantBadge = memo(function VariantBadge({
           style={{ left: x + 12, width: Math.min(320, w - 24) }}
         >
           <AiProposalCard
+            onSlide
             proposal={proposal}
             onResolve={resolveNote ? (done) => resolveNote(proposal.id, !done) : undefined}
           />
@@ -199,10 +202,12 @@ export const VariantNoteHint = memo(function VariantNoteHint({
 /**
  * On the variant track over a slide's last variant: a slide-sized „Variante erstellen“ – the
  * slide's right-click „Variante erstellen“ brings it into view and opens it, so both are one. With
- * the AI at hand it opens a field right there for what the variant should be („dunkler, Bild
- * rechts“): typed, the AI makes the variant so (the tile shows it at work until the variant is
- * in); left empty, the variant is a copy of the slide at once, opened to work on by hand – as
- * without the AI.
+ * the AI at hand it opens the AI's field right there, over the slide itself (dimmed: one sees what
+ * one asks to change), for what the variant should be („dunkler, Bild rechts“): typed, the AI
+ * makes the variant so – the tile is that variant in the making, the slide under the AI's light,
+ * then each drawing of the AI's as it comes, its card where its answer will lie on the variant;
+ * left empty, the variant is a copy of the slide at once, opened to work on by hand – as without
+ * the AI.
  */
 export const VariantGhost = memo(function VariantGhost({
   slideId,
@@ -216,21 +221,21 @@ export const VariantGhost = memo(function VariantGhost({
   h: number;
 }) {
   const editing = useEditing();
-  const { deck } = useViewerData();
+  const { deck, variantsOf } = useViewerData();
   const ai = useAskAi();
   const copy = useVariantCopy();
   const request = useVariantRequest(slideId);
-  const { prompt, setPrompt, typed, submit: send, pending } = useVariantAsk(slideId);
+  const ask = useVariantAsk(slideId);
   const { open, setOpen, close, wrapperRef, triggerProps, panelId } = usePopover({
     hasPopup: 'dialog',
   });
-  const working = !!request || pending;
+  const working = !!request || ask.pending;
   // Always fetched: a variant taken back leaves its card here (below).
   const { data: proposals } = useAiProposals(deck.id);
   const running = proposals?.find(
     (item) => item.id === request?.proposalId && item.status === 'running',
   );
-  const card = !!running && w >= 240;
+  const card = w >= 240;
   // A variant of this slide the AI made and someone took back: its card stays where the variant
   // was – „Wieder anwenden“ brings the same variant back (the change applied again, as in a
   // thread) – until someone marks it done, for everyone. The latest one (the list is newest first).
@@ -238,7 +243,7 @@ export const VariantGhost = memo(function VariantGhost({
     (item) => item.slideId === slideId && item.commentId === null && item.status === 'reverted',
   );
   const resolveNote = useResolveNote();
-  const takenCard = !!taken && taken.resolvedAt === null && !working && w >= 240;
+  const takenCard = !!taken && taken.resolvedAt === null && !working && card;
 
   // Asked for from the slide's right-click menu: open, once the menu has let go of the focus.
   const prompted = useVariantPrompted(slideId);
@@ -251,8 +256,10 @@ export const VariantGhost = memo(function VariantGhost({
 
   const submit = () => {
     close();
-    send();
+    ask.submit();
   };
+  /** As the badge the variant will carry (`VariantBadge`). */
+  const name = `Variante ${(variantsOf.get(slideId)?.length ?? 0) + 1}`;
 
   return (
     <div ref={wrapperRef} className="absolute top-0" style={{ left: x, width: w, height: h }}>
@@ -264,33 +271,59 @@ export const VariantGhost = memo(function VariantGhost({
         data-variant-ghost={slideId}
         disabled={editing.busy || working}
         aria-label={working ? 'Die KI erstellt die Variante' : 'Variante erstellen'}
-        className="flex size-full flex-col items-center justify-center gap-2 rounded-panel border border-dashed border-handle px-4 text-sm text-fg-muted transition-colors enabled:hover:border-border-focus enabled:hover:bg-surface-1 enabled:hover:text-fg"
+        className={cn(
+          'flex size-full flex-col items-center justify-center gap-2 rounded-panel border border-dashed border-handle px-4 text-sm text-fg-muted transition-colors enabled:hover:border-border-focus enabled:hover:bg-surface-1 enabled:hover:text-fg',
+          // The variant in the making, or the field, takes its place.
+          (working || open) && 'border-transparent',
+        )}
       >
-        {!card && !takenCard && !open && (
+        {!working && !takenCard && !open && (
           <>
-            {working ? (
-              <Spinner size="xl" label="Die KI erstellt die Variante" />
-            ) : (
-              <Icon name="addCircle" size="xl" />
-            )}
-            {w >= 160 && (working ? 'Variante wird erstellt …' : 'Variante erstellen')}
-            {w >= 160 && request && (
-              <span className="line-clamp-2 text-xs text-fg-subtle">{request.prompt}</span>
-            )}
+            <Icon name="addCircle" size="xl" />
+            {w >= 160 && 'Variante erstellen'}
           </>
         )}
       </button>
-      {/* At work: the card a thread shows – what it does now, its latest drawing, „abbrechen“. */}
-      {card && running && (
+      {/* At work: the tile is the variant in the making – and the card a thread shows (what it
+          does now, „abbrechen“), where its answer will lie on the variant (`VariantBadge`). */}
+      {working && (
         <div
           data-variant-working={slideId}
-          className="absolute inset-3 z-(--z-overlay) flex flex-col overflow-y-auto"
+          aria-busy
+          className="absolute inset-0 z-(--z-overlay) rounded-panel bg-glass-solid"
         >
-          {/* Centred while it fits, scrolled from its top once it does not. */}
-          <div className="my-auto flex flex-col gap-2">
-            <p className="line-clamp-2 px-1 text-xs text-fg-muted">{request?.prompt}</p>
-            <AiProposalCard proposal={running} />
-          </div>
+          <VariantGround slideId={slideId} preview={running?.progress?.previewUrl} working />
+          {card && (
+            <>
+              <div className="glass-dark absolute top-3 left-3 rounded-chip px-2.5 py-1.5 text-xs text-fg">
+                {name}
+              </div>
+              <div
+                className="absolute bottom-3 left-3 flex flex-col items-start gap-1.5"
+                style={{ width: Math.min(320, w - 24) }}
+              >
+                {request && (
+                  <p className="glass-dark line-clamp-2 max-w-full rounded-chip px-2.5 py-1.5 text-xs text-fg-muted">
+                    {request.prompt}
+                  </p>
+                )}
+                {running ? (
+                  <AiProposalCard
+                    proposal={running}
+                    onSlide
+                    preview={false}
+                    step={variantStep(running.progress?.step) ?? 'Erstellt die Variante …'}
+                    className="w-full"
+                  />
+                ) : (
+                  <p className="glass-elevated flex w-full items-center gap-2 rounded-panel px-3.5 py-3 text-sm text-fg-muted">
+                    <Spinner size="sm" label="Die KI erstellt die Variante" />
+                    Variante wird erstellt …
+                  </p>
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
       {takenCard && !open && (
@@ -313,34 +346,28 @@ export const VariantGhost = memo(function VariantGhost({
           role="dialog"
           aria-label="Variante erstellen"
           data-variant-prompt={slideId}
-          className="absolute inset-0 z-(--z-overlay) flex flex-col gap-2 rounded-panel border border-border-focus bg-surface-1 p-3"
+          className="absolute inset-0 z-(--z-overlay) flex animate-fade-in flex-col overflow-y-auto rounded-panel bg-glass-solid p-3"
         >
-          <div className="field-well focus-field min-h-0 flex-1 overflow-y-auto rounded-control-sm px-3 py-2">
-            <AutosizeTextarea
-              autoFocus
-              aria-label="Was soll anders sein?"
-              placeholder="Was soll anders sein? z. B. dunkler, mit Bild rechts"
-              maxLength={4_000}
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              onKeyDown={(event) => {
-                // ↵ creates, ⇧↵ is a new line – as in the comments.
-                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-                  event.preventDefault();
-                  submit();
-                }
+          <VariantGround slideId={slideId} />
+          {card && h >= 220 && (
+            <div className="glass-dark absolute top-3 left-3 rounded-chip px-2.5 py-1.5 text-xs text-fg">
+              {name}
+            </div>
+          )}
+          {/* At the slide's foot, where the AI's card and its answer will lie – the slide stays in
+              sight above it; scrolled from its top once the tile is too small for it. */}
+          <div className="relative mx-auto mt-auto w-full max-w-130">
+            <VariantComposer
+              panel
+              ask={ask}
+              onSubmit={submit}
+              onCopy={() => {
+                close();
+                copy(slideId);
               }}
-              className="text-xs leading-5 text-fg"
+              ideas={w >= 320 && h >= 220}
             />
           </div>
-          <Button
-            size="sm"
-            variant="primary"
-            icon={typed ? 'autoAwesome' : 'difference'}
-            onClick={submit}
-          >
-            {typed ? 'Mit KI erstellen' : 'Kopie erstellen'}
-          </Button>
         </div>
       )}
     </div>

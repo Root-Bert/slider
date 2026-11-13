@@ -14,7 +14,8 @@ import {
 } from 'react';
 import { accentColor } from '@/lib/accent';
 import { SwapImage } from '../stage/SwapImage';
-import { cn, ContextMenu, Icon, type MenuAction } from '@/ui';
+import { Avatar, cn, ContextMenu, Icon, type MenuAction } from '@/ui';
+import { useLivePeople } from '../live/lib/live-people';
 import { afterCommit, rafThrottle } from '@/lib/dom';
 import { wheelPixels } from '@/lib/wheel';
 import { smoothScroll } from '@/lib/motion';
@@ -112,7 +113,7 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
 
   const rowH = THUMB_H + 2 * MINIMAP_PAD;
   const { aspectRatios } = useFrameAspects();
-  // Folie 0's tile before the thumbnails, as the board lies before slide 1 (not in a template).
+  // The „Material“ tile before the thumbnails: it opens the material page (a template has none).
   const lead = deck.template ? 0 : BOARD_THUMB_W + THUMB_GAP;
   const mini = useMemo(
     () =>
@@ -219,8 +220,7 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
           list.scrollTo({ left, behavior: smoothScroll() });
       }
       dispatch({ type: 'activeSlideChanged', slideId });
-      // The big track too: in the middle – the first at the left edge (Folie 0 before it is not a
-      // slide to centre around), the last at the right.
+      // The big track too: in the middle – the first at the left edge, the last at the right.
       const index = slides.findIndex((slide) => slide.id === slideId);
       registry.revealSlide(slideId, {
         align: index === 0 ? 'start' : index === slides.length - 1 ? 'end' : 'center',
@@ -507,20 +507,17 @@ export function Minimap({ layout, scrollerRef, narrow }: MinimapProps) {
                 <button
                   type="button"
                   data-board-thumb
-                  aria-label="Material (Folie 0) anzeigen"
-                  title="Material"
+                  aria-label="Material anzeigen"
+                  title="Material (M)"
                   onClick={() => {
                     if (clickGuard.consume()) return;
-                    registry.endProgrammaticScroll();
-                    scrollerRef.current?.scrollTo({ left: 0, behavior: smoothScroll() });
-                    document
-                      .querySelector<HTMLElement>('[data-material-board] [tabindex]')
-                      ?.focus({ preventScroll: true });
+                    dispatch({ type: 'materialSet', open: true });
                   }}
                   className="flex size-full items-center justify-center rounded-thumb bg-surface-2 text-fg-muted ring-hairline transition-colors hover:bg-selected hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-white"
                 >
                   {/* The icon alone; its name is in the label and the tooltip. */}
                   <Icon name="attachFile" size={18} />
+                  <MaterialPeople />
                 </button>
               </li>
             )}
@@ -822,3 +819,29 @@ const Thumbnail = memo(function Thumbnail({
     </li>
   );
 });
+
+/** Who else is on the material page right now: their avatars on its tile, the first three. */
+function MaterialPeople() {
+  const { viewer } = useViewerData();
+  const people = useLivePeople().filter(
+    (person) => person.onMaterial && person.author.id !== viewer.author.id,
+  );
+  if (people.length === 0) return null;
+  return (
+    <span
+      className="absolute right-1 bottom-1 flex"
+      aria-label={`Im Material: ${people.map((person) => person.author.name).join(', ')}`}
+      title={`Im Material: ${people.map((person) => person.author.name).join(', ')}`}
+    >
+      {people.slice(0, 3).map((person, index) => (
+        <Avatar
+          key={person.author.id}
+          author={person.author}
+          size={16}
+          nativeTitle={false}
+          className={cn(index > 0 && '-ml-1.5', 'rounded-full ring-1 ring-canvas')}
+        />
+      ))}
+    </span>
+  );
+}

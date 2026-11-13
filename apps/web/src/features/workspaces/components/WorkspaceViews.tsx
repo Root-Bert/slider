@@ -26,6 +26,8 @@ const SWITCH_MS = 600;
 
 /** Set by a click on the other view, taken by the view that mounts next. */
 let switching = false;
+/** Clears `data-transition` after the last switch – one timer, so a quick second switch keeps it. */
+let transitionReset: ReturnType<typeof setTimeout> | undefined;
 
 /**
  * The page title of a workspace's views, "Projekte  Bibliothek": the open one in full size and
@@ -66,7 +68,10 @@ export function WorkspaceViews({
               // Picks the light switch transition instead of the import stage's (index.css).
               const root = document.documentElement;
               root.dataset.transition = 'workspace-view';
-              setTimeout(() => delete root.dataset.transition, SWITCH_MS);
+              // An earlier click's timer would clear it in the middle of this switch: the page
+              // then fell back to the import stage's blur and the header to the crossfade.
+              clearTimeout(transitionReset);
+              transitionReset = setTimeout(() => delete root.dataset.transition, SWITCH_MS);
             }}
             className={cn(
               view.name,

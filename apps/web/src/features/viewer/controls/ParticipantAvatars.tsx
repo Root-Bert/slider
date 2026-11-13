@@ -41,6 +41,9 @@ export function ParticipantAvatars() {
   const { personFilter } = useViewerState();
   const live = useLivePeople();
   const liveSlide = new Map(live.map((person) => [person.author.id, person.activeSlideId]));
+  const onMaterial = new Set(
+    live.filter((person) => person.onMaterial).map((person) => person.author.id),
+  );
   const { aiPresent, aiWorking } = useAiPresence();
   const present = [
     // You are already the last avatar – your other windows don't add you twice.
@@ -83,6 +86,7 @@ export function ParticipantAvatars() {
                 author={person}
                 live={liveSlide.has(person.id)}
                 liveSlideId={liveSlide.get(person.id) ?? null}
+                liveOnMaterial={onMaterial.has(person.id)}
                 className={className}
               />
             );
@@ -157,6 +161,8 @@ interface AvatarColorPickerProps {
   /** In the deck right now: a live dot, and a jump to their slide. */
   live?: boolean;
   liveSlideId?: string | null;
+  /** On the material page right now: said so, and the jump goes there. */
+  liveOnMaterial?: boolean;
   className?: string;
   /** The AI's avatar: its menu starts (or sends) speaking to it. */
   voice?: { active: boolean; toggle: () => void };
@@ -167,6 +173,7 @@ function AvatarColorPicker({
   self = false,
   live = false,
   liveSlideId = null,
+  liveOnMaterial = false,
   className,
   voice,
 }: AvatarColorPickerProps) {
@@ -184,7 +191,7 @@ function AvatarColorPicker({
   // the trigger takes no `triggerProps`.
   const { open, setOpen, close, wrapperRef, triggerRef, panelRef } = usePopover();
   const titleId = useId();
-  const hasPicker = !fixedColor || liveIndex !== undefined || !!voice;
+  const hasPicker = !fixedColor || liveIndex !== undefined || liveOnMaterial || !!voice;
   // Opened from the keyboard: the focus moves into the picker.
   const focusPicker = useRef(false);
   // A touch press: its timer, where it started, and whether it already opened the picker (then
@@ -230,6 +237,7 @@ function AvatarColorPicker({
         label={
           <>
             <span>{name}</span>
+            {liveOnMaterial && <span className="text-fg-muted">im Material</span>}
             {filtered && <span className="text-fg-muted">{filterState}</span>}
           </>
         }
@@ -360,20 +368,36 @@ function AvatarColorPicker({
               {voice.active ? `An ${author.name} senden` : `Mit ${author.name} sprechen`}
             </Button>
           )}
-          {liveIndex !== undefined && (
+          {liveOnMaterial ? (
             <Button
               variant="soft"
               size="xs"
               weight="normal"
-              icon="arrowForward"
+              icon="attachFile"
               onClick={() => {
-                goToSlide(liveIndex);
+                dispatch({ type: 'materialSet', open: true });
                 close();
               }}
               className="self-start"
             >
-              Zu {slideLabel(liveIndex)} springen
+              Zum Material springen
             </Button>
+          ) : (
+            liveIndex !== undefined && (
+              <Button
+                variant="soft"
+                size="xs"
+                weight="normal"
+                icon="arrowForward"
+                onClick={() => {
+                  goToSlide(liveIndex);
+                  close();
+                }}
+                className="self-start"
+              >
+                Zu {slideLabel(liveIndex)} springen
+              </Button>
+            )
           )}
           {!self && !fixedColor && (
             <p className="max-w-48 text-caption text-fg-muted">

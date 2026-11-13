@@ -1,19 +1,36 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
+import JSZip from 'jszip';
 import {
   authProvidersSchema,
   createdWorkspaceInviteSchema,
+  deckEditStateSchema,
+  DESKTOP_SECRET_HEADER,
   SETUP_TOKEN_HEADER,
+  type CloudSession,
+  type CloudStatus,
+  type DeckEditState,
   type MeResponse,
 } from '@slider/shared';
+import { z } from 'zod';
 import { SESSION_MAX_AGE_MS } from '../src/auth/session';
-import { decryptToken } from '../src/auth/token-crypto';
 import { signInWithIdentity } from '../src/services/accounts';
 import type { Config, OidcConfig } from '../src/config';
-import { microsoftConnections, sessions, userIdentities, users } from '../src/db/schema';
+import { encryptToken } from '../src/auth/token-crypto';
+import {
+  decks,
+  googleConnections,
+  microsoftConnections,
+  sessions,
+  userIdentities,
+  users,
+} from '../src/db/schema';
+import { silentLogger } from '../src/logger';
+import { retireFileConnections } from '../src/services/retired-connections';
 import { ensureSetupToken, setupGrant } from '../src/services/instance-settings';
 import { purgeStaleRows } from '../src/services/retention';
 import type { FetchLike } from '../src/sources/safe-fetch';
@@ -28,8 +45,8 @@ import {
   testConfig,
   type TestContext,
 } from './helpers';
+import { DEMO_ODP, fakeOdpPdf, odpForm } from './odp-helpers';
 
-const SECRET = 'test-secret-test-secret-test-secret!';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ISSUER = 'https://sso.example.com/application/o/slider';
 const OIDC: OidcConfig = {
@@ -130,18 +147,12 @@ function fakeMicrosoft(claims: Record<string, unknown> = {}): FakeIdp {
       const url = String(input);
       if (url.endsWith('/oauth2/v2.0/token')) {
         return Response.json({
-          access_token: 'at-1',
-          refresh_token: 'rt-1',
-          expires_in: 3600,
           id_token: fakeJwt({
             exp: Math.floor(Date.now() / 1000) + 300,
             nonce: idp.nonce,
             ...idp.claims,
           }),
         });
-      }
-      if (url.startsWith('https://graph.microsoft.com/v1.0/me')) {
-        return Response.json({ mail: 'robert.hofmann@example.org' });
       }
       throw new Error(`Unexpected request: ${url}`);
     },
@@ -201,11 +212,11 @@ describe('GET /api/auth/providers', () => {
         },
       ],
       devLogin: false,
+      desktop: false,
       signup: 'domains',
       needsSetup: false,
       setupPending: false,
       nextcloudAnyServer: false,
-      googleDrive: false,
       sso: false,
       // No mail on this instance: no login links (BER-168).
       emailLogin: false,
@@ -233,9 +244,10 @@ describe('sessions', () => {
     expect((await ctx.request(`/api/decks/${deckId}`)).status).toBe(401);
 
     // Every registered private API route must authenticate, including newly added routes.
-    // Public login/contact endpoints and short-lived bearer-capability endpoints are separate.
+    // Public login/contact endpoints, OAuth for AI apps and short-lived bearer-capability endpoints
+    // are separate.
     const publicRoute = (method: string, route: string) =>
-      /^\/api\/(?:auth\/|setup(?:\/|$)|site-live(?:\/|$)|contact$|data-requests(?:\/|$)|join\/|billing\/webhook$|csp-report$|health$)/.test(
+      /^\/api\/(?:auth\/|oauth\/|setup(?:\/|$)|site-live(?:\/|$)|contact$|data-requests(?:\/|$)|join\/|billing\/webhook$|csp-report$|health$)/.test(
         route,
       ) ||
       (method === 'GET' && route === '/api/legal') ||
@@ -289,7 +301,6 @@ describe('sessions', () => {
     expect(body.user).toMatchObject({
       email: 'robert@example.org',
       isInstanceAdmin: false,
-      microsoftConnected: false,
     });
     expect(body.workspaces).toEqual([
       expect.objectContaining({ name: 'Mein Workspace', role: 'admin', memberCount: 1 }),
@@ -323,7 +334,472 @@ describe('sessions', () => {
     const idle = await signedInUser(ctx, { name: 'R', email: 'r2@example.org' });
     ctx.clock.advance(31 * DAY_MS);
     expect((await me(idle.cookie)).status).toBe(401);
-  });
+
+    // The desktop app signs in to this server like Figma (BER-201): its local server starts, the
+    // browser asks for a code, the app trades it once with the verifier only it knows.
+    // A claimed server (an unclaimed one hands out nothing before its setup).
+    const cloud = await createTestContext({
+      config: authConfig(),
+      instanceAdmin: true,
+      libreOfficePdf: fakeOdpPdf(),
+    });
+    const dataDir = await mkdtemp(path.join(tmpdir(), 'slider-desktop-'));
+    let offline = false;
+    const local = await createTestContext({
+      // The desktop's dev login: its one person.
+      config: { desktop: true, cloudUrl: 'http://cloud.test', dataDir },
+      libreOfficePdf: fakeOdpPdf(),
+      cloudFetch: async (url, init) => {
+        if (offline) throw new TypeError('fetch failed');
+        // A self-hosted Slider (the same server under another address), a page that is no
+        // Slider, and one that is not there.
+        const at = ['http://cloud.test', 'http://localhost:7'].find((s) => url.startsWith(s));
+        if (at) return cloud.request(url.slice(at.length), init);
+        if (url.startsWith('http://127.0.0.1:5')) return new Response('nope', { status: 404 });
+        throw new TypeError('fetch failed');
+      },
+    });
+    try {
+      const status = async () => (await local.request('/api/desktop/cloud')).json();
+      expect(await status()).toEqual({
+        server: 'http://cloud.test',
+        account: null,
+        sync: null,
+        cloudDecks: {},
+      });
+      const start = async () => {
+        const { url } = (await (
+          await local.request('/api/desktop/cloud/start', { method: 'POST' })
+        ).json()) as { url: string };
+        const page = new URL(url);
+        expect(page.origin + page.pathname).toBe('http://cloud.test/desktop-anmelden');
+        return {
+          challenge: page.searchParams.get('challenge') ?? '',
+          state: page.searchParams.get('state') ?? '',
+        };
+      };
+      const desktop = await signedInUser(cloud, { name: 'Dana Desk', email: 'dana@example.org' });
+      // Dana's team on the server has a deck, this machine one of its own.
+      const teamSpace = z.object({ id: z.string() }).parse(
+        await (
+          await cloud.request('/api/workspaces', {
+            method: 'POST',
+            cookie: desktop.cookie,
+            json: { name: 'Dana Team' },
+          })
+        ).json(),
+      );
+      await cloud.request(`/api/decks/upload?workspaceId=${teamSpace.id}`, {
+        method: 'POST',
+        cookie: desktop.cookie,
+        body: odpForm(DEMO_ODP, 'Team.odp'),
+      });
+      await local.request('/api/decks/upload', {
+        method: 'POST',
+        body: odpForm(DEMO_ODP, 'Hier.odp'),
+      });
+      await Promise.all([local.deps.queue.idle(), cloud.deps.queue.idle()]);
+      // This machine's file is on the server already (where its workspace goes): the upload finds
+      // it (the server dedupes bytes) – one deck on each side, not brought back as a second.
+      const [hier] = z
+        .array(z.object({ id: z.string() }))
+        .parse(await (await local.request('/api/decks')).json());
+      const hierFile = await local.request(`/api/decks/${hier!.id}/file`);
+      await cloud.request(`/api/decks/upload?workspaceId=${teamSpace.id}`, {
+        method: 'POST',
+        cookie: desktop.cookie,
+        body: odpForm(new Uint8Array(await hierFile.arrayBuffer()), 'Hier.odp'),
+      });
+      await cloud.deps.queue.idle();
+      const askCode = async (challenge: string, cookie?: string) =>
+        cloud.request('/api/auth/desktop/code', { method: 'POST', cookie, json: { challenge } });
+      const first = await start();
+      // Signed out: no code (the instance gate answers before the login does).
+      expect(await (await askCode(first.challenge)).json()).not.toHaveProperty('code');
+      const { code } = (await (await askCode(first.challenge, desktop.cookie)).json()) as {
+        code: string;
+      };
+      const finish = (state: string) =>
+        local.request('/api/desktop/cloud/finish', { method: 'POST', json: { code, state } });
+      expect((await finish('not-started')).status).toBe(404);
+      expect(await (await finish(first.state)).json()).toMatchObject({
+        server: 'http://cloud.test',
+        account: { name: 'Dana Desk', email: 'dana@example.org', color: expect.any(String) },
+      });
+      expect(await status()).toMatchObject({ account: { name: 'Dana Desk' } });
+      // The token is kept sealed, and only this app's session has it.
+      const stored = JSON.parse(await readFile(path.join(dataDir, 'cloud.json'), 'utf8')) as {
+        token: string;
+      };
+      expect(stored.token).toMatch(/^slenc3:/);
+      const sessionsOf = async () =>
+        (await cloud.deps.db.select().from(sessions).where(eq(sessions.userId, desktop.user.id)))
+          .map((row) => row.userAgent)
+          .sort();
+      expect(await sessionsOf()).toHaveLength(2);
+      expect(await sessionsOf()).toContain('Slider Desktop');
+      // Reaching 127.0.0.1 is not enough: another browser has no page cookie, a page rebound
+      // to 127.0.0.1 (DNS rebinding) names its own host. The health check stays open.
+      const stranger = { headers: { cookie: 'other=1' } };
+      expect((await local.request('/api/workspaces', stranger)).status).toBe(403);
+      expect((await local.request('/api/health', stranger)).status).toBe(200);
+      expect((await local.request('http://evil.test:47821/api/workspaces')).status).toBe(403);
+      expect((await local.request('http://127.0.0.1:47821/api/workspaces')).status).toBe(200);
+      // Electron alone gets the token, for the server's pages in its tabs.
+      expect((await local.request('/api/desktop/cloud/session')).status).toBe(403);
+      const session = (await (
+        await local.request('/api/desktop/cloud/session', {
+          headers: { [DESKTOP_SECRET_HEADER]: local.deps.config.secret },
+        })
+      ).json()) as { token: string };
+      expect(
+        (await cloud.request('/api/workspaces', { cookie: `slider_session=${session.token}` }))
+          .status,
+      ).toBe(200);
+      // Signed in, both hold the same (BER-201): this machine's first workspace goes into the
+      // account's, decks new on either side are made on the other.
+      const pass = async () => {
+        await local.request('/api/desktop/cloud/sync', { method: 'POST' });
+        await Promise.all([local.deps.queue.idle(), cloud.deps.queue.idle()]);
+      };
+      const deckIn = async (ctx: TestContext, cookie?: string) =>
+        z
+          .array(z.object({ id: z.string(), title: z.string() }))
+          .parse(await (await ctx.request('/api/decks', { cookie })).json());
+      const stateIn = async (ctx: TestContext, deckId: string, cookie?: string) =>
+        deckEditStateSchema.parse(
+          await (await ctx.request(`/api/decks/${deckId}/edit`, { cookie })).json(),
+        );
+      await pass();
+      await pass();
+      expect((await deckIn(local)).map((deck) => deck.title).sort()).toEqual(['Hier', 'Team']);
+      expect((await deckIn(cloud, desktop.cookie)).map((deck) => deck.title).sort()).toEqual([
+        'Hier',
+        'Team',
+      ]);
+      const pair = async (title: string) => ({
+        here: (await deckIn(local)).find((deck) => deck.title === title)!.id,
+        there: (await deckIn(cloud, desktop.cookie)).find((deck) => deck.title === title)!.id,
+      });
+      const team = await pair('Team');
+      // Online the tabs show the server's pages: Electron learns which deck is which there.
+      const ids = (await (
+        await local.request('/api/desktop/cloud/session', {
+          headers: { [DESKTOP_SECRET_HEADER]: local.deps.config.secret },
+        })
+      ).json()) as CloudSession;
+      expect(ids.decks[team.here]).toBe(team.there);
+      expect(Object.keys(ids.workspaces)).toHaveLength(1);
+      // Edited here: the step goes there as its operations.
+      const titleOf = (state: DeckEditState) =>
+        state.slides[0]!.elements.find((item) => item.role === 'title')!;
+      const titleId = titleOf(await stateIn(local, team.here)).id;
+      await local.request(`/api/decks/${team.here}/edit/operations`, {
+        method: 'POST',
+        json: {
+          baseSeq: 0,
+          operations: [{ type: 'setText', elementId: titleId, paragraphs: ['Von hier'] }],
+        },
+      });
+      await pass();
+      const there = await stateIn(cloud, team.there, desktop.cookie);
+      expect(there.seq).toBe(1);
+      expect(titleOf(there).paragraphs).toEqual(['Von hier']);
+      // Edited there: the copy takes it in as a new version.
+      await cloud.request(`/api/decks/${team.there}/edit/operations`, {
+        method: 'POST',
+        cookie: desktop.cookie,
+        json: {
+          baseSeq: 1,
+          operations: [{ type: 'setText', elementId: titleId, paragraphs: ['Von dort'] }],
+        },
+      });
+      await pass();
+      await pass();
+      expect(titleOf(await stateIn(local, team.here)).paragraphs).toEqual(['Von dort']);
+      // Offline the edit waits here; with the connection back it goes up.
+      offline = true;
+      await local.request(`/api/decks/${team.here}/edit/operations`, {
+        method: 'POST',
+        json: {
+          operations: [{ type: 'setText', elementId: titleId, paragraphs: ['Im Zug'] }],
+        },
+      });
+      await pass();
+      expect(await status()).toMatchObject({ sync: { state: 'offline' } });
+      offline = false;
+      await pass();
+      expect(titleOf(await stateIn(cloud, team.there, desktop.cookie)).paragraphs).toEqual([
+        'Im Zug',
+      ]);
+      // Renamed here: there too; renamed there: here too.
+      await local.request(`/api/decks/${team.here}`, {
+        method: 'PATCH',
+        json: { title: 'Team 2' },
+      });
+      await pass();
+      expect((await deckIn(cloud, desktop.cookie)).map((deck) => deck.title)).toContain('Team 2');
+      await cloud.request(`/api/decks/${team.there}`, {
+        method: 'PATCH',
+        cookie: desktop.cookie,
+        json: { title: 'Team' },
+      });
+      await pass();
+      expect((await deckIn(local)).map((deck) => deck.title)).toContain('Team');
+      // Deleted there: gone here.
+      const here = await pair('Hier');
+      await cloud.request(`/api/decks/${here.there}`, { method: 'DELETE', cookie: desktop.cookie });
+      await pass();
+      expect((await deckIn(local)).map((deck) => deck.title)).toEqual(['Team']);
+      // One of the account's decks marked „Auf diesem Gerät behalten“; decks made here need none.
+      // Other bytes: the same file twice in a workspace is one deck.
+      const other = async (note: string) => {
+        const zip = await JSZip.loadAsync(DEMO_ODP);
+        zip.file('note.txt', note);
+        return zip.generateAsync({ type: 'uint8array' });
+      };
+      await cloud.request(`/api/decks/upload?workspaceId=${teamSpace.id}`, {
+        method: 'POST',
+        cookie: desktop.cookie,
+        body: odpForm(await other('Mitnehmen'), 'Mitnehmen.odp'),
+      });
+      await local.request('/api/decks/upload', {
+        method: 'POST',
+        body: odpForm(await other('Eigene'), 'Eigene.odp'),
+      });
+      await Promise.all([local.deps.queue.idle(), cloud.deps.queue.idle()]);
+      await pass();
+      await pass();
+      const keepIt = await pair('Mitnehmen');
+      const own = await pair('Eigene');
+      expect(Object.keys(((await status()) as CloudStatus).cloudDecks ?? {}).sort()).toEqual(
+        [team.here, keepIt.here].sort(),
+      );
+      const keep = (deckId: string) =>
+        local.request(`/api/desktop/cloud/decks/${deckId}/keep`, {
+          method: 'PUT',
+          json: { keep: true },
+        });
+      expect(
+        ((await (await keep(keepIt.here)).json()) as CloudStatus).cloudDecks?.[keepIt.here],
+      ).toEqual({
+        keep: true,
+      });
+      expect((await keep(own.here)).status).toBe(404);
+      // Taken once; never without the verifier; never after five minutes.
+      const trade = (body: { code: string; verifier: string }) =>
+        cloud.request('/api/auth/desktop/token', { method: 'POST', json: body });
+      const someVerifier = 'v'.repeat(43);
+      expect(await (await trade({ code, verifier: someVerifier })).json()).toMatchObject({
+        error: { code: 'invalid_code' },
+      });
+      const second = await start();
+      const late = (await (await askCode(second.challenge, desktop.cookie)).json()) as {
+        code: string;
+      };
+      expect((await trade({ code: late.code, verifier: someVerifier })).status).toBe(400);
+      expect((await trade({ code: `${late.code}x`, verifier: someVerifier })).status).toBe(400);
+      cloud.clock.advance(6 * 60_000);
+      expect(
+        (
+          await local.request('/api/desktop/cloud/finish', {
+            method: 'POST',
+            json: { code: late.code, state: second.state },
+          })
+        ).status,
+      ).toBe(400);
+      // „Abmelden“ forgets the account here and ends the app's session there – the browser stays.
+      expect(
+        await (await local.request('/api/desktop/cloud', { method: 'DELETE' })).json(),
+      ).toEqual({ server: 'http://cloud.test', account: null, sync: null, cloudDecks: {} });
+      expect(await sessionsOf()).toHaveLength(1);
+      expect(await sessionsOf()).not.toContain('Slider Desktop');
+      // Like iCloud: the account's decks left this machine, the kept one and the own one stay.
+      expect((await deckIn(local)).map((deck) => deck.title).sort()).toEqual([
+        'Eigene',
+        'Mitnehmen',
+      ]);
+      expect(await (await local.request('/api/workspaces')).json()).toHaveLength(1);
+      // Signed in again they join their decks there, nothing is uploaded twice.
+      const again = await start();
+      const { code: againCode } = (await (
+        await askCode(again.challenge, desktop.cookie)
+      ).json()) as { code: string };
+      await local.request('/api/desktop/cloud/finish', {
+        method: 'POST',
+        json: { code: againCode, state: again.state },
+      });
+      await pass();
+      await pass();
+      const titles = ['Eigene', 'Mitnehmen', 'Team'];
+      expect((await deckIn(cloud, desktop.cookie)).map((deck) => deck.title).sort()).toEqual(
+        titles,
+      );
+      expect((await deckIn(local)).map((deck) => deck.title).sort()).toEqual(titles);
+      // Another server, like Bitwarden: typed as an address, checked to be a Slider before the
+      // browser opens – and only once signed out.
+      const startAt = (server: string) =>
+        local.request('/api/desktop/cloud/start', { method: 'POST', json: { server } });
+      expect((await startAt('http://localhost:7')).status).toBe(409);
+      // Off the desktop there is no such route.
+      expect((await cloud.request('/api/desktop/cloud')).status).toBe(404);
+      // A file on this computer is the truth (BER-201): opened, every step goes back into it, a
+      // change made elsewhere comes in as a new version; only Electron may name a path.
+      const filePath = path.join(dataDir, 'Datei.odp');
+      await writeFile(filePath, await other('Datei'));
+      const electron = { [DESKTOP_SECRET_HEADER]: local.deps.config.secret };
+      const open = (headers: Record<string, string>) =>
+        local.request('/api/desktop/files/open', {
+          method: 'POST',
+          headers,
+          json: { path: filePath },
+        });
+      expect((await open({})).status).toBe(403);
+      const opened = (await (await open(electron)).json()) as { deckId: string; linked: boolean };
+      expect(opened.linked).toBe(true);
+      await local.deps.queue.idle();
+      // An identical copy of it opened too: a presentation of its own, the first keeps its file.
+      const copyPath = path.join(dataDir, 'Kopie.odp');
+      await writeFile(copyPath, await readFile(filePath));
+      const copy = (await (
+        await local.request('/api/desktop/files/open', {
+          method: 'POST',
+          headers: electron,
+          json: { path: copyPath },
+        })
+      ).json()) as { deckId: string };
+      expect(copy.deckId).not.toBe(opened.deckId);
+      expect(await (await local.request('/api/desktop/files')).json()).toMatchObject({
+        [opened.deckId]: { path: filePath },
+        [copy.deckId]: { path: copyPath },
+      });
+      await local.deps.queue.idle();
+      await local.request(`/api/decks/${copy.deckId}`, { method: 'DELETE' });
+      // Opened through a symlink: the file it points to, the same presentation.
+      const alias = path.join(dataDir, 'Verknüpfung.odp');
+      await symlink(filePath, alias);
+      const viaAlias = await local.request('/api/desktop/files/open', {
+        method: 'POST',
+        headers: electron,
+        json: { path: alias },
+      });
+      expect(((await viaAlias.json()) as { deckId: string }).deckId).toBe(opened.deckId);
+      const filePass = async () => {
+        await local.request('/api/desktop/files/sync', { method: 'POST' });
+        await local.deps.queue.idle();
+      };
+      // A Finder tag on it stays when Slider writes it (macOS: extended attributes).
+      const tagged = process.platform === 'darwin';
+      if (tagged) execFileSync('/usr/bin/xattr', ['-w', 'org.slider.test', 'rot', filePath]);
+      const fileTitle = titleOf(await stateIn(local, opened.deckId)).id;
+      await local.request(`/api/decks/${opened.deckId}/edit/operations`, {
+        method: 'POST',
+        json: {
+          baseSeq: 0,
+          operations: [{ type: 'setText', elementId: fileTitle, paragraphs: ['In der Datei'] }],
+        },
+      });
+      await filePass();
+      const written = await readFile(filePath);
+      const answer = await local.request(`/api/decks/${opened.deckId}/file`);
+      expect(Buffer.from(await answer.arrayBuffer()).equals(written)).toBe(true);
+      if (tagged) {
+        expect(
+          execFileSync('/usr/bin/xattr', ['-p', 'org.slider.test', filePath], { encoding: 'utf8' }),
+        ).toBe('rot\n');
+      }
+      // Saved elsewhere (LibreOffice): a new version here.
+      await writeFile(filePath, await other('Außen'));
+      await filePass();
+      await filePass();
+      expect(
+        z
+          .array(z.unknown())
+          .parse(await (await local.request(`/api/decks/${opened.deckId}/revisions`)).json()),
+      ).toHaveLength(2);
+      expect(((await (await open(electron)).json()) as { deckId: string }).deckId).toBe(
+        opened.deckId,
+      );
+      expect(await (await local.request('/api/desktop/files')).json()).toEqual({
+        [opened.deckId]: { path: filePath, missing: false, changedAt: expect.any(String) },
+      });
+      // Renamed in its folder: found again.
+      const renamedPath = path.join(dataDir, 'Umbenannt.odp');
+      await rename(filePath, renamedPath);
+      await filePass();
+      expect(await (await local.request('/api/desktop/files')).json()).toMatchObject({
+        [opened.deckId]: { path: renamedPath, missing: false },
+      });
+      expect(
+        await (
+          await local.request(`/api/desktop/files/${opened.deckId}/reveal`, { method: 'POST' })
+        ).json(),
+      ).toEqual({ path: renamedPath });
+      // Deleted here: the file stays.
+      await local.request(`/api/decks/${opened.deckId}`, { method: 'DELETE' });
+      await filePass();
+      expect(await (await local.request('/api/desktop/files')).json()).toEqual({});
+      expect((await readFile(renamedPath)).byteLength).toBeGreaterThan(0);
+      // „Als Datei sichern …“ to a file not there yet: written at once, linked from then on.
+      const savedPath = path.join(dataDir, 'Gesichert.odp');
+      const saved = await local.request(`/api/desktop/files/${own.here}/save`, {
+        method: 'POST',
+        headers: electron,
+        json: { path: savedPath },
+      });
+      expect(await saved.json()).toEqual({
+        [own.here]: { path: savedPath, missing: false, changedAt: null },
+      });
+      const ownFile = await local.request(`/api/decks/${own.here}/file`);
+      expect(Buffer.from(await ownFile.arrayBuffer()).equals(await readFile(savedPath))).toBe(true);
+      await local.request('/api/desktop/cloud', { method: 'DELETE' });
+      const refusal = async (server: string) => {
+        const answer = await startAt(server);
+        return [
+          answer.status,
+          ((await answer.json()) as { error: { message: string } }).error.message,
+        ];
+      };
+      expect(await refusal('http://slider.firma.de')).toEqual([
+        400,
+        'Der Slider-Server muss über https:// erreichbar sein.',
+      ]);
+      expect(await refusal('http://127.0.0.1:5')).toEqual([
+        400,
+        'Unter 127.0.0.1:5 läuft kein Slider.',
+      ]);
+      expect(await refusal('https://weg.test')).toEqual([502, 'weg.test ist nicht erreichbar.']);
+      const selfHosted = (await (await startAt('http://localhost:7/egal?x=1')).json()) as {
+        url: string;
+      };
+      const page = new URL(selfHosted.url);
+      expect(page.origin + page.pathname).toBe('http://localhost:7/desktop-anmelden');
+      // Not before the sign-in is done.
+      expect(await status()).toMatchObject({ server: 'http://cloud.test' });
+      const { code: hostedCode } = (await (
+        await askCode(page.searchParams.get('challenge') ?? '', desktop.cookie)
+      ).json()) as { code: string };
+      expect(
+        await (
+          await local.request('/api/desktop/cloud/finish', {
+            method: 'POST',
+            json: { code: hostedCode, state: page.searchParams.get('state') },
+          })
+        ).json(),
+      ).toMatchObject({ server: 'http://localhost:7', account: { name: 'Dana Desk' } });
+      // Signed out, the server stays for the next „Anmelden“ – across restarts too.
+      expect(
+        await (await local.request('/api/desktop/cloud', { method: 'DELETE' })).json(),
+      ).toMatchObject({ server: 'http://localhost:7', account: null });
+      expect(JSON.parse(await readFile(path.join(dataDir, 'cloud.json'), 'utf8'))).toEqual({
+        server: 'http://localhost:7',
+      });
+    } finally {
+      await local.cleanup();
+      await cloud.cleanup();
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  }, 60_000);
 
   it('ends a session 90 days after its login, however often it is used – old sessions too', async () => {
     ctx = await createTestContext({ config: authConfig() });
@@ -515,7 +991,7 @@ describe('Microsoft login', () => {
     });
   };
 
-  it('the first login creates a normal account – never instance admin – and stores the Graph token', async () => {
+  it('the first login creates a normal account – never instance admin – and keeps no file token', async () => {
     const idp = fakeMicrosoft();
     const dataDir = await mkdtemp(path.join(tmpdir(), 'slider-auth-ms-'));
     await msContext(idp, { dataDir, auth: { ...authConfig().auth!, signup: 'open' } });
@@ -525,9 +1001,7 @@ describe('Microsoft login', () => {
     const { deckId } = await createReadyDeck(ctx);
 
     const start = await ctx.request('/api/auth/microsoft/login', { cookie: grant });
-    expect(location(start).searchParams.get('scope')).toBe(
-      'openid profile email offline_access User.Read Files.Read.All',
-    );
+    expect(location(start).searchParams.get('scope')).toBe('openid profile email');
     expect(location(start).searchParams.get('nonce')).toMatch(/^[\w-]{43}$/);
 
     const res = await redirectLogin('microsoft', idp, { returnTo: '/', cookie: grant });
@@ -538,7 +1012,6 @@ describe('Microsoft login', () => {
     expect(body.user).toMatchObject({
       email: 'robert.hofmann@example.org',
       isInstanceAdmin: false,
-      microsoftConnected: true,
     });
     expect(body.user?.id).not.toBe(ctx.ownerId);
     expect(body.workspaces).toEqual([expect.objectContaining({ name: 'Example', role: 'admin' })]);
@@ -554,18 +1027,47 @@ describe('Microsoft login', () => {
       subject: `${TENANT}:oid-robert`,
       userId: body.user?.id,
     });
-    const [connection] = await ctx.deps.db
-      .select()
-      .from(microsoftConnections)
-      .where(eq(microsoftConnections.userId, body.user?.id ?? ''));
-    expect(await decryptToken(SECRET, connection?.refreshToken ?? '')).toBe('rt-1');
-    expect(connection?.identitySubject).toBe(`${TENANT}:oid-robert`);
     expect(await ctx.deps.db.select().from(users).where(eq(users.isInstanceAdmin, true))).toEqual(
       [],
     );
+
+    // File connections from before Google Drive and OneDrive went: revoked at Google, deleted,
+    // the deck lets go of them.
+    const secret = ctx.deps.config.secret;
+    await ctx.deps.db.insert(googleConnections).values({
+      id: 'g1',
+      userId: ctx.ownerId,
+      subject: 'sub-1',
+      refreshToken: await encryptToken(secret, 'google-refresh', 'google-refresh-token'),
+    });
+    await ctx.deps.db.insert(microsoftConnections).values({
+      id: 'm1',
+      userId: ctx.ownerId,
+      subject: 'oid-1',
+      refreshToken: await encryptToken(secret, 'ms-refresh'),
+    });
+    await ctx.deps.db
+      .update(decks)
+      .set({ googleConnectionId: 'g1', microsoftConnectionId: 'm1' })
+      .where(eq(decks.id, deckId));
+    const revoked: string[] = [];
+    await retireFileConnections({
+      db: ctx.deps.db,
+      secret,
+      log: silentLogger,
+      fetch: async (url, init) => {
+        revoked.push(`${String(url)} ${String(init?.body)}`);
+        return new Response(null, { status: 200 });
+      },
+    });
+    expect(revoked).toEqual(['https://oauth2.googleapis.com/revoke token=google-refresh']);
+    expect(await ctx.deps.db.select().from(googleConnections)).toEqual([]);
+    expect(await ctx.deps.db.select().from(microsoftConnections)).toEqual([]);
+    const [linked] = await ctx.deps.db.select().from(decks).where(eq(decks.id, deckId));
+    expect(linked).toMatchObject({ googleConnectionId: null, microsoftConnectionId: null });
   });
 
-  it('signed in, connects file access and links the login – no new session; unverified e-mails never sign up', async () => {
+  it('signed in, links the login – no new session; unverified e-mails never sign up', async () => {
     const idp = fakeMicrosoft({ oid: 'oid-lena', preferred_username: 'lena@firma.de' });
     await msContext(idp, {}, { instanceAdmin: true });
     await finishBootstrap();
@@ -573,10 +1075,7 @@ describe('Microsoft login', () => {
     const res = await redirectLogin('microsoft', idp, { returnTo: '/neu', cookie: lena.cookie });
     expect(res.headers.get('location')).toBe('http://localhost:5173/neu');
     expect(sessionCookieFrom(res)).toBeNull();
-    expect((await me(lena.cookie)).body.user).toMatchObject({
-      id: lena.user.id,
-      microsoftConnected: true,
-    });
+    expect((await me(lena.cookie)).body.user).toMatchObject({ id: lena.user.id });
     const loginsOf = (userId: string) =>
       ctx.deps.db
         .select({ provider: userIdentities.provider })
@@ -584,10 +1083,9 @@ describe('Microsoft login', () => {
         .where(eq(userIdentities.userId, userId));
     expect(await loginsOf(lena.user.id)).toEqual([{ provider: 'microsoft' }]);
 
-    // Someone else may get files through the same Microsoft account, but not its login.
+    // Someone else may not take its login.
     const max = await signedInUser(ctx, { name: 'Max', email: 'max@firma.de' });
     await redirectLogin('microsoft', idp, { returnTo: '/neu', cookie: max.cookie });
-    expect((await me(max.cookie)).body.user?.microsoftConnected).toBe(true);
     expect(await loginsOf(max.user.id)).toEqual([]);
     expect(await loginsOf(lena.user.id)).toEqual([{ provider: 'microsoft' }]);
 

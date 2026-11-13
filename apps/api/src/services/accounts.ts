@@ -408,8 +408,7 @@ export type UnlinkResult = { ok: true } | { ok: false; error: 'not_found' | 'las
  * Removes a provider login from the account ("Trennen" on /konto). Only while another login
  * identity remains: passkeys don't count, they only sign into an account that has a login. Under
  * the same per-account lock as {@link deletePasskey}, so two unlinks at once can't both see the
- * other as the remaining one. The Microsoft file access stays; it is disconnected on its own
- * (`DELETE /me/microsoft/:id`). Sessions don't record their login: the route ends every other
+ * other as the remaining one. Sessions don't record their login: the route ends every other
  * one (`endOtherSessions`).
  */
 export async function unlinkIdentity(

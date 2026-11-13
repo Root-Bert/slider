@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
-import type { Deck, NextcloudConnection, NextcloudEntry } from '@slider/shared';
+import type { NextcloudConnection, NextcloudEntry } from '@slider/shared';
 import { ApiError } from '@/lib/api-client';
 import {
   nextcloudPreviewUrl,
-  useImportNextcloudItem,
   useNextcloudConnections,
   useNextcloudListing,
   type NextcloudView,
@@ -47,24 +46,23 @@ function sortEntries(entries: NextcloudEntry[], sort: Sort): NextcloudEntry[] {
   );
 }
 
+/** What happens to a picked file: imported as a presentation, or taken as material. */
+type OnPick = (entry: NextcloudEntry, connectionId: string) => Promise<unknown>;
+
+/** A presentation by its name – any other file gets a plain file icon. */
+const DECK_FILE = /\.(pptx?|potx|odp|otp|key|pdf)$/i;
+
 const connectionLabel = (connection: NextcloudConnection) =>
   `${connection.account} | ${nextcloudHost(connection.server)}`;
 
 /**
- * Picks a presentation from a connected Nextcloud (BER-135) – the body of the panel the
- * "Aus Nextcloud wählen" button opens into. Nextcloud has no picker to embed, so this lists its
- * folders, "Mit mir geteilt" and search results through the API; every file and
- * folder shows. Without an account it connects one first.
+ * Picks a file from a connected Nextcloud (BER-135) – a presentation to import, or material for
+ * a deck: the body of the panel the "Aus Nextcloud wählen" button opens into. Nextcloud has no
+ * picker to embed, so this lists its folders, "Mit mir geteilt" and search results through the
+ * API; every file and folder shows. Without an account it connects one first. `onPick` runs while
+ * the file shows a spinner; what it throws shows under the list.
  */
-export function NextcloudBrowser({
-  workspaceId,
-  onImported,
-  className,
-}: {
-  workspaceId: string;
-  onImported: (deck: Deck) => void;
-  className?: string;
-}) {
+export function NextcloudBrowser({ onPick, className }: { onPick: OnPick; className?: string }) {
   const connections = useNextcloudConnections();
   const usable = (connections.data ?? []).filter((c) => !c.needsReconnect);
   const [chosen, setChosen] = useState<string | null>(null);
@@ -91,27 +89,14 @@ export function NextcloudBrowser({
               className="max-w-[420px]"
             />
           )}
-          <FileList
-            key={connection.id}
-            connection={connection}
-            workspaceId={workspaceId}
-            onImported={onImported}
-          />
+          <FileList key={connection.id} connection={connection} onPick={onPick} />
         </>
       )}
     </div>
   );
 }
 
-function FileList({
-  connection,
-  workspaceId,
-  onImported,
-}: {
-  connection: NextcloudConnection;
-  workspaceId: string;
-  onImported: (deck: Deck) => void;
-}) {
+function FileList({ connection, onPick }: { connection: NextcloudConnection; onPick: OnPick }) {
   const [tab, setTab] = useState<Tab>('files');
   const [path, setPath] = useState('/');
   const [sort, setSort] = useState<Sort>('name');
@@ -129,8 +114,8 @@ function FileList({
         ? { kind: 'shared' }
         : { kind: 'files', path };
   const listing = useNextcloudListing(connection.id, view);
-  const importItem = useImportNextcloudItem(workspaceId);
   const [picked, setPicked] = useState<string | null>(null);
+  const [pickError, setPickError] = useState<string | null>(null);
 
   const open = (entry: NextcloudEntry) => {
     if (entry.folder) {
@@ -141,10 +126,14 @@ function FileList({
       return;
     }
     setPicked(entry.fileId);
-    importItem.mutate(
-      { connectionId: connection.id, fileId: entry.fileId },
-      { onSuccess: onImported, onSettled: () => setPicked(null) },
-    );
+    setPickError(null);
+    onPick(entry, connection.id)
+      .catch((error: unknown) =>
+        setPickError(
+          error instanceof Error ? error.message : 'Die Datei konnte nicht geladen werden.',
+        ),
+      )
+      .finally(() => setPicked(null));
   };
 
   const loginLost =
@@ -226,7 +215,7 @@ function FileList({
                   connectionId={connection.id}
                   showPath={view.kind !== 'files'}
                   pending={picked === entry.fileId}
-                  disabled={importItem.isPending}
+                  disabled={picked !== null}
                   onClick={() => open(entry)}
                 />
               </li>
@@ -234,7 +223,7 @@ function FileList({
           </ul>
         )}
       </div>
-      {importItem.error && <p className="pb-4 text-sm text-danger">{importItem.error.message}</p>}
+      {pickError && <p className="pb-4 text-sm text-danger">{pickError}</p>}
     </div>
   );
 }
@@ -312,9 +301,13 @@ function EntryButton({
           onError={() => setPreviewFailed(true)}
           className="size-9 shrink-0 rounded-control-sm bg-surface-1 object-cover"
         />
-      ) : (
+      ) : DECK_FILE.test(entry.name) ? (
         <IconTile tone="inherit">
           <PowerPointMark size={20} />
+        </IconTile>
+      ) : (
+        <IconTile>
+          <Icon name="attachFile" size={20} />
         </IconTile>
       )}
       <span className="flex min-w-0 flex-1 flex-col">

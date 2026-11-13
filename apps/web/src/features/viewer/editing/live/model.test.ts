@@ -19,7 +19,6 @@ import {
   commonValue,
   formatRange,
   groupedElement,
-  heldStill,
   liveFromRich,
   maxCornerRadius,
   newPartIds,
@@ -30,6 +29,8 @@ import {
   withGroupIn,
   wordAt,
 } from './model';
+import { insertEach } from '../insert-image';
+import { pastedOf, pastedParagraphs, pastedTextBox } from '../paste';
 import { boxCss } from './css';
 import { editorFonts } from './fonts';
 
@@ -169,7 +170,7 @@ describe('the editor’s changes before the server answers', () => {
     },
   };
 
-  it('keeps each paragraph’s look for new text, and moves, restyles, deletes and adds elements', () => {
+  it('keeps each paragraph’s look for new text, and moves, restyles, deletes and adds elements', async () => {
     const rich = richFromLive([paragraph(['Neu', { bold: true }]), paragraph()]);
     expect(rich[1]?.runs).toEqual([{ ...style(), text: '' }]);
     // New text is offered Office's twins under their own names, never Microsoft's (a Calibri
@@ -281,6 +282,53 @@ describe('the editor’s changes before the server answers', () => {
     })!;
     expect(boxCss(lower, lower.live!)).toMatchObject({ minHeight: '4%' });
     expect(boxCss(lower, lower.live!).height).toBeUndefined();
+    // Pasted from outside (BER-202): a picture wins, but text an office app put beside its own
+    // picture of it is meant as text; text alone becomes a text box.
+    const png = new File([''], 'a.png', { type: 'image/png' });
+    expect(pastedOf({ images: [png], text: '', html: '<img src="x">' })?.kind).toBe('images');
+    expect(pastedOf({ images: [png], text: 'a.png', html: '' })?.kind).toBe('images');
+    expect(pastedOf({ images: [png], text: 'Umsatz 2026', html: '<table><td>Umsatz' })).toEqual({
+      kind: 'text',
+      text: 'Umsatz 2026',
+    });
+    expect(pastedOf({ images: [], text: 'a\r\nb', html: '' })).toEqual({
+      kind: 'text',
+      text: 'a\nb',
+    });
+    expect(pastedOf({ images: [], text: ' \n ', html: '' })).toBeNull();
+    // Each line a paragraph in the slide's style, blank ends dropped, cut at what a box takes.
+    const pasted = pastedParagraphs('\n\nEins  \n\nZwei\n\n', style());
+    expect(pasted.cut).toBe(false);
+    expect(pasted.paragraphs.map((p) => p.runs.map((run) => run.text).join(''))).toEqual([
+      'Eins',
+      '',
+      'Zwei',
+    ]);
+    expect(pasted.paragraphs[0]?.runs[0]).toEqual({ ...style(), text: 'Eins' });
+    expect(pastedParagraphs('x'.repeat(6000), style()).cut).toBe(true);
+    expect(pastedParagraphs('a\n'.repeat(300), style()).paragraphs).toHaveLength(200);
+    // As wide as its line, in the slide's middle; a long one wraps at 80 % of the slide.
+    const page = { width: 28, height: 15.75 };
+    const tenPx = (line: string) => line.length * 10;
+    const short = pastedTextBox(pasted.paragraphs.slice(0, 1), style(), page, undefined, tenPx);
+    expect(short.w).toBeCloseTo((40 * (2.54 / 96) * 1.05 + 0.5) / 28);
+    expect(short.x + short.w / 2).toBeCloseTo(0.5);
+    expect(short.y + short.h / 2).toBeCloseTo(0.5);
+    const long = pastedParagraphs('Wort '.repeat(200), style()).paragraphs;
+    const wrapped = pastedTextBox(long, style(), page, undefined, tenPx);
+    expect(wrapped.w).toBeCloseTo(0.8);
+    expect(wrapped.h).toBeGreaterThan(short.h * 5);
+    expect(wrapped.y).toBeGreaterThanOrEqual(0);
+    // Pictures pasted or dropped together: each a step aside of the one before, as far down.
+    const steps: { x: number; y: number }[] = [];
+    const two = [new File([], 'a.png'), new File([], 'b.png')];
+    await insertEach(two, { x: 0.5, y: 0.5 }, 0.02, page, async (_, at) => {
+      steps.push(at);
+      return true;
+    });
+    expect(steps[0]).toEqual({ x: 0.5, y: 0.5 });
+    expect(steps[1]!.x).toBeCloseTo(0.52);
+    expect((steps[1]!.y - 0.5) * page.height).toBeCloseTo(0.02 * page.width);
     // A drawn frame turned before it was filled: added, then turned in the same step.
     const image = {
       type: 'addImage' as const,
@@ -294,12 +342,7 @@ describe('the editor’s changes before the server answers', () => {
       image,
       { type: 'setBox', elementId: 'sl-pic', box: image.box, rotation: 30 },
     ]);
-    // „Hinzufügen“: what was there held still – locked in the editor only, what came since free.
     const fresh = { ...element, id: 'sl2' };
-    const seen = heldStill([element, fresh], new Set([element.id]));
-    expect(seen.map((item) => item.locked)).toEqual([true, undefined]);
-    expect(element.locked).toBeUndefined();
-    expect(heldStill([element], null)[0]).toBe(element);
     // Grouped before the server answers: the box round them, moved only, its elements named.
     const grouped = groupedElement(
       { type: 'groupElements', elementIds: ['sl1', 'sl2'], newElementId: 'slg1' },

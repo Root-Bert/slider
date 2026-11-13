@@ -84,7 +84,9 @@ export function useComposerPosition(
     const placeNow = () => flushSync(place);
     // Placed before the first paint, so it shows up together with its mark, not a frame after.
     place();
-    const resizeObserver = new ResizeObserver(placeNow);
+    // A size the observer reports without `flushSync`, as the format panel does: drawn in the
+    // middle of its round, other sizes changed could no longer be reported that frame.
+    const resizeObserver = new ResizeObserver(place);
     if (popoverRef.current) resizeObserver.observe(popoverRef.current);
     // The slide resizes under a split drag or a zoom without anything scrolling.
     const slide = draft.slideId ? registry.getSlideElement(draft.slideId) : null;

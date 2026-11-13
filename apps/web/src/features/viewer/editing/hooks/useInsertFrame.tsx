@@ -2,7 +2,6 @@ import {
   clamp01,
   rectFromPoints,
   type EditableElement,
-  type LiveTextStyle,
   isNewLine,
   NEW_LINE_STROKE,
   type ElementFlip,
@@ -20,15 +19,23 @@ import {
   type DragEvent,
   type PointerEvent,
   type ReactNode,
+  type RefObject,
 } from 'react';
+import { isTextTarget } from '@/lib/dom';
 import { typesCharacter } from '@/lib/keyboard';
 import { useEditing } from '../editing-context';
 import { FramePanelPreview } from '../FormatBar';
-import { openPanelOn } from '../panel-tab';
+import { markSymbolFrame, openPanelOn } from '../panel-tab';
 import { EditableFrame } from '../../stage/EditableFrame';
-import { drawnRect, LINE_SNAP_PX, snappedPoint, type RectSize } from '../../stage/lib/rect-edit';
+import { FRAME_ATTR } from '../../stage/hooks/useRectEdit';
+import {
+  drawnRect,
+  LINE_SNAP_PX,
+  snappedPoint,
+  type RectSize,
+  type SnapLines,
+} from '../../stage/lib/rect-edit';
 import { ShapeOutline } from '../../stage/ShapeOutline';
-import { useSnapLines } from '../../template/useSnapLines';
 import {
   FrameOutline,
   FrameShape,
@@ -38,15 +45,9 @@ import {
 } from '../InsertFrameChooser';
 import { focusShapes } from '../frame-shapes';
 import { encloses, shownRect } from '../lib/group-layout';
-import { bringsFiles, imageFilesOf } from '../insert-image';
-import {
-  addedElement,
-  addedImage,
-  addedTurned,
-  canMove,
-  DEFAULT_STYLE,
-  NEW_BOX,
-} from '../live/model';
+import { bringsFiles, imageFilesOf, insertEach } from '../insert-image';
+import { textStyleOn } from '../paste';
+import { addedElement, addedImage, addedTurned, canMove, NEW_BOX } from '../live/model';
 import { newEditId } from '../new-id';
 import { typedAhead } from '../typed-ahead';
 import { usePlaceAiBox } from '../../voice/hooks/usePlaceAiBox';
@@ -57,8 +58,6 @@ const DRAFT_ID = 'frame-draft';
 const MIN_FRAME = 0.02;
 /** Typed into a new frame: taken by its element within this long, or dropped. */
 const HAND_OVER_MS = 5000;
-/** A click with the frame tool: a frame this large around it. */
-const CLICK_FRAME = { w: 0.3, h: 0.15 };
 /** Several pictures dropped at once: each this far aside of the one before (of the slide). */
 const DROP_STEP = 0.03;
 
@@ -73,23 +72,53 @@ const pointIn = (element: Element, event: { clientX: number; clientY: number }):
 /**
  * Drawing a frame on a slide while editing, then saying what it is for – picking the elements it
  * encloses together („Auswählen“, first and picked when it encloses any), or what goes in it: a
- * text, a shape or a picture (a placeholder until one is chosen). Dragging on the free slide draws one; with the
- * frame tool anywhere, over elements too; a click there places one of a default size, a click
- * on an element picks it as always (back to picking). Pictures dropped on the slide go on where
- * they fall. Drawn, its corners are caught at the lines a moved element is caught at (⌘ free, ⇧
- * square); till it is filled it moves, resizes and turns by the handles of a picked element. Rough on
- * purpose: put the idea on the slide, let the AI make it right (a comment).
+ * text, a shape, a picture or a symbol (a placeholder until one is chosen). Dragging on the free
+ * slide draws one; with ⇧ held, over elements too (a ⇧-click there still picks it together with
+ * those picked, `onShiftClick`; ⇧ again for a square). Pictures dropped on the slide go on where
+ * they fall. Drawn, its corners are caught at the lines a moved element is caught at (`snapLines`:
+ * the slide's, the guides, the other elements' sides and middles; ⌘ free, ⇧ square); till it is
+ * filled it moves, resizes and turns by the handles of a picked element. Rough on purpose: put the
+ * idea on the slide, let the AI make it right (a comment).
  */
-export function useInsertFrame(slideId: string) {
+export function useInsertFrame(
+  slideId: string,
+  /** The slide's edit layer: `data-adding` while ⇧ is held (its pointer a crosshair). */
+  layerRef: RefObject<HTMLElement | null>,
+  snapLines: SnapLines,
+  onShiftClick?: (element: EditableElement) => void,
+) {
   const editing = useEditing();
   const placeAiBox = usePlaceAiBox();
   // Where it was pressed (`raw`), caught at the lines close by (`from`); how close they catch.
+  // Begun with ⇧ on an element (`over`: its id, or null where it is found by the point): ⇧ held
+  // from then on squares nothing – let go and pressed again, it does.
   const press = useRef<{
     raw: Point;
     from: Point;
     moved: boolean;
     tolerance: RectSize;
+    over?: string | null;
+    shiftHeld?: boolean;
   } | null>(null);
+  const tool = editing.tool;
+  // ⇧ held: a drag adds over elements too – the pointer says so (`data-adding` on the layer, no
+  // render of it). Not while typing: ⇧ there writes capitals.
+  useEffect(() => {
+    const layer = layerRef.current;
+    if (!layer || tool !== 'select') return;
+    const follow = (event: KeyboardEvent) =>
+      layer.toggleAttribute('data-adding', event.shiftKey && !isTextTarget(event.target));
+    const off = () => layer.removeAttribute('data-adding');
+    window.addEventListener('keydown', follow);
+    window.addEventListener('keyup', follow);
+    window.addEventListener('blur', off);
+    return () => {
+      window.removeEventListener('keydown', follow);
+      window.removeEventListener('keyup', follow);
+      window.removeEventListener('blur', off);
+      off();
+    };
+  }, [layerRef, tool]);
   // A drag just ended: the click after it does not let go of anything.
   const dragged = useRef(false);
   // Being drawn: caught at the lines a moved or resized element is caught at (`caught`: which).
@@ -103,7 +132,6 @@ export function useInsertFrame(slideId: string) {
   const [turn, setTurn] = useState(0);
   // The drawn frame as shown while it is moved, resized or turned (`EditableFrame`'s preview).
   const [moving, setMoving] = useState<{ rect: Rect; rotation: number } | null>(null);
-  const snapLines = useSnapLines(slideId);
   const aspect = editing.pageSize.width / editing.pageSize.height;
   // The kind picked for the frame (`KindChooser`): its panel shows meanwhile.
   const [kind, setKind] = useState<FrameKind>('text');
@@ -119,12 +147,15 @@ export function useInsertFrame(slideId: string) {
   const typedRef = useRef<string | null>(null);
   // Handed to the new element: typed on into `typedAhead` until it is taken there.
   const handedTo = useRef<string | null>(null);
-  const tool = editing.tool;
   const stock = editing.state?.stockPhotos ?? false;
   const generation = editing.state?.imageGeneration ?? false;
-  // A picture goes on with typing when it has somewhere to go: a photo search, else a description.
-  const typedKinds: InsertKind[] =
-    !editing.offline && (stock || generation) ? ['text', 'image'] : ['text'];
+  // A picture goes on with typing when it has somewhere to go: a photo search, else a description;
+  // a symbol searches the symbols (here in the browser, online to put one in).
+  const typedKinds: InsertKind[] = editing.offline
+    ? ['text']
+    : stock || generation
+      ? ['text', 'image', 'symbol']
+      : ['text', 'symbol'];
 
   const keepTyped = (text: string | null) => {
     typedRef.current = text;
@@ -157,10 +188,31 @@ export function useInsertFrame(slideId: string) {
     return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
   }, [typing]);
 
+  /**
+   * ⇧ and a press on an element's body (not its handles – ⇧ there resizes in proportion or tilts –
+   * nor text being typed in): taken before the element, a frame drawn from there as on the free
+   * slide.
+   */
+  const onPointerDownCapture = (event: PointerEvent<HTMLDivElement>) => {
+    if (!event.shiftKey || tool !== 'select') return;
+    if (event.button !== 0 || event.pointerType === 'touch') return;
+    const target = event.target;
+    if (target === event.currentTarget || !(target instanceof Element)) return;
+    if (isTextTarget(target)) return;
+    const hit = target.closest('[data-edit-element]');
+    // Elements picked together: their shared frame, the element under the point.
+    if (!hit && !(target.hasAttribute(FRAME_ATTR) && !frame)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    begin(event, hit?.getAttribute('data-edit-element') ?? null);
+  };
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || event.pointerType === 'touch') return;
-    // On the free slide – or anywhere with the frame tool (elements let the pointer through).
-    if (tool !== 'frame' && event.target !== event.currentTarget) return;
+    // On the free slide.
+    if (event.target !== event.currentTarget) return;
+    begin(event);
+  };
+  function begin(event: PointerEvent<HTMLDivElement>, over?: string | null) {
     event.currentTarget.setPointerCapture(event.pointerId);
     const box = event.currentTarget.getBoundingClientRect();
     const tolerance = {
@@ -171,9 +223,15 @@ export function useInsertFrame(slideId: string) {
     // Begun at a line close by, as its other corner is caught – free with ⌘ (Ctrl).
     const free = event.metaKey || event.ctrlKey;
     const from = free ? raw : snappedPoint(raw, snapLines, tolerance).point;
-    press.current = { raw, from, moved: false, tolerance };
+    press.current = {
+      raw,
+      from,
+      moved: false,
+      tolerance,
+      ...(over !== undefined && { over, shiftHeld: true }),
+    };
     setFrame(null);
-  };
+  }
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
     const start = press.current;
     if (!start) return;
@@ -182,15 +240,16 @@ export function useInsertFrame(slideId: string) {
     if (!start.moved && travel.w < MIN_FRAME / 2 && travel.h < MIN_FRAME / 2) return;
     start.moved = true;
     // Its moving corner caught at the lines close by, as a resized element's – free with ⌘
-    // (Ctrl); square with ⇧.
+    // (Ctrl); square with ⇧ (begun with ⇧ on an element: pressed again).
     const free = event.metaKey || event.ctrlKey;
+    if (!event.shiftKey) start.shiftHeld = false;
     setDrawing(
       drawnRect(
         free ? start.raw : start.from,
         to,
         free ? null : snapLines,
         start.tolerance,
-        event.shiftKey,
+        event.shiftKey && !start.shiftHeld,
         aspect,
       ),
     );
@@ -229,32 +288,13 @@ export function useInsertFrame(slideId: string) {
       }
       const to = pointIn(event.currentTarget, event);
       openFrame(rect, { x: to.x < start.from.x, y: to.y < start.from.y });
-    } else if (!start.moved && tool === 'frame') {
+    } else if (!start.moved && start.over !== undefined) {
+      // ⇧-click on an element: picked together with those picked, as always.
       dragged.current = true;
-      // A click on an element with the frame tool: picked as always (the picked text: typed in
-      // there).
-      const element = elementAt(start.raw);
-      if (element) {
-        editing.setTool('select');
-        const selection = { slideId, elementId: element.id };
-        if (
-          element.live &&
-          (editing.selection?.elementId === element.id ||
-            // Typing in another text: typed on here at once.
-            (editing.textEditing !== null && editing.textEditing !== element.id))
-        ) {
-          editing.startText(selection, { x: event.clientX, y: event.clientY });
-        } else editing.select(selection);
-        return;
-      }
-      // On the free slide: a frame around it, inside the slide.
-      const { w, h } = CLICK_FRAME;
-      openFrame({
-        x: Math.min(1 - w, Math.max(0, start.raw.x - w / 2)),
-        y: Math.min(1 - h, Math.max(0, start.raw.y - h / 2)),
-        w,
-        h,
-      });
+      const element = start.over
+        ? editing.elementsOf(slideId).find((item) => item.id === start.over)
+        : elementAt(start.raw);
+      if (element) onShiftClick?.(element);
     }
   };
   /**
@@ -327,12 +367,9 @@ export function useInsertFrame(slideId: string) {
     event.stopPropagation();
     const images = imageFilesOf(event.dataTransfer);
     const at = pointIn(event.currentTarget, event);
-    void (async () => {
-      for (const [index, image] of images.entries()) {
-        const step = index * DROP_STEP;
-        await editing.insertImage(image, slideId, { x: at.x + step, y: at.y + step });
-      }
-    })();
+    void insertEach(images, at, DROP_STEP, editing.pageSize, (image, there) =>
+      editing.insertImage(image, slideId, there),
+    );
   };
   const onPointerCancel = () => {
     press.current = null;
@@ -357,6 +394,8 @@ export function useInsertFrame(slideId: string) {
     const operation = operationFor(kind, rect, slide.pageId, elementId, shape, drawnWay);
     // Picked once the server has it: its pictures (to type over, to restyle) are drawn then.
     setPlacing({ rect, kind, rotation });
+    // Its picture part opens on the symbols.
+    if (kind === 'symbol') markSymbolFrame(elementId);
     // Turned: turned in the same step (one undo) – a new element comes unturned.
     const ok = await editing.apply(addedTurned(operation, rotation));
     const typedOn = typedRef.current;
@@ -393,7 +432,8 @@ export function useInsertFrame(slideId: string) {
     shape?: NewShape,
     way?: ElementFlip,
   ): AddElementOperation | AddImageOperation => {
-    if (kind === 'image') return { type: 'addImage', pageId, elementId, box: rect, imageId: null };
+    if (kind === 'image' || kind === 'symbol')
+      return { type: 'addImage', pageId, elementId, box: rect, imageId: null };
     // A line or arrow: across the frame as it was drawn, no fill, no text.
     if (isNewLine(shape))
       return {
@@ -538,12 +578,23 @@ export function useInsertFrame(slideId: string) {
   );
 
   return {
-    handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onDragOver, onDrop },
+    handlers: {
+      onPointerDownCapture,
+      onPointerDown,
+      onPointerMove,
+      onPointerUp,
+      onPointerCancel,
+      onDragOver,
+      onDrop,
+    },
     takesClick,
     elementAt,
     overlay,
-    /** Elements let the pointer through to the slide: the frame tool draws over them. */
-    passThrough: tool === 'frame',
+    /**
+     * The frame as it is drawn, or moved and resized by its handles (unturned only): the lines it
+     * lies on are drawn across the slide, as for a dragged element.
+     */
+    dragged: drawing?.rect ?? (moving && moving.rotation === 0 ? moving.rect : null),
   };
 }
 
@@ -554,21 +605,4 @@ function clippedToSlide(rect: Rect): Rect {
   const w = Math.min(1, rect.x + rect.w) - x;
   const h = Math.min(1, rect.y + rect.h) - y;
   return w > 0 && h > 0 ? { x, y, w, h } : rect;
-}
-
-/** A new text looks like the slide's body text (not its title), else like a plain default. */
-function textStyleOn(elements: readonly EditableElement[]): LiveTextStyle {
-  const body = elements.find(
-    (element) => element.live && element.role !== 'title' && !element.live.placeholder,
-  );
-  const mark = body?.live?.paragraphs[0]?.mark;
-  if (!mark) return DEFAULT_STYLE;
-  return {
-    font: mark.font,
-    size: Math.min(mark.size, 28),
-    color: mark.color,
-    bold: false,
-    italic: false,
-    underline: false,
-  };
 }

@@ -7,10 +7,14 @@ import { z } from 'zod';
  * No money: list prices are guesses, only what is measured is shown.
  */
 
-/** What a request was for – the dashboard names them. `create`: a deck created by the AI. */
+/**
+ * What a request was for – the dashboard names them. `create`: a deck created by the AI;
+ * `material`: a question about a deck's material („Fragen“ on the material page).
+ */
 export const AI_FEATURES = [
   'edit',
   'create',
+  'material',
   'summary',
   'voice',
   'live',

@@ -29,8 +29,9 @@ import { extractLater } from './material-extract';
 import { assertStorageFor, assertWithinLimits } from './plans';
 
 /*
- * The board of a deck – Folie 0, „Material“: files, notes and links lying on a free surface
- * before slide 1. Never part of the deck's file. Everyone who sees the deck sees the board;
+ * The board of a deck – its material page „Material“: files, notes and links lying on a free
+ * surface on a page of its own beside the slides. Never part of the deck's file. Everyone who
+ * sees the deck sees the board;
  * whoever may comment puts things down, moves them and deletes their own; whoever manages the
  * deck deletes anyone's (as comments). Every change is told to the others at once
  * (`LiveHub.boardChanged`). Files come over tus (`purpose material`), their text is read in the

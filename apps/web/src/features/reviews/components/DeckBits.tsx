@@ -1,15 +1,7 @@
 import type { ReactNode } from 'react';
-import type { Deck, DeckSource, SlideRenderer } from '@slider/shared';
-import {
-  Badge,
-  cn,
-  GoogleMark,
-  Icon,
-  MicrosoftMark,
-  NextcloudMark,
-  ProgressBar,
-  Tooltip,
-} from '@/ui';
+import type { Deck, DeckSource } from '@slider/shared';
+import { Badge, cn, Icon, NextcloudMark, ProgressBar, Tooltip } from '@/ui';
+import { useDesktopDeck } from '@/lib/api';
 import { importActivityLabel, importFraction, isImporting, slidesLabel } from '@/lib/deck-labels';
 
 /** Right-hand status badge next to the title. Import state wins over the version. */
@@ -30,8 +22,9 @@ export function SlideCountChip({ count }: { count: number }) {
 
 /**
  * Bottom-left logos on the thumbnail: where the deck comes from and – once there are slides –
- * who drew the slide images (Microsoft, Google or LibreOffice). One logo when both are the same
- * (a OneDrive file Microsoft drew). `compact` (list rows) shows only the source.
+ * whether LibreOffice drew the slide images. `compact` (list rows) shows only the source. In the desktop
+ * app a deck marked „Auf diesem Computer behalten“ shows that too, and one that is a file on this
+ * computer (BER-201).
  *
  * Laid over the thumbnail instead of inside it: above the card's stretched title link (so the
  * chips get hover) and outside the frame's overflow clip (so their tooltips show). `className`
@@ -47,10 +40,10 @@ export function OriginChips({
   className?: string;
 }) {
   const source = SOURCES[deck.source];
-  const renderer =
-    !compact && deck.slideCount > 0 ? rendererOf(deck.thumbnailRenderer, deck.source) : null;
-  const rendererLabel = renderer && rendererTitle(renderer, deck.source, deck.officeFailure);
-  const same = renderer === source.vendor;
+  // Who drew the slide images (BER-94): only LibreOffice is shown – not the built-in SVG
+  // preview, a PDF's own pages, or the pictures Office drew before Slider stopped asking it.
+  const byLibreOffice = !compact && deck.slideCount > 0 && deck.thumbnailRenderer === 'libreoffice';
+  const here = useDesktopDeck(deck.id);
   return (
     <div className={cn('pointer-events-none absolute inset-0 z-(--z-raised)', className)}>
       {/* Hovering the chips counts as hovering the deck: otherwise the card would shrink back
@@ -62,13 +55,27 @@ export function OriginChips({
           compact ? 'bottom-1 left-1' : 'bottom-2 left-2',
         )}
       >
-        <OriginChip
-          label={same && rendererLabel ? `${source.title}, ${lower(rendererLabel)}` : source.title}
-        >
-          {source.mark}
-        </OriginChip>
-        {renderer && rendererLabel && !same && (
-          <OriginChip label={rendererLabel}>{RENDERER_MARKS[renderer]}</OriginChip>
+        <OriginChip label={source.title}>{source.mark}</OriginChip>
+        {byLibreOffice && (
+          <OriginChip label="Gerendert mit LibreOffice">
+            <LibreOfficeMark />
+          </OriginChip>
+        )}
+        {here.kept && (
+          <OriginChip label="Bleibt auf diesem Computer">
+            <Icon name="offlinePin" size={16} className="text-fg" />
+          </OriginChip>
+        )}
+        {here.file && (
+          <OriginChip
+            label={here.file.missing ? 'Datei nicht gefunden' : 'Datei auf diesem Computer'}
+          >
+            <Icon
+              name={here.file.missing ? 'warning' : 'description'}
+              size={16}
+              className="text-fg"
+            />
+          </OriginChip>
         )}
       </div>
     </div>
@@ -86,59 +93,23 @@ function OriginChip({ label, children }: { label: string; children: ReactNode })
   );
 }
 
-/** Who drew the slide images – the vendor, not the app: a Word file's pages are Microsoft's too. */
-type RendererVendor = 'microsoft' | 'google' | 'libreoffice';
-
-const microsoftMark = <MicrosoftMark size={12} />;
-const googleMark = <GoogleMark size={12} />;
-
-/** Where the deck comes from, instead of the old "OneDrive | …" text line. */
-const SOURCES: Record<DeckSource, { title: string; mark: ReactNode; vendor?: RendererVendor }> = {
-  onedrive: { title: 'Aus OneDrive', mark: microsoftMark, vendor: 'microsoft' },
-  sharepoint: { title: 'Aus SharePoint', mark: microsoftMark, vendor: 'microsoft' },
-  nextcloud: { title: 'Aus Nextcloud', mark: <NextcloudMark size={16} /> },
-  google: { title: 'Aus Google Drive', mark: googleMark, vendor: 'google' },
-  url: { title: 'Aus einem Link', mark: <Icon name="link" size={16} className="text-fg" /> },
-  upload: { title: 'Hochgeladen', mark: <Icon name="upload" size={16} className="text-fg" /> },
-};
-
-const RENDERER_MARKS: Record<RendererVendor, ReactNode> = {
-  microsoft: microsoftMark,
-  google: googleMark,
-  libreoffice: <LibreOfficeMark />,
-};
-
-const RENDERER_NAMES: Record<RendererVendor, string> = {
-  microsoft: 'Microsoft',
-  google: 'Google',
-  libreoffice: 'LibreOffice',
+const linkSource = {
+  title: 'Aus einem Link',
+  mark: <Icon name="link" size={16} className="text-fg" />,
 };
 
 /**
- * Who drew the slide images (BER-94); `null` for the built-in SVG preview and a PDF's own pages.
- * An `office` render of a Google deck is Google's own PDF (BER-119) – no Microsoft involved.
+ * Where the deck comes from. Decks once linked from OneDrive, SharePoint or Google Drive keep
+ * their source but read as any other link: Slider no longer reads files there.
  */
-function rendererOf(
-  renderer: SlideRenderer | null | undefined,
-  source: DeckSource,
-): RendererVendor | null {
-  if (renderer === 'office') return source === 'google' ? 'google' : 'microsoft';
-  if (renderer === 'libreoffice') return 'libreoffice';
-  return null;
-}
-
-/** The renderer's tooltip; when Microsoft or Google was tried and failed, it says why. */
-function rendererTitle(
-  renderer: RendererVendor,
-  source: DeckSource,
-  officeFailure?: string | null,
-): string {
-  const name = `Gerendert mit ${RENDERER_NAMES[renderer]}`;
-  if (renderer !== 'libreoffice' || !officeFailure) return name;
-  return `${name} – ${source === 'google' ? 'Google' : 'Microsoft'} ging nicht: ${officeFailure}`;
-}
-
-const lower = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
+const SOURCES: Record<DeckSource, { title: string; mark: ReactNode }> = {
+  onedrive: linkSource,
+  sharepoint: linkSource,
+  nextcloud: { title: 'Aus Nextcloud', mark: <NextcloudMark size={16} /> },
+  google: linkSource,
+  url: linkSource,
+  upload: { title: 'Hochgeladen', mark: <Icon name="upload" size={16} className="text-fg" /> },
+};
 
 /** LibreOffice's green document with the folded corner. */
 function LibreOfficeMark() {

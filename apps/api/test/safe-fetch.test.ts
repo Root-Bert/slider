@@ -8,6 +8,7 @@ import {
   isPdfBytes,
   readBodyCapped,
   redirectTarget,
+  streamBodyCapped,
   type LookupAll,
 } from '../src/sources/safe-fetch';
 import { publicLookup } from './helpers';
@@ -180,6 +181,34 @@ describe('responses', () => {
     await expect(
       readBodyCapped(new Response(streamOf([new Uint8Array(1)], true)), 10),
     ).rejects.toThrow('Die Datei konnte nicht vollständig geladen werden.');
+
+    // Passed on as it comes (a Nextcloud file for the material): the same cap, `ended` once.
+    let ended = 0;
+    const end = () => (ended += 1);
+    const passed = streamBodyCapped(
+      new Response(streamOf([new Uint8Array([1, 2]), new Uint8Array([3])])),
+      3,
+      end,
+    );
+    expect([...new Uint8Array(await new Response(passed).arrayBuffer())]).toEqual([1, 2, 3]);
+    expect(ended).toBe(1);
+    expect(() =>
+      streamBodyCapped(new Response('12345', { headers: { 'content-length': '5' } }), 4, end),
+    ).toThrow('Die Datei ist zu groß');
+    const over = streamBodyCapped(
+      new Response(streamOf([new Uint8Array(3), new Uint8Array(3)])),
+      4,
+      end,
+    );
+    expect(await codeOf(new Response(over).arrayBuffer())).toBe('file_too_large');
+    expect(ended).toBe(2);
+    const broken = streamBodyCapped(new Response(streamOf([new Uint8Array(1)], true)), 10, end);
+    await expect(new Response(broken).arrayBuffer()).rejects.toThrow(
+      'Die Datei konnte nicht vollständig geladen werden.',
+    );
+    const stopped = streamBodyCapped(new Response(streamOf([new Uint8Array(1)])), 10, end);
+    await stopped.cancel();
+    expect(ended).toBe(4);
   });
 
   it('recognises PDF and HTML content and names files safely as .pptx', () => {

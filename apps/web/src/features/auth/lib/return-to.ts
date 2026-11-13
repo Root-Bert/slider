@@ -1,16 +1,12 @@
 import { LOGIN_ERRORS, type LoginError, type SignupMode } from '@slider/shared';
 
 /** The URL half (safe `returnTo`, login links) is app-wide: `lib/routes` builds on it too. */
-export { DEFAULT_RETURN_TO, loginPath, providerLoginUrl, safeReturnTo } from '@/lib/return-to';
+export { loginPath, providerLoginUrl, safeReturnTo } from '@/lib/return-to';
 
 export const isLoginError = (value: string | null): value is LoginError =>
   value !== null && (LOGIN_ERRORS as readonly string[]).includes(value);
 
 /** Friendly explanations for `/login?error=<code>`. */
-/** One Microsoft account connects to at most two Slider accounts (API: `MAX_ACCOUNTS_PER_MICROSOFT`). */
-export const ACCOUNT_LIMIT_MESSAGE =
-  'Dieses Microsoft-Konto ist schon mit zwei Slider-Konten verbunden. Trenne es dort oder nimm ein anderes Microsoft-Konto.';
-
 const LOGIN_ERROR_COPY: Record<LoginError, { title: string; message: string }> = {
   signup_closed: {
     title: 'Kein Konto gefunden',
@@ -41,10 +37,6 @@ const LOGIN_ERROR_COPY: Record<LoginError, { title: string; message: string }> =
     title: 'Anmeldung abgebrochen',
     message: 'Die Anmeldung wurde abgebrochen oder nicht erlaubt. Versuche es erneut.',
   },
-  account_limit: {
-    title: 'Microsoft-Konto schon vergeben',
-    message: ACCOUNT_LIMIT_MESSAGE,
-  },
   sso_unavailable: {
     title: 'Firmen-Login nicht verfügbar',
     message:
@@ -62,8 +54,7 @@ const LOGIN_ERROR_COPY: Record<LoginError, { title: string; message: string }> =
   },
   rate_limited: {
     title: 'Zu viele Anmeldeversuche',
-    message:
-      'Zu viele Anmeldeversuche von hier – bitte versuch es in ein paar Minuten noch einmal.',
+    message: 'Zu viele Anmeldeversuche von hier. Bitte versuch es in ein paar Minuten noch einmal.',
   },
   account_blocked: {
     title: 'Konto gesperrt',

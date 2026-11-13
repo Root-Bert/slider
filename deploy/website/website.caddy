@@ -1,5 +1,6 @@
-# The product website on the Slider server: https://{$WEBSITE_DOMAIN}/slider/ → the website
-# container. Mounted into the Caddy of deploy/docker-compose.yml by docker-compose.website.yml.
+# The product website (https://{$WEBSITE_DOMAIN}/slider/) and the personal page at the root → the
+# website container. Mounted into the Caddy of deploy/docker-compose.yml by
+# docker-compose.website.yml.
 {$WEBSITE_DOMAIN} {
 	encode zstd gzip
 	header {
@@ -27,8 +28,17 @@
 		rewrite * /slider/robots.txt
 		reverse_proxy website:80
 	}
-	# Nothing else lives on the domain (yet): everything else, /slider included, lands on the site.
-	handle {
+	# The personal page at the root (apps/home) and its files.
+	@home path / /assets/*
+	handle @home {
+		reverse_proxy website:80
+	}
+	# Nothing else lives on the domain: /slider without the slash lands on the site, the rest on
+	# the personal page.
+	handle /slider {
 		redir * /slider/ 302
+	}
+	handle {
+		redir * / 302
 	}
 }

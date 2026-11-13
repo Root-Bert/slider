@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { forgetWebFiles } from './web-files';
 
 /*
  * Offline (`public/sw.js`): the service worker keeps what was open once – the app, the decks'
@@ -58,7 +59,7 @@ const forgetOutbox = () =>
  * stored answers and files, and the edits not sent yet – they would go out as the next account.
  */
 export async function forgetOffline(): Promise<void> {
-  await forgetOutbox();
+  await Promise.all([forgetOutbox(), forgetWebFiles()]);
   try {
     const names = await caches.keys();
     await Promise.all(

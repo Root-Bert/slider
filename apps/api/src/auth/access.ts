@@ -80,9 +80,9 @@ export interface DeckAccessDeps {
  * Accounts that are not members of the deck's workspace get 404 (no existence leak), and so do
  * members a restricted deck keeps out ({@link passesRestriction}); members without the right
  * get 403, and so does everyone in a blocked workspace (BER-167). There are no guests (only
- * members see decks). The workspace alone decides – also for a deck linked from OneDrive,
- * SharePoint, Nextcloud or Google Drive: Slider reads such a file with the account of whoever
- * linked it, never with the viewer's (BER-165). Narrowing it is "Zugriff einschränken".
+ * members see decks). The workspace alone decides – also for a deck linked from a Nextcloud:
+ * Slider reads such a file with the account of whoever linked it, never with the viewer's
+ * (BER-165). Narrowing it is "Zugriff einschränken".
  */
 export async function deckAccess(
   { db }: DeckAccessDeps,

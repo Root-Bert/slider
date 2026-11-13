@@ -21,7 +21,12 @@ export const FLOAT_SHADOW_ALPHA = 0.5;
  * over them, as PowerPoint shows them – deliberately not the reviewer accents or `danger`, so a
  * guide never reads as somebody's mark.
  */
-export const GUIDE_COLORS = { guide: 'rgb(6 182 212)', overflow: 'rgb(239 68 68)' } as const;
+export const GUIDE_COLORS = {
+  guide: 'rgb(6 182 212)',
+  overflow: 'rgb(239 68 68)',
+  /** A box with a misspelt word – amber, apart from a box over the guides. */
+  spelling: 'rgb(245 158 11)',
+} as const;
 
 /**
  * Grounds of the generated avatars (DiceBear "slice", "Bold Pop" preset), as DiceBear takes them:

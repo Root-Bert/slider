@@ -1,14 +1,16 @@
 import {
   PROVIDER_LABELS,
   SERVER_PROVIDER,
+  defaultQuickModel,
   type InheritedIntegration,
   type IntegrationKind,
 } from '@slider/shared';
 import { useInheritedModels, useSetInheritedModel, useUpdateIntegrationKey } from '@/lib/api';
 import { Badge, Button, ErrorText, Select, Spinner, type ShowToast } from '@/ui';
-import { AI_MODEL_ROLES, createModelOptions } from '../lib/ai-models';
+import { AI_MODEL_ROLES } from '../lib/ai-models';
 import { ModelLine } from './ModelLine';
 import { ProviderLogo } from './ProviderLogo';
+import { RoleModelSelect } from './RoleModelSelect';
 
 /**
  * The instance's default as a row beside the workspace's own keys, laid out like one of them and
@@ -65,6 +67,10 @@ export function InstanceRow({
   const isAi = kind === 'ai';
   const createStandard = inherited.defaultCreateModel ?? inherited.model;
   const createModel = inherited.createModel ?? inherited.model;
+  // Quick requests: the instance's model for them, else Haiku on Anthropic, else the first.
+  const quickStandard =
+    inherited.defaultQuickModel ?? defaultQuickModel(inherited.provider, inherited.model);
+  const quickModel = inherited.quickModel ?? quickStandard;
 
   return (
     <li className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0">
@@ -128,26 +134,25 @@ export function InstanceRow({
       {isAi && inherited.model && (
         <ModelLine role="create">
           {pickModel ? (
-            <Select
-              aria-label={`Modell für ${AI_MODEL_ROLES.create.label} mit dem Key der Instanz`}
-              size="sm"
-              value={createModel === createStandard ? '' : createModel}
-              disabled={setModel.isPending}
-              options={createModelOptions(
-                offered,
+            <RoleModelSelect
+              role="create"
+              where="mit dem Key der Instanz"
+              offered={offered}
+              standard={createStandard}
+              standardLabel={
                 inherited.defaultCreateModel
                   ? `${nameOf(inherited.defaultCreateModel)} (Standard der Instanz)`
-                  : `Wie oben (${nameOf(inherited.model)})`,
-                createStandard,
-                createModel === createStandard ? null : createModel,
-              )}
-              onChange={(model) =>
+                  : `Wie oben (${nameOf(inherited.model)})`
+              }
+              current={createModel === createStandard ? null : createModel}
+              disabled={setModel.isPending}
+              onPick={(model) =>
                 setModel.mutate(
-                  { kind, createModel: model || null },
+                  { kind, createModel: model },
                   {
                     onSuccess: () =>
                       onNotify(
-                        `${AI_MODEL_ROLES.create.label} nutzt hier jetzt ${nameOf(model || createStandard)}`,
+                        `${AI_MODEL_ROLES.create.label} nutzt hier jetzt ${nameOf(model ?? createStandard)}`,
                       ),
                   },
                 )
@@ -155,6 +160,40 @@ export function InstanceRow({
             />
           ) : (
             <span className="text-fg">{createModel}</span>
+          )}
+        </ModelLine>
+      )}
+      {isAi && inherited.model && (
+        <ModelLine role="quick">
+          {pickModel ? (
+            <RoleModelSelect
+              role="quick"
+              where="mit dem Key der Instanz"
+              offered={offered}
+              standard={quickStandard}
+              standardLabel={
+                inherited.defaultQuickModel
+                  ? `${nameOf(inherited.defaultQuickModel)} (Standard der Instanz)`
+                  : quickStandard === inherited.model
+                    ? `Wie oben (${nameOf(inherited.model)})`
+                    : `${nameOf(quickStandard)} (Standard)`
+              }
+              current={quickModel === quickStandard ? null : quickModel}
+              disabled={setModel.isPending}
+              onPick={(model) =>
+                setModel.mutate(
+                  { kind, quickModel: model },
+                  {
+                    onSuccess: () =>
+                      onNotify(
+                        `${AI_MODEL_ROLES.quick.label} nutzen hier jetzt ${nameOf(model ?? quickStandard)}`,
+                      ),
+                  },
+                )
+              }
+            />
+          ) : (
+            <span className="text-fg">{quickModel}</span>
           )}
         </ModelLine>
       )}

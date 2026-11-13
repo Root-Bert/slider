@@ -12,9 +12,9 @@ const CANVAS = { dark: '#000000', light: '#f4f4f5' } as const;
 const store = createStoredStore<ThemePreference>({
   key: STORAGE_KEY,
   parse: (value) =>
-    PREFERENCES.includes(value as ThemePreference) ? (value as ThemePreference) : 'dark',
-  // Slider has been dark only: nothing chosen keeps it so.
-  fallback: 'dark',
+    PREFERENCES.includes(value as ThemePreference) ? (value as ThemePreference) : 'system',
+  // Nothing chosen: the system's light or dark.
+  fallback: 'system',
   crossTab: true,
 });
 

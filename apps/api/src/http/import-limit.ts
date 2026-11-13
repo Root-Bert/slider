@@ -5,7 +5,7 @@ import { ApiError } from './errors';
 import { clientAddress, fixedWindow } from './rate-limit';
 
 /**
- * Imports per account and hour: uploads, links, OneDrive picks, new versions and "Neu rendern"
+ * Imports per account and hour: uploads, links, Nextcloud picks, new versions and "Neu rendern"
  * together. Each one is up to 512 MB downloaded or uploaded, parsed and rendered by LibreOffice
  * in the one import queue – without a cap one account (open sign-up on the demo) could keep the
  * queue busy for everyone, or make the server fetch URLs in a loop. Failed attempts count too.

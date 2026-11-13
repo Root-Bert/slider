@@ -8,13 +8,16 @@ interface ViewSearchProps {
   label: string;
   value: string;
   onChange: (value: string) => void;
-  /** What the button adds to the names – "Auch Folien und Kommentare durchsuchen". */
-  contentLabel: string;
+  /**
+   * What the button adds to the names – "Auch Folien und Kommentare durchsuchen". Without it (and
+   * `onContentChange`) no button: `content` says what is always searched.
+   */
+  contentLabel?: string;
   /** The placeholder while it is on – "Namen, Folien, Kommentare…". */
   contentPlaceholder: string;
   /** The contents are searched too, not only the names (switched on by hand). */
   content: boolean;
-  onContentChange: (content: boolean) => void;
+  onContentChange?: (content: boolean) => void;
   /** The contents are being searched (on the server). */
   searching?: boolean;
 }
@@ -42,7 +45,7 @@ export function ViewSearch({
   }, true);
 
   return (
-    <search className="w-[300px] max-sm:w-full">
+    <search className="block w-88 max-w-full max-sm:w-full">
       <TextField
         ref={inputRef}
         type="search"
@@ -64,17 +67,19 @@ export function ViewSearch({
             ) : (
               <Kbd className="max-sm:hidden">{isApplePlatform() ? '⌘K' : 'Strg K'}</Kbd>
             )}
-            <IconButton
-              icon="textFields"
-              label={contentLabel}
-              size="xs"
-              active={content}
-              aria-pressed={content}
-              onClick={() => {
-                onContentChange(!content);
-                inputRef.current?.focus();
-              }}
-            />
+            {contentLabel && onContentChange && (
+              <IconButton
+                icon="textFields"
+                label={contentLabel}
+                size="xs"
+                active={content}
+                aria-pressed={content}
+                onClick={() => {
+                  onContentChange(!content);
+                  inputRef.current?.focus();
+                }}
+              />
+            )}
           </span>
         }
         className="[&_input::-webkit-search-cancel-button]:hidden"

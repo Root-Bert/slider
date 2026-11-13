@@ -162,7 +162,7 @@ function ClaimInstance({ initialToken }: { initialToken: string | null }) {
         </div>
         {logout.error && (
           <ErrorText role="alert" size="xs">
-            Abmelden hat nicht geklappt – bitte erneut versuchen.
+            Abmelden hat nicht geklappt. Bitte erneut versuchen.
           </ErrorText>
         )}
       </Section>
@@ -207,7 +207,7 @@ function AdminOnly() {
           </Button>
           {logout.error && (
             <ErrorText role="alert" size="xs">
-              Abmelden hat nicht geklappt – bitte erneut versuchen.
+              Abmelden hat nicht geklappt. Bitte erneut versuchen.
             </ErrorText>
           )}
         </div>

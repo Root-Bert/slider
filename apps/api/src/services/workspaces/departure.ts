@@ -14,7 +14,7 @@ import { getRole, requireRole } from './roles';
  * their account (BER-165). Everyone in a workspace sees its decks, and Slider reads a linked
  * deck's file with its owner's accounts – without them nobody can sync or re-render it. So:
  *
- * - Their linked decks (OneDrive, SharePoint, Nextcloud, Google Drive, web links) are deleted,
+ * - Their linked decks (Nextcloud, web links, older linked decks) are deleted,
  *   comments included. The dialogs list them before (`departurePreview`).
  * - Their uploads pass to the workspace owner ({@link workspaceOwnerOf}), recordings with them;
  *   with nobody left in the workspace they are deleted too.

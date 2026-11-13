@@ -9,7 +9,7 @@ import { runPdfTask } from '../import/pdf-jobs';
 import { materialAsPdf, readWorkbook, sheetRows } from './material-extract';
 
 /*
- * What the AI reads of a deck's board (Folie 0) – through tools, never all at once: the first
+ * What the AI reads of a deck's material page – through tools, never all at once: the first
  * message only lists the files (`materialsBrief`, `ai-context.ts`), the tools bring their text, a sheet's cells,
  * a search through all of them, or a look at a picture or page. For comment requests and for
  * creating a deck from a prompt alike (`ai-proposals.ts`).
@@ -41,7 +41,7 @@ export const MATERIAL_TOOLS: Anthropic.Beta.BetaTool[] = [
   {
     name: 'list_materials',
     description:
-      "Lists the material on the deck's board (Folie 0, before slide 1): files with id, name, kind, size, pages or sheets, whether their text is read, the beginning of their text and the notes people put on them; notes and links people put on the board with their text.",
+      "Lists the presentation's material (its own page „Material“ beside the slides): files with id, name, kind, size, pages or sheets, whether their text is read, the beginning of their text and the notes people put on them; notes and links people put on the material page with their text.",
     input_schema: { type: 'object', properties: {} },
   },
   {
@@ -390,7 +390,7 @@ async function searchMaterials(deps: AppDeps, deckId: string, query: string): Pr
 }
 
 /** A picture as a JPEG at most {@link VIEW_WIDTH} on its longer side. */
-async function asJpeg(bytes: Uint8Array): Promise<Uint8Array> {
+export async function asJpeg(bytes: Uint8Array): Promise<Uint8Array> {
   const image = await loadImage(Buffer.from(bytes));
   const scale = Math.min(1, VIEW_WIDTH / Math.max(image.width, image.height));
   const width = Math.max(1, Math.round(image.width * scale));

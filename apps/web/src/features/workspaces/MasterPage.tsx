@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useCreateBlankDeck, useRemoveWorkspaceMaster, useWorkspaceMasters } from '@/lib/api';
 import { OPEN_ON_BOARD, routes } from '@/lib/routes';
 import {
@@ -26,7 +26,8 @@ import { atLeast } from './lib/roles';
 /**
  * `/w/:workspaceId/material/folienmaster/:masterId` – one uploaded design with every layout,
  * large. Laid out like "Bibliothek": its title, and where the filter sits a pill like the filter's,
- * the slide masters (the way back) and this one's name, selected.
+ * the way back – to the slide masters, or to „Farben“ when opened there (`?from=farben`) – and
+ * this one's name, selected.
  */
 export function Component() {
   const workspace = useWorkspace();
@@ -62,7 +63,13 @@ export function Component() {
         ]
       : []),
   ];
-  const back = routes.workspaceMaterial(workspace.id, 'vorlagen');
+  const [params] = useSearchParams();
+  const fromColors = params.get('from') === 'farben';
+  const back = routes.workspaceMaterial(workspace.id, fromColors ? 'farben' : 'vorlagen');
+  // What the filter's segment counts: the designs, or their colours (each value once).
+  const backCount = fromColors
+    ? new Set(masters.data?.flatMap((item) => (item.colors ?? []).map((c) => c.color))).size
+    : masters.data?.length;
 
   return (
     <div className="dot-grid relative min-h-full overflow-x-clip">
@@ -82,9 +89,9 @@ export function Component() {
               className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-control px-2.5 text-body whitespace-nowrap text-fg-muted transition-colors hover:bg-hover hover:text-fg"
             >
               <Icon name="arrowBack" size={18} />
-              Vorlagen
+              {fromColors ? 'Farben' : 'Vorlagen'}
               {masters.data && (
-                <span className="text-xs font-medium text-fg-subtle">{masters.data.length}</span>
+                <span className="text-xs font-medium text-fg-subtle">{backCount}</span>
               )}
             </Link>
             {master && (

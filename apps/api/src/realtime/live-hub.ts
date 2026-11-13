@@ -121,6 +121,7 @@ export class LiveHub {
       textCaret: null,
       picked: null,
       drag: null,
+      onMaterial: false,
       send,
       close,
       lastSeen: this.now(),
@@ -264,7 +265,8 @@ export class LiveHub {
       JSON.stringify(connection.cursor) === JSON.stringify(input.cursor) &&
       JSON.stringify(connection.textCaret) === JSON.stringify(input.textCaret) &&
       connection.picked === input.picked &&
-      JSON.stringify(connection.drag) === JSON.stringify(input.drag)
+      JSON.stringify(connection.drag) === JSON.stringify(input.drag) &&
+      connection.onMaterial === input.onMaterial
     ) {
       return true;
     }
@@ -274,6 +276,7 @@ export class LiveHub {
     connection.textCaret = input.textCaret;
     connection.picked = input.picked;
     connection.drag = input.drag;
+    connection.onMaterial = input.onMaterial;
     this.broadcast(
       connection.deckId,
       { type: 'peer', peer: toPeer(connection) },
@@ -302,7 +305,7 @@ export class LiveHub {
     this.broadcast(deckId, { type: 'proposals' });
   }
 
-  /** Something on the deck's board (Folie 0) came, moved, changed or went – or its text was read. */
+  /** Something on the deck's material page came, moved, changed or went – or its text was read. */
   boardChanged(deckId: string): void {
     this.broadcast(deckId, { type: 'board' });
   }
@@ -375,6 +378,7 @@ const toPeer = ({
   textCaret,
   picked,
   drag,
+  onMaterial,
 }: LivePeer): LivePeer => ({
   connectionId,
   author,
@@ -384,4 +388,5 @@ const toPeer = ({
   textCaret,
   picked,
   drag,
+  onMaterial,
 });

@@ -86,6 +86,14 @@ Parity script (from `apps/web`): `bun --tsconfig-override=tsconfig.app.json scri
   copies get final part ids in the browser (`partIds`). Where: `EditingProvider`, `copyElement` +
   `loadSources`, `OdpDocument.elementSource`, `newPartIds`. Check: odp + api edits tests,
   `model.test.ts`; ⌘X ⌘V puts it back in place.
+- **⌘V from outside puts anything in** (Figma) – text from another app or a web page becomes a
+  text box in the slide's body style, as wide as its lines (measured in the editor's face, ≤ 80 %),
+  centred, picked; pictures become picture elements, any format the browser reads (HEIC, TIFF,
+  SVG … drawn into a PNG); text beside an office app's own picture of it (HTML without `<img>`)
+  is text; typing in a text box or a field, the text goes there. Where: `paste.ts`
+  (`pastedOf`, `pastedTextBox`), `insert-image.ts` (`shownImage`, `readClipboard`),
+  `EditingProvider` `onPaste`/`insertText`. Check: `model.test.ts`; in the editor paste text from
+  another app → one box, no wrap of its lines.
 - **A locked element is out of the pointer's way** – not picked/moved (also 3D, frame-select, ⌘A);
   a frame drawn on it makes a new box; double click or its lock in Ebenen (⇧L) unlocks; stored as
   `style:protect`. Where: `EditLayer`, `useInsertFrame`, `LayerStage`, `LayersPanel`,
@@ -104,10 +112,12 @@ Parity script (from `apps/web`): `bun --tsconfig-override=tsconfig.app.json scri
   `OdpDocument.locate`, `EditingProvider` `entered`/`enterGroup`/`topOf`, `EditLayer`,
   `remote-steps.ts`, `LayersPanel` `PartRows`. Check: odp `document.test.ts`, api `edits.test.ts`,
   `undo-ops.test.ts`, `remote-steps.test.ts`, `live-parity --sample --compose`.
-- **„Hinzufügen“ holds what is there still** – every element present when the mode began acts
-  locked (editor only, never in the file); double click or its lock → Bearbeiten with it picked,
-  never a `setLocked`. Where: `EditingProvider` `setAdding`/`heldStill`/`isHeld`, `ToolBar`,
-  `LayersPanel`. Check: `model.test.ts`.
+- **⇧ + drag adds inside other boxes** – no mode of its own: in Bearbeiten, ⇧ pressed on an
+  element's body (not handles: ⇧ resizes in proportion / tilts there; not text being typed in)
+  draws a new frame as on the free slide (crosshair while ⇧ is held); ⇧-click without a drag still
+  picks it together with those picked; square only with ⇧ pressed again. Where: `useInsertFrame`
+  `onPointerDownCapture`, `EditLayer`. Check: in the editor, ⇧-drag inside a text box → chooser;
+  ⇧-click two boxes → both picked; ⇧ on a corner → proportional resize.
 
 ## AI
 
@@ -119,7 +129,11 @@ Parity script (from `apps/web`): `bun --tsconfig-override=tsconfig.app.json scri
   `draft-reducer`. Check: `viewer-state.test.ts`.
 - **A request about an open thread's subject goes on in that thread** – same element(s) or box IoU
   ≥ 0.6 on the same slide (`threadForRequest`) → reply there, a running run stopped and re-asked;
-  own session thread → addition; resolved threads / whole slide / typed comments unchanged. Where:
+  own session thread → addition; threads people resolved / whole slide / typed comments unchanged.
+  The AI's applied change resolves its thread itself (`resolvedBy` `ai`, sparkles instead of the
+  check, listed under „Erledigt“); such a thread still takes requests, and opens again when the
+  AI asks back (filter „KI“) or its change is taken back – unless another applied change of the
+  AI in it stands; applied again, done again. Where: `ai-proposals.ts` `resolveThread`/`reopenThread`,
   `shared/shapes.ts`, `voice/session.ts` `joinOpenThread`/`stopRunsIn`, `useSendAiBox`. Check:
   `voice.test.ts`, `viewer-state.test.ts`.
 - **The AI makes new elements as a person does** – shapes, text, lines, copies, new slide content
@@ -127,17 +141,19 @@ Parity script (from `apps/web`): `bun --tsconfig-override=tsconfig.app.json scri
   `sl…`, browser-drawn, typable); an empty list placeholder filled shows bullets; XML only for
   tables, charts, pictures, gradients. Where: `voice/quick-edits.ts`, `ai-proposals.ts`,
   `quick-requests.ts`, `voice/router.ts`. Check: api `ai-proposals.test.ts`, `voice.test.ts`.
-- **A sticker is a comment, also for the AI** – sent alone its text is the body (counted, listed);
+- **A sticker is a comment, also for the AI** – sent alone its text is the body (counted, listed,
+  but no card under the slide until it has a comment of its own, a reply or the AI's answer –
+  `isBareSticker`, `useCommentThreads`);
   ⌘↵ sends and asks the AI; „An die KI geben“ in its menu; AI reads its text + box (`markText`);
   the AI stickers only what people must notice. Where: `stage/lib/text-box.ts`, `TextBox.tsx`,
   `useMarkMenu`, `services/comments.ts`, `ai-proposals.ts`. Check: api `ai-proposals.test.ts`,
   `comments.test.ts`.
 
-## Material board (Folie 0) and deck creation
+## Material page and deck creation
 
-- **Folie 0 never goes into the file** – lives in `deck_materials`/`deck_board_items` + media
-  store; never in the ODP, exports, LibreOffice or slide count; laid before slide 1; rights as
-  comments. Where: `services/materials.ts`, `routes/materials.ts`, `features/viewer/board/`,
+- **Material never goes into the file** – lives in `deck_materials`/`deck_board_items` + media
+  store; never in the ODP, exports, LibreOffice or slide count; a page of its own beside the
+  presentation, never in the track; rights as comments. Where: `services/materials.ts`, `routes/materials.ts`, `features/viewer/board/`,
   `timeline-layout.ts`. Check: api `materials.test.ts`, `timeline-layout.test.ts`,
   `board-outbox.test.ts`.
 - **The AI reads material through tools** – first message only lists files (`materialsBrief`);
@@ -145,13 +161,22 @@ Parity script (from `apps/web`): `bun --tsconfig-override=tsconfig.app.json scri
   `view_material`; text extracted in background, encrypted in `material_chunks`, searched in the
   server. Where: `material-extract.ts`, `material-tools.ts`, `ai-context.ts`. Check: api
   `materials.test.ts`, `ai-proposals.test.ts`.
-- **A new deck is built from the prompt on Folie 1** – „Neue Präsentation“ opens on Folie 0; while
+- **A new deck is built from the prompt on Folie 1** – „Neue Präsentation“ opens on the material page; while
   the deck is its blank start Folie 1 is the prompt (description kept per deck, takes live speech
   with a strict `claim`; 8 kinds; Stil = templates; 5–30 pages; material always used); „Erstellen“
   closes at once, outline shows, each slide its own AI step, Abbrechen keeps what is built; „Leer
   anfangen“ closes for good. Where: `services/deck-creation/`, `CreatePrompt`, `creation-draft.ts`,
   `useHeardWords`, `CreationProgress`, `Timeline`. Check: api `deck-creation.test.ts`,
   `creation-draft.test.ts`.
+
+## KI-Apps (MCP)
+
+- **AI apps act only with their bearer token, never the cookie** – `/api/mcp` reads no session;
+  OAuth (PKCE, rotating refresh) or a token from „KI-Apps“ on /konto, each held to its workspace if
+  chosen, „Entfernen“ ends it at once; the OAuth routes stay public, everything else needs a
+  session. Where: `routes/app-connections.ts`, `services/app-connections.ts`, `services/mcp.ts`,
+  `app.ts` (CORS, `sameOriginWrites`), `http/desktop-guard.ts`. Check: api `materials.test.ts`
+  (MCP), `auth.test.ts`.
 
 ## Comments
 

@@ -13,10 +13,10 @@ import { createContext, use } from 'react';
 import type { ParagraphPatch, TextStylePatch } from './live/model';
 
 /**
- * While editing: picking elements, drawing a frame for a new text, shape or picture, or – in a
- * template being designed – setting its guides.
+ * While editing: picking elements (dragging on the free slide draws a frame for a new text, shape
+ * or picture), or – in a template being designed – setting its guides.
  */
-export type EditTool = 'select' | 'frame' | 'guides';
+export type EditTool = 'select' | 'guides';
 
 /** What is picked on the slide while editing. */
 export interface EditSelection {
@@ -69,18 +69,6 @@ export interface Editing {
   /** „Bearbeiten“ is on: the slides show their elements, clicks pick instead of commenting. */
   active: boolean;
   setActive: (active: boolean) => void;
-  /**
-   * „Hinzufügen“ is on: editing, every element there when it began held still as locked (in the
-   * editor only, not in the file) – what is added meanwhile stays free.
-   */
-  adding: boolean;
-  /** „Hinzufügen“ (A): editing, what is there now held still. */
-  setAdding: () => void;
-  /**
-   * Whether an element is held still by „Hinzufügen“ only – shown locked, but not locked in the
-   * file (`elementsOf` gives it `locked`).
-   */
-  isHeld: (slideId: string, elementId: string) => boolean;
   tool: EditTool;
   setTool: (tool: EditTool) => void;
   /** „Ebenen“ is open: the shown slide taken apart in 3D, its elements restacked there (L). */
@@ -131,9 +119,10 @@ export interface Editing {
   tryOut: (operations: SlideOperation[] | null) => void;
   /**
    * A picture from outside (pasted, dropped) as a new picture element on a slide – the one shown
-   * unless given –, centred on `at` (of the slide), picked; `false` when it did not go on.
+   * unless given –, centred on `at` (of the slide), `longest` cm on its longer side if given,
+   * picked; `false` when it did not go on.
    */
-  insertImage: (file: File, slideId?: string, at?: Point) => Promise<boolean>;
+  insertImage: (file: File, slideId?: string, at?: Point, longest?: number) => Promise<boolean>;
   undo: () => void;
   redo: () => void;
   /**
@@ -180,12 +169,9 @@ export interface Editing {
   /** Heights (of the slide) of live elements that grow with their text, as drawn. */
   heightOf: (elementId: string) => number | null;
   measure: (elementId: string, height: number | null) => void;
-  /**
-   * How high the picked text's box is around its text at its width, padding in (of the slide) –
-   * what its height is fitted to („Höhe an Text anpassen“, `TextSizeMeasure`).
-   */
-  textHeightOf: (elementId: string) => number | null;
-  measureText: (elementId: string, height: number | null) => void;
+  /** The picked text's own size – what its box is fitted to („An Text anpassen“, `TextSizeMeasure`). */
+  textFitOf: (elementId: string) => TextFit | null;
+  measureText: (elementId: string, fit: TextFit | null) => void;
   /**
    * Tilted elements changed since their tilted picture was drawn (their text, look, size), by
    * their slide: drawn tilted anew (`TiltRefreshes`), picked or not.
@@ -196,6 +182,16 @@ export interface Editing {
 }
 
 /** An element as dragged: its box, and its turn when it is being turned or moved turned. */
+/**
+ * A text's own size (of the slide), padding in: as wide as its longest line (`width`), and how
+ * high its box is around it at the box's own width (`height`) and at `width` (`fittedHeight`).
+ */
+export interface TextFit {
+  width: number;
+  height: number;
+  fittedHeight: number;
+}
+
 export interface ElementPreview {
   elementId: string;
   rect: Rect;
@@ -217,6 +213,11 @@ export interface ElementPreview {
      * not in it moves by `dx`/`dy`.
      */
     frames?: ReadonlyMap<string, { rect: Rect; rotation: number }>;
+    /**
+     * The frame round them all where it goes – moved or resized, not turned: what is caught at
+     * lines, gaps and other boxes (`EditLayer`), as the frame itself is.
+     */
+    frame?: Rect;
   };
 }
 
@@ -245,9 +246,6 @@ const INACTIVE: Editing = {
   state: undefined,
   active: false,
   setActive: () => {},
-  adding: false,
-  setAdding: () => {},
-  isHeld: () => false,
   tool: 'select',
   setTool: () => {},
   layers: false,
@@ -289,7 +287,7 @@ const INACTIVE: Editing = {
   setPreview: () => {},
   heightOf: () => null,
   measure: () => {},
-  textHeightOf: () => null,
+  textFitOf: () => null,
   measureText: () => {},
   retilting: new Map(),
   retilted: () => {},

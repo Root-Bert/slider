@@ -1,0 +1,109 @@
+{
+  "name": "slider-desktop",
+  "productName": "Slider",
+  "version": "0.1.0",
+  "private": true,
+  "license": "EUPL-1.2",
+  "author": {
+    "name": "bertro",
+    "email": "slider@bertro.dev"
+  },
+  "homepage": "https://bertro.dev/slider",
+  "description": "Slider as a desktop app: works offline on this machine, AI with your own keys.",
+  "type": "module",
+  "main": "main.mjs",
+  "scripts": {
+    "start": "node scripts/stage.mjs && node scripts/dev-name.mjs .",
+    "open": "node scripts/dev-name.mjs .",
+    "stage": "node scripts/stage.mjs",
+    "app": "node scripts/stage.mjs && electron-builder --mac --dir --arm64 -c.mac.identity=null",
+    "dmg": "node scripts/stage.mjs && electron-builder --mac dmg --arm64 -c.mac.identity=null"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.11"
+  },
+  "devDependencies": {
+    "electron": "45.3.0",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "dev.bertro.slider",
+    "productName": "Slider",
+    "artifactName": "Slider-${arch}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.mjs",
+      "libreoffice.mjs",
+      "live.mjs",
+      "updates.mjs",
+      "splash.html",
+      "package.json",
+      "tabs.mjs",
+      "page-preload.cjs",
+      "tabbar/**",
+      "splash.js",
+      "generated/**"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "hardenedRuntime": true,
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist",
+      "notarize": true,
+      "darkModeSupport": true,
+      "icon": "icon.png"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office",
+      "executableName": "slider",
+      "synopsis": "Presentations everyone gets a say in",
+      "icon": "icon.png"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "Root-Bert",
+      "repo": "slider"
+    },
+    "afterPack": "scripts/after-pack.cjs",
+    "protocols": [
+      {
+        "name": "Slider",
+        "schemes": [
+          "slider"
+        ]
+      }
+    ],
+    "fileAssociations": [
+      {
+        "ext": [
+          "odp",
+          "otp"
+        ],
+        "name": "OpenDocument-Präsentation",
+        "role": "Editor",
+        "mimeType": "application/vnd.oasis.opendocument.presentation",
+        "rank": "Default"
+      },
+      {
+        "ext": [
+          "pptx",
+          "ppt"
+        ],
+        "name": "PowerPoint-Präsentation",
+        "role": "Viewer",
+        "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "rank": "Alternate"
+      }
+    ]
+  }
+}

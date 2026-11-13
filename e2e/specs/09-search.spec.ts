@@ -26,7 +26,7 @@ test('the search finds slide text and opens the review at that slide (BER-175), 
   // The library searches the same way: ⌘K, names by default, the button adds the contents –
   // here the Office font a Slider font stands in for.
   await page.getByRole('link', { name: 'Bibliothek' }).click();
-  await page.getByRole('radio', { name: /Slider-Schriften/ }).click();
+  await page.getByRole('radio', { name: /^Schriften/ }).click();
   const library = page.getByRole('searchbox', { name: 'Bibliothek durchsuchen' });
   await page.keyboard.press('ControlOrMeta+k');
   await expect(library).toBeFocused();

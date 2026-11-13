@@ -1,0 +1,5 @@
+# Staged API, web build and Bun runtime (scripts/stage.mjs), and the built app.
+build/
+dist/
+# The start screen's logo animations (scripts/logo-css.mjs).
+generated/

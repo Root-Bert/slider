@@ -36,6 +36,8 @@ export default defineConfig({
     baseURL: WEB_ORIGIN,
     locale: 'de-DE',
     timezoneId: 'Europe/Berlin',
+    // The app follows the system's theme; the tests look at the dark one, as always.
+    colorScheme: 'dark',
     viewport: { width: 1280, height: 800 },
     // A control not found fails fast, not at the test's end.
     actionTimeout: 20_000,

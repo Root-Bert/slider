@@ -11,9 +11,11 @@ import { cn } from '@/ui';
 import { EditableFrame } from '../stage/EditableFrame';
 import {
   boxLines,
+  caughtBoxes,
+  caughtGaps,
   caughtLines,
+  type BoxGap,
   fittedToText,
-  joinLines,
   snappedToText,
   type RectCorner,
   type SnapLines,
@@ -55,7 +57,7 @@ const SNAP_PX = 8;
  * its corners resize it. Anything else a click picks. Any element that moves is dragged at once,
  * picked or not; its corners and turning handle show once picked, or in box mode under the
  * pointer. A click on the free slide lets go; dragging there draws a frame for a new text, shape
- * or picture (`useInsertFrame`). A locked element (`EditableElement.locked`) is not there for the
+ * or picture (`useInsertFrame`) – with ⇧ held, on an element too. A locked element (`EditableElement.locked`) is not there for the
  * pointer: clicks and drags on it go to what lies under it, or to the free slide – a frame drawn
  * on it. Picked by a double click or in the list of layers („Ebenen“), it is outlined, without
  * handles – its panel unlocks it.
@@ -82,7 +84,6 @@ function EditLayerView({ slideId, color, boxes, onHover }: EditLayerProps) {
   const layerRef = useRef<HTMLDivElement>(null);
   const editing = useEditing();
   const dispatch = useViewerDispatch();
-  const insertFrame = useInsertFrame(slideId);
   const cropFill = useCropFill(slideId);
   // Lines are grabbed along their length and dragged by their ends (`LineFrame`).
   const lines = editing
@@ -92,8 +93,9 @@ function EditLayerView({ slideId, color, boxes, onHover }: EditLayerProps) {
     .filter((element) => !element.line && element.bbox.w > 0 && element.bbox.h > 0)
     // Small ones on top, so they can be picked inside large ones.
     .sort((a, b) => area(b) - area(a));
-  // Only a drag of one of this slide's elements renders it again.
-  const preview = usePreviewAmong(elements.map((element) => element.id));
+  // Only a drag of one of this slide's elements renders it again – lines too: a group picked
+  // together is previewed under its lead, which may be one.
+  const preview = usePreviewAmong([...elements, ...lines].map((element) => element.id));
   const picked = editing.selection?.slideId === slideId ? editing.selectedElement : null;
   const [hovered, setHovered] = useState<string | null>(null);
   useEffect(() => {
@@ -126,7 +128,7 @@ function EditLayerView({ slideId, color, boxes, onHover }: EditLayerProps) {
   const snapLines = useSnapLines(slideId);
   // The picked text's own size (at its own size, also one that shrinks to fit), read while its
   // box is resized – caught there within a few pixels – or fitted to it, the corner's double click
-  // and „Höhe an Text anpassen“ alike. Not for an empty placeholder.
+  // and „An Text anpassen“ alike. Not for an empty placeholder.
   const sizeRef = useRef<HTMLDivElement>(null);
   const sized = picked?.live && !picked.live.placeholder ? picked : null;
   // Measured once per resize (`start`, the box as the drag began, is the drag's own): every
@@ -180,24 +182,59 @@ function EditLayerView({ slideId, color, boxes, onHover }: EditLayerProps) {
     ]),
   );
   const linesWithout = (ids: readonly string[]): SnapLines => {
-    let lines = snapLines;
-    for (const [id, own] of ownLines) if (!ids.includes(id)) lines = joinLines(lines, own);
-    return lines;
+    const x = [...snapLines.x];
+    const y = [...snapLines.y];
+    const boxes = [...(snapLines.boxes ?? [])];
+    for (const [id, own] of ownLines) {
+      if (ids.includes(id)) continue;
+      x.push(...own.x);
+      y.push(...own.y);
+      boxes.push(...(own.boxes ?? []));
+    }
+    return { x, y, boxes };
   };
+  /**
+   * ⇧-click: the element joins those picked (the one picked alone too) or leaves them – only
+   * elements that move go together.
+   */
+  const toggleInGroup = (element: EditableElement) => {
+    const group = editing.group?.slideId === slideId ? editing.group.elementIds : null;
+    const base = group ?? (picked ? [picked.id] : []);
+    const elementIds = base.includes(element.id)
+      ? base.filter((id) => id !== element.id)
+      : [...base, element.id];
+    editing.selectGroup({ slideId, elementIds });
+  };
+  // A frame drawn for a new element is caught at all of them.
+  const allLines = linesWithout([]);
+  // ⇧-click on an element (no drag): picked together with those picked.
+  const insertFrame = useInsertFrame(slideId, layerRef, allLines, (element) =>
+    toggleInGroup(element),
+  );
   const groupIds = editing.group?.slideId === slideId ? editing.group.elementIds : [];
-  // The lines the one dragged lies on now, drawn across the slide (moved or resized unturned only:
-  // a turned one is not caught).
+  const caughtAt = (rect: Rect, around: SnapLines) => {
+    const gaps = caughtGaps(rect, around);
+    return { lines: caughtLines(rect, around), gaps, boxes: caughtBoxes(rect, around, gaps) };
+  };
+  // The lines the one dragged – those picked together: their frame – or the frame being drawn
+  // lies on now, drawn across the slide (moved or resized unturned only: a turned one is not
+  // caught).
   const dragged = preview && elements.find((element) => element.id === preview.elementId);
-  const dragLines =
-    preview?.rect &&
-    dragged &&
-    !isTurned({
-      bbox: preview.rect,
-      rotation: preview.rotation ?? dragged.rotation,
-      tilt: preview.tilt !== undefined ? preview.tilt : dragged.tilt,
-    })
-      ? caughtLines(preview.rect, linesWithout([dragged.id, ...groupIds]))
-      : null;
+  const dragLines = preview?.group
+    ? preview.group.frame
+      ? caughtAt(preview.group.frame, linesWithout(groupIds))
+      : null
+    : preview?.rect &&
+        dragged &&
+        !isTurned({
+          bbox: preview.rect,
+          rotation: preview.rotation ?? dragged.rotation,
+          tilt: preview.tilt !== undefined ? preview.tilt : dragged.tilt,
+        })
+      ? caughtAt(preview.rect, linesWithout([dragged.id, ...groupIds]))
+      : insertFrame.dragged
+        ? caughtAt(insertFrame.dragged, allLines)
+        : null;
 
   // Moved or turned before it was picked, it stays unpicked: a drag is no click.
   const commit = (element: EditableElement, rect: Rect, done: () => void, flip?: ElementFlip) => {
@@ -225,18 +262,6 @@ function EditLayerView({ slideId, color, boxes, onHover }: EditLayerProps) {
       )
       .finally(done);
   };
-  /**
-   * ⇧-click: the element joins those picked (the one picked alone too) or leaves them – only
-   * elements that move go together.
-   */
-  const toggleInGroup = (element: EditableElement) => {
-    const group = editing.group?.slideId === slideId ? editing.group.elementIds : null;
-    const base = group ?? (picked ? [picked.id] : []);
-    const elementIds = base.includes(element.id)
-      ? base.filter((id) => id !== element.id)
-      : [...base, element.id];
-    editing.selectGroup({ slideId, elementIds });
-  };
   const turn = (element: EditableElement, rect: Rect, rotation: number, done: () => void) => {
     void editing
       .apply([{ type: 'setBox', elementId: element.id, box: rect, rotation }])
@@ -249,8 +274,10 @@ function EditLayerView({ slideId, color, boxes, onHover }: EditLayerProps) {
       data-edit-layer={slideId}
       data-live-host=""
       className={cn(
-        'absolute inset-0 z-(--z-raised)',
-        insertFrame.passThrough ? 'cursor-crosshair' : 'cursor-default',
+        'absolute inset-0 z-(--z-raised) cursor-default',
+        // ⇧ held (`data-adding`, `useInsertFrame`): a drag on an element adds too – its body says
+        // so, its handles stay.
+        'data-[adding]:cursor-crosshair [&[data-adding]_[data-edit-element]]:cursor-crosshair!',
       )}
       style={{
         ...liveLayerStyle(editing.pageSize.width * PT_PER_CM, editing.pageSize.height * PT_PER_CM),
@@ -266,7 +293,7 @@ function EditLayerView({ slideId, color, boxes, onHover }: EditLayerProps) {
       // A double click on the slide itself (no element there): its background, as from its menu –
       // on a locked element, that one picked.
       onDoubleClick={(event) => {
-        if (event.target !== event.currentTarget || insertFrame.passThrough) return;
+        if (event.target !== event.currentTarget) return;
         event.stopPropagation();
         // On a locked element: it is picked – its panel unlocks it.
         const box = event.currentTarget.getBoundingClientRect();
@@ -285,8 +312,6 @@ function EditLayerView({ slideId, color, boxes, onHover }: EditLayerProps) {
             ),
         );
         if (locked) {
-          // Adding, it is held still here only: Bearbeiten, with it picked.
-          if (editing.adding) editing.setActive(true);
           editing.select({ slideId, elementId: locked.id });
           return;
         }
@@ -306,262 +331,252 @@ function EditLayerView({ slideId, color, boxes, onHover }: EditLayerProps) {
           }}
         />
       )}
-      {/* Drawing a frame: the elements let the pointer through to the slide. */}
-      <div className={cn('contents', insertFrame.passThrough && '*:pointer-events-none!')}>
-        {elements.map((element) => {
-          // Drawing a frame: the pointer passes through to the slide.
-          const passThrough = insertFrame.passThrough ? 'pointer-events-none!' : undefined;
-          const rect = boxOf(element);
-          const select = () => editing.select({ slideId, elementId: element.id });
-          const typeOnSlide = element.live !== null;
-          const typeAt = (event: { clientX: number; clientY: number }) =>
-            editing.startText(
-              { slideId, elementId: element.id },
-              { x: event.clientX, y: event.clientY },
+      {elements.map((element) => {
+        const rect = boxOf(element);
+        const select = () => editing.select({ slideId, elementId: element.id });
+        const typeOnSlide = element.live !== null;
+        const typeAt = (event: { clientX: number; clientY: number }) =>
+          editing.startText(
+            { slideId, elementId: element.id },
+            { x: event.clientX, y: event.clientY },
+          );
+        // A picture: its part shown chosen on the slide („Ausschnitt“).
+        const cropHere = () => {
+          select();
+          pictureFit.crop(element.id);
+        };
+        // A shape filled with a picture, without text: its part too (as Figma crops an image
+        // fill) – one with text is typed in…
+        const cropFillHere = () => {
+          select();
+          cropFill(element);
+        };
+        // A group: entered (Figma), the element of it under the pointer picked.
+        const enterHere = (event: { clientX: number; clientY: number }) => {
+          const box = layerRef.current?.getBoundingClientRect();
+          const point = box && {
+            x: (event.clientX - box.left) / Math.max(1, box.width),
+            y: (event.clientY - box.top) / Math.max(1, box.height),
+          };
+          const under =
+            point &&
+            element.children?.findLast(
+              (child) =>
+                !child.locked &&
+                turnedBoxContains(
+                  { bbox: boxOf(child), rotation: child.rotation, tilt: child.tilt },
+                  point,
+                  pageAspect,
+                ),
             );
-          // A picture: its part shown chosen on the slide („Ausschnitt“).
-          const cropHere = () => {
-            select();
-            pictureFit.crop(element.id);
-          };
-          // A shape filled with a picture, without text: its part too (as Figma crops an image
-          // fill) – one with text is typed in…
-          const cropFillHere = () => {
-            select();
-            cropFill(element);
-          };
-          // A group: entered (Figma), the element of it under the pointer picked.
-          const enterHere = (event: { clientX: number; clientY: number }) => {
-            const box = layerRef.current?.getBoundingClientRect();
-            const point = box && {
-              x: (event.clientX - box.left) / Math.max(1, box.width),
-              y: (event.clientY - box.top) / Math.max(1, box.height),
-            };
-            const under =
-              point &&
-              element.children?.findLast(
-                (child) =>
-                  !child.locked &&
-                  turnedBoxContains(
-                    { bbox: boxOf(child), rotation: child.rotation, tilt: child.tilt },
-                    point,
-                    pageAspect,
-                  ),
-              );
-            editing.enterGroup(slideId, element.id, under ? under.id : null);
-          };
-          // …so a click on it picked does not type in it (the double click's first half would).
-          const cropsFill = fillToCrop(element) >= 0;
-          const typesOnClick = typeOnSlide && !cropsFill;
-          const onDoubleClick = element.children
-            ? enterHere
-            : element.picture?.src && !element.tilt
-              ? cropHere
-              : cropsFill
-                ? cropFillHere
-                : typeOnSlide
-                  ? typeAt
-                  : select;
-          const typing = typeOnSlide && editing.textEditing === element.id;
-          // Typing in another text: a click into this one types on here at once, where clicked.
-          const typingElsewhere = editing.textEditing !== null && !typing;
-          const frameProps = {
-            rect,
-            className: passThrough,
-            color,
-            handles: element.resizable,
-            elementEdge: true,
-            offSlide: true,
-            emphasized: true,
-            rotation: element.rotation,
-            outline: element.outline,
-            onCommit: (next: Rect, done: () => void, flip?: ElementFlip) =>
-              commit(element, next, done, flip),
-            // Groups do not turn.
-            onRotate: element.resizable
-              ? (rotation: number, done: () => void) => turn(element, rect, rotation, done)
+          editing.enterGroup(slideId, element.id, under ? under.id : null);
+        };
+        // …so a click on it picked does not type in it (the double click's first half would).
+        const cropsFill = fillToCrop(element) >= 0;
+        const typesOnClick = typeOnSlide && !cropsFill;
+        const onDoubleClick = element.children
+          ? enterHere
+          : element.picture?.src && !element.tilt
+            ? cropHere
+            : cropsFill
+              ? cropFillHere
+              : typeOnSlide
+                ? typeAt
+                : select;
+        const typing = typeOnSlide && editing.textEditing === element.id;
+        // Typing in another text: a click into this one types on here at once, where clicked.
+        const typingElsewhere = editing.textEditing !== null && !typing;
+        const frameProps = {
+          rect,
+          color,
+          handles: element.resizable,
+          elementEdge: true,
+          offSlide: true,
+          emphasized: true,
+          rotation: element.rotation,
+          outline: element.outline,
+          onCommit: (next: Rect, done: () => void, flip?: ElementFlip) =>
+            commit(element, next, done, flip),
+          // Groups do not turn.
+          onRotate: element.resizable
+            ? (rotation: number, done: () => void) => turn(element, rect, rotation, done)
+            : undefined,
+          snapResize: sized?.id === element.id ? snapToText : undefined,
+          onFit:
+            sized?.id === element.id
+              ? (corner: RectCorner) => fitToText(element, rect, corner)
               : undefined,
-            snapResize: sized?.id === element.id ? snapToText : undefined,
-            onFit:
-              sized?.id === element.id
-                ? (corner: RectCorner) => fitToText(element, rect, corner)
-                : undefined,
-            snapLines: linesWithout(
-              groupIds.includes(element.id) ? [element.id, ...groupIds] : [element.id],
+          snapLines: linesWithout(
+            groupIds.includes(element.id) ? [element.id, ...groupIds] : [element.id],
+          ),
+          onPreview: (next: Rect | null, rotation?: number, flip?: ElementFlip) =>
+            editing.setPreview(
+              next && { elementId: element.id, rect: next, rotation, flip },
+              element.id,
+              previewSurface,
             ),
-            onPreview: (next: Rect | null, rotation?: number, flip?: ElementFlip) =>
-              editing.setPreview(
-                next && { elementId: element.id, rect: next, rotation, flip },
-                element.id,
-                previewSurface,
-              ),
-            // ⇧ on its turning handle tilts it in depth (groups do not tilt).
-            tilt: element.tilt,
-            // Offline not: its tilted picture goes up to the server.
-            onTilt:
-              element.resizable && !editing.offline
-                ? (next: ElementTilt, done: () => void, mirror?: ElementFlip) =>
-                    tilt(element, next, done, mirror)
-                : undefined,
-            // Pictures and drawn shapes mirror, pulled over a side or tilted over the edge.
-            flip: element.resizable ? element.flip : null,
-            onTiltPreview: (next: ElementTilt | null) => {
-              // Typed in, typing goes on: its text is drawn tilted as it goes.
-              editing.setPreview(
-                next && { elementId: element.id, rect, tilt: next },
-                element.id,
-                previewSurface,
-              );
-            },
-          };
-          if (typing && element.live) {
-            // Typable at once: until the picture without this text is drawn (asked for ahead on
-            // hover), the browser's text lies over LibreOffice's own – the same, by live parity.
-            return (
-              <div
-                key={element.id}
-                style={{ display: 'contents' }}
-                onClick={(event) => event.stopPropagation()}
-                onDoubleClick={(event) => event.stopPropagation()}
-              >
-                <LiveElementView
-                  // Dragged by its border or corners: laid out in the box as it goes.
-                  element={
-                    preview?.elementId === element.id
-                      ? {
-                          ...element,
-                          bbox: preview.rect,
-                          rotation: preview.rotation ?? element.rotation,
-                          tilt: preview.tilt !== undefined ? preview.tilt : element.tilt,
-                        }
-                      : element
-                  }
-                  live={element.live}
-                  textOnly
-                  style={{
-                    // Over every other element's frame, also one raised under the pointer: a
-                    // click on the text – wherever it reaches, turned or tilted – lands in it.
-                    zIndex: 'var(--z-typing)',
-                    pointerEvents: 'auto',
-                    // A layer of its own: drawn with the slide, Chrome lets a drag over the
-                    // text move the caret instead of selecting (turned or tilted, it has one).
-                    willChange: 'transform',
-                    ...(canMove(element)
-                      ? {}
-                      : { outline: `2px solid ${color}`, outlineOffset: 2 }),
-                  }}
-                >
-                  <InlineTextEditor
-                    elementId={element.id}
-                    live={element.live}
-                    prompt={
-                      element.live.placeholder && (
-                        <PromptText element={element} live={element.live} />
-                      )
-                    }
-                  />
-                </LiveElementView>
-                {/* Moved by its border and resized by its corners while typing in it. */}
-                {canMove(element) && (
-                  <EditableFrame
-                    key="frame"
-                    {...frameProps}
-                    edgesOnly
-                    className={cn(passThrough, 'z-(--z-typing-frame)')}
-                  />
-                )}
-              </div>
+          // ⇧ on its turning handle tilts it in depth (groups do not tilt).
+          tilt: element.tilt,
+          // Offline not: its tilted picture goes up to the server.
+          onTilt:
+            element.resizable && !editing.offline
+              ? (next: ElementTilt, done: () => void, mirror?: ElementFlip) =>
+                  tilt(element, next, done, mirror)
+              : undefined,
+          // Pictures and drawn shapes mirror, pulled over a side or tilted over the edge.
+          flip: element.resizable ? element.flip : null,
+          onTiltPreview: (next: ElementTilt | null) => {
+            // Typed in, typing goes on: its text is drawn tilted as it goes.
+            editing.setPreview(
+              next && { elementId: element.id, rect, tilt: next },
+              element.id,
+              previewSurface,
             );
-          }
-          // Locked: the pointer passes through it (typed in, as above, once picked otherwise).
-          if (element.locked) return null;
-          const isPicked = picked?.id === element.id;
-          const hover = {
-            onPointerEnter: () => setHovered(element.id),
-            // Its turning handle is no longer aimed at either: coming back over the element alone
-            // takes the slide apart no more than passing over any other one does.
-            onPointerLeave: () => {
-              setHovered((id) => (id === element.id ? null : id));
-              setAimed((id) => (id === element.id ? null : id));
-            },
-          };
-          const keyboard = {
-            'data-edit-element': element.id,
-            'aria-label': elementLabel(element),
-            'aria-pressed': isPicked,
-            onFocus: (event: FocusEvent<HTMLButtonElement>) => {
-              if (event.currentTarget.matches(':focus-visible')) setFocused(element.id);
-            },
-            onBlur: () => setFocused((id) => (id === element.id ? null : id)),
-          };
-          if (element.movable) {
-            // Dragged at once, picked or not; its handles show once picked, or in box mode under
-            // the pointer. Kept as it is when typing in it starts or stops (as a tilt does): a
-            // drag going on goes on.
-            return (
-              <div key={element.id} style={{ display: 'contents' }}>
+          },
+        };
+        if (typing && element.live) {
+          // Typable at once: until the picture without this text is drawn (asked for ahead on
+          // hover), the browser's text lies over LibreOffice's own – the same, by live parity.
+          return (
+            <div
+              key={element.id}
+              style={{ display: 'contents' }}
+              onClick={(event) => event.stopPropagation()}
+              onDoubleClick={(event) => event.stopPropagation()}
+            >
+              <LiveElementView
+                // Dragged by its border or corners: laid out in the box as it goes.
+                element={
+                  preview?.elementId === element.id
+                    ? {
+                        ...element,
+                        bbox: preview.rect,
+                        rotation: preview.rotation ?? element.rotation,
+                        tilt: preview.tilt !== undefined ? preview.tilt : element.tilt,
+                      }
+                    : element
+                }
+                live={element.live}
+                textOnly
+                style={{
+                  // Over every other element's frame, also one raised under the pointer: a
+                  // click on the text – wherever it reaches, turned or tilted – lands in it.
+                  zIndex: 'var(--z-typing)',
+                  pointerEvents: 'auto',
+                  // A layer of its own: drawn with the slide, Chrome lets a drag over the
+                  // text move the caret instead of selecting (turned or tilted, it has one).
+                  willChange: 'transform',
+                  ...(canMove(element) ? {} : { outline: `2px solid ${color}`, outlineOffset: 2 }),
+                }}
+              >
+                <InlineTextEditor
+                  elementId={element.id}
+                  live={element.live}
+                  prompt={
+                    element.live.placeholder && <PromptText element={element} live={element.live} />
+                  }
+                />
+              </LiveElementView>
+              {/* Moved by its border and resized by its corners while typing in it. */}
+              {canMove(element) && (
                 <EditableFrame
                   key="frame"
                   {...frameProps}
-                  handles={handled(element)}
-                  emphasized={isPicked}
-                  outlined={isPicked}
-                  // Tilted from its picture alone, asked for once its turning handle is aimed at.
-                  onTilt={handled(element) ? frameProps.onTilt : undefined}
-                  onTurnHandleEnter={() => setAimed(element.id)}
-                  {...hover}
-                  // A click picks it – Tab then steps its panel's kinds; a click into the picked
-                  // text types in it, where it was clicked (as typing at it or Enter does) – at
-                  // once while typing in another text. ⇧-click: picked together with those picked.
-                  onActivate={(event) =>
-                    event.shiftKey
-                      ? toggleInGroup(element)
-                      : typesOnClick && (isPicked || typingElsewhere)
-                        ? typeAt(event)
-                        : select()
-                  }
-                  onDoubleClick={onDoubleClick}
-                >
-                  {/* Reached by the keyboard; its click goes up to the frame. */}
-                  <button
-                    type="button"
-                    {...keyboard}
-                    className="absolute inset-0 cursor-[inherit] rounded-mark outline-none"
-                  />
-                </EditableFrame>
-              </div>
-            );
-          }
-          return (
-            <button
-              key={element.id}
-              type="button"
-              {...keyboard}
-              {...hover}
-              // Picked by a click; the picked text is typed in where it is clicked again – at
-              // once while typing in another text.
-              onClick={(event) => {
-                event.stopPropagation();
-                if (typesOnClick && (isPicked || typingElsewhere)) typeAt(event);
-                else select();
-              }}
-              onDoubleClick={(event) => {
-                event.stopPropagation();
-                onDoubleClick?.(event);
-              }}
-              // Only where it can be clicked: its outline is the box mode's (`ShapeOutline`).
-              className="absolute rounded-mark outline-none"
-              style={{
-                left: `${rect.x * 100}%`,
-                top: `${rect.y * 100}%`,
-                width: `${rect.w * 100}%`,
-                height: `${rect.h * 100}%`,
-                transform: elementTransform(element.rotation, element.tilt),
-              }}
-            />
+                  edgesOnly
+                  className="z-(--z-typing-frame)"
+                />
+              )}
+            </div>
           );
-        })}
-      </div>
+        }
+        // Locked: the pointer passes through it (typed in, as above, once picked otherwise).
+        if (element.locked) return null;
+        const isPicked = picked?.id === element.id;
+        const hover = {
+          onPointerEnter: () => setHovered(element.id),
+          // Its turning handle is no longer aimed at either: coming back over the element alone
+          // takes the slide apart no more than passing over any other one does.
+          onPointerLeave: () => {
+            setHovered((id) => (id === element.id ? null : id));
+            setAimed((id) => (id === element.id ? null : id));
+          },
+        };
+        const keyboard = {
+          'data-edit-element': element.id,
+          'aria-label': elementLabel(element),
+          'aria-pressed': isPicked,
+          onFocus: (event: FocusEvent<HTMLButtonElement>) => {
+            if (event.currentTarget.matches(':focus-visible')) setFocused(element.id);
+          },
+          onBlur: () => setFocused((id) => (id === element.id ? null : id)),
+        };
+        if (element.movable) {
+          // Dragged at once, picked or not; its handles show once picked, or in box mode under
+          // the pointer. Kept as it is when typing in it starts or stops (as a tilt does): a
+          // drag going on goes on.
+          return (
+            <div key={element.id} style={{ display: 'contents' }}>
+              <EditableFrame
+                key="frame"
+                {...frameProps}
+                handles={handled(element)}
+                emphasized={isPicked}
+                outlined={isPicked}
+                // Tilted from its picture alone, asked for once its turning handle is aimed at.
+                onTilt={handled(element) ? frameProps.onTilt : undefined}
+                onTurnHandleEnter={() => setAimed(element.id)}
+                {...hover}
+                // A click picks it – Tab then steps its panel's kinds; a click into the picked
+                // text types in it, where it was clicked (as typing at it or Enter does) – at
+                // once while typing in another text. ⇧-click: picked together with those picked.
+                onActivate={(event) =>
+                  event.shiftKey
+                    ? toggleInGroup(element)
+                    : typesOnClick && (isPicked || typingElsewhere)
+                      ? typeAt(event)
+                      : select()
+                }
+                onDoubleClick={onDoubleClick}
+              >
+                {/* Reached by the keyboard; its click goes up to the frame. */}
+                <button
+                  type="button"
+                  {...keyboard}
+                  className="absolute inset-0 cursor-[inherit] rounded-mark outline-none"
+                />
+              </EditableFrame>
+            </div>
+          );
+        }
+        return (
+          <button
+            key={element.id}
+            type="button"
+            {...keyboard}
+            {...hover}
+            // Picked by a click; the picked text is typed in where it is clicked again – at
+            // once while typing in another text.
+            onClick={(event) => {
+              event.stopPropagation();
+              if (typesOnClick && (isPicked || typingElsewhere)) typeAt(event);
+              else select();
+            }}
+            onDoubleClick={(event) => {
+              event.stopPropagation();
+              onDoubleClick?.(event);
+            }}
+            // Only where it can be clicked: its outline is the box mode's (`ShapeOutline`).
+            className="absolute rounded-mark outline-none"
+            style={{
+              left: `${rect.x * 100}%`,
+              top: `${rect.y * 100}%`,
+              width: `${rect.w * 100}%`,
+              height: `${rect.h * 100}%`,
+              transform: elementTransform(element.rotation, element.tilt),
+            }}
+          />
+        );
+      })}
       {lines.map((element) => (
         <LineFrame
           key={element.id}
@@ -626,14 +641,27 @@ function EditLayerView({ slideId, color, boxes, onHover }: EditLayerProps) {
         snapLines={linesWithout(groupIds)}
       />
       <PictureFitLayer slideId={slideId} color={color} />
-      {dragLines && <CaughtLines lines={dragLines} color={color} />}
+      {dragLines && <CaughtLines {...dragLines} color={color} />}
       {insertFrame.overlay}
     </div>
   );
 }
 
-/** The lines a dragged element lies on – the slide's, a guide, another element's side – across it. */
-function CaughtLines({ lines, color }: { lines: SnapLines; color: string }) {
+/**
+ * The lines a dragged element lies on – the slide's, a guide, another element's side – across it,
+ * the elements on them framed, and the equal gaps it keeps to those beside it marked.
+ */
+function CaughtLines({
+  lines,
+  gaps,
+  boxes,
+  color,
+}: {
+  lines: SnapLines;
+  gaps: readonly BoxGap[];
+  boxes: readonly Rect[];
+  color: string;
+}) {
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 z-(--z-raised)">
       {lines.x.map((x) => (
@@ -652,6 +680,59 @@ function CaughtLines({ lines, color }: { lines: SnapLines; color: string }) {
           style={{ top: `${y * 100}%`, background: color }}
         />
       ))}
+      {boxes.map((box, index) => (
+        <span
+          key={`b${index}`}
+          data-caught-box
+          className="absolute border"
+          style={{
+            left: `${box.x * 100}%`,
+            top: `${box.y * 100}%`,
+            width: `${box.w * 100}%`,
+            height: `${box.h * 100}%`,
+            borderColor: color,
+          }}
+        />
+      ))}
+      {gaps.map((gap) => {
+        const along = gap.axis === 'x';
+        const start = `${gap.start * 100}%`;
+        const length = `${(gap.end - gap.start) * 100}%`;
+        const from = `${gap.across[0] * 100}%`;
+        const width = `${(gap.across[1] - gap.across[0]) * 100}%`;
+        return (
+          // The gap tinted over what both share, a bar across it with a tick at either end.
+          <span
+            key={`g${gap.axis}${gap.start}`}
+            data-caught-gap={gap.axis}
+            className="absolute"
+            style={
+              along
+                ? { left: start, width: length, top: from, height: width }
+                : { top: start, height: length, left: from, width }
+            }
+          >
+            <span className="absolute inset-0 opacity-20" style={{ background: color }} />
+            <span
+              className={
+                along
+                  ? 'absolute inset-x-0 top-1/2 h-2.5 -translate-y-1/2 border-x-2'
+                  : 'absolute inset-y-0 left-1/2 w-2.5 -translate-x-1/2 border-y-2'
+              }
+              style={{ borderColor: color }}
+            >
+              <span
+                className={
+                  along
+                    ? 'absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2'
+                    : 'absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2'
+                }
+                style={{ background: color }}
+              />
+            </span>
+          </span>
+        );
+      })}
     </div>
   );
 }

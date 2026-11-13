@@ -3,7 +3,7 @@ import { createContext, useContext } from 'react';
 import type { Thread } from '../comments/lib/comment-selectors';
 import type { SlideBadge } from '../revisions/lib/revision-changes';
 
-/** A link import (OneDrive, SharePoint, URL) that updates itself; uploads get new versions by hand. */
+/** A link import (Nextcloud, URL) that updates itself; uploads get new versions by hand. */
 export function isDeckLinked(deck: Pick<Deck, 'sync' | 'source'>): boolean {
   return deck.sync?.enabled ?? deck.source !== 'upload';
 }
@@ -19,7 +19,7 @@ export interface RevisionData {
   revisionNumber: number;
   /** Fresh from the status poll, falling back to the deck's own `sync`. */
   sync: DeckSync | null;
-  /** Link import (OneDrive, SharePoint, URL) that updates itself; uploads get new versions by hand. */
+  /** Link import (Nextcloud, URL) that updates itself; uploads get new versions by hand. */
   isLinked: boolean;
   /** Badges of the latest revision per slide id (only slides that changed). */
   badges: ReadonlyMap<string, SlideBadge>;

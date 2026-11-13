@@ -20,11 +20,14 @@ const PLANE = '[data-plane], [data-layer-marks]';
 
 /** How large a layout px on `plane` shows on screen, from its corners as seen. */
 function planeScale(plane: HTMLElement): number {
+  const width = plane.offsetWidth;
+  const height = plane.offsetHeight;
+  if (width <= 0 || height <= 0) return 1;
   const quad = seenCorners(plane);
-  if (!quad || plane.offsetWidth <= 0 || plane.offsetHeight <= 0) return 1;
+  if (!quad) return 1;
   const [a, b, , d] = quad;
-  const across = Math.hypot(b.x - a.x, b.y - a.y) / plane.offsetWidth;
-  const down = Math.hypot(d.x - a.x, d.y - a.y) / plane.offsetHeight;
+  const across = Math.hypot(b.x - a.x, b.y - a.y) / width;
+  const down = Math.hypot(d.x - a.x, d.y - a.y) / height;
   return across > 0 && down > 0 ? Math.sqrt(across * down) : 1;
 }
 
@@ -39,15 +42,17 @@ export function useFrameSize(
   const [size, setSize] = useState<FrameSize | null>(null);
   const measure = useCallback(() => {
     const frame = frameRef.current;
-    const plane = frame?.closest<HTMLElement>(PLANE);
-    const next =
-      active && frame && frame.offsetWidth > 0 && frame.offsetHeight > 0
-        ? {
-            width: frame.offsetWidth,
-            height: frame.offsetHeight,
-            scale: plane ? planeScale(plane) : 1,
-          }
-        : null;
+    if (!active || !frame) {
+      setSize(null);
+      return;
+    }
+    const width = frame.offsetWidth;
+    const height = frame.offsetHeight;
+    let next: FrameSize | null = null;
+    if (width > 0 && height > 0) {
+      const plane = frame.closest<HTMLElement>(PLANE);
+      next = { width, height, scale: plane ? planeScale(plane) : 1 };
+    }
     setSize((current) =>
       current?.width === next?.width &&
       current?.height === next?.height &&

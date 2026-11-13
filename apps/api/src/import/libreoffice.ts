@@ -452,7 +452,7 @@ export function createLibreOfficeDocumentPdf(options: LibreOfficeOptions): Docum
 }
 
 /**
- * Files on a deck's board (Folie 0) LibreOffice reads, with the one import filter each is read
+ * Files on a deck's material page LibreOffice reads, with the one import filter each is read
  * with and the PDF export of its kind – their text is read from that PDF (`material-extract.ts`).
  */
 export const MATERIAL_PDF_FILTERS = {

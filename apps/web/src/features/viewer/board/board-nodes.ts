@@ -9,6 +9,8 @@ import type {
 import type { Node, ResizeParams } from '@xyflow/react';
 import { createContext, type MouseEvent, type PointerEvent } from 'react';
 import type { RichValue } from './RichSticker';
+import type { NoteAnswerActions } from './NoteAnswer';
+import type { NoteAnswerValue } from './note-answers';
 import type { FolderUpload } from './useBoard';
 
 /*
@@ -326,8 +328,17 @@ export interface BoardNodeContext {
     item: BoardItem,
     value: RichValue | { text: string; plain: string; rich: null },
   ) => void;
+  /** ⌘↵ while its text is typed: taken as ↵ takes it, then handed to the AI (`NoteAnswer`). */
+  onNoteAsk: (
+    item: BoardItem,
+    value: RichValue | { text: string; plain: string; rich: null },
+  ) => void;
   /** Typing dropped (Esc): a new one goes, one's own stays as it was. */
   onNoteCancel: (item: BoardItem) => void;
+  /** The AI's answer under a note, once asked. */
+  answerOf: (noteId: string) => NoteAnswerValue | undefined;
+  /** What the answer card under a note offers. */
+  answers: NoteAnswerActions;
   onResize: (id: string, frame: ResizeParams) => void;
   onResizeEnd: (id: string, frame: ResizeParams) => void;
 }

@@ -4,7 +4,7 @@ import { compress } from 'hono/compress';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { secureHeaders } from 'hono/secure-headers';
-import { API_PREFIX } from '@slider/shared';
+import { API_PREFIX, MCP_PATH } from '@slider/shared';
 import { InstanceGate } from './auth/instance-gate';
 import type { AppDeps } from './deps';
 import { CSP_REPORT_PATH } from './http/csp';
@@ -14,15 +14,25 @@ import { LiveHub } from './realtime/live-hub';
 import { LiveTexts } from './realtime/live-texts';
 import { WorkspacePresence } from './realtime/workspace-presence';
 import { sameOriginWrites } from './http/same-origin';
+import { desktopGuard } from './http/desktop-guard';
+import {
+  appConnectionsRoutes,
+  isOpenPath,
+  OPEN_PATHS,
+  wellKnownRoutes,
+} from './routes/app-connections';
 import { serveWebApp } from './http/static';
 import { authRoutes } from './routes/auth';
+import { desktopCloudRoutes } from './routes/desktop-cloud';
+import { desktopFilesRoutes } from './routes/desktop-files';
+import { desktopLoginRoutes } from './routes/desktop-login';
 import { billingRoutes } from './routes/billing';
 import { materialsRoutes } from './routes/materials';
+import { materialQuestionsRoutes } from './routes/material-questions';
 import { deckCreationRoutes } from './routes/deck-creation';
 import { commentsRoutes } from './routes/comments';
 import { decksRoutes } from './routes/decks';
 import { deckTusRoutes } from './routes/deck-tus';
-import { filePickerRoutes } from './routes/file-picker';
 import { nextcloudRoutes } from './routes/nextcloud';
 import { filesRoutes } from './routes/files';
 import { liveRoutes } from './routes/live';
@@ -66,18 +76,39 @@ export function createApp(appDeps: AppDeps) {
   // compress (nginx's and Traefik's defaults). Skips the live stream (text/event-stream, it would
   // be buffered), ranges and what is compressed already (WebP, audio, video).
   app.use(compress());
+  // The desktop's local server: this machine and the app only (DNS rebinding, other browsers).
+  if (deps.config.desktop) {
+    app.use(desktopGuard(deps.config.secret, [`${API_PREFIX}/health`], [MCP_PATH]));
+  }
   // `same-site`: the web dev server (another port on localhost) may embed slide images.
-  // `same-origin-allow-popups`: the OneDrive file picker is a Microsoft popup that talks back to
-  // the page through `window.opener` – plain `same-origin` would cut that link.
+  // `same-origin-allow-popups`: the Nextcloud login is a popup the page keeps steering and closes
+  // after it went to the Nextcloud – plain `same-origin` would cut the page's handle on it.
   app.use(
     secureHeaders({
       crossOriginResourcePolicy: 'same-site',
       crossOriginOpenerPolicy: 'same-origin-allow-popups',
     }),
   );
-  app.use(cors({ origin: deps.config.webOrigin, credentials: true }));
+  // AI apps (MCP, OAuth, discovery) are read from any origin, without cookies; the rest is the
+  // web app's own.
+  const appCors = cors({ origin: deps.config.webOrigin, credentials: true });
+  const openCors = cors({
+    origin: '*',
+    allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+    allowHeaders: [
+      'Authorization',
+      'Content-Type',
+      'Accept',
+      'Mcp-Session-Id',
+      'Mcp-Protocol-Version',
+      'Last-Event-ID',
+    ],
+    exposeHeaders: ['Mcp-Session-Id', 'WWW-Authenticate'],
+  });
+  app.use((c, next) => (isOpenPath(c.req.path) ? openCors(c, next) : appCors(c, next)));
   // Browsers post CSP reports on their own (Origin missing or `null`); a report changes nothing.
-  app.use(sameOriginWrites(deps.config.webOrigin, [CSP_REPORT_PATH]));
+  // AI apps call with a bearer token, never the session cookie: no CSRF there.
+  app.use(sameOriginWrites(deps.config.webOrigin, [CSP_REPORT_PATH, ...OPEN_PATHS]));
   if (deps.config.hosting?.trustProxy) app.use(trustProxy());
   // Before the instance gate: reports come from any page, also before the instance is claimed.
   app.route(API_PREFIX, cspReportRoutes(deps));
@@ -94,7 +125,6 @@ export function createApp(appDeps: AppDeps) {
     .route('/', instanceAdminRoutes(deps))
     .route('/', deckTusRoutes(deps))
     .route('/', decksRoutes(deps))
-    .route('/', filePickerRoutes(deps))
     .route('/', nextcloudRoutes(deps))
     .route('/', syncRoutes(deps))
     .route('/', editsRoutes(deps))
@@ -102,6 +132,8 @@ export function createApp(appDeps: AppDeps) {
     .route('/', storageRoutes(deps))
     .route('/', commentsRoutes(deps))
     .route('/', materialsRoutes(deps))
+    .route('/', materialQuestionsRoutes(deps))
+    .route('/', appConnectionsRoutes(deps))
     .route('/', deckCreationRoutes(deps))
     .route('/', showRunRoutes(deps))
     .route('/', liveRoutes(deps, live, presence, texts))
@@ -111,12 +143,16 @@ export function createApp(appDeps: AppDeps) {
     .route('/', billingRoutes(deps))
     .route('/', foldersRoutes(deps))
     .route('/', authRoutes(deps, gate))
+    .route('/', desktopLoginRoutes(deps))
+    .route('/', desktopCloudRoutes(deps))
+    .route('/', desktopFilesRoutes(deps))
     .route('/', passkeysRoutes(deps))
     .route('/', setupRoutes(deps));
 
   // Self-hosting: health check for Docker and uptime monitors, before any auth middleware.
   app.get(`${API_PREFIX}/health`, healthCheck(deps));
   app.route(API_PREFIX, api);
+  app.route('/', wellKnownRoutes(deps));
   app.route('/files', filesRoutes(deps));
 
   // Self-hosting: the built web app from the same origin as the API.

@@ -333,7 +333,7 @@ describe('AI proposals', { timeout: 60_000 }, () => {
         'change_elements',
         'add_comment',
         'ask_back',
-        // The deck's board (Folie 0): read through tools only.
+        // The deck's material page: read through tools only.
         'list_materials',
         'read_material',
         'read_sheet',
@@ -392,12 +392,36 @@ describe('AI proposals', { timeout: 60_000 }, () => {
         return deckEditStateSchema.parse(await res.json());
       };
 
+      // Its thread: done by the AI while its change is in, open again while it is taken back.
+      const thread = async () =>
+        (
+          (await (await ctx.request(`/api/decks/${deckId}/comments`)).json()) as {
+            id: string;
+            status: string;
+            resolvedBy: string | null;
+          }[]
+        ).find((item) => item.id === done.commentId);
+      expect(await thread()).toMatchObject({ status: 'done', resolvedBy: 'ai' });
+
       // The last step: taking it back is undo, applying again is redo.
       expect(await ok('revert')).toMatchObject({ seq: 0 });
       expect((await slides())[2]!.title).toBe('Umsatz nach Region');
       expect((await proposals(ctx, deckId))[0]!.status).toBe('reverted');
+      expect(await thread()).toMatchObject({ status: 'open', resolvedBy: null });
       expect(await ok('reapply')).toMatchObject({ seq: 1 });
       expect((await slides())[2]!.title).toBe('Umsatz 2026: +10 %');
+      expect(await thread()).toMatchObject({ status: 'done', resolvedBy: 'ai' });
+
+      // Resolved by a person, it stays theirs through taking back and applying again.
+      for (const status of ['open', 'done']) {
+        const res = await ctx.request(`/api/comments/${done.commentId}`, {
+          method: 'PATCH',
+          json: { status },
+        });
+        expect(res.status).toBe(200);
+      }
+      const byPerson = (await thread())!.resolvedBy;
+      expect(byPerson).not.toBe('ai');
 
       // With a step on another slide on top, it is taken back by writing the slide as it was.
       const edit = async (slideIndex: number, paragraphs: string[]) => {
@@ -418,8 +442,10 @@ describe('AI proposals', { timeout: 60_000 }, () => {
       expect(await ok('revert')).toMatchObject({ seq: 3 });
       expect((await slides())[2]!.title).toBe('Umsatz nach Region');
       expect((await slides())[0]!.title).toBe('Neu');
+      expect(await thread()).toMatchObject({ status: 'done', resolvedBy: byPerson });
       expect(await ok('reapply')).toMatchObject({ seq: 4 });
       expect((await slides())[2]!.title).toBe('Umsatz 2026: +10 %');
+      expect(await thread()).toMatchObject({ status: 'done', resolvedBy: byPerson });
 
       // Changed since on its own slide: only undo in the edit panel takes it back.
       await edit(2, ['Von Hand']);
@@ -1479,7 +1505,16 @@ describe('AI proposals', { timeout: 60_000 }, () => {
     expect(after[1]!.id).toBe(original[2]!.id);
     expect(after[5]!.id).toBe(original[0]!.id);
     expect(original.map((slide) => slide.id)).not.toContain(after[2]!.id);
-    expect(after[1]!.openCommentCount).toBe(1);
+    // The thread that asked moved along – done now, by the AI.
+    const kept = (await (await ctx.request(`/api/decks/${deckId}/comments`)).json()) as {
+      id: string;
+    }[];
+    expect(kept.find((item) => item.id === asking)).toMatchObject({
+      slideId: after[1]!.id,
+      status: 'done',
+      resolvedBy: 'ai',
+    });
+    expect(after[1]!.openCommentCount).toBe(0);
 
     const act = async (action: 'revert' | 'reapply') => {
       const res = await ctx.request(`/api/decks/${deckId}/ai/proposals/${done.id}/${action}`, {
@@ -1610,6 +1645,26 @@ describe('AI proposals', { timeout: 60_000 }, () => {
         })
       ).status,
     ).toBe(404);
+    // Its answer takes a reaction as a comment does: one per person, changed by reacting again,
+    // taken back with null – listed with it, heard by the others, gone with the proposal's deck.
+    const react = (kind: string | null, id = made.id) =>
+      ctx.request(`/api/decks/${deckId}/ai/proposals/${id}/reaction`, {
+        method: 'PUT',
+        json: { kind },
+      });
+    expect((await proposals(ctx, deckId))[0]!.reactions).toEqual([]);
+    const liked = await react('up');
+    expect(liked.status).toBe(200);
+    expect(await liked.json()).toMatchObject([{ kind: 'up', author: { id: ctx.ownerId } }]);
+    expect((await react('down')).status).toBe(200);
+    expect((await proposals(ctx, deckId))[0]!.reactions).toMatchObject([
+      { kind: 'down', author: { id: ctx.ownerId } },
+    ]);
+    expect(heard).toHaveLength(4);
+    expect(await (await react(null)).json()).toEqual([]);
+    expect((await proposals(ctx, deckId))[0]!.reactions).toEqual([]);
+    expect((await react('super')).status).toBe(400);
+    expect((await react('up', 'nope')).status).toBe(404);
     // Words are needed.
     const empty = await ctx.request(`/api/decks/${deckId}/ai/proposals`, {
       method: 'POST',
@@ -1650,6 +1705,17 @@ describe('AI proposals', { timeout: 60_000 }, () => {
     });
     expect(asked.status).toBe(202);
     expect(await settled(ctx, deckId)).toMatchObject({ status: 'applied', commentId: reply });
+    // Its change is in: the thread is done – by the AI, the reply as it was.
+    const thread = (await (await ctx.request(`/api/decks/${deckId}/comments`)).json()) as {
+      id: string;
+      status: string;
+      resolvedBy: string | null;
+    }[];
+    expect(thread.find((item) => item.id === root)).toMatchObject({
+      status: 'done',
+      resolvedBy: 'ai',
+    });
+    expect(thread.find((item) => item.id === reply)).toMatchObject({ status: 'open' });
     // „Variante“ is never a quick request.
     expect(anthropic.quickRequests).toHaveLength(0);
     // Nor any other way of asking for one – aloud or typed, German or English: never edits of the
@@ -1737,6 +1803,8 @@ describe('AI proposals', { timeout: 60_000 }, () => {
       }[];
       const own = list.filter((item) => item.author.type === 'ai');
       expect(own).toHaveLength(2);
+      // It asks back: the thread that asked stays open, for the people's answer.
+      expect(list.find((item) => item.body === 'Kürzer bitte')).toMatchObject({ status: 'open' });
       // Its sticker: written on the commented slide, at least a few words wide, its box the anchor.
       const sticker = own.find((item) => item.strokes.length > 0)!;
       expect(sticker).toMatchObject({

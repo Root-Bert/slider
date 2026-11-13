@@ -5,6 +5,8 @@ import type { ViewerAction, ViewerState } from './viewer-types';
 
 export function createInitialState(options: {
   activeSlideId: string | null;
+  /** Opens on the material page (`?material`, a new deck). */
+  materialOpen?: boolean;
   /** Restored split; `null` / missing is the default (Desktop-1 proportions). */
   split?: number | null;
   showChanges?: boolean;
@@ -43,6 +45,7 @@ export function createInitialState(options: {
     showLayoutGrid: false,
     layoutGridPanelOpen: false,
     sharePanelOpen: false,
+    materialOpen: options.materialOpen ?? false,
     boardPanelOpen: false,
     layoutGridAxis: null,
     showHiddenSlides: options.showHiddenSlides ?? false,
@@ -158,7 +161,16 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
       return split === next.split ? next : { ...next, split };
     }
     case 'slideZoomChanged': {
-      if (action.zoom === null && !next.slideZooms.has(action.slideId)) return next;
+      const current = next.slideZooms.get(action.slideId) ?? null;
+      if (
+        current === action.zoom ||
+        (current &&
+          action.zoom &&
+          current.scale === action.zoom.scale &&
+          current.x === action.zoom.x &&
+          current.y === action.zoom.y)
+      )
+        return next;
       const slideZooms = new Map(next.slideZooms);
       if (action.zoom === null) slideZooms.delete(action.slideId);
       else slideZooms.set(action.slideId, action.zoom);
@@ -225,22 +237,13 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
         : next.deletedPanelOpen
           ? { ...next, deletedPanelOpen: false }
           : next;
+    case 'materialSet':
+      if (action.open === next.materialOpen) return next;
+      // Leaving the material page lets go of what was picked there.
+      return { ...next, materialOpen: action.open, boardPanelOpen: false };
     case 'boardPanelSet':
-      if (action.open === next.boardPanelOpen) return next;
-      return action.open
-        ? {
-            ...next,
-            boardPanelOpen: true,
-            threadPanelOpen: false,
-            focusedThreadId: null,
-            editingCommentId: null,
-            deletedPanelOpen: false,
-            layersPanelOpen: false,
-            backgroundPanelPageId: null,
-            layoutGridPanelOpen: false,
-            sharePanelOpen: false,
-          }
-        : { ...next, boardPanelOpen: false };
+      // On the material page of its own: the presentation's panels stay as they are.
+      return action.open === next.boardPanelOpen ? next : { ...next, boardPanelOpen: action.open };
     case 'sharePanelSet':
       if (action.open === next.sharePanelOpen) return next;
       return action.open

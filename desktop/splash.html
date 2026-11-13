@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'"
+    />
+    <title>Slider</title>
+    <link rel="stylesheet" href="./generated/logo-animations.css" />
+    <style>
+      @font-face {
+        font-family: 'Inter Variable';
+        src: url('./tabbar/inter.woff2') format('woff2');
+        font-weight: 100 900;
+      }
+      :root {
+        color-scheme: dark;
+        --canvas: #000;
+        --fg: rgb(255 255 255 / 0.9);
+        --fg-subtle: rgb(255 255 255 / 0.5);
+      }
+      :root[data-theme='light'] {
+        color-scheme: light;
+        --canvas: #f4f4f5;
+        --fg: rgb(0 0 0 / 0.88);
+        --fg-subtle: rgb(0 0 0 / 0.46);
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: var(--canvas);
+        color: var(--fg);
+        font-family:
+          'Inter Variable',
+          -apple-system,
+          BlinkMacSystemFont,
+          sans-serif;
+        font-feature-settings: 'cv11', 'ss01';
+        -webkit-font-smoothing: antialiased;
+        user-select: none;
+        cursor: default;
+      }
+      body {
+        display: grid;
+        place-items: center;
+      }
+      main {
+        display: grid;
+        justify-items: center;
+        gap: 28px;
+      }
+      /* The app header's word mark (Logo.tsx: mark 24 px, gap 6, 18 px semibold), zoomed – the
+         animations' px are meant at that size. */
+      .logo {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        zoom: 3;
+      }
+      .logo-text {
+        font-size: 18px;
+        line-height: 28px;
+        font-weight: 600;
+        letter-spacing: -0.025em;
+      }
+      .logo-text > span {
+        display: inline-block;
+      }
+      .fill-logo-back {
+        fill: var(--color-logo-back);
+      }
+      .fill-logo-front {
+        fill: var(--color-logo-front);
+      }
+      .fill-logo {
+        fill: var(--color-logo);
+      }
+      .stroke-logo-lines {
+        stroke: var(--color-logo-lines);
+      }
+      .stroke-logo-outline {
+        stroke: var(--color-logo-outline);
+      }
+      #status {
+        margin: 0;
+        min-height: 18px;
+        font-size: 13px;
+        line-height: 18px;
+        color: var(--fg-subtle);
+        font-variant-numeric: tabular-nums;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <span class="logo" role="img" aria-label="Slider">
+        <svg
+          width="24"
+          height="22.2"
+          viewBox="0 0 24.05 22.25"
+          fill="none"
+          aria-hidden="true"
+          data-logo-part="icon"
+        >
+          <g data-logo-part="back">
+            <rect x=".2315" y=".2315" width="20" height="11.25" rx="3" class="fill-logo-back" />
+            <path d="M3.1435 2.1065h7.6389" class="stroke-logo-lines" stroke-width=".75" />
+          </g>
+          <g data-logo-part="front">
+            <rect x="2.537" y="9.9769" width="20" height="12.0139" rx="3" class="fill-logo-front" />
+            <path
+              d="M5.412 17.1852h.5787M7.787 17.1852h9.4907M5.412 19.4545h.5787M7.787 19.4545h6.25"
+              class="stroke-logo-lines"
+              stroke-width=".75"
+            />
+          </g>
+          <path
+            d="M10.037 3.4861h10a4 4 0 0 1 4 4v3.25a4 4 0 0 1-4 4H7.037a1 1 0 0 1-1-1V7.4861a4 4 0 0 1 4-4Z"
+            class="fill-logo stroke-logo-outline"
+            stroke-width=".46"
+            data-logo-part="bubble"
+          />
+        </svg>
+        <span class="logo-text" data-logo-part="text">
+          <span aria-hidden="true" style="--i: 0">S</span
+          ><span aria-hidden="true" style="--i: 1">l</span
+          ><span aria-hidden="true" style="--i: 2">i</span
+          ><span aria-hidden="true" style="--i: 3">d</span
+          ><span aria-hidden="true" style="--i: 4">e</span
+          ><span aria-hidden="true" style="--i: 5">r</span>
+        </span>
+      </span>
+      <p id="status"></p>
+    </main>
+    <script src="./generated/logo-animations.js"></script>
+    <script src="./splash.js"></script>
+  </body>
+</html>

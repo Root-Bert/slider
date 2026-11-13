@@ -5,7 +5,6 @@ import type { Config } from '../config';
 import type { Database } from '../db/client';
 import {
   decks,
-  googleConnections,
   nextcloudConnections,
   revisions,
   workspaceMembers,
@@ -23,7 +22,6 @@ import type { ImportJob, JobQueue } from '../import/queue';
 import type { Logger } from '../logger';
 import { isSyncEnabled } from '../services/deck-sync';
 import { assertStorageFor, assertWithinLimits } from '../services/plans';
-import { withDeckConnection, type ConnectionLookup } from '../sources/connections';
 import {
   readContributors,
   type RemoteFile,
@@ -54,8 +52,6 @@ export interface SyncServiceDeps {
   clock: Clock;
   log: Logger;
   config: Pick<Config, 'plans'>;
-  /** The owners' Microsoft connections, for decks that do not know theirs yet. */
-  connections?: ConnectionLookup;
   /** LibreOffice for Word, Excel and text files (see `toDeckBytes`); absent → none of those. */
   documentPdf?: DocumentToPdf | null;
   /** How long a pull waits for its import; {@link SYNC_MANUAL_WAIT_MS} unless a test says. */
@@ -209,7 +205,8 @@ export class SyncService {
     // Over the plan's limits nothing new comes in (BER-155): "Neu rendern" says why.
     await assertWithinLimits(this.deps.db, this.deps.config, deck.workspaceId, now);
     const state = deck.syncState;
-    const adapter = this.deps.sources[deck.source as Exclude<DeckRow['source'], 'upload'>];
+    // `isSyncEnabled` lets only Nextcloud and plain links through.
+    const adapter: SourceAdapter = this.deps.sources[deck.source as 'nextcloud' | 'url'];
     const file: RemoteFile = {
       ref: deck.sourceRef,
       fileName: deck.fileName,
@@ -218,13 +215,13 @@ export class SyncService {
     };
 
     try {
-      // Through the deck's Microsoft (Nextcloud, Google) connection – or, without one, the first
-      // of the owner's that has access; the rest of the check goes through the same one.
+      // Through the deck's Nextcloud connection – or, without one, the first of the owner's that
+      // has access; the rest of the check goes through the same one.
       const readToken = (context: SourceContext) => adapter.getChangeToken(file, context);
       const changed =
-        deck.source === 'nextcloud' || deck.source === 'google'
-          ? await this.throughOwnConnection(deck, deck.source, readToken)
-          : await withDeckConnection(this.deps, deck, readToken);
+        deck.source === 'nextcloud'
+          ? await this.throughOwnConnection(deck, readToken)
+          : { value: await readToken({ userId: deck.ownerId }), context: { userId: deck.ownerId } };
       const remote: Remote = { adapter, file, context: changed.context };
       let token = changed.value;
       // Decks linked before contributors were recorded learn them now; the rest with a revision.
@@ -411,15 +408,14 @@ export class SyncService {
     const stored = deck?.syncState.lastSyncError;
     if (!deck || !stored)
       return toSyncError(new Error('unknown'), deck?.id ?? '', this.deps.clock.now()).error;
-    return {
-      ...stored,
-      ...(stored.code === 'auth_required' ? { loginUrl: loginUrlOfDeck(deck) } : {}),
-    };
+    const loginUrl = stored.code === 'auth_required' ? loginUrlOfDeck(deck) : undefined;
+    return { ...stored, ...(loginUrl ? { loginUrl } : {}) };
   }
 
   private async fail(deck: DeckRow, error: unknown, now: Date): Promise<SyncResult> {
+    const loginUrl = loginUrlOfDeck(deck);
     const { error: syncError, expected } = toSyncError(error, deck.id, now, {
-      loginUrl: loginUrlOfDeck(deck),
+      ...(loginUrl ? { loginUrl } : {}),
     });
     if (!expected) this.deps.log.error(`Sync check of deck ${deck.id} failed`, error);
     else this.deps.log.warn(`Sync check of deck ${deck.id}: ${syncError.code}`);
@@ -431,30 +427,27 @@ export class SyncService {
   }
 
   /**
-   * Nextcloud and Google decks read through their own connection, else through the owner's other
-   * accounts – Nextcloud's at the file's server, also when the own one lost access; Google's, else
-   * the public link (the adapter tries them) – remembering the one that worked, unless the deck
-   * changed connection meanwhile.
+   * Nextcloud decks read through their own connection, else through the owner's other accounts
+   * at the file's server, also when the own one lost access (the adapter tries them) –
+   * remembering the one that worked, unless the deck changed connection meanwhile.
    */
   private async throughOwnConnection<T>(
     deck: DeckRow,
-    source: 'nextcloud' | 'google',
     run: (context: SourceContext) => Promise<T>,
   ): Promise<{ value: T; context: SourceContext }> {
-    const field = source === 'nextcloud' ? 'nextcloudConnectionId' : 'googleConnectionId';
-    const connections = source === 'nextcloud' ? nextcloudConnections : googleConnections;
-    const own = deck[field];
-    const context: SourceContext = { userId: deck.ownerId, [field]: own };
+    const connections = nextcloudConnections;
+    const own = deck.nextcloudConnectionId;
+    const context: SourceContext = { userId: deck.ownerId, nextcloudConnectionId: own };
     const value = await run(context);
-    const used = context[field];
+    const used = context.nextcloudConnectionId;
     if (used && used !== own) {
       await this.deps.db
         .update(decks)
-        .set({ [field]: used })
+        .set({ nextcloudConnectionId: used })
         .where(
           and(
             eq(decks.id, deck.id),
-            own ? eq(decks[field], own) : isNull(decks[field]),
+            own ? eq(decks.nextcloudConnectionId, own) : isNull(decks.nextcloudConnectionId),
             // Disconnected during the check: nothing to remember (the foreign key would fail).
             exists(
               this.deps.db

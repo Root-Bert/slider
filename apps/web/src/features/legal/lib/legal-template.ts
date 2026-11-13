@@ -52,12 +52,8 @@ export const TEMPLATE_FIELDS = [
 export type TemplateFieldKey = (typeof TEMPLATE_FIELDS)[number]['key'];
 
 export const TEMPLATE_OPTIONS = [
-  {
-    key: 'microsoft',
-    label: 'Anmeldung mit Microsoft',
-    description: 'Mit OneDrive und SharePoint',
-  },
-  { key: 'google', label: 'Anmeldung mit Google', description: 'Mit Google Drive' },
+  { key: 'microsoft', label: 'Anmeldung mit Microsoft' },
+  { key: 'google', label: 'Anmeldung mit Google' },
   { key: 'oidc', label: 'Firmen-Login (SSO)' },
   { key: 'nextcloud', label: 'Nextcloud' },
   { key: 'mail', label: 'E-Mails', description: 'Login-Links, Einladungen, Erinnerungen' },

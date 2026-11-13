@@ -273,7 +273,7 @@ export async function setWorkspaceLogo(
   return getWorkspace(deps, userId, workspaceId);
 }
 
-/** Admins only. Back to the monogram. */
+/** Admins only. Back to the landscape drawn from its name (`WorkspaceMark`). */
 export async function removeWorkspaceLogo(
   deps: AppDeps,
   userId: string,

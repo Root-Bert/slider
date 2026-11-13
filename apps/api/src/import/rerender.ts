@@ -9,7 +9,7 @@ import { ConversionAborted } from './libreoffice';
 import { hasPdfRenderer, renderSlidePages, type SlidePagesDeps } from './office-pages';
 
 /** The PDF renderers a server has – see {@link SlidePagesDeps}. */
-export type SlideRenderers = Pick<SlidePagesDeps, 'officePdf' | 'libreOfficePdf'>;
+export type SlideRenderers = Pick<SlidePagesDeps, 'libreOfficePdf'>;
 import { openDeckFile } from './pdf-deck';
 import type { ImportJob, JobQueue } from './queue';
 
@@ -60,7 +60,7 @@ export async function rerenderRevision(
     .from(revisions)
     .where(and(eq(revisions.id, id), eq(revisions.deckId, deckId)));
   if (!revision || revision.status !== 'ready') return skipped('revision not ready');
-  if (!hasPdfRenderer(deps, deck)) return skipped('no renderer available');
+  if (!hasPdfRenderer(deps)) return skipped('no renderer available');
   if (!revision.pptxKey) return skipped('no original file');
   const rows = await db
     .select()
@@ -89,10 +89,6 @@ export async function rerenderRevision(
     priority: 'background',
   });
   if (rendered.renderer === null) return skipped('no renderer available');
-  await db
-    .update(revisions)
-    .set({ officeFailure: rendered.officeFailure })
-    .where(eq(revisions.id, id));
   if (rendered.renderer === 'svg') {
     await markTried(db, id);
     return { status: 'unchanged', renderer: 'svg', replaced: 0 };
@@ -239,7 +235,7 @@ export async function findRerenderCandidates(
   renderers: SlideRenderers,
 ): Promise<ImportJob[]> {
   // Nothing better to offer: no need to look at a single slide.
-  if (!renderers.officePdf && !renderers.libreOfficePdf) return [];
+  if (!renderers.libreOfficePdf) return [];
   // One row per deck, aggregated in SQL – not every slide of every deck with its deck row.
   const untried = sql<boolean>`bool_or(${slideVersions.renderer} is null)`;
   const better = sql<boolean>`coalesce(bool_or(${slideVersions.renderer} in ('office', 'libreoffice')), false)`;
@@ -248,8 +244,6 @@ export async function findRerenderCandidates(
       deckId: decks.id,
       revisionId: revisions.id,
       importState: decks.importState,
-      source: decks.source,
-      sourceRef: decks.sourceRef,
     })
     .from(decks)
     .innerJoin(revisions, eq(revisions.id, decks.currentRevisionId))
@@ -258,11 +252,7 @@ export async function findRerenderCandidates(
     .groupBy(decks.id, revisions.id)
     .having(and(untried, sql`not ${better}`));
   return rows
-    .filter(
-      (row) =>
-        row.importState.status === 'ready' &&
-        hasPdfRenderer(renderers, { source: row.source, sourceRef: row.sourceRef }),
-    )
+    .filter((row) => row.importState.status === 'ready')
     .map((row) => ({ deckId: row.deckId, revisionId: row.revisionId, kind: 'rerender' as const }));
 }
 

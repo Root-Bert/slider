@@ -18,7 +18,7 @@ import {
 import {
   bannerSyncError,
   isLoginError,
-  sourceLoginLabel,
+  SOURCE_LOGIN_LABEL,
   syncErrorTitle,
 } from './lib/revision-changes';
 import { useRevisionData } from '../state/revision-data';
@@ -123,7 +123,7 @@ function SyncErrorStatus({ error }: { error: SyncError }) {
           {login ? (
             <div className="flex pt-2">
               <Button size="sm" onClick={() => window.location.assign(error.loginUrl!)}>
-                {sourceLoginLabel(error.loginUrl)}
+                {SOURCE_LOGIN_LABEL}
               </Button>
             </div>
           ) : (

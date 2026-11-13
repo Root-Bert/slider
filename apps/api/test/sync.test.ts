@@ -17,13 +17,8 @@ import { FINGERPRINT_VERSION } from '../src/import/common';
 import { findInterruptedImports, importDeck } from '../src/import/import-deck';
 import { silentLogger } from '../src/logger';
 import { blobKeys } from '../src/storage/blob-storage';
-import {
-  microsoftLoginRequired,
-  sourceForbidden,
-  sourceNotFound,
-  sourceUnreachable,
-} from '../src/sources/errors';
-import { connectMicrosoft, createTestContext, pinComment, type TestContext } from './helpers';
+import { sourceForbidden, sourceNotFound, sourceUnreachable } from '../src/sources/errors';
+import { createTestContext, pinComment, type TestContext } from './helpers';
 import {
   BASE_SLIDES,
   commentRows,
@@ -63,7 +58,7 @@ async function setup(
   const pptx = versionedPptx({ v1: presentation(BASE_SLIDES), ...versions });
   ctx = await createTestContext({
     openPptx: pptx.open,
-    sources: { onedrive: source },
+    sources: { url: source },
     ...config,
     // Sync is not about plans: no deck limit (BER-130).
     config: { plans: { free: UNLIMITED_PLAN, paid: UNLIMITED_PLAN }, ...config.config },
@@ -241,7 +236,7 @@ describe('pulling by hand', () => {
       error: {
         code: 'storage_full',
         message:
-          'Speicher voll – neue Versionen aus OneDrive lassen sich erst wieder holen, wenn Platz frei ist.',
+          'Speicher voll – neue Versionen aus der Quelle lassen sich erst wieder holen, wenn Platz frei ist.',
       },
     });
     expect(source.download).not.toHaveBeenCalled();
@@ -275,55 +270,12 @@ describe('pulling by hand', () => {
   });
 });
 
-describe('several Microsoft accounts', () => {
-  it('a public file ties no account; otherwise the owner’s accounts are tried, the winner kept, switched on lost access and renewed from the banner', async () => {
-    const { ctx, source, deckId } = await setup();
-    const other = await connectMicrosoft(ctx.deps.db, ctx.ownerId, {
-      subject: 'ms-1',
-      lastUsedAt: new Date('2026-10-02'),
-    });
-    const winner = await connectMicrosoft(ctx.deps.db, ctx.ownerId, {
-      subject: 'ms-2',
-      lastUsedAt: new Date('2026-10-01'),
-    });
-    // A public file never ties the deck to an account.
-    expect(await sync(ctx, deckId)).toEqual({ status: 'unchanged' });
-    expect((await deckRow(ctx, deckId)).microsoftConnectionId).toBeNull();
-
-    // A deck without a connection (linked before) tries the owner's accounts and keeps the winner.
-    source.getChangeToken.mockClear();
-    source.access = new Set([winner]);
-    expect(await sync(ctx, deckId)).toEqual({ status: 'unchanged' });
-    expect(source.getChangeToken.mock.calls.map(([, c]) => c?.connectionId)).toEqual([
-      other,
-      winner,
-    ]);
-    expect((await deckRow(ctx, deckId)).microsoftConnectionId).toBe(winner);
-    expect(await sync(ctx, deckId)).toEqual({ status: 'unchanged' });
-    expect(source.getChangeToken.mock.calls.at(-1)?.[1]?.connectionId).toBe(winner);
-
-    // That account loses access: the owner's other account can read it, so the deck switches.
-    source.access = new Set([other]);
-    expect(await sync(ctx, deckId)).toEqual({ status: 'unchanged' });
-    expect((await deckRow(ctx, deckId)).microsoftConnectionId).toBe(other);
-
-    // No account can read it any more: the banner renews the deck's own account.
-    source.error = microsoftLoginRequired('');
-    source.access = null;
-    const expired = await sync(ctx, deckId);
-    expect(expired.error?.loginUrl).toBe(
-      `/api/auth/microsoft/login?returnTo=${encodeURIComponent(`/d/${deckId}`)}&connection=${other}`,
-    );
-  });
-});
-
 describe('errors keep the last revision', () => {
   it('source, parse and import errors show on the deck; the next pull recovers', async () => {
     const { ctx, source, deckId } = await setup({ v3: presentation(EDITED) });
     const slidesBefore = await slidesOf(ctx, deckId);
     const before = await deckRow(ctx, deckId);
     for (const [error, code] of [
-      [microsoftLoginRequired(''), 'auth_required'],
       [sourceNotFound(), 'not_found'],
       [sourceForbidden(), 'access_revoked'],
     ] as const) {
@@ -332,13 +284,7 @@ describe('errors keep the last revision', () => {
       expect(result).toMatchObject({ status: 'error', error: { code } });
       const deck = await deckOf(ctx, deckId);
       expect(deck.sync?.lastSyncError?.code).toBe(code);
-      expect(deck.sync?.lastSyncError?.message).toMatch(/Version|Datei|Microsoft/);
-      if (code === 'auth_required') {
-        const loginUrl = `/api/auth/microsoft/login?returnTo=${encodeURIComponent(`/d/${deckId}`)}`;
-        expect(result.error?.loginUrl).toBe(loginUrl);
-        expect(deck.sync?.lastSyncError?.loginUrl).toBe(loginUrl);
-        expect(result.error?.message).toContain('Bis dahin siehst du die letzte Version');
-      }
+      expect(deck.sync?.lastSyncError?.message).toMatch(/Version|Datei/);
       expect(deck.currentRevisionId).toBe(before.currentRevisionId);
       expect(deck.import).toEqual({ status: 'ready' });
       expect(await slidesOf(ctx, deckId)).toEqual(slidesBefore);

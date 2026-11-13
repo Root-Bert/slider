@@ -7,12 +7,8 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: ErrorCode,
     message: string,
-    /** With `microsoft_login_required`: where to send the browser to sign in. */
-    readonly loginUrl?: string,
     /** With `nextcloud_login_required`: the Nextcloud to connect (BER-135). */
     readonly nextcloudServer?: string,
-    /** With `google_login_required`: the file to pick in Google's picker (BER-119). */
-    readonly googleFileId?: string,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -21,14 +17,7 @@ export class ApiError extends Error {
 
 const fromBody = (status: number, error: ApiErrorBody['error']) => {
   if (error.code === 'instance_unclaimed') toClaimScreen();
-  return new ApiError(
-    status,
-    error.code,
-    error.message,
-    error.loginUrl,
-    error.nextcloudServer,
-    error.googleFileId,
-  );
+  return new ApiError(status, error.code, error.message, error.nextcloudServer);
 };
 
 /**
@@ -184,11 +173,8 @@ export const api = {
   delete: (path: string) => apiRequest<void>(path, { method: 'DELETE' }),
 };
 
-/**
- * A file the API makes on asking (a PDF of a deck), saved by the browser under the name the
- * answer gives – fetched first, so the page can show it is being made and say why it failed.
- */
-export async function apiDownload(path: string, fallbackName: string): Promise<void> {
+/** A file from the API, named as its answer says (`Content-Disposition`), else `fallbackName`. */
+export async function apiFile(path: string, fallbackName: string): Promise<File> {
   checkPath(path);
   let response: Response;
   try {
@@ -199,10 +185,20 @@ export async function apiDownload(path: string, fallbackName: string): Promise<v
   if (!response.ok) throw await toApiError(response);
   const disposition = response.headers.get('Content-Disposition') ?? '';
   const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
-  const url = URL.createObjectURL(await response.blob());
+  const blob = await response.blob();
+  return new File([blob], encoded ? decodeURIComponent(encoded) : fallbackName);
+}
+
+/**
+ * A file the API makes on asking (a PDF of a deck), saved by the browser under the name the
+ * answer gives – fetched first, so the page can show it is being made and say why it failed.
+ */
+export async function apiDownload(path: string, fallbackName: string): Promise<void> {
+  const file = await apiFile(path, fallbackName);
+  const url = URL.createObjectURL(file);
   const link = document.createElement('a');
   link.href = url;
-  link.download = encoded ? decodeURIComponent(encoded) : fallbackName;
+  link.download = file.name;
   // In the page while clicked, and the file kept a while: Safari reads it after the click.
   link.hidden = true;
   document.body.append(link);

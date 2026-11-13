@@ -98,8 +98,10 @@ const relative = (rect: DOMRect, origin: DOMRect): Box => ({
   bottom: rect.bottom - origin.top,
 });
 
-const centreX = (element: Element, origin: DOMRect) => {
-  const rect = element.getBoundingClientRect();
+type MeasureRect = (element: Element) => DOMRect;
+
+const centreX = (element: Element, origin: DOMRect, rectOf: MeasureRect) => {
+  const rect = rectOf(element);
   return (rect.left + rect.right) / 2 - origin.left;
 };
 
@@ -135,32 +137,24 @@ export function useConnectorLayout({
 }): ConnectorLine[] {
   const registry = useStageRegistry();
   const [lines, setLines] = useState<ConnectorLine[]>(NO_LINES);
-  const rendered = useRef({ lines: '', cutouts: '' });
+  const rendered = useRef('');
 
   useEffect(() => {
     const scroller = registry.getScroller();
     const wrapper = scroller?.parentElement;
-    // A new SVG starts with an empty mask.
-    rendered.current.cutouts = '';
     // Applied before the frame paints, so the lines never trail the cards by a frame.
     const commit = (next: ConnectorLayout) => {
       const key = next.lines.map((line) => `${line.threadId} ${line.color}`).join('\n');
-      if (key !== rendered.current.lines) {
-        rendered.current.lines = key;
+      if (key !== rendered.current) {
+        rendered.current = key;
         const structure = next.lines.map(({ threadId, color }) => ({ threadId, color }));
         flushSync(() => setLines(structure.length > 0 ? structure : NO_LINES));
       }
       if (!svg) return;
       const height = `${next.height}px`;
       if (svg.style.height !== height) svg.style.height = height;
-      const cutouts = cutoutMarkup(next.cutouts);
-      if (cutouts !== rendered.current.cutouts) {
-        const group = svg.querySelector('[data-connector-cutouts]');
-        if (group) {
-          group.innerHTML = cutouts;
-          rendered.current.cutouts = cutouts;
-        }
-      }
+      const group = svg.querySelector('[data-connector-cutouts]');
+      if (group) updateCutouts(group, next.cutouts);
       const pathOf = new Map(next.lines.map((line) => [line.threadId, line.d]));
       for (const path of svg.querySelectorAll<SVGPathElement>('path[data-connector-id]')) {
         const d = pathOf.get(path.dataset.connectorId!);
@@ -173,14 +167,24 @@ export function useConnectorLayout({
         commit(EMPTY);
         return;
       }
-      const origin = layer.getBoundingClientRect();
-      const stage = relative(scroller.getBoundingClientRect(), origin);
+      // Read each rectangle once: a card is both an obstacle, a mask and a route target.
+      const rectangles = new Map<Element, DOMRect>();
+      const rectOf: MeasureRect = (element) => {
+        let rect = rectangles.get(element);
+        if (!rect) {
+          rect = element.getBoundingClientRect();
+          rectangles.set(element, rect);
+        }
+        return rect;
+      };
+      const origin = rectOf(layer);
+      const stage = relative(rectOf(scroller), origin);
       // Top of the visible comment area: everything above it is the sticky header (track, then
       // the band of minimap, controls and split handle).
       const header =
         wrapper.querySelector('[data-connector-occluder]') ??
         wrapper.querySelector('[data-timeline-header]');
-      const commentTop = header ? header.getBoundingClientRect().bottom - origin.top : 0;
+      const commentTop = header ? rectOf(header).bottom - origin.top : 0;
       const busTop = commentTop + BUS_BELOW_HEADER;
       const visible = (box: Box) => box.bottom > commentTop && box.top < stage.bottom;
       const clipped = (box: Box): Box => ({ ...box, top: Math.max(box.top, commentTop) });
@@ -198,7 +202,7 @@ export function useConnectorLayout({
       for (const element of area?.querySelectorAll(
         '[data-comment-card], [data-connector-blob], [data-gap-bubble]',
       ) ?? []) {
-        const box = relative(element.getBoundingClientRect(), origin);
+        const box = relative(rectOf(element), origin);
         if (!visible(box)) continue;
         cutouts.push({ kind: 'fill', box: clipped(box) });
         obstacles.push(box);
@@ -207,7 +211,7 @@ export function useConnectorLayout({
       // the lines pass behind it too.
       for (const element of area?.querySelectorAll('[data-reaction-picker]') ?? []) {
         if (getComputedStyle(element).visibility === 'hidden') continue;
-        const box = relative(element.getBoundingClientRect(), origin);
+        const box = relative(rectOf(element), origin);
         if (!visible(box)) continue;
         cutouts.push({ kind: 'fill', box: clipped(box) });
       }
@@ -218,10 +222,10 @@ export function useConnectorLayout({
         if (!slideElement) continue;
         // Zoomed (`stage/lib/slide-zoom`), the slide box is bigger than its frame, which crops
         // it: lines leave the frame, from marks clamped into it.
-        const slideRect = slideElement.getBoundingClientRect();
+        const slideRect = rectOf(slideElement);
         const content = relative(slideRect, origin);
         const frame = slideElement.closest('[data-slide-frame]') ?? slideElement;
-        const slide = relative(frame.getBoundingClientRect(), origin);
+        const slide = relative(rectOf(frame), origin);
         // Either way: a portrait page in a 16:9 frame is cropped top and bottom.
         const cropped =
           content.right - content.left > slide.right - slide.left + 1 ||
@@ -232,8 +236,8 @@ export function useConnectorLayout({
         const prevGap = route.prevGapKey ? registry.getGapElement(route.prevGapKey) : null;
         const nextGap = registry.getGapElement(route.nextGapKey);
         const corridor = {
-          left: prevGap ? centreX(prevGap, origin) : slide.left - FIRST_SLIDE_CORRIDOR,
-          right: nextGap ? centreX(nextGap, origin) : slide.right + FIRST_SLIDE_CORRIDOR,
+          left: prevGap ? centreX(prevGap, origin, rectOf) : slide.left - FIRST_SLIDE_CORRIDOR,
+          right: nextGap ? centreX(nextGap, origin, rectOf) : slide.right + FIRST_SLIDE_CORRIDOR,
         };
 
         // Cards of this column; lower brick bands are reached through the half-gaps.
@@ -243,12 +247,12 @@ export function useConnectorLayout({
         const placements = new Map<string, { band: string; margin: string | undefined }>();
         if (column) {
           for (const card of column.querySelectorAll<HTMLElement>('[data-comment-card]')) {
-            const box = relative(card.getBoundingClientRect(), origin);
+            const box = relative(rectOf(card), origin);
             cards.set(card.dataset.commentCard!, box);
           }
           for (const brick of column.querySelectorAll<HTMLElement>('[data-brick]')) {
             const { brick: id, band = '0', margin } = brick.dataset;
-            const top = brick.getBoundingClientRect().top - origin.top;
+            const top = rectOf(brick).top - origin.top;
             bandTops.set(band, Math.min(bandTops.get(band) ?? top, top));
             placements.set(id!, { band, margin });
           }
@@ -263,7 +267,7 @@ export function useConnectorLayout({
         };
 
         const blobElement = column?.querySelector<HTMLElement>('[data-connector-blob]');
-        const blob = blobElement ? relative(blobElement.getBoundingClientRect(), origin) : null;
+        const blob = blobElement ? relative(rectOf(blobElement), origin) : null;
 
         const requests: ConnectorRequest[] = [];
         for (const item of route.items) {
@@ -273,8 +277,8 @@ export function useConnectorLayout({
             const marker = nextGap?.querySelector('[data-gap-marker]');
             const card = cards.get(item.threadId);
             if (!marker || (!card && !blob)) continue;
-            const x = centreX(marker, origin);
-            const from = marker.getBoundingClientRect().bottom - origin.top;
+            const x = centreX(marker, origin, rectOf);
+            const from = rectOf(marker).bottom - origin.top;
             const target = card
               ? { x: card.left + (compact ? COMPACT_ENTRY_X : CARD_ENTRY_X), y: card.top }
               : { x: (blob!.left + blob!.right) / 2, y: blob!.top };
@@ -354,8 +358,8 @@ export function useConnectorLayout({
         }
         // The lines pass behind the slide's marks, flat or on its planes.
         const markCutouts = () => {
-          cutouts.push(...measureCutouts(slideElement, origin, cropped ? slide : null));
-          cutouts.push(...layerCutouts(frame, origin));
+          cutouts.push(...measureCutouts(slideElement, origin, cropped ? slide : null, rectOf));
+          cutouts.push(...layerCutouts(frame, origin, rectOf));
         };
         if (requests.length === 0) {
           markCutouts();
@@ -368,7 +372,7 @@ export function useConnectorLayout({
           routed = layoutBlobConnectors(requests, { slide, corridor, blob });
         } else {
           const cardsTop = Math.min(...requests.map((request) => request.target.y));
-          const columnBox = column ? relative(column.getBoundingClientRect(), origin) : null;
+          const columnBox = column ? relative(rectOf(column), origin) : null;
           // A column grown past its slide's corridor keeps the room `columnSpans` left beside it.
           const margins = columnBox && {
             left: {
@@ -534,24 +538,59 @@ export function useConnectorLayout({
 }
 
 const num = (value: number) => Math.round(value * 10) / 10;
-const attr = (value: string) =>
-  value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-
-/** The cutouts as mask markup (black: the lines are hidden there). */
-function cutoutMarkup(cutouts: readonly Cutout[]): string {
-  return cutouts
-    .map((cutout) => {
-      if (cutout.kind === 'circle')
-        return `<circle cx="${num(cutout.cx)}" cy="${num(cutout.cy)}" r="${num(cutout.r)}" fill="black"/>`;
-      if (cutout.kind === 'path')
-        return `<path d="${attr(cutout.d)}" transform="${attr(cutout.transform)}" fill="none" stroke="black" stroke-width="${num(cutout.width)}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+/** Keep SVG mask nodes alive during scroll/zoom; only changed attributes touch the DOM. */
+function updateCutouts(group: Element, cutouts: readonly Cutout[]): void {
+  let node = group.firstElementChild;
+  for (const cutout of cutouts) {
+    let tag: string;
+    let attributes: Record<string, string | number>;
+    if (cutout.kind === 'circle') {
+      tag = 'circle';
+      attributes = { cx: num(cutout.cx), cy: num(cutout.cy), r: num(cutout.r), fill: 'black' };
+    } else if (cutout.kind === 'path') {
+      tag = 'path';
+      attributes = {
+        d: cutout.d,
+        transform: cutout.transform,
+        fill: 'none',
+        stroke: 'black',
+        'stroke-width': num(cutout.width),
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'round',
+        'vector-effect': 'non-scaling-stroke',
+      };
+    } else {
+      tag = 'rect';
       const { box } = cutout;
-      const rect = `x="${num(box.left)}" y="${num(box.top)}" width="${num(box.right - box.left)}" height="${num(box.bottom - box.top)}"`;
-      return cutout.kind === 'fill'
-        ? `<rect ${rect} rx="12" fill="black"/>`
-        : `<rect ${rect} rx="4" fill="none" stroke="black" stroke-width="6"/>`;
-    })
-    .join('');
+      const fill = cutout.kind === 'fill';
+      attributes = {
+        x: num(box.left),
+        y: num(box.top),
+        width: num(box.right - box.left),
+        height: num(box.bottom - box.top),
+        rx: fill ? 12 : 4,
+        fill: fill ? 'black' : 'none',
+        stroke: fill ? 'none' : 'black',
+        'stroke-width': fill ? 0 : 6,
+      };
+    }
+    if (!node || node.localName !== tag) {
+      const replacement = document.createElementNS('http://www.w3.org/2000/svg', tag);
+      if (node) group.replaceChild(replacement, node);
+      else group.appendChild(replacement);
+      node = replacement;
+    }
+    for (const [name, value] of Object.entries(attributes)) {
+      const next = String(value);
+      if (node.getAttribute(name) !== next) node.setAttribute(name, next);
+    }
+    node = node.nextElementSibling;
+  }
+  while (node) {
+    const next = node.nextElementSibling;
+    node.remove();
+    node = next;
+  }
 }
 
 /** A pin's dot (as seen on screen) as a cutout. */
@@ -568,7 +607,12 @@ const pinCutout = (dot: DOMRect, origin: DOMRect): Cutout => ({
  * `frame` count – cropped ones would cut holes beside it – and drawings, which can reach out of
  * it, are left out.
  */
-function measureCutouts(slideElement: HTMLElement, origin: DOMRect, frame: Box | null): Cutout[] {
+function measureCutouts(
+  slideElement: HTMLElement,
+  origin: DOMRect,
+  frame: Box | null,
+  rectOf: MeasureRect,
+): Cutout[] {
   const cutouts: Cutout[] = [];
   const outside = (rect: DOMRect) => {
     if (!frame) return false;
@@ -583,15 +627,15 @@ function measureCutouts(slideElement: HTMLElement, origin: DOMRect, frame: Box |
   for (const mark of slideElement.querySelectorAll<HTMLElement | SVGElement>('[data-mark]')) {
     const kind = mark.dataset.mark;
     if (kind === 'pin') {
-      const dot = (mark.firstElementChild ?? mark).getBoundingClientRect();
+      const dot = rectOf(mark.firstElementChild ?? mark);
       if (outside(dot)) continue;
       cutouts.push(pinCutout(dot, origin));
     } else if (kind === 'frame') {
-      const rect = mark.getBoundingClientRect();
+      const rect = rectOf(mark);
       if (outside(rect)) continue;
       cutouts.push({ kind: 'rect', box: relative(rect, origin) });
     } else if (kind === 'stroke' && mark instanceof SVGPathElement && !frame) {
-      const svg = mark.ownerSVGElement?.getBoundingClientRect();
+      const svg = mark.ownerSVGElement ? rectOf(mark.ownerSVGElement) : null;
       if (!svg) continue;
       cutouts.push({
         kind: 'path',
@@ -625,7 +669,7 @@ const STROKE_SAMPLES = 48;
  * The marks on the planes of a slide turned in 3D as cutouts, each mapped through its plane:
  * pins as seen, frames as the quads they show as, drawings along their projected paths.
  */
-function layerCutouts(frame: Element, origin: DOMRect): Cutout[] {
+function layerCutouts(frame: Element, origin: DOMRect, rectOf: MeasureRect): Cutout[] {
   const cutouts: Cutout[] = [];
   const seen = (project: Projection, point: Point) => {
     const { x, y } = project(point);
@@ -637,7 +681,7 @@ function layerCutouts(frame: Element, origin: DOMRect): Cutout[] {
     for (const mark of plane.querySelectorAll<HTMLElement | SVGElement>('[data-mark]')) {
       const kind = mark.dataset.mark;
       if (kind === 'pin') {
-        cutouts.push(pinCutout((mark.firstElementChild ?? mark).getBoundingClientRect(), origin));
+        cutouts.push(pinCutout(rectOf(mark.firstElementChild ?? mark), origin));
       } else if (kind === 'frame' && mark instanceof HTMLElement) {
         const box = boxOnPlane(mark, plane);
         if (!box) continue;

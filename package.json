@@ -16,6 +16,7 @@
   "scripts": {
     "dev": "bun run --filter @slider/api --filter @slider/web dev",
     "dev:site": "bun run --filter @slider/site dev",
+    "desktop": "cd desktop && bun install && bun run start",
     "build": "bun run --filter '*' build",
     "start": "NODE_ENV=production bun apps/api/src/server.ts",
     "typecheck": "bun run --filter '*' typecheck && tsc -p e2e && tsc -p test",

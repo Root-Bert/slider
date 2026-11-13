@@ -9,7 +9,7 @@ test('the API serves the built app with its document headers', async ({ page }) 
   const response = await page.goto('/einstellungen');
   expect(response?.status()).toBe(200);
   const headers = response?.headers() ?? {};
-  // The OneDrive picker is a popup that talks back through `window.opener`.
+  // The Nextcloud login is a popup the page keeps steering.
   expect(headers['cross-origin-opener-policy']).toBe('same-origin-allow-popups');
   expect(headers['x-frame-options']).toBe('SAMEORIGIN');
   expect(headers['referrer-policy']).toBe('no-referrer');

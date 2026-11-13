@@ -1,13 +1,14 @@
 import { memo } from 'react';
 import { cn, CountBubble, Icon, usePopover } from '@/ui';
 import type { Thread } from '../comments/lib/comment-selectors';
-import { isPendingSlideId } from '../editing/pending-slides';
 import { SlideInsertPicker } from '../editing/SlideInsertPicker';
 import { useTransitionOf } from '../editing/transition/picked-transitions';
 import { SlideTransitionPicker } from '../editing/transition/SlideTransitionPicker';
 import { transitionLabel } from '../editing/transition/transition-frames';
 import { useViewerDispatch } from '../state/viewer-state';
-import { TrackDots, trackDotsHeight, useTrackDots } from '../timeline/TrackDots';
+import { trackDotsHeight, useTrackDots } from '../timeline/lib/track-dots';
+import { TrackDots } from '../timeline/TrackDots';
+import { gapButtons, gapDotsLift } from './lib/gap-buttons';
 
 interface GapDividerProps {
   gapKey: string;
@@ -46,32 +47,6 @@ const HAIRLINE_FADE = '[mask-image:linear-gradient(transparent,#000_30%,#000_70%
 const HAIRLINE_MASKS = [HAIRLINE_FADE, HAIRLINE_MASK, HAIRLINE_MASK_PAIR, HAIRLINE_MASK_TRIPLE];
 /** Half the pause by the number of buttons (as in the masks above); none: a little round the dots. */
 const HAIRLINE_PAUSES = [6, 20, 32, 48];
-
-/** The gap's buttons: who may insert (and pick the transition after it) and comment there. */
-export function gapButtons({
-  afterSlideId,
-  beforeSlideId,
-  canInsert: insertable,
-  canComment: commentable,
-}: Pick<GapDividerProps, 'afterSlideId' | 'beforeSlideId' | 'canInsert' | 'canComment'>) {
-  // Beside a slide just put in, not on the server yet: nothing to name it by until it is.
-  const settled = ![afterSlideId, beforeSlideId].some((id) => id && isPendingSlideId(id));
-  const canInsert = insertable && settled;
-  const canComment = commentable && settled;
-  const canTransition = canInsert && beforeSlideId !== null;
-  const count = Number(canInsert && !!afterSlideId) + Number(canTransition) + Number(canComment);
-  return { canInsert, canComment, canTransition, count };
-}
-
-/**
- * How far the track dots' bottom lies over the gap's middle (px): over its `count` buttons
- * (centred there, `size-6`/`size-5` with `gap-2`), 8px apart – on every track alike, so the dots
- * stay put when the band swipes to one without the buttons.
- */
-export function gapDotsLift(count: number, width: number): number {
-  const button = width < 32 ? 20 : 24;
-  return (count > 0 ? (count * button + (count - 1) * 8) / 2 : 0) + 8;
-}
 
 /** The pause reaching further up, over the track dots over the buttons (`below` + `above` px). */
 const hairlineMaskAround = (below: number, above: number) =>

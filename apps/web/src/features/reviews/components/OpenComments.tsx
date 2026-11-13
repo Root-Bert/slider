@@ -22,6 +22,7 @@ import {
 import {
   buildThreads,
   commentPreview,
+  doneByAi,
   isBareDrawing,
   isRemovedInSource,
   type Thread,
@@ -296,7 +297,7 @@ function OpenThreadItem({
         <Link
           to={to}
           onClick={onOpen}
-          className="flex min-w-0 flex-col gap-0.5 rounded-badge outline-none focus-visible:ring-2 focus-visible:ring-mention"
+          className="flex min-w-0 flex-col gap-0.5 rounded-badge outline-none focus-visible:ring-2 focus-visible:ring-focus"
         >
           <CommentMeta
             comment={root}
@@ -344,7 +345,7 @@ function OpenThreadItem({
                     <Link
                       to={to}
                       onClick={onOpen}
-                      className="flex min-w-0 flex-col gap-0.5 rounded-badge outline-none focus-visible:ring-2 focus-visible:ring-mention"
+                      className="flex min-w-0 flex-col gap-0.5 rounded-badge outline-none focus-visible:ring-2 focus-visible:ring-focus"
                     >
                       <CommentMeta comment={reply} />
                       <span className="line-clamp-3 text-body text-fg-muted">
@@ -361,14 +362,20 @@ function OpenThreadItem({
       {canResolve && (
         // Same as the review tool's resolve button (ResolveButton, `icon`).
         <IconButton
-          icon="check"
+          icon={doneByAi(root) ? 'autoAwesome' : 'check'}
           variant="subtle"
           size="sm"
           iconSize={18}
           iconTone={done ? 'success' : undefined}
           aria-pressed={done}
           label={done ? 'Wieder öffnen' : 'Als erledigt markieren'}
-          title={done ? 'Erledigt – klicken zum Wiederöffnen' : 'Als erledigt markieren'}
+          title={
+            !done
+              ? 'Als erledigt markieren'
+              : doneByAi(root)
+                ? 'Von der KI erledigt – klicken zum Wiederöffnen'
+                : 'Erledigt – klicken zum Wiederöffnen'
+          }
           onClick={toggle}
         />
       )}

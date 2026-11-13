@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { searchFold, type WorkspaceMaster } from '@slider/shared';
 import {
   useCreateBlankDeck,
@@ -16,6 +16,7 @@ import { isOnControl } from '@/lib/marquee-select';
 import { readString, writeString } from '@/lib/storage';
 import { useWorkspaceFontFaces } from '@/lib/workspace-fonts';
 import { useAccount } from '@/features/auth';
+import { searchIcons, useIconLibrary, type IconFilter } from '@/features/icons';
 import { registerOfficeFonts } from '@/features/viewer';
 import {
   Button,
@@ -31,12 +32,15 @@ import {
   useToast,
   type MenuAction,
 } from '@/ui';
+import { ColorCollection, ColorCollectionSkeleton } from './components/material/ColorCollection';
 import { FontCollection, FontCollectionSkeleton } from './components/material/FontCollection';
+import { IconCollection, IconCollectionSkeleton } from './components/material/IconCollection';
 import { FontSpecimens } from './components/material/FontSpecimens';
 import { MasterCollection, MasterCollectionSkeleton } from './components/material/MasterCollection';
 import { MasterSpecimens } from './components/material/MasterSpecimens';
 import {
   MaterialToolbar,
+  type FontSource,
   type MaterialKind,
   type MaterialSort,
 } from './components/material/MaterialToolbar';
@@ -74,26 +78,70 @@ const MASTER_SORTERS: Record<MaterialSort, (a: WorkspaceMaster, b: WorkspaceMast
   size: byMasterName,
 };
 
+const colorCount = (master: WorkspaceMaster) => master.colors?.length ?? 0;
+// "Farben" sorts the designs by how many they have.
+const COLOR_SORTERS: Record<MaterialSort, (a: WorkspaceMaster, b: WorkspaceMaster) => number> = {
+  name: byMasterName,
+  faces: (a, b) => colorCount(b) - colorCount(a) || byMasterName(a, b),
+  size: byMasterName,
+};
+
 const SLIDER_FAMILIES = sliderFamilies();
 
-/** `?filter=` of each kind. */
+/** What the filter shows, named as its segment. */
+const SECTION_LABELS: Record<MaterialKind, string> = {
+  masters: 'Vorlagen',
+  colors: 'Farben',
+  fonts: 'Schriften',
+  icons: 'Symbole',
+};
+
+/** `?filter=` of each kind – „Schriften“ with all fonts. */
 const KIND_PARAMS: Record<MaterialKind, string> = {
   masters: 'vorlagen',
-  'workspace-fonts': 'workspace-schriften',
-  'slider-fonts': 'slider-schriften',
+  colors: 'farben',
+  fonts: 'schriften',
+  icons: 'icons',
+};
+/** `?filter=` of „Schriften“ by whose fonts it shows – an upload leads to the workspace's. */
+const SOURCE_PARAMS: Record<FontSource, string> = {
+  all: 'schriften',
+  slider: 'slider-schriften',
+  workspace: 'workspace-schriften',
+};
+/** `?filter=` of „Symbole“ by which kind it shows – both under „Symbole“'s own. */
+const ICON_KIND_PARAMS: Record<IconFilter, string> = {
+  all: 'icons',
+  icons: 'nur-icons',
+  pictograms: 'piktogramme',
 };
 /** The filter last shown, as its `?filter=` – the page opens on it again without one. */
 const KIND_KEY = 'slider.material.filter';
-const kindOf = (param: string | null): MaterialKind =>
-  (Object.keys(KIND_PARAMS) as MaterialKind[]).find((kind) => KIND_PARAMS[kind] === param) ??
-  'masters';
+const filterOf = (
+  param: string | null,
+): { kind: MaterialKind; source: FontSource; iconKind: IconFilter } => {
+  const source = (Object.keys(SOURCE_PARAMS) as FontSource[]).find(
+    (key) => SOURCE_PARAMS[key] === param,
+  );
+  if (source) return { kind: 'fonts', source, iconKind: 'all' };
+  const iconKind = (Object.keys(ICON_KIND_PARAMS) as IconFilter[]).find(
+    (key) => ICON_KIND_PARAMS[key] === param,
+  );
+  if (iconKind) return { kind: 'icons', source: 'all', iconKind };
+  // An old link to one set (`icons-phosphor`): all symbols.
+  if (param?.startsWith('icons-')) return { kind: 'icons', source: 'all', iconKind: 'all' };
+  const kind = (Object.keys(KIND_PARAMS) as MaterialKind[]).find(
+    (key) => KIND_PARAMS[key] === param,
+  );
+  return { kind: kind ?? 'masters', source: 'all', iconKind: 'all' };
+};
 
 /**
  * `/w/:workspaceId/material` – "Bibliothek", next to "Projekte": what the workspace's decks draw
  * on, laid out like the reviews. Its fonts: the ones Slider brings along, and its own – TTF or
  * OTF files, or the zip a font site hands out – which the slides are drawn in and the editor
  * offers. And its slide masters: company designs, as templates (`.otp`, `.potx`), with a
- * picture of each layout. Members and admins add both (the "Hinzufügen" menu, or files dropped
+ * picture of each layout, and their colours („Farben“, read from an uploaded one's theme). Members and admins add both (the "Hinzufügen" menu, or files dropped
  * anywhere on the page), only admins remove them; everyone sees them. Templates and fonts are
  * selected like decks (⌘/Shift-click, ⌘A, a selection box; the selection bar in the toolbar's
  * place) and have their actions on right click.
@@ -127,12 +175,24 @@ export function Component() {
   const [pageMenuAt, setPageMenuAt] = useState<{ x: number; y: number } | null>(null);
   // In the URL: a design's page leads back to its filter, and a link can open one.
   const [params, setParams] = useSearchParams();
-  const kind = kindOf(params.get('filter') ?? readString(KIND_KEY));
+  const { kind, source, iconKind } = filterOf(params.get('filter') || readString(KIND_KEY));
+  // „Schriften“ opens on all fonts again, „Symbole“ on all symbols.
   useEffect(() => writeString(KIND_KEY, KIND_PARAMS[kind]), [kind]);
-  const setKind = (next: MaterialKind) =>
+  const setKind = (
+    next: MaterialKind,
+    nextSource: FontSource = 'all',
+    nextIcons: IconFilter = 'all',
+  ) =>
     setParams(
       (current) => {
-        current.set('filter', KIND_PARAMS[next]);
+        current.set(
+          'filter',
+          next === 'fonts'
+            ? SOURCE_PARAMS[nextSource]
+            : next === 'icons'
+              ? ICON_KIND_PARAMS[nextIcons]
+              : KIND_PARAMS[next],
+        );
         return current;
       },
       { replace: true },
@@ -157,7 +217,7 @@ export function Component() {
         ),
       )
       .toSorted(SORTERS[sort]);
-  const showsOwn = kind === 'workspace-fonts';
+  const showsOwn = kind === 'fonts' && source !== 'slider';
   const visibleMasters = (masters.data ?? [])
     .filter((master) =>
       matches(
@@ -167,15 +227,52 @@ export function Component() {
       ),
     )
     .toSorted(MASTER_SORTERS[sort]);
+  // A design with colours, by its name – with the search's button also by its colours' names
+  // and values (`2563EB`, `#2563eb`).
+  const colored = (masters.data ?? []).filter((master) => colorCount(master) > 0);
+  const visibleColors = colored
+    .filter((master) =>
+      matches(
+        searchContent
+          ? [
+              master.name,
+              ...(master.colors ?? []).flatMap(({ color, name }) => [name, color, color.slice(1)]),
+            ]
+          : [master.name],
+      ),
+    )
+    .toSorted(COLOR_SORTERS[sort]);
   const visible =
-    kind === 'workspace-fonts' ? pick(own) : kind === 'slider-fonts' ? pick(SLIDER_FAMILIES) : [];
+    kind !== 'fonts'
+      ? []
+      : pick(
+          source === 'workspace'
+            ? own
+            : source === 'slider'
+              ? SLIDER_FAMILIES
+              : [...own, ...SLIDER_FAMILIES],
+        );
+  // Slider's icons and pictograms: loaded once the filter is opened, searched in German or
+  // English – by their names and keywords, as the editor's symbol search does.
+  const icons = useIconLibrary(kind === 'icons');
+  const iconQuery = useDeferredValue(query);
+  // …of the kind picked, best first – A–Z while nothing is typed (no sort to pick).
+  const visibleIcons = useMemo(
+    () => searchIcons(icons.data?.icons ?? [], iconQuery, iconKind),
+    [icons.data, iconKind, iconQuery],
+  );
 
   // Multi-select of what the filter shows: ⌘/Shift-click, ⌘A or a selection box dragged over
   // empty space.
   const pageRef = useRef<HTMLDivElement>(null);
   const selection = useCollectionSelection(
     pageRef,
-    kind === 'masters' ? visibleMasters.map((master) => master.id) : visible.map(familyKey),
+    // Colours belong to their design, icons to Slider: nothing to select.
+    kind === 'masters'
+      ? visibleMasters.map((master) => master.id)
+      : kind === 'colors' || kind === 'icons'
+        ? []
+        : visible.map(familyKey),
   );
   const selectedFamilies = visible.filter((family) => selection.selected.has(familyKey(family)));
   const selectedMasters = visibleMasters.filter((master) => selection.selected.has(master.id));
@@ -320,7 +417,8 @@ export function Component() {
   const { sendAny, sendMasters, sendFonts, skipped, uploadingFonts, uploadingMaster } =
     useMaterialUpload(workspace.id, {
       notify: showToast,
-      onAdded: (added: UploadedKind) => setKind(added),
+      onAdded: (added: UploadedKind) =>
+        added === 'workspace-fonts' ? setKind('fonts', 'workspace') : setKind(added),
     });
   // Files dropped anywhere on the page are uploaded.
   const { dragOver, handlers: dropHandlers } = useFileDrop(sendAny);
@@ -360,9 +458,10 @@ export function Component() {
               setKind(next);
             }}
             counts={{
-              'slider-fonts': SLIDER_FAMILIES.length,
-              'workspace-fonts': own.length,
+              fonts: SLIDER_FAMILIES.length + own.length,
               masters: masters.data?.length ?? 0,
+              colors: new Set(colored.flatMap((master) => master.colors!.map((c) => c.color))).size,
+              icons: icons.data?.icons.length,
             }}
             query={query}
             onQueryChange={setQuery}
@@ -372,19 +471,30 @@ export function Component() {
             onSortChange={setSort}
             view={view}
             onViewChange={setView}
+            source={source}
+            onSourceChange={(next) => {
+              selection.clear();
+              setKind('fonts', next);
+            }}
+            iconKind={iconKind}
+            onIconKindChange={(next) => setKind('icons', 'all', next)}
             action={
-              editable && (
-                <Button
-                  variant="secondary"
-                  size="toolbar"
-                  icon="add"
-                  aria-label="Neues Asset"
-                  loading={uploadingFonts || uploadingMaster}
-                  onClick={goToNew}
-                >
-                  <span className="max-sm:hidden">Neues Asset</span>
-                </Button>
-              )
+              editable
+                ? (iconOnly) => (
+                    <Button
+                      variant="secondary"
+                      size="toolbar"
+                      icon="add"
+                      aria-label="Neues Asset"
+                      title={iconOnly ? 'Neues Asset' : undefined}
+                      loading={uploadingFonts || uploadingMaster}
+                      onClick={goToNew}
+                      className={iconOnly ? 'w-10 px-0' : undefined}
+                    >
+                      {!iconOnly && 'Neues Asset'}
+                    </Button>
+                  )
+                : undefined
             }
           />
         )}
@@ -436,8 +546,80 @@ export function Component() {
           </Notice>
         )}
 
-        <section aria-label="Schriften" aria-busy={showsOwn && fonts.isPending}>
-          {kind === 'masters' ? (
+        <section
+          aria-label={SECTION_LABELS[kind]}
+          aria-busy={
+            kind === 'icons'
+              ? icons.isPending
+              : kind === 'fonts'
+                ? showsOwn && fonts.isPending
+                : masters.isPending
+          }
+        >
+          {kind === 'icons' ? (
+            icons.isPending ? (
+              <IconCollectionSkeleton />
+            ) : icons.isError ? (
+              <EmptyState
+                title="Symbole konnten nicht geladen werden"
+                message={icons.error.message}
+                action={
+                  <Button variant="secondary" icon="refresh" onClick={() => void icons.refetch()}>
+                    Erneut versuchen
+                  </Button>
+                }
+              />
+            ) : visibleIcons.length === 0 ? (
+              <EmptyState
+                title={`Keine Treffer für „${query.trim()}“`}
+                message="Versuche einen anderen Suchbegriff – auf Deutsch oder Englisch."
+              />
+            ) : (
+              <IconCollection icons={visibleIcons} view={view} onNotify={showToast} />
+            )
+          ) : kind === 'colors' ? (
+            masters.isPending ? (
+              <ColorCollectionSkeleton view={view} />
+            ) : masters.isError ? (
+              <EmptyState
+                title="Farben konnten nicht geladen werden"
+                message={masters.error.message}
+                action={
+                  <Button variant="secondary" icon="refresh" onClick={() => void masters.refetch()}>
+                    Erneut versuchen
+                  </Button>
+                }
+              />
+            ) : colored.length === 0 ? (
+              <EmptyState
+                title="Noch keine Farben"
+                message={
+                  editable
+                    ? 'Farben kommen aus euren Vorlagen: Eine hochgeladene bringt die Farben ihres Designs mit, in einer in Slider gestalteten legt ihr sie selbst fest.'
+                    : 'Sobald eine Vorlage Farben hat, erscheinen sie hier.'
+                }
+                action={
+                  editable && (
+                    <Button icon="upload" loading={uploadingMaster} onClick={pickMaster}>
+                      Vorlage hochladen
+                    </Button>
+                  )
+                }
+              />
+            ) : visibleColors.length === 0 ? (
+              <EmptyState
+                title={`Keine Treffer für „${query.trim()}“`}
+                message="Versuche einen anderen Suchbegriff."
+              />
+            ) : (
+              <ColorCollection
+                workspaceId={workspace.id}
+                masters={visibleColors}
+                view={view}
+                onNotify={showToast}
+              />
+            )
+          ) : kind === 'masters' ? (
             masters.isPending ? (
               <MasterCollectionSkeleton view={view} />
             ) : masters.isError ? (
@@ -532,7 +714,7 @@ export function Component() {
                 ]}
               />
             )
-          ) : showsOwn && fonts.isPending ? (
+          ) : source === 'workspace' && fonts.isPending ? (
             <FontCollectionSkeleton view={view} />
           ) : showsOwn && fonts.isError ? (
             <EmptyState
@@ -544,7 +726,7 @@ export function Component() {
                 </Button>
               }
             />
-          ) : kind === 'workspace-fonts' && own.length === 0 ? (
+          ) : source === 'workspace' && own.length === 0 ? (
             <EmptyState
               illustration={<FontSpecimens />}
               title="Noch keine eigenen Schriften"

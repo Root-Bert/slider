@@ -49,7 +49,7 @@ import { cn, IconButton, Toolbar, ToolbarDivider, type IconName } from '@/ui';
 import { RICH_THEME as THEME } from './rich-theme';
 
 /*
- * A sticker's rich text on the board (Folie 0): typed in Lexical right in its box – bold, italic,
+ * A sticker's rich text on the board (the material page): typed in Lexical right in its box – bold, italic,
  * underlined, struck through, lists, two sizes of heading, links; ⌘B/⌘I/⌘U and Markdown-like
  * starts (`- `, `1. `, `# `) – with a small floating bar in the format bar's look. Kept as
  * Lexical's state (`rich`) plus the same as Markdown (`text`, for the AI and search); shown again
@@ -98,13 +98,18 @@ export function RichStickerEditor({
   rich,
   text,
   className,
+  placeholder = 'Notiz …',
   onDone,
+  onAsk,
   onCancel,
 }: {
   rich: Record<string, unknown> | null;
   text: string;
   className?: string;
+  placeholder?: string;
   onDone: (value: RichValue) => void;
+  /** ⌘↵: taken as with ↵, then handed to the AI (as a comment is). */
+  onAsk?: (value: RichValue) => void;
   onCancel: () => void;
 }) {
   const [config] = useState(() => ({
@@ -123,13 +128,14 @@ export function RichStickerEditor({
           contentEditable={
             <ContentEditable
               aria-label="Notiz"
-              aria-placeholder="Notiz …"
+              aria-placeholder={placeholder}
+              aria-keyshortcuts={onAsk ? 'Meta+Enter' : undefined}
               spellCheck
               // Typed in, not dragged, panned or scrolled by the board.
               className="nodrag nopan nowheel size-full overflow-auto outline-none"
               placeholder={
                 <span className="pointer-events-none absolute top-0 left-0 opacity-50">
-                  Notiz …
+                  {placeholder}
                 </span>
               }
             />
@@ -141,7 +147,7 @@ export function RichStickerEditor({
       <ListPlugin />
       <LinkPlugin />
       <MarkdownShortcutPlugin transformers={TRANSFORMERS} />
-      <Keys onDone={onDone} onCancel={onCancel} />
+      <Keys onDone={onDone} onAsk={onAsk} onCancel={onCancel} />
       <FormatBar />
     </LexicalComposer>
   );
@@ -156,15 +162,27 @@ function valueOf(state: EditorState): RichValue {
   };
 }
 
-/** Focus at once (the caret at the end), ↵/Esc, and leaving the box takes what was typed. */
-function Keys({ onDone, onCancel }: { onDone: (value: RichValue) => void; onCancel: () => void }) {
+/**
+ * Focus at once (the caret at the end), ↵/Esc, ⌘↵ to the AI, and leaving the box takes what was
+ * typed.
+ */
+function Keys({
+  onDone,
+  onAsk,
+  onCancel,
+}: {
+  onDone: (value: RichValue) => void;
+  onAsk: ((value: RichValue) => void) | undefined;
+  onCancel: () => void;
+}) {
   const [editor] = useLexicalComposerContext();
   const ended = useRef(false);
   useEffect(() => {
-    const end = (how: 'done' | 'cancel') => {
+    const end = (how: 'done' | 'ask' | 'cancel') => {
       if (ended.current) return;
       ended.current = true;
       if (how === 'cancel') onCancel();
+      else if (how === 'ask') onAsk?.(valueOf(editor.getEditorState()));
       else onDone(valueOf(editor.getEditorState()));
     };
     // In the box at once, its caret at the end – React Flow shows a new node a frame late.
@@ -191,6 +209,12 @@ function Keys({ onDone, onCancel }: { onDone: (value: RichValue) => void; onCanc
       editor.registerCommand(
         KEY_ENTER_COMMAND,
         (event) => {
+          // ⌘↵: taken and handed to the AI – in a list too.
+          if (onAsk && (event?.metaKey || event?.ctrlKey)) {
+            event.preventDefault();
+            end('ask');
+            return true;
+          }
           // ⇧↵: a new line – a paragraph of its own, so `- `, `1. ` and `# ` start one there.
           if (event?.shiftKey) {
             event.preventDefault();
@@ -223,7 +247,7 @@ function Keys({ onDone, onCancel }: { onDone: (value: RichValue) => void; onCanc
         COMMAND_PRIORITY_HIGH,
       ),
     );
-  }, [editor, onDone, onCancel]);
+  }, [editor, onDone, onAsk, onCancel]);
   return null;
 }
 

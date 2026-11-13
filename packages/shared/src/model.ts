@@ -308,15 +308,11 @@ export const deckSchema = z.object({
   openCommentCount: z.number().int(),
   thumbnailUrl: z.string().nullable(),
   /**
-   * Who drew the thumbnail slide: PowerPoint (`office`), LibreOffice or the built-in SVG preview.
-   * `null` when unknown. Optional for older API versions.
+   * Who drew the thumbnail slide: LibreOffice, a PDF's own page or the built-in SVG preview
+   * (`office`: decks drawn by Office before Slider stopped asking it). `null` when unknown.
+   * Optional for older API versions.
    */
   thumbnailRenderer: slideRendererSchema.nullable().optional(),
-  /**
-   * Why PowerPoint (Office) did not draw the slides although it was tried, e.g. a file too big
-   * for Microsoft's PDF conversion. `null` otherwise. Optional for older API versions.
-   */
-  officeFailure: z.string().nullable().optional(),
   participants: z.array(authorSchema),
   /**
    * The workspace's AI: the name its admins gave it, and whether a working key is set – then it
@@ -601,7 +597,10 @@ export function moveDrawing<T extends Placed>(comment: T, dx: number, dy: number
 export const commentStatusSchema = z.enum(['open', 'done']);
 export type CommentStatus = z.infer<typeof commentStatusSchema>;
 
-/** `gslides`: imported from Google Slides through Drive's comment API (BER-157). */
+/**
+ * `gslides`: imported from Google Slides through Drive's comment API (BER-157) – retired, only on
+ * old comments: never imported again, never editable.
+ */
 export const commentSourceSchema = z.enum(['app', 'pptx', 'gslides']);
 export type CommentSource = z.infer<typeof commentSourceSchema>;
 

@@ -4,24 +4,25 @@ import { threadsOf, useCommentThreads } from '../comments/hooks/useCommentThread
 import { fadesDone, gapKey } from '../comments/lib/comment-selectors';
 import type { TrackLayout, TrackStack } from './lib/timeline-layout';
 import { DeletedSlidesEntry } from '../revisions/DeletedSlidesEntry';
-import { GapDivider, gapButtons, gapDotsLift } from '../stage/GapDivider';
+import { GapDivider } from '../stage/GapDivider';
+import { gapButtons, gapDotsLift } from '../stage/lib/gap-buttons';
 import { useLayers } from '../editing/layers/layers-context';
 import { useEditing } from '../editing/editing-context';
 import { SlideFrame } from '../stage/SlideFrame';
 import { useDeckCreation } from '@/lib/api';
-import { MaterialBoard } from '../board/MaterialBoard';
 import { CreatePrompt } from '../creation/CreatePrompt';
 import { useRevisionData } from '../state/revision-data';
 import { useViewerData } from '../state/viewer-data';
 import { isBoxModeActive, useHoveredThreadId, useViewerState } from '../state/viewer-state';
 import type { TrackSwipe } from './hooks/useTrackSwipe';
 import { GapDots } from './TrackDots';
+import { useTimelineRange, type TimelineWindow } from './timeline-window';
 import { SlideNotes, VariantBadge, VariantGhost, VariantNoteHint } from './TrackRows';
 
 interface TrackProps {
   layout: TrackLayout;
   /** Rendered slide indices (windowing) – the rest of the deck only reserves its width. */
-  range: { first: number; last: number };
+  window: TimelineWindow;
   /** Phones snap slide by slide: every slide needs a snap target, rendered or not. */
   snap: boolean;
   /** The tracks over and under the slides', and which one the band shows. */
@@ -41,7 +42,8 @@ interface TrackProps {
  * time; paged (`useTrackSwipe`), its tracks slide up and down, clipped to the band, and only
  * then are the tracks beside it drawn.
  */
-export function Track({ layout, range, snap, stack, swipe }: TrackProps) {
+export function Track({ layout, window, snap, stack, swipe }: TrackProps) {
+  const range = useTimelineRange(window);
   const { deck, slides, gapThreads, canComment, viewer, variantsOf } = useViewerData();
   // Editing: a click picks an element instead of starting a comment.
   const editing = useEditing();
@@ -57,7 +59,6 @@ export function Track({ layout, range, snap, stack, swipe }: TrackProps) {
     boxModeFlipped,
     showGuides,
     showLayoutGrid,
-    slideZooms,
     statusFilter,
   } = useViewerState();
   const hoveredThreadId = useHoveredThreadId();
@@ -104,7 +105,6 @@ export function Track({ layout, range, snap, stack, swipe }: TrackProps) {
         boxMode={boxes}
         showGuides={showGuides}
         showLayoutGrid={showLayoutGrid}
-        zoom={slideZooms.get(slide.id) ?? null}
         layered={layers.open && slide.id === activeSlideId}
       />
     );
@@ -113,11 +113,6 @@ export function Track({ layout, range, snap, stack, swipe }: TrackProps) {
   /** What track `level` holds over the slides shown (windowing). */
   const levelItems = (level: number): ReactNode[] => {
     const items: ReactNode[] = [];
-    // Folie 0, „Material“: on the slides' track, while the first slides are rendered.
-    if (level === 0 && layout.leading && range.first === 0)
-      items.push(
-        <MaterialBoard key="board" x={layout.leading.x} w={layout.leading.w} h={height} />,
-      );
     // Folie 1 of a new deck, still blank: the prompt to have the AI build it.
     const first = layout.slides[0];
     if (level === 0 && range.first === 0 && prompt && first)

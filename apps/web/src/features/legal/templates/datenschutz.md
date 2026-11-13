@@ -16,7 +16,8 @@ E-Mail: {{email}}
 - Kein Tracking, keine Werbung, keine Analyse-Tools. Schriften und Bilder liefert Slider selbst aus; beim Aufruf werden keine Dritten eingebunden{{#stockPhotos}} – nur wenn du beim Bearbeiten nach Fotos suchst, kommen deren Vorschaubilder von Unsplash (Abschnitt 6){{/stockPhotos}}.
 - Es gibt nur technisch notwendige Cookies.
 - Die Daten liegen auf Servern in der EU.
-- KI gibt es nur in Workspaces, deren Admins einen KI-Dienst angebunden haben – und sie arbeitet nur, wenn jemand sie in einem Kommentar darum bittet (Abschnitt 6).
+- KI gibt es nur in Workspaces, deren Admins einen KI-Dienst angebunden haben – und sie arbeitet nur, wenn jemand sie in einem Kommentar darum bittet oder ihr auf der Materialseite eine Notiz übergibt (Abschnitt 6).
+- Eine KI-App wie Claude oder ChatGPT bekommt deine Daten nur, wenn du sie selbst mit deinem Konto verbindest (Abschnitt 6).
 - Deine Daten kannst du jederzeit selbst herunterladen oder löschen – unter „Konto & Anmeldung“{{#mail}}, oder ohne Anmeldung unter /datenanfrage{{/mail}}.
 
 ## 3. Hosting und Server-Logs
@@ -64,13 +65,11 @@ Rechtsgrundlage ist die Erfüllung des Nutzungsvertrags (Art. 6 Abs. 1 lit. b DS
 
 Präsentationen, die du hochlädst, liegen nur bei uns.
 
-{{#google}}
-Wenn du eine Präsentation aus Google Drive auswählst, erteilst du Slider über Google Zugriff auf genau die Dateien, die du dort auswählst – auf nichts sonst in deinem Google Drive.
-{{/google}}
+{{#nextcloud}}
+Du kannst eine Nextcloud als Speicherort verbinden: bei {{nextcloudOperator}} oder bei einer anderen Nextcloud, deren Adresse du selbst angibst. Welche das ist, entscheidest allein du; für die Verarbeitung dort ist ihr Betreiber verantwortlich, es gilt dessen Datenschutzerklärung. Beim Verbinden gibt uns deine Nextcloud ein App-Passwort für dein Konto dort. Wir speichern es verschlüsselt und nutzen es nur zum Lesen: Slider zeigt dir beim Auswählen deine Ordner und Dateien, holt die Präsentationen, die du einfügst, und schaut nach, ob es von ihnen eine neue Version gibt. Wir ändern und löschen in deiner Nextcloud nichts und speichern von dort nur die Präsentationen, die du einfügst, samt den Namen, die die Nextcloud als Besitzer oder Bearbeiter nennt (siehe Abschnitt 6). Trennst du die Verbindung in Slider, widerrufen wir das App-Passwort bei deiner Nextcloud und löschen es bei uns; widerrufen kannst du es auch selbst in deiner Nextcloud unter Einstellungen, Sicherheit.
+{{/nextcloud}}
 
-{{#microsoft}}
-Wenn du eine Präsentation aus OneDrive oder SharePoint verknüpfst, erteilst du Slider über Microsoft Zugriff auf deine Dateien. Slider liest nur die Präsentationen, die du auswählst oder verlinkst, um sie anzuzeigen und Änderungen zu übernehmen. Den dafür nötigen Zugangsschlüssel (Token) speichern wir verschlüsselt. Du kannst die Verbindung jederzeit unter „Konto & Anmeldung“ trennen.
-{{/microsoft}}
+Fügst du einen öffentlichen Link zu einer Präsentation ein, lädt Slider die Datei von unserem Server aus von dort, ohne Angaben zu dir mitzuschicken.
 
 Rechtsgrundlage: Art. 6 Abs. 1 lit. b DSGVO.
 
@@ -78,15 +77,19 @@ Rechtsgrundlage: Art. 6 Abs. 1 lit. b DSGVO.
 
 Wir speichern die Präsentationen, die du hochlädst oder verknüpfst (Originaldatei und daraus erzeugte Folienbilder), Schriften, die ein Workspace hochlädt, sowie Kommentare, Markierungen, Zeichnungen und Reaktionen auf Kommentare (Daumen hoch, Daumen runter, egal). Sprach- und Videokommentare zeichnet dein Browser nur auf, wenn du die Aufnahme startest; Mikrofon und Kamera geben erst nach deiner Erlaubnis frei.
 
-Präsentationen und Kommentare sehen nur die Mitglieder des Workspace, in dem sie liegen. Wer gerade im Workspace ist und wer dieselbe Präsentation ansieht, wird den anderen Mitgliedern live angezeigt; das wird nicht gespeichert.
+**Material:** Neben den Folien hat jede Präsentation eine Seite „Material“, auf der Mitglieder Notizen, Links und Dateien ablegen{{#nextcloud}} – auch aus einer verbundenen Nextcloud{{/nextcloud}}. Wir speichern sie mit dem Namen der Person, die sie abgelegt hat, und lesen den Text der Dateien aus, damit Suche und KI ihn finden. Links ruft Slider nicht auf. Übergibt jemand der KI eine Notiz (⌘↵), steht ihre Antwort unter der Notiz – für alle, die das Material sehen.
 
-**KI:** Admins eines Workspace können einen KI-Dienst anbinden – mit einem API-Schlüssel des Workspace bei Anthropic, OpenAI, Google (Gemini) oder einem anderen Anbieter ihrer Wahl. Ohne Schlüssel gibt es keine KI, und nichts geht an einen KI-Dienst. Bittet jemand in einem Kommentar die KI, etwas an der Präsentation zu ändern, schickt Slider von unserem Server aus an diesen Dienst: den Kommentar-Thread mit den Namen der Schreibenden, bis zu sechs Bilder, die am Thread hängen, und die Inhalte der Präsentation, die die KI für die Aufgabe ansieht (Folien mit Texten, Formaten und Bildern). E-Mail-Adressen und Sprach- oder Videoaufnahmen gehen nicht mit. Was die KI antwortet und ändert, speichern wir wie einen Kommentar und einen Bearbeitungsschritt, samt dem Namen der Person, die sie gebeten hat. Den Dienst wählt der Workspace, und mit dessen Anbieter schließt er den Vertrag; wo der Anbieter die Daten verarbeitet (etwa in den USA) und ob er sie speichert oder zum Training nutzt, richtet sich nach diesem Vertrag und den Einstellungen des Schlüssels. Rechtsgrundlage ist die Erfüllung des Nutzungsvertrags (Art. 6 Abs. 1 lit. b DSGVO) und, für die Namen anderer im Thread, das berechtigte Interesse des Workspace, seine Präsentationen mit KI zu bearbeiten (Art. 6 Abs. 1 lit. f DSGVO).
+Präsentationen, Material und Kommentare sehen nur die Mitglieder des Workspace, in dem sie liegen. Wer gerade im Workspace ist und wer dieselbe Präsentation ansieht, wird den anderen Mitgliedern live angezeigt; das wird nicht gespeichert.
+
+**KI:** Admins eines Workspace können einen KI-Dienst anbinden – mit einem API-Schlüssel des Workspace bei Anthropic, OpenAI, Google (Gemini) oder einem anderen Anbieter ihrer Wahl. Ohne Schlüssel gibt es keine KI, und nichts geht an einen KI-Dienst. Bittet jemand in einem Kommentar die KI, etwas an der Präsentation zu ändern, schickt Slider von unserem Server aus an diesen Dienst: den Kommentar-Thread mit den Namen der Schreibenden, bis zu sechs Bilder, die am Thread hängen, und die Inhalte der Präsentation und ihres Materials, die die KI für die Aufgabe ansieht (Folien mit Texten, Formaten und Bildern; Notizen, Links und der Text der Dateien). Ebenso, wenn jemand auf der Materialseite der KI eine Notiz übergibt – dann gehen ihr Text, die Namen der Dateien, an denen sie hängt, und das Material, das die KI dafür liest – oder aus dem Material eine Präsentation bauen lässt. E-Mail-Adressen und Sprach- oder Videoaufnahmen gehen nicht mit. Was die KI antwortet und ändert, speichern wir wie einen Kommentar und einen Bearbeitungsschritt, samt dem Namen der Person, die sie gebeten hat. Den Dienst wählt der Workspace, und mit dessen Anbieter schließt er den Vertrag; wo der Anbieter die Daten verarbeitet (etwa in den USA) und ob er sie speichert oder zum Training nutzt, richtet sich nach diesem Vertrag und den Einstellungen des Schlüssels. Rechtsgrundlage ist die Erfüllung des Nutzungsvertrags (Art. 6 Abs. 1 lit. b DSGVO) und, für die Namen anderer im Thread, das berechtigte Interesse des Workspace, seine Präsentationen mit KI zu bearbeiten (Art. 6 Abs. 1 lit. f DSGVO).
+
+**KI-Apps:** Unter „Konto & Anmeldung“ → „KI-Apps“ kannst du eine KI-App wie Claude oder ChatGPT mit deinem Konto verbinden – für alle deine Workspaces oder nur für einen. Die App liest dann in deinem Namen, was du in Slider sehen kannst (Präsentationen, Kommentare mit den Namen der Schreibenden, Material), und kann kommentieren, Material ablegen und die KI des Workspace um Änderungen bitten. Was sie abfragt, schickt Slider an diese App. Welche App das ist, entscheidest allein du; für die Verarbeitung dort ist ihr Anbieter verantwortlich, es gilt dessen Datenschutzerklärung. Wir speichern zu jeder Verbindung den Namen der App, für welche Workspaces sie gilt, wann sie verbunden und zuletzt genutzt wurde, und von ihren Zugangsschlüsseln nur einen Hash. „Entfernen“ trennt sie sofort. Rechtsgrundlage ist die Erfüllung des Nutzungsvertrags (Art. 6 Abs. 1 lit. b DSGVO) und, für die Namen und Beiträge anderer, dein berechtigtes Interesse, mit den Inhalten deiner Workspaces in der App deiner Wahl zu arbeiten (Art. 6 Abs. 1 lit. f DSGVO).
 
 {{#stockPhotos}}
 **Fotosuche:** Suchst du beim Bearbeiten nach Fotos oder lässt die KI ein Foto für eine Folie aussuchen, schickt Slider den Suchbegriff an Unsplash (Unsplash Inc., Kanada) – von unserem Server aus, ohne Angaben zu dir. Die Vorschaubilder lädt dein Browser direkt von Unsplash, wie es dessen Nutzungsbedingungen verlangen; dabei erhält Unsplash deine IP-Adresse und technische Angaben zu deinem Browser. Nimmst du ein Foto – oder bestätigst das Foto der KI –, holt Slider es in die Präsentation und meldet Unsplash, dass es verwendet wurde, ebenfalls ohne Angaben zu dir. Wer das Foto gemacht hat, steht als Bildbeschreibung in der Datei. Für Kanada besteht ein Angemessenheitsbeschluss der EU-Kommission. Rechtsgrundlage ist die Erfüllung des Nutzungsvertrags (Art. 6 Abs. 1 lit. b DSGVO).
 {{/stockPhotos}}
 
-Kommentare, die schon in einer Präsentationsdatei stehen{{#google}} oder in Google Präsentationen an der Datei hängen{{/google}}, übernimmt Slider samt den Namen ihrer Verfasser, damit sie beim Prüfen sichtbar bleiben.{{#google}} Nennt Google die E-Mail-Adresse einer Verfasserin oder eines Verfassers, nutzt Slider sie nur, um Mitglieder des eigenen Workspace zu erkennen, und speichert sie nicht.{{/google}} Ebenso zeigt Slider, wer an einer Präsentation gearbeitet hat: den Namen, unter dem die Datei zuletzt gespeichert wurde, und bei verknüpften Dateien die Namen, die der Speicherort als Besitzer, Ersteller, teilende Person oder Bearbeiter früherer Versionen nennt. Rechtsgrundlage dafür ist das berechtigte Interesse, eine Präsentation vollständig prüfen zu können (Art. 6 Abs. 1 lit. f DSGVO); für alles Übrige Art. 6 Abs. 1 lit. b DSGVO.
+Kommentare, die schon in einer Präsentationsdatei stehen, übernimmt Slider samt den Namen ihrer Verfasser, damit sie beim Prüfen sichtbar bleiben. Ebenso zeigt Slider, wer an einer Präsentation gearbeitet hat: den Namen, unter dem die Datei zuletzt gespeichert wurde, und bei verknüpften Dateien die Namen, die der Speicherort als Besitzer, Ersteller, teilende Person oder Bearbeiter früherer Versionen nennt. Rechtsgrundlage dafür ist das berechtigte Interesse, eine Präsentation vollständig prüfen zu können (Art. 6 Abs. 1 lit. f DSGVO); für alles Übrige Art. 6 Abs. 1 lit. b DSGVO.
 
 ## 7. Workspaces und Einladungen
 
@@ -109,7 +112,7 @@ Wenn dich jemand in einen Workspace einlädt, speichern wir deine E-Mail-Adresse
 Slider setzt nur Cookies, die für den Betrieb unbedingt nötig sind (§ 25 Abs. 2 Nr. 2 TDDDG):
 
 - `slider_session`: hält dich angemeldet; läuft 30 Tage nach deiner letzten Nutzung ab.
-- `slider_ms_oauth`, `slider_google`, `slider_google_drive`, `slider_oidc`, `slider_nextcloud`: schützen den Anmeldevorgang; gelten 10 Minuten.
+- `slider_ms_oauth`, `slider_google`, `slider_oidc`, `slider_nextcloud`: schützen den Anmeldevorgang; gelten 10 Minuten.
 {{#nextcloud}}
 - `slider_nc_flow`: ordnet eine Anmeldung mit Nextcloud über ihre Adresse diesem Browser zu; gilt 5 Minuten.
 {{/nextcloud}}
@@ -127,14 +130,19 @@ Es gibt keine Cookies für Statistik, Werbung oder Dritte.
 - **Präsentationen:** bis sie gelöscht werden.
 {{/deleteUnused}}
 - **Kommentare** einer Person, die ihr Konto löscht, bleiben für die anderen erhalten, aber ohne Namen und Bild („Gelöschtes Konto“). Ihre Sprach- und Videoaufnahmen, ihre Bilder (gezeichnet, eingefügt oder hochgeladen) und ihre Reaktionen auf Kommentare werden gelöscht.
+- **Material** einer Präsentation: bis es gelöscht wird, spätestens mit der Präsentation. Antworten der KI unter Notizen: bis die Antwort oder ihre Notiz gelöscht wird; löscht die fragende Person ihr Konto, bleiben sie ohne Bezug zu ihr.
+- **Verbundene KI-Apps:** bis du sie entfernst oder dein Konto löschst.
 - **Bilder aus dem Editor** (hochgeladen{{#stockPhotos}} oder als Foto geholt{{/stockPhotos}}): 7 Tage; was du auf eine Folie gesetzt hast, steckt danach in der Präsentationsdatei.
+{{#nextcloud}}
+- **App-Passwort einer verbundenen Nextcloud:** bis du die Verbindung trennst oder dein Konto löschst.
+{{/nextcloud}}
 - **Einladungen:** 30 Tage nach Ablauf, Annahme oder Rücknahme.
 - **Sitzungen:** 30 Tage nach der letzten Nutzung, spätestens 90 Tage nach der Anmeldung.
 - **Sicherungskopien** werden nach {{backupDays}} Tagen überschrieben; gelöschte Daten sind danach auch aus den Backups entfernt.
 
 ## 10. Empfänger
 
-Deine Daten sehen nur die Mitglieder der Workspaces, in denen du mitarbeitest, wir als Betreiber im Umfang der Übersicht aus Abschnitt 4 und – soweit für den Betrieb nötig – unsere Auftragsverarbeiter: {{hoster}} (Hosting){{#cloudflare}}, Cloudflare (Netzwerk und Schutz){{/cloudflare}}{{#mail}}, {{mailer}} (E-Mail-Versand){{/mail}}{{#payments}} und – falls du für einen Workspace bezahlst – Stripe (Zahlungsabwicklung){{/payments}}. Hat ein Workspace einen KI-Dienst angebunden, erhält dieser Dienst die Daten aus Abschnitt 6, wenn jemand die KI bittet. Wir verkaufen keine Daten und geben sie nicht für Werbung weiter.
+Deine Daten sehen nur die Mitglieder der Workspaces, in denen du mitarbeitest, wir als Betreiber im Umfang der Übersicht aus Abschnitt 4 und – soweit für den Betrieb nötig – unsere Auftragsverarbeiter: {{hoster}} (Hosting){{#cloudflare}}, Cloudflare (Netzwerk und Schutz){{/cloudflare}}{{#mail}}, {{mailer}} (E-Mail-Versand){{/mail}}{{#payments}} und – falls du für einen Workspace bezahlst – Stripe (Zahlungsabwicklung){{/payments}}. Hat ein Workspace einen KI-Dienst angebunden, erhält dieser Dienst die Daten aus Abschnitt 6, wenn jemand die KI bittet. Eine KI-App, die du verbunden hast, erhält, was sie in deinem Namen abfragt. Wir verkaufen keine Daten und geben sie nicht für Werbung weiter.
 
 ## 11. Deine Rechte
 

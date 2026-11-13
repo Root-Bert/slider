@@ -14,7 +14,7 @@ export function makeDeck(overrides: Partial<Deck> = {}): Deck {
     workspaceId: 'w1',
     title: 'Q4 Strategie',
     fileName: 'Q4 Strategie.pptx',
-    source: 'onedrive',
+    source: 'nextcloud',
     owner,
     createdAt: '2026-10-01T08:00:00.000Z',
     updatedAt: '2026-10-01T08:00:00.000Z',

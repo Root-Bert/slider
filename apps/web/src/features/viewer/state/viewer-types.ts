@@ -177,8 +177,14 @@ export interface ViewerState {
    */
   sharePanelOpen: boolean;
   /**
-   * Something picked on the board (Folie 0): its file, link or note in the side panel – where the
-   * thread or the others would be (`MaterialBoard` keeps what is picked).
+   * The material page is shown: the deck's board, the whole screen beside the presentation (the
+   * presentation slid out to the right). The paperclip left of the slide overview opens it, M
+   * toggles it; `?material` in the address keeps it.
+   */
+  materialOpen: boolean;
+  /**
+   * Something picked on the board: its file, link or note in the material page's side panel
+   * (`MaterialBoard` keeps what is picked).
    */
   boardPanelOpen: boolean;
   /** The direction of the grid being set (its fields in use): only it shows meanwhile. */
@@ -270,6 +276,7 @@ export type ViewerAction =
   | { type: 'layoutGridPanelSet'; open: boolean }
   | { type: 'sharePanelSet'; open: boolean }
   | { type: 'boardPanelSet'; open: boolean }
+  | { type: 'materialSet'; open: boolean }
   | { type: 'layoutGridAxisSet'; axis: 'columns' | 'rows' | null }
   | { type: 'showHiddenSlidesToggled' }
   | { type: 'showMinimapToggled' }

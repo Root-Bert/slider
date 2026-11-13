@@ -38,7 +38,7 @@ const dispositionName = (name: string) =>
   `filename="${name.replace(/[^\x20-\x7e]|["\\]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`;
 
 /**
- * The board of a deck – Folie 0, „Material“ (`services/materials.ts`):
+ * The board of a deck – its material page „Material“ (`services/materials.ts`):
  * - `GET /decks/:deckId/board` → `Board` (everyone who sees the deck);
  * - `POST /decks/:deckId/materials` `{ id, upload, x, y, w, h }` → `Material` (201; 200 when
  *   sent again) – the file sent before over tus (`purpose material`, `deckId`);

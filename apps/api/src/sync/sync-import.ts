@@ -46,7 +46,6 @@ import {
 } from '../import/office-pages';
 import type { ImportDeps } from '../import/import-deck';
 import { upsertPptxComments, type ImportedSlide } from '../import/pptx-comments';
-import { isGoogleSlidesDeck, slideIdsFor, upsertGoogleComments } from '../import/slides-extras';
 import type { ImportJob } from '../import/queue';
 import { deleteBlobs, storageBlobs } from '../services/blob-deletions';
 import { blobKeys } from '../storage/blob-storage';
@@ -62,7 +61,7 @@ type SlideVersionRow = typeof slideVersions.$inferSelect;
 /** A parsed slide's fingerprint, with what the caller knows of it besides the file. */
 const parsedFingerprint = (
   slide: ParsedSlide,
-  known: Pick<SlideFingerprint, 'key' | 'position' | 'sourceSlideId'> & {
+  known: Pick<SlideFingerprint, 'key' | 'position'> & {
     shapes: Shape[];
     renderHash: string;
   },
@@ -80,7 +79,6 @@ const parsedFingerprint = (
     contentHash: slide.contentHash,
     creationId: slide.creationId,
     hidden: slide.hidden,
-    sourceSlideId: known.sourceSlideId,
   });
 
 /**
@@ -128,7 +126,6 @@ async function currentFingerprints(
           position: row.position,
           shapes: slide.shapes.map(toShape),
           renderHash: sha256Hex(svgForRenderHash(svg)),
-          sourceSlideId: row.sourceSlideId,
         }),
       );
     }
@@ -186,8 +183,6 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
     const document = await openDeckFile(deps.openPptx, bytes);
     const { presentation } = document;
     const aspectRatio = presentation.size.cx / presentation.size.cy;
-    const extras = (await deps.slidesExtras?.(deck, revision)) ?? null;
-    const slideIds = slideIdsFor(extras, presentation.slides);
 
     const planned: PlannedSlide[] = [];
     // Images of an earlier run cut off before publishing (crash, restart): nothing refers to a
@@ -201,7 +196,6 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
       planned.push({
         parsed,
         position,
-        sourceSlideId: slideIds?.[position] ?? null,
         imageKey: '',
         thumbnailKey: '',
         shapes: parsed.shapes.map(toShape),
@@ -234,7 +228,6 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
         contentHash: row.contentHash,
         creationId: row.creationId,
         hidden: row.hidden,
-        sourceSlideId: row.sourceSlideId,
       });
     };
     const prevFingerprints: SlideFingerprint[] = rebuilt ?? [];
@@ -257,7 +250,7 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
     }
     // Where every box of the previous revision went: comments bound to one follow it (BER-111).
     const boxes = trackBoxes(prevFingerprints, nextFingerprints, results);
-    const rendered = await storeImages(deps, {
+    await storeImages(deps, {
       deck,
       revision,
       bytes,
@@ -367,7 +360,6 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
             textHash: slide.parsed.textHash,
             contentHash: slide.parsed.contentHash,
             creationId: slide.parsed.creationId,
-            sourceSlideId: slide.sourceSlideId,
             imageKey: slide.imageKey,
             thumbnailKey: slide.thumbnailKey,
             aspectRatio,
@@ -379,19 +371,13 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
           })),
         );
       }
-      // A Google Slides export's comments are Google's (BER-157), merged with Drive's.
-      const commentCounts = isGoogleSlidesDeck(deck)
-        ? await upsertGoogleComments(
-            tx,
-            deckId,
-            extras,
-            presentation,
-            slideIds,
-            slidesBySldId,
-            now,
-            deps.log,
-          )
-        : await upsertPptxComments(tx, deckId, presentation.comments, slidesBySldId, now);
+      const commentCounts = await upsertPptxComments(
+        tx,
+        deckId,
+        presentation.comments,
+        slidesBySldId,
+        now,
+      );
       await carryBoxComments(tx, {
         deckId,
         previous: prevFingerprints,
@@ -417,7 +403,6 @@ export async function importSyncRevision(deps: ImportDeps, job: ImportJob): Prom
           slideWidthEmu: presentation.size.cx,
           slideHeightEmu: presentation.size.cy,
           fileAuthor: presentation.author,
-          officeFailure: rendered.officeFailure,
           fingerprintVersion: FINGERPRINT_VERSION,
         })
         .where(eq(revisions.id, revisionId));
@@ -524,8 +509,6 @@ async function discardRevision(deps: ImportDeps, deckId: string, revisionId: str
 type PlannedSlide = {
   parsed: ParsedSlide;
   position: number;
-  /** Google Slides' `objectId` (BER-157); `null` elsewhere or when it could not be read. */
-  sourceSlideId: string | null;
   imageKey: string;
   thumbnailKey: string;
   shapes: Shape[];
@@ -569,8 +552,7 @@ function keepsImages(
  * moved) with an identical render keep the previous version's files: the same keys in two
  * versions. Every code path that deletes slide images checks that no other version still uses
  * them (`rerender`) or only touches the pending revision's own prefix (a failed import), so the
- * shared files stay. Only when some slide needs a new picture is the PDF drawn at all. Returns
- * why Office was not used, as the revision stores it.
+ * shared files stay. Only when some slide needs a new picture is the PDF drawn at all.
  */
 async function storeImages(
   deps: ImportDeps,
@@ -584,10 +566,10 @@ async function storeImages(
     results: readonly SlideMatchResult[];
     renderSlide: (parsed: ParsedSlide) => Promise<string>;
   },
-): Promise<Pick<SlidePages, 'officeFailure'>> {
+): Promise<void> {
   const { deck, revision, planned } = input;
   const previousById = new Map(input.previous.map((row) => [row.slideId, row]));
-  const canRenderBetter = hasPdfRenderer(deps, deck);
+  const canRenderBetter = hasPdfRenderer(deps);
   const kept = new Map<number, SlideVersionRow>();
   for (const result of input.results) {
     if (result.prevKey === null || result.nextKey === null) continue;
@@ -600,14 +582,8 @@ async function storeImages(
 
   let rendered: SlidePages;
   if (kept.size === planned.length) {
-    // Nothing looks different: no PDF to draw, and Office's earlier verdict still applies.
-    const [last] = deck.currentRevisionId
-      ? await deps.db
-          .select({ officeFailure: revisions.officeFailure })
-          .from(revisions)
-          .where(eq(revisions.id, deck.currentRevisionId))
-      : [];
-    rendered = { renderer: null, pages: [], officeFailure: last?.officeFailure ?? null };
+    // Nothing looks different: no PDF to draw.
+    rendered = { renderer: null, pages: [] };
   } else {
     rendered = await renderSlidePages(
       deps,
@@ -637,7 +613,6 @@ async function storeImages(
     slide.thumbnailKey = keys.thumbnailKey;
     slide.renderer = slideRenderer(rendered, page);
   }
-  return { officeFailure: rendered.officeFailure };
 }
 
 /**

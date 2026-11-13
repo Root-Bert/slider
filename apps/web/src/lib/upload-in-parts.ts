@@ -46,7 +46,7 @@ export async function uploadInParts<T>(
 
 /**
  * What a file sent in parts is for: a deck file (new deck or version), a comment's recording, or
- * a file for a deck's board (Folie 0).
+ * a file for a deck's board (the material page).
  */
 export type PartsTarget =
   | { workspaceId: string }

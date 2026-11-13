@@ -8,6 +8,7 @@ import { useCommentProposals } from '../../comments/hooks/useCommentProposals';
 import {
   asksInWords,
   isBareDrawing,
+  isBareSticker,
   isImplicitFrame,
   textAnnotation,
   type Thread,
@@ -145,19 +146,4 @@ export function pinOf(comment: Comment): Point | null {
   return comment.anchor.type === 'rect'
     ? { x: comment.anchor.rect.x, y: comment.anchor.rect.y }
     : null;
-}
-
-/**
- * A sticker whose comment is only its own text (sent without a comment of its own): taking the
- * text off leaves nothing, so the whole comment goes.
- */
-function isBareSticker({ root, replies }: Thread): boolean {
-  const text = textAnnotation(root);
-  return (
-    text !== null &&
-    replies.length === 0 &&
-    !root.media &&
-    !root.images?.length &&
-    root.body.trim() === text.text.trim()
-  );
 }

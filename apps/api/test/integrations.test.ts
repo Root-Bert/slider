@@ -3,7 +3,12 @@ import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { deckSchema, integrationsSchema } from '@slider/shared';
 import { aiUsage, instanceSettings, integrationKeys, workspaces } from '../src/db/schema';
-import { keyProblem, ProviderHttpError, transcribe } from '../src/services/ai-providers';
+import {
+  keyProblem,
+  ProviderHttpError,
+  quickModelOf,
+  transcribe,
+} from '../src/services/ai-providers';
 import {
   aiConnectionFor,
   workspaceAiConnection,
@@ -161,6 +166,24 @@ describe('a workspace’s AI keys', () => {
       ).toBe(400);
       await call(`/keys/${gemini.id}`, { method: 'PATCH', json: { createModel: null } });
       expect((await runsOn('create'))?.model).toBe('gemini-3.0-flash');
+
+      // Quick requests: none of their own – a key other than Anthropic's runs them on its model;
+      // one set, only for them; none it does not offer; `null` back.
+      expect((await keys())[0]!.quickModel).toBeNull();
+      expect(quickModelOf((await runsOn('review'))!)).toBe('gemini-3.0-flash');
+      await call(`/keys/${gemini.id}`, { method: 'PATCH', json: { quickModel: 'gemini-3.0-pro' } });
+      expect((await keys())[0]).toMatchObject({
+        model: 'gemini-3.0-flash',
+        quickModel: 'gemini-3.0-pro',
+      });
+      expect((await runsOn('review'))?.model).toBe('gemini-3.0-flash');
+      expect(quickModelOf((await runsOn('review'))!)).toBe('gemini-3.0-pro');
+      expect(
+        (await call(`/keys/${gemini.id}`, { method: 'PATCH', json: { quickModel: 'gpt-5.5' } }))
+          .status,
+      ).toBe(400);
+      await call(`/keys/${gemini.id}`, { method: 'PATCH', json: { quickModel: null } });
+      expect(quickModelOf((await runsOn('review'))!)).toBe('gemini-3.0-flash');
 
       // Removing the active one leaves the AI off until another is set active.
       await call(`/keys/${gemini.id}`, { method: 'DELETE' });
@@ -535,6 +558,7 @@ describe('the instance’s integrations', () => {
           rule: pick,
           model: null,
           createModel: null,
+          quickModel: null,
         },
       ]);
       expect((await call('/instance/ai/models')).body).toMatchObject({
@@ -568,6 +592,21 @@ describe('the instance’s integrations', () => {
       expect((await runsOn())?.model).toBe('claude-opus-5-5');
       await call('/instance/ai/model', { method: 'PUT', json: { createModel: null } });
       expect(await creates()).toBe('claude-opus-5-5');
+
+      // Its model of quick requests, picked apart alike: an Anthropic key's are on Haiku until.
+      expect(quickModelOf((await runsOn())!)).toBe('claude-haiku-5-5');
+      await call('/instance/ai/model', {
+        method: 'PUT',
+        json: { quickModel: 'claude-sonnet-5-5' },
+      });
+      expect((await integrations()).areas.ai.inherited).toMatchObject({
+        model: 'claude-opus-5-5',
+        quickModel: 'claude-sonnet-5-5',
+        defaultQuickModel: null,
+      });
+      expect(quickModelOf((await runsOn())!)).toBe('claude-sonnet-5-5');
+      await call('/instance/ai/model', { method: 'PUT', json: { quickModel: null } });
+      expect(quickModelOf((await runsOn())!)).toBe('claude-haiku-5-5');
 
       // Another key of the instance: its model applies again.
       await instance('/keys', {
@@ -661,6 +700,22 @@ describe('the instance’s integrations', () => {
       ).toBe(400);
       await apart({ rule: fixed, createModel: null });
       expect(await creates()).toBe('claude-opus-5-5');
+      // And quick requests' model, alike.
+      await apart({ rule: fixed, quickModel: 'claude-sonnet-5-5' });
+      expect(
+        integrationsSchema.parse((await instance('')).body).areas.ai.exceptions[0],
+      ).toMatchObject({ model: 'claude-opus-5-5', quickModel: 'claude-sonnet-5-5' });
+      expect(quickModelOf((await runsOn())!)).toBe('claude-sonnet-5-5');
+      expect(
+        (
+          await instance('/speech', {
+            method: 'PATCH',
+            json: { workspaceId: context.workspaceId, rule: fixed, quickModel: 'x' },
+          })
+        ).status,
+      ).toBe(400);
+      await apart({ rule: fixed, quickModel: null });
+      expect(quickModelOf((await runsOn())!)).toBe('claude-haiku-5-5');
 
       // Model free: the instance's is the default – a pick of the workspace goes before it.
       const pick = { ownKeys: false, inherit: 'key' };
@@ -839,6 +894,8 @@ describe('the instance’s integrations', () => {
         defaultModel: 'whisper-large-v3-turbo',
         createModel: null,
         defaultCreateModel: null,
+        quickModel: null,
+        defaultQuickModel: null,
       });
       const ofInstance = integrationsSchema.parse((await instance('')).body);
       expect(ofInstance.areas.speech.inherited).toBeNull();

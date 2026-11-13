@@ -11,14 +11,7 @@
  * - `./sso`: a workspace's own company login (BER-162)
  */
 
-export {
-  atLeast,
-  deckPermissions,
-  getRole,
-  requireRole,
-  rolesOf,
-  workspaceNotFound,
-} from './roles';
+export { getRole, requireRole } from './roles';
 export {
   createWorkspace,
   deleteWorkspace,
@@ -33,18 +26,15 @@ export {
   setWorkspaceLogo,
 } from './workspaces';
 export { listMembers, removeMember, updateMemberRole } from './members';
-export { deleteDeckFiles, departDecks, departurePreview } from './departure';
+export { deleteDeckFiles, departurePreview } from './departure';
 export {
   acceptInviteById,
   createInvite,
   effectiveState,
   findInviteByToken,
   hasPendingEmailInvite,
-  inviteState,
-  inviteUrl,
   joinByToken,
   listInvites,
-  maskEmail,
   pendingInvitesFor,
   previewInvite,
   revokeInvite,
@@ -54,7 +44,6 @@ export {
   findDomainWorkspace,
   foundAtSignUp,
   joinByDomain,
-  nameFromDomain,
   setWorkspaceDomain,
 } from './domains';
 export {

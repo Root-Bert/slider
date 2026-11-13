@@ -61,7 +61,7 @@ interface TusUpload {
   touchedAt: number;
 }
 
-/** A deck file, a voice/video comment's recording, or a file put on a deck's board (Folie 0). */
+/** A deck file, a voice/video comment's recording, or a file put on a deck's material page. */
 type TusPurpose = 'deck' | 'recording' | 'material';
 
 const ID_PATTERN = /^[0-9a-f-]{36}$/;

@@ -15,8 +15,10 @@ export const queryKeys = {
   folders: (workspaceId: string) => ['folders', workspaceId] as const,
   slides: (deckId: string) => ['decks', deckId, 'slides'] as const,
   comments: (deckId: string) => ['decks', deckId, 'comments'] as const,
-  /** The deck's board (Folie 0, „Material“): its files, notes and links. */
+  /** The deck's board (the material page): its files, notes and links. */
   board: (deckId: string) => ['decks', deckId, 'board'] as const,
+  /** One's own questions about the deck's material („Fragen“ on the material page). */
+  materialQuestions: (deckId: string) => ['decks', deckId, 'material-questions'] as const,
   /** A deck built by the AI from the prompt on Folie 1: the prompt, the outline, the progress. */
   creation: (deckId: string) => ['decks', deckId, 'creation'] as const,
   people: (deckId: string) => ['decks', deckId, 'people'] as const,
@@ -85,14 +87,12 @@ export const workspaceKeys = {
   masters: (workspaceId: string) => ['workspaces', workspaceId, 'masters'] as const,
   join: (token: string) => ['join', token] as const,
   passkeys: ['account', 'passkeys'] as const,
+  /** „KI-Apps“: AI apps let into the account over MCP. */
+  appConnections: ['account', 'app-connections'] as const,
   identities: ['account', 'identities'] as const,
-  /** Microsoft accounts connected for OneDrive/SharePoint (`GET /me/microsoft`). */
-  microsoft: ['account', 'microsoft'] as const,
   /** Nextcloud accounts connected for files (`GET /me/nextcloud`, BER-135). */
   nextcloud: ['account', 'nextcloud'] as const,
   nextcloudSettings: ['nextcloud', 'settings'] as const,
-  /** Google accounts connected for Google Drive (`GET /me/google`, BER-119). */
-  google: ['account', 'google'] as const,
   /** One folder, "Mit mir geteilt" or a search in the Nextcloud browser. */
   nextcloudListing: (connectionId: string, kind: 'files' | 'shared' | 'search', key: string) =>
     ['nextcloud', connectionId, kind, key] as const,

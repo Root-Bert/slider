@@ -12,16 +12,9 @@ export const CSP_REPORT_PATH = `${API_PREFIX}/csp-report`;
 const REPORT_GROUP = 'csp';
 
 /**
- * Microsoft's OneDrive File Picker v8 (`sources/onedrive-picker`): the web app posts a form with
- * the first token into an iframe – the consumer picker for personal accounts, the tenant's
- * SharePoint (`contoso-my.sharepoint.com/_layouts/15/FilePicker.aspx`) for work and school.
- */
-const ONEDRIVE_PICKER = ['https://onedrive.live.com', 'https://*.sharepoint.com'];
-
-/**
  * Everything else comes from the app's own origin: scripts and the frame-clock worker (Vite
  * bundles), the stylesheet and Inter (fontsource, bundled), the API, the live stream and signed
- * `/files` links. Google Drive, Stripe and the logins are top-level navigations, the Nextcloud
+ * `/files` links. Stripe and the logins are top-level navigations, the Nextcloud
  * login a popup – none of them is loaded into the page. No inline scripts or `<style>` elements:
  * React sets `style` props through the CSSOM, which `style-src` does not restrict.
  */
@@ -48,8 +41,8 @@ const DIRECTIVES: [string, ...string[]][] = [
   // browser connects itself, with a token the server got for it.
   ['connect-src', "'self'", 'wss://api.mistral.ai'],
   ['worker-src', "'self'"],
-  ['frame-src', ...ONEDRIVE_PICKER],
-  ['form-action', "'self'", ...ONEDRIVE_PICKER],
+  ['frame-src', "'none'"],
+  ['form-action', "'self'"],
   ['frame-ancestors', "'self'"],
   ['object-src', "'none'"],
   ['base-uri', "'self'"],

@@ -38,16 +38,42 @@ const POLICY_KEY = 'INTEGRATION_POLICY';
 
 /**
  * The models the instance runs its key on in one workspace – for that key only: `model` for
- * everything, `createModel` (AI) to create decks on; each left out: the key's own.
+ * everything, `createModel` (AI) to create decks on, `quickModel` (AI) for quick requests; each
+ * left out: the key's own.
  */
 export interface AssignedModel {
   keyId: string;
   model?: string;
   createModel?: string;
+  quickModel?: string;
 }
 
-/** Which of a key's models: the one for everything, or (AI) the one decks are created on. */
-export type ModelField = 'model' | 'createModel';
+/**
+ * Which of a key's models: the one for everything, or (AI) the one decks are created on, or the
+ * one of quick requests.
+ */
+export const MODEL_FIELDS = ['model', 'createModel', 'quickModel'] as const;
+export type ModelField = (typeof MODEL_FIELDS)[number];
+
+/** One value per model of a key. */
+export const perModel = <T>(value: (field: ModelField) => T): Record<ModelField, T> => ({
+  model: value('model'),
+  createModel: value('createModel'),
+  quickModel: value('quickModel'),
+});
+
+/** The models named for key `keyId` (empty ones left out) – `null` when none is. */
+export function assignedTo(
+  keyId: string,
+  models: Partial<Record<ModelField, string | null | undefined>>,
+): AssignedModel | null {
+  const assigned: AssignedModel = { keyId };
+  for (const field of MODEL_FIELDS) {
+    const name = models[field];
+    if (name) assigned[field] = name;
+  }
+  return MODEL_FIELDS.some((field) => assigned[field]) ? assigned : null;
+}
 
 /**
  * Per kind, the rule for all workspaces and those for single ones apart – each of those with the
@@ -66,14 +92,15 @@ function parseModel(stored: unknown): AssignedModel | null {
   if (!stored || typeof stored !== 'object' || !('model' in stored)) return null;
   const { model } = stored;
   if (!model || typeof model !== 'object') return null;
-  const { keyId, model: name, createModel } = model as Partial<Record<string, unknown>>;
-  if (typeof keyId !== 'string') return null;
-  const assigned: AssignedModel = {
-    keyId,
-    ...(typeof name === 'string' && name && { model: name }),
-    ...(typeof createModel === 'string' && createModel && { createModel }),
-  };
-  return assigned.model || assigned.createModel ? assigned : null;
+  const fields = model as Partial<Record<string, unknown>>;
+  if (typeof fields.keyId !== 'string') return null;
+  return assignedTo(
+    fields.keyId,
+    perModel((field) => {
+      const name = fields[field];
+      return typeof name === 'string' ? name : undefined;
+    }),
+  );
 }
 
 /** A stored rule; once only `true`/`false` – whether workspaces may set their own. */
@@ -176,7 +203,7 @@ export async function savePolicy(
 
 /**
  * The model the instance set for its key `keyId` in a workspace apart – `null`: none. `field`:
- * the one for everything, or the one decks are created on.
+ * the one for everything, the one decks are created on, or the one of quick requests.
  */
 export const assignedModel = (
   policy: IntegrationPolicy,
@@ -191,10 +218,36 @@ export const assignedModel = (
     : null;
 };
 
+/** `row` with each model `name` gives in its place – the others as they are. */
+function withModels(
+  row: IntegrationKeyRow,
+  name: (field: ModelField) => string | null | undefined,
+): IntegrationKeyRow {
+  const next = { ...row };
+  for (const field of MODEL_FIELDS) {
+    const named = name(field);
+    if (named) next[field] = named;
+  }
+  return next;
+}
+
+/**
+ * The instance's key with the models the instance set for it in a workspace apart – each not
+ * set: the key's own. What the workspace runs on without a pick of its own.
+ */
+export const assignedRow = (
+  policy: IntegrationPolicy,
+  workspaceId: string,
+  instance: IntegrationKeyRow,
+): IntegrationKeyRow =>
+  withModels(instance, (field) =>
+    assignedModel(policy, instance.kind, workspaceId, instance.id, field),
+  );
+
 /**
  * The instance's key as a workspace runs on it: on the model the instance set for it there, or
  * the key's own – and where the rule lets the workspace pick, on its pick, made for this key.
- * The same for the model decks are created on, each apart.
+ * The same for the models decks are created on and quick requests run on, each apart.
  */
 export async function inheritedRow(
   deps: { db: Executor },
@@ -203,13 +256,7 @@ export async function inheritedRow(
   instance: IntegrationKeyRow,
 ): Promise<IntegrationKeyRow> {
   if (instance.kind === 'photos') return instance;
-  const base = {
-    ...instance,
-    model: assignedModel(policy, instance.kind, workspaceId, instance.id) ?? instance.model,
-    createModel:
-      assignedModel(policy, instance.kind, workspaceId, instance.id, 'createModel') ??
-      instance.createModel,
-  };
+  const base = assignedRow(policy, workspaceId, instance);
   if (ruleFor(policy, instance.kind, workspaceId).inherit !== 'key') return base;
   const [found] = await deps.db
     .select({ models: workspaces.integrationModels })
@@ -217,11 +264,7 @@ export async function inheritedRow(
     .where(eq(workspaces.id, workspaceId));
   const pick = found?.models[instance.kind];
   if (!pick || pick.keyId !== instance.id) return base;
-  return {
-    ...base,
-    model: pick.model ?? base.model,
-    createModel: pick.createModel ?? base.createModel,
-  };
+  return withModels(base, (field) => pick[field]);
 }
 
 /** The keys of one place – a workspace, or the instance (`null`) – newest first. */
@@ -360,6 +403,7 @@ function connectionOf(
       apiKey: row.apiKey,
       baseUrl: row.baseUrl,
       model: row.model,
+      ...(row.kind === 'ai' && { quickModel: row.quickModel }),
       instance: row.workspaceId === null,
       ...(usage && {
         meter: usageMeter(usage.deps, {
@@ -379,6 +423,11 @@ function connectionOf(
  * What the AI does for a workspace, each on its own model of the same key (AI settings):
  * `review` – reviews, comments, changes asked of it, everything until now; `create` – creating a
  * deck („Präsentation erstellen“).
+ *
+ * Quick requests („Schnelle Aufträge“: the voice router, plain changes from comments, thread
+ * summaries) are no purpose of their own: either connection carries the key's `quickModel` (as
+ * the workspace's rules set it, like the other two), and `runToolCall` asks it through
+ * `quickModelOf` – unset, Haiku on an Anthropic key, else the connection's `model` (no quicker one).
  */
 export type AiPurpose = 'review' | 'create';
 

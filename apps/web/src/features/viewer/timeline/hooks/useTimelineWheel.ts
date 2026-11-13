@@ -18,6 +18,7 @@ import {
 
 type View = Pick<SlideZoom, 'scale' | 'x' | 'y'>;
 import { useViewerDispatch, useViewerState } from '../../state/viewer-state';
+import { useViewerStore } from '../../state/viewer-store';
 import type { SizeAnchor } from '../timeline-context';
 import { isModKey } from '@/lib/keyboard';
 
@@ -85,9 +86,14 @@ export function useTimelineWheel({
    */
   onTrackWheel?: (event: WheelEvent) => boolean;
 }) {
-  const { split, slideZooms } = useViewerState();
+  const { split } = useViewerState();
+  const store = useViewerStore();
   const dispatch = useViewerDispatch();
-  const current = useEffectEvent(() => ({ split, geometry, slideZooms }));
+  const current = useEffectEvent(() => ({
+    split,
+    geometry,
+    slideZooms: store.getState().slideZooms,
+  }));
   const trackWheel = useEffectEvent((event: WheelEvent) => onTrackWheel?.(event) ?? false);
 
   useEffect(() => {
@@ -195,7 +201,11 @@ export function useTimelineWheel({
       }
       // Up and down over the band: its tracks (variants over the slides, notes under them) – not
       // while a notes field still scrolls that way itself.
-      if (vertical && target?.closest('[data-track], [data-track-dots]') && !scrollsItself(target, event.deltaY))
+      if (
+        vertical &&
+        target?.closest('[data-track], [data-track-dots]') &&
+        !scrollsItself(target, event.deltaY)
+      )
         trackWheel(event);
     };
 

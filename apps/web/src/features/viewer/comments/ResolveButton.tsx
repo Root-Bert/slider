@@ -2,6 +2,7 @@ import type { Comment } from '@slider/shared';
 import { useUpdateComment } from '@/lib/api';
 import type { MouseEvent } from 'react';
 import { cn, Icon, IconButton } from '@/ui';
+import { doneByAi } from './lib/comment-selectors';
 
 interface ResolveButtonProps {
   comment: Comment;
@@ -23,6 +24,7 @@ export function ResolveButton({
   return (
     <ResolveToggle
       done={done}
+      byAi={doneByAi(comment)}
       onToggle={() => update.mutate({ commentId: comment.id, status: done ? 'open' : 'done' })}
       failed={update.isError}
       variant={variant}
@@ -33,16 +35,19 @@ export function ResolveButton({
 
 /**
  * The thread's done toggle for anything done like a thread (the AI's card on a variant): one
- * icon, label and title. `failed`: the last toggle was not saved.
+ * icon, label and title. `failed`: the last toggle was not saved. `byAi`: done by the AI's change
+ * – its sparkles instead of the check.
  */
 export function ResolveToggle({
   done,
+  byAi = false,
   onToggle,
   failed = false,
   variant = 'icon',
   className,
 }: {
   done: boolean;
+  byAi?: boolean;
   onToggle: () => void;
   failed?: boolean;
   variant?: 'chip' | 'icon';
@@ -56,7 +61,12 @@ export function ResolveToggle({
   };
   // A toggle: the name says what it switches, `aria-pressed` whether it's on ("Erledigt,
   // gedrückt"); what a click does is the tooltip's.
-  const title = done ? 'Erledigt – klicken zum Wiederöffnen' : 'Als erledigt markieren';
+  const title = !done
+    ? 'Als erledigt markieren'
+    : byAi
+      ? 'Von der KI erledigt – klicken zum Wiederöffnen'
+      : 'Erledigt – klicken zum Wiederöffnen';
+  const icon = done && byAi ? 'autoAwesome' : 'check';
 
   return (
     <span className={cn('relative z-(--z-raised) inline-flex items-center gap-1.5', className)}>
@@ -78,12 +88,12 @@ export function ResolveToggle({
             done ? 'bg-success/10 text-success' : 'text-fg-subtle hover:bg-hover hover:text-fg',
           )}
         >
-          <Icon name="check" size={16} />
+          <Icon name={icon} size={16} />
           {label}
         </button>
       ) : (
         <IconButton
-          icon="check"
+          icon={icon}
           label="Erledigt"
           title={title}
           variant="subtle"

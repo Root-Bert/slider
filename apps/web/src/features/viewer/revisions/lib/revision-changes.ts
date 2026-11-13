@@ -1,6 +1,5 @@
 import type {
   DeckSync,
-  Revision,
   RevisionDiff,
   Slide,
   SlideChange,
@@ -136,10 +135,6 @@ export function slideBadges(
   return result;
 }
 
-/** The current revision's entry of a revision list (newest first). */
-export const currentRevision = (revisions: readonly Revision[] | undefined) =>
-  revisions?.find((revision) => revision.isCurrent) ?? null;
-
 // ── Copy ────────────────────────────────────────────────────────────────────
 
 /**
@@ -170,25 +165,15 @@ export function bannerSyncError(
   return error;
 }
 
-/** Errors the owner can fix by signing in with Microsoft again. */
+/** Errors the owner can fix by connecting the source again. */
 export const isLoginError = (code: SyncErrorCode) =>
   code === 'auth_required' || code === 'consent_required';
 
-/** Nextcloud decks send the owner to /konto to connect again (BER-135), not to Microsoft. */
-export const isNextcloudLogin = (loginUrl: string | undefined) =>
-  loginUrl?.startsWith('/konto') ?? false;
+/** Nextcloud decks send the owner to /konto to connect again (BER-135). */
+const isNextcloudLogin = (loginUrl: string | undefined) => loginUrl?.startsWith('/konto') ?? false;
 
-/** Google Drive decks connect a Google account again (BER-119). */
-export const isGoogleLogin = (loginUrl: string | undefined) =>
-  loginUrl?.startsWith('/api/auth/google/') ?? false;
-
-/** The button that fixes a source's `auth_required`. */
-export const sourceLoginLabel = (loginUrl: string | undefined) =>
-  isNextcloudLogin(loginUrl)
-    ? 'Nextcloud verbinden'
-    : isGoogleLogin(loginUrl)
-      ? 'Google Drive verbinden'
-      : 'Mit Microsoft anmelden';
+/** The button that fixes a source's `auth_required`: only Nextcloud decks have one. */
+export const SOURCE_LOGIN_LABEL = 'Nextcloud verbinden';
 
 /** Headline of the sync error (the server's `message` is the detail line). */
 export function syncErrorTitle(code: SyncErrorCode, loginUrl?: string): string {
@@ -196,11 +181,9 @@ export function syncErrorTitle(code: SyncErrorCode, loginUrl?: string): string {
     case 'auth_required':
       return isNextcloudLogin(loginUrl)
         ? 'Anmeldung bei Nextcloud abgelaufen'
-        : isGoogleLogin(loginUrl)
-          ? 'Verbindung zu Google Drive getrennt'
-          : 'Anmeldung bei Microsoft abgelaufen';
+        : 'Verbindung zur Quelle getrennt';
     case 'consent_required':
-      return 'Zugriff auf OneDrive nicht freigegeben';
+      return 'Zugriff auf die Datei nicht freigegeben';
     case 'access_revoked':
       return 'Kein Zugriff mehr auf die Präsentation';
     case 'not_found':

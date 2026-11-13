@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { and, count, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { OdpDocument, blankOdp, isOdpBytes, type OdpDesign } from '@slider/odp';
 import { openPptx } from '@slider/pptx';
 import {
@@ -29,6 +29,7 @@ import type { AppDeps } from '../deps';
 import { badRequest, notFound } from '../http/errors';
 import { ConversionAborted, deckFonts, fontSubstituteFor } from '../import/libreoffice';
 import {
+  masterFileColors,
   odpLayoutDeck,
   odpLayoutName,
   odpLayoutPages,
@@ -69,6 +70,7 @@ export const toWorkspaceMaster = (row: WorkspaceMasterRow): WorkspaceMaster => (
   fileUrl: fileUrl(row.fileKey),
   fileExtension: fileExtensionOf(row),
   draftDeckId: row.draftDeckId,
+  colors: row.colors,
   layouts: row.layouts.map((layout) => ({
     name: layout.name,
     master: layout.master,
@@ -279,6 +281,7 @@ export async function uploadWorkspaceMaster(
         aspectRatio: read.aspectRatio,
         layouts,
         uploadedById: userId,
+        colors: read.colors,
       });
     });
   } catch (error) {
@@ -291,6 +294,38 @@ export async function uploadWorkspaceMaster(
     throw error;
   }
   return (await rowsOf(deps, workspaceId)).map(toWorkspaceMaster);
+}
+
+/**
+ * Uploaded designs from before their theme's colours were read get them once, in the background
+ * at start. Designed ones keep what is set in them. One without a theme is read again at each
+ * start – a design is a single small file, a workspace has a few.
+ */
+export async function backfillMasterColors(
+  deps: Pick<AppDeps, 'db' | 'storage' | 'log'>,
+): Promise<number> {
+  const rows = await deps.db
+    .select({ id: workspaceMasters.id, fileKey: workspaceMasters.fileKey })
+    .from(workspaceMasters)
+    .where(
+      and(isNull(workspaceMasters.draftDeckId), sql`${workspaceMasters.colors} = '[]'::jsonb`),
+    );
+  let filled = 0;
+  for (const row of rows) {
+    try {
+      const bytes = await deps.storage.get(row.fileKey);
+      const colors = bytes ? await masterFileColors(bytes) : [];
+      if (colors.length === 0) continue;
+      await deps.db
+        .update(workspaceMasters)
+        .set({ colors })
+        .where(and(eq(workspaceMasters.id, row.id), isNull(workspaceMasters.draftDeckId)));
+      filled++;
+    } catch (error) {
+      deps.log.warn(`Could not read the colours of the slide masters ${row.id}`, error);
+    }
+  }
+  return filled;
 }
 
 /** Members and admins, like uploading. Names a design anew; returns the slide masters now. */

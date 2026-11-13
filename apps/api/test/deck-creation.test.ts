@@ -16,7 +16,7 @@ import { creationAtWork } from '../src/services/deck-creation';
 import { createTestContext, type TestContext } from './helpers';
 import { DEMO_ODP, fakeOdpPdf } from './odp-helpers';
 
-/* A new deck built by the AI from the prompt on Folie 1, the material on Folie 0 read first. */
+/* A new deck built by the AI from the prompt on Folie 1, its material read first. */
 
 let ctx: TestContext | undefined;
 afterEach(async () => {
@@ -122,7 +122,7 @@ describe('deck creation', { timeout: 120_000 }, () => {
     const deckId = await blank();
     expect(await creation(deckId)).toMatchObject({ status: 'offered', prompt: true, built: 0 });
 
-    // A spreadsheet on Folie 0, over tus as the board takes files.
+    // A spreadsheet in the material, over tus as the board takes files.
     const csv = new TextEncoder().encode('Quartal,Umsatz\nQ1,1200\nQ2,1850\n');
     const tus = (url: string, init: RequestInit) =>
       context.request(url, {

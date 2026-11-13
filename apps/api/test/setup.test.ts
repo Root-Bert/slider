@@ -319,6 +319,22 @@ describe('server start', () => {
     expect(config.auth.oidc?.clientId).toBe('o-id');
     await ctx.deps.db.delete(instanceSettings);
 
+    // Desktop app: no login in production, this machine only, nothing deleted for being unused.
+    const desktopEnv = {
+      NODE_ENV: 'production',
+      SLIDER_DESKTOP: 'true',
+      SLIDER_URL: 'http://127.0.0.1:47821',
+      SLIDER_SECRET: ctx.deps.config.secret,
+    };
+    const desktop = loadConfig(desktopEnv, () => {});
+    expect(desktop.auth.devLogin).toBe(true);
+    expect(desktop.host).toBe('127.0.0.1');
+    expect(desktop.retention.deleteUnused).toBe(false);
+    expect(() => loadConfig({ ...desktopEnv, HOST: '0.0.0.0' }, () => {})).toThrow(/HOST/);
+    expect(() =>
+      loadConfig({ ...desktopEnv, SLIDER_DESKTOP: 'false', AUTH_DEV_LOGIN: 'true' }, () => {}),
+    ).toThrow(/AUTH_DEV_LOGIN/);
+
     // BOOTSTRAP_EMAIL: one info line that it is ignored and how to claim instead.
     const info = vi.fn<Logger['info']>();
     const log = { ...silentLogger, info };

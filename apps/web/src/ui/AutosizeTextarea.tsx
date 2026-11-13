@@ -32,8 +32,16 @@ export function AutosizeTextarea({
     const element = ref.current;
     if (!element) return;
     element.style.height = 'auto';
-    element.style.height = `${Math.min(element.scrollHeight, maxHeight)}px`;
-    element.style.overflowY = element.scrollHeight > maxHeight ? 'auto' : 'hidden';
+    const contentHeight = element.scrollHeight;
+    // A fitting border box cannot overflow after shrinking to its content height. Reuse that
+    // read; capped or content-box fields still need their final scroll height (padding/rows).
+    const fits = contentHeight <= maxHeight && getComputedStyle(element).boxSizing === 'border-box';
+    element.style.height = `${Math.min(contentHeight, maxHeight)}px`;
+    element.style.overflowY = fits
+      ? 'hidden'
+      : element.scrollHeight > maxHeight
+        ? 'auto'
+        : 'hidden';
   }, [value, maxHeight]);
 
   return (

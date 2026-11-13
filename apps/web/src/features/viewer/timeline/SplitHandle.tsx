@@ -245,7 +245,7 @@ export function SplitHandle({ geometry, slideH, split, onDrag }: SplitHandleProp
             'h-[3px] rounded-full transition-[background-color,width] duration-150',
             // One or the other: with plain class merging `bg-handle` would outrank `bg-fg`.
             dragging ? 'w-28 bg-fg' : 'w-24 bg-handle',
-            'group-hover:w-28 group-hover:bg-fg-muted group-focus-visible:w-28 group-focus-visible:bg-fg-muted group-focus-visible:outline-2 group-focus-visible:outline-offset-2 group-focus-visible:outline-mention',
+            'group-hover:w-28 group-hover:bg-fg-muted group-focus-visible:w-28 group-focus-visible:bg-fg-muted group-focus-visible:outline-2 group-focus-visible:outline-offset-2 group-focus-visible:outline-focus',
           )}
         />
       )}
@@ -261,7 +261,7 @@ function HandleEnd({ dragging }: { dragging: boolean }) {
       className={cn(
         'h-[3px] w-4 animate-fade-in rounded-full transition-colors duration-150',
         dragging ? 'bg-fg' : 'bg-handle',
-        'group-hover:bg-fg-muted group-focus-visible:bg-fg-muted group-focus-visible:outline-2 group-focus-visible:outline-offset-2 group-focus-visible:outline-mention',
+        'group-hover:bg-fg-muted group-focus-visible:bg-fg-muted group-focus-visible:outline-2 group-focus-visible:outline-offset-2 group-focus-visible:outline-focus',
       )}
     />
   );

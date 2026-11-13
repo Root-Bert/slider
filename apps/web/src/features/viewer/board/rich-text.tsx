@@ -28,20 +28,25 @@ const UNDERLINE = 8;
 export function RichText({
   rich,
   className,
+  renderText = plain,
 }: {
   rich: Record<string, unknown>;
   className?: string;
+  /** A text run's content – the material answers turn their sources into chips. */
+  renderText?: (text: string) => ReactNode;
 }) {
   const root = (rich as { root?: Serialized }).root;
-  return <div className={className}>{render(root?.children ?? [])}</div>;
+  return <div className={className}>{render(root?.children ?? [], renderText)}</div>;
 }
 
-function render(nodes: Serialized[]): ReactNode {
-  return nodes.map((node, index) => <Fragment key={index}>{renderNode(node)}</Fragment>);
+const plain = (text: string) => text;
+
+function render(nodes: Serialized[], text: (text: string) => ReactNode): ReactNode {
+  return nodes.map((node, index) => <Fragment key={index}>{renderNode(node, text)}</Fragment>);
 }
 
-function renderNode(node: Serialized): ReactNode {
-  const children = render(node.children ?? []);
+function renderNode(node: Serialized, text: (text: string) => ReactNode): ReactNode {
+  const children = render(node.children ?? [], text);
   switch (node.type) {
     case 'text': {
       const bits = node.format ?? 0;
@@ -55,7 +60,7 @@ function renderNode(node: Serialized): ReactNode {
             bits & UNDERLINE && bits & STRIKE && THEME.text.underlineStrikethrough,
           )}
         >
-          {node.text}
+          {text(node.text ?? '')}
         </span>
       );
     }

@@ -15,6 +15,7 @@ import { KpiTile } from './KpiTile';
 const FEATURES: Record<AiFeature, { label: string; color: string }> = {
   edit: { label: 'Folien ändern', color: 'bg-accent-blue' },
   create: { label: 'Präsentationen erstellen', color: 'bg-sage' },
+  material: { label: 'Fragen zum Material', color: 'bg-lagoon' },
   voice: { label: 'Sprechen mit der KI', color: 'bg-accent-green' },
   live: { label: 'Live-Untertitel', color: 'bg-accent-cyan' },
   recording: { label: 'Aufnahmen abschreiben', color: 'bg-accent-yellow' },

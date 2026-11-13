@@ -22,7 +22,8 @@ export const ROLE_HINTS: Record<WorkspaceRole, string> = {
   viewer: 'Präsentationen nur ansehen – so teilst du eine Präsentation.',
   reviewer: 'Präsentationen ansehen und kommentieren.',
   member: 'Zusätzlich eigene Präsentationen anlegen.',
-  admin: 'Alles: Mitglieder, Einladungen, alle Präsentationen, den Workspace umbenennen und löschen.',
+  admin:
+    'Alles: Mitglieder, Einladungen, alle Präsentationen, den Workspace umbenennen und löschen.',
 };
 
 /** Not a role – who founded the workspace. Nobody becomes creator, you are or aren't. */

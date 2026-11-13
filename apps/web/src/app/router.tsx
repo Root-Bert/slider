@@ -33,6 +33,13 @@ export const router = createBrowserRouter([
           { index: true, lazy: () => import('@/features/workspaces/HomePage') },
           { path: 'neu', lazy: () => import('@/features/onboarding/NewReviewPage') },
           { path: 'konto', lazy: () => import('@/features/account/AccountPage') },
+          // The desktop app signs in here, in the browser (BER-201).
+          {
+            path: 'desktop-anmelden',
+            lazy: () => import('@/features/auth/DesktopSignInPage'),
+          },
+          // An AI app asks to be let in (OAuth, „KI-Apps“).
+          { path: 'verbinden', lazy: () => import('@/features/account/ConnectAppPage') },
           { path: 'einstellungen', lazy: () => import('@/features/account/PreferencesPage') },
           { path: 'nutzung', lazy: () => import('@/features/account/UsagePage') },
           { path: 'instanz', lazy: () => import('@/features/instance/InstancePage') },

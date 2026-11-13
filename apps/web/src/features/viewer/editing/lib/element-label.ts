@@ -10,8 +10,11 @@ const KIND_LABEL: Record<EditableElement['kind'], string> = {
   other: 'Element',
 };
 
+/** „Bild „Bild 2““ – a symbol by its own name: „Symbol „House““. */
 export const elementLabel = (element: EditableElement) =>
-  `${KIND_LABEL[element.kind]}${element.name ? ` „${element.name}“` : ''}`;
+  element.symbol
+    ? `Symbol „${element.symbol.label}“`
+    : `${KIND_LABEL[element.kind]}${element.name ? ` „${element.name}“` : ''}`;
 
 /**
  * Locks what is given – or unlocks it when every one is locked already (the format panel's and the

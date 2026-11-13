@@ -11,6 +11,7 @@ on:
     branches: [main]
     paths:
       - apps/site/**
+      - apps/home/**
       # The site renders the app's components and styles.
       - apps/web/src/**
       - packages/shared/**

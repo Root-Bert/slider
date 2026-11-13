@@ -3,9 +3,11 @@ import { count, eq, sql } from 'drizzle-orm';
 import JSZip from 'jszip';
 import { DELETED_ACCOUNT_NAME, type Author, type WorkspaceRole } from '@slider/shared';
 import {
+  appConnections,
   comments,
   decks,
   deletedPptxComments,
+  materialQuestions,
   media,
   revisions,
   sessions,
@@ -140,6 +142,40 @@ describe('data export (BER-145)', () => {
       expiresAt: new Date(Date.now() + 86_400_000),
     });
 
+    // A KI-App let in for the workspace, and a question about a deck's material.
+    const appHash = hashToken('slider_pat_anna');
+    await ctx.deps.db.insert(appConnections).values({
+      id: crypto.randomUUID(),
+      userId: person.user.id,
+      kind: 'token',
+      name: 'Claude Code',
+      workspaceId: ctx.workspaceId,
+      accessHash: appHash,
+    });
+    const noteId = crypto.randomUUID();
+    await ctx.request(`/api/decks/${other.deckId}/board/items`, {
+      method: 'POST',
+      cookie: person.cookie,
+      json: {
+        id: noteId,
+        kind: 'box',
+        text: 'Wie stark wächst der Markt?',
+        x: 0,
+        y: 0,
+        w: 200,
+        h: 120,
+      },
+    });
+    await ctx.deps.db.insert(materialQuestions).values({
+      id: crypto.randomUUID(),
+      deckId: other.deckId,
+      noteId,
+      userId: person.user.id,
+      question: 'Wie stark wächst der Markt?',
+      answer: 'Um **12 Prozent**.',
+      state: 'done',
+    });
+
     const res = await ctx.request('/api/me/export', { cookie: person.cookie });
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('application/zip');
@@ -154,6 +190,21 @@ describe('data export (BER-145)', () => {
       expect.objectContaining({ id: ctx.workspaceId, role: 'member' }),
     ]);
     expect(account.sessions).toHaveLength(1);
+    expect(account.aiApps).toEqual([
+      expect.objectContaining({
+        name: 'Claude Code',
+        kind: 'token',
+        workspace: { id: ctx.workspaceId, name: expect.any(String) },
+        lastUsedAt: null,
+      }),
+    ]);
+    expect(await read('fragen.json')).toEqual([
+      expect.objectContaining({
+        deck: { id: other.deckId, title: 'Roberts Deck' },
+        question: 'Wie stark wächst der Markt?',
+        answer: 'Um **12 Prozent**.',
+      }),
+    ]);
     const deckList = (await read('praesentationen.json')) as {
       title: string;
       file: string;
@@ -178,6 +229,7 @@ describe('data export (BER-145)', () => {
       Object.values(zip.files).map((file) => file.async('string')),
     );
     expect(everything.join('\n')).not.toMatch(/token_hash|refreshToken|publicKey|geheim/);
+    expect(everything.join('\n')).not.toContain(appHash);
 
     // Removed from the workspace: the upload is the workspace's now (BER-165).
     const removed = await ctx.request(

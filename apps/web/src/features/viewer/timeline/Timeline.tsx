@@ -10,10 +10,8 @@ import {
   type MouseEvent,
   type ReactNode,
 } from 'react';
-import { useLocation } from 'react-router';
 import { cn, SelectionBox, useIsNarrow } from '@/ui';
 import { useDeckCreation } from '@/lib/api';
-import { opensOnBoard } from '@/lib/routes';
 import { smoothScroll } from '@/lib/motion';
 import { selectionStyle } from '@/lib/accent';
 import { rafThrottle } from '@/lib/dom';
@@ -37,7 +35,6 @@ import {
   revealScrollLeft,
   computeTrackGeometry,
   layoutTrack,
-  leadingWidth,
   slideHeightAt,
   splitForHeight,
   splitForWidth,
@@ -57,7 +54,8 @@ import { Minimap } from './Minimap';
 import { SplitHandle } from './SplitHandle';
 import { TimelineContext, type SizeAnchor } from './timeline-context';
 import { Track } from './Track';
-import { TrackDotsContext } from './TrackDots';
+import { createTimelineWindow } from './timeline-window';
+import { TrackDotsContext } from './lib/track-dots';
 import { useTrackSwipe } from './hooks/useTrackSwipe';
 import { useVariantFlow } from './hooks/useVariantFlow';
 import { VariantSheet } from './VariantSheet';
@@ -81,9 +79,6 @@ const PROMPT_MIN_H = 560;
 /** Less comment area than this left under the band counts as closed. */
 const COMMENTS_CLOSED_H = 32;
 
-type Range = { first: number; last: number };
-const sameRange = (a: Range, b: Range) => a.first === b.first && a.last === b.last;
-
 /**
  * The deck as a timeline: a track with every slide side by side on top, the minimap (thumbnails
  * of the whole deck), the controls row and the split handle below it, and below that every
@@ -103,7 +98,7 @@ export function Timeline({
   const { slides, slideIndex, viewer, variantsOf, deck } = useViewerData();
   const editing = useEditing();
   const viewerState = useViewerState();
-  const { split, activeSlideId, tool, threadPanelOpen, showMinimap } = viewerState;
+  const { split, activeSlideId, tool, threadPanelOpen, showMinimap, materialOpen } = viewerState;
   const sidePanelOpen = isSidePanelOpen(viewerState);
   const { deletedSlides } = useRevisionData();
   const hasDeleted = deletedSlides.length > 0;
@@ -131,9 +126,6 @@ export function Timeline({
   const anchorRef = useRef<SizeAnchor | null>(null);
   const [connectorLayer, setConnectorLayer] = useState<HTMLDivElement | null>(null);
   const [initialSlideId] = useState(activeSlideId);
-  // A new deck opens on Folie 0 (`OPEN_ON_BOARD`): its material goes there first.
-  const location = useLocation();
-  const [openOnBoard] = useState(() => opensOnBoard(location.state));
   // A split drag resizes from here: the viewer store only gets the split on release, so the
   // rest of the viewer (controls, panels, avatars) doesn't re-render with every frame of it.
   const [draggedSplit, setDraggedSplit] = useState<number | null>(null);
@@ -190,19 +182,10 @@ export function Timeline({
   useEffect(() => {
     dispatch({ type: 'commentsClosedSet', closed: commentsClosed });
   }, [dispatch, commentsClosed]);
-  // Folie 0, „Material“: the board before slide 1 – every deck has one, a template none.
-  const hasBoard = !deck.template;
   const layout = useMemo(
     () =>
-      slideH
-        ? layoutTrack(
-            aspectRatios,
-            slideH,
-            hasDeleted ? trailingWidth(slideH) : 0,
-            hasBoard ? leadingWidth(slideH) : 0,
-          )
-        : null,
-    [aspectRatios, slideH, hasDeleted, hasBoard],
+      slideH ? layoutTrack(aspectRatios, slideH, hasDeleted ? trailingWidth(slideH) : 0) : null,
+    [aspectRatios, slideH, hasDeleted],
   );
 
   // Comments selected as the decks in "Präsentationen" are: a box drawn over them on the comment
@@ -270,10 +253,11 @@ export function Timeline({
     enabled: !narrow,
     onTrackWheel: swipe.wheel,
   });
-  // Space held and dragging, or the middle button: the hand.
-  useHandPan({ scrollerRef, enabled: !narrow });
+  // Space held and dragging, or the middle button: the hand. Asleep on the material page, as the
+  // presentation's other keys.
+  useHandPan({ scrollerRef, enabled: !narrow && !materialOpen });
   // Space tapped twice: the active slide at 100 %, and back.
-  useZoomToggle(!narrow);
+  useZoomToggle(!narrow && !materialOpen);
 
   useLayoutEffect(() => {
     registry.setScroller(scrollerRef.current);
@@ -284,7 +268,7 @@ export function Timeline({
   }, [registry, layout, slideIndex, narrow]);
 
   // Windowing: only slides (and columns) within a viewport left and right are rendered.
-  const [range, setRange] = useState<Range>({ first: 0, last: -1 });
+  const [windowStore] = useState(createTimelineWindow);
   const slideOrder = useMemo(() => slides.map((slide) => slide.id).join(), [slides]);
   const shownOrder = useRef(slideOrder);
   /** The active slide's left edge on screen (px from the track's), as last seen. */
@@ -303,8 +287,7 @@ export function Timeline({
     const box = index === undefined ? undefined : layout.slides[index];
     if (activeSlideId && box && slideOrder === shownOrder.current)
       activeAt.current = { slideId: activeSlideId, viewportX: box.x - scroller.scrollLeft };
-    const next = visibleRange(layout, scroller.scrollLeft, scroller.clientWidth);
-    setRange((current) => (sameRange(current, next) ? current : next));
+    windowStore.update(visibleRange(layout, scroller.scrollLeft, scroller.clientWidth));
   });
 
   /**
@@ -332,10 +315,8 @@ export function Timeline({
     prevLayout.current = layout;
     const width = scroller.clientWidth;
     if (!prev) {
-      // Deep link (`?slide=`): centred on the first paint, without animation. A new deck: the
-      // board before slide 1.
-      if (openOnBoard && layout.leading) registry.scrollTrackTo(0, 'instant');
-      else if (initialSlideId)
+      // Deep link (`?slide=`): centred on the first paint, without animation.
+      if (initialSlideId)
         registry.revealSlide(initialSlideId, { behavior: 'instant', align: 'center' });
     } else if (prev.h !== layout.h) {
       const anchor: SizeAnchor =
@@ -349,7 +330,7 @@ export function Timeline({
       );
     }
     updateRange();
-  }, [layout, clientW, registry, initialSlideId, openOnBoard]);
+  }, [layout, clientW, registry, initialSlideId]);
 
   // Scrolling: update the window.
   useEffect(() => {
@@ -443,7 +424,7 @@ export function Timeline({
   }, [tool]);
 
   // Folie 1's prompt to build a new deck (`CreatePrompt`) needs room: the slides grow to it once,
-  // the track's left edge kept where it is (the board, when the deck opened there).
+  // the track's left edge kept where it is.
   const creationPrompt = useDeckCreation(deck.id, !deck.template).data?.prompt ?? false;
   const showsPrompt = creationPrompt && editing.available && slides.length === 1;
   const growForPrompt = useEffectEvent(() => {
@@ -512,8 +493,8 @@ export function Timeline({
         >
           {/* Connector lines: in the content, so they scroll sideways with slides and cards in
               the same frame; sticky, so vertically they stay with the header's marks. */}
-          {/* The dots belong to the comment area: none round the slides and thumbnails (Folie 0's
-              own dots stand for themselves), faded in over the controls row, full below. Sticky,
+          {/* The dots belong to the comment area: none round the slides and thumbnails,
+              faded in over the controls row, full below. Sticky,
               under everything (`isolate`), so cards and lines scroll over it. */}
           {slideH !== null && metrics && (
             <div aria-hidden className="pointer-events-none sticky top-0 -z-1 h-0">
@@ -542,7 +523,13 @@ export function Timeline({
             {layout && context ? (
               <TimelineContext value={context}>
                 <TrackDotsContext value={trackDots}>
-                  <Track layout={layout} range={range} snap={narrow} stack={stack} swipe={swipe} />
+                  <Track
+                    layout={layout}
+                    window={windowStore}
+                    snap={narrow}
+                    stack={stack}
+                    swipe={swipe}
+                  />
                 </TrackDotsContext>
               </TimelineContext>
             ) : (
@@ -618,7 +605,7 @@ export function Timeline({
           {layout && context && (
             <TimelineContext value={context}>
               <CommentSelectionContext value={commentSelection}>
-                <CommentColumns layout={layout} range={range} narrow={narrow} />
+                <CommentColumns layout={layout} window={windowStore} narrow={narrow} />
               </CommentSelectionContext>
             </TimelineContext>
           )}

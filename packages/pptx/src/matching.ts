@@ -4,10 +4,6 @@ import { normaliseText } from './hash';
 /**
  * Slide matching between two revisions of a deck (BER-108). Pure and deterministic.
  *
- * 0. Ids the source keeps per slide (Google Slides' `objectId`, `sourceSlideId`) settle it when
- *    every slide of both revisions has one: same id = same slide, and phase A is skipped – the
- *    `sldId`s of such exports follow the position. Slides with different ids pair in phase B
- *    only when their text is nearly the same (a slide copied and the original deleted).
  * 1. Phase A: slides with the same PowerPoint `sldId` are the same slide, however much their
  *    content changed – unless there is positive evidence against the pair: different
  *    `p14:creationId`s (PowerPoint reused a freed id), or one of its slides has a clearly better
@@ -52,11 +48,6 @@ export interface SlideFingerprint {
   /** `show="0"`: reported as `hiddenChanged`, never as a content change. */
   hidden?: boolean | null;
   /**
-   * The slide's id in its source, where the source keeps one across exports (Google Slides'
-   * `objectId`): equal = same slide, whatever its content or position.
-   */
-  sourceSlideId?: string | null;
-  /**
    * The slide's boxes. An `sldId` pair is only kept when one of the old boxes survived; absent
    * (callers from before) means "unknown", and the pair is judged as before.
    */
@@ -73,7 +64,7 @@ export interface SlideMatchResult {
   moved: boolean;
   /** 0–1, two decimals. For new/deleted slides: how sure we are there is no counterpart. */
   confidence: number;
-  matchedBy: 'sourceId' | 'sldId' | 'content' | null;
+  matchedBy: 'sldId' | 'content' | null;
   previousPosition: number | null;
   position: number | null;
   /** Matched slides only, and only when it changed: the slide was hidden / shown again. */
@@ -150,7 +141,6 @@ export function fingerprintFromShapes(input: {
   contentHash?: string | null;
   creationId?: number | null;
   hidden?: boolean | null;
-  sourceSlideId?: string | null;
 }): SlideFingerprint {
   return {
     key: input.key,
@@ -165,7 +155,6 @@ export function fingerprintFromShapes(input: {
     contentHash: input.contentHash ?? null,
     creationId: input.creationId ?? null,
     hidden: input.hidden ?? null,
-    sourceSlideId: input.sourceSlideId ?? null,
     shapes: input.shapes,
   };
 }
@@ -584,15 +573,11 @@ const positionalIds = (slides: readonly Prepared[]) =>
   slides.length > 0 &&
   slides.every((s) => s.fp.sldId === FIRST_SLD_ID + s.index && s.fp.creationId == null);
 
-/** Every slide carries the id its source keeps for it (Google Slides' `objectId`). */
-const hasSourceIds = (slides: readonly Prepared[]) =>
-  slides.length > 0 && slides.every((s) => Boolean(s.fp.sourceSlideId));
-
 interface Pair {
   p: number;
   n: number;
   confidence: number;
-  matchedBy: 'sourceId' | 'sldId' | 'content';
+  matchedBy: 'sldId' | 'content';
 }
 
 /** Matches the slides of the previous revision to the next one. See the file comment. */
@@ -604,8 +589,6 @@ export function matchSlides(
   const threshold = options.threshold ?? MATCH_THRESHOLD;
   const ctx: Context = { prev: prepare(previous), next: prepare(nextSlides), anchors: new Map() };
   const { prev, next } = ctx;
-  // Phase 0: the source's own slide ids, when both revisions have them throughout.
-  const bySourceId = hasSourceIds(prev) && hasSourceIds(next);
 
   // Phase A: same sldId.
   const nextBySldId = new Map<number, number>();
@@ -625,7 +608,7 @@ export function matchSlides(
   const usedNext = new Set<number>();
   /** `sldId` pairs none of whose old boxes survived: a new slide on a freed id. */
   const boxesGone = new Set<string>(); // `${p}:${n}`
-  for (const slide of bySourceId ? [] : prev) {
+  for (const slide of prev) {
     if (slide.fp.sldId === null) continue;
     const n = nextBySldId.get(slide.fp.sldId);
     if (n === undefined || usedNext.has(n)) continue;
@@ -692,13 +675,6 @@ export function matchSlides(
   candidates.forEach((c, i) => {
     if (renumbered ? c.sameCreation : !contradicted.has(i)) ctx.anchors.set(c.p, c.n);
   });
-  if (bySourceId) {
-    const nextBySourceId = new Map(next.map((slide) => [slide.fp.sourceSlideId, slide.index]));
-    for (const slide of prev) {
-      const n = nextBySourceId.get(slide.fp.sourceSlideId);
-      if (n !== undefined) ctx.anchors.set(slide.index, n);
-    }
-  }
   for (const [p, n] of ctx.anchors) {
     const a = prev[p];
     const b = next[n];
@@ -706,7 +682,7 @@ export function matchSlides(
     const exact =
       renderEqual(a.fp, b.fp) || Boolean(a.fp.textHash && a.fp.textHash === b.fp.textHash);
     const confidence = exact ? 1 : Math.min(1, 0.7 + 0.3 * score(ctx, a, b));
-    pairs.push({ p, n, confidence, matchedBy: bySourceId ? 'sourceId' : 'sldId' });
+    pairs.push({ p, n, confidence, matchedBy: 'sldId' });
   }
 
   // Phase B: content similarity among the rest.
@@ -714,10 +690,10 @@ export function matchSlides(
   const matchedNext = new Set(pairs.map((pair) => pair.n));
   const restPrev = prev.filter((slide) => !matchedPrev.has(slide.index));
   const restNext = next.filter((slide) => !matchedNext.has(slide.index));
-  // A different creationId or source id – or a freed sldId whose boxes are all new – says
-  // "different slide": only near-identical text overrules it.
+  // A different creationId – or a freed sldId whose boxes are all new – says "different slide":
+  // only near-identical text overrules it.
   const differentSlide = (a: Prepared, b: Prepared) =>
-    bySourceId || creationDiffers(a.fp, b.fp) || boxesGone.has(`${a.index}:${b.index}`);
+    creationDiffers(a.fp, b.fp) || boxesGone.has(`${a.index}:${b.index}`);
   const scores = restPrev.map((a) =>
     restNext.map((b) =>
       differentSlide(a, b) && !isExact(a, b) && (textSim(a, b) ?? 0) < NEW_CREATION_MIN_TEXT_SIM
@@ -810,8 +786,6 @@ export const RELINK_THRESHOLD = 0.8;
  * without text only qualify with an identical render.
  */
 function relinkScore(a: Prepared, b: Prepared): number {
-  // The source's own id (Google Slides' objectId): the slide itself, back from the trash.
-  if (a.fp.sourceSlideId && a.fp.sourceSlideId === b.fp.sourceSlideId) return 1;
   if (renderEqual(a.fp, b.fp)) return 1;
   const text = textSim(a, b);
   if (text === null) return 0;

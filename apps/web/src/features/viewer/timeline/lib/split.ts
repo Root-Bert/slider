@@ -2,14 +2,7 @@ import { clamp } from '@slider/shared';
 import { wheelPixels } from '@/lib/wheel';
 import { slideHeightAt, splitForHeight, type TrackGeometry } from './timeline-layout';
 
-export {
-  clampSplit,
-  loadStoredSplit,
-  SPLIT_MAX,
-  SPLIT_MIN,
-  SPLIT_STORAGE_KEY,
-  storeSplit,
-} from '@/lib/preferences/split';
+export { SPLIT_MAX, SPLIT_MIN } from '@/lib/preferences/split';
 
 /**
  * The split handle between the slide area and the comment area. The split is `t` ∈ [0, 1]

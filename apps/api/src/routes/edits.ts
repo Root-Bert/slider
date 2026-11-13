@@ -8,14 +8,17 @@ import {
   choosePhotoInputSchema,
   createAiProposalInputSchema,
   generateEditImageInputSchema,
+  imageSymbolSchema,
   pickStockPhotoInputSchema,
   revertEditInputSchema,
   sendExportInputSchema,
+  setCommentReactionInputSchema,
   stockOrientationSchema,
   updateAiProposalInputSchema,
 } from '@slider/shared';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import type { AppDeps } from '../deps';
+import { aiLimits } from '../http/ai-limits';
 import { badRequest, fileTooLarge } from '../http/errors';
 import { assertWithinLimit, fixedWindow } from '../http/rate-limit';
 import { MAX_JSON_BODY_BYTES, readJson } from '../http/validate';
@@ -28,6 +31,7 @@ import {
   resolveProposal,
   revertProposal,
 } from '../services/ai-proposals';
+import { setProposalReaction, withProposalReactions } from '../services/proposal-reactions';
 import { cutOutElement } from '../services/cut-outs';
 import { generateEditImage } from '../services/image-generation';
 import { pickPhoto, reportChosenPhotosLater, searchForDeck } from '../services/stock-photos';
@@ -50,6 +54,14 @@ import {
 } from '../services/edits';
 
 const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
+
+const parseJson = (text: string): unknown => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+};
 const renderOptionsSchema = z.object({
   priority: z.enum(['background', 'interactive']).default('interactive'),
   /** Layers for the per-element editor: live texts left out, browser-drawn elements not drawn. */
@@ -80,8 +92,8 @@ export function editsRoutes(deps: AppDeps) {
     );
     await next();
   });
-  // Each AI request runs on the workspace's Anthropic key: a person asks a few a minute at most.
-  const aiWindow = fixedWindow({ limit: 20, windowMs: 60_000, clock: deps.clock });
+  // Each AI request runs on the workspace's AI key – shared with the KI-Apps' edit_slides.
+  const aiWindow = aiLimits(deps).aiRequests;
   const aiRequests = createMiddleware<ViewerEnv>(async (c, next) => {
     assertWithinLimit(
       c,
@@ -185,8 +197,13 @@ export function editsRoutes(deps: AppDeps) {
           const file = body['file'];
           if (!(file instanceof File)) throw badRequest('Bitte ein Bild im Feld „file“ mitsenden.');
           const bytes = new Uint8Array(await file.arrayBuffer());
+          // One of Slider's symbols: which, in which colour – kept with it in the file.
+          const symbol = body['symbol'];
+          const parsed =
+            typeof symbol === 'string' ? imageSymbolSchema.safeParse(parseJson(symbol)) : null;
+          if (parsed && !parsed.success) throw badRequest('Das Symbol ist nicht lesbar.');
           return c.json(
-            await uploadEditImage(deps, c.var.viewer, c.req.param('deckId'), bytes),
+            await uploadEditImage(deps, c.var.viewer, c.req.param('deckId'), bytes, parsed?.data),
             201,
           );
         },
@@ -241,8 +258,26 @@ export function editsRoutes(deps: AppDeps) {
         );
       })
       .get('/decks/:deckId/ai/proposals', viewer, async (c) =>
-        c.json(await listProposals(deps, c.var.viewer, c.req.param('deckId'))),
+        c.json(
+          await withProposalReactions(
+            deps.db,
+            await listProposals(deps, c.var.viewer, c.req.param('deckId')),
+          ),
+        ),
       )
+      // One's own reaction to its answer, as `PUT /comments/:id/reaction`.
+      .put('/decks/:deckId/ai/proposals/:proposalId/reaction', viewer, async (c) => {
+        const { kind } = await readJson(c, setCommentReactionInputSchema);
+        return c.json(
+          await setProposalReaction(
+            deps,
+            c.var.viewer,
+            c.req.param('deckId'),
+            c.req.param('proposalId'),
+            kind,
+          ),
+        );
+      })
       .post('/decks/:deckId/ai/proposals', viewer, aiRequests, async (c) => {
         const input = await readJson(c, createAiProposalInputSchema);
         return c.json(await createProposal(deps, c.var.viewer, c.req.param('deckId'), input), 202);

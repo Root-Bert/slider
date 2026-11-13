@@ -52,10 +52,15 @@ export const accountBlocked = () =>
   );
 
 /**
- * Signs `userId` in on this browser. A blocked account (BER-167) never gets a session – the
- * logins refuse it before with `account_blocked`, this is the last line.
+ * A new session for `userId`: its token (to hand out once) and when it expires. A blocked
+ * account (BER-167) never gets one – the logins refuse it before with `account_blocked`, this is
+ * the last line.
  */
-export async function startSession(c: Context, deps: AppDeps, userId: string): Promise<void> {
+export async function createSession(
+  deps: AppDeps,
+  userId: string,
+  userAgent: string | undefined,
+): Promise<{ token: string; now: Date; expiresAt: Date }> {
   const [user] = await deps.db
     .select({ blockedAt: users.blockedAt })
     .from(users)
@@ -71,10 +76,21 @@ export async function startSession(c: Context, deps: AppDeps, userId: string): P
     createdAt: now,
     lastSeenAt: now,
     expiresAt,
-    userAgent: c.req.header('user-agent')?.slice(0, 500) ?? null,
+    userAgent: userAgent?.slice(0, 500) ?? null,
   });
   await markActive(deps.db, userId, now);
+  return { token, now, expiresAt };
+}
+
+/** Signs `userId` in on this browser (see {@link createSession}). */
+export async function startSession(c: Context, deps: AppDeps, userId: string): Promise<void> {
+  const { token, now, expiresAt } = await createSession(deps, userId, c.req.header('user-agent'));
   setSessionCookie(c, deps, token, { now, expiresAt });
+}
+
+/** Ends the session of `token` – the desktop app's, which holds it outside any cookie. */
+export async function endSessionToken(deps: AppDeps, token: string): Promise<void> {
+  await deps.db.delete(sessions).where(eq(sessions.tokenHash, hashToken(token)));
 }
 
 export interface LoadSessionOptions {

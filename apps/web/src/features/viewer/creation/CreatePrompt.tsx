@@ -20,7 +20,6 @@ import { MasterChoice } from '@/features/onboarding';
 import { api } from '@/lib/api-client';
 import { queryKeys, useDismissCreation, useStartCreation, useWorkspaceMasters } from '@/lib/api';
 import { isModEnter } from '@/lib/keyboard';
-import { smoothScroll } from '@/lib/motion';
 import {
   Button,
   cn,
@@ -31,7 +30,7 @@ import {
   useFocusLoop,
   type IconName,
 } from '@/ui';
-import { useStageRegistry } from '../state/stage-registry';
+import { useViewerDispatch } from '../state/viewer-state';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerToast } from '../state/viewer-toast';
 
@@ -51,7 +50,7 @@ const pagesOf = (kind: DeckKind) => DECK_KINDS.find((each) => each.id === kind)?
 /**
  * Folie 1 of a new deck while it is still blank: a large window on the slide to have the AI
  * build the deck – what it is about, the kind (8 cards, one picked), the workspace's template,
- * how many slides – and how much material lies on Folie 0 (always read, never a switch).
+ * how many slides – and how much material lies on the material page (always read, never a switch).
  * „Erstellen“ starts the run (the window closes at once, the progress shows), „Leer anfangen“
  * closes it for good.
  */
@@ -69,7 +68,7 @@ export function CreatePrompt({
 }) {
   const { deck } = useViewerData();
   const toast = useViewerToast();
-  const registry = useStageRegistry();
+  const dispatch = useViewerDispatch();
   const start = useStartCreation(deck.id);
   const dismiss = useDismissCreation(deck.id);
   const masters =
@@ -113,7 +112,7 @@ export function CreatePrompt({
   const materialLine =
     files.length + items === 0
       ? 'Noch kein Material da.'
-      : `Die KI nutzt das Material auf Folie 0: ${[
+      : `Die KI nutzt das Material: ${[
           files.length > 0 && `${files.length} ${files.length === 1 ? 'Datei' : 'Dateien'}`,
           items > 0 && `${items} ${items === 1 ? 'Notiz oder Link' : 'Notizen und Links'}`,
         ]
@@ -146,13 +145,7 @@ export function CreatePrompt({
     }
   };
 
-  const toBoard = () => {
-    registry.endProgrammaticScroll();
-    registry.scrollTrackTo(0, smoothScroll());
-    document
-      .querySelector<HTMLElement>('[data-material-board] [tabindex]')
-      ?.focus({ preventScroll: true });
-  };
+  const toBoard = () => dispatch({ type: 'materialSet', open: true });
 
   // The slide itself is the window: its whole area, no card in it. Too small for everything, the
   // middle scrolls – the text never shrinks – and the actions stay bottom right.
@@ -251,7 +244,7 @@ export function CreatePrompt({
               <span>
                 {materialLine}{' '}
                 <TextLink variant="underline" tone="muted" onClick={toBoard}>
-                  Zu Folie 0
+                  Zum Material
                 </TextLink>
               </span>
             </p>

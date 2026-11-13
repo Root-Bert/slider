@@ -55,6 +55,7 @@ import {
   type StockPhotoRecord,
 } from '../db/schema';
 import type { AppDeps } from '../deps';
+import type { Executor } from '../db/client';
 import { fileUrl } from '../storage/file-urls';
 import { ApiError, badRequest, notFound } from '../http/errors';
 import { requireDeckAccess } from '../auth/access';
@@ -79,6 +80,7 @@ import {
   failureMessage,
   isProviderError,
   keyProblem,
+  quickModelOf,
   refusesKey,
   effortMessage,
   runTurn,
@@ -270,7 +272,7 @@ What you know and how to learn more:
 - zoom_slide shows a part of a slide close up, sharp – small text, spacing, edges.
 - view_layout shows a layout big with its placeholders: a template's (list_layouts) or one of the deck's master pages.
 - list_comments lists the deck's open comments – what people want elsewhere.
-- The deck's material – files, notes and links people put on its board (Folie 0, before slide 1; never part of the deck) – is listed in your first message when there is any, but not its contents: list_materials lists it, read_material reads a file's text page by page, read_sheet gives a spreadsheet's cells with their addresses, search_materials finds words in all of it, view_material looks at a picture or a page. When the request refers to figures, facts or wording from the material („die Zahlen aus der Excel“), read them there – take figures exactly as they are, never guess them.
+- The deck's material – files, notes and links people put on its own page „Material“ beside the slides (never part of the deck) – is listed in your first message when there is any, but not its contents: list_materials lists it, read_material reads a file's text page by page, read_sheet gives a spreadsheet's cells with their addresses, search_materials finds words in all of it, view_material looks at a picture or a page. When the request refers to figures, facts or wording from the material („die Zahlen aus der Excel“), read them there – take figures exactly as they are, never guess them.
 Look up what the request needs; you need not look at everything. Ask for everything you want to see in one answer – several looks called together run at the same time – rather than one look per turn: each turn takes time.
 
 Writing:
@@ -1454,6 +1456,83 @@ async function finish(
   deps.live?.proposalsChanged(proposal.deckId);
 }
 
+/**
+ * The change is in: the thread that asked for it is done – by the AI (`resolvedBy`), so its card
+ * says who. Whether it was open; a thread done already keeps who did that.
+ */
+async function resolveThread(
+  deps: AppDeps,
+  db: Executor,
+  proposal: Pick<ProposalRow, 'commentId'>,
+): Promise<boolean> {
+  if (!proposal.commentId) return false;
+  const [asking] = await db
+    .select({ id: comments.id, parentId: comments.parentId })
+    .from(comments)
+    .where(eq(comments.id, proposal.commentId));
+  if (!asking) return false;
+  const now = deps.clock.now();
+  const resolved = await db
+    .update(comments)
+    .set({ status: 'done', resolvedBy: AI_AUTHOR.id, resolvedAt: now, updatedAt: now })
+    .where(and(eq(comments.id, asking.parentId ?? asking.id), eq(comments.status, 'open')))
+    .returning({ id: comments.id });
+  return resolved.length > 0;
+}
+
+/**
+ * The AI asks back – or its change was taken back (`takenBack`): its thread waits for the people
+ * – open again where a change of its resolved it; taken back, not while another change of the AI
+ * in that thread still stands (that one did it). One a person resolved stays so.
+ */
+async function reopenThread(
+  deps: AppDeps,
+  proposal: ProposalRow,
+  { takenBack = false }: { takenBack?: boolean } = {},
+): Promise<void> {
+  if (!proposal.commentId) return;
+  const [asking] = await deps.db
+    .select({ id: comments.id, parentId: comments.parentId })
+    .from(comments)
+    .where(eq(comments.id, proposal.commentId));
+  if (!asking) return;
+  const rootId = asking.parentId ?? asking.id;
+  if (takenBack) {
+    const [standing] = await deps.db
+      .select({ id: aiProposals.id })
+      .from(aiProposals)
+      .innerJoin(comments, eq(comments.id, aiProposals.commentId))
+      .where(
+        and(
+          or(eq(comments.id, rootId), eq(comments.parentId, rootId)),
+          eq(aiProposals.status, 'applied'),
+          eq(aiProposals.asks, false),
+          ne(aiProposals.id, proposal.id),
+        ),
+      )
+      .limit(1);
+    if (standing) return;
+  }
+  const reopened = await deps.db
+    .update(comments)
+    .set({ status: 'open', resolvedBy: null, resolvedAt: null, updatedAt: deps.clock.now() })
+    .where(
+      and(
+        eq(comments.id, rootId),
+        eq(comments.status, 'done'),
+        eq(comments.resolvedBy, AI_AUTHOR.id),
+      ),
+    )
+    .returning({ id: comments.id });
+  if (reopened.length > 0) deps.live?.commentsChanged(proposal.deckId);
+}
+
+/** Its change is in again: the thread is done by the AI again – unless it asked back. */
+async function resolveAgain(deps: AppDeps, proposal: ProposalRow): Promise<void> {
+  if (proposal.asks) return;
+  if (await resolveThread(deps, deps.db, proposal)) deps.live?.commentsChanged(proposal.deckId);
+}
+
 /** Like `finish`, unless someone stopped the run meanwhile – then it stays stopped. */
 const settle = (deps: AppDeps, proposal: ProposalRow, values: Partial<ProposalRow>) =>
   finish(deps, proposal, values, { onlyRunning: true });
@@ -1687,7 +1766,7 @@ export class DeckCopy {
     return this.target.revision;
   }
 
-  /** One of the tools reading the deck's board (Folie 0); `null` for any other tool. */
+  /** One of the tools reading the deck's material page; `null` for any other tool. */
   materialTool(name: string, input: unknown) {
     return runMaterialTool(this.deps, this.target.deck.id, name, input);
   }
@@ -3434,7 +3513,7 @@ async function runProposal(
           {
             type: 'text',
             text: variant
-              ? `What the variant should be, in the words of ${viewer.author.name}:\n${proposal.prompt}\n\nYour reply shows on the variant: when done, one short sentence in the language of these words (not the language of this message) saying how the variant differs from the slide – what you made, not what you checked.`
+              ? `What the variant should be, in the words of ${viewer.author.name}:\n${proposal.prompt}\n\nYour reply shows on the variant: when done, one short sentence in the language of these words (not the language of this message) saying how the variant differs from the slide – what you made, not what you checked. Speak of „die Variante“ and „die Folie“ (in their language), never of slide numbers: the people see no number on a variant.`
               : `The comment thread (the last message asks you):\n${proposal.prompt}`,
           },
           ...(others.length > 0
@@ -3560,7 +3639,11 @@ async function runProposal(
                 ...results,
                 {
                   type: 'text',
-                  text: 'Check the drawing: correct what is off, else stop. Your reply then says what you changed, not what you checked.',
+                  // Its last words are what the people read: all it did for the request – not
+                  // only what this check corrected („das Bild fehlte noch“), nor that it checked.
+                  text: variant
+                    ? 'Check the drawing: correct what is off, else stop. Your reply then shows on the variant, alone: one short sentence in the language of the request saying how the finished variant differs from the slide – all of it, not only what you corrected now. No slide numbers, nothing about the slide itself staying as it is, nothing about checking.'
+                    : 'Check the drawing: correct what is off, else stop. Your reply then stands alone as your answer: what you changed for the request, all of it – not only what you corrected now, not what you checked.',
                 },
               ],
             },
@@ -3580,10 +3663,11 @@ async function runProposal(
 
     let summary: string | null = null;
     let talk = true;
-    // The fast model is Anthropic's (Haiku); other services' models are no quicker than the AI.
+    // Anthropic always (unset: Haiku); another service only with a quicker model than the key's
+    // own („Schnelle Aufträge“) – unset, its own model is no quicker than the AI.
     if (
       quick &&
-      connection.provider === 'anthropic' &&
+      (connection.provider === 'anthropic' || quickModelOf(connection) !== connection.model) &&
       pictures.length === 0 &&
       !place.text.includes('between') &&
       // It sees one slide: a thread about several (a reply to one included) is the AI's.
@@ -3616,6 +3700,7 @@ async function runProposal(
           summary: summary || 'Die KI hat nichts geändert.',
           asks: remarks.asks,
         });
+        if (remarks.asks) await reopenThread(deps, proposal);
         await postNotes(deps, proposal, remarks.notes);
         return;
       }
@@ -3629,25 +3714,30 @@ async function runProposal(
           'Die Folie wurde gleichzeitig an derselben Stelle geändert – bitte nochmal senden.',
         );
         // Only while it still runs: stopped meanwhile (or past the limit), it goes back.
-        const [applied] = await deps.db
-          .update(aiProposals)
-          .set({
-            status: 'applied',
-            appliedSeq: written.seq,
-            appliedEditId: written.editId,
-            error: null,
-            changes: written.changes,
-            summary,
-            asks: remarks.asks,
-            updatedAt: deps.clock.now(),
-          })
-          .where(and(eq(aiProposals.id, proposal.id), eq(aiProposals.status, 'running')))
-          .returning({ id: aiProposals.id });
+        const applied = await deps.db.transaction(async (tx) => {
+          const [row] = await tx
+            .update(aiProposals)
+            .set({
+              status: 'applied',
+              appliedSeq: written.seq,
+              appliedEditId: written.editId,
+              error: null,
+              changes: written.changes,
+              summary,
+              asks: remarks.asks,
+              updatedAt: deps.clock.now(),
+            })
+            .where(and(eq(aiProposals.id, proposal.id), eq(aiProposals.status, 'running')))
+            .returning({ id: aiProposals.id });
+          return row && { resolved: !remarks.asks && (await resolveThread(deps, tx, proposal)) };
+        });
         if (!applied) {
           await takeBackStopped(deps, viewer, target.deck.id, proposal, written);
           return;
         }
         deps.live?.proposalsChanged(proposal.deckId);
+        if (applied.resolved) deps.live?.commentsChanged(proposal.deckId);
+        if (remarks.asks) await reopenThread(deps, proposal);
         await moveThread(deps, proposal, written.changes, 'apply');
         await postNotes(deps, proposal, remarks.notes);
         return;
@@ -3869,27 +3959,31 @@ export async function applyQuickProposal(
     }
   }
   const now = deps.clock.now();
-  const [row] = await deps.db
-    .insert(aiProposals)
-    .values({
-      id: crypto.randomUUID(),
-      deckId: target.deck.id,
-      revisionId: target.revision.id,
-      slideId: place.slideId,
-      commentId: thread.asking.id,
-      prompt,
-      status: 'applied',
-      baseSeq: written.seq - 1,
-      appliedSeq: written.seq,
-      appliedEditId: written.editId,
-      changes: written.changes,
-      summary: input.summary,
-      createdById: viewer.author.id,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning();
+  const { row, resolved } = await deps.db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(aiProposals)
+      .values({
+        id: crypto.randomUUID(),
+        deckId: target.deck.id,
+        revisionId: target.revision.id,
+        slideId: place.slideId,
+        commentId: thread.asking.id,
+        prompt,
+        status: 'applied',
+        baseSeq: written.seq - 1,
+        appliedSeq: written.seq,
+        appliedEditId: written.editId,
+        changes: written.changes,
+        summary: input.summary,
+        createdById: viewer.author.id,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+    return { row, resolved: await resolveThread(deps, tx, { commentId: thread.asking.id }) };
+  });
   deps.live?.proposalsChanged(target.deck.id);
+  if (resolved) deps.live?.commentsChanged(target.deck.id);
   summarizeThreadLater(deps, thread.asking.id);
   return toDto(row as ProposalRow, now, viewer.author.name);
 }
@@ -4477,6 +4571,8 @@ export async function revertProposal(
     await takeBack(deps, viewer, deckId, proposal);
     await moveBack?.();
     await finish(deps, proposal, { status: 'reverted' });
+    // The thread it resolved is open again.
+    await reopenThread(deps, proposal, { takenBack: true });
   });
   return getEditState(deps, viewer, deckId);
 }
@@ -4512,6 +4608,7 @@ export async function reapplyProposal(
       });
       await moveThread(deps, proposal, written.changes, 'apply');
     }
+    await resolveAgain(deps, proposal);
   });
   return getEditState(deps, viewer, deckId);
 }

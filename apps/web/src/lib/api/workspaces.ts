@@ -55,7 +55,7 @@ export function useRenameWorkspace(workspaceId: string) {
   });
 }
 
-/** Admins only. `null` removes the logo (back to the monogram). */
+/** Admins only. `null` removes the logo (back to the landscape drawn from its name). */
 export function useWorkspaceLogo(workspaceId: string) {
   const reloadMe = useReloadMe();
   return useMutation({

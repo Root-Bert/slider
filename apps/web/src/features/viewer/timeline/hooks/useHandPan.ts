@@ -3,7 +3,8 @@ import { flushSync } from 'react-dom';
 import { isTypingTarget, rafThrottle } from '@/lib/dom';
 import { OWN_SPACE } from '../../lib/space-taps';
 import { NO_COVER, panBy, snappedCentre, type SlideZoom } from '../../stage/lib/slide-zoom';
-import { useViewerDispatch, useViewerState } from '../../state/viewer-state';
+import { useViewerDispatch } from '../../state/viewer-state';
+import { useViewerStore } from '../../state/viewer-store';
 import { coverIn, frameOf } from './useTimelineWheel';
 
 /**
@@ -19,9 +20,11 @@ export function useHandPan({
   scrollerRef: RefObject<HTMLElement | null>;
   enabled: boolean;
 }) {
-  const { slideZooms } = useViewerState();
+  const store = useViewerStore();
   const dispatch = useViewerDispatch();
-  const zoomOf = useEffectEvent((slideId: string) => slideZooms.get(slideId) ?? null);
+  const zoomOf = useEffectEvent(
+    (slideId: string) => store.getState().slideZooms.get(slideId) ?? null,
+  );
 
   useEffect(() => {
     const scroller = scrollerRef.current;

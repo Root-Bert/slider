@@ -14,14 +14,25 @@ interface WaveformProps {
   className?: string;
 }
 
-/** Fewest bars drawn: a short take (a peak per 100 ms) is stretched to them, not drawn as dashes. */
-const MIN_BARS = 40;
+/**
+ * Bars drawn, whatever the length: a peak comes per 100 ms, so a short take is stretched to them
+ * (not drawn as dashes) and a long one is thinned to them – more bars than fit (each needs 4 px)
+ * would run out of the card over the time.
+ */
+const BARS = 40;
 
-/** A short take's peaks spread over `MIN_BARS`, each bar between its two neighbours. */
-function stretchPeaks(peaks: readonly number[], bars = MIN_BARS): readonly number[] {
+/** The peaks over `BARS`: a short take's bars between their two neighbours, a long one's loudest. */
+function fitPeaks(peaks: readonly number[], bars = BARS): readonly number[] {
   if (peaks.length === 0) return FLAT;
-  if (peaks.length >= bars) return peaks;
+  if (peaks.length === bars) return peaks;
   if (peaks.length === 1) return Array.from({ length: bars }, () => peaks[0]!);
+  if (peaks.length > bars) {
+    return Array.from({ length: bars }, (_, index) => {
+      const from = Math.floor((index * peaks.length) / bars);
+      const to = Math.max(from + 1, Math.floor(((index + 1) * peaks.length) / bars));
+      return Math.max(...peaks.slice(from, to));
+    });
+  }
   return Array.from({ length: bars }, (_, index) => {
     const at = (index * (peaks.length - 1)) / (bars - 1);
     const from = Math.floor(at);
@@ -32,7 +43,7 @@ function stretchPeaks(peaks: readonly number[], bars = MIN_BARS): readonly numbe
 
 /** Audio waveform as bars (Figma Desktop-7 voice note); doubles as the seek bar. */
 export function Waveform({ peaks, progress = 0, onSeek, label, className }: WaveformProps) {
-  const bars = stretchPeaks(peaks);
+  const bars = fitPeaks(peaks);
   const seek = (event: PointerEvent<HTMLDivElement>) => {
     if (!onSeek) return;
     const box = event.currentTarget.getBoundingClientRect();
@@ -57,7 +68,7 @@ export function Waveform({ peaks, progress = 0, onSeek, label, className }: Wave
       onPointerDown={seek}
       onKeyDown={onKeyDown}
       className={cn(
-        'flex h-7 min-w-0 flex-1 items-center gap-[2px]',
+        'flex h-7 min-w-0 flex-1 items-center gap-[2px] overflow-hidden',
         onSeek &&
           'cursor-pointer rounded-badge outline-none focus-visible:ring-1 focus-visible:ring-border-focus',
         className,

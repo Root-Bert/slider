@@ -100,7 +100,7 @@ export async function workspaceStorage(
         .from(workspaceMasters)
         .where(inArray(workspaceMasters.workspaceId, ids))
         .groupBy(workspaceMasters.workspaceId),
-      // Files on the decks' boards (Folie 0).
+      // Files on the decks' material pages.
       db
         .select({
           id: decks.workspaceId,

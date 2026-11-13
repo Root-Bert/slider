@@ -19,19 +19,21 @@ import { typesCharacter } from '@/lib/keyboard';
 import { Button, cn, GlassPanel, iconButtonClasses } from '@/ui';
 import { focusShapes, frameShapes } from './frame-shapes';
 
-export type InsertKind = 'text' | 'shape' | 'image';
+/** `symbol`: a picture frame whose picture is an icon or pictogram, its search open at once. */
+export type InsertKind = 'text' | 'shape' | 'image' | 'symbol';
 /** What a frame drawn is for: picking the elements it encloses, or a new one in it. */
 export type FrameKind = 'select' | InsertKind;
 
 const KINDS: {
   kind: FrameKind;
   label: string;
-  icon: 'highlightAlt' | 'textFields' | 'cropSquare' | 'image';
+  icon: 'highlightAlt' | 'textFields' | 'cropSquare' | 'image' | 'shapes';
 }[] = [
   { kind: 'select', label: 'Auswählen', icon: 'highlightAlt' },
   { kind: 'text', label: 'Text', icon: 'textFields' },
   { kind: 'shape', label: 'Form', icon: 'cropSquare' },
   { kind: 'image', label: 'Bild', icon: 'image' },
+  { kind: 'symbol', label: 'Symbol', icon: 'shapes' },
 ];
 
 /**
@@ -242,7 +244,8 @@ function starPoints(): string {
  * meanwhile (`FramePanelPreview`); a click, ↵ or Space takes it, Esc drops the frame. Typing goes
  * on in the picked kind: on „Text“ it writes the text, on „Bild“ it searches the photos (or
  * describes the picture to generate, without a photo service; with neither, only „Datei“ is left
- * – typing does nothing) – `onType`, for the kinds in `typed`. The row itself never changes: a
+ * – typing does nothing), on „Symbol“ the icons and pictograms – `onType`, for the kinds in
+ * `typed`. The row itself never changes: a
  * shape is picked in „Form“'s panel only – taking „Form“ moves the focus onto its shapes, Tab steps
  * them there, Esc goes back to „Form“.
  */

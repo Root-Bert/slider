@@ -13,7 +13,6 @@ import {
   deckMaterials,
   decks,
   media,
-  googleConnections,
   loginLinks,
   nextcloudConnections,
   users,
@@ -81,16 +80,12 @@ export async function deleteAccount(
   }
 
   const memberships = await membershipsOf(deps.db, userId);
-  // Their rows go with the account; the app passwords at Nextcloud and the grants at Google are
-  // revoked after.
+  // Their rows go with the account (Microsoft and Google connections of before too); the app
+  // passwords at Nextcloud are revoked after.
   const nextcloud = await deps.db
     .select()
     .from(nextcloudConnections)
     .where(eq(nextcloudConnections.userId, userId));
-  const google = await deps.db
-    .select()
-    .from(googleConnections)
-    .where(eq(googleConnections.userId, userId));
   // Checked before anything is deleted.
   const handOverPayingFirst = successors !== 'automatic' && !options.erasure;
   if (handOverPayingFirst) {
@@ -232,7 +227,6 @@ export async function deleteAccount(
   await cancelSubscriptions(deps, result.cancelled);
   // Full access to someone's files must not outlive their account (best effort, logged).
   for (const row of nextcloud) await deps.nextcloud.revoke(row);
-  for (const row of google) await deps.googleDrive.revoke(row);
   // The account is gone now: files that can't be deleted yet are retried by the hourly sweep.
   await deleteMediaBlobs(deps, result.recordingKeys);
   await deleteDeckFiles(deps, result.orphaned);
@@ -437,7 +431,7 @@ async function anonymiseComments(
     .where(sql`${comments.author}->>'id' = ${userId}`)
     .returning({ deckId: comments.deckId });
   await tx.update(comments).set({ resolvedBy: deleted.id }).where(eq(comments.resolvedBy, userId));
-  // What they put on decks' boards (Folie 0) stays, under the same deleted author.
+  // What they put on decks' material pages stays, under the same deleted author.
   await tx
     .update(deckMaterials)
     .set({ author: deleted })

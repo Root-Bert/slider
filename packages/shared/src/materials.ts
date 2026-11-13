@@ -2,8 +2,8 @@ import { z } from 'zod';
 import { accentColorSchema, authorSchema } from './model';
 
 /*
- * Folie 0 („Material“): a free board before slide 1 where the material of a deck lies – files
- * (PDF, Word, PowerPoint, Excel, pictures …), notes and links. It is never part of the deck's
+ * The material page („Material“): a free board beside the slides where the material of a deck
+ * lies – files (PDF, Word, PowerPoint, Excel, pictures …), notes and links. It is never part of the deck's
  * file: not in the ODP, not in an export, not counted as a slide. The AI reads the files through
  * its tools (`list_materials`, `read_material`, `read_sheet`, `search_materials`,
  * `view_material`), never all at once.

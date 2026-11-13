@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useLocation, useParams, useSearchParams } from 'react-router';
-import { routes } from '@/lib/routes';
+import { opensOnBoard, routes } from '@/lib/routes';
 import { isSignedOutError } from '@/features/auth';
 import { markDeckOpened } from '@/lib/last-visits';
 import { motionMs } from '@/lib/motion';
@@ -13,7 +13,7 @@ import { useColorOverrides } from './hooks/useColorOverrides';
 import { useLiveConnected } from './live/lib/live-store';
 import { blockingError } from './lib/blocking-error';
 import { useDocumentTitle } from './hooks/usePageSession';
-import { SLIDE_PARAM } from './hooks/useSlideUrlSync';
+import { MATERIAL_PARAM, SLIDE_PARAM } from './hooks/useSlideUrlSync';
 import { RevisionProvider } from './state/RevisionProvider';
 import { loadWorkPreferences } from '@/lib/preferences/work-preferences';
 import { deckStatusCounts } from './comments/lib/comment-selectors';
@@ -34,6 +34,10 @@ export function DeckRoute({ deckId }: { deckId: string }) {
   const [searchParams] = useSearchParams();
   const [initialSlideId] = useState(() => searchParams.get(SLIDE_PARAM));
   const location = useLocation();
+  // A new deck (`OPEN_ON_BOARD`) and `?material` open on the material page.
+  const [initialMaterial] = useState(
+    () => searchParams.has(MATERIAL_PARAM) || opensOnBoard(location.state),
+  );
 
   const deck = useDeck(deckId);
   const me = useMe();
@@ -135,7 +139,11 @@ export function DeckRoute({ deckId }: { deckId: string }) {
     <>
       {viewerUp && (
         <div className="contents" data-comments-intro={commentsIntro ?? undefined}>
-          <ViewerStoreProvider data={data} initialSlideId={initialSlideId}>
+          <ViewerStoreProvider
+            data={data}
+            initialSlideId={initialSlideId}
+            initialMaterial={initialMaterial}
+          >
             <RevisionProvider>
               <Viewer />
             </RevisionProvider>

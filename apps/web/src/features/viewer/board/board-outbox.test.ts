@@ -71,6 +71,11 @@ describe('the board outbox', () => {
       });
     create(note('n2', 'Offline'));
     create(note('n3', 'Gleich weg'));
+    // Asking about a note waits till it is on the server; one deleted before it went never is.
+    let n2Saved = false;
+    void outbox.saved('d1', 'n2').then(() => (n2Saved = true));
+    const n3Saved = outbox.saved('d1', 'n3');
+    await expect(outbox.saved('d1', 'n1')).resolves.toBeUndefined();
     outbox.enqueue('d1', 'ana', { type: 'update', itemId: 'n1', input: { text: 'Neu' } });
     outbox.enqueue('d1', 'ana', {
       type: 'move',
@@ -86,6 +91,8 @@ describe('the board outbox', () => {
       ['n2', 'Offline', 0],
     ]);
     expect(sent).toEqual([]);
+    await expect(n3Saved).rejects.toThrow('deleted');
+    expect(n2Saved).toBe(false);
     // React Flow only shows it: nodes from the board as shown, a drag under way laid over it,
     // the picked ones picked, the note being written not dragged.
     const nodes = boardNodes(shown, {
@@ -180,6 +187,7 @@ describe('the board outbox', () => {
     await vi.waitFor(() =>
       expect(outbox.queued('d1').map((action) => action.type)).toEqual(['create', 'move']),
     );
+    expect(n2Saved).toBe(true);
     outbox.forget('d1', 0);
     expect(outbox.queued('d1')).toHaveLength(2);
     outbox.forget('d1', Date.now() + 1);

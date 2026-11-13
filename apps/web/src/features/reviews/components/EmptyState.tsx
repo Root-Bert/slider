@@ -40,8 +40,8 @@ function StackedSlides() {
       <rect x="40" y="30" width="40" height="5" rx="2.5" fill="var(--color-fg-faint)" />
       <rect x="40" y="41" width="60" height="3" rx="1.5" fill="var(--color-selected)" />
       <rect x="40" y="48" width="52" height="3" rx="1.5" fill="var(--color-selected)" />
-      <circle cx="108" cy="22" r="9" fill="var(--color-accent-blue)" />
-      <circle cx="108" cy="22" r="3" fill="var(--color-primary-hover)" />
+      <circle cx="108" cy="22" r="9" fill="var(--color-primary)" />
+      <circle cx="108" cy="22" r="3" fill="var(--color-on-primary)" />
     </svg>
   );
 }

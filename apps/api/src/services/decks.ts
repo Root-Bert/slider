@@ -88,7 +88,6 @@ export async function toDeckDtos(
             id: revisions.id,
             number: revisions.number,
             summary: revisions.summary,
-            officeFailure: revisions.officeFailure,
           })
           .from(revisions)
           .where(inArray(revisions.id, revisionIds))
@@ -176,9 +175,6 @@ export async function toDeckDtos(
   const ownerById = new Map(owners.map((owner) => [owner.id, ownerAuthor(owner)]));
   const numberByRevision = new Map(revisionNumbers.map((row) => [row.id, row.number]));
   const summaryByRevision = new Map(revisionNumbers.map((row) => [row.id, row.summary]));
-  const officeFailureByRevision = new Map(
-    revisionNumbers.map((row) => [row.id, row.officeFailure]),
-  );
   const pendingByDeck = new Map(pendingRevisions.map((row) => [row.deckId, row.since]));
   const slideCountByRevision = new Map(slideCounts.map((row) => [row.revisionId, row.count]));
   const thumbnailByRevision = new Map(thumbnails.map((row) => [row.revisionId, row]));
@@ -234,7 +230,6 @@ export async function toDeckDtos(
       openCommentCount: openCountByDeck.get(row.id) ?? 0,
       thumbnailUrl: thumbnail ? fileUrl(thumbnail.key) : null,
       thumbnailRenderer: thumbnail?.renderer ?? null,
-      officeFailure: officeFailureByRevision.get(revisionId) ?? null,
       participants: participantsOf(owner, participantsByDeck.get(row.id) ?? []),
       ai: aiByWorkspace.get(row.workspaceId) ?? { name: DEFAULT_AI_NAME, available: false },
       import: row.importState,
@@ -368,12 +363,8 @@ export interface NewDeckFile {
   /** Who worked on the linked file, if the source told (`decks.source_contributors`). */
   contributors?: string[] | null;
   changeToken?: string | null;
-  /** The Microsoft connection that could read the file (`decks.microsoft_connection_id`). */
-  microsoftConnectionId?: string | null;
   /** The Nextcloud connection that could read the file (`decks.nextcloud_connection_id`). */
   nextcloudConnectionId?: string | null;
-  /** The Google connection that could read the file (`decks.google_connection_id`). */
-  googleConnectionId?: string | null;
   /** The workspace's design it was made from (`decks.master_id`). */
   masterId?: string | null;
   /** A template to design (`decks.is_template`), no review: no deck slot, its own title. */
@@ -428,9 +419,7 @@ export async function createDeckFromFile(
         sourceUrl: file.sourceUrl ?? null,
         sourceRef: file.sourceRef ?? null,
         sourceContributors: file.contributors ?? null,
-        microsoftConnectionId: file.microsoftConnectionId ?? null,
         nextcloudConnectionId: file.nextcloudConnectionId ?? null,
-        googleConnectionId: file.googleConnectionId ?? null,
         masterId: file.masterId ?? null,
         isTemplate: file.template !== undefined,
         templateDesign: file.template ? (file.template.design ?? EMPTY_TEMPLATE) : null,

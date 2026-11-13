@@ -8,3 +8,6 @@ packages/pptx/samples
 e2e/.results
 e2e/.report
 e2e/.shots
+desktop/build
+desktop/generated
+apps/web/src/features/icons/sets

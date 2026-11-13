@@ -3,7 +3,7 @@ import { z } from 'zod';
 /**
  * Who may open a review. Unrestricted (the default), every member of its workspace may; restricted,
  * only the listed accounts – plus the deck's owner and the workspace admins, who can never be
- * locked out. The source's own sharing (OneDrive, SharePoint, Nextcloud) still applies on top.
+ * locked out. The source's own sharing (Nextcloud) still applies on top.
  */
 export const deckAccessSchema = z.object({
   restricted: z.boolean(),

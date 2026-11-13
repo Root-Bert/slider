@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ctrlClickIsClick } from '@/lib/dom';
+import { useFileChangedElsewhere, useWebFile } from '@/lib/api';
+import { inDesktopBar } from '@/lib/desktop-bridge';
 import { cn, Toast, Toolbar, ToolbarDivider, useFullscreen, useToast } from '@/ui';
 import { CommentFilterBar } from './comments/CommentFilterBar';
 import { Composer } from './comments/Composer';
@@ -23,7 +25,8 @@ import { FindBar } from './find/FindBar';
 import { HandleHint } from './hint/HandleHint';
 import { useGoToSlide } from './hooks/useGoToSlide';
 import { useThreadHover } from './hooks/useThreadHover';
-import { useSlideUrlSync } from './hooks/useSlideUrlSync';
+import { useMaterialUrlSync, useSlideUrlSync } from './hooks/useSlideUrlSync';
+import { MaterialPage } from './board/MaterialPage';
 import { useViewerShortcuts } from './hooks/useViewerShortcuts';
 import { CursorLayer } from './live/CursorLayer';
 import { useLive } from './live/hooks/useLive';
@@ -31,6 +34,7 @@ import { PresentButton } from './presentation/PresentButton';
 import { PresentationMode } from './presentation/PresentationMode';
 import { PresenterView } from './presentation/PresenterView';
 import { AudienceShow } from './presentation/AudienceShow';
+import { DesktopBar } from './presentation/DesktopBar';
 import { useIsAudienceWindow } from './presentation/show-hooks';
 import { EditingProvider } from './editing/EditingProvider';
 import { FillRefresh } from './editing/fills/FillRefresh';
@@ -70,7 +74,7 @@ function ViewerMain() {
   const rootRef = useRef<HTMLDivElement>(null);
   const { deck, slideIndex } = useViewerData();
   const viewerState = useViewerState();
-  const { activeSlideId, commentsClosed } = viewerState;
+  const { activeSlideId, commentsClosed, materialOpen } = viewerState;
   // Thread panel, deleted slides, layers, a slide's background and the layout share the right side.
   const threadPanelOpen = isSidePanelOpen(viewerState);
   const toggleFullscreen = useFullscreen(rootRef);
@@ -84,6 +88,7 @@ function ViewerMain() {
   const goTo = useGoToSlide();
   const startPresenting = () => setPresenting('show');
   const startPresenterView = () => setPresenting('presenter');
+  const desktopBar = inDesktopBar();
   const stopPresenting = (slideId: string | null) => {
     setPresenting(null);
     const index = slideId ? slideIndex.get(slideId) : undefined;
@@ -97,9 +102,12 @@ function ViewerMain() {
     onPresenterView: startPresenterView,
   });
   useSlideUrlSync(activeSlideId);
+  useMaterialUrlSync(materialOpen);
   useThreadHover();
   useLive();
   useCommentRefusals(showToast);
+  useFileChangedElsewhere(deck.id, showToast);
+  useWebFile(deck.id, showToast);
   // On the slides (picking elements, multi-select), ctrl+click on a Mac is a click, not a right
   // click; fields and comments' marks keep their menus, as does everything else on the page.
   useEffect(
@@ -112,100 +120,126 @@ function ViewerMain() {
       <EditingProvider>
         <LayersProvider>
           <VoiceProvider>
-            <div
-              ref={rootRef}
-              data-viewer-root
-              className={cn('dot-grid relative flex h-dvh flex-col overflow-hidden text-fg')}
-            >
-              {/* The first focus stop: keyboard users skip the slides to the controls row. */}
-              <SkipToControls targetId={CONTROLS_ID} />
-              <h1 className="sr-only">{deck.title}</h1>
-              <Timeline
-                findSlotRef={setFindSlot}
-                controls={
-                  // On desktop this row never wraps – its height is part of where the comment area
-                  // starts, which must not move when a side panel narrows the controls band: the slide
-                  // counter gives way (container query on the band width).
-                  <div
-                    id={CONTROLS_ID}
-                    className="flex flex-wrap items-center gap-3 md:flex-nowrap"
-                  >
-                    <ToolBar />
-                    {/* A template being designed: its name, its layout's, guides and saving. */}
-                    <TemplateControls />
-                    <SyncStatus />
-                    {/* Figma 87:359: right-aligned, 10px apart. */}
+            {/* The fullscreen target: the presentation and the material page beside it. */}
+            <div ref={rootRef} className="relative h-dvh overflow-hidden">
+              {/* The presentation: slides out to the right while the material page is shown (its
+                floating controls and panels with it – fixed inside a moved box), asleep meanwhile. */}
+              <div
+                data-viewer-root
+                inert={materialOpen}
+                className={cn(
+                  'dot-grid relative flex h-dvh flex-col overflow-hidden text-fg transition-[translate] duration-300 ease-sheet',
+                  materialOpen && 'translate-x-full',
+                )}
+              >
+                {/* The first focus stop: keyboard users skip the slides to the controls row. */}
+                <SkipToControls targetId={CONTROLS_ID} />
+                <h1 className="sr-only">{deck.title}</h1>
+                <Timeline
+                  findSlotRef={setFindSlot}
+                  controls={
+                    // On desktop this row never wraps – its height is part of where the comment area
+                    // starts, which must not move when a side panel narrows the controls band: the slide
+                    // counter gives way (container query on the band width).
                     <div
-                      data-controls-cluster
-                      className="ml-auto flex shrink-0 items-center gap-2.5"
+                      id={CONTROLS_ID}
+                      className="flex flex-wrap items-center gap-3 md:flex-nowrap"
                     >
-                      <CommentFilterBar />
-                      <RevisionControls />
-                      {/* One pill for the deck, like the tool bar – a lone icon button in its own
+                      <ToolBar />
+                      {/* A template being designed: its name, its layout's, guides and saving. */}
+                      <TemplateControls />
+                      <SyncStatus />
+                      {/* Figma 87:359: right-aligned, 10px apart. */}
+                      <div
+                        data-controls-cluster
+                        className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2.5 md:shrink-0 md:flex-nowrap"
+                      >
+                        <CommentFilterBar />
+                        <RevisionControls />
+                        {/* One pill for the deck, like the tool bar – a lone icon button in its own
                     glass pill would read as a circle next to the wide ones. */}
-                      <Toolbar role={false} className="shrink-0">
-                        <MinimapToggle />
-                        <WideFramesToggle />
-                        <PresentButton
-                          onPresent={startPresenting}
-                          onPresenterView={startPresenterView}
-                        />
-                        <ShareButton />
-                        <ToolbarDivider />
-                        {/* Gives way on a narrow band, with its divider. */}
-                        <span className="flex items-center gap-1 md:@max-[740px]:hidden">
-                          <SlideCounter />
-                          <ToolbarDivider />
-                        </span>
-                        <SessionControls />
-                      </Toolbar>
+                        <Toolbar role={false} className="shrink-0">
+                          <MinimapToggle />
+                          <WideFramesToggle />
+                          {/* The desktop app has „Präsentieren“, „Exportieren“ and ✕ in its tab bar, top right. */}
+                          {desktopBar ? (
+                            // Gives way on a narrow band, with its divider.
+                            <span className="flex items-center gap-1 md:@max-[740px]:hidden">
+                              <ToolbarDivider />
+                              <SlideCounter />
+                            </span>
+                          ) : (
+                            <>
+                              <PresentButton
+                                onPresent={startPresenting}
+                                onPresenterView={startPresenterView}
+                              />
+                              <ShareButton />
+                              <ToolbarDivider />
+                              {/* Gives way on a narrow band, with its divider. */}
+                              <span className="flex items-center gap-1 md:@max-[740px]:hidden">
+                                <SlideCounter />
+                                <ToolbarDivider />
+                              </span>
+                              <SessionControls />
+                            </>
+                          )}
+                        </Toolbar>
+                      </div>
                     </div>
-                  </div>
-                }
-              />
+                  }
+                />
 
-              {/* Bottom right: who else is here, then you – hover for the name, click to pick a colour. Moves left of the side panel when that opens; gone while the comment area is closed. */}
-              {!commentsClosed && <AvatarDock panelOpen={threadPanelOpen} />}
+                {/* Bottom right: who else is here, then you – hover for the name, click to pick a colour. Moves left of the side panel when that opens; gone while the comment area is closed. */}
+                {!commentsClosed && <AvatarDock panelOpen={threadPanelOpen} />}
 
-              {/* Other people's pointers (BER-104): above the track, below the floating controls. */}
-              <CursorLayer />
+                {/* Other people's pointers (BER-104): above the track, below the floating controls. */}
+                <CursorLayer />
 
-              <Composer />
-              {/* A new deck built by the AI from Folie 1's prompt: its progress, bottom left. */}
-              <CreationProgress />
-              <AskAiShortcut />
-              <ThreadZoom />
-              <ThreadPanel />
-              <MediaReplyDialog />
-              <DeletedSlidesPanel />
-              <FormatBar />
-              {/* Tilted elements changed: drawn tilted anew, picked or not. */}
-              <TiltRefreshes />
-              <FillRefresh />
-              {/* „Ebenen“ (L): the active slide's layers; the slide itself turns 3D on the track. */}
-              <LayersPanel />
-              {/* „Hintergrund“ from a slide's right-click menu. */}
-              <SlideBackgroundPanel />
-              {/* „Layout-Ansicht“ of a template (⇧H): its columns and rows. */}
-              <LayoutGridPanel />
-              {/* „Exportieren“ (S): the file (a template's as OTP) and a PDF. */}
-              <SharePanel />
-              {/* ⌘F / Ctrl F (BER-176). Docked at the split handle, morphing out of it; on a phone
+                <Composer />
+                {/* A new deck built by the AI from Folie 1's prompt: its progress, bottom left. */}
+                <CreationProgress />
+                <AskAiShortcut />
+                <ThreadZoom />
+                <ThreadPanel />
+                <MediaReplyDialog />
+                <DeletedSlidesPanel />
+                <FormatBar />
+                {/* Tilted elements changed: drawn tilted anew, picked or not. */}
+                <TiltRefreshes />
+                <FillRefresh />
+                {/* „Ebenen“ (L): the active slide's layers; the slide itself turns 3D on the track. */}
+                <LayersPanel />
+                {/* „Hintergrund“ from a slide's right-click menu. */}
+                <SlideBackgroundPanel />
+                {/* „Layout-Ansicht“ of a template (⇧H): its columns and rows. */}
+                <LayoutGridPanel />
+                {/* „Exportieren“ (S): the file (a template's as OTP) and a PDF. */}
+                <SharePanel />
+                {/* ⌘F / Ctrl F (BER-176). Docked at the split handle, morphing out of it; on a phone
             after the panels: above the bottom sheet. */}
-              <FindBar slot={findSlot} />
-              {/* Speaking to the AI (a click on its avatar): what it heard and made of it, out of
+                <FindBar slot={findSlot} />
+                {/* Speaking to the AI (a click on its avatar): what it heard and made of it, out of
             the split handle like the find bar. */}
-              <VoiceBar slot={findSlot} />
-              <HandleHint slot={findSlot} />
-              <LeaveGuard />
-              {/* Above the thread panel and popovers (`--z-toast`). */}
+                <VoiceBar slot={findSlot} />
+                <HandleHint slot={findSlot} />
+                <LeaveGuard />
+                <DesktopBar
+                  active={!presenting && !materialOpen}
+                  onPresent={startPresenting}
+                  onPresenterView={startPresenterView}
+                />
+                {presenting === 'show' && (
+                  <PresentationMode startSlideId={activeSlideId} onExit={stopPresenting} />
+                )}
+                {presenting === 'presenter' && (
+                  <PresenterView startSlideId={activeSlideId} onExit={stopPresenting} />
+                )}
+              </div>
+              {/* „Material“: the board's page, left of the presentation. */}
+              <MaterialPage />
+              {/* Above the thread panel and popovers (`--z-toast`), on either page. */}
               <Toast toast={toast} />
-              {presenting === 'show' && (
-                <PresentationMode startSlideId={activeSlideId} onExit={stopPresenting} />
-              )}
-              {presenting === 'presenter' && (
-                <PresenterView startSlideId={activeSlideId} onExit={stopPresenting} />
-              )}
             </div>
           </VoiceProvider>
         </LayersProvider>

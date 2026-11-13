@@ -20,7 +20,7 @@ import { boardOutbox, withQueued } from './board-outbox';
 import { eachLimited, FOLDER_CARD, FOLDER_PARALLEL } from './folder-files';
 
 /*
- * The deck's board (Folie 0) as the viewer shows it: the server's, with the changes queued here
+ * The deck's board (the material page) as the viewer shows it: the server's, with the changes queued here
  * (`board-outbox.ts`) and the files on their way laid over it – every change shows at once.
  * Others' changes come over the live stream (`board` event → refetch, `useLive`).
  */
@@ -157,6 +157,8 @@ export interface BoardActions {
   updateText(itemId: string, text: string, rich?: Record<string, unknown> | null): void;
   move(frames: (BoardFrame & { id: string })[]): void;
   remove(itemIds: readonly string[]): void;
+  /** Once a note just put down is on the server (asking about it there needs it). */
+  saved(itemId: string): Promise<void>;
 }
 
 export function useBoard(): BoardActions {
@@ -470,5 +472,6 @@ export function useBoard(): BoardActions {
     remove: (itemIds) => {
       for (const itemId of itemIds) enqueue({ type: 'delete', itemId });
     },
+    saved: (itemId) => outbox.saved(deckId, itemId),
   };
 }

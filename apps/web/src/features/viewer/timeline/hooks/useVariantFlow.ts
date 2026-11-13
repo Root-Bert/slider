@@ -37,8 +37,9 @@ export function useVariantCopy(): (slideId: string) => void {
 
 /**
  * The field of „Variante erstellen“ for slide `slideId` – on its tile, in the phone's sheet: what
- * is typed, and `submit` – words to the AI (the request kept until it is done), nothing typed a
- * copy at once (`useVariantCopy`). Returns what it did, `null` for nothing (no such slide).
+ * is typed, and `submit` – words to the AI (the request kept until it is done; refused, the words
+ * come back into the field), nothing typed a copy at once (`useVariantCopy`). `submit` returns what
+ * it did: `'copy'` or `'ai'`.
  */
 export function useVariantAsk(slideId: string) {
   const { deck } = useViewerData();
@@ -58,7 +59,11 @@ export function useVariantAsk(slideId: string) {
       {
         onSuccess: (proposal) =>
           setVariantRequest(slideId, { proposalId: proposal.id, prompt: words }),
-        onError: (error) => toast(error.message, 'danger'),
+        onError: (error) => {
+          // Not lost: back in the field unless something new was typed meanwhile.
+          setPrompt((current) => current || words);
+          toast(error.message, 'danger');
+        },
       },
     );
     return 'ai';
@@ -111,7 +116,7 @@ export function useVariantFlow(go: (track: number) => void, tracks: boolean): vo
       openVariantWhenThere(null);
       go(-(at + 1));
       dispatch({ type: 'activeSlideChanged', slideId });
-      if (!editing.active || editing.adding) editing.setActive(true);
+      if (!editing.active) editing.setActive(true);
       return;
     }
   });

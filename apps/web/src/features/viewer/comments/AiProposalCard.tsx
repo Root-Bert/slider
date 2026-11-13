@@ -8,6 +8,7 @@ import { ProposalPhotos } from '../editing/photos/ProposalPhotos';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerToast } from '../state/viewer-toast';
 import { workingLabel } from './lib/ai-ask';
+import { ReactionChips, ReactionPicker } from './Reactions';
 import { ResolveToggle } from './ResolveButton';
 
 /**
@@ -20,9 +21,21 @@ export function AiProposalCard({
   proposal,
   className,
   onResolve,
+  preview = true,
+  step,
+  onSlide = false,
+  floating = false,
 }: {
   proposal: AiProposal;
   className?: string;
+  /** Its latest drawing in the card – not where the card lies on that drawing (a variant's tile). */
+  preview?: boolean;
+  /** Lying on a slide's picture (a variant): opaque enough to read on a bright slide. */
+  onSlide?: boolean;
+  /** In a scrolling panel (the thread): its reaction picker floats over the panel's header. */
+  floating?: boolean;
+  /** What it does now, said otherwise than the run does (a variant's tile). */
+  step?: string;
   /**
    * Shown where no thread holds it (on a variant): done or open again for everyone, with the
    * thread's own toggle (`ResolveToggle`) – `done` what it is to become.
@@ -45,6 +58,12 @@ export function AiProposalCard({
       proposal.status === 'applied' ||
       reverted ||
       ((proposal.status === 'failed' || cancelled) && !!proposal.commentId));
+  /** It answered: its answer takes reactions as a comment does (👍 / 👎 / egal). */
+  const answered =
+    !!proposal.summary &&
+    proposal.status !== 'running' &&
+    proposal.status !== 'failed' &&
+    !cancelled;
   const run = (action: 'revert' | 'reapply') =>
     move.mutate(
       { proposalId: proposal.id, action },
@@ -70,7 +89,11 @@ export function AiProposalCard({
         cancel.isPending ||
         undefined
       }
-      className={cn('glass flex flex-col gap-2 rounded-panel px-3.5 py-3', className)}
+      className={cn(
+        'group/message relative flex flex-col gap-2 rounded-panel px-3.5 py-3',
+        onSlide ? 'glass-elevated' : 'glass',
+        className,
+      )}
     >
       <header className="flex items-center gap-2">
         {/* The AI's avatar, as on the comments it leaves. */}
@@ -78,6 +101,12 @@ export function AiProposalCard({
         <span className="text-xs font-medium text-fg">{aiAuthor.name}</span>
         {reverted && <span className="text-caption text-fg-subtle">zurückgenommen</span>}
         {cancelled && <span className="text-caption text-fg-subtle">abgebrochen</span>}
+        {answered && (
+          // Floats above the line without taking room – as after a comment's time (`AuthorLine`).
+          <span className="relative -ml-2 shrink-0 self-stretch">
+            <ReactionPicker proposal={proposal} floating={floating} />
+          </span>
+        )}
         {canManage && proposal.status === 'running' && (
           <IconButton
             icon="stop"
@@ -147,12 +176,12 @@ export function AiProposalCard({
       {proposal.status === 'running' && (
         <div className="flex items-center gap-2 text-sm text-fg-muted">
           <Spinner size="sm" />
-          {proposal.progress?.step ?? workingLabel(proposal.prompt)}
+          {step ?? proposal.progress?.step ?? workingLabel(proposal.prompt)}
           <Elapsed since={proposal.createdAt} />
         </div>
       )}
       {/* The latest slide it drew, while it still works – applied once it is done. */}
-      {proposal.status === 'running' && proposal.progress?.previewUrl && (
+      {preview && proposal.status === 'running' && proposal.progress?.previewUrl && (
         <img
           src={proposal.progress.previewUrl}
           alt="Zwischenstand der KI"
@@ -173,6 +202,7 @@ export function AiProposalCard({
       {proposal.photos && proposal.status === 'applied' && (
         <ProposalPhotos proposal={proposal} photos={proposal.photos} />
       )}
+      {answered && <ReactionChips proposal={proposal} />}
     </article>
   );
 }

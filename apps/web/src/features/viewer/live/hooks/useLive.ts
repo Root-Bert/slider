@@ -15,7 +15,7 @@ const COMMENTS_REFETCH_DELAY_MS = 120;
  */
 export function useLive() {
   const { deck } = useViewerData();
-  const { activeSlideId, focusedThreadId } = useViewerState();
+  const { activeSlideId, focusedThreadId, materialOpen } = useViewerState();
   const queryClient = useQueryClient();
   const deckId = deck.id;
 
@@ -29,7 +29,7 @@ export function useLive() {
       }, COMMENTS_REFETCH_DELAY_MS);
     };
     // Edited by someone (or the AI's proposals changed): the slides and the editor's state reload.
-    // Something on the board (Folie 0) changed: it reloads.
+    // Something on the board (the material page) changed: it reloads.
     // A deck built from the prompt on Folie 1 moved on: its progress reloads – with the slides,
     // as the prompt shows only while the deck is blank.
     const onDeckChange = (change: 'slides' | 'proposals' | 'board' | 'creation') => {
@@ -42,7 +42,7 @@ export function useLive() {
               queryKeys.creation(deckId),
             ]
           : change === 'board'
-            ? [queryKeys.board(deckId)]
+            ? [queryKeys.board(deckId), queryKeys.materialQuestions(deckId)]
             : change === 'creation'
               ? [queryKeys.creation(deckId)]
               : [queryKeys.proposals(deckId)];
@@ -58,6 +58,11 @@ export function useLive() {
   useEffect(() => {
     setPresence({ activeSlideId });
   }, [activeSlideId]);
+
+  // On the material page: the others see them there, not on their slide.
+  useEffect(() => {
+    setPresence({ onMaterial: materialOpen });
+  }, [materialOpen]);
 
   // The comment open here (expanded card or thread panel) is marked for the others.
   useEffect(() => {

@@ -11,11 +11,8 @@ export class ApiError extends Error {
     readonly status: ContentfulStatusCode,
     readonly code: ErrorCode,
     message: string,
-    /** Extra fields for the client, e.g. `loginUrl` with `microsoft_login_required`. */
-    readonly extra: Pick<
-      ApiErrorBody['error'],
-      'loginUrl' | 'nextcloudServer' | 'googleFileId'
-    > = {},
+    /** Extra fields for the client, e.g. `nextcloudServer` with `nextcloud_login_required`. */
+    readonly extra: Pick<ApiErrorBody['error'], 'nextcloudServer'> = {},
   ) {
     super(message);
     this.name = 'ApiError';

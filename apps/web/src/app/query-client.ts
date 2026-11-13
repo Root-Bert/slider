@@ -15,8 +15,7 @@ import { currentPath, routes } from '@/lib/routes';
  * `sessionTtlDays` reached, session revoked): any request answers 401 `unauthorized`. Instead of
  * every list and action failing on its own, go to the login and come back here afterwards.
  *
- * Only for `unauthorized`: the source imports answer 401 `microsoft_login_required` too, which
- * their own UI handles (A3 card, picker). And only while `me` says signed in – signed-out pages
+ * Only for `unauthorized`, and only while `me` says signed in – signed-out pages
  * (login, setup, join) and the deck page handle their own 401s.
  */
 export function signedOutHandler(
@@ -99,7 +98,7 @@ export function createQueryClient(redirect?: (path: string) => void): QueryClien
       },
     },
   });
-  // API calls outside React Query (upload, OneDrive picker) report through `reportSessionError`.
+  // API calls outside React Query (the upload) report through `reportSessionError`.
   setSessionErrorHandler(client, onError);
   refreshStoredAnswers(client);
   return client;

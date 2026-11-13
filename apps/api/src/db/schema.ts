@@ -17,6 +17,8 @@ import {
 import { sql } from 'drizzle-orm';
 import type {
   ShowRun,
+  AppConnectionKind,
+  MaterialQuestionState,
   AccentColor,
   AiFeature,
   AiProposalStatus,
@@ -97,6 +99,7 @@ export interface RevisionDiffRecord {
     status: SlideDiffStatus;
     moved: boolean;
     confidence: number;
+    /** `sourceId`: only in old rows – Google Slides' `objectId` (BER-157, retired). */
     matchedBy: 'sourceId' | 'sldId' | 'content' | null;
     position: number;
     previousPosition: number | null;
@@ -135,10 +138,9 @@ export const users = pgTable('users', {
 });
 
 /**
- * Microsoft accounts connected for OneDrive/SharePoint access – several per Slider account.
- * Each holds that account's refresh token; linked decks remember which one they sync through
- * (`decks.microsoft_connection_id`). At most {@link MAX_ACCOUNTS_PER_MICROSOFT} Slider accounts
- * share one Microsoft account (`subject`).
+ * Retired with OneDrive/SharePoint: Microsoft accounts once connected for file access. Nothing
+ * adds rows any more – `retireFileConnections` deletes what is left at start; the table stays
+ * for that cleanup only.
  */
 export const microsoftConnections = pgTable(
   'microsoft_connections',
@@ -210,9 +212,9 @@ export const nextcloudConnections = pgTable(
 );
 
 /**
- * Google accounts connected for Google Drive (BER-119), several per Slider account. Google grants
- * only `drive.file`: the files the person picked in Google's picker. Linked decks remember which
- * one they sync through (`decks.google_connection_id`).
+ * Retired with Google Drive (BER-119): Google accounts once connected for file access. Nothing
+ * adds rows any more – `retireFileConnections` revokes each grant at Google and deletes the row
+ * at start; the table stays for that cleanup only.
  */
 export const googleConnections = pgTable(
   'google_connections',
@@ -255,6 +257,60 @@ export const sessions = pgTable(
   },
   (t) => [index('sessions_user_idx').on(t.userId)],
 );
+
+/**
+ * AI apps that registered themselves to sign in over OAuth (RFC 7591 – Claude, ChatGPT …): a
+ * public client (PKCE, no secret) with the addresses it may be sent back to. Its name is what it
+ * calls itself – shown to the person it asks, beside where it goes back to.
+ */
+export const appClients = pgTable('app_clients', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  redirectUris: jsonb('redirect_uris').$type<string[]>().notNull(),
+  createdAt: createdAt(),
+});
+
+/**
+ * An AI app let into an account over MCP („KI-Apps“ on `/konto`): over OAuth (`client_id`, a
+ * short-lived access token renewed with its refresh token) or a token made by its person (no
+ * expiry, until removed). Only the tokens' SHA-256 is kept, like `sessions`. `workspace_id`:
+ * only that workspace; `null`: all of the account's.
+ */
+export const appConnections = pgTable(
+  'app_connections',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind').$type<AppConnectionKind>().notNull(),
+    clientId: text('client_id'),
+    name: text('name').notNull(),
+    workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
+    accessHash: text('access_hash').notNull().unique(),
+    /** `null`: a token made by hand, valid until removed. */
+    accessExpiresAt: timestamptz('access_expires_at'),
+    refreshHash: text('refresh_hash').unique(),
+    createdAt: createdAt(),
+    lastUsedAt: timestamptz('last_used_at'),
+  },
+  (t) => [index('app_connections_user_idx').on(t.userId)],
+);
+
+/** An OAuth code handed back to an app, swapped for its tokens once, within minutes. */
+export const appCodes = pgTable('app_codes', {
+  codeHash: text('code_hash').primaryKey(),
+  clientId: text('client_id').notNull(),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
+  redirectUri: text('redirect_uri').notNull(),
+  /** PKCE: SHA-256 of the app's verifier, base64url. */
+  codeChallenge: text('code_challenge').notNull(),
+  expiresAt: timestamptz('expires_at').notNull(),
+  createdAt: createdAt(),
+});
 
 /**
  * How an account signs in: `microsoft` (`<tid>:<oid>`), `google` (Google `sub`), `oidc` (`sub` of
@@ -416,11 +472,17 @@ export const workspaces = pgTable('workspaces', {
   /**
    * Per kind, the model it runs the instance's key on, where the instance lets it pick one – for
    * that key only: once the instance sets another active, the instance's model applies again.
-   * `createModel` (AI): the one a deck is created on; each left out: the instance's.
+   * `createModel` (AI): the one a deck is created on, `quickModel` (AI) the one of quick
+   * requests; each left out: the instance's.
    */
   integrationModels: jsonb('integration_models')
     .$type<
-      Partial<Record<IntegrationKind, { keyId: string; model?: string; createModel?: string }>>
+      Partial<
+        Record<
+          IntegrationKind,
+          { keyId: string; model?: string; createModel?: string; quickModel?: string }
+        >
+      >
     >()
     .notNull()
     .default({}),
@@ -575,6 +637,8 @@ export const integrationKeys = pgTable(
     model: text('model').notNull(),
     /** AI only: the model a deck is created on („Präsentation erstellen“); `null`: `model`. */
     createModel: text('create_model'),
+    /** AI only: the model of quick requests (`runToolCall`); `null`: `defaultQuickModel`. */
+    quickModel: text('quick_model'),
     active: boolean('active').notNull().default(false),
     setById: text('set_by_id').references((): AnyPgColumn => users.id, { onDelete: 'set null' }),
     setByName: text('set_by_name'),
@@ -666,7 +730,7 @@ export const decks = pgTable(
   'decks',
   {
     id: text('id').primaryKey(),
-    /** Who created the deck; their Microsoft login is used to keep a linked deck in sync. */
+    /** Who created the deck; their Nextcloud connection keeps a linked deck in sync. */
     ownerId: text('owner_id')
       .notNull()
       .references(() => users.id),
@@ -714,9 +778,8 @@ export const decks = pgTable(
     /** The folder it is sorted into; `null` = not in a folder. Deleting the folder keeps the deck. */
     folderId: text('folder_id').references(() => deckFolders.id, { onDelete: 'set null' }),
     /**
-     * The owner's Microsoft account the deck syncs through. `null` for uploads, anonymous links,
-     * decks linked before several accounts existed and after a disconnect – then the owner's
-     * connections are tried in turn and the first with access is remembered.
+     * Retired with OneDrive/SharePoint: the Microsoft account an old deck synced through. Always
+     * `null` once `retireFileConnections` ran; the column stays for that cleanup only.
      */
     microsoftConnectionId: text('microsoft_connection_id').references(
       (): AnyPgColumn => microsoftConnections.id,
@@ -731,8 +794,8 @@ export const decks = pgTable(
       { onDelete: 'set null' },
     ),
     /**
-     * The owner's Google account the deck syncs through (BER-119). `null` for public links and
-     * after a disconnect – then the owner's other Google accounts are tried.
+     * Retired with Google Drive (BER-119): the Google account an old deck synced through. Always
+     * `null` once `retireFileConnections` ran; the column stays for that cleanup only.
      */
     googleConnectionId: text('google_connection_id').references(
       (): AnyPgColumn => googleConnections.id,
@@ -854,14 +917,14 @@ export const revisions = pgTable(
     diff: jsonb('diff').$type<RevisionDiffRecord>(),
     summary: jsonb('summary').$type<SyncSummary>(),
     /**
-     * Why Office's PDF was tried and not used for the slide images (BER-94), e.g. a file too big
-     * for Microsoft's conversion; `null` when Office drew them or was not tried.
+     * Retired with Office's PDF (BER-94): why it was tried and not used, on old rows only. Nothing
+     * writes or reads it any more.
      */
     officeFailure: text('office_failure'),
     /**
-     * Who made the PDF this revision's file became (`import/pdf-maker`): Office or Google
-     * (`office`), or LibreOffice. Its pages are the slide images under that renderer instead of
-     * `pdf`; `null` for a PowerPoint, a PDF as it came, or a picture.
+     * Who made the PDF this revision's file became (`import/pdf-maker`): LibreOffice (`office`
+     * only on old rows, from OneDrive and Google Drive). Its pages are the slide images under that
+     * renderer instead of `pdf`; `null` for a PowerPoint, a PDF as it came, or a picture.
      */
     pdfRenderer: text('pdf_renderer').$type<PdfMaker>(),
     /**
@@ -968,8 +1031,8 @@ export const slideVersions = pgTable(
     /** `p14:creationId` of the slide (unsigned 32 bit), tells a reused sldId apart. */
     creationId: bigint('creation_id', { mode: 'number' }),
     /**
-     * The slide's id in its source, kept across exports: Google Slides' `objectId` (BER-157).
-     * `null` for every other source, and for Google decks whose ids could not be read.
+     * Retired with Google Slides (BER-157): its `objectId`, set only on old rows of Google decks.
+     * Nothing writes or reads it any more; the column stays for those rows.
      */
     sourceSlideId: text('source_slide_id'),
     /**
@@ -1222,6 +1285,28 @@ export const commentReactions = pgTable(
   ],
 );
 
+/** Reactions to the AI's answers (👍 / 👎 / egal), as `commentReactions`: one per account and answer. */
+export const aiProposalReactions = pgTable(
+  'ai_proposal_reactions',
+  {
+    proposalId: text('proposal_id')
+      .notNull()
+      .references(() => aiProposals.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Snapshot of the author at reaction time, like `comments.author`. */
+    author: jsonb('author').$type<Author>().notNull(),
+    kind: text('kind').$type<CommentReactionKind>().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.proposalId, t.userId] }),
+    // Account deletion and export find someone's reactions.
+    index('ai_proposal_reactions_user_idx').on(t.userId),
+  ],
+);
+
 /**
  * PowerPoint comments deleted in Slider (tombstones): the next import of the file must not bring
  * them back, though they are still in it. Replies are keyed `<root>/<reply>` like `external_id`.
@@ -1294,7 +1379,7 @@ export const media = pgTable(
 );
 
 /**
- * Files on a deck's board – Folie 0, „Material“ (`services/materials.ts`). Never part of the
+ * Files on a deck's material page „Material“ (`services/materials.ts`). Never part of the
  * deck's file: the ODP, exports and the slide count never see them. The bytes lie in the media
  * store under the deck's prefix (gone with the deck); their text, once read, in
  * `material_chunks`. Where a card lies on the board (`x`, `y`) and how big (`w`, `h`) in board
@@ -1339,7 +1424,7 @@ export const deckMaterials = pgTable(
   (t) => [index('deck_materials_deck_idx').on(t.deckId, t.createdAt)],
 );
 
-/** Notes and links on a deck's board (Folie 0), beside its files. */
+/** Notes and links on a deck's material page, beside its files. */
 export const deckBoardItems = pgTable(
   'deck_board_items',
   {
@@ -1372,6 +1457,39 @@ export const deckBoardItems = pgTable(
   },
   (t) => [index('deck_board_items_deck_idx').on(t.deckId, t.createdAt)],
 );
+
+/**
+ * „Fragen“ on the material page: a note on the board asked with ⌘↵ – its text the question – and
+ * the AI's answer under it (Markdown with citations of the board's files). One per note, gone
+ * with it; seen by everyone who sees the board, like the note. Encrypted like every content
+ * (BER-149).
+ */
+export const materialQuestions = pgTable(
+  'material_questions',
+  {
+    id: text('id').primaryKey(),
+    deckId: text('deck_id')
+      .notNull()
+      .references(() => decks.id, { onDelete: 'cascade' }),
+    /** The note asked (`deck_board_items`): its answer goes with it. */
+    noteId: text('note_id')
+      .notNull()
+      .references(() => deckBoardItems.id, { onDelete: 'cascade' }),
+    /** Who asked; `null` once their account is gone – the answer stays with the note. */
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    question: encryptedText('material_questions', 'question').notNull(),
+    answer: encryptedText('material_questions', 'answer').notNull(),
+    state: text('state').$type<MaterialQuestionState>().notNull(),
+    error: text('error'),
+    createdAt: createdAt(),
+    updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('material_questions_note_idx').on(t.noteId),
+    index('material_questions_deck_idx').on(t.deckId, t.createdAt),
+  ],
+);
+export type MaterialQuestionRow = typeof materialQuestions.$inferSelect;
 
 /**
  * The text of a file on the board, in pieces of a few thousand characters (a PDF page, a part of
@@ -1430,10 +1548,7 @@ export const deckCreations = pgTable('deck_creations', {
 export type DeckCreationRow = typeof deckCreations.$inferSelect;
 
 export type UserRow = typeof users.$inferSelect;
-export type SessionRow = typeof sessions.$inferSelect;
-export type MicrosoftConnectionRow = typeof microsoftConnections.$inferSelect;
 export type NextcloudConnectionRow = typeof nextcloudConnections.$inferSelect;
-export type GoogleConnectionRow = typeof googleConnections.$inferSelect;
 /**
  * Settings saved on the setup page (`/einrichtung`), keyed by their env name (`MS_CLIENT_ID`, …).
  * Secrets (`*_SECRET`) are AES-GCM encrypted with SLIDER_SECRET. The environment
@@ -1489,19 +1604,15 @@ export const aiUsage = pgTable(
 );
 
 export type WorkspaceRow = typeof workspaces.$inferSelect;
-export type WorkspaceMemberRow = typeof workspaceMembers.$inferSelect;
 export type WorkspaceInviteRow = typeof workspaceInvites.$inferSelect;
 export type DeckRow = typeof decks.$inferSelect;
 export type DeckFolderRow = typeof deckFolders.$inferSelect;
-export type DeckAccessGrantRow = typeof deckAccessGrants.$inferSelect;
 export type RevisionRow = typeof revisions.$inferSelect;
 export type SlideVersionRow = typeof slideVersions.$inferSelect;
 export type DeckEditRow = typeof deckEdits.$inferSelect;
 /** Who drew a slide image – see `slide_versions.renderer`. */
 export type { SlideRenderer };
 export type CommentRow = typeof comments.$inferSelect;
-export type NewCommentRow = typeof comments.$inferInsert;
-export type CommentReactionRow = typeof commentReactions.$inferSelect;
 export type MediaRow = typeof media.$inferSelect;
 export type DeckMaterialRow = typeof deckMaterials.$inferSelect;
 export type DeckBoardItemRow = typeof deckBoardItems.$inferSelect;

@@ -79,7 +79,7 @@ export function ThreadMessage({ comment, deckId, isRoot, onDeleted }: ThreadMess
             </span>
           )
         }
-        afterTime={!editing && <ReactionPicker comment={comment} />}
+        afterTime={!editing && <ReactionPicker comment={comment} floating />}
         className="-my-1"
       />
 

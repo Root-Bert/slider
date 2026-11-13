@@ -1,10 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useEditing } from '../../editing/editing-context';
 import { useZoomToRect } from '../../stage/hooks/useZoomToRect';
 import { NO_COVER, panBy } from '../../stage/lib/slide-zoom';
 import { coverIn } from '../../timeline/hooks/useTimelineWheel';
 import { useViewerData } from '../../state/viewer-data';
 import { useViewerDispatch, useViewerState } from '../../state/viewer-state';
+import { useViewerStore } from '../../state/viewer-store';
 import { anchorRect } from '../lib/comment-selectors';
 
 /** Room (px) kept between a mark moved into view and its frame's edges. */
@@ -54,18 +55,14 @@ function shiftInto(from: number, to: number, start: number, end: number) {
  * the same zoom – measured once the opened panel has settled the layout.
  */
 function useRevealLayerMark(threadId: string | null, slideId: string | null) {
-  const { slideZooms } = useViewerState();
+  const store = useViewerStore();
   const dispatch = useViewerDispatch();
-  const zooms = useRef(slideZooms);
-  useEffect(() => {
-    zooms.current = slideZooms;
-  });
 
   useEffect(() => {
     if (!threadId || !slideId) return;
     const reveal = () => {
       // Unzoomed, the stack shows whole.
-      const zoom = zooms.current.get(slideId);
+      const zoom = store.getState().slideZooms.get(slideId);
       if (!zoom || zoom.scale <= 1) return;
       const frame = document.querySelector<HTMLElement>(
         `[data-slide-frame="${CSS.escape(slideId)}"]`,
@@ -97,5 +94,5 @@ function useRevealLayerMark(threadId: string | null, slideId: string | null) {
       frame = requestAnimationFrame(reveal);
     });
     return () => cancelAnimationFrame(frame);
-  }, [threadId, slideId, dispatch]);
+  }, [threadId, slideId, dispatch, store]);
 }

@@ -69,12 +69,12 @@ export function LoginHero({ className }: { className?: string }) {
           width="53"
           height="43"
           rx="3"
-          fill="var(--color-accent-blue)"
+          fill="var(--color-primary)"
           fillOpacity="0.1"
-          stroke="var(--color-accent-blue)"
+          stroke="var(--color-primary)"
           strokeWidth="1.5"
         />
-        <path d="M99 68H222" stroke="var(--color-accent-blue)" strokeWidth="1.5" />
+        <path d="M99 68H222" stroke="var(--color-primary)" strokeWidth="1.5" />
       </g>
       <g className="animate-rise-in" style={rise(340)}>
         <rect
@@ -92,8 +92,8 @@ export function LoginHero({ className }: { className?: string }) {
         <rect x="231" y="82" width="52" height="3" rx="1.5" fill="var(--color-selected)" />
       </g>
       <g className="animate-pop-in" style={{ ...popOrigin, ...rise(300) }}>
-        <circle cx="99" cy="68" r="7.5" fill="var(--color-accent-blue)" />
-        <circle cx="99" cy="68" r="2.75" fill="var(--color-primary-hover)" />
+        <circle cx="99" cy="68" r="7.5" fill="var(--color-primary)" />
+        <circle cx="99" cy="68" r="2.75" fill="var(--color-on-primary)" />
       </g>
     </svg>
   );

@@ -3,7 +3,7 @@ import { z } from 'zod';
 /*
  * A new deck built by the AI from a prompt on Folie 1 (phase 3 of the material board): what
  * kind of deck, how many slides, which of the workspace's templates – and the run's progress.
- * The material on Folie 0 is always read; there is no switch for it.
+ * The material page is always read; there is no switch for it.
  */
 
 /**

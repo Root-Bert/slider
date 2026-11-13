@@ -5,7 +5,6 @@ import {
   computeTrackGeometry,
   gapWidth,
   layoutTrack,
-  leadingWidth,
   slideHeightAt,
   TRACK_PAD_TOP,
   type TrackLayout,
@@ -26,11 +25,10 @@ describe('columnSpans', () => {
     expect(columnSpans(layout, (i) => (i === 2 ? 100 : 0), none)[2]).toEqual({ x: 456, w: 200 });
     expect(columnSpans(layout, (i) => (i === 2 ? 360 : 0), none)[2]).toEqual({ x: 376, w: 360 });
 
-    // Folie 0 („Material“) lies before slide 1, a divider apart; the slides move right by it.
-    const withBoard = layoutTrack([16 / 9, 4 / 3], 90, 0, leadingWidth(90));
-    expect(withBoard.leading).toEqual({ x: 16, w: 160 });
-    expect(withBoard.slides[0]!.x).toBe(16 + 160 + gapWidth(90));
-    expect(layoutTrack([16 / 9], 90).leading).toBeUndefined();
+    // The track starts with slide 1 – the material is a page of its own beside the presentation.
+    const track = layoutTrack([16 / 9, 4 / 3], 90);
+    expect(track.slides[0]!.x).toBe(16);
+    expect(track.slides[1]!.x).toBe(16 + 160 + gapWidth(90));
 
     // Halfway to the next column with comments, leaving room between them.
     const apart = columnSpans(layout, (i) => (i === 0 || i === 3 ? 1000 : 0), none);

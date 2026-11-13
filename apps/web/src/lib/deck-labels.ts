@@ -1,11 +1,12 @@
 import type { Deck, DeckSource, ImportState } from '@slider/shared';
 import { pluralize } from './format';
 
+// Decks once linked from OneDrive, SharePoint or Google Drive read as any other link.
 const SOURCE_LABELS: Record<DeckSource, string> = {
-  onedrive: 'OneDrive',
-  sharepoint: 'SharePoint',
+  onedrive: 'Link',
+  sharepoint: 'Link',
   nextcloud: 'Nextcloud',
-  google: 'Google Drive',
+  google: 'Link',
   url: 'Link',
   upload: 'Upload',
 };

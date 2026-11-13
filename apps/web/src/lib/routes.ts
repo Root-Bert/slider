@@ -1,8 +1,8 @@
 import { loginPath } from './return-to';
 
 /**
- * Navigation state of a new deck: it opens on Folie 0 („Material“), where its material goes
- * before Folie 1's prompt builds it (`navigate(routes.deck(id), { state: OPEN_ON_BOARD })`).
+ * Navigation state of a new deck: it opens on its material page, where its material goes before
+ * Folie 1's prompt builds it (`navigate(routes.deck(id), { state: OPEN_ON_BOARD })`).
  */
 export const OPEN_ON_BOARD = { board: true } as const;
 

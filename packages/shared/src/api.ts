@@ -43,13 +43,11 @@ import type { DomainWorkspace, MeLimits, MeUser, PendingInvite, Workspace } from
  * | PATCH  | /comments/:commentId                   | UpdateCommentInput         | Comment               |
  * | DELETE | /comments/:commentId                   |                            | 204                   |
  * | PUT    | /comments/:commentId/reaction          | SetCommentReactionInput    | Comment               |
+ * | PUT    | /decks/:deckId/ai/proposals/:proposalId/reaction | SetCommentReactionInput | CommentReaction[] |
  * | PUT    | /comments/:commentId/recording (multipart `file` + `comment` JSON, author only) | SetCommentRecordingInput | Comment |
  * | POST   | /decks/:deckId/media-comments (multipart `file` and/or `image` + `comment` JSON) | CreateMediaCommentInput | Comment (201) |
  * | GET    | /decks/:deckId/media-usage             |                            | MediaUsage            |
  * | GET    | /media/:mediaId                        | (Range supported)          | audio/video/PNG bytes |
- * | GET    | /microsoft/file-picker?connectionId=   |                            | FilePickerSession     |
- * | POST   | /microsoft/file-picker/token           | FilePickerTokenInput       | { token }             |
- * | POST   | /decks/drive-item                      | ImportDriveItemInput       | Deck (201)            |
  * | GET    | /nextcloud/settings                    |                            | NextcloudSettings     |
  * | POST   | /nextcloud/login                       | StartNextcloudLoginInput   | NextcloudLoginStart   |
  * | POST   | /nextcloud/login/:id/poll              |                            | NextcloudLoginPoll    |
@@ -58,13 +56,10 @@ import type { DomainWorkspace, MeLimits, MeUser, PendingInvite, Workspace } from
  * | GET    | /nextcloud/:connectionId/search?q=     |                            | NextcloudListing      |
  * | GET    | /nextcloud/:connectionId/preview/:fileId |                          | image bytes           |
  * | POST   | /decks/nextcloud-item                  | ImportNextcloudItemInput   | Deck (201)            |
- * | POST   | /decks/google-item                     | ImportGoogleItemInput      | Deck (201)            |
  * | GET    | /auth/providers                        |                            | AuthProviders         |
- * | GET    | /auth/microsoft/login?returnTo=&connection= | (signed in: connects files; `connection` preselects that account) | 302 to Microsoft |
+ * | GET    | /auth/microsoft/login?returnTo=&intent= | (signed in: link to me) | 302 to Microsoft |
  * | GET    | /auth/microsoft/callback               |                            | 302 back to the web app |
  * | GET    | /auth/google/login?returnTo=&intent=   | (`intent=connect`: link to me) | 302 to Google    |
- * | GET    | /auth/google/drive?returnTo=&connection= | (signed in: connects Google Drive) | 302 to Google |
- * | GET    | /auth/google/pick?returnTo=&fileId=&connection= | (signed in: Google's picker page) | 302 to Google |
  * | GET    | /auth/google/callback                  |                            | 302 back to the web app |
  * | GET    | /auth/oidc/login?returnTo=&intent=     | (`intent=connect`: link to me) | 302 to the SSO provider |
  * | GET    | /auth/oidc/callback                    |                            | 302 back to the web app |
@@ -80,12 +75,8 @@ import type { DomainWorkspace, MeLimits, MeUser, PendingInvite, Workspace } from
  * | POST   | /auth/email/confirm                    | ConfirmEmailLoginInput     | EmailLoginResult (sets cookie) |
  * | POST   | /auth/passkey/options                  |                            | WebAuthn request options |
  * | POST   | /auth/passkey/verify                   | VerifyPasskeyLoginInput    | LoginResult (sets cookie) |
- * | GET    | /me/microsoft                          |                            | MicrosoftConnection[] |
- * | DELETE | /me/microsoft/:id                      | (decks syncing through it → auth_required) | 204 |
  * | GET    | /me/nextcloud                          |                            | NextcloudConnection[] |
  * | DELETE | /me/nextcloud/:id                      | (revokes the app password at Nextcloud) | DisconnectNextcloudResult |
- * | GET    | /me/google                             |                            | GoogleConnection[]    |
- * | DELETE | /me/google/:id                         | (revokes the grant at Google) | 204                |
  * | GET    | /me/identities                         |                            | LoginIdentity[]       |
  * | GET    | /passkeys                              |                            | Passkey[]             |
  * | POST   | /passkeys/register/options             |                            | WebAuthn creation options |
@@ -135,15 +126,10 @@ export const ERROR_CODES = [
   'forbidden',
   'unauthorized',
   'unsupported_link',
-  'microsoft_login_required',
+  /** The Microsoft login is not set up on this server. */
   'microsoft_not_configured',
-  'microsoft_consent_required',
   /** The file needs a connected Nextcloud account at `nextcloudServer` (BER-135). */
   'nextcloud_login_required',
-  /** The file needs a connected Google account, or one that picked it in Google's picker (BER-119). */
-  'google_login_required',
-  /** Google Drive is not set up on this server (no Google login). */
-  'google_not_configured',
   'source_forbidden',
   'source_not_found',
   'source_unreachable',
@@ -192,6 +178,11 @@ export const ERROR_CODES = [
    * this one heard of it): refused, kept by the editor for its account.
    */
   'account_changed',
+  /** The desktop's sign-in code is expired, taken or not for this verifier (BER-201). */
+  'invalid_code',
+  /** The desktop app could not reach its Slider server, or it refused the sign-in. */
+  'cloud_unreachable',
+  'cloud_refused',
   'internal',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -200,15 +191,8 @@ export interface ApiError {
   error: {
     code: ErrorCode;
     message: string;
-    /** With `microsoft_login_required`: where to send the browser to sign in (relative to the web origin). */
-    loginUrl?: string;
     /** With `nextcloud_login_required`: the Nextcloud to connect (`POST /nextcloud/login`). */
     nextcloudServer?: string;
-    /**
-     * With `google_login_required`: the file to hand to Slider in Google's picker – it only sees
-     * files a person picked there.
-     */
-    googleFileId?: string;
   };
 }
 
@@ -345,37 +329,6 @@ export type DeleteAccountInput = z.infer<typeof deleteAccountInputSchema>;
 
 export const importLinkInputSchema = z.object({ url: z.url() });
 export type ImportLinkInput = z.infer<typeof importLinkInputSchema>;
-
-// ── OneDrive file picker ─────────────────────────────────────────────────────
-
-/** Which OneDrive File Picker v8 to open for the signed-in Microsoft account. */
-export const filePickerSessionSchema = z.object({
-  account: z.enum(['personal', 'business']),
-  /** The resource of the first token (`https://onedrive.live.com/picker` or the OneDrive host). */
-  baseUrl: z.string(),
-  /** Where the picker form is posted to. */
-  pickerUrl: z.string(),
-});
-export type FilePickerSession = z.infer<typeof filePickerSessionSchema>;
-
-/** The picker's `authenticate` command: a token for `resource`. */
-export const filePickerTokenInputSchema = z.object({
-  resource: z.string().max(2048),
-  /** The Microsoft connection the picker runs with; omitted → the most recently used one. */
-  connectionId: z.string().max(100).optional(),
-});
-export type FilePickerTokenInput = z.infer<typeof filePickerTokenInputSchema>;
-
-/** A file picked in the OneDrive file picker (`parentReference.driveId` + `id`). */
-export const importDriveItemInputSchema = z.object({
-  driveId: z.string().min(1).max(200),
-  itemId: z.string().min(1).max(200),
-  /** Omitted → the first workspace the user may create decks in. */
-  workspaceId: z.string().max(100).optional(),
-  /** The Microsoft connection the picker ran with; omitted → the most recently used one. */
-  connectionId: z.string().max(100).optional(),
-});
-export type ImportDriveItemInput = z.infer<typeof importDriveItemInputSchema>;
 
 export const updateDeckInputSchema = z
   .object({
@@ -522,7 +475,7 @@ export const updateCommentInputSchema = z
   .partial();
 export type UpdateCommentInput = z.infer<typeof updateCommentInputSchema>;
 
-/** One's own reaction to a comment; `null` takes it back. */
+/** One's own reaction to a comment or to an answer of the AI; `null` takes it back. */
 export const setCommentReactionInputSchema = z.object({
   kind: commentReactionKindSchema.nullable(),
 });

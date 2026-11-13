@@ -9,6 +9,7 @@ import { isModKey } from '@/lib/keyboard';
 /**
  * Global keyboard shortcuts of the viewer:
  * ←/→ previous/next slide, Home/End first/last, F fullscreen, P presentation, ⌥P the presenter view, B PowerPoint boxes on/off,
+ * M the material page and back (there only Esc, M and F),
  * G PowerPoint guides on/off, S „Exportieren“, H the hidden slides on/off (in a template its layout grid, ⇧H the grid's panel), C comments on the active slide (in box mode on the box under the pointer), K hides the comments or brings them back, typing right after a drawing comments on it, Tab / ⇧Tab next/previous tool (while nothing is focused, once the pointer was used),
  * ⌘Z / ⇧⌘Z undo/redo while drawing, ⌘↵ sends the draft (on a selected thread it asks the AI: `useAskAiShortcut`), Esc cancels the draft → drops the tool → closes the thread (or the deleted slides, the layers panel, a background, the layout view or „Exportieren“) → leaves the layers.
  */
@@ -35,6 +36,7 @@ export function useViewerShortcuts({
     layoutGridPanelOpen,
     sharePanelOpen,
     boardPanelOpen,
+    materialOpen,
   } = useViewerState();
   const dispatch = useViewerDispatch();
   const goTo = useGoToSlide();
@@ -48,6 +50,24 @@ export function useViewerShortcuts({
     )
       return;
 
+    // The material page: its board has its own keys, the presentation's are asleep.
+    if (materialOpen) {
+      if (event.key === 'Escape' && boardPanelOpen) {
+        dispatch({ type: 'boardPanelSet', open: false });
+        event.preventDefault();
+        return;
+      }
+      if (isTypingTarget(event.target) || isModKey(event) || event.altKey) return;
+      if (event.key === 'm' || event.key === 'M') {
+        event.preventDefault();
+        dispatch({ type: 'materialSet', open: false });
+      } else if (event.key === 'f' || event.key === 'F') {
+        event.preventDefault();
+        onToggleFullscreen();
+      }
+      return;
+    }
+
     if (event.key === 'Escape') {
       // Typing in the composer: Esc still cancels the draft, that's what people expect.
       if (draft) dispatch({ type: 'draftCancelled' });
@@ -58,7 +78,6 @@ export function useViewerShortcuts({
       else if (backgroundPanelPageId) dispatch({ type: 'backgroundPanelSet', pageId: null });
       else if (layoutGridPanelOpen) dispatch({ type: 'layoutGridPanelSet', open: false });
       else if (sharePanelOpen) dispatch({ type: 'sharePanelSet', open: false });
-      else if (boardPanelOpen) dispatch({ type: 'boardPanelSet', open: false });
       else if (layersOpen) dispatch({ type: 'layersSet', open: false });
       else return;
       event.preventDefault();
@@ -151,6 +170,12 @@ export function useViewerShortcuts({
         if (event.shiftKey && deck.template)
           dispatch({ type: 'layoutGridPanelSet', open: !layoutGridPanelOpen });
         else dispatch({ type: 'layoutGridToggled' });
+        break;
+      case 'm':
+      case 'M':
+        // A template has no material.
+        if (deck.template) return;
+        dispatch({ type: 'materialSet', open: true });
         break;
       case 'k':
       case 'K':

@@ -385,7 +385,7 @@ export function SetupForm({
           >
             <Section
               title="Microsoft"
-              description="„Weiter mit Microsoft“ und PowerPoints aus OneDrive/SharePoint. App registrieren unter entra.microsoft.com → App-Registrierungen, Plattform „Web“."
+              description="„Weiter mit Microsoft“. App registrieren unter entra.microsoft.com → App-Registrierungen, Plattform „Web“."
               aside={aside(MICROSOFT_KEYS)}
             >
               <RedirectUri uri={settings.redirectUris.microsoft} />
@@ -404,7 +404,7 @@ export function SetupForm({
 
             <Section
               title="Google"
-              description="„Weiter mit Google“ und Präsentationen aus Google Drive. OAuth-Client (Webanwendung) anlegen unter console.cloud.google.com → Google Auth Platform → Clients; für Drive im Projekt auch die Google Drive API und Google Picker API aktivieren."
+              description="„Weiter mit Google“. OAuth-Client (Webanwendung) anlegen unter console.cloud.google.com → Google Auth Platform → Clients."
               aside={aside(GOOGLE_KEYS)}
             >
               <RedirectUri uri={settings.redirectUris.google} />
@@ -483,10 +483,7 @@ export function SetupForm({
             </Section>
           </Group>
 
-          <Group
-            {...GROUPS.files}
-            description="Optional. Woher Slider Präsentationen außer OneDrive/SharePoint holt."
-          >
+          <Group {...GROUPS.files} description="Optional. Woher Slider Präsentationen holt.">
             <Section
               title="Nextcloud"
               description="Jede Nextcloud funktioniert ohne Einrichtung – man gibt beim Verbinden ihre Adresse ein. Trag hier die Nextcloud eurer Firma ein, dann entfällt das, und sie darf auch im internen Netz liegen."

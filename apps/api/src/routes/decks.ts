@@ -6,8 +6,6 @@ import { z } from 'zod';
 import {
   DECK_SEARCH_MAX_LENGTH,
   DECK_SEARCH_MIN_LENGTH,
-  importDriveItemInputSchema,
-  importGoogleItemInputSchema,
   importNextcloudItemInputSchema,
   LINK_CREDENTIALS_MESSAGE,
   linkHasCredentials,
@@ -34,12 +32,10 @@ import { decks, revisions, type DeckRow } from '../db/schema';
 import { toDeckBytes } from '../import/any-file';
 import { sha256Hex } from '../import/common';
 import type { AppDeps } from '../deps';
-import { ApiError, badRequest, fileTooLarge, notFound } from '../http/errors';
+import { aiLimits } from '../http/ai-limits';
+import { ApiError, badRequest, fileTooLarge } from '../http/errors';
 import { deckUploadSlot, importLimit } from '../http/import-limit';
-import { fixedWindow } from '../http/rate-limit';
 import { readJson } from '../http/validate';
-import { withConnections } from '../sources/connections';
-import { pickerContext, withPickerLogin } from '../sources/onedrive-picker';
 import {
   readContributors,
   type RemoteFile,
@@ -85,8 +81,6 @@ const BLANK_DECK_FILE_NAME = 'Neue Präsentation.odp';
 
 /** Opening a deck keeps it in the automatic update rotation (BER-107); written at most hourly. */
 const LAST_VIEWED_THROTTLE_MS = 60 * 60 * 1000;
-/** Text searches per account and minute (BER-175): a search asks once typing pauses. */
-export const SEARCHES_PER_MINUTE = 60;
 
 async function touchLastViewed(deps: AppDeps, deck: DeckRow): Promise<void> {
   const now = deps.clock.now();
@@ -128,7 +122,7 @@ const findLinkedDeck = (deps: AppDeps, viewer: Viewer, workspaceId: string, ref:
 
 /**
  * The deck whose current version is exactly this file (by the SHA-256 of the file as it came) –
- * the same file reached another way (OneDrive picker vs. pasted link, uploaded twice). `linkedOnly`: only decks linked to a source,
+ * the same file reached another way (Nextcloud browser vs. pasted link, uploaded twice). `linkedOnly`: only decks linked to a source,
  * so a linked file never ends up on an uploaded copy that would not sync.
  */
 const findDeckWithContent = (
@@ -175,8 +169,6 @@ async function importRemote(
   context: SourceContext,
   remote: RemoteFile,
   source: { kind: Exclude<DeckSource, 'upload'>; url?: string },
-  /** The Microsoft connection that read the file; `null` for public files. */
-  microsoftConnectionId: string | null,
 ): Promise<{ deck: Deck; created: boolean }> {
   const linked = await findLinkedDeck(deps, viewer, workspaceId, remote.ref);
   if (linked) return { deck: await existingDeckDto(deps, viewer, linked), created: false };
@@ -184,7 +176,6 @@ async function importRemote(
   await assertDeckSlot(deps.db, deps.config, workspaceId);
 
   const nextcloudConnectionId = context.nextcloudConnectionId ?? null;
-  const googleConnectionId = context.googleConnectionId ?? null;
   const maxBytes = deps.config.maxUploadBytes;
   if (remote.sizeBytes > maxBytes) throw fileTooLarge(maxBytes);
   const [file, contributors] = await Promise.all([
@@ -210,9 +201,7 @@ async function importRemote(
       sourceRef: remote.ref,
       contributors,
       changeToken: remote.changeToken,
-      microsoftConnectionId,
       nextcloudConnectionId,
-      googleConnectionId,
     },
   );
   return { deck, created: true };
@@ -244,9 +233,6 @@ export async function createUploadedDeck(
   );
   return { deck, created: true };
 }
-
-/** Work and school drives have `b!…` ids; personal OneDrive ids are plain hex. */
-const driveKind = (driveId: string) => (driveId.startsWith('b!') ? 'sharepoint' : 'onedrive');
 
 /**
  * Link and picker imports one account may have in flight at once: each downloads up to
@@ -288,11 +274,7 @@ function remoteImportSlot() {
 }
 
 const unsupportedLink = () =>
-  new ApiError(
-    400,
-    'unsupported_link',
-    'Kein gültiger OneDrive-, SharePoint-, Nextcloud-, Google- oder Datei-Link.',
-  );
+  new ApiError(400, 'unsupported_link', 'Kein gültiger Nextcloud- oder Datei-Link.');
 
 export function decksRoutes(deps: AppDeps) {
   const viewer = viewerMiddleware(deps);
@@ -300,8 +282,8 @@ export function decksRoutes(deps: AppDeps) {
   const uploads = deckUploadSlot(deps);
   const downloads = remoteImportSlot();
   const maxBytes = deps.config.maxUploadBytes;
-  // Every search reads and decrypts the text of all decks: typing pauses ask, a loop does not.
-  const searches = fixedWindow({ limit: SEARCHES_PER_MINUTE, windowMs: 60_000, clock: deps.clock });
+  // Every search reads and decrypts the text of all decks – one budget with the KI-Apps' search.
+  const searches = aiLimits(deps).searches;
 
   return (
     new Hono<ViewerEnv>()
@@ -420,49 +402,10 @@ export function decksRoutes(deps: AppDeps) {
         }
         const workspaceId = await resolveUploadWorkspace(deps, viewer.author.id, requested);
 
-        const adapter = deps.sources[link.kind];
-        // Each of my Microsoft accounts in turn, until one may read the file. Nextcloud and
-        // Google try my accounts (Google: then the public link) themselves.
-        const resolved =
-          link.kind === 'nextcloud' || link.kind === 'google'
-            ? await (async () => {
-                const context: SourceContext = { userId: viewer.author.id };
-                const value = await adapter.resolve(link, context);
-                return { value, context, connectionId: null };
-              })()
-            : await withConnections(deps.microsoft, viewer.author.id, (context) =>
-                adapter.resolve(link, context),
-              );
-        const { deck, created } = await importRemote(
-          deps,
-          viewer,
-          workspaceId,
-          adapter,
-          resolved.context,
-          resolved.value,
-          { kind: link.kind, url: link.url.href },
-          resolved.connectionId,
-        );
-        return c.json(deck, created ? 201 : 200);
-      })
-
-      /** A file picked in Microsoft's OneDrive file picker. */
-      .post('/decks/drive-item', viewer, imports, downloads, async (c) => {
-        const { viewer } = c.var;
-        requireOwner(viewer);
-        const input = await readJson(c, importDriveItemInputSchema);
-        const workspaceId = await resolveUploadWorkspace(deps, viewer.author.id, input.workspaceId);
-
-        const kind = driveKind(input.driveId);
-        const adapter = deps.sources[kind];
-        if (!adapter.resolveItem) throw unsupportedLink();
-        const resolveItem = adapter.resolveItem.bind(adapter);
-        // The account the picker was opened with.
-        const context = await pickerContext(deps, viewer.author.id, input.connectionId);
-        const remote = await withPickerLogin(() =>
-          resolveItem({ driveId: input.driveId, itemId: input.itemId }, context),
-        );
-        if (context.connectionId) await deps.microsoft.markUsed(context.connectionId);
+        const adapter: SourceAdapter = deps.sources[link.kind];
+        // Nextcloud tries my accounts, then the public link, itself.
+        const context: SourceContext = { userId: viewer.author.id };
+        const remote = await adapter.resolve(link, context);
         const { deck, created } = await importRemote(
           deps,
           viewer,
@@ -470,9 +413,7 @@ export function decksRoutes(deps: AppDeps) {
           adapter,
           context,
           remote,
-          // Re-syncs go by `sourceRef`; the URL is for "open in PowerPoint".
-          { kind, url: remote.webUrl },
-          context.connectionId ?? null,
+          { kind: link.kind, url: link.url.href },
         );
         return c.json(deck, created ? 201 : 200);
       })
@@ -500,37 +441,6 @@ export function decksRoutes(deps: AppDeps) {
           remote,
           // Syncs go by `sourceRef` (the file id); the URL opens the file in Nextcloud.
           { kind: 'nextcloud', url: remote.webUrl },
-          null,
-        );
-        return c.json(deck, created ? 201 : 200);
-      })
-
-      /** A file picked in Google's picker (`routes/google`): Google Slides or a `.pptx`. */
-      .post('/decks/google-item', viewer, imports, downloads, async (c) => {
-        const { viewer } = c.var;
-        requireOwner(viewer);
-        const input = await readJson(c, importGoogleItemInputSchema);
-        const workspaceId = await resolveUploadWorkspace(deps, viewer.author.id, input.workspaceId);
-
-        const adapter = deps.sources.google;
-        if (!(await deps.googleDrive.findConnection(viewer.author.id, input.connectionId))) {
-          throw notFound('Dieses Google-Konto ist nicht verbunden.');
-        }
-        const context: SourceContext = {
-          userId: viewer.author.id,
-          googleConnectionId: input.connectionId,
-        };
-        const remote = await adapter.resolvePicked(input.fileId, context);
-        const { deck, created } = await importRemote(
-          deps,
-          viewer,
-          workspaceId,
-          adapter,
-          context,
-          remote,
-          // Syncs go by `sourceRef` (the file id); the URL opens the file in Google.
-          { kind: 'google', url: remote.webUrl },
-          null,
         );
         return c.json(deck, created ? 201 : 200);
       })

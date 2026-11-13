@@ -17,13 +17,6 @@ import {
   type NextcloudSignInPoll,
   type SsoLogin,
 } from '@slider/shared';
-import {
-  GoogleAuthError,
-  googleDriveAuthorizeUrl,
-  googleDriveConnectUrl,
-  googleNotConfigured,
-  googlePickAuthorizeUrl,
-} from '../auth/google';
 import { emailVerifiedFalse, type IdTokenClaims } from '../auth/id-token';
 import type { InstanceGate } from '../auth/instance-gate';
 import {
@@ -31,15 +24,11 @@ import {
   createPkce,
   mapMicrosoftError,
   MicrosoftAuthError,
+  microsoftNotConfigured,
   type MicrosoftErrorKind,
 } from '../auth/microsoft';
 import { browserKey, readSignedCookie, removeCookie, writeSignedCookie } from '../auth/cookies';
-import {
-  DEFAULT_LOGIN_RETURN_TO,
-  loginErrorPath,
-  loginPath,
-  nextcloudConfirmPath,
-} from '../auth/login-paths';
+import { DEFAULT_LOGIN_RETURN_TO, loginErrorPath, nextcloudConfirmPath } from '../auth/login-paths';
 import {
   exchangeNextcloudCode,
   nextcloudAuthorizeUrl,
@@ -81,7 +70,6 @@ import {
   getRole,
   joinByDomain,
 } from '../services/workspaces';
-import { microsoftNotConfigured } from '../sources/errors';
 
 /**
  * Short-lived cookies that carry PKCE state, nonce and `returnTo` from `/login` to `/callback`.
@@ -90,8 +78,6 @@ import { microsoftNotConfigured } from '../sources/errors';
 export const MS_OAUTH_COOKIE = 'slider_ms_oauth';
 export const OIDC_COOKIE = 'slider_oidc';
 export const GOOGLE_COOKIE = 'slider_google';
-/** "Connect Google Drive" (BER-119): the same callback as the login, told apart by this cookie. */
-export const GOOGLE_DRIVE_COOKIE = 'slider_google_drive';
 export const NEXTCLOUD_COOKIE = 'slider_nextcloud';
 /** A workspace's company login (BER-162); the workspace is in the cookie. */
 export const SSO_COOKIE = 'slider_sso';
@@ -131,7 +117,7 @@ const EMAIL_LOGIN_MAILS_PER_ADDRESS = 5;
 /** Login links per client address and hour; a company behind one NAT signs in now and then. */
 const EMAIL_LOGIN_MAILS_PER_CLIENT = 30;
 const COOKIE_MAX_AGE = 10 * 60;
-/** Where "connect Microsoft for file access" returns to by default: the import page. */
+/** Where a return path falls back to: the import page. */
 const DEFAULT_RETURN_TO = '/neu';
 /** The account page (`/konto`): shows `?linkError=` after a failed "Verbinden". */
 const ACCOUNT_PATH = '/konto';
@@ -142,16 +128,11 @@ const oauthStateSchema = z.object({
   nonce: z.string().optional(),
   returnTo: z.string(),
   /**
-   * `login` signs someone in (BER-129); `connect` only stores Microsoft file access for the
-   * account that is already signed in (`userId`). Cookies from before BER-129 are `connect`.
-   * `pick`: back from Google's picker page with the files picked (BER-158).
+   * `login` signs someone in (BER-129); `connect` links the login to the account that is already
+   * signed in (`userId`). Cookies from before BER-129 are `connect`.
    */
-  mode: z.enum(['login', 'connect', 'pick']).default('connect'),
+  mode: z.enum(['login', 'connect']).default('connect'),
   userId: z.string().optional(),
-  /** `picker`: the one-time consent to the personal-account file picker (BER-131). */
-  access: z.enum(['read', 'picker']).optional(),
-  /** The Microsoft connection being renewed (`?connection=`): the picker consent is for it. */
-  connectionId: z.string().optional(),
   /** Company login (BER-162): whose. */
   workspaceId: z.string().optional(),
 });
@@ -197,9 +178,9 @@ function microsoftIdentity(
 }
 
 /**
- * Login (BER-129) and Microsoft file access (BER-92).
- * - Microsoft: `/login` → Microsoft → `/callback`. Signed out it signs in (identity + Graph token
- *   in one go); signed in it connects file access and links the login to the current account.
+ * Login (BER-129).
+ * - Microsoft: `/login` → Microsoft → `/callback`. Signed out it signs in; signed in it links the
+ *   login to the current account.
  * - Google and OIDC: the same for Google and the configured SSO provider; signed in with
  *   `intent=connect` they link the provider to the account instead.
  * Every login ends in a session cookie and a redirect to `returnTo`; failures go to
@@ -224,19 +205,12 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
   };
 
   /**
-   * Back to the start page with the link prefilled and the reason, so A3 can explain it. A login
-   * started in a deck (the sync banner's "sign in again") goes back to that deck instead; one
-   * started anywhere else ("Verbinden" in /konto, the account menu) goes to /konto with
-   * `?linkError=`, like the Google and SSO connects – the only page that explains it for everyone.
+   * Linking Microsoft to the signed-in account failed: to /konto with `?linkError=`, like the
+   * Google and SSO connects – the only page that explains it for everyone.
    */
-  const connectFailed = (c: Context, returnTo: string, kind: MicrosoftErrorKind) => {
+  const connectFailed = (c: Context, returnTo: string, kind: LoginError) => {
     const back = new URL(returnTo, config.webOrigin);
-    if (back.pathname.startsWith('/d/')) return toWeb(c, withQuery(returnTo, { msError: kind }));
-    if (back.pathname !== DEFAULT_RETURN_TO) {
-      return linkFailed(c, back.pathname === ACCOUNT_PATH ? returnTo : ACCOUNT_PATH, kind);
-    }
-    const link = back.searchParams.get('link');
-    return toWeb(c, withQuery(DEFAULT_RETURN_TO, { ...(link ? { link } : {}), msError: kind }));
+    return linkFailed(c, back.pathname === ACCOUNT_PATH ? returnTo : ACCOUNT_PATH, kind);
   };
 
   const loginFailed = (c: Context, error: LoginError, returnTo?: string) =>
@@ -427,12 +401,12 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
         return c.json<AuthProviders>({
           providers,
           devLogin: config.auth.devLogin,
+          desktop: config.desktop ?? false,
           // No instance admin yet: whoever typed in the setup token signs up, to claim it.
           signup: config.auth.devLogin || (await gate.claimed()) ? config.auth.signup : 'open',
           needsSetup: !config.auth.devLogin && !hasLogin(config),
           setupPending: await gate.setupPending(c),
           nextcloudAnyServer: config.nextcloud.loginAnyServer,
-          googleDrive: config.googleDrive !== null,
           sso: await anyWorkspaceSso(deps),
           emailLogin: deps.mailer.configured,
         });
@@ -453,38 +427,26 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
         const current = c.var.viewer;
         const signedIn = current?.kind === 'owner' && c.req.query('intent') !== 'login';
         const pkce = await createPkce();
-        const requested = c.req.query('access');
-        // The picker consent only adds to a signed-in account's Microsoft connection.
-        const access = requested === 'picker' && signedIn ? 'picker' : 'read';
-        // Renewing one of my connections: Microsoft preselects that account. Anyone else's
-        // connection id is ignored.
-        const connectionParam = c.req.query('connection');
-        const connection =
-          signedIn && connectionParam
-            ? await deps.microsoft.findConnection(current.author.id, connectionParam)
-            : null;
         await writeState(c, MS_OAUTH_COOKIE, {
           state: pkce.state,
           verifier: pkce.verifier,
           nonce: pkce.nonce,
           returnTo: safeReturnTo(
             c.req.query('returnTo'),
-            signedIn ? DEFAULT_RETURN_TO : DEFAULT_LOGIN_RETURN_TO,
+            signedIn ? ACCOUNT_PATH : DEFAULT_LOGIN_RETURN_TO,
           ),
           mode: signedIn ? 'connect' : 'login',
           userId: signedIn ? current.author.id : undefined,
-          access,
-          connectionId: connection?.id,
         });
-        return c.redirect(buildAuthorizeUrl(microsoft, pkce, access, connection?.account), 302);
+        return c.redirect(buildAuthorizeUrl(microsoft, pkce), 302);
       })
 
       .get('/auth/microsoft/callback', viewer, async (c) => {
         const saved = await readState(c, MS_OAUTH_COOKIE);
         const query = c.req.query();
         const mode = saved?.mode ?? 'connect';
-        const returnTo = saved?.returnTo ?? DEFAULT_RETURN_TO;
-        const fail = (kind: MicrosoftErrorKind) =>
+        const returnTo = saved?.returnTo ?? ACCOUNT_PATH;
+        const fail = (kind: MicrosoftErrorKind | LoginError) =>
           mode === 'login' ? loginFailed(c, kind, returnTo) : connectFailed(c, returnTo, kind);
 
         if (!saved || !query['state'] || query['state'] !== saved.state) return fail('failed');
@@ -497,183 +459,37 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
         const code = query['code'];
         if (!code || !deps.microsoft.configured) return fail('failed');
 
-        if (mode === 'connect') {
-          const current = c.var.viewer;
-          if (current?.kind !== 'owner' || (saved.userId && saved.userId !== current.author.id)) {
-            return fail('failed');
-          }
-          try {
-            if (saved.access === 'picker') {
-              await deps.microsoft.completePickerConsent(
-                current.author.id,
-                saved.connectionId,
-                code,
-                saved.verifier,
-              );
-            } else {
-              // A new connection, or the one of the same Microsoft account refreshed.
-              const { claims } = await deps.microsoft.completeLogin(
-                current.author.id,
-                code,
-                saved.verifier,
-                saved.nonce ?? '',
-              );
-              // Also a login from now on – unless it already signs into another account (one
-              // Microsoft account may give files to two accounts, but logs into only one).
-              const identity = claims && microsoftIdentity(claims, null);
-              if (identity) await linkIdentity(deps, current.author.id, identity);
-            }
-          } catch (error) {
-            deps.log.warn('Microsoft token exchange failed', error);
-            return fail(error instanceof MicrosoftAuthError ? error.kind : 'failed');
-          }
-          return toWeb(c, returnTo);
-        }
-
-        let result: Awaited<ReturnType<typeof deps.microsoft.exchangeLogin>>;
+        let claims: IdTokenClaims;
         try {
-          result = await deps.microsoft.exchangeLogin(code, saved.verifier, saved.nonce ?? '');
+          claims = await deps.microsoft.exchangeLogin(code, saved.verifier, saved.nonce ?? '');
         } catch (error) {
           deps.log.warn('Microsoft login failed', error);
           return fail(error instanceof MicrosoftAuthError ? error.kind : 'failed');
         }
-        const identity = microsoftIdentity(result.claims, inviteTokenFromPath(returnTo));
+
+        if (mode === 'connect') {
+          // Signed in: the Microsoft account becomes a login of this account.
+          const current = c.var.viewer;
+          if (current?.kind !== 'owner' || (saved.userId && saved.userId !== current.author.id)) {
+            return fail('failed');
+          }
+          const identity = microsoftIdentity(claims, null);
+          if (!identity) return fail('failed');
+          const linked = await linkIdentity(deps, current.author.id, identity);
+          if (!linked.ok) return fail(linked.error);
+          return toWeb(c, returnTo);
+        }
+
+        const identity = microsoftIdentity(claims, inviteTokenFromPath(returnTo));
         if (!identity) return loginFailed(c, 'failed', returnTo);
         const signIn = await signInWithIdentity(deps, identity);
         if (!signIn.ok) return loginFailed(c, signIn.error, returnTo);
-        try {
-          await deps.microsoft.saveTokens(signIn.user.id, result.tokens, result.claims);
-        } catch (error) {
-          // Login works without file access; OneDrive imports will ask again.
-          deps.log.warn('Could not store the Microsoft token after login', error);
-        }
         return loggedIn(c, signIn.user.id, returnTo);
       })
 
       // ── Google and generic OpenID Connect ────────────────────────────────
       .get('/auth/google/login', viewer, oidcLogin('google'))
-      // Google Drive (BER-119): signed in only; `drive.file` and a refresh token for the files
-      // the person picks. Comes back through the login's callback.
-      .get('/auth/google/drive', viewer, async (c) => {
-        const drive = config.googleDrive;
-        if (!drive) throw googleNotConfigured();
-        const current = c.var.viewer;
-        const returnTo = safeReturnTo(c.req.query('returnTo'));
-        if (current?.kind !== 'owner') {
-          return toWeb(c, loginPath(returnTo));
-        }
-        // Renewing one of my connections: Google preselects that account.
-        const connectionParam = c.req.query('connection');
-        const connection = connectionParam
-          ? await deps.googleDrive.findConnection(current.author.id, connectionParam)
-          : null;
-        const pkce = await createPkce();
-        await writeState(c, GOOGLE_DRIVE_COOKIE, {
-          state: pkce.state,
-          verifier: pkce.verifier,
-          nonce: pkce.nonce,
-          returnTo,
-          mode: 'connect',
-          userId: current.author.id,
-        });
-        return c.redirect(googleDriveAuthorizeUrl(drive, pkce, connection?.account), 302);
-      })
-      // Google's file picker as its own page (BER-158), for a connected account: back through the
-      // login's callback to `returnTo` with `googlePicked` and `googleConnection`. `fileId`: only
-      // that file (a pasted link). Without a connection, connecting comes first; `?google=pick`
-      // brings the person here again afterwards.
-      .get('/auth/google/pick', viewer, async (c) => {
-        const drive = config.googleDrive;
-        if (!drive) throw googleNotConfigured();
-        const current = c.var.viewer;
-        const returnTo = safeReturnTo(c.req.query('returnTo'), '/neu');
-        if (current?.kind !== 'owner') {
-          return toWeb(c, loginPath(returnTo));
-        }
-        const fileParam = c.req.query('fileId');
-        const fileId = fileParam && /^[A-Za-z0-9_-]{1,200}$/.test(fileParam) ? fileParam : null;
-        const userId = current.author.id;
-        const requested = c.req.query('connection');
-        const connectionId = requested ?? (await deps.googleDrive.connectionIds(userId))[0];
-        const connection = connectionId
-          ? await deps.googleDrive.findConnection(userId, connectionId)
-          : null;
-        if (!connection?.refreshToken) {
-          const again = withQuery(returnTo, {
-            google: 'pick',
-            ...(fileId ? { googleFile: fileId } : {}),
-          });
-          return c.redirect(googleDriveConnectUrl(again, connection?.id), 302);
-        }
-        const pkce = await createPkce();
-        await writeState(c, GOOGLE_DRIVE_COOKIE, {
-          state: pkce.state,
-          verifier: pkce.verifier,
-          returnTo,
-          mode: 'pick',
-          userId,
-        });
-        return c.redirect(
-          googlePickAuthorizeUrl(drive, pkce, { loginHint: connection.account, fileId }),
-          302,
-        );
-      })
-      .get('/auth/google/callback', viewer, async (c) => {
-        const query = c.req.query();
-        const drive = await readSignedCookie(c, config, GOOGLE_DRIVE_COOKIE);
-        const saved = drive ? parseState(drive) : null;
-        if (!saved || !query['state'] || query['state'] !== saved.state) {
-          return oidcCallback('google')(c);
-        }
-        removeCookie(c, config, GOOGLE_DRIVE_COOKIE);
-        const fail = (kind: string) => toWeb(c, withQuery(saved.returnTo, { googleError: kind }));
-        if (query['error']) {
-          // Closing Google's picker (or its consent) just leads back.
-          if (saved.mode === 'pick' && query['error'] === 'access_denied') {
-            return toWeb(c, saved.returnTo);
-          }
-          deps.log.warn(`Google Drive connect failed: ${query['error']}`);
-          return fail(query['error'] === 'access_denied' ? 'denied' : 'failed');
-        }
-        const current = c.var.viewer;
-        if (!query['code'] || current?.kind !== 'owner' || current.author.id !== saved.userId) {
-          return fail('failed');
-        }
-        if (saved.mode === 'pick') {
-          const [fileId] = (query['picked_file_ids'] ?? '').split(',');
-          if (!fileId || !/^[A-Za-z0-9_-]{1,200}$/.test(fileId)) return toWeb(c, saved.returnTo);
-          let connectionId: string;
-          try {
-            connectionId = await deps.googleDrive.completePick(
-              current.author.id,
-              query['code'],
-              saved.verifier,
-            );
-          } catch (error) {
-            deps.log.warn('Google Drive pick failed', error);
-            return fail(error instanceof GoogleAuthError ? error.kind : 'failed');
-          }
-          return toWeb(
-            c,
-            withQuery(saved.returnTo, { googlePicked: fileId, googleConnection: connectionId }),
-          );
-        }
-        try {
-          const { claims } = await deps.googleDrive.completeConnect(
-            current.author.id,
-            query['code'],
-            saved.verifier,
-            saved.nonce ?? '',
-          );
-          // Also a login from now on – unless it already signs into another account.
-          const identity = oidcIdentity('google', claims, null);
-          if (identity.ok) await linkIdentity(deps, current.author.id, identity.value);
-        } catch (error) {
-          deps.log.warn('Google Drive connect failed', error);
-          return fail(error instanceof GoogleAuthError ? error.kind : 'failed');
-        }
-        return toWeb(c, saved.returnTo);
-      })
+      .get('/auth/google/callback', viewer, oidcCallback('google'))
       .get('/auth/oidc/login', viewer, oidcLogin('oidc'))
       .get('/auth/oidc/callback', viewer, oidcCallback('oidc'))
 

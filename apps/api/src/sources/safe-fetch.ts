@@ -288,6 +288,63 @@ export async function readBodyCapped(response: Response, maxBytes: number): Prom
   return bytes;
 }
 
+/**
+ * The body as a stream, never held whole – for a file passed on as it comes. A declared length
+ * past `maxBytes` throws before anything is sent; growing past it while streaming (no length
+ * declared) errors the stream, so the answer breaks off instead of ending short. `ended` runs
+ * once, when the body is through, failed or was cancelled.
+ */
+export function streamBodyCapped(
+  response: Response,
+  maxBytes: number,
+  ended: () => void = () => {},
+): ReadableStream<Uint8Array> {
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    void response.body?.cancel();
+    throw fileTooLarge(maxBytes);
+  }
+  let open = true;
+  const end = () => {
+    if (open) ended();
+    open = false;
+  };
+  if (!response.body) {
+    end();
+    return new ReadableStream({ start: (controller) => controller.close() });
+  }
+
+  const reader = response.body.getReader();
+  let total = 0;
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          end();
+          controller.close();
+          return;
+        }
+        total += value.byteLength;
+        if (total > maxBytes) {
+          end();
+          controller.error(fileTooLarge(maxBytes));
+          await reader.cancel();
+          return;
+        }
+        controller.enqueue(value);
+      } catch {
+        end();
+        controller.error(sourceUnreachable('Die Datei konnte nicht vollständig geladen werden.'));
+      }
+    },
+    async cancel(reason) {
+      end();
+      await reader.cancel(reason);
+    },
+  });
+}
+
 /** A PPTX is a ZIP archive: it starts with the local file header `PK\x03\x04`. */
 export const isPptxBytes = (bytes: Uint8Array): boolean =>
   bytes.length >= 4 &&

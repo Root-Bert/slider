@@ -114,6 +114,7 @@ export function GroupSelection({
           dx,
           dy,
           ...(frames && { frames }),
+          ...(next.rotation === 0 && { frame: next.rect }),
         },
       },
       lead.id,

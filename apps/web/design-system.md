@@ -45,16 +45,17 @@ canvas, frosted glass and white at fixed opacities.
 
 All state and fill tints are white at one of these steps. Nothing in between.
 
-| Token          | Alpha | Use                                                                         |
-| -------------- | ----- | --------------------------------------------------------------------------- |
-| `surface-1`    | 0.05  | Inset wells, info boxes, tab tracks, quiet row hover (`hover:bg-surface-1`) |
-| `surface-2`    | 0.08  | Chips, code, soft-button rest, selected row in a list                       |
-| `hover`        | 0.10  | **Standard hover / focus / open** for ghost controls; progress tracks       |
-| `surface-3`    | 0.12  | Thread rails, workspace mark, soft-button rest on glass                     |
-| `selected`     | 0.15  | **Pressed / selected** controls; hover on `glass-control` and soft chips    |
-| `surface-4`    | 0.20  | Switch track off; hover on `surface-3`                                      |
-| `handle`       | 0.25  | Drag handles, waveform bars, dashed tile border at rest                     |
-| `border-focus` | 0.35  | Field focus ring (`focus-field`), dashed tile border on hover               |
+| Token          | Alpha | Use                                                                                |
+| -------------- | ----- | ---------------------------------------------------------------------------------- |
+| `surface-1`    | 0.05  | Inset wells, info boxes, tab tracks, quiet row hover (`hover:bg-surface-1`)        |
+| `surface-2`    | 0.08  | Chips, code, soft-button rest, selected row in a list                              |
+| `hover`        | 0.10  | **Standard hover / focus / open** for ghost controls; progress tracks              |
+| `surface-3`    | 0.12  | Thread rails, workspace mark, soft-button rest on glass                            |
+| `selected`     | 0.15  | **Pressed / selected** controls; hover on `glass-control` and soft chips           |
+| `surface-4`    | 0.20  | Switch track off; hover on `surface-3`                                             |
+| `handle`       | 0.25  | Drag handles, waveform bars, dashed tile border at rest                            |
+| `border-focus` | 0.35  | Field focus ring (`focus-field`), dashed tile border on hover                      |
+| `focus`        | 0.70  | Keyboard focus ring / outline (`:focus-visible`, `ring-focus`); black 0.6 in light |
 
 Above 0.35 use the foreground tokens: `fg-faint` 0.3, `fg-subtle` 0.5, `fg-muted` 0.7, `fg` 0.9.
 
@@ -81,9 +82,8 @@ Above 0.35 use the foreground tokens: `fg-faint` 0.3, `fg-subtle` 0.5, `fg-muted
 
 ### Status, brand, accents
 
-`success` `warning` `info` `danger` `mention` · brand `powerpoint` `libreoffice` `onedrive`
-`sharepoint` · reviewer accents `accent-{red,yellow,green,cyan,blue,violet}` and their
-`ring-*` presence colours.
+`success` `warning` `info` `danger` `mention` (`info` and `mention` are white, black in light: no brand colour) · brand `powerpoint` `libreoffice` · reviewer
+accents `accent-{red,yellow,green,cyan,blue,violet}` and their `ring-*` presence colours.
 
 Status tints use Tailwind opacity modifiers on the token, at fixed steps only:
 
@@ -211,14 +211,14 @@ xs/compact → 18, sm/lg → 20, md → 24 (`iconSize` overrides, e.g. 16 for de
 
 ## 9. States
 
-| State    | Ghost / list controls                                                         | Glass / soft controls         | Primary            |
-| -------- | ----------------------------------------------------------------------------- | ----------------------------- | ------------------ |
-| Rest     | transparent, `text-fg-muted`                                                  | `glass-control` / `surface-2` | `bg-primary`       |
-| Hover    | `bg-hover`, `text-fg`                                                         | `bg-selected`                 | `bg-primary-hover` |
-| Selected | `bg-selected`, `text-fg`                                                      | `bg-selected`                 | –                  |
-| Open     | `aria-expanded:bg-hover`                                                      | `aria-expanded:bg-selected`   | –                  |
-| Disabled | `opacity-40`, no pointer                                                      | `opacity-40`, no pointer      | `opacity-40`       |
-| Focus    | global `:focus-visible` outline (mention blue, 2px); fields use `focus-field` |
+| State    | Ghost / list controls                                                               | Glass / soft controls         | Primary            |
+| -------- | ----------------------------------------------------------------------------------- | ----------------------------- | ------------------ |
+| Rest     | transparent, `text-fg-muted`                                                        | `glass-control` / `surface-2` | `bg-primary`       |
+| Hover    | `bg-hover`, `text-fg`                                                               | `bg-selected`                 | `bg-primary-hover` |
+| Selected | `bg-selected`, `text-fg`                                                            | `bg-selected`                 | –                  |
+| Open     | `aria-expanded:bg-hover`                                                            | `aria-expanded:bg-selected`   | –                  |
+| Disabled | `opacity-40`, no pointer                                                            | `opacity-40`, no pointer      | `opacity-40`       |
+| Focus    | global `:focus-visible` outline (`focus`, white 0.7, 2px); fields use `focus-field` |
 
 ## 10. Components (`apps/web/src/ui`)
 
@@ -253,7 +253,7 @@ merging), so pick a size/variant prop instead of overriding classes with `classN
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Menu`                      | `label` (trigger name), `actions` (`MenuAction[]`: `label`, `icon`, `onSelect`, `tone` default · danger, `disabled`, `title`), `triggerSize` (IconButton size, **sm**), `triggerVariant` (IconButton variant, **ghost**; `glass` over images), `triggerClassName`, `className` – menu button pattern (Enter/Space/↓ open, ↑/↓/Home/End, Escape/Tab close); the panel is portalled to `<body>` below/above the trigger, so glass cards can't cover it |
 | `ContextMenu`               | `label`, `actions`, `at` (`{ x, y }`), `onClose` – the same menu at the pointer, portalled to `<body>`                                                                                                                                                                                                                                                                                                                                               |
-| `MenuItem`                  | `as` (**button** · `a` · router `Link` · `div` static row); `icon` (icon name or node); `trailing`; `selected` (`bg-surface-2`, `aria-current`); `tone` **default** · danger; `size` **sm** (13px) · md (14px); `inset` 4 (`rounded-control`) · **6** (`rounded-control-sm`); `disabled`, `dimDisabled` (**true**), `focusableWhenDisabled`; `truncate`; hover = `bg-hover`, keyboard focus adds an inset 2px mention ring                           |
+| `MenuItem`                  | `as` (**button** · `a` · router `Link` · `div` static row); `icon` (icon name or node); `trailing`; `selected` (`bg-surface-2`, `aria-current`); `tone` **default** · danger; `size` **sm** (13px) · md (14px); `inset` 4 (`rounded-control`) · **6** (`rounded-control-sm`); `disabled`, `dimDisabled` (**true**), `focusableWhenDisabled`; `truncate`; hover = `bg-hover`, keyboard focus adds an inset 2px `focus` ring                           |
 | `MenuDivider` `MenuHeading` | Hairline between groups; uppercase caption above a group (give it an `id` to label the group)                                                                                                                                                                                                                                                                                                                                                        |
 | `usePopover`                | Options `extraRefs`, `returnFocus` (**true**), `hasPopup`, `onOpenChange`, `initialOpen` → `{ open, setOpen, toggle, close, wrapperRef, triggerRef, panelRef, panelId, triggerProps }`                                                                                                                                                                                                                                                               |
 | `PopoverPanel`              | `as` **div** · section; `side` **bottom** · top; `align` **start** · end; `position` **anchored** · none; `offset` sm 4 · **md 8**; `tone` **elevated** · default; `padding` **none** · sm 4 · md 6 · lg 12; `ref`                                                                                                                                                                                                                                   |

@@ -1,5 +1,6 @@
 import { createContext, useContext, type Dispatch } from 'react';
 import type { ViewerAction, ViewerState } from './viewer-types';
+import type { ViewerControls } from './viewer-store';
 
 /*
  * The viewer's UI state: types in `viewer-types`, the reducers in `viewer-reducer` and
@@ -8,7 +9,7 @@ import type { ViewerAction, ViewerState } from './viewer-types';
 export * from './viewer-types';
 export { createInitialState, viewerReducer } from './viewer-reducer';
 
-export const ViewerStateContext = createContext<ViewerState | null>(null);
+export const ViewerStateContext = createContext<ViewerControls | null>(null);
 export const ViewerDispatchContext = createContext<Dispatch<ViewerAction> | null>(null);
 
 /*
@@ -26,8 +27,8 @@ export const isBoxModeActive = (state: Pick<ViewerState, 'boxMode' | 'boxModeFli
   state.boxMode !== state.boxModeFlipped;
 
 /**
- * One of the right side panels is open: a thread, deleted slides, layers, a background, layout,
- * sharing, something picked on the board.
+ * One of the presentation's right side panels is open: a thread, deleted slides, layers, a
+ * background, layout, sharing (the board's panel is on the material page).
  */
 export const isSidePanelOpen = (
   state: Pick<
@@ -38,7 +39,6 @@ export const isSidePanelOpen = (
     | 'backgroundPanelPageId'
     | 'layoutGridPanelOpen'
     | 'sharePanelOpen'
-    | 'boardPanelOpen'
   >,
 ) =>
   state.threadPanelOpen ||
@@ -46,10 +46,9 @@ export const isSidePanelOpen = (
   state.layersPanelOpen ||
   state.backgroundPanelPageId !== null ||
   state.layoutGridPanelOpen ||
-  state.sharePanelOpen ||
-  state.boardPanelOpen;
+  state.sharePanelOpen;
 
-export function useViewerState(): ViewerState {
+export function useViewerState(): ViewerControls {
   const state = useContext(ViewerStateContext);
   if (!state) throw new Error('useViewerState must be used inside <ViewerStoreProvider>');
   return state;

@@ -5,7 +5,6 @@ import {
   shapeRefForRect,
   type Anchor,
   type Author,
-  type CommentSource,
   type CommentStatus,
   type Shape,
 } from '@slider/shared';
@@ -14,9 +13,6 @@ import type { Executor } from '../db/client';
 import { comments, deletedPptxComments, type CommentRow } from '../db/schema';
 import { clampRect, sha256Hex } from './common';
 import { pptxAuthorResolver, type PptxAuthorResolver } from './pptx-authors';
-
-/** Comments that come from the deck's source: the PowerPoint file, or Google Slides. */
-export type ImportedCommentSource = Exclude<CommentSource, 'app'>;
 
 /** The slide a PowerPoint comment belongs to, looked up by its `sldId`. */
 export interface ImportedSlide {
@@ -65,9 +61,7 @@ interface Desired {
  *
  * `slidesBySldId` maps the file's `sldId`s to Slider slides (after slide matching). Call it only
  * after the whole file parsed, ideally in the transaction that publishes the new revision.
- *
- * `source` `gslides`: Google Slides comments (BER-157), read through Drive's API and handed in
- * on the `sldId`s of the export – the same rules, kept apart from the file's own comments.
+
  */
 export async function upsertPptxComments(
   db: Executor,
@@ -75,7 +69,6 @@ export async function upsertPptxComments(
   parsed: readonly ParsedComment[],
   slidesBySldId: ReadonlyMap<number, ImportedSlide>,
   now: Date,
-  source: ImportedCommentSource = 'pptx',
 ): Promise<PptxCommentCounts> {
   // Deleted in Slider: never brought back, though the file still has them (replies of a deleted
   // root are skipped below, as their parent is missing).
@@ -91,7 +84,7 @@ export async function upsertPptxComments(
   const existing = await db
     .select()
     .from(comments)
-    .where(and(eq(comments.deckId, deckId), eq(comments.source, source)));
+    .where(and(eq(comments.deckId, deckId), eq(comments.source, 'pptx')));
   const byExternalId = new Map(existing.map((row) => [row.externalId, row]));
   const idByExternalId = new Map(existing.map((row) => [row.externalId ?? '', row.id]));
   // Legacy rows the file no longer has under their old id: PowerPoint for Microsoft 365 may have
@@ -130,7 +123,7 @@ export async function upsertPptxComments(
       }
     }
     if (!row) {
-      const id = await insert(db, deckId, item, parentId, now, source);
+      const id = await insert(db, deckId, item, parentId, now);
       idByExternalId.set(item.externalId, id);
       counts.inserted += 1;
       continue;
@@ -149,7 +142,7 @@ export async function upsertPptxComments(
     .where(
       and(
         eq(comments.deckId, deckId),
-        eq(comments.source, source),
+        eq(comments.source, 'pptx'),
         isNull(comments.removedInSourceAt),
         ...(seen.length > 0 ? [notInArray(comments.externalId, seen)] : []),
       ),
@@ -321,7 +314,6 @@ async function insert(
   item: Desired,
   parentId: string | null,
   now: Date,
-  source: ImportedCommentSource,
 ): Promise<string> {
   const [row] = await db
     .insert(comments)
@@ -335,7 +327,7 @@ async function insert(
       anchor: item.anchor,
       strokes: [],
       ...resolution(item.externalStatus, now),
-      source,
+      source: 'pptx',
       externalId: item.externalId,
       externalStatus: item.externalStatus,
       createdAt: item.createdAt,

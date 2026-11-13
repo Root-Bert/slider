@@ -1,10 +1,10 @@
 // The theme before the first paint (mirrors `installTheme` in src/lib/theme.ts): the stored
-// choice ("light" | "system" | "dark", JSON under `slider.theme`), dark by default.
+// choice ("light" | "system" | "dark", JSON under `slider.theme`), the system's by default.
 (function () {
-  var pref = 'dark';
+  var pref = 'system';
   try {
     var stored = JSON.parse(localStorage.getItem('slider.theme') || 'null');
-    if (stored === 'light' || stored === 'system') pref = stored;
+    if (stored === 'light' || stored === 'dark') pref = stored;
   } catch {
     // No storage (private mode, blocked): the default stays.
   }

@@ -539,20 +539,6 @@ export function newPartIds(
 const PT_PER_CM = 72 / 2.54;
 
 /**
- * „Hinzufügen“: the elements as the editor works on them – those held still (`frozen`, there when
- * it began) locked, in the editor only; the others as they are.
- */
-export function heldStill(
-  elements: readonly EditableElement[],
-  frozen: ReadonlySet<string> | null,
-): readonly EditableElement[] {
-  if (!frozen) return elements;
-  return elements.map((element) =>
-    frozen.has(element.id) && !element.locked ? { ...element, locked: true } : element,
-  );
-}
-
-/**
  * The group `groupElements` makes of `members` (as shown, any order), before the server says how
  * it is: the box round them as they show, moved only – LibreOffice draws it (until its picture
  * comes, its elements stand in for it, `SlideCompositor`).

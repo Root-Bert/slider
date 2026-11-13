@@ -107,6 +107,8 @@ export const livePresenceInputSchema = z.object({
   picked: z.string().min(1).max(100).nullable().default(null),
   /** The element they drag, resize or turn, where it is now; `null` (or left out): none. */
   drag: liveDragSchema.nullable().default(null),
+  /** On the deck's material page rather than the slides (left out: on the slides). */
+  onMaterial: z.boolean().default(false),
 });
 export type LivePresenceInput = z.infer<typeof livePresenceInputSchema>;
 
@@ -135,7 +137,7 @@ export type LiveEvent =
   | { type: 'slides'; step?: LiveStep }
   /** An AI proposal of the deck started, finished or was taken (BER-183) – refetch them. */
   | { type: 'proposals' }
-  /** Something on the deck's board (Folie 0, „Material“) came, moved, changed or went – refetch it. */
+  /** Something on the deck's board (the material page) came, moved, changed or went – refetch it. */
   | { type: 'board' }
   /** A deck being built from the prompt on Folie 1 moved on (outline, a slide, done) – refetch it. */
   | { type: 'creation' }

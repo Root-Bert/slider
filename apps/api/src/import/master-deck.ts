@@ -12,6 +12,7 @@ import {
   masterDeck,
   type MasterLayout,
 } from '@slider/pptx';
+import type { TemplateColor } from '@slider/shared';
 import { badRequest } from '../http/errors';
 
 /*
@@ -30,6 +31,36 @@ export interface MasterFile {
   layouts: MasterLayout[];
   /** Width / height of its slides. */
   aspectRatio: number;
+  /** Its theme's colours, as a template's („Farben“) – empty when it has no theme. */
+  colors: TemplateColor[];
+}
+
+/**
+ * The theme slots a design's colours come from – PowerPoint's name, LibreOffice's, what Slider
+ * calls it – in the order of PowerPoint's colour picker, without the two link colours.
+ */
+const THEME_SLOTS = [
+  ['lt1', 'light1', 'Hintergrund 1'],
+  ['dk1', 'dark1', 'Text 1'],
+  ['lt2', 'light2', 'Hintergrund 2'],
+  ['dk2', 'dark2', 'Text 2'],
+  ...[1, 2, 3, 4, 5, 6].map((n) => [`accent${n}`, `accent${n}`, `Akzent ${n}`]),
+] as const;
+
+/** A theme's colours (by PowerPoint's or LibreOffice's slot names) as a template's, each once. */
+export function themeTemplateColors(theme: ReadonlyMap<string, string>): TemplateColor[] {
+  const colors: TemplateColor[] = [];
+  for (const [pptx, odp, name] of THEME_SLOTS) {
+    const color = (theme.get(pptx) ?? theme.get(odp))?.toLowerCase();
+    if (color && !colors.some((kept) => kept.color === color)) colors.push({ color, name });
+  }
+  return colors;
+}
+
+/** The colours of a design's file as kept (`MasterFile.file`); empty when it has no theme. */
+export async function masterFileColors(bytes: Uint8Array): Promise<TemplateColor[]> {
+  if (isOdpBytes(bytes)) return themeTemplateColors((await OdpDocument.open(bytes)).themeColors());
+  return themeTemplateColors((await masterDeck(bytes)).colors);
 }
 
 const escapeXml = (text: string) =>
@@ -136,6 +167,7 @@ async function odpMasterFile(bytes: Uint8Array): Promise<MasterFile> {
     deck: await odpLayoutDeck(document),
     layouts: masters.map((master) => ({ master: null, name: odpLayoutName(master) })),
     aspectRatio: size.width / size.height,
+    colors: themeTemplateColors(document.themeColors()),
   };
 }
 
@@ -154,6 +186,7 @@ export async function readMasterFile(bytes: Uint8Array): Promise<MasterFile> {
       deck: read.deck,
       layouts: read.layouts,
       aspectRatio: read.size.cx / read.size.cy,
+      colors: themeTemplateColors(read.colors),
     };
   } catch (error) {
     if (error instanceof PptxError) {

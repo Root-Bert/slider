@@ -52,7 +52,10 @@ export function DepartureDecks({
         />
       )}
       {transferred.length > 0 && heirName && (
-        <DeckList label={`Diese hochgeladenen Präsentationen gehen an ${heirName}:`} decks={transferred} />
+        <DeckList
+          label={`Diese hochgeladenen Präsentationen gehen an ${heirName}:`}
+          decks={transferred}
+        />
       )}
     </div>
   );

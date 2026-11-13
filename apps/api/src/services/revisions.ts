@@ -65,7 +65,11 @@ export async function getRevisionDiff(
     revisionId: revision.id,
     number: revision.number,
     previousRevisionId: diff?.previousRevisionId || null,
-    slides: diff?.slides ?? [],
+    // Old rows of Google decks say `sourceId`: matched by an id of their source, as `sldId` is.
+    slides: (diff?.slides ?? []).map(({ matchedBy, ...slide }) => ({
+      ...slide,
+      matchedBy: matchedBy === 'sourceId' ? 'sldId' : matchedBy,
+    })),
     deletedSlides,
     summary: revision.summary,
   };

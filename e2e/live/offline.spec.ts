@@ -14,10 +14,7 @@ test.skip(!process.env.E2E_BUNDLE, 'needs the production build served by the API
 // The pause detector (speaking to the AI) is not loaded ahead offline – its files are not kept –,
 // so no `loading model file /vad/…` error is allowed here.
 test.use({
-  allowConsoleErrors: [
-    [/ERR_INTERNET_DISCONNECTED/, /Failed to load resource/],
-    { scope: 'test' },
-  ],
+  allowConsoleErrors: [[/ERR_INTERNET_DISCONNECTED/, /Failed to load resource/], { scope: 'test' }],
 });
 
 const RED = '#e0245e';

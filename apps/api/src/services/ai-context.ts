@@ -1380,7 +1380,7 @@ export async function zoomArea(
 const BRIEF_FILES = 40;
 
 /**
- * The first message's few lines about the deck's board (Folie 0): what lies there – each file's
+ * The first message's few lines about the deck's material page: what lies there – each file's
  * name, kind, size and the beginning of its text – never what it says; the contents come only
  * through the material tools (`material-tools.ts`). `null` when the board is empty.
  */
@@ -1404,5 +1404,5 @@ export async function materialsBrief(deps: AppDeps, deckId: string): Promise<str
   const files = new Set(rows.map((row) => row.id));
   const loose = items.filter((item) => !item.boundIds.some((id) => files.has(id))).length;
   if (loose > 0) lines.push(`- ${loose} note(s) and link(s) on the board itself`);
-  return `Material on the deck's board (Folie 0, before slide 1 – never part of the deck): ${rows.length} file(s). Their contents are not in this message: read what the request needs with read_material, read_sheet, search_materials and view_material (list_materials lists everything, notes and links included).\n${lines.join('\n')}`;
+  return `The presentation's material (on its own page „Material“ beside the slides – never part of the deck): ${rows.length} file(s). Their contents are not in this message: read what the request needs with read_material, read_sheet, search_materials and view_material (list_materials lists everything, notes and links included).\n${lines.join('\n')}`;
 }

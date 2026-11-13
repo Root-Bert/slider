@@ -171,7 +171,7 @@ export function DeckCard({ deck, selected = false, onNotify, searchHit }: DeckIt
           className={cn(
             'rounded-panel ring-2 ring-transparent transition-[box-shadow,scale] duration-300',
             'group-has-[[data-deck-hover]:hover]:scale-[0.97] group-has-[[data-deck-hover]:hover]:ring-fg',
-            'group-has-[a:focus-visible]:ring-mention',
+            'group-has-[a:focus-visible]:ring-focus',
             selected && selectedCardClass,
           )}
         >
@@ -241,7 +241,7 @@ export function DeckRow({ deck, selected = false, onNotify, searchHit }: DeckIte
         'group relative flex flex-col rounded-control-sm px-3 py-2.5 transition-colors',
         // Only the stretched title link lights up the row – not the controls on top of it.
         'has-[[data-deck-hover]:hover]:bg-surface-1',
-        'has-[a:focus-visible]:bg-surface-1 has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-mention',
+        'has-[a:focus-visible]:bg-surface-1 has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-focus',
         selected && selectedRowClass,
       )}
     >

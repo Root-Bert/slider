@@ -23,6 +23,7 @@ import {
   PPTX_MIME,
   readBodyCapped,
   safeFetch,
+  streamBodyCapped,
   type SafeFetchOptions,
 } from './safe-fetch';
 import type { RemoteFile, SourceAdapter, SourceContext } from './source-adapter';
@@ -531,6 +532,15 @@ export class NextcloudClient {
   async download(path: string): Promise<Uint8Array> {
     const response = await this.request('GET', this.davPath(path));
     return readBodyCapped(response, this.http.maxBytes);
+  }
+
+  /**
+   * The file's bytes as they come, by its current path – never held whole, capped like
+   * {@link download}. `ended` runs once the body is through, failed or was cancelled.
+   */
+  async downloadStream(path: string, ended?: () => void): Promise<ReadableStream<Uint8Array>> {
+    const response = await this.request('GET', this.davPath(path));
+    return streamBodyCapped(response, this.http.maxBytes, ended);
   }
 
   /** Nextcloud's thumbnail of a file – PNG or JPEG. */

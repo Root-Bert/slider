@@ -11,6 +11,9 @@ name: CI
 #   the published tree is complete and builds – lint, typecheck, build, the container image (amd64
 #   and arm64) and the secret scan. Only when these pass does its last job turn the tag into a
 #   GitHub release.
+#   The desktop app is built after that and put on the release with its update feeds: Linux
+#   (x64, arm64) always, the Mac (Apple Silicon) once signed with the Apple secrets set there –
+#   see the desktop job.
 #
 # No image is published: self-hosters build it from their checkout (docs/self-hosting.md). Pushes
 # to main and pull requests start no run; a tag pushed here starts nothing (publish.yml calls it).
@@ -254,3 +257,105 @@ jobs:
           git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
           gh release create "$GITHUB_REF_NAME" --verify-tag --notes-from-tag \
             --title "$(git tag -l --format='%(contents:subject)' "$GITHUB_REF_NAME")"
+
+  # The desktop app (desktop/), each build on a runner of its own system and architecture: the
+  # API's native packages (@napi-rs/canvas) and the bundled bun are per platform. Linux (AppImage,
+  # deb) needs no signing and always goes on the release. The Mac (Apple Silicon only) goes there
+  # only signed with the Developer ID and notarized, with the Apple secrets set here (Settings →
+  # Secrets → Actions); without them it is built unsigned and kept as a workflow artifact.
+  #   CSC_LINK          the Developer ID Application certificate, .p12 as base64
+  #   CSC_KEY_PASSWORD  its password
+  #   APPLE_API_KEY     App Store Connect API key (.p8 contents) for notarization
+  #   APPLE_API_KEY_ID, APPLE_API_ISSUER
+  # Each build brings its own update feed (latest-mac.yml, latest-linux.yml,
+  # latest-linux-arm64.yml), so none has to be merged.
+  desktop:
+    name: Desktop app ${{ matrix.os }} ${{ matrix.arch }}
+    needs: release
+    if: github.repository == 'Root-Bert/slider' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: mac
+            arch: arm64
+            runner: macos-14
+            targets: dmg zip
+          - os: linux
+            arch: x64
+            runner: ubuntu-24.04
+            targets: AppImage deb
+          - os: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            targets: AppImage deb
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - run: bun install --frozen-lockfile
+      - run: bun install --frozen-lockfile
+        working-directory: desktop
+      - name: Build (the Mac signed and notarized when the Apple secrets are set)
+        id: build
+        working-directory: desktop
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          extra=()
+          if [ "${{ matrix.os }}" = linux ]; then
+            unset CSC_LINK CSC_KEY_PASSWORD
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          elif [ -n "$CSC_LINK" ]; then
+            printf '%s\n' "$APPLE_API_KEY_CONTENT" > "$RUNNER_TEMP/notarize.p8"
+            export APPLE_API_KEY="$RUNNER_TEMP/notarize.p8"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            unset CSC_LINK CSC_KEY_PASSWORD
+            extra=(-c.mac.identity=null)
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+          node scripts/stage.mjs
+          npx electron-builder --${{ matrix.os }} ${{ matrix.targets }} --${{ matrix.arch }} \
+            --publish never -c.extraMetadata.version="${GITHUB_REF_NAME#v}" "${extra[@]}"
+      - if: steps.build.outputs.signed == 'true'
+        name: Check signature and notarization
+        working-directory: desktop
+        run: |
+          app=$(find dist -maxdepth 2 -name Slider.app | head -1)
+          codesign --verify --deep --strict "$app"
+          spctl --assess --type execute --verbose "$app"
+          xcrun stapler validate "$app"
+      - if: steps.build.outputs.publish == 'true'
+        name: Put the packages and the update feed on the release
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # The packages, their blockmaps (updates that load only what changed) and the feed.
+        run: >-
+          gh release upload "$GITHUB_REF_NAME" --clobber --repo "$GITHUB_REPOSITORY"
+          dist/Slider-* dist/latest*.yml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            desktop/dist/Slider-*
+            desktop/dist/latest*.yml
+            !desktop/dist/*.blockmap
+          retention-days: 14

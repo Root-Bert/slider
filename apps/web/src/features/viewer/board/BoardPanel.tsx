@@ -19,7 +19,7 @@ import { useRestoreFocus } from '../hooks/useRestoreFocus';
 import { isMaterial, noteColor, notesOn, type BoardEntry } from './board-nodes';
 
 /*
- * The side panel of something picked on the board (Folie 0), where a comment's thread would be:
+ * The side panel of something picked on the board (the material page), as a comment's thread:
  * a file (name, what it is, its notes, a field for one more, „Öffnen“, „Löschen“), a link (its
  * address, the same) or a note (its text). Notes read like a thread's messages, the field like
  * its reply field: ↵ hangs a note on the file or link (beside it, no box).
@@ -48,17 +48,18 @@ export interface BoardPanelProps {
   mayDelete: (item: BoardEntry) => boolean;
   onClose: () => void;
   onOpen: (item: BoardEntry) => void;
-  onAddNote: (text: string) => void;
+  /** A note on it; `ask` (⌘↵): handed to the AI too, its answer under the note on the board. */
+  onAddNote: (text: string, ask: boolean) => void;
   onEditNote: (note: BoardItem, text: string) => void;
   onDelete: (item: BoardEntry) => void;
 }
 
 /**
- * Rendered where the deck's other side panels are (`ThreadPanel` in `[data-viewer-root]`): the
- * same surface, backdrop and text colour – never inside the board's transformed, clipped box.
+ * Rendered on the material page, at the place of the presentation's side panels: the same
+ * surface, backdrop and text colour – never inside the board's transformed, clipped box.
  */
 export function BoardPanel(props: BoardPanelProps) {
-  const host = document.querySelector<HTMLElement>('[data-viewer-root]') ?? document.body;
+  const host = document.querySelector<HTMLElement>('[data-material-page]') ?? document.body;
   return createPortal(<BoardPanelView key={props.item.id} {...props} />, host);
 }
 
@@ -367,12 +368,18 @@ function NoteMessage({
 }
 
 /** The reply field's look: ↵ hangs a note on what is shown, ⇧↵ a new line. */
-function NoteField({ label, onAdd }: { label: string; onAdd: (text: string) => void }) {
+function NoteField({
+  label,
+  onAdd,
+}: {
+  label: string;
+  onAdd: (text: string, ask: boolean) => void;
+}) {
   const [text, setText] = useState('');
-  const submit = (event?: FormEvent) => {
+  const submit = (event?: FormEvent, ask = false) => {
     event?.preventDefault();
     if (!text.trim()) return;
-    onAdd(text.trim());
+    onAdd(text.trim(), ask);
     setText('');
   };
   return (
@@ -393,12 +400,14 @@ function NoteField({ label, onAdd }: { label: string; onAdd: (text: string) => v
                     : 'Notiz zu dieser Datei'
               }
               aria-label="Notiz hinzufügen"
+              aria-keyshortcuts="Meta+Enter"
               className="text-body leading-5 text-fg"
               onChange={(event) => setText(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
                   event.preventDefault();
-                  submit();
+                  // ⌘↵: put down and handed to the AI, as in a note on the board.
+                  submit(undefined, event.metaKey || event.ctrlKey);
                 }
               }}
             />

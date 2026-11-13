@@ -13,9 +13,9 @@ vi.mock('../../editing/layers/seen-on-plane', () => ({
   ],
 }));
 let callbacks: Map<number, FrameRequestCallback>;
-function Fixture() {
+function Fixture({ active = true }: { active?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
-  const size = useFrameSize(ref, true);
+  const size = useFrameSize(ref, active);
   return (
     <div
       data-plane
@@ -25,7 +25,7 @@ function Fixture() {
             geometry.running ? [{ playState: 'running', pending: false } as Animation] : [];
       }}
     >
-      <div ref={ref} data-scale={size?.scale} />
+      <div ref={ref} data-scale={size?.scale} data-width={size?.width} data-height={size?.height} />
     </div>
   );
 }
@@ -64,7 +64,7 @@ afterEach(() => {
 
 describe('frame measurement on a layer plane', () => {
   it('follows transforms and CSS easing, polling only while they run', async () => {
-    const { container } = render(<Fixture />);
+    const { container, rerender } = render(<Fixture />);
     frame();
     // Idle: no polling on every frame.
     expect(callbacks.size).toBe(0);
@@ -80,5 +80,41 @@ describe('frame measurement on a layer plane', () => {
     geometry.running = false;
     frame();
     expect(callbacks.size).toBe(0);
+
+    // A single measurement reads each frame/plane dimension once, even on parent rerenders.
+    const width = vi.mocked(
+      Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth')!.get!,
+    );
+    const height = vi.mocked(
+      Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')!.get!,
+    );
+    width.mockClear();
+    height.mockClear();
+    rerender(<Fixture />);
+    expect(width).toHaveBeenCalledTimes(2);
+    expect(height).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[data-width]')?.getAttribute('data-width')).toBe('100');
+    expect(container.querySelector('[data-height]')?.getAttribute('data-height')).toBe('100');
+
+    const closest = vi.spyOn(Element.prototype, 'closest');
+    width.mockClear();
+    height.mockClear();
+    rerender(<Fixture active={false} />);
+    rerender(<Fixture active={false} />);
+    expect(closest).not.toHaveBeenCalled();
+    expect(width).not.toHaveBeenCalled();
+    expect(height).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-scale]')).toBeNull();
+    expect(callbacks.size).toBe(0);
+
+    rerender(<Fixture />);
+    frame();
+    expect(container.querySelector('[data-scale]')?.getAttribute('data-scale')).toBe('2');
+    width.mockReturnValue(0);
+    rerender(<Fixture />);
+    expect(container.querySelector('[data-scale]')).toBeNull();
+    width.mockReturnValue(100);
+    rerender(<Fixture />);
+    expect(container.querySelector('[data-scale]')?.getAttribute('data-scale')).toBe('2');
   });
 });

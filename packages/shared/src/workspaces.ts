@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { accentColorSchema, workspaceRoleSchema } from './model';
+import { accentColorSchema, templateColorsSchema, workspaceRoleSchema } from './model';
 
 /**
  * Accounts, login and workspaces (BER-129). Routes are listed in the contract table in `api.ts`.
@@ -37,6 +37,8 @@ export const authProvidersSchema = z.object({
   providers: z.array(loginProviderSchema),
   /** Development only: requests without a session act as the dev owner, no login needed. */
   devLogin: z.boolean(),
+  /** Inside the desktop app: one person on this machine, nothing to sign out of. */
+  desktop: z.boolean(),
   signup: signupModeSchema,
   /** No login works yet: the login page points to the setup link in the server log. */
   needsSetup: z.boolean(),
@@ -50,11 +52,6 @@ export const authProvidersSchema = z.object({
    * (`POST /auth/nextcloud/flow`). Next to a `nextcloud` provider it is the way for other ones.
    */
   nextcloudAnyServer: z.boolean(),
-  /**
-   * Google Drive as a source (BER-119): Google's file picker on /neu. Needs the Google login's
-   * client; Google links that anyone may open work without it.
-   */
-  googleDrive: z.boolean(),
   /**
    * Some workspace has its own company login (BER-162): the login page offers "Mit
    * Firmen-Login" – the address typed finds it (`POST /auth/sso/discover`).
@@ -72,8 +69,7 @@ export type AuthProviders = z.infer<typeof authProvidersSchema>;
  * `?error=` on `/login` after a failed sign-in:
  * `signup_closed` (no account and no invitation), `account_exists` (the e-mail belongs to an
  * account that signs in another way), `no_email`/`email_unverified` (the provider sent no usable
- * address), `admin_consent`/`denied`/`failed`,
- * `account_limit` (the Microsoft account is already connected to two Slider accounts).
+ * address), `admin_consent`/`denied`/`failed`.
  */
 export const LOGIN_ERRORS = [
   'signup_closed',
@@ -83,7 +79,6 @@ export const LOGIN_ERRORS = [
   'admin_consent',
   'denied',
   'failed',
-  'account_limit',
   /** A new account through any Nextcloud needs its address confirmed by mail, and this instance sends none. */
   'mail_unavailable',
   /** The workspace's company login is off (deleted, domain changed, plan). */
@@ -172,26 +167,8 @@ export const meUserSchema = z.object({
   email: z.string(),
   color: accentColorSchema,
   isInstanceAdmin: z.boolean(),
-  /** At least one Microsoft account is connected – OneDrive/SharePoint links can be imported. */
-  microsoftConnected: z.boolean(),
-  /** How many Microsoft accounts are connected (`GET /me/microsoft` lists them). */
-  microsoftConnections: z.number().int(),
 });
 export type MeUser = z.infer<typeof meUserSchema>;
-
-/** `GET /me/microsoft` – a Microsoft account connected for OneDrive/SharePoint access. */
-export const microsoftConnectionSchema = z.object({
-  id: z.string(),
-  /** Mail or UPN of the Microsoft account; `null` if Microsoft did not tell. */
-  account: z.string().nullable(),
-  createdAt: z.iso.datetime(),
-  lastUsedAt: z.iso.datetime().nullable(),
-  /** Reviews that keep themselves up to date through this account. */
-  deckCount: z.number().int(),
-  /** Microsoft refused its sign-in (revoked, expired): connect it again. */
-  needsReconnect: z.boolean(),
-});
-export type MicrosoftConnection = z.infer<typeof microsoftConnectionSchema>;
 
 // ── Plans (BER-130, BER-152) ────────────────────────────────────────────────
 
@@ -530,6 +507,11 @@ export const workspaceMasterSchema = z.object({
   layouts: z.array(workspaceMasterLayoutSchema),
   /** Designed in Slider: the template deck it is edited in. Optional for older API versions. */
   draftDeckId: z.string().nullable().optional(),
+  /**
+   * Its colours („Farben“): set where it is designed, or its theme's when uploaded. Optional for
+   * older API versions.
+   */
+  colors: templateColorsSchema.optional(),
   createdAt: z.iso.datetime(),
 });
 export type WorkspaceMaster = z.infer<typeof workspaceMasterSchema>;

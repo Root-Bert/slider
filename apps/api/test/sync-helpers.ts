@@ -11,8 +11,7 @@ import type { ParsedShareLink } from '@slider/shared';
 import { comments, decks, revisions } from '../src/db/schema';
 import type { OpenPptx } from '../src/import/pptx';
 import { createDeckFromFile } from '../src/services/decks';
-import { microsoftLoginRequired, sourceForbidden } from '../src/sources/errors';
-import type { RemoteFile, SourceAdapter, SourceContext } from '../src/sources/source-adapter';
+import type { RemoteFile, SourceAdapter } from '../src/sources/source-adapter';
 import type { TestContext } from './helpers';
 
 const HEADER = [0x50, 0x4b, 0x03, 0x04];
@@ -123,64 +122,43 @@ export function versionedPptx(versions: Record<string, ParsedPresentation>) {
   };
 }
 
-/** A OneDrive stand-in: token and bytes are set by the test; calls are recorded. */
+/** A file behind a plain link: token and bytes are set by the test; calls are recorded. */
 export class FakeSource implements SourceAdapter {
   token = 'c1';
   bytes: Uint8Array = pptxBytes('v1');
   error: Error | null = null;
-  /**
-   * Like Graph: only these Microsoft connections may read the file (others get
-   * `source_forbidden`, none `microsoft_login_required`). `null`: a public file, no token needed.
-   */
-  access: Set<string> | null = null;
-
-  private gate(context?: SourceContext) {
-    if (!this.access) return;
-    if (!context?.connectionId) throw microsoftLoginRequired('');
-    context.connectionUsed = true;
-    if (!this.access.has(context.connectionId)) throw sourceForbidden();
-  }
 
   readonly resolve = vi.fn(async (link: ParsedShareLink): Promise<RemoteFile> => {
     throw new Error(`resolve not expected in sync tests (${link.url.href})`);
   });
 
-  readonly getChangeToken = vi.fn(
-    async (_file: RemoteFile, context?: SourceContext): Promise<string> => {
-      this.gate(context);
-      if (this.error) throw this.error;
-      return this.token;
-    },
-  );
+  readonly getChangeToken = vi.fn(async (_file: RemoteFile): Promise<string> => {
+    if (this.error) throw this.error;
+    return this.token;
+  });
 
-  readonly download = vi.fn(
-    async (_file: RemoteFile, context?: SourceContext): Promise<Uint8Array> => {
-      this.gate(context);
-      if (this.error) throw this.error;
-      return this.bytes;
-    },
-  );
+  readonly download = vi.fn(async (_file: RemoteFile): Promise<Uint8Array> => {
+    if (this.error) throw this.error;
+    return this.bytes;
+  });
 
   /** Who worked on the file, as the source tells; an error stands for a refused history. */
   contributors: string[] | Error = [];
 
-  readonly listContributors = vi.fn(
-    async (_file: RemoteFile, context?: SourceContext): Promise<string[]> => {
-      this.gate(context);
-      if (this.contributors instanceof Error) throw this.contributors;
-      return this.contributors;
-    },
-  );
+  readonly listContributors = vi.fn(async (_file: RemoteFile): Promise<string[]> => {
+    if (this.contributors instanceof Error) throw this.contributors;
+    return this.contributors;
+  });
 }
 
-/** A ready OneDrive deck made through the real import pipeline from `source`'s current state. */
+/** A ready linked deck made through the real import pipeline from `source`'s current state. */
 export async function createLinkDeck(ctx: TestContext, source: FakeSource): Promise<string> {
   const deck = await createDeckFromFile(ctx.deps, ctx, {
     fileName: 'Q4 Strategie.pptx',
     bytes: source.bytes,
-    source: 'onedrive',
-    sourceUrl: 'https://1drv.ms/p/s!test',
-    sourceRef: 'drives/d1/items/i1',
+    source: 'url',
+    sourceUrl: 'https://example.com/decks/Q4.pptx',
+    sourceRef: 'https://example.com/decks/Q4.pptx',
     changeToken: source.token,
   });
   await ctx.deps.queue.idle();

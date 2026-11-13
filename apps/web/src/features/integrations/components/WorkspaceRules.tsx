@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from 'react';
-import type {
-  IntegrationArea,
-  IntegrationKey,
-  IntegrationKind,
-  IntegrationRule,
+import {
+  defaultQuickModel,
+  type IntegrationArea,
+  type IntegrationKey,
+  type IntegrationKind,
+  type IntegrationRule,
 } from '@slider/shared';
 import { useInstanceWorkspaces, useIntegrationModels, useSetIntegrationPolicy } from '@/lib/api';
 import {
@@ -18,7 +19,8 @@ import {
   type ShowToast,
 } from '@/ui';
 import { ruleSummary } from '../lib/providers';
-import { AI_MODEL_ROLES, createModelOptions } from '../lib/ai-models';
+import { AI_MODEL_ROLES } from '../lib/ai-models';
+import { RoleModelSelect } from './RoleModelSelect';
 
 /**
  * The instance's rules of a kind: one for all workspaces, below it single workspaces treated
@@ -45,7 +47,7 @@ export function WorkspaceRules({
     workspaceId: string | null,
     rule: IntegrationRule | null,
     done: string,
-    models?: { model?: string | null; createModel?: string | null },
+    models?: Models,
   ) =>
     policy.mutate(
       { kind, workspaceId, rule, ...models },
@@ -114,6 +116,7 @@ export function WorkspaceRules({
                     apiKey={activeKey}
                     model={exception.model}
                     createModel={exception.createModel}
+                    quickModel={exception.quickModel}
                     free={exception.rule.inherit === 'key'}
                     disabled={policy.isPending}
                     onChange={(models, label) =>
@@ -122,9 +125,11 @@ export function WorkspaceRules({
                         exception.rule,
                         models.createModel !== undefined
                           ? `${exception.name}: ${AI_MODEL_ROLES.create.label} nutzt jetzt ${label}`
-                          : exception.rule.inherit === 'key'
-                            ? `${exception.name} startet jetzt mit ${label}`
-                            : `${exception.name} nutzt jetzt ${label}`,
+                          : models.quickModel !== undefined
+                            ? `${exception.name}: ${AI_MODEL_ROLES.quick.label} nutzen jetzt ${label}`
+                            : exception.rule.inherit === 'key'
+                              ? `${exception.name} startet jetzt mit ${label}`
+                              : `${exception.name} nutzt jetzt ${label}`,
                         models,
                       )
                     }
@@ -308,20 +313,24 @@ function KeyModel({ apiKey: key }: { apiKey: IntegrationKey }) {
       {key.kind === 'ai' &&
         key.createModel &&
         `, ${AI_MODEL_ROLES.create.label}: ${nameOf(key.createModel)}`}
+      {key.kind === 'ai' &&
+        key.quickModel &&
+        `, ${AI_MODEL_ROLES.quick.label}: ${nameOf(key.quickModel)}`}
     </span>
   );
 }
 
 /**
  * The model of the instance's key in a workspace apart – fixed there, or (`free`) the one it
- * starts on until it picks its own. Empty: the key's own, as for all. The AI's model to create
- * decks on beside it, alike.
+ * starts on until it picks its own. Empty: the key's own, as for all. The AI's models to create
+ * decks on and for quick requests beside it, alike.
  */
 function ModelPick({
   name,
   apiKey: key,
   model,
   createModel,
+  quickModel,
   free,
   disabled,
   onChange,
@@ -330,9 +339,10 @@ function ModelPick({
   apiKey: IntegrationKey;
   model: string | null;
   createModel: string | null;
+  quickModel: string | null;
   free: boolean;
   disabled: boolean;
-  onChange: (models: { model?: string | null; createModel?: string | null }, label: string) => void;
+  onChange: (models: Models, label: string) => void;
 }) {
   const models = useIntegrationModels(null, key.id, true);
   const offered = models.data?.models ?? [];
@@ -350,6 +360,8 @@ function ModelPick({
   const isAi = key.kind === 'ai';
   // Decks are created on the key's own for that, else on the model it runs on there.
   const createStandard = key.createModel ?? model ?? key.model;
+  // Quick requests on the key's own for them, else Haiku on Anthropic, else the model there.
+  const quickStandard = key.quickModel ?? defaultQuickModel(key.provider, model ?? key.model);
   const pick = (
     <Select
       className="min-w-0"
@@ -376,21 +388,38 @@ function ModelPick({
       {isAi && (
         <span className="flex min-w-0 flex-wrap items-center gap-2">
           {AI_MODEL_ROLES.create.label}:
-          <Select
+          <RoleModelSelect
             className="min-w-0"
-            aria-label={`Modell für ${AI_MODEL_ROLES.create.label} in ${name}`}
-            size="sm"
-            value={createModel ?? ''}
+            role="create"
+            where={`in ${name}`}
+            offered={offered}
+            standard={createStandard}
+            standardLabel={key.createModel ? `${nameOf(key.createModel)} (wie alle)` : 'Wie oben'}
+            current={createModel}
             disabled={disabled}
-            options={createModelOptions(
-              offered,
-              key.createModel ? `${nameOf(key.createModel)} (wie alle)` : 'Wie oben',
-              createStandard,
-              createModel,
-            )}
-            onChange={(value) =>
-              onChange({ createModel: value || null }, nameOf(value || createStandard))
+            onPick={(value) => onChange({ createModel: value }, nameOf(value ?? createStandard))}
+          />
+        </span>
+      )}
+      {isAi && (
+        <span className="flex min-w-0 flex-wrap items-center gap-2">
+          {AI_MODEL_ROLES.quick.label}:
+          <RoleModelSelect
+            className="min-w-0"
+            role="quick"
+            where={`in ${name}`}
+            offered={offered}
+            standard={quickStandard}
+            standardLabel={
+              key.quickModel
+                ? `${nameOf(key.quickModel)} (wie alle)`
+                : quickStandard === (model ?? key.model)
+                  ? 'Wie oben'
+                  : `${nameOf(quickStandard)} (Standard)`
             }
+            current={quickModel}
+            disabled={disabled}
+            onPick={(value) => onChange({ quickModel: value }, nameOf(value ?? quickStandard))}
           />
         </span>
       )}
@@ -400,6 +429,9 @@ function ModelPick({
     </span>
   );
 }
+
+/** The models of the instance's key set for a workspace apart; `null`: the key's own. */
+type Models = { model?: string | null; createModel?: string | null; quickModel?: string | null };
 
 /** A workspace found by name – those already apart left out. */
 function PickWorkspace({

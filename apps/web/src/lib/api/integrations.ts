@@ -139,6 +139,8 @@ export function useSetIntegrationPolicy() {
       model?: string | null;
       /** A workspace apart (AI): the model it creates decks on there; `null` the key's own. */
       createModel?: string | null;
+      /** A workspace apart (AI): the model of quick requests there; `null` the key's own. */
+      quickModel?: string | null;
     }) => api.patch<Integrations>(`/instance/integrations/${kind}`, input),
     onSuccess: settle,
   });

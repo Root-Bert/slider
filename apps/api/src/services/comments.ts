@@ -568,13 +568,12 @@ export async function deleteComment(
       .where(or(eq(comments.id, commentId), replies))
       .for('update');
     const keys = await mediaKeysOfThread(tx, commentId);
-    // PowerPoint and Google comments in the thread stay deleted: the next import skips them.
+    // PowerPoint comments in the thread stay deleted: the next import skips them. (Google
+    // Slides' are never imported again.)
     const fromPptx = await tx
       .select()
       .from(comments)
-      .where(
-        and(deleted, inArray(comments.source, ['pptx', 'gslides']), isNotNull(comments.externalId)),
-      );
+      .where(and(deleted, eq(comments.source, 'pptx'), isNotNull(comments.externalId)));
     if (fromPptx.length > 0) {
       await tx
         .insert(deletedPptxComments)

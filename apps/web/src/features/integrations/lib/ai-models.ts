@@ -1,6 +1,7 @@
 /**
- * The AI runs on two models of the same key: one for everything it does in a deck (`review`), a
- * stronger one to create a deck (`create`). Other kinds have one model, just „Modell“.
+ * The AI runs on three models of the same key: one for everything it does in a deck (`review`), a
+ * stronger one to create a deck (`create`), a fast one for quick requests (`quick`). Other kinds
+ * have one model, just „Modell“.
  */
 export const AI_MODEL_ROLES = {
   review: {
@@ -10,6 +11,10 @@ export const AI_MODEL_ROLES = {
   create: {
     label: 'Präsentation erstellen',
     hint: 'Baut ganze Präsentationen aus eurem Material. Am besten das stärkste Modell.',
+  },
+  quick: {
+    label: 'Schnelle Aufträge',
+    hint: 'Teilt im Sprachmodus das Gesagte in Aufträge, macht einfache Änderungen sofort und fasst lange Kommentare zusammen. Am besten ein schnelles Modell.',
   },
 } as const;
 

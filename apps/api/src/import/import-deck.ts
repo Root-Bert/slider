@@ -18,7 +18,6 @@ import {
   renderSlidePages,
   slideRenderer,
   storeSlideRender,
-  type OfficePdf,
   type SlidePagesDeps,
 } from './office-pages';
 import { isPdfPage, openDeckFile } from './pdf-deck';
@@ -28,12 +27,6 @@ import { upsertPptxComments, type ImportedSlide } from './pptx-comments';
 import type { ImportJob } from './queue';
 import type { RenderProgress } from './render-progress';
 import { rerenderJob } from './rerender';
-import {
-  isGoogleSlidesDeck,
-  slideIdsFor,
-  upsertGoogleComments,
-  type SlidesExtrasReader,
-} from './slides-extras';
 
 export interface ImportDeps {
   db: Database;
@@ -41,12 +34,8 @@ export interface ImportDeps {
   openPptx: OpenPptx;
   clock: Clock;
   log: Logger;
-  /** Office's rendering of cloud decks (BER-94); without it every slide uses the SVG preview. */
-  officePdf?: OfficePdf;
   /** LibreOffice's rendering of any deck (BER-94); `null`/absent when it is not installed. */
   libreOfficePdf?: PptxToPdf | null;
-  /** Google Slides' slide ids and comments (BER-157); absent → neither is read. */
-  slidesExtras?: SlidesExtrasReader;
   /** Progress of background re-renders, shown by `GET /decks/:id/status`. */
   renderProgress?: RenderProgress;
   /** Fonts an ODP brings along become its workspace's (see {@link SlidePagesDeps}). */
@@ -152,12 +141,9 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
   const document = await openDeckFile(deps.openPptx, bytes);
   const { presentation } = document;
   const aspectRatio = presentation.size.cx / presentation.size.cy;
-  const extras = (await deps.slidesExtras?.(deck, revision)) ?? null;
-  const slideIds = slideIdsFor(extras, presentation.slides);
 
-  const planned = presentation.slides.map((parsed, index) => ({
+  const planned = presentation.slides.map((parsed) => ({
     parsed,
-    sourceSlideId: slideIds?.[index] ?? null,
     slideId: crypto.randomUUID(),
     versionId: crypto.randomUUID(),
     // Placeholder until the slide is rendered below.
@@ -180,7 +166,7 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
     if (planned.length === 0) return;
     await tx.insert(slides).values(planned.map(({ slideId }) => ({ id: slideId, deckId })));
     await tx.insert(slideVersions).values(
-      planned.map(({ parsed, sourceSlideId, slideId, versionId, imageKey, shapes }, position) => ({
+      planned.map(({ parsed, slideId, versionId, imageKey, shapes }, position) => ({
         id: versionId,
         slideId,
         revisionId,
@@ -193,7 +179,6 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
         textHash: parsed.textHash,
         contentHash: parsed.contentHash,
         creationId: parsed.creationId,
-        sourceSlideId,
         imageKey,
         thumbnailKey: imageKey,
         aspectRatio,
@@ -218,9 +203,7 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
   // The SVGs' hashes (what slide matching compares, BER-108) are worked out meanwhile: the PDF
   // is drawn by LibreOffice and the PDF worker, not on this thread.
   const hashing = { stopped: false };
-  const hashes = hasPdfRenderer(deps, deck)
-    ? renderHashes(document, parsedSlides, hashing)
-    : null;
+  const hashes = hasPdfRenderer(deps) ? renderHashes(document, parsedSlides, hashing) : null;
   hashes?.catch(() => {});
   const rendered = await renderSlidePages(deps, deck, revision, bytes, parsedSlides, {
     onPage: (done) => progress(Math.min(done, total - 1)),
@@ -229,10 +212,6 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
     hashing.stopped = true;
     throw error;
   });
-  await db
-    .update(revisions)
-    .set({ officeFailure: rendered.officeFailure })
-    .where(eq(revisions.id, revisionId));
   const known = await hashes;
   for (const [done, slide] of planned.entries()) {
     await progress(done);
@@ -265,21 +244,7 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
   }
   await db.transaction(async (tx) => {
     const now = deps.clock.now();
-    // A Google Slides export's comments are Google's (BER-157), merged with Drive's.
-    if (isGoogleSlidesDeck(deck)) {
-      await upsertGoogleComments(
-        tx,
-        deckId,
-        extras,
-        presentation,
-        slideIds,
-        slidesBySldId,
-        now,
-        deps.log,
-      );
-    } else {
-      await upsertPptxComments(tx, deckId, presentation.comments, slidesBySldId, now);
-    }
+    await upsertPptxComments(tx, deckId, presentation.comments, slidesBySldId, now);
   });
 
   // The workspace's design it is built on, for the editor's layouts; a guess, so never fatal.

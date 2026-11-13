@@ -13,6 +13,7 @@ import {
   type ElementFlip,
   type ElementTilt,
   type ImageCredit,
+  type ImageSymbol,
   type SlideOperation,
   type NotesParagraph,
   type NotesRun,
@@ -20,7 +21,7 @@ import {
   type SlideTransition,
 } from '@slider/shared';
 import { ODP_MIME, OTP_MIME, OdpArchive } from './archive';
-import { framesShowing, readCredit, writeCredit } from './credit';
+import { framesShowing, readCredit, readSymbol, writeCredit } from './credit';
 import { OdpError } from './errors';
 import { imageSize } from './image-size';
 import { boxOf, frameOf, moveBy, setFrame, type CmBox } from './geometry';
@@ -130,6 +131,8 @@ export interface OdpImage {
   height: number;
   /** A stock photo's credit, kept as the frame's description (see `credit.ts`). */
   credit?: ImageCredit | null;
+  /** One of Slider's symbols, kept as the frame's description too. */
+  symbol?: ImageSymbol | null;
 }
 
 /** A picture in the package, see {@link OdpDocument.pictures}. */
@@ -219,6 +222,12 @@ export interface OdpElementSource {
 }
 
 /** A short name part made of what a node says, the same for the same node. */
+/** A picture frame's symbol as an element's field – none when it shows no symbol. */
+const symbolOf = (node: XmlNode): { symbol: ImageSymbol } | null => {
+  const symbol = readSymbol(node);
+  return symbol && { symbol };
+};
+
 const contentHash = (node: XmlNode): string =>
   createHash('sha256').update(xmlOf(node)).digest('hex').slice(0, 8);
 
@@ -1208,6 +1217,7 @@ export class OdpDocument {
       // A tilted one too: typed on the slide tilted, its picture drawn anew after (`setTilt`).
       live,
       credit: kind === 'image' ? readCredit(node) : null,
+      ...(kind === 'image' && symbolOf(node)),
       look,
       tilt,
       // A line's way across its box.
@@ -2115,7 +2125,7 @@ export class OdpDocument {
     while (names.has(`Bild ${n}`)) n += 1;
     const node = newImageFrame(this.styleSink(), operation.elementId, box, `Bild ${n}`, path);
     if (image) {
-      writeCredit(node, image.credit ?? null);
+      writeCredit(node, image.credit ?? null, image.symbol ?? null);
       resetPicture(this.styleSink(), node, pictureCmSize(image.bytes));
     }
     this.putOnTop(page, shapes, node);
@@ -2349,7 +2359,7 @@ export class OdpDocument {
     }
     // Fallback pictures (an SVG's PNG twin) would show the old picture elsewhere.
     for (const other of pictures.slice(1)) removeChild(node, other);
-    writeCredit(node, image.credit ?? null);
+    writeCredit(node, image.credit ?? null, image.symbol ?? null);
     // Fit the new picture into the old frame, keeping its proportions.
     const frame = frameOf(node);
     if (frame && image.width > 0 && image.height > 0) {
@@ -2714,6 +2724,29 @@ export class OdpDocument {
       });
       return [{ name, displayName: attr(master, 'style:display-name') ?? null, placeholders }];
     });
+  }
+
+  /**
+   * The theme colours of the first master page that has them (`loext:theme`, written by
+   * LibreOffice 7.6 on, also for the PowerPoint files it takes in): slot (`dark1`, `light1`,
+   * `accent1`, …) → `#rrggbb`, in file order. Empty for a file without a theme.
+   */
+  themeColors(): Map<string, string> {
+    const styles = this.root(this.styles, 'office:document-styles');
+    const masters = styles && firstChild(styles, 'office:master-styles');
+    for (const master of masters ? childrenOf(masters) : []) {
+      if (tagOf(master) !== 'style:master-page') continue;
+      const theme = firstChild(master, 'loext:theme');
+      const table = theme && firstChild(theme, 'loext:theme-colors');
+      const colors = new Map<string, string>();
+      for (const color of table ? childrenOf(table) : []) {
+        const slot = tagOf(color) === 'loext:color' ? attr(color, 'loext:name') : undefined;
+        const value = attr(color, 'loext:color');
+        if (slot && value && /^#[0-9a-f]{6}$/i.test(value)) colors.set(slot, value.toLowerCase());
+      }
+      if (colors.size > 0) return colors;
+    }
+    return new Map();
   }
 
   /** Whether the file is a template (`.otp`), as its manifest says – a design, no deck. */

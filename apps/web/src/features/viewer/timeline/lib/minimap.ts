@@ -11,7 +11,10 @@ import { unitAt, xAt, type TrackLayout } from './timeline-layout';
 /** All thumbnails are this high, whatever the deck's length (85×48 for 16:9), 8px apart. */
 export const THUMB_H = 48;
 export const THUMB_GAP = 8;
-/** Width of Folie 0's tile („Material“) before the first thumbnail: a 16:9 thumbnail's. */
+/**
+ * Width of the „Material“ tile before the first thumbnail (a 16:9 thumbnail's): it opens the
+ * material page – not a slide, the bracket never runs over it.
+ */
 export const BOARD_THUMB_W = Math.round((THUMB_H * 16) / 9);
 /** Room around the thumbnails for the active frame and the bracket (each side). */
 export const MINIMAP_PAD = 4;
@@ -38,7 +41,7 @@ export interface MinimapLayout {
 export function layoutMinimap(
   aspectRatios: readonly number[],
   availableW: number,
-  /** Room before the first thumbnail: Folie 0's tile („Material“) with its gap; 0 = none. */
+  /** Room before the first thumbnail: the „Material“ tile with its gap; 0 = none. */
   lead = 0,
 ): MinimapLayout {
   const h = THUMB_H;
@@ -87,12 +90,14 @@ export function bracketFor(
 ): Bracket {
   const all = track.contentW <= viewportW + 0.5;
   if (mini.slides.length === 0) return { left: 0, width: 0, all };
-  const start = clamp(xAt(mini, unitAt(track, scrollLeft)), 0, mini.contentW);
-  const end = clamp(xAt(mini, unitAt(track, scrollLeft + viewportW)), 0, mini.contentW);
+  // From the first thumbnail: the material tile before it is not part of the track.
+  const from = mini.slides[0]!.x;
+  const start = clamp(xAt(mini, unitAt(track, scrollLeft)), from, mini.contentW);
+  const end = clamp(xAt(mini, unitAt(track, scrollLeft + viewportW)), from, mini.contentW);
   let width = Math.max(end - start, Math.min(BRACKET_MIN_W, mini.contentW));
   let left = start;
   // A minimum-width bracket at the end stays inside the row.
-  if (left + width > mini.contentW) left = Math.max(0, mini.contentW - width);
+  if (left + width > mini.contentW) left = Math.max(from, mini.contentW - width);
   width = Math.min(width, mini.contentW - left);
   return { left, width, all };
 }
@@ -104,7 +109,7 @@ export function scrollLeftForBracket(
   centre: number,
   viewportW: number,
 ): number {
-  const x = xAt(track, unitAt(mini, clamp(centre, 0, mini.contentW)));
+  const x = xAt(track, unitAt(mini, clamp(centre, mini.slides[0]?.x ?? 0, mini.contentW)));
   return clamp(x - viewportW / 2, 0, track.contentW - viewportW);
 }
 

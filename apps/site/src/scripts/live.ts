@@ -184,7 +184,10 @@ export function startLive(root: HTMLElement): void {
         if (event.pointerType !== 'mouse') return;
         node.style.translate = `${event.clientX}px ${event.clientY}px`;
         const target = event.target as Element | null;
-        node.classList.toggle('is-over', !!target?.closest('a, button, summary, [role="button"], label'));
+        node.classList.toggle(
+          'is-over',
+          !!target?.closest('a, button, summary, [role="button"], label'),
+        );
         node.classList.toggle('is-text', !!target?.closest('input, textarea, [contenteditable]'));
         node.classList.remove('is-say');
         clearTimeout(resting);
@@ -204,7 +207,9 @@ export function startLive(root: HTMLElement): void {
       node.classList.remove('is-say');
     });
     document.documentElement.addEventListener('pointerleave', () => node.classList.add('is-away'));
-    document.documentElement.addEventListener('pointerenter', () => node.classList.remove('is-away'));
+    document.documentElement.addEventListener('pointerenter', () =>
+      node.classList.remove('is-away'),
+    );
     return node;
   }
 
@@ -675,7 +680,9 @@ export function startLive(root: HTMLElement): void {
 
   // The hero's comment box (Opinion.astro) speaks to the room too, so everyone here sees it.
   addEventListener('site-live:comment', (event) => {
-    const { a, x, y, text } = (event as CustomEvent<{ a: string; x: number; y: number; text: string }>).detail;
+    const { a, x, y, text } = (
+      event as CustomEvent<{ a: string; x: number; y: number; text: string }>
+    ).detail;
     send({ type: 'comment', a, x: round(x), y: round(y), text });
   });
 

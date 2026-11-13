@@ -113,7 +113,12 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
         {root.aiSummary && <ThreadSummary summary={root.aiSummary} className="mb-3" />}
         <ThreadMessage comment={root} deckId={deck.id} isRoot onDeleted={close} />
         {proposalsOf(root.id).map((proposal) => (
-          <AiProposalCard key={proposal.id} proposal={proposal} className="mt-2 ml-[39px]" />
+          <AiProposalCard
+            key={proposal.id}
+            proposal={proposal}
+            floating
+            className="mt-2 ml-[39px]"
+          />
         ))}
         {hidden > 0 && (
           <div className="mt-2.5 flex items-center gap-1.5 pl-[26px]">
@@ -140,7 +145,7 @@ function ThreadPanelView({ thread }: { thread: Thread }) {
               <li key={reply.id} className="flex flex-col gap-2">
                 <ThreadMessage comment={reply} deckId={deck.id} isRoot={false} />
                 {proposalsOf(reply.id).map((proposal) => (
-                  <AiProposalCard key={proposal.id} proposal={proposal} />
+                  <AiProposalCard key={proposal.id} proposal={proposal} floating />
                 ))}
               </li>
             ))}

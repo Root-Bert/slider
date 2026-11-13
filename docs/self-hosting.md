@@ -56,14 +56,12 @@ Die Einrichtungsseite zeigt alle Weiterleitungs-URIs zum Kopieren.
 Kontotypen „beliebiges Organisationsverzeichnis und persönliche Microsoft-Konten“.
 Plattform _Web_ mit Redirect-URI `https://slider.firma.de/api/auth/microsoft/callback`. Neuen
 Clientschlüssel anlegen. API-Berechtigungen (delegiert), Microsoft Graph: `openid`, `profile`,
-`email`, `offline_access`, `User.Read`, `Files.Read.All`; für den OneDrive-Picker zusätzlich
-SharePoint: `MyFiles.Read`, `AllSites.Read`. Nur die eigene Firma: `MS_TENANT=<Tenant-ID>`.
+`email`. Nur die eigene Firma: `MS_TENANT=<Tenant-ID>`.
 
 **Google:** [Google Cloud Console](https://console.cloud.google.com/) → neues Projekt →
-Google Auth Platform: Zielgruppe **Extern**, Bereiche `openid`, `userinfo.email`,
-`userinfo.profile` und `drive.file`. Client vom Typ _Webanwendung_ mit Weiterleitungs-URI
-`https://slider.firma.de/api/auth/google/callback`. Unter APIs & Dienste die Google Drive API,
-Google Picker API und Google Slides API aktivieren. Danach unter Zielgruppe **App
+Google Auth Platform: Zielgruppe **Extern**, Bereiche `openid`, `userinfo.email` und
+`userinfo.profile`. Client vom Typ _Webanwendung_ mit Weiterleitungs-URI
+`https://slider.firma.de/api/auth/google/callback`. Danach unter Zielgruppe **App
 veröffentlichen**; mit diesen Bereichen ist keine Überprüfung durch Google nötig.
 
 **OIDC (Keycloak, authentik, …):** vertraulicher Client mit Redirect-URI
@@ -77,6 +75,24 @@ Admin unter Verwaltung → Sicherheit → OAuth-2.0-Clients einen Client mit
 Passkeys brauchen keine Einrichtung. „Mit E-Mail fortfahren“ (Konto per Login-Link, ohne
 Passwort) ist an, sobald E-Mail-Versand eingerichtet ist. Workspaces können ihren eigenen
 Firmen-Login (SSO) in ihren Einstellungen verbinden.
+
+## Desktop-App
+
+Die Desktop-App (Mac, Linux; Download unter den GitHub-Releases) meldet sich standardmäßig bei
+slider.bertro.dev an. Für die eigene Instanz: in der App unter Konto → **Anderer Server** die
+Adresse eintragen, z. B. `https://slider.firma.de` (https, ab Slider 1.6.0). Die Anmeldung öffnet
+den Browser mit den Logins der Instanz; danach liegen die Workspaces und Präsentationen des Kontos
+als Kopien auf dem Computer und werden abgeglichen. Auf dem Server ist nichts einzurichten.
+
+## KI-Apps
+
+Claude, ChatGPT und Claude Code verbinden sich über MCP mit Slider: Adresse
+`https://slider.firma.de/api/mcp`, Anmeldung per OAuth oder mit einem Token aus Konto →
+**KI-Apps**. Auf dem Server ist nichts einzurichten, die Adressen kommen aus `SLIDER_URL`. Die
+OAuth-Erkennung liegt im Wurzelverzeichnis der Domain (`/.well-known/oauth-…`): Der mitgelieferte
+Caddy leitet alles durch, ein eigener Proxy, der nur einzelne Pfade weiterreicht, braucht
+`/.well-known/` dazu. Claude und ChatGPT rufen Slider aus ihrer Cloud auf; eine Instanz nur im Firmennetz erreicht
+nur Claude Code auf Rechnern in diesem Netz.
 
 ## E-Mail (optional)
 
@@ -176,6 +192,12 @@ docker image prune -f
 
 Vorher ein Backup ziehen: Migrationen lassen sich nicht zurückdrehen.
 
+Von einer Version vor 1.6: OneDrive, SharePoint und Google Drive gibt es nicht mehr, Microsoft und
+Google dienen nur noch der Anmeldung. Beim ersten Start widerruft Slider gespeicherte
+Google-Zugriffe (braucht ausgehend `oauth2.googleapis.com`, sonst beim nächsten Start) und löscht
+die alten Dateiverbindungen. Danach in der Entra-App alles außer `openid`, `profile` und `email`
+entfernen und bei Google den Bereich `drive.file` sowie Drive-, Picker- und Slides-API abschalten.
+
 ## Datenschutz
 
 - **Impressum und Datenschutzerklärung** trägt der Admin auf der Einrichtungsseite ein.
@@ -188,7 +210,7 @@ Vorher ein Backup ziehen: Migrationen lassen sich nicht zurückdrehen.
   Login über `/datenanfrage` (braucht E-Mail-Versand).
 - **Wer was sieht:** Alle in einem Workspace sehen seine Präsentationen, auch verknüpfte.
   Slider liest verknüpfte Dateien mit dem Konto der Person, die sie verknüpft hat, nie mit dem
-  der Betrachter; Freigaben bei OneDrive, Google oder Nextcloud gelten in Slider nicht. Per
+  der Betrachter; Freigaben in der Nextcloud gelten in Slider nicht. Per
   Rechtsklick → „Zugriff einschränken“ lässt sich eine Präsentation auf einzelne Personen
   begrenzen. Verlässt jemand einen Workspace oder löscht das Konto, werden die verknüpften
   Präsentationen gelöscht, hochgeladene gehen an den Owner des Workspace.
@@ -246,11 +268,12 @@ gehen auch auf der Einrichtungsseite.
 | `DATABASE_URL`                                                    | nein              | `postgres://…`. Leer: eingebettete Datenbank in `DATA_DIR/db`.                                 |
 | `DATA_DIR`, `MEDIA_DIR`, `WEB_DIST_DIR`                           | nein              | Datenordner (Container: `/data`), Ordner für Aufnahmen, gebaute Web-App.                       |
 | `TRUST_PROXY`                                                     | nein              | `1` hinter einem Proxy, wenn Port 8787 nicht öffentlich ist.                                   |
+| `HOST`                                                            | nein              | Adresse, auf der die API lauscht; leer: alle Schnittstellen. Im Container leer lassen.         |
 | `TRUSTED_PROXIES`                                                 | nein (Compose)    | Adressen, deren Client-IP-Header Caddy glaubt (Cloudflare).                                    |
 | `SIGNUP`, `SIGNUP_DOMAINS`                                        | nein (Seite)      | `open` (Standard), `invite`, `domains` (mit Liste, z. B. `firma.de,firma.com`) oder `company`. |
 | `DELETE_UNUSED`                                                   | nein (Seite)      | `false` schaltet das Löschen ungenutzter Konten und Präsentationen aus.                        |
-| `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, `MS_TENANT`                   | Login (Seite)     | Microsoft-Login und OneDrive/SharePoint.                                                       |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`                        | Login (Seite)     | Google-Login und Google Drive.                                                                 |
+| `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, `MS_TENANT`                   | Login (Seite)     | Microsoft-Login.                                                                               |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`                        | Login (Seite)     | Google-Login.                                                                                  |
 | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`             | Login (Seite)     | OIDC-Anbieter, z. B. `https://auth.firma.de/realms/firma`.                                     |
 | `OIDC_LABEL`, `OIDC_SCOPES`                                       | nein (Seite)      | Button-Text; Scopes (Standard `openid profile email`).                                         |
 | `NEXTCLOUD_URL`, `NEXTCLOUD_CLIENT_ID`, `NEXTCLOUD_CLIENT_SECRET` | Login (Seite)     | Firmen-Nextcloud (darf intern sein) und ihr OAuth-Client.                                      |

@@ -21,7 +21,6 @@ import type { OpenPptx } from '../src/import/pptx';
 import { toAnchor, upsertPptxComments } from '../src/import/pptx-comments';
 import { silentLogger } from '../src/logger';
 import {
-  connectMicrosoft,
   createReadyDeck,
   createTestContext,
   parsedSlide,
@@ -616,7 +615,7 @@ describe('upsertPptxComments', () => {
     const { db } = ctx.deps;
     const owner = (await db.select().from(users).where(eq(users.id, ctx.ownerId)))[0]!;
     const { deckId, slideIds } = await createReadyDeck(ctx, { slideCount: 1 });
-    await db.update(decks).set({ source: 'onedrive' }).where(eq(decks.id, deckId));
+    await db.update(decks).set({ source: 'nextcloud' }).where(eq(decks.id, deckId));
     const slides = new Map([[7, { slideId: slideIds[0] ?? '', shapes: [] }]]);
     const comment = (externalId: string, author: ParsedComment['author']): ParsedComment => ({
       ...emptyComment(),
@@ -631,7 +630,6 @@ describe('upsertPptxComments', () => {
       return (id: string) => rows.find((row) => row.externalId === id)?.author;
     };
     const oid = '6f1c2d3e-4b5a-4c6d-8e7f-901a2b3c4d5e';
-    await connectMicrosoft(db, owner.id, { subject: oid, account: 'R.Hofmann@Firma.de' });
     await db.insert(userIdentities).values([
       {
         provider: 'microsoft',
@@ -647,19 +645,6 @@ describe('upsertPptxComments', () => {
       },
     ]);
     const authorOf = await authorsAfter([
-      // The UPN of a work account, against a connected Microsoft account (any case).
-      comment('work', {
-        name: 'R. Hofmann',
-        initials: null,
-        userId: 'S::r.hofmann@firma.de::6F1C2D3E-4B5A-4C6D-8E7F-901A2B3C4D5E',
-        providerId: 'AD',
-      }),
-      // A Google comment (Drive's comment API), against the member's own address.
-      comment('google', {
-        name: 'Robert',
-        initials: null,
-        googleAccount: owner.email.toUpperCase(),
-      }),
       // A file's `authors.xml` claiming a Google account names nobody.
       comment('forged-google', {
         name: 'Robert',
@@ -673,7 +658,7 @@ describe('upsertPptxComments', () => {
         userId: 'S::lena@firma.de::00000000-1111-2222-3333-444444444444',
         providerId: 'AD',
       }),
-      // The object id of a connected Microsoft account, but another address: nobody.
+      // The object id of the member's Microsoft login, but another address: nobody.
       comment('object-id', {
         name: 'R. Hofmann',
         initials: null,
@@ -707,9 +692,7 @@ describe('upsertPptxComments', () => {
         providerId: 'AD',
       }),
     ]);
-    for (const id of ['work', 'google', 'address']) {
-      expect(authorOf(id), id).toMatchObject({ id: owner.id, type: 'owner' });
-    }
+    expect(authorOf('address')).toMatchObject({ id: owner.id, type: 'owner' });
     expect(authorOf('forged-google')).toEqual(externalAuthor('Robert'));
     expect(authorOf('stranger')).toEqual({
       id: 'pptx:lena wolf',

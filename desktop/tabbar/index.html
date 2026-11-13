@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; font-src 'self'; script-src 'self'"
+    />
+    <title>Slider</title>
+    <style>
+      /* Slider's tokens (apps/web/design-system.md), dark and light like the app. */
+      @font-face {
+        font-family: 'Inter Variable';
+        src: url('./inter.woff2') format('woff2');
+        font-weight: 100 900;
+      }
+      :root {
+        --canvas: #000;
+        --fg: rgb(255 255 255 / 0.9);
+        --fg-muted: rgb(255 255 255 / 0.7);
+        --fg-subtle: rgb(255 255 255 / 0.5);
+        --hover: rgb(255 255 255 / 0.1);
+        --selected: rgb(255 255 255 / 0.15);
+        --logo-back: #7a7a7a;
+        --logo-front: #525252;
+        --logo-lines: #ebebeb;
+        --logo-bubble: #f5f5f5;
+        --hairline-strong: rgb(255 255 255 / 0.16);
+        color-scheme: dark;
+      }
+      :root[data-theme='light'] {
+        --canvas: #f4f4f5;
+        --fg: rgb(0 0 0 / 0.88);
+        --fg-muted: rgb(0 0 0 / 0.62);
+        --fg-subtle: rgb(0 0 0 / 0.46);
+        --hover: rgb(0 0 0 / 0.07);
+        --selected: rgb(0 0 0 / 0.1);
+        --logo-back: #a3a3a3;
+        --logo-front: #c7c7c7;
+        --logo-lines: #262626;
+        --logo-bubble: #1f1f1f;
+        --hairline-strong: rgb(0 0 0 / 0.14);
+        color-scheme: light;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: var(--canvas);
+        color: var(--fg);
+        font:
+          500 13px/18px 'Inter Variable',
+          -apple-system,
+          BlinkMacSystemFont,
+          sans-serif;
+        font-feature-settings: 'cv11', 'ss01';
+        -webkit-font-smoothing: antialiased;
+        user-select: none;
+        cursor: default;
+      }
+      /* The bar drags the window; its buttons don't. */
+      header {
+        display: flex;
+        align-items: center;
+        height: 40px;
+        -webkit-app-region: drag;
+      }
+      /* Every clickable control shows the hand, as in the web app (styles/index.css). */
+      button:not(:disabled),
+      [role='tab'] {
+        cursor: pointer;
+      }
+      nav {
+        display: flex;
+        flex: 1;
+        align-items: center;
+        gap: 2px;
+        min-width: 0;
+        height: 100%;
+        /* Room for the window's traffic lights; none in full screen. */
+        padding: 0 8px 0 88px;
+      }
+      :root[data-fullscreen] nav,
+      :root:not([data-platform='darwin']) nav {
+        padding-left: 8px;
+      }
+      .tab {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex: 0 1 200px;
+        min-width: 0;
+        height: 28px;
+        padding: 0 4px 0 10px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--fg-muted);
+        font: inherit;
+        -webkit-app-region: no-drag;
+      }
+      .tab:hover {
+        background: var(--hover);
+        color: var(--fg);
+      }
+      .tab[aria-selected='true'] {
+        background: var(--selected);
+        color: var(--fg);
+      }
+      /* The presentation's buttons, top right – the deck pill's in the web app. */
+      .actions {
+        display: flex;
+        flex: 0 0 auto;
+        align-items: center;
+        gap: 2px;
+        padding-right: 12px;
+      }
+      .actions[hidden] {
+        display: none;
+      }
+      .action {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--fg-muted);
+        -webkit-app-region: no-drag;
+      }
+      .action:hover {
+        background: var(--hover);
+        color: var(--fg);
+      }
+      .action[aria-expanded='true'] {
+        background: var(--selected);
+        color: var(--fg);
+      }
+      .tab:focus-visible,
+      .close:focus-visible,
+      .action:focus-visible {
+        outline: 2px solid #3b82f6;
+        outline-offset: -2px;
+      }
+      .home {
+        flex: 0 0 auto;
+        width: 28px;
+        padding: 0;
+        justify-content: center;
+      }
+      .divider {
+        flex: 0 0 auto;
+        width: 1px;
+        height: 16px;
+        margin: 0 6px;
+        background: var(--hairline-strong);
+      }
+      .divider[hidden] {
+        display: none;
+      }
+      .title {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        text-align: left;
+      }
+      /* The name being typed (a click on the tab in front). */
+      .edit {
+        height: 22px;
+        margin-left: -6px;
+        padding: 0 6px;
+        border: 0;
+        border-radius: 6px;
+        background: var(--canvas);
+        color: var(--fg);
+        font: inherit;
+        outline: 2px solid #3b82f6;
+        outline-offset: -2px;
+        user-select: text;
+        cursor: text;
+      }
+      .close {
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+        width: 20px;
+        height: 20px;
+        padding: 0;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--fg-subtle);
+        visibility: hidden;
+      }
+      .tab:hover .close,
+      .tab[aria-selected='true'] .close {
+        visibility: visible;
+      }
+      .close:hover {
+        background: var(--hover);
+        color: var(--fg);
+      }
+      /* The mark's mono tone, as in the app header (--color-logo-mono-*). */
+      .mark .back {
+        fill: var(--logo-back);
+      }
+      .mark .front {
+        fill: var(--logo-front);
+      }
+      .mark .lines {
+        stroke: var(--logo-lines);
+      }
+      .mark .bubble {
+        fill: var(--logo-bubble);
+      }
+      .mark {
+        fill: none;
+      }
+      svg {
+        display: block;
+        flex: 0 0 auto;
+        fill: currentColor;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <nav role="tablist" aria-label="Geöffnete Präsentationen"></nav>
+      <div class="actions" role="toolbar" aria-label="Präsentation" hidden></div>
+    </header>
+    <script src="./tabbar.js"></script>
+  </body>
+</html>

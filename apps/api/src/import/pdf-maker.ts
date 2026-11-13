@@ -1,6 +1,6 @@
 import type { SlideRenderer } from '@slider/shared';
 
-/** Who turned a file into the PDF a deck is: Office or Google (`office`), or LibreOffice. */
+/** Who made a deck's PDF from its file: LibreOffice, or Office/Google (`office`, old rows only). */
 export type PdfMaker = Extract<SlideRenderer, 'office' | 'libreoffice'>;
 
 /*

@@ -3,7 +3,8 @@ import { createMiddleware } from 'hono/factory';
 import { startDeckCreationInputSchema } from '@slider/shared';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import type { AppDeps } from '../deps';
-import { assertWithinLimit, fixedWindow } from '../http/rate-limit';
+import { aiLimits } from '../http/ai-limits';
+import { assertWithinLimit } from '../http/rate-limit';
 import { readJson } from '../http/validate';
 import {
   cancelCreation,
@@ -21,8 +22,8 @@ import {
  */
 export function deckCreationRoutes(deps: AppDeps) {
   const viewer = viewerMiddleware(deps);
-  // A deck is built a few times a day at most; a script asking again and again is stopped.
-  const window = fixedWindow({ limit: 6, windowMs: 60_000, clock: deps.clock });
+  // A deck is built a few times a day at most – shared with the KI-Apps' build_presentation.
+  const window = aiLimits(deps).deckCreations;
   const starts = createMiddleware<ViewerEnv>(async (c, next) => {
     assertWithinLimit(
       c,

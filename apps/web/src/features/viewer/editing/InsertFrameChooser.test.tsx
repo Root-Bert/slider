@@ -57,7 +57,11 @@ it('steps with Tab and types on the picked kind wherever the focus is – not on
   fireEvent.keyDown(document.body, { key: 'Tab' });
   expect(view.getByTestId('kind').textContent).toBe('image');
   fireEvent.keyDown(document.body, { key: 'Tab' });
+  expect(view.getByTestId('kind').textContent).toBe('symbol');
+  fireEvent.keyDown(document.body, { key: 'Tab' });
   expect(view.getByTestId('kind').textContent).toBe('text');
+  fireEvent.keyDown(document.body, { key: 'Tab', shiftKey: true });
+  expect(view.getByTestId('kind').textContent).toBe('symbol');
   fireEvent.keyDown(document.body, { key: 'Tab', shiftKey: true });
   expect(view.getByTestId('kind').textContent).toBe('image');
   act(() => (document.activeElement as HTMLElement).blur());
@@ -73,7 +77,7 @@ it('steps with Tab and types on the picked kind wherever the focus is – not on
   fireEvent.click(formButton);
   expect(onPick).not.toHaveBeenCalledWith('shape');
   expect(document.activeElement).toBe(shapeAt('rectangle'));
-  expect(view.getByRole('toolbar').textContent).toBe('TextFormBild');
+  expect(view.getByRole('toolbar').textContent).toBe('TextFormBildSymbol');
   fireEvent.keyDown(document.activeElement!, { key: 'Tab' });
   expect(document.activeElement).toBe(shapeAt('ellipse'));
   fireEvent.keyDown(document.activeElement!, { key: 'Tab' });
@@ -87,6 +91,7 @@ it('steps with Tab and types on the picked kind wherever the focus is – not on
   // Neither a photo service nor generation: typing on „Bild“ goes nowhere.
   const none = vi.fn();
   const bare = render(<Host typed={['text']} onType={none} onPick={vi.fn()} />);
+  fireEvent.keyDown(document.body, { key: 'Tab', shiftKey: true });
   fireEvent.keyDown(document.body, { key: 'Tab', shiftKey: true });
   expect(bare.getByTestId('kind').textContent).toBe('image');
   fireEvent.keyDown(document.body, { key: 'x' });
@@ -102,6 +107,7 @@ it('steps with Tab and types on the picked kind wherever the focus is – not on
     'Text',
     'Form',
     'Bild',
+    'Symbol',
   ]);
   expect(around.getByTestId('kind').textContent).toBe('select');
   act(() => (document.activeElement as HTMLElement).blur());
@@ -110,7 +116,7 @@ it('steps with Tab and types on the picked kind wherever the focus is – not on
   fireEvent.keyDown(document.body, { key: 'Enter' });
   expect(picks).toHaveBeenCalledWith('select');
   fireEvent.keyDown(document.body, { key: 'Tab', shiftKey: true });
-  expect(around.getByTestId('kind').textContent).toBe('image');
+  expect(around.getByTestId('kind').textContent).toBe('symbol');
   around.unmount();
   // „Form“'s shapes: the frame shows the one Tab is on at once, the one under the pointer over it,
   // the box again once neither.

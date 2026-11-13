@@ -94,7 +94,7 @@ export const slideDiffSchema = slideChangeSchema.extend({
   slideId: z.string(),
   position: z.number().int(),
   previousPosition: z.number().int().nullable(),
-  matchedBy: z.enum(['sourceId', 'sldId', 'content']).nullable(),
+  matchedBy: z.enum(['sldId', 'content']).nullable(),
 });
 export type SlideDiff = z.infer<typeof slideDiffSchema>;
 

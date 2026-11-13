@@ -22,14 +22,27 @@ type ImgProps = Omit<ComponentProps<'img'>, 'src' | 'srcSet' | 'onError'>;
 export function SwapImage({
   src,
   srcSet,
+  initialSrc,
   className,
   onError,
   ...props
-}: ImgProps & Source & { onError?: (src: string) => void }) {
+}: ImgProps &
+  Source & {
+    /** Already available preview, kept on the first mount until the full picture is decoded. */
+    initialSrc?: string;
+    onError?: (src: string) => void;
+  }) {
   // Oldest first; the first is on screen, those after it are coming in under it.
-  const [stack, setStack] = useState<Source[]>([{ src, srcSet }]);
+  const [stack, setStack] = useState<Source[]>(() => [
+    ...(initialSrc && initialSrc !== src ? [{ src: initialSrc }] : []),
+    { src, srcSet },
+  ]);
   const latest = stack[stack.length - 1]!;
-  if (keyOf(latest) !== keyOf({ src, srcSet })) setStack([...stack, { src, srcSet }]);
+  if (keyOf(latest) !== keyOf({ src, srcSet })) {
+    // Back to one still there (A → B → A before B came in): those after it go, it stays.
+    const at = stack.findIndex((item) => keyOf(item) === keyOf({ src, srcSet }));
+    setStack(at >= 0 ? stack.slice(0, at + 1) : [...stack, { src, srcSet }]);
+  }
 
   /** `source` is on screen: whatever came before it goes. */
   const settle = (source: Source) =>
@@ -65,6 +78,11 @@ export function SwapImage({
           else shown();
         }}
         onError={() => {
+          // A failed optional preview must neither cover the full picture nor fail the slide.
+          if (item.src === initialSrc && item.src !== src) {
+            setStack((current) => current.filter((source) => source !== item));
+            return;
+          }
           // A new one that fails takes over too: the error shows as it did.
           if (index > 0) settle(item);
           pictureShown(item.src);

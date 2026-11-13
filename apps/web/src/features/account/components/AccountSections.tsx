@@ -1,15 +1,25 @@
-import { useCallback, useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react';
 import { passkeyNameSchema, USER_NAME_MAX, type LoginIdentity, type Passkey } from '@slider/shared';
 import { isPasskeyCancel, passkeyErrorMessage, passkeysSupported } from '@/lib/passkeys';
 import { NextcloudSignIn, providerLoginUrl } from '@/features/auth';
 import { formatDateTime, formatRelativeTime } from '@/lib/format';
 import {
   useAuthProviders,
+  useCloudStatus,
   useDeletePasskey,
   useIdentities,
   usePasskeys,
   useRegisterPasskey,
   useRenamePasskey,
+  useStartCloudSignIn,
   useUnlinkIdentity,
   useUpdateMe,
 } from '@/lib/api';
@@ -17,6 +27,7 @@ import {
   Badge,
   Button,
   ConfirmDialog,
+  ErrorText,
   GoogleMark,
   Icon,
   IconTile,
@@ -98,6 +109,134 @@ export function NameField({ name }: { name: string }) {
         trailing={isPending ? <Spinner size={16} className="text-fg-subtle" /> : undefined}
       />
     </form>
+  );
+}
+
+/**
+ * The desktop app has no login of its own (BER-201): its account is the one on its Slider server,
+ * signed in in the browser – there with Microsoft, Google, Nextcloud or a passkey. „Anmelden“ as
+ * in the account menu, to the server signed in to last; „Anderer Server“ for a self-hosted one,
+ * like Bitwarden. „Abmelden“ stays in the account menu.
+ */
+export function CloudLoginSection() {
+  const cloud = useCloudStatus(true);
+  const startCloud = useStartCloudSignIn();
+  const startOther = useStartCloudSignIn();
+  const [choosing, setChoosing] = useState(false);
+  const [typed, setTyped] = useState('');
+  const account = cloud.data?.account ?? null;
+  const host = cloud.data ? new URL(cloud.data.server).host : '';
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    startOther.mutate(typed, {
+      onSuccess: () => {
+        setChoosing(false);
+        setTyped('');
+      },
+    });
+  };
+
+  return (
+    <Subsection title="Anmelden mit">
+      {cloud.isPending ? (
+        <Spinner size={20} className="text-fg-subtle" />
+      ) : cloud.isError ? (
+        <p className="text-sm text-danger">{cloud.error.message}</p>
+      ) : (
+        <RowList>
+          <ListRow
+            dimmed={!account}
+            leading={
+              <IconTile tone="inherit">
+                <Icon name="person" size={20} className="text-fg-muted" />
+              </IconTile>
+            }
+            title={account ? account.name : `Slider-Konto auf ${host}`}
+            subtitle={
+              account
+                ? account.email
+                  ? `${account.email} · ${host}`
+                  : host
+                : 'Nicht angemeldet. Im Browser mit Microsoft, Google, Nextcloud oder Passkey.'
+            }
+            trailing={
+              !account &&
+              !choosing && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  loading={startCloud.isPending}
+                  onClick={() => startCloud.mutate(undefined)}
+                >
+                  Anmelden
+                </Button>
+              )
+            }
+          />
+          {startCloud.isError && !choosing && (
+            <li>
+              <ErrorText role="alert" size="xs">
+                {startCloud.error.message}
+              </ErrorText>
+            </li>
+          )}
+          {!account &&
+            (choosing ? (
+              <li>
+                <form
+                  onSubmit={submit}
+                  className="flex animate-pop-in flex-col gap-3 rounded-panel p-3 glass-control"
+                >
+                  <TextField
+                    label="Adresse des Slider-Servers"
+                    placeholder="slider.firma.de"
+                    inputMode="url"
+                    autoComplete="url"
+                    autoFocus
+                    value={typed}
+                    onChange={(event) => setTyped(event.target.value)}
+                    disabled={startOther.isPending}
+                    error={startOther.isError ? startOther.error.message : null}
+                  />
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="submit"
+                      className="flex-1"
+                      loading={startOther.isPending}
+                      disabled={!typed.trim()}
+                    >
+                      Anmelden
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setChoosing(false);
+                        startOther.reset();
+                      }}
+                    >
+                      Abbrechen
+                    </Button>
+                  </div>
+                </form>
+              </li>
+            ) : (
+              <li>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    startCloud.reset();
+                    setChoosing(true);
+                  }}
+                >
+                  Anderer Server
+                </Button>
+              </li>
+            ))}
+        </RowList>
+      )}
+    </Subsection>
   );
 }
 
@@ -216,11 +355,7 @@ function UnlinkDialog({ identity, onClose }: { identity: LoginIdentity; onClose:
     <ConfirmDialog
       onClose={onClose}
       title={`${label} trennen?`}
-      description={
-        identity.provider === 'microsoft'
-          ? `Mit ${identity.email ?? 'diesem Microsoft-Konto'} meldest du dich dann nicht mehr an. Der Zugriff auf OneDrive und SharePoint bleibt, den trennst du dort, wo das Microsoft-Konto für Dateien steht. Du kannst die Anmeldung jederzeit wieder verbinden.`
-          : `Mit ${identity.email ?? `diesem ${label}-Konto`} meldest du dich dann nicht mehr an. Du kannst es jederzeit wieder verbinden.`
-      }
+      description={`Mit ${identity.email ?? `diesem ${label}-Konto`} meldest du dich dann nicht mehr an. Du kannst es jederzeit wieder verbinden.`}
       confirmLabel="Trennen"
       pending={unlink.isPending}
       // In the dialog: a toast would sit behind its backdrop.

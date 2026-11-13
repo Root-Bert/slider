@@ -1,4 +1,5 @@
 import {
+  AI_AUTHOR,
   commentWords,
   isPathStroke,
   isTextStroke,
@@ -35,8 +36,8 @@ export interface ThreadFilter {
   /** Avatar filter (BER-105): only these thread ids; `null`/absent = no such filter. */
   threadIds?: ReadonlySet<string> | null;
   /**
-   * Threads the AI finished a change on (BER-183): while still open they are "KI" – as good as
-   * done, waiting to be confirmed – and no longer "Offen".
+   * Threads the AI asks back in (BER-183): while open they are "KI" – waiting for the people –
+   * and no longer "Offen". What it changed is done by itself (`resolvedBy` the AI).
    */
   aiThreadIds?: ReadonlySet<string> | null;
   /** Listed whatever their status: threads being replied to (see `composingThreads`). */
@@ -46,7 +47,7 @@ export interface ThreadFilter {
 export interface StatusCounts {
   all: number;
   open: number;
-  /** Open threads the AI changed something for – not counted as open. */
+  /** Open threads the AI asks back in – not counted as open. */
   ai: number;
   done: number;
 }
@@ -118,7 +119,7 @@ export function openCountBySlide(threads: readonly Thread[]): Map<string, number
 /** Done threads step back among the others; filtered to „Erledigt“ alone they show as usual. */
 export const fadesDone = (filter: StatusFilter) => filter !== 'done';
 
-/** Where a thread belongs in the filter: done, else "KI" once the AI changed something, else open. */
+/** Where a thread belongs in the filter: done, else "KI" while the AI asks back, else open. */
 export function threadStatus(
   thread: Thread,
   aiThreadIds: ReadonlySet<string> | null | undefined,
@@ -126,6 +127,10 @@ export function threadStatus(
   if (thread.root.status === 'done') return 'done';
   return aiThreadIds?.has(thread.id) ? 'ai' : 'open';
 }
+
+/** Done by the AI: its change went in. Shown with its sparkles instead of the check. */
+export const doneByAi = (comment: Pick<Comment, 'status' | 'resolvedBy'>) =>
+  comment.status === 'done' && comment.resolvedBy === AI_AUTHOR.id;
 
 /** Counts for the Alle / Offen / KI / Erledigt chips; respects the avatar filter but not the status. */
 export function countByStatus(
@@ -265,27 +270,6 @@ export function gapThreadsByGap(
     groups.set(key, [...(groups.get(key) ?? []), thread]);
   }
   return groups;
-}
-
-/**
- * The listed threads in deck order: slide by slide, each slide's threads followed by those in
- * the gap after it (gap threads in front of the first slide are already in its list).
- */
-export function threadsInDeckOrder(
-  slides: SlideOrder,
-  bySlide: ReadonlyMap<string, readonly Thread[]>,
-  byGap: ReadonlyMap<string, readonly Thread[]>,
-): Thread[] {
-  return slides.flatMap((slide, index) => [
-    ...(bySlide.get(slide.id) ?? []),
-    ...(byGap.get(gapKey(slide.id, slides[index + 1]?.id ?? null)) ?? []),
-  ]);
-}
-
-/** The thread after `currentId` in `ordered`, from the start again after the last; `null` if none. */
-export function nextThread(ordered: readonly Thread[], currentId: string | null): Thread | null {
-  const index = ordered.findIndex((thread) => thread.id === currentId);
-  return ordered[(index + 1) % ordered.length] ?? null;
 }
 
 /**
@@ -543,6 +527,22 @@ export const isBareDrawing = ({ root, replies }: Thread) =>
   !root.images?.length &&
   root.body.trim() === '' &&
   root.strokes.length > 0;
+
+/**
+ * A sticker whose comment is only its own text (sent without a comment of its own), nothing
+ * said to it yet: the sticker on the slide is all there is – no card repeats it, and taking the
+ * text off takes the whole comment.
+ */
+export function isBareSticker({ root, replies }: Thread): boolean {
+  const text = textAnnotation(root);
+  return (
+    text !== null &&
+    replies.length === 0 &&
+    !root.media &&
+    !root.images?.length &&
+    root.body.trim() === text.text.trim()
+  );
+}
 
 /** Stand-in for an empty body: the text on the slide, if any, else "✏️ Markierung". */
 export const strokeOnlyLabel = (comment: Pick<Comment, 'strokes'>) => {

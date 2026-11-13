@@ -10,7 +10,7 @@ import {
   type NextcloudSettings,
 } from '@slider/shared';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, apiRequest } from '../api-client';
+import { api, apiFile, apiRequest } from '../api-client';
 import { queryKeys, workspaceKeys } from './keys';
 
 // Nextcloud as a source (BER-135): connected accounts, the file browser and its imports.
@@ -80,6 +80,13 @@ export const useNextcloudListing = (connectionId: string | null, view: Nextcloud
 export const nextcloudPreviewUrl = (connectionId: string, fileId: string) =>
   `${API_PREFIX}/nextcloud/${encodeURIComponent(connectionId)}/preview/${encodeURIComponent(fileId)}`;
 
+/** A file's bytes, picked in the Nextcloud browser as material – uploaded like one from disk. */
+export const downloadNextcloudFile = (connectionId: string, fileId: string, name: string) =>
+  apiFile(
+    `/nextcloud/${encodeURIComponent(connectionId)}/download/${encodeURIComponent(fileId)}`,
+    name,
+  );
+
 /** A presentation picked in the Nextcloud browser. */
 export function useImportNextcloudItem(workspaceId: string | null) {
   const queryClient = useQueryClient();
@@ -87,7 +94,7 @@ export function useImportNextcloudItem(workspaceId: string | null) {
     mutationFn: (item: Omit<ImportNextcloudItemInput, 'workspaceId'>) =>
       api.post<Deck>('/decks/nextcloud-item', workspaceId ? { ...item, workspaceId } : item),
     onSuccess: (deck) => {
-      // Like the OneDrive picker: the viewer opens on the cached deck, the lists show it.
+      // The viewer opens on the cached deck, the lists show it.
       queryClient.setQueryData(queryKeys.deck(deck.id), deck);
       return Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.deckLists }),

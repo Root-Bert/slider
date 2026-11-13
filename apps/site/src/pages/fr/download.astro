@@ -1,0 +1,11 @@
+---
+import Download from '~/components/download/Download.astro';
+import { t } from '~/i18n';
+import Base from '~/layouts/Base.astro';
+
+const { meta } = t('fr');
+---
+
+<Base lang="fr" translated="download" title={meta.downloadTitle} description={meta.downloadDescription}>
+  <Download lang="fr" />
+</Base>

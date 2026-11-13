@@ -5,6 +5,7 @@ import {
   filterThreads,
   gapKey,
   isBareDrawing,
+  isBareSticker,
   type StatusCounts,
   type Thread,
   type ThreadFilter,
@@ -32,7 +33,7 @@ export interface VisibleThreads {
 const EMPTY: Thread[] = [];
 
 /**
- * Applies the comment filter bar (status, or the threads the AI edited) and the avatar filter (your avatar:
+ * Applies the comment filter bar (status, or the threads the AI asks back in) and the avatar filter (your avatar:
  * threads that @mention you; someone else's: threads they wrote in, the AI's also those it
  * answered in) to the deck's threads.
  * A thread being replied to stays listed, whatever its status now (`useKeepThreadListed`).
@@ -40,7 +41,7 @@ const EMPTY: Thread[] = [];
 export function useCommentThreads(): VisibleThreads {
   const { threads, threadsBySlide, gapThreads, slides, slideIndex, mentionedThreadIds, viewer } =
     useViewerData();
-  const { edited: aiThreadIds, answered: aiAnswered } = useAiThreads();
+  const { asking: aiThreadIds, answered: aiAnswered, working: aiWorking } = useAiThreads();
   const { statusFilter, personFilter, composingThreads } = useViewerState();
   const keep = useMemo(() => new Set(composingThreads.keys()), [composingThreads]);
 
@@ -83,16 +84,22 @@ export function useCommentThreads(): VisibleThreads {
     [threadsBySlide, inFront, filter],
   );
 
-  const bySlide = useMemo(
-    () =>
-      new Map(
-        [...marksBySlide].map(([slideId, list]) => [
-          slideId,
-          list.some(isBareDrawing) ? list.filter((thread) => !isBareDrawing(thread)) : list,
-        ]),
-      ),
-    [marksBySlide],
-  );
+  const bySlide = useMemo(() => {
+    // No card for what is all on the slide: a drawing without a comment, and a sticker sent
+    // without one – until something is said to it (a reply, the AI at work or its answer).
+    const cardless = (thread: Thread) =>
+      isBareDrawing(thread) ||
+      (isBareSticker(thread) &&
+        !aiAnswered.has(thread.id) &&
+        !aiWorking.has(thread.id) &&
+        !keep.has(thread.id));
+    return new Map(
+      [...marksBySlide].map(([slideId, list]) => [
+        slideId,
+        list.some(cardless) ? list.filter((thread) => !cardless(thread)) : list,
+      ]),
+    );
+  }, [marksBySlide, aiAnswered, aiWorking, keep]);
 
   const byGap = useMemo(() => {
     const result = new Map<string, Thread[]>();

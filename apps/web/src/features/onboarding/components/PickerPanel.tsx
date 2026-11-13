@@ -39,8 +39,7 @@ const surface = (expanded: boolean): CSSProperties => {
 
 /**
  * A source button that opens up into its file picker, right in the page – it grows wider than
- * the column and tall enough for the list, and shrinks back into the button on close. Shared by
- * OneDrive/SharePoint and Nextcloud so both open the same way.
+ * the column and tall enough for the list, and shrinks back into the button on close (Nextcloud).
  */
 export function PickerPanel({
   open,

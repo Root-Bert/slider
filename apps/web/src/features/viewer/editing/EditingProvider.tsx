@@ -48,12 +48,21 @@ import {
   type Editing,
   type EditTool,
   type TextEditorHandle,
+  type TextFit,
 } from './editing-context';
 import { useOwnUndo } from './hooks/useOwnUndo';
 import { inverseOf, snapshotOf, touchedElements, type UndoContext } from './undo-ops';
 import { useSlidePicturesReady } from './hooks/useSlidePicturesReady';
 import { setWorkspaceFonts } from './live/fonts';
-import { imageBox, imageFilesOf, readClipboardImage } from './insert-image';
+import { imageBox, imageFilesOf, insertEach, readClipboard, shownImage } from './insert-image';
+import {
+  loadPastedFont,
+  pastedOf,
+  pastedParagraphs,
+  pastedTextBox,
+  textStyleOn,
+  type Pasted,
+} from './paste';
 import { lockOperations } from './lib/element-label';
 import {
   addedElement,
@@ -63,12 +72,12 @@ import {
   copiedElement,
   enteredIn,
   groupedElement,
-  heldStill,
   newPartIds,
   withCopyIn,
   withGroupIn,
 } from './live/model';
 import { photoSearchTakesTab } from './photos/photo-search-tab';
+import { typedIntoField } from './hooks/useTypeIntoField';
 import { newEditId } from './new-id';
 import { typedAhead } from './typed-ahead';
 import { createPreviewStore, PreviewStoreContext } from './preview-store';
@@ -92,7 +101,6 @@ type Actions = Pick<
   | 'groupPicked'
   | 'ungroupPicked'
   | 'pasteCopied'
-  | 'setAdding'
 >;
 
 const NONE: readonly EditableElement[] = [];
@@ -109,6 +117,27 @@ const withHeight =
     const next = new Map(current);
     if (height === null) next.delete(elementId);
     else next.set(elementId, height);
+    return next;
+  };
+
+/** A map of text sizes with one changed – the same map when it changed by a hair only. */
+const withFit =
+  (elementId: string, fit: TextFit | null) => (current: ReadonlyMap<string, TextFit>) => {
+    const old = current.get(elementId) ?? null;
+    const same = (a: number, b: number) => Math.abs(a - b) < 0.0005;
+    if (
+      old === fit ||
+      (old &&
+        fit &&
+        same(old.width, fit.width) &&
+        same(old.height, fit.height) &&
+        same(old.fittedHeight, fit.fittedHeight))
+    ) {
+      return current;
+    }
+    const next = new Map(current);
+    if (fit === null) next.delete(elementId);
+    else next.set(elementId, fit);
     return next;
   };
 
@@ -217,9 +246,6 @@ export function EditingProvider({ children }: { children: ReactNode }) {
   // The account the edits are made under: only it ever sends them (`edit-outbox.ts`).
   const userId = useMe().data?.user?.id;
   const [active, setActiveState] = useState(false);
-  // „Hinzufügen“: editing with every element there when it began held still, as locked – in
-  // the editor only, not in the file; what is added meanwhile stays free. `null`: not adding.
-  const [frozen, setFrozen] = useState<ReadonlySet<string> | null>(null);
   const [tool, setToolState] = useState<EditTool>('select');
   const [selection, setSelection] = useState<EditSelection | null>(null);
   const [group, setGroup] = useState<EditGroup | null>(null);
@@ -295,14 +321,14 @@ export function EditingProvider({ children }: { children: ReactNode }) {
   useDeckLayouts(deck.id, available);
   // …and the workspace's templates („Vorlagen“), so the panel never waits on them either.
   useWorkspaceMasters(deck.workspaceId, available);
-  // How high the picked text's box is around its text – to fit its height to (`textHeightOf`).
-  const [textHeights, setTextHeights] = useState<ReadonlyMap<string, number>>(new Map());
+  // The picked text's own size – to fit its box to (`textFitOf`).
+  const [textFits, setTextFits] = useState<ReadonlyMap<string, TextFit>>(new Map());
   const measure = useCallback(
     (elementId: string, height: number | null) => setHeights(withHeight(elementId, height)),
     [],
   );
   const measureText = useCallback(
-    (elementId: string, height: number | null) => setTextHeights(withHeight(elementId, height)),
+    (elementId: string, fit: TextFit | null) => setTextFits(withFit(elementId, fit)),
     [],
   );
 
@@ -393,7 +419,10 @@ export function EditingProvider({ children }: { children: ReactNode }) {
     layersOpen: layers,
     layersPanelOpen,
     tool: reviewTool,
+    materialOpen,
   } = useViewerState();
+  // The editor's keys are off on the material page: ⌘Z, ⌘V, Entf there are the board's.
+  const keysActive = active && !materialOpen;
   const stacked = (slideId: string) => {
     const elements = elementsWith(slideId, changed);
     const moves = pendingMoves(changed);
@@ -417,8 +446,6 @@ export function EditingProvider({ children }: { children: ReactNode }) {
     inGroup?.slideId === slideId && !layers
       ? enteredIn(stacked(slideId), inGroup.groupId)
       : stacked(slideId);
-  /** A slide's elements as the editor works on them: adding, those held still as locked. */
-  const elementsSeen = (slideId: string) => heldStill(elementsOf(slideId), frozen);
 
   const picked = selection
     ? (elementsOf(selection.slideId).find((element) => element.id === selection.elementId) ??
@@ -480,22 +507,11 @@ export function EditingProvider({ children }: { children: ReactNode }) {
   // Reviewing or editing – either one also in the layers view. Editing drops the drawing tool.
   const setActive = (next: boolean) => {
     setActiveState(next);
-    setFrozen(null);
     setToolState('select');
     setSelection(null);
     setGroup(null);
     stopText();
     if (next) dispatch({ type: 'toolSelected', tool: null });
-  };
-  /** „Hinzufügen“ (A): editing, every element there now (on any slide) held still. */
-  const setAdding = () => {
-    setActive(true);
-    const ids = new Set<string>();
-    for (const slide of state?.slides ?? [])
-      for (const element of slide.elements) ids.add(element.id);
-    for (const [id, change] of changedRef.current) if (change.element) ids.add(id);
-    for (const [id, change] of remote) if (change.element) ids.add(id);
-    setFrozen(ids);
   };
   const setTool = (next: EditTool) => {
     setToolState(next);
@@ -878,7 +894,7 @@ export function EditingProvider({ children }: { children: ReactNode }) {
   const undo = ownUndo.undo;
   const redo = ownUndo.redo;
 
-  // E edits, A adds (editing, what is there held still), R reviews (each only goes there), L switches the layers view – not while typing, nor
+  // E edits, R reviews (each only goes there), L switches the layers view – not while typing, nor
   // while a drawing's comment is being started by typing after it (`useViewerShortcuts`).
   const setLayers = (open: boolean) => {
     dispatch({ type: 'layersSet', open });
@@ -889,8 +905,8 @@ export function EditingProvider({ children }: { children: ReactNode }) {
     if (!available) return;
     const onKeyDown = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
-      if (key !== 'e' && key !== 'r' && key !== 'l' && key !== 'a') return;
-      if (event.defaultPrevented || isModKey(event) || event.altKey) return;
+      if (key !== 'e' && key !== 'r' && key !== 'l') return;
+      if (materialOpen || event.defaultPrevented || isModKey(event) || event.altKey) return;
       if (isTypingTarget(event.target)) return;
       if (event.target instanceof Element && event.target.closest('dialog')) return;
       if (draft || lastDrawing) return;
@@ -902,9 +918,7 @@ export function EditingProvider({ children }: { children: ReactNode }) {
           setLayers(true);
           dispatch({ type: 'layersPanelSet', open: true });
         } else dispatch({ type: 'layersPanelSet', open: !layersPanelOpen });
-      } else if (key === 'a') {
-        if (!frozen) setAdding();
-      } else if (key === 'e' ? !active || frozen : active) setActive(key === 'e');
+      } else if ((key === 'e') !== active) setActive(key === 'e');
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -1032,6 +1046,7 @@ export function EditingProvider({ children }: { children: ReactNode }) {
     file,
     slideId = activeSlideId ?? undefined,
     at,
+    longest,
   ) => {
     const slide = slideId ? bySlide.get(slideId) : undefined;
     if (!slide) return false;
@@ -1039,10 +1054,16 @@ export function EditingProvider({ children }: { children: ReactNode }) {
       toast('Bilder lassen sich nur mit Verbindung einfügen.', 'neutral');
       return false;
     }
+    // HEIC, TIFF, SVG …: drawn into a PNG first – as the slide shows it.
+    const shown = await shownImage(file);
+    if (!shown) {
+      toast('Dieses Bildformat lässt sich nicht einfügen.', 'neutral');
+      return false;
+    }
     try {
-      const image = await upload.mutateAsync(file);
+      const image = await upload.mutateAsync(shown);
       const elementId = newEditId();
-      const box = imageBox(image, state?.pageSize ?? PAGE_SIZE, at);
+      const box = imageBox(image, state?.pageSize ?? PAGE_SIZE, at, longest);
       const ok = await apply([
         { type: 'addImage', pageId: slide.pageId, elementId, box, imageId: image.imageId },
       ]);
@@ -1054,22 +1075,76 @@ export function EditingProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  /**
+   * Text pasted from outside (another app, a web page): a new text box in the slide's body style,
+   * as wide as its lines, in the slide's middle, picked – as Figma does. Works offline (no upload).
+   */
+  const insertText = async (text: string, slideId = activeSlideId ?? undefined) => {
+    const slide = slideId ? bySlide.get(slideId) : undefined;
+    if (!slide) return false;
+    const style = textStyleOn(elementsOf(slide.slideId));
+    const { paragraphs, cut } = pastedParagraphs(text, style);
+    if (paragraphs.length === 0) return false;
+    if (cut) toast('Der Text war zu lang – eingefügt ist sein Anfang.', 'neutral');
+    const elementId = newEditId();
+    await loadPastedFont(style);
+    const box = pastedTextBox(paragraphs, style, state?.pageSize ?? PAGE_SIZE);
+    const ok = await apply([
+      {
+        type: 'addElement',
+        pageId: slide.pageId,
+        elementId,
+        kind: 'text',
+        box,
+        fill: null,
+        stroke: null,
+        paragraphs,
+      },
+    ]);
+    if (ok) select({ slideId: slide.slideId, elementId });
+    return ok;
+  };
+
+  /** What came from outside Slider: pictures as picture elements (a step apart), text as a box. */
+  const insertPasted = async (pasted: Pasted) => {
+    if (pasted?.kind === 'text') return insertText(pasted.text);
+    if (pasted?.kind !== 'images') return false;
+    return insertEach(
+      pasted.images,
+      { x: 0.5, y: 0.5 },
+      PASTE_STEP,
+      state?.pageSize ?? PAGE_SIZE,
+      (image, at) => insertImage(image, undefined, at),
+    );
+  };
+
   const onPaste = useEffectEvent((event: ClipboardEvent) => {
     const pending = pastePendingRef.current;
     pastePendingRef.current = false;
+    // A dialog over the editor takes what is pasted there itself (as it does E, R and L).
+    if (event.target instanceof Element && event.target.closest('dialog')) return;
     const data = event.clipboardData;
     if (!data) return;
     const copied = copiedOf(data);
     if (!copied) {
       // Something else copied since (in another app, too): not the element any more.
       if (data.types.length > 0) copiedRef.current = null;
-      // A picture (a screenshot, one copied in another app or a file): a new picture element –
-      // unless pasted into a field (a comment takes it there).
-      const [image] = imageFilesOf(data);
-      if (image && (pending || !isTextTarget(event.target))) {
+      const pasted = pastedOf({
+        images: imageFilesOf(data),
+        text: data.getData('text/plain'),
+        html: data.getData('text/html'),
+      });
+      // A picture (a screenshot, one copied in another app or a file): new picture elements –
+      // unless pasted into a field (a comment takes it there). Text: a new text box – unless
+      // pasted where text is typed (a text box, a comment, a panel's field takes it).
+      const takes =
+        pasted?.kind === 'images'
+          ? pending || !isTextTarget(event.target)
+          : !!pasted && !isTextTarget(event.target);
+      if (takes) {
         event.preventDefault();
         event.stopPropagation();
-        void insertImage(image);
+        void insertPasted(pasted);
       }
       return;
     }
@@ -1091,11 +1166,11 @@ export function EditingProvider({ children }: { children: ReactNode }) {
     void paste(same);
   });
   useEffect(() => {
-    if (!active) return;
+    if (!keysActive) return;
     const listener = (event: ClipboardEvent) => onPaste(event);
     window.addEventListener('paste', listener, { capture: true });
     return () => window.removeEventListener('paste', listener, { capture: true });
-  }, [active]);
+  }, [keysActive]);
 
   // Keys while editing: Esc lets go (the tool, then the pick – never the mode), ⌘↵ takes the element as it is and lets go –
   // also while typing in it –, Entf / ⌘⌫ deletes (elements picked together too), ⌘A picks every
@@ -1103,9 +1178,11 @@ export function EditingProvider({ children }: { children: ReactNode }) {
   // ⇧⌘L locks and unlocks, ⌘G / ⇧⌘G group and ungroup, ⌘Z / ⇧⌘Z undo and redo.
   useEffect(() => {
     // Also in the layers view; its list's keys go first (⌘Z there is the same).
-    if (!active) return;
+    if (!keysActive) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
+      // A key typed into a search open anywhere (symbols, photos): the search's, not a picked
+      // text box's.
+      if (event.defaultPrevented || typedIntoField(event)) return;
       const mod = event.metaKey || event.ctrlKey;
       // A panel's text field takes ⌘↵ itself; any other field gives up its value on blur.
       const textarea = event.target instanceof HTMLTextAreaElement;
@@ -1209,7 +1286,7 @@ export function EditingProvider({ children }: { children: ReactNode }) {
           inGroup?.slideId === activeSlideId && enteredGroup?.children
             ? new Set(enteredGroup.children.map((element) => element.id))
             : null;
-        const elementIds = elementsSeen(activeSlideId)
+        const elementIds = elementsOf(activeSlideId)
           .filter((element) => canMove(element) && element.bbox.w > 0 && element.bbox.h > 0)
           .filter((element) => !among || among.has(element.id))
           .map((element) => element.id);
@@ -1271,8 +1348,8 @@ export function EditingProvider({ children }: { children: ReactNode }) {
           if (!pastePendingRef.current) return;
           pastePendingRef.current = false;
           if (copiedRef.current?.deckId === deck.id) void paste(copiedRef.current);
-          // Nothing copied here: a picture on the clipboard, read where the browser allows it.
-          else void readClipboardImage().then((image) => image && insertImage(image));
+          // Nothing copied here: a picture or text on the clipboard, read where the browser allows it.
+          else void readClipboard().then((content) => insertPasted(pastedOf(content)));
         });
         // Not kept from the browser: its paste brings the clipboard.
         event.stopPropagation();
@@ -1300,7 +1377,7 @@ export function EditingProvider({ children }: { children: ReactNode }) {
   // template, through its guides, too. In the layers view there is only picking – Tab stays with
   // it, it does not step into the drawing tools.
   useEffect(() => {
-    if (!active) return;
+    if (!keysActive) return;
     const onKeyDown = (event: KeyboardEvent) => {
       const step = tabStep(event);
       if (!step || photoSearchTakesTab(event)) return;
@@ -1345,7 +1422,6 @@ export function EditingProvider({ children }: { children: ReactNode }) {
     groupPicked,
     ungroupPicked,
     pasteCopied,
-    setAdding,
   };
   const latest = useRef(actions);
   useLayoutEffect(() => {
@@ -1362,7 +1438,8 @@ export function EditingProvider({ children }: { children: ReactNode }) {
         latest.current.enterGroup(slideId, groupId, elementId),
       apply: (operations, options) => latest.current.apply(operations, options),
       tryOut: (operations) => latest.current.tryOut(operations),
-      insertImage: (file, slideId, at) => latest.current.insertImage(file, slideId, at),
+      insertImage: (file, slideId, at, longest) =>
+        latest.current.insertImage(file, slideId, at, longest),
       undo: () => latest.current.undo(),
       redo: () => latest.current.redo(),
       startText: (next, at) => latest.current.startText(next, at),
@@ -1370,7 +1447,6 @@ export function EditingProvider({ children }: { children: ReactNode }) {
       groupPicked: () => latest.current.groupPicked(),
       ungroupPicked: () => latest.current.ungroupPicked(),
       pasteCopied: () => latest.current.pasteCopied(),
-      setAdding: () => latest.current.setAdding(),
     }),
     [],
   );
@@ -1388,7 +1464,6 @@ export function EditingProvider({ children }: { children: ReactNode }) {
       available,
       state,
       active: active && available,
-      adding: active && available && frozen !== null,
       tool,
       layers: layers && available,
       selection: currentSelection,
@@ -1398,10 +1473,7 @@ export function EditingProvider({ children }: { children: ReactNode }) {
       clipboard,
       opened,
       open: setOpened,
-      elementsOf: elementsSeen,
-      isHeld: (slideId, elementId) =>
-        !!frozen?.has(elementId) &&
-        !elementsOf(slideId).find((element) => element.id === elementId)?.locked,
+      elementsOf,
       selectedElement,
       busy,
       canUndo,
@@ -1418,7 +1490,7 @@ export function EditingProvider({ children }: { children: ReactNode }) {
       setPreview: previews.set,
       heightOf: (elementId) => heights.get(elementId) ?? null,
       measure,
-      textHeightOf: (elementId) => textHeights.get(elementId) ?? null,
+      textFitOf: (elementId) => textFits.get(elementId) ?? null,
       measureText,
       retilting,
       retilted,
@@ -1437,7 +1509,6 @@ export function EditingProvider({ children }: { children: ReactNode }) {
       currentGroup,
       inGroup,
       clipboard,
-      frozen,
       opened,
       changed,
       selectedElement,
@@ -1452,7 +1523,7 @@ export function EditingProvider({ children }: { children: ReactNode }) {
       textCaret,
       textEditor,
       heights,
-      textHeights,
+      textFits,
       retilting,
       measure,
       measureText,

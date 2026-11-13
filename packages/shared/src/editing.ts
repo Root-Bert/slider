@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { photoProviderSchema, type PhotoProvider } from './integrations';
-import { commentStatusSchema, slideTransitionSchema, type TemplatePlaceholderKind } from './model';
+import {
+  commentReactionSchema,
+  commentStatusSchema,
+  slideTransitionSchema,
+  type TemplatePlaceholderKind,
+} from './model';
 import { shapeOutlineSchema } from './shape-outline';
 import { elementPictureSchema, pictureFitSchema, pictureFocusSchema } from './image-fit';
 import { workspaceFontSchema } from './workspaces';
@@ -216,6 +221,20 @@ export const imageCreditSchema = z.object({
   source: photoProviderSchema.optional(),
 });
 export type ImageCredit = z.infer<typeof imageCreditSchema>;
+
+/**
+ * A picture that is one of Slider's symbols (an icon or pictogram, `@/features/icons`) drawn in
+ * one colour – kept with it in the file (its description, like a credit), so a symbol picked
+ * again offers its colours and other symbols instead of a picture's controls.
+ */
+export const imageSymbolSchema = z.object({
+  /** `phosphor/house` – the same in every build of the sets. */
+  id: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
+  /** As shown: `House`. */
+  label: z.string().min(1).max(200),
+  color: z.string().regex(/^#[0-9a-f]{6}$/i),
+});
+export type ImageSymbol = z.infer<typeof imageSymbolSchema>;
 
 /** How see-through a fill layer is drawn: 0 (not at all) to 1 (fully). */
 const opacitySchema = z.number().min(0).max(1);
@@ -511,6 +530,8 @@ export const editableElementSchema = z.object({
   live: liveElementSchema.nullable().default(null),
   /** A picture that is a stock photo: whose it is (shown with it). */
   credit: imageCreditSchema.nullable().default(null),
+  /** A picture that is a symbol: which, in which colour. Left out: none. */
+  symbol: imageSymbolSchema.optional(),
   /** Fill and border of a shape or text frame (`setShapeStyle`); `null`: it has none to set. */
   look: elementLookSchema.nullable().default(null),
   /** Tilted in depth (`setTilt`); `null`: flat on the slide. */
@@ -702,6 +723,8 @@ export type EditableSlide = z.infer<typeof editableSlideSchema>;
 
 /** Longest text the editor or the AI may put into one element. */
 export const MAX_ELEMENT_TEXT = 5_000;
+/** Most paragraphs one element takes. */
+export const MAX_PARAGRAPHS = 200;
 
 const elementId = z.string().min(1).max(100);
 /** The id the editor gives an element it adds (`sl…`). */
@@ -726,7 +749,7 @@ export const setTextOperationSchema = z.object({
   /** Replaces the element's text; formatting of the first run of each paragraph stays. */
   paragraphs: z
     .array(z.string().max(MAX_ELEMENT_TEXT))
-    .max(200)
+    .max(MAX_PARAGRAPHS)
     .refine((paragraphs) => paragraphs.join('').length <= MAX_ELEMENT_TEXT, 'Text zu lang.'),
 });
 
@@ -757,7 +780,7 @@ export type RichParagraph = z.infer<typeof richParagraphSchema>;
 
 const richParagraphs = z
   .array(richParagraphSchema)
-  .max(200)
+  .max(MAX_PARAGRAPHS)
   .refine(
     (paragraphs) =>
       paragraphs.reduce(
@@ -1433,8 +1456,8 @@ export const aiProposalSchema = z.object({
   /** What the AI did, in its words. */
   summary: z.string().nullable(),
   /**
-   * Its reply asks the people something about the request: the thread stays „Offen“ for their
-   * answer instead of going to „KI“.
+   * Its reply asks the people something about the request: the thread waits under „KI“ for their
+   * answer instead of going to „Erledigt“.
    */
   asks: z.boolean().default(false),
   error: z.string().nullable(),
@@ -1467,6 +1490,8 @@ export const aiProposalSchema = z.object({
    * variant's answer (no thread) stays open on it until then. `null`: open.
    */
   resolvedAt: z.iso.datetime().nullable().default(null),
+  /** Reactions to its answer (👍 / 👎 / egal), oldest first – as on a comment. */
+  reactions: z.array(commentReactionSchema).optional(),
   createdByName: z.string().nullable(),
   createdAt: z.iso.datetime(),
 });

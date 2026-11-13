@@ -33,9 +33,23 @@ import { createPortal, flushSync } from 'react-dom';
 import { ACCENT_COLOR_NAMES, accentColor, selectionStyle } from '@/lib/accent';
 import { isTextTarget } from '@/lib/dom';
 import { isModKey } from '@/lib/keyboard';
-import { Button, cn, ConfirmDialog, ContextMenu, Icon, IconButton } from '@/ui';
+import { downloadNextcloudFile, useNextcloudConnections } from '@/lib/api';
+import { NextcloudBrowser } from '@/features/nextcloud';
+import {
+  Button,
+  cn,
+  ConfirmDialog,
+  ContextMenu,
+  Dialog,
+  GlassPanel,
+  Icon,
+  IconButton,
+  NextcloudMark,
+  Toolbar,
+  ToolbarDivider,
+} from '@/ui';
 import { useViewerData } from '../state/viewer-data';
-import { isSidePanelOpen, useViewerDispatch, useViewerState } from '../state/viewer-state';
+import { useViewerDispatch, useViewerState } from '../state/viewer-state';
 import {
   BoardNodeContext,
   boardNodes,
@@ -54,11 +68,12 @@ import {
 import { BoardNodeView } from './BoardNodeView';
 import { RectFrame } from '../stage/RectFrame';
 import { BoardPanel } from './BoardPanel';
-import { droppedItems, pickedFolder } from './folder-files';
+import { askKeys, useNoteAnswers, type NoteAnswerValue } from './note-answers';
+import { droppedItems } from './folder-files';
 import { useBoard, useFolderUploads } from './useBoard';
 
 /*
- * Folie 0, „Material“: the deck's board before slide 1 – a free surface like a moodboard where
+ * „Material“: the deck's board, a page of its own beside the presentation – a free surface like a moodboard where
  * files, links and notes lie (`useBoard`), shown with React Flow. A drag on the empty surface draws
  * a box as on a slide in Besprechen and the caret goes into it, as into a sticker on a slide: what
  * is typed is the note. Round one thing (a file mostly inside it, or begun on a picked file's
@@ -105,10 +120,33 @@ const asUrl = (text: string): string | null => {
 
 /** A press that moves this far (screen px) draws a box; less is a click. */
 const DRAW_SLOP = 5;
-/** What the side panel takes of the screen's right: its width and its gap to the board. */
-const PANEL_ROOM = 412 + 12;
 /** A pasted text's note: its box at the pointer. */
 const PASTED_BOX = { w: 160, h: 80 };
+/** „Fragen“: a note to write the question in, at the middle of what is in view. */
+const QUESTION_BOX = { w: 240, h: 96 };
+/**
+ * Below which width of the controls' row (its content, px) each part gives way – measured with
+ * every button there (`canComment`), a few px to spare: labels first, then the zoom, then the
+ * word „Material“. Nextcloud's button needs about 46 px more, its label about 70.
+ */
+const GIVE_WAY = {
+  plain: {
+    nextcloud: '',
+    ask: '@max-[654px]:hidden',
+    add: '@max-[604px]:hidden',
+    leave: '@max-[474px]:hidden',
+    zoom: '@max-[390px]:hidden',
+    material: '@max-[256px]:hidden',
+  },
+  nextcloud: {
+    nextcloud: '@max-[768px]:hidden',
+    ask: '@max-[700px]:hidden',
+    add: '@max-[650px]:hidden',
+    leave: '@max-[520px]:hidden',
+    zoom: '@max-[436px]:hidden',
+    material: '@max-[302px]:hidden',
+  },
+} as const;
 /** How much of a thing must lie in a box drawn (or of the box on it) for the note to hang on it. */
 const MOSTLY = 0.6;
 
@@ -136,6 +174,21 @@ function takenIn(
   return { held: [], beside: under?.id ?? null };
 }
 
+/** A note or box: what may be asked (its text the question). */
+const isNote = (item: BoardEntry): item is BoardItem =>
+  !isMaterial(item) && (item.kind === 'note' || item.kind === 'box');
+
+/** Where a new note lies free: from `start`, past whatever it would cover, to the right. */
+function freeSpot(start: BoardFrame, things: readonly BoardFrame[]): { x: number; y: number } {
+  const spot = { ...start };
+  for (let step = 0; step < 50; step++) {
+    const covered = things.filter((thing) => overlap(spot, thing) > 0);
+    if (covered.length === 0) break;
+    spot.x = Math.max(...covered.map((thing) => thing.x + thing.w)) + 24;
+  }
+  return { x: spot.x, y: spot.y };
+}
+
 const clampZoom = (zoom: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
 
 const frameOf = ({ x, y, width, height }: ResizeParams): BoardFrame => ({
@@ -146,9 +199,10 @@ const frameOf = ({ x, y, width, height }: ResizeParams): BoardFrame => ({
 });
 
 export const MaterialBoard = memo(function MaterialBoard(props: {
-  x: number;
   w: number;
   h: number;
+  /** „Präsentation →“: back to the presentation beside the material page. */
+  onLeave: () => void;
 }) {
   return (
     <ReactFlowProvider>
@@ -157,8 +211,8 @@ export const MaterialBoard = memo(function MaterialBoard(props: {
   );
 });
 
-function Board({ x, w, h }: { x: number; w: number; h: number }) {
-  const { canComment, canManage, viewer } = useViewerData();
+function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void }) {
+  const { canComment, canManage, viewer, aiAuthor } = useViewerData();
   const {
     board,
     loading,
@@ -172,11 +226,21 @@ function Board({ x, w, h }: { x: number; w: number; h: number }) {
     setColor,
     move,
     remove,
+    saved,
   } = useBoard();
+  // The AI's answers under notes (⌘↵), seen by everyone who sees the board.
+  const answers = useNoteAnswers(saved);
+  const [deletingAnswer, setDeletingAnswer] = useState<NoteAnswerValue | null>(null);
   const flow = useReactFlow<BoardNode>();
   const zoom = useStore((state) => state.transform[2]);
   const rootRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // „Aus Nextcloud wählen“ once an account is connected: a picked file comes as if from disk.
+  const nextcloudConnected = (useNextcloudConnections(canComment).data?.length ?? 0) > 0;
+  const giveWay = GIVE_WAY[nextcloudConnected ? 'nextcloud' : 'plain'];
+  const [browsingNextcloud, setBrowsingNextcloud] = useState(false);
+  // Counts the dialog's closings: a download it was closed during is dropped, not added.
+  const nextcloudClosings = useRef(0);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [live, setLive] = useState<ReadonlyMap<string, BoardFrame>>(NO_FRAMES);
   const [editing, setEditing] = useState<string | null>(null);
@@ -235,7 +299,6 @@ function Board({ x, w, h }: { x: number; w: number; h: number }) {
   } | null>(null);
   /** A folder to be deleted: asked whether its files go too. */
   const [deletingFolder, setDeletingFolder] = useState<BoardItem | null>(null);
-  const folderRef = useRef<HTMLInputElement>(null);
   // Boxes: holding what lies in them.
   const frames = useMemo(() => board.items.filter((item) => item.kind === 'box'), [board.items]);
   const nodes = useMemo(
@@ -307,15 +370,10 @@ function Board({ x, w, h }: { x: number; w: number; h: number }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only once, when it first arrives
   }, [loading]);
 
-  // The wheel sideways scrolls the deck as anywhere else (React Flow never sees it); nothing
-  // the board takes goes on to the deck. Safari's pinch comes as gesture events.
+  // Nothing the board takes goes on to the page. Safari's pinch comes as gesture events.
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-    const sideways = (event: WheelEvent) => {
-      if (!isModKey(event) && Math.abs(event.deltaX) > Math.abs(event.deltaY))
-        event.stopPropagation();
-    };
     const stop = (event: Event) => event.stopPropagation();
     let pinchFrom = 1;
     const onGestureStart = (event: Event) => {
@@ -339,12 +397,10 @@ function Board({ x, w, h }: { x: number; w: number; h: number }) {
         y: py - ((py - view.y) / view.zoom) * next,
       });
     };
-    root.addEventListener('wheel', sideways, { capture: true });
     root.addEventListener('wheel', stop);
     root.addEventListener('gesturestart', onGestureStart);
     root.addEventListener('gesturechange', onGestureChange);
     return () => {
-      root.removeEventListener('wheel', sideways, { capture: true });
       root.removeEventListener('wheel', stop);
       root.removeEventListener('gesturestart', onGestureStart);
       root.removeEventListener('gesturechange', onGestureChange);
@@ -454,6 +510,8 @@ function Board({ x, w, h }: { x: number; w: number; h: number }) {
   };
 
   const ownItem = (item: BoardItem) => canComment && item.author.id === viewer.author.id;
+  /** Its text may be handed to the AI (⌘↵, „KI fragen“) – anyone's note, by whoever may comment. */
+  const askable = (item: BoardItem) => canComment && isNote(item) && item.text.trim() !== '';
   /** A folder's files laid out where it lay, its folder deleted alone (they stay on the board). */
   const deleteFolder = (folder: BoardItem, withFiles: boolean) => {
     setDeletingFolder(null);
@@ -477,6 +535,35 @@ function Board({ x, w, h }: { x: number; w: number; h: number }) {
         })),
       );
     remove([folder.id]);
+  };
+
+  /**
+   * A note's or frame's text taken (↵, ⌘↵, or left with text): the note it is saved as – a new
+   * one's own id – or `null` when none is kept.
+   */
+  const takeNote = (
+    item: BoardItem,
+    { text, plain, rich }: Parameters<BoardNodeContext['onNoteDone']>[1],
+  ): string | null => {
+    setEditing(null);
+    if (item.id === draft?.id) {
+      // Written: a note beside the one file the box lay on (its words), else the box with its
+      // rich text, holding what it took in.
+      setDraft(null);
+      if (!plain) return null;
+      const frame = { x: item.x, y: item.y, w: item.w, h: item.h };
+      return item.kind === 'note'
+        ? addNote(frame, plain, item.boundIds)
+        : addBox(frame, text, item.boundIds, rich);
+    }
+    // Emptied: deleted once it is confirmed, as a comment is.
+    if (!plain) {
+      setEmptied(item);
+      return null;
+    }
+    if (text !== item.text || (rich && JSON.stringify(rich) !== JSON.stringify(item.rich)))
+      updateText(item.id, text, rich);
+    return item.id;
   };
 
   const context: BoardNodeContext = {
@@ -535,27 +622,33 @@ function Board({ x, w, h }: { x: number; w: number; h: number }) {
     mayEdit: ownItem,
     setColor: (item, color) => setColor(item.id, color === item.author.color ? null : color),
     onContextMenu: (item, event) => {
-      if (!ownItem(item) && !mayDelete(item)) return;
+      if (!ownItem(item) && !mayDelete(item) && !askable(item)) return;
       event.preventDefault();
       event.stopPropagation();
       setMenuAt({ item, x: event.clientX, y: event.clientY });
     },
-    onNoteDone: (item, { text, plain, rich }) => {
-      setEditing(null);
-      if (item.id === draft?.id) {
-        // Written: a note beside the one file the box lay on (its words), else the box with its
-        // rich text, holding what it took in.
-        setDraft(null);
-        if (!plain) return;
-        const frame = { x: item.x, y: item.y, w: item.w, h: item.h };
-        if (item.kind === 'note') addNote(frame, plain, item.boundIds);
-        else addBox(frame, text, item.boundIds, rich);
-        return;
-      }
-      // Emptied: deleted once it is confirmed, as a comment is.
-      if (!plain) setEmptied(item);
-      else if (text !== item.text || (rich && JSON.stringify(rich) !== JSON.stringify(item.rich)))
-        updateText(item.id, text, rich);
+    onNoteDone: (item, value) => void takeNote(item, value),
+    onNoteAsk: (item, value) => {
+      const id = takeNote(item, value);
+      if (id) answers.ask(id, item.kind === 'note' ? value.plain : value.text);
+    },
+    answerOf: (noteId) => answers.byNote.get(noteId),
+    answers: {
+      ai: aiAuthor,
+      byId: fileById,
+      canComment,
+      streaming: answers.streaming,
+      stop: answers.stop,
+      retry: (answer) => {
+        const note = board.items.find((each) => each.id === answer.noteId);
+        if (note?.text.trim()) answers.ask(note.id, note.text);
+      },
+      remove: setDeletingAnswer,
+      openSource: (material, page) => {
+        if (!material.url) return;
+        const at = page && material.kind === 'pdf' ? `#page=${page}` : '';
+        window.open(`${material.url}${at}`, '_blank', 'noopener');
+      },
     },
     onNoteCancel: (item) => {
       setEditing(null);
@@ -647,6 +740,34 @@ function Board({ x, w, h }: { x: number; w: number; h: number }) {
     setDraft(note);
     setEditing(note.id);
   };
+  /** „Fragen“: a note in the middle of what is in view, typed in at once – ⌘↵ asks the AI. */
+  const startQuestion = () => {
+    const start = { ...middle(), ...QUESTION_BOX };
+    const at = freeSpot(start, items);
+    const note: BoardItem = {
+      id: crypto.randomUUID(),
+      deckId: '',
+      author: viewer.author,
+      kind: 'box',
+      text: '',
+      url: null,
+      boundIds: [],
+      color: null,
+      rich: null,
+      ...at,
+      ...QUESTION_BOX,
+      createdAt: new Date().toISOString(),
+    };
+    setSelected(new Set());
+    setDraft(note);
+    setEditing(note.id);
+    // Moved aside to lie free: the board follows it.
+    if (at.x !== start.x)
+      void flow.setCenter(at.x + QUESTION_BOX.w / 2, at.y + QUESTION_BOX.h / 2, {
+        zoom,
+        duration: 300,
+      });
+  };
   /** A box drawn from `a` to `b` (screen points) in board units; `null` while it is a click. */
   const boardRect = (a: { x: number; y: number }, b: { x: number; y: number }) => {
     if (Math.hypot(b.x - a.x, b.y - a.y) < DRAW_SLOP) return null;
@@ -729,6 +850,13 @@ function Board({ x, w, h }: { x: number; w: number; h: number }) {
       event.stopPropagation();
       setSelected(new Set());
       setOpenFolder(null);
+    } else if (event.key === 'Enter' && isModKey(event) && canComment) {
+      // ⌘↵ on one picked note: asked as while typing it.
+      const notes = items.filter((item) => selected.has(item.id)).filter(isNote);
+      if (notes.length !== 1 || !notes[0]!.text.trim()) return;
+      event.preventDefault();
+      event.stopPropagation();
+      answers.ask(notes[0]!.id, notes[0]!.text);
     } else if (event.key === 'a' && isModKey(event)) {
       event.preventDefault();
       event.stopPropagation();
@@ -756,54 +884,17 @@ function Board({ x, w, h }: { x: number; w: number; h: number }) {
     !(editing && picked.id === editing)
       ? picked
       : undefined;
-  // One of the deck's side panels: open while one thing is picked, gone with it.
+  // One of the deck's side panels, floating over the board as over the slides: open while one
+  // thing is picked (gone with it).
   useEffect(() => {
     dispatch({ type: 'boardPanelSet', open: !!panelItem });
   }, [dispatch, panelItem]);
   useEffect(() => () => dispatch({ type: 'boardPanelSet', open: false }), [dispatch]);
-  // The board narrows by as much as the side panel would cover of it (`SidePanel`: 400 px wide,
-  // 12 px from the edge, from tablets up) – never under it.
-  const panelOpen = !!panelItem;
-  useEffect(() => {
-    const root = rootRef.current;
-    const section = root?.parentElement;
-    if (!root || !section) return;
-    if (!panelOpen) {
-      root.style.width = '';
-      return;
-    }
-    // Measured from the board's own place (not its narrowed width) – again as the deck scrolls
-    // sideways or the window changes: the panel never lies over it.
-    const fit = () => {
-      if (!window.matchMedia('(min-width: 768px)').matches) {
-        root.style.width = '';
-        return;
-      }
-      const place = section.getBoundingClientRect();
-      const covered = place.right - (window.innerWidth - PANEL_ROOM);
-      root.style.width = covered > 0 ? `${Math.max(0, Math.floor(place.width - covered))}px` : '';
-    };
-    fit();
-    window.addEventListener('resize', fit);
-    window.addEventListener('scroll', fit, true);
-    return () => {
-      window.removeEventListener('resize', fit);
-      window.removeEventListener('scroll', fit, true);
-      root.style.width = '';
-    };
-  }, [panelOpen]);
-  // Closed elsewhere (Esc, another panel opened): what was picked is let go.
-  const otherPanel = isSidePanelOpen({ ...viewerState, boardPanelOpen: false });
+  // Closed elsewhere (Esc, leaving the material page): what was picked is let go.
   const [panelShown, setPanelShown] = useState(false);
   if (viewerState.boardPanelOpen !== panelShown) {
     setPanelShown(viewerState.boardPanelOpen);
     if (panelShown && panelItem) setSelected(new Set());
-  }
-  // Another panel opened meanwhile (a thread, sharing): it takes the side, what was picked goes.
-  const [otherShown, setOtherShown] = useState(otherPanel);
-  if (otherPanel !== otherShown) {
-    setOtherShown(otherPanel);
-    if (otherPanel && panelItem) setSelected(new Set());
   }
   const names = useMemo(
     () =>
@@ -826,8 +917,8 @@ function Board({ x, w, h }: { x: number; w: number; h: number }) {
     <section
       data-material-board
       aria-label="Material"
-      className="absolute snap-start"
-      style={{ left: x, top: 0, width: w, height: h }}
+      className="absolute"
+      style={{ left: 0, top: 0, width: w, height: h }}
     >
       <div
         ref={rootRef}
@@ -835,7 +926,7 @@ function Board({ x, w, h }: { x: number; w: number; h: number }) {
         role="application"
         aria-roledescription="Materialfläche"
         className={cn(
-          'material-board relative h-full w-full touch-none overflow-hidden rounded-panel bg-surface-1 ring-hairline transition-[width] duration-300 ease-emphasized outline-none select-none focus-visible:ring-hairline-strong',
+          'material-board relative h-full w-full touch-none overflow-hidden rounded-panel bg-surface-1 ring-hairline outline-none select-none focus-visible:ring-hairline-strong',
 
           dropping && 'ring-hairline-strong',
         )}
@@ -1024,36 +1115,67 @@ function Board({ x, w, h }: { x: number; w: number; h: number }) {
           </div>
         )}
 
-        {/* What it is and how much lies there; the controls top right. */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-(--z-raised) flex items-center gap-2 p-3">
-          <span className="glass-control pointer-events-auto flex h-8 items-center gap-1.5 rounded-control px-3 text-sm font-medium text-fg">
-            <Icon name="attachFile" size={16} />
-            Material
+        {/* What it is and how much lies there; the controls top right. On a narrow board the
+            buttons keep their icons only, then the zoom goes, then the word „Material“ – nothing
+            runs over the edge (`GIVE_WAY`, measured). */}
+        <div
+          className={cn(
+            'pointer-events-none absolute inset-x-0 top-0 z-(--z-raised) @container flex items-center gap-2 p-3',
+            // The side panel floats over the board's right: the controls stay left of it.
+            panelItem && 'md:pr-[412px]',
+          )}
+        >
+          <GlassPanel className="pointer-events-auto flex h-10 shrink-0 items-center gap-1.5 px-3.5 text-body font-medium text-fg">
+            <Icon name="attachFile" size={18} />
+            <span className={giveWay.material}>Material</span>
             {fileCount > 0 && <span className="text-fg-subtle">{fileCount}</span>}
-          </span>
-          <span className="ml-auto flex items-center gap-1">
-            <span className="glass-control pointer-events-auto flex items-center rounded-control">
-              <IconButton icon="remove" label="Verkleinern" onClick={() => zoomBy(1 / 1.25)} />
+          </GlassPanel>
+          {/* One pill like the presentation's controls: every part 40 high. */}
+          <Toolbar role={false} className="pointer-events-auto ml-auto shrink-0">
+            <span className={cn('flex items-center gap-1', giveWay.zoom)}>
+              <IconButton
+                icon="remove"
+                label="Verkleinern"
+                size="sm"
+                onClick={() => zoomBy(1 / 1.25)}
+              />
               <button
                 type="button"
-                className="h-8 min-w-12 px-1 text-xs text-fg-muted tabular-nums hover:text-fg"
+                className="h-8 min-w-12 rounded-control px-1 text-xs text-fg-muted tabular-nums hover:bg-hover hover:text-fg"
                 title="Alles zeigen"
                 onClick={fit}
               >
                 {Math.round(zoom * 100)} %
               </button>
-              <IconButton icon="add" label="Vergrößern" onClick={() => zoomBy(1.25)} />
+              <IconButton icon="add" label="Vergrößern" size="sm" onClick={() => zoomBy(1.25)} />
+              <ToolbarDivider />
             </span>
+            {/* Asking spends the workspace's AI: not for Betrachter, as no other AI is. */}
+            {canComment && (
+              <Button
+                size="sm"
+                variant="ghost"
+                icon="autoAwesome"
+                className="rounded-control"
+                aria-label="Frage an die KI"
+                title={`Frage an die KI – in eine Notiz geschrieben, ${askKeys()} fragt`}
+                onClick={startQuestion}
+              >
+                <span className={giveWay.ask}>Fragen</span>
+              </Button>
+            )}
             {canComment && (
               <>
                 <Button
                   size="sm"
-                  variant="secondary"
+                  variant="ghost"
                   icon="upload"
-                  className="pointer-events-auto"
+                  className="rounded-control"
+                  aria-label="Material hinzufügen"
+                  title="Material hinzufügen"
                   onClick={() => fileRef.current?.click()}
                 >
-                  Material hinzufügen
+                  <span className={giveWay.add}>Material hinzufügen</span>
                 </Button>
                 <input
                   ref={fileRef}
@@ -1066,38 +1188,57 @@ function Board({ x, w, h }: { x: number; w: number; h: number }) {
                     event.target.value = '';
                   }}
                 />
-                <IconButton
-                  icon="folder"
-                  label="Ordner hinzufügen"
-                  className="pointer-events-auto glass-control"
-                  onClick={() => folderRef.current?.click()}
-                />
-                <input
-                  ref={folderRef}
-                  type="file"
-                  hidden
-                  // A whole folder, with what is in its folders.
-                  {...{ webkitdirectory: '', directory: '' }}
-                  onChange={(event) => {
-                    const folder = pickedFolder([...(event.target.files ?? [])]);
-                    if (folder) addFolder(folder.name, folder.files, middle());
-                    event.target.value = '';
-                  }}
-                />
+                {nextcloudConnected && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="rounded-control"
+                    aria-label="Aus Nextcloud wählen"
+                    title="Aus Nextcloud wählen"
+                    onClick={() => setBrowsingNextcloud(true)}
+                  >
+                    <NextcloudMark size={18} />
+                    <span className={giveWay.nextcloud}>Nextcloud</span>
+                  </Button>
+                )}
               </>
             )}
-          </span>
+            {/* The presentation lies to the right of the material page. */}
+            <Button
+              size="sm"
+              variant="ghost"
+              trailingIcon="arrowForward"
+              className="rounded-control"
+              aria-label="Zur Präsentation"
+              title="Zur Präsentation (M)"
+              onClick={onLeave}
+            >
+              <span className={giveWay.leave}>Präsentation</span>
+            </Button>
+          </Toolbar>
         </div>
 
         {!loading && items.length === 0 && (
-          <div className="pointer-events-none absolute inset-0 z-(--z-raised) flex flex-col items-center justify-center gap-2 px-6 text-center">
-            <Icon name="attachFile" size={32} className="text-fg-faint" />
-            <p className="max-w-80 text-sm text-fg-muted">
-              {canComment
-                ? 'Dateien, Bilder und Links für diese Präsentation hierher ziehen oder einfügen, mit einem Rahmen eine Notiz schreiben'
-                : 'Hier liegt noch kein Material'}
-            </p>
-            {canComment && <p className="text-xs text-fg-subtle">Die KI liest es bei Bedarf mit</p>}
+          // Under the controls, never behind them: a low board drops the icon, then the second
+          // line, then the hint itself.
+          <div className="pointer-events-none absolute inset-x-0 top-14 bottom-0 z-(--z-raised) [container-type:size]">
+            <div className="flex size-full flex-col items-center justify-center gap-2 overflow-hidden px-6 pb-3 text-center [@container(max-height:6rem)]:hidden [@container(max-width:16rem)]:hidden">
+              <Icon
+                name="attachFile"
+                size={32}
+                className="shrink-0 text-fg-faint [@container(max-height:12rem)]:hidden"
+              />
+              <p className="max-w-80 text-sm text-fg-muted">
+                {canComment
+                  ? 'Dateien, Bilder und Links für diese Präsentation hierher ziehen oder einfügen, mit einem Rahmen eine Notiz schreiben'
+                  : 'Hier liegt noch kein Material'}
+              </p>
+              {canComment && (
+                <p className="text-xs text-fg-subtle [@container(max-height:9rem)]:hidden">
+                  Die KI liest es bei Bedarf mit
+                </p>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -1112,11 +1253,14 @@ function Board({ x, w, h }: { x: number; w: number; h: number }) {
           mayDelete={mayDelete}
           onClose={() => setSelected(new Set())}
           onOpen={open}
-          onAddNote={(text) =>
-            addNote({ x: panelItem.x, y: panelItem.y, w: panelItem.w, h: panelItem.h }, text, [
-              panelItem.id,
-            ])
-          }
+          onAddNote={(text, ask) => {
+            const id = addNote(
+              { x: panelItem.x, y: panelItem.y, w: panelItem.w, h: panelItem.h },
+              text,
+              [panelItem.id],
+            );
+            if (ask) answers.ask(id, text);
+          }}
           onEditNote={(note, text) => (text ? updateText(note.id, text) : remove([note.id]))}
           onDelete={(item) => {
             if (!isMaterial(item) && item.kind === 'folder' && item.boundIds.length > 0) {
@@ -1127,6 +1271,42 @@ function Board({ x, w, h }: { x: number; w: number; h: number }) {
             if (item.id === panelItem.id) setSelected(new Set());
           }}
         />
+      )}
+      <ConfirmDialog
+        open={deletingAnswer !== null}
+        onClose={() => setDeletingAnswer(null)}
+        title="Antwort löschen?"
+        description={`Die Notiz bleibt – mit ${askKeys()} lässt sie sich wieder fragen.`}
+        confirmLabel="Löschen"
+        confirmIcon="delete"
+        onConfirm={() => {
+          if (deletingAnswer) answers.remove(deletingAnswer);
+          setDeletingAnswer(null);
+        }}
+      />
+      {browsingNextcloud && (
+        <Dialog
+          open
+          onClose={() => {
+            nextcloudClosings.current += 1;
+            setBrowsingNextcloud(false);
+          }}
+          title="Aus Nextcloud wählen"
+          className="w-[min(640px,calc(100vw-32px))]"
+        >
+          {/* The browser brings its own side padding; its list scrolls inside this height. */}
+          <div className="-mx-5 -mt-4 flex h-[min(480px,calc(100dvh-180px))] flex-col">
+            <NextcloudBrowser
+              onPick={async (entry, connectionId) => {
+                const closings = nextcloudClosings.current;
+                const file = await downloadNextcloudFile(connectionId, entry.fileId, entry.name);
+                if (closings !== nextcloudClosings.current) return;
+                setBrowsingNextcloud(false);
+                addFiles([file], middle());
+              }}
+            />
+          </div>
+        </Dialog>
       )}
       <ConfirmDialog
         open={deletingFolder !== null}
@@ -1164,6 +1344,15 @@ function Board({ x, w, h }: { x: number; w: number; h: number }) {
             at={menuAt}
             onClose={() => setMenuAt(null)}
             actions={[
+              ...(askable(menuAt.item)
+                ? [
+                    {
+                      label: answers.byNote.has(menuAt.item.id) ? 'KI nochmal fragen' : 'KI fragen',
+                      icon: 'autoAwesome' as const,
+                      onSelect: () => answers.ask(menuAt.item.id, menuAt.item.text),
+                    },
+                  ]
+                : []),
               ...(ownItem(menuAt.item)
                 ? [
                     {

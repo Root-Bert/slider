@@ -4,7 +4,7 @@ import { getDocument, type PDFPageProxy } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { MAX_PAGE_HEIGHT, MAX_PDF_IMAGE_PIXELS, STANDARD_FONTS } from './pdf-pages';
 
 /*
- * The text of a PDF on a deck's board (Folie 0) and pictures of its pages – in the PDF worker
+ * The text of a PDF on a deck's material page and pictures of its pages – in the PDF worker
  * like every pdf.js run (`pdf-jobs.ts`), never on the server's main thread.
  */
 

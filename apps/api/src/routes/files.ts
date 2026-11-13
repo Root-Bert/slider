@@ -21,7 +21,7 @@ const DECK_FILE_MAX_AGE_S = 5 * 60;
  * there is nothing to see. A deck's files (`decks/<id>/…`: slides, thumbnails, originals)
  * additionally need a signed-in account that may view the deck right now, through the same
  * check as the deck itself, the source's included (`deckAccess`). So a link passed on opens
- * nothing, and a revocation in SharePoint or Nextcloud closes the files with the deck. Images
+ * nothing, and a revocation in the Nextcloud closes the files with the deck. Images
  * load same-origin, so the session cookie comes along. Workspace logos stay signature-only:
  * the invitation page shows them before anyone is signed in. Workspace fonts and the slide
  * masters' files (a design and its layout pictures) require current membership and are cached

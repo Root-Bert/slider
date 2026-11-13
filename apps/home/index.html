@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Robert Hofmann, Full-Stack-Entwickler in Berlin</title>
+    <meta
+      name="description"
+      content="Robert Hofmann gestaltet und baut Software, die den Menschen als Benutzer in den Mittelpunkt stellt."
+    />
+    <link rel="canonical" href="https://bertro.dev/" />
+    <!-- Link previews (LinkedIn, mail, Slack): name and role, the sentence, the photo. -->
+    <meta property="og:type" content="profile" />
+    <meta property="og:url" content="https://bertro.dev/" />
+    <meta property="og:title" content="Robert Hofmann, Full-Stack-Entwickler in Berlin" />
+    <meta
+      property="og:description"
+      content="Ich gestalte und baue Software, die den Menschen als Benutzer in den Mittelpunkt stellt."
+    />
+    <meta property="og:image" content="https://bertro.dev/assets/robert.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="675" />
+    <meta property="og:locale" content="de_DE" />
+    <meta property="profile:first_name" content="Robert" />
+    <meta property="profile:last_name" content="Hofmann" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Person",
+        "name": "Robert Hofmann",
+        "url": "https://bertro.dev/",
+        "image": "https://bertro.dev/assets/robert.jpg",
+        "jobTitle": "Full-Stack-Entwickler",
+        "worksFor": { "@type": "Organization", "name": "Sourcepark GmbH" },
+        "alumniOf": { "@type": "CollegeOrUniversity", "name": "Technische Universität Berlin" },
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Berlin",
+          "addressCountry": "DE"
+        },
+        "knowsLanguage": ["de", "en"],
+        "sameAs": ["https://www.linkedin.com/in/ro-bert-hofmann", "https://github.com/Root-Bert"]
+      }
+    </script>
+    <meta name="color-scheme" content="dark light" />
+    <!-- Two files, picked by the link's media: Safari ignores a media query inside the SVG, draws
+         the mark black and puts a light plate behind it. -->
+    <link
+      rel="icon"
+      href="/assets/bertro-light.svg"
+      type="image/svg+xml"
+      media="(prefers-color-scheme: light)"
+    />
+    <link
+      rel="icon"
+      href="/assets/bertro-dark.svg"
+      type="image/svg+xml"
+      media="(prefers-color-scheme: dark)"
+    />
+    <link rel="preload" href="/assets/inter.woff2" as="font" type="font/woff2" crossorigin />
+    <style>
+      /* Slider's look in one page: black canvas with the dot grid, Inter, white at fixed
+         opacities, frosted glass cards. Light follows the system, with black instead of white. */
+      @font-face {
+        font-family: 'Inter Variable';
+        src: url('/assets/inter.woff2') format('woff2');
+        font-weight: 100 900;
+        font-display: swap;
+      }
+      :root {
+        --canvas: #000;
+        --ink: 255 255 255;
+        --glass: rgb(77 77 77 / 0.3);
+        --glass-hover: rgb(110 110 110 / 0.38);
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --canvas: #f4f4f5;
+          --ink: 0 0 0;
+          --glass: rgb(255 255 255 / 0.6);
+          --glass-hover: rgb(255 255 255 / 0.85);
+        }
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+      }
+      html {
+        background: var(--canvas);
+        color: rgb(var(--ink) / 0.9);
+        font:
+          16px/1.6 'Inter Variable',
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          sans-serif;
+        font-feature-settings: 'cv11', 'ss01';
+        -webkit-font-smoothing: antialiased;
+      }
+      body {
+        min-height: 100vh;
+        background-image: radial-gradient(rgb(var(--ink) / 0.14) 1px, transparent 1.2px);
+        background-size: 22px 22px;
+      }
+      main {
+        max-width: 600px;
+        margin: 0 auto;
+        padding: 40px 16px 64px;
+      }
+      a {
+        color: inherit;
+      }
+      :focus-visible {
+        outline: 2px solid rgb(var(--ink) / 0.7);
+        outline-offset: 2px;
+        border-radius: 6px;
+      }
+      /* Who: the mark and the name side by side, quiet, so the sentence under them leads. */
+      .id {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+      }
+      .role {
+        margin-top: 2px;
+        font-size: 15px;
+        color: rgb(var(--ink) / 0.6);
+      }
+      .mark {
+        display: block;
+        flex: none;
+        width: 27px;
+        height: 32px;
+        color: rgb(var(--ink));
+      }
+      h1 {
+        font-size: 20px;
+        font-weight: 600;
+        line-height: 1.2;
+        letter-spacing: -0.01em;
+        color: rgb(var(--ink) / 0.95);
+      }
+      .lead {
+        margin-top: 40px;
+        font-size: 20px;
+        font-weight: 500;
+        line-height: 1.35;
+        letter-spacing: -0.01em;
+        color: rgb(var(--ink) / 0.9);
+        text-wrap: balance;
+      }
+      .story {
+        margin-top: 20px;
+        color: rgb(var(--ink) / 0.6);
+      }
+      /* Lebenslauf: what and where on the left, when on the right. */
+      .cv {
+        padding: 0;
+        list-style: none;
+      }
+      .cv li {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 12px 0;
+        border-top: 1px solid rgb(var(--ink) / 0.08);
+      }
+      .cv li > div {
+        flex: 1 1 0;
+        min-width: 0;
+      }
+      .cv b {
+        display: block;
+        font-weight: 600;
+      }
+      .cv span {
+        display: block;
+        font-size: 15px;
+        color: rgb(var(--ink) / 0.6);
+      }
+      .cv div a {
+        color: inherit;
+        text-decoration: underline;
+        text-decoration-color: rgb(var(--ink) / 0.3);
+        text-underline-offset: 3px;
+      }
+      .cv div a:hover {
+        text-decoration-color: currentColor;
+      }
+      .cv p {
+        flex-basis: 100%;
+        max-width: 60ch;
+        margin-top: -10px;
+        font-size: 15px;
+        color: rgb(var(--ink) / 0.6);
+      }
+      .cv .grades {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .cv .grade {
+        display: inline-block;
+        padding: 2px 10px;
+        border-radius: 999px;
+        background: rgb(var(--ink) / 0.08);
+        font-size: 13px;
+        color: rgb(var(--ink) / 0.6);
+      }
+      .cv .grade b {
+        display: inline;
+        font-weight: 600;
+        color: rgb(var(--ink) / 0.95);
+      }
+      /* The photo as a slide on its stack: a quiet copy one step down to the left behind it. */
+      /* Small on purpose: the page is about the work, not the face. */
+      /* Who: the photo with the mark and the name beside it. On phones this row comes first. */
+      .top {
+        display: grid;
+        grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+        gap: 24px;
+        align-items: center;
+      }
+      @media (max-width: 959px), print {
+        main {
+          display: flex;
+          flex-direction: column;
+        }
+        .content {
+          display: contents;
+        }
+        .top {
+          order: -1;
+        }
+      }
+      .photo {
+        position: relative;
+        margin: 0 0 0 8px;
+      }
+      .photo::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 12px;
+        background: rgb(var(--ink) / 0.1);
+        transform: translate(-8px, 8px);
+      }
+      .photo img {
+        position: relative;
+        display: block;
+        width: 100%;
+        height: auto;
+        border-radius: 12px;
+      }
+      .cv time {
+        flex: none;
+        max-width: 45%;
+        text-align: right;
+        font-size: 15px;
+        color: rgb(var(--ink) / 0.5);
+        font-variant-numeric: tabular-nums;
+      }
+      h2 {
+        margin: 40px 0 8px;
+        font-size: 13px;
+        font-weight: 500;
+        color: rgb(var(--ink) / 0.5);
+      }
+      .projects {
+        display: grid;
+        gap: 12px;
+      }
+      .card {
+        position: relative;
+        display: flex;
+        gap: 16px;
+        padding: 20px;
+        border-radius: 16px;
+        background: var(--glass);
+        box-shadow: inset 0 0 0 1px rgb(var(--ink) / 0.08);
+        -webkit-backdrop-filter: blur(24px);
+        backdrop-filter: blur(24px);
+        transition:
+          background-color 150ms ease,
+          transform 200ms cubic-bezier(0.2, 0, 0, 1);
+      }
+      .card:hover {
+        background: var(--glass-hover);
+        transform: translate(2px, -2px);
+      }
+      .card img {
+        flex: none;
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
+      }
+      .card h3 {
+        font-size: 17px;
+        font-weight: 600;
+        line-height: 1.3;
+      }
+      /* The title's link covers the whole card; the other links sit above it. */
+      .card h3 a {
+        text-decoration: none;
+      }
+      .card h3 a::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 16px;
+      }
+      .card p {
+        margin-top: 4px;
+        font-size: 15px;
+        color: rgb(var(--ink) / 0.6);
+      }
+      .links {
+        position: relative;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 16px;
+        margin-top: 10px;
+        font-size: 14px;
+        font-weight: 500;
+      }
+      .contact {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 20px;
+        margin-top: 24px;
+        font-size: 15px;
+        font-weight: 500;
+      }
+      .contact a,
+      .links a,
+      footer a {
+        color: rgb(var(--ink) / 0.7);
+        text-decoration: none;
+        transition: color 150ms ease;
+      }
+      .contact a:hover,
+      .links a:hover,
+      footer a:hover {
+        color: rgb(var(--ink) / 0.95);
+      }
+      footer {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 20px;
+        margin-top: 72px;
+        padding-top: 20px;
+        border-top: 1px solid rgb(var(--ink) / 0.08);
+        font-size: 13px;
+      }
+      footer {
+        align-items: center;
+      }
+      .wordmark {
+        margin-right: auto;
+        color: rgb(var(--ink));
+      }
+      .wordmark svg {
+        display: block;
+        width: auto;
+        height: 20px;
+      }
+      /* Only the legal links down here: quiet, one step below the contact links. */
+      footer span,
+      footer a {
+        color: rgb(var(--ink) / 0.5);
+      }
+      /* Desktop: the Lebenslauf scrolls on the left while the intro and the projects stay on the right. */
+      @media (min-width: 960px) {
+        main {
+          display: grid;
+          grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+          column-gap: clamp(64px, 8vw, 128px);
+          max-width: 1200px;
+          padding: 64px 48px 64px;
+        }
+        /* Who and the Lebenslauf on the left, the sentence and the work on the right. */
+        .content {
+          grid-column: 1;
+          grid-row: 1;
+        }
+        .side {
+          grid-column: 2;
+          grid-row: 1;
+        }
+        /* Sticky only inside its own column, so it never runs over the footer, and only when the
+           window is tall enough to show all of it. */
+        @media (min-height: 1040px) {
+          .side {
+            position: sticky;
+            top: 64px;
+            align-self: start;
+          }
+        }
+        h1 {
+          font-size: 22px;
+        }
+        .lead {
+          margin-top: 0;
+          font-size: 24px;
+        }
+        footer {
+          grid-column: 1 / -1;
+          margin-top: 96px;
+        }
+      }
+      /* Printed or saved as PDF: white paper, black text, no dot grid. The narrow page gets the phone
+         layout, photo and name first. */
+      @media print {
+        :root {
+          --canvas: #fff;
+          --ink: 0 0 0;
+          --glass: #fff;
+        }
+        body {
+          background: none;
+        }
+        main {
+          padding: 0;
+          zoom: 0.85;
+        }
+        .card {
+          border: 1px solid rgb(0 0 0 / 0.15);
+          break-inside: avoid;
+        }
+        .cv li {
+          break-inside: avoid;
+        }
+        h2 {
+          break-after: avoid;
+        }
+        /* On paper the Lebenslauf comes before the projects. */
+        .side {
+          order: 1;
+        }
+        footer {
+          order: 2;
+        }
+      }
+      /* Phones: the date goes small above the title, so the title gets the whole row; the photo
+         column narrows so the role fits beside it. */
+      @media (max-width: 599px) {
+        .top {
+          grid-template-columns: 120px minmax(0, 1fr);
+          gap: 20px;
+        }
+        .role {
+          font-size: 14px;
+        }
+        .cv time {
+          order: -1;
+          flex-basis: 100%;
+          max-width: none;
+          margin-bottom: -12px;
+          text-align: left;
+          font-size: 13px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .card {
+          transition: none;
+        }
+        .card:hover {
+          transform: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="side">
+        <header class="intro">
+          <p class="lead">
+            Ich gestalte und baue Software, die den Menschen als Benutzer in den Mittelpunkt stellt.
+          </p>
+          <p class="story">
+            Ich bin Wirtschaftsingenieur mit Schwerpunkt Informations- und Kommunikationssysteme und
+            studiere im Master an der TU Berlin. Seit 2021 arbeite ich bei Sourcepark als
+            Full-Stack-Entwickler, vom Frontend einer großen B2B-Anwendung bis zu hochverteilten
+            Services im Backend. In meiner freien Zeit baue ich eigene Produkte, von der Idee bis
+            zum Betrieb, und mache sie als Open Source für alle nutzbar.
+          </p>
+          <nav class="contact" aria-label="Kontakt">
+            <a href="https://www.linkedin.com/in/ro-bert-hofmann">LinkedIn</a>
+            <a href="https://github.com/Root-Bert">GitHub</a>
+          </nav>
+        </header>
+
+        <h2>Woran ich arbeite</h2>
+        <div class="projects">
+          <article class="card">
+            <img src="/assets/slider.png" alt="" />
+            <div>
+              <h3><a href="/slider/">Slider</a></h3>
+              <p>
+                Präsentationen, bei denen alle direkt auf der Folie mitreden. Im Browser, Open
+                Source und gehostet in der EU.
+              </p>
+              <div class="links">
+                <a href="/slider/">Website</a>
+                <a href="https://github.com/Root-Bert/slider">GitHub</a>
+              </div>
+            </div>
+          </article>
+          <article class="card">
+            <img src="/assets/slides2pdf.png" alt="" />
+            <div>
+              <h3><a href="https://www.raycast.com/bertro/slides2pdf">Slides2PDF</a></h3>
+              <p>
+                Eine Raycast-Erweiterung, die Folien, Dokumente und Tabellen zu PDFs macht. Alles
+                auf dem eigenen Mac, nichts geht in eine Cloud.
+              </p>
+              <div class="links">
+                <a href="https://www.raycast.com/bertro/slides2pdf">Raycast Store</a>
+                <a href="https://github.com/Root-Bert/slides2pdf">GitHub</a>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="top">
+          <figure class="photo">
+            <img src="/assets/robert.jpg" alt="Robert Hofmann" width="1200" height="675" />
+          </figure>
+          <!-- Bertro's mark (Figma "Slider", Brand Guide, "Bertro Logo"): two comment boxes, the back
+           one at 50 %, the front one at 90 %, in the text colour. -->
+          <div class="id">
+            <svg class="mark" viewBox="0 0 215 253" role="img" aria-label="Bertro">
+              <path
+                fill="currentColor"
+                fill-opacity=".5"
+                d="M135.269 0C153.15 0 167.645 14.496 167.646 32.377V87.015C167.646 104.896 153.15 119.392 135.269 119.392H32.377C23.23 119.393 14.807 122.488 8.095 127.687C3.624 127.686 0 124.062 0 119.592V32.377C0 14.496 14.496 0 32.377 0H135.269Z"
+              />
+              <path
+                fill="currentColor"
+                fill-opacity=".9"
+                d="M0 159.086C0 141.205 14.496 126.709 32.377 126.709H182.553C200.435 126.709 214.93 141.205 214.93 159.086V220.482C214.93 238.364 200.435 252.859 182.553 252.859H8.094C3.624 252.859 0 249.235 0 244.765V159.086Z"
+              />
+            </svg>
+            <div>
+              <h1>Robert Hofmann</h1>
+              <p class="role">Full-Stack-Entwickler in Berlin</p>
+            </div>
+          </div>
+        </div>
+        <h2>Beruf</h2>
+        <ol class="cv">
+          <li>
+            <div><b>Full-Stack-Entwickler</b><span>Sourcepark GmbH, Berlin</span></div>
+            <time>seit November 2021</time>
+            <p>
+              Frontend und Design einer großen B2B-Webanwendung, hochverteilte Services im Backend,
+              ein OCR-System zur Fahrzeugscheinerkennung, End-to-End-Tests und ein Dashboard für
+              eine Komponentenbibliothek.
+            </p>
+          </li>
+        </ol>
+
+        <h2>Studium</h2>
+        <ol class="cv">
+          <li>
+            <div>
+              <b>M.Sc. Wirtschaftsingenieurwesen</b
+              ><span>TU Berlin, Informations- und Kommunikationssysteme</span
+              ><span class="grades"
+                ><span class="grade"><b>1,6</b> aktueller Schnitt</span></span
+              >
+            </div>
+            <time>seit April 2023</time>
+          </li>
+          <li>
+            <div>
+              <b>Austausch, Global Environmental Studies</b><span>Sophia University, Tokio</span>
+            </div>
+            <time>April bis August 2024</time>
+          </li>
+          <li>
+            <div>
+              <b>B.Sc. Wirtschaftsingenieurwesen</b
+              ><span>TU Berlin, Informations- und Kommunikationssysteme</span
+              ><span class="grades"
+                ><span class="grade"><b>1,5</b> Abschlussnote</span
+                ><span class="grade"><b>Top 8,8 %</b></span></span
+              >
+            </div>
+            <time>Oktober 2019 bis September 2023</time>
+          </li>
+        </ol>
+
+        <h2>Engagement</h2>
+        <ol class="cv">
+          <li>
+            <div>
+              <b>Vorstandsvorsitzender</b
+              ><span><a href="https://cct-ev.de">Company Consulting Team</a>, Berlin</span>
+            </div>
+            <time>Oktober 2025 bis Oktober 2026</time>
+            <p>
+              Projektorganisation, Stakeholdermanagement, Recruiting und der Austausch mit den
+              Mitgliedern.
+            </p>
+          </li>
+          <li>
+            <div>
+              <b>Mitglied</b
+              ><span
+                ><a href="https://cct-ev.de">Company Consulting Team</a> und
+                <a href="https://juniter.de">JunITer</a>, Berlin</span
+              >
+            </div>
+            <time>seit November 2024</time>
+            <p>
+              Maßgeblich am Portal mitentwickelt, dem internen Werkzeug, mit dem der Verein fast
+              alles verwaltet. Dazu Business Continuity Management nach BSI 200-4 für den Verein.
+            </p>
+          </li>
+        </ol>
+
+        <h2>Kenntnisse</h2>
+        <ol class="cv">
+          <li>
+            <div>
+              <b>Entwicklung</b
+              ><span class="grades"
+                ><span class="grade">TypeScript</span><span class="grade">JavaScript</span
+                ><span class="grade">React</span><span class="grade">Vue</span
+                ><span class="grade">Nuxt</span><span class="grade">Java</span
+                ><span class="grade">Groovy</span><span class="grade">Grails</span
+                ><span class="grade">Python</span><span class="grade">Docker</span
+                ><span class="grade">Google Cloud</span><span class="grade">Firebase</span></span
+              >
+            </div>
+          </li>
+          <li>
+            <div><b>Sprachen</b><span>Deutsch Muttersprache, Englisch C1</span></div>
+          </li>
+        </ol>
+      </div>
+
+      <footer>
+        <!-- Bertro's horizontal wordmark (Figma Brand Guide, "Bertro / Horizontal Dark"), in the text colour. -->
+        <a class="wordmark" href="/" aria-label="Bertro">
+          <svg viewBox="0 0 304 88" aria-hidden="true">
+            <path
+              fill="currentColor"
+              fill-opacity="0.5"
+              d="M44.9365 2C50.8766 2.00016 55.6914 6.81577 55.6914 12.7559V30.9453C55.6703 36.8675 50.8636 41.662 44.9365 41.6621H10.7559C7.71751 41.6621 4.91918 42.6904 2.68945 44.417H2.68848C1.20364 44.4168 0 43.2134 0 41.7285V12.7559C0 6.81571 4.81573 2.00007 10.7559 2H44.9365Z"
+            />
+            <path
+              fill="currentColor"
+              fill-opacity="0.9"
+              d="M0 54.8484C0 48.9083 4.81547 44.0928 10.7557 44.0928H60.6443C66.5845 44.0928 71.4 48.9082 71.4 54.8484V75.2442C71.4 81.1844 66.5845 85.9999 60.6443 85.9999H2.68884C1.20384 85.9999 0 84.7961 0 83.3111V54.8484Z"
+            />
+            <path
+              fill="currentColor"
+              fill-opacity="0.9"
+              d="M98.5648 70V17.6364H118.61C122.394 17.6364 125.539 18.233 128.045 19.4261C130.568 20.6023 132.451 22.2131 133.695 24.2585C134.957 26.304 135.588 28.6222 135.588 31.2131C135.588 33.3438 135.178 35.1676 134.36 36.6847C133.542 38.1847 132.443 39.4034 131.062 40.3409C129.681 41.2784 128.139 41.9517 126.434 42.3608V42.8722C128.292 42.9744 130.073 43.5455 131.778 44.5852C133.499 45.608 134.906 47.0568 135.997 48.9318C137.088 50.8068 137.633 53.0739 137.633 55.733C137.633 58.4432 136.977 60.8807 135.664 63.0455C134.352 65.1932 132.374 66.8892 129.732 68.1335C127.09 69.3778 123.767 70 119.761 70H98.5648ZM108.051 62.0739H118.252C121.695 62.0739 124.176 61.4176 125.693 60.1051C127.227 58.7756 127.994 57.071 127.994 54.9915C127.994 53.4403 127.61 52.0426 126.843 50.7983C126.076 49.5369 124.985 48.5483 123.57 47.8324C122.156 47.0994 120.468 46.733 118.508 46.733H108.051V62.0739ZM108.051 39.9062H117.434C119.07 39.9062 120.545 39.608 121.857 39.0114C123.17 38.3977 124.201 37.5369 124.951 36.429C125.718 35.304 126.102 33.9744 126.102 32.4403C126.102 30.4119 125.386 28.7415 123.954 27.429C122.539 26.1165 120.434 25.4602 117.639 25.4602H108.051V39.9062ZM161.062 70.767C157.125 70.767 153.724 69.9489 150.861 68.3125C148.014 66.6591 145.824 64.3239 144.29 61.3068C142.756 58.2727 141.989 54.7017 141.989 50.5938C141.989 46.554 142.756 43.0085 144.29 39.9574C145.841 36.8892 148.006 34.5028 150.784 32.7983C153.562 31.0767 156.827 30.2159 160.577 30.2159C162.997 30.2159 165.281 30.608 167.429 31.392C169.594 32.1591 171.503 33.3523 173.156 34.9716C174.827 36.5909 176.139 38.6534 177.094 41.1591C178.048 43.6477 178.525 46.6136 178.525 50.0568V52.8949H146.335V46.6562H169.653C169.636 44.8835 169.253 43.3068 168.503 41.9261C167.753 40.5284 166.704 39.429 165.358 38.6278C164.028 37.8267 162.477 37.4261 160.704 37.4261C158.812 37.4261 157.15 37.8864 155.719 38.8068C154.287 39.7102 153.17 40.9034 152.369 42.3864C151.585 43.8523 151.185 45.4631 151.167 47.2188V52.6648C151.167 54.9489 151.585 56.9091 152.42 58.5455C153.256 60.1648 154.423 61.4091 155.923 62.2784C157.423 63.1307 159.179 63.5568 161.19 63.5568C162.537 63.5568 163.756 63.3693 164.846 62.9943C165.937 62.6023 166.883 62.0312 167.685 61.2812C168.486 60.5312 169.091 59.6023 169.5 58.4943L178.142 59.4659C177.596 61.75 176.557 63.7443 175.023 65.4489C173.506 67.1364 171.562 68.4489 169.193 69.3864C166.824 70.3068 164.114 70.767 161.062 70.767ZM184.556 70V30.7273H193.53V37.2727H193.939C194.655 35.0057 195.882 33.2585 197.621 32.0312C199.377 30.7869 201.38 30.1648 203.63 30.1648C204.141 30.1648 204.712 30.1903 205.343 30.2415C205.99 30.2756 206.527 30.3352 206.953 30.4205V38.9347C206.561 38.7983 205.939 38.679 205.087 38.5767C204.252 38.4574 203.442 38.3977 202.658 38.3977C200.97 38.3977 199.453 38.7642 198.107 39.4972C196.777 40.2131 195.729 41.2102 194.962 42.4886C194.195 43.767 193.811 45.2415 193.811 46.9119V70H184.556ZM233.023 30.7273V37.8864H210.446V30.7273H233.023ZM216.02 21.3182H225.276V58.1875C225.276 59.4318 225.463 60.3864 225.838 61.0511C226.23 61.6989 226.742 62.142 227.372 62.3807C228.003 62.6193 228.702 62.7386 229.469 62.7386C230.048 62.7386 230.577 62.696 231.054 62.6108C231.548 62.5256 231.923 62.4489 232.179 62.3807L233.739 69.6165C233.244 69.7869 232.537 69.9744 231.617 70.179C230.713 70.3835 229.605 70.5028 228.293 70.5369C225.974 70.6051 223.886 70.2557 222.028 69.4886C220.17 68.7045 218.696 67.4943 217.605 65.858C216.531 64.2216 216.003 62.1761 216.02 59.7216V21.3182ZM238.964 70V30.7273H247.938V37.2727H248.347C249.063 35.0057 250.29 33.2585 252.029 32.0312C253.785 30.7869 255.787 30.1648 258.037 30.1648C258.549 30.1648 259.12 30.1903 259.75 30.2415C260.398 30.2756 260.935 30.3352 261.361 30.4205V38.9347C260.969 38.7983 260.347 38.679 259.495 38.5767C258.66 38.4574 257.85 38.3977 257.066 38.3977C255.378 38.3977 253.861 38.7642 252.515 39.4972C251.185 40.2131 250.137 41.2102 249.37 42.4886C248.603 43.767 248.219 45.2415 248.219 46.9119V70H238.964ZM281.224 70.767C277.389 70.767 274.065 69.9233 271.252 68.2358C268.44 66.5483 266.258 64.1875 264.707 61.1534C263.173 58.1193 262.406 54.5739 262.406 50.517C262.406 46.4602 263.173 42.9062 264.707 39.8551C266.258 36.804 268.44 34.4347 271.252 32.7472C274.065 31.0597 277.389 30.2159 281.224 30.2159C285.059 30.2159 288.383 31.0597 291.195 32.7472C294.008 34.4347 296.181 36.804 297.715 39.8551C299.267 42.9062 300.042 46.4602 300.042 50.517C300.042 54.5739 299.267 58.1193 297.715 61.1534C296.181 64.1875 294.008 66.5483 291.195 68.2358C288.383 69.9233 285.059 70.767 281.224 70.767ZM281.275 63.3523C283.355 63.3523 285.093 62.7812 286.491 61.6392C287.889 60.4801 288.928 58.929 289.61 56.9858C290.309 55.0426 290.659 52.8778 290.659 50.4915C290.659 48.0881 290.309 45.9148 289.61 43.9716C288.928 42.0114 287.889 40.4517 286.491 39.2926C285.093 38.1335 283.355 37.554 281.275 37.554C279.144 37.554 277.372 38.1335 275.957 39.2926C274.559 40.4517 273.511 42.0114 272.812 43.9716C272.13 45.9148 271.789 48.0881 271.789 50.4915C271.789 52.8778 272.13 55.0426 272.812 56.9858C273.511 58.929 274.559 60.4801 275.957 61.6392C277.372 62.7812 279.144 63.3523 281.275 63.3523Z"
+            />
+          </svg>
+        </a>
+        <span>Berlin</span>
+        <a href="/slider/impressum">Impressum</a>
+        <a href="/slider/datenschutz">Datenschutz</a>
+      </footer>
+    </main>
+  </body>
+</html>

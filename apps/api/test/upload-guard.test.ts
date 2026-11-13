@@ -296,7 +296,7 @@ describe('link and picker imports in flight', () => {
     const source = new FakeSource();
     ctx = await createTestContext({
       config: { maxUploadBytes: 100 },
-      sources: { onedrive: source },
+      sources: { url: source },
     });
     let release = () => {};
     let calls = 0;
@@ -315,7 +315,7 @@ describe('link and picker imports in flight', () => {
       ctx.request('/api/decks/link', {
         method: 'POST',
         cookie,
-        json: { url: 'https://1drv.ms/p/c/abc123/EXAMPLE' },
+        json: { url: 'https://example.com/files/deck.pptx' },
       });
 
     hang();

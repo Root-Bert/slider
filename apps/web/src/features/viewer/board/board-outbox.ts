@@ -10,7 +10,7 @@ import { OUTBOX_TAB, retryDelay, sendOutcome, type QueuedEntry } from '@/lib/out
 import { BOARD_STORE, browserQueue } from '../editing/outbox';
 
 /*
- * Changes to a deck's board (Folie 0) without a connection, like comments (`comment-outbox.ts`):
+ * Changes to a deck's board (the material page) without a connection, like comments (`comment-outbox.ts`):
  * a note or link put down, its text changed, things moved or deleted – shown at once over the
  * server's board (`withQueued`), sent one after the other in the order made, kept in the browser
  * (IndexedDB, beside the editor's edits and comments) until the server took them – a reload
@@ -116,6 +116,11 @@ export interface BoardOutbox {
   /** The server took (`ok`) or refused an action: the deck's board is asked for anew. */
   onSettled(listener: (deckId: string, refused: unknown) => void): () => void;
   /**
+   * Once a new note queued here is on the server (at once when none is queued): asking about it
+   * there needs it saved. Refused, it throws the server's refusal.
+   */
+  saved(deckId: string, itemId: string): Promise<void>;
+  /**
    * The deck's board as fetched from `startedAt` on is in: actions the server took before that
    * are in it and go. Till then a taken action stays shown – dropped at once, the board would
    * show where things were before till the board fetched anew is in (a drag jumped back).
@@ -139,6 +144,12 @@ export function createBoardOutbox(
   const listeners = new Set<() => void>();
   const settled = new Set<(deckId: string, refused: unknown) => void>();
   const resumed = new Set<string>();
+  const waiters = new Set<{
+    deckId: string;
+    itemId: string;
+    resolve: () => void;
+    reject: (error: unknown) => void;
+  }>();
   const EMPTY: BoardAction[] = [];
 
   const deckOf = (deckId: string) => {
@@ -185,6 +196,14 @@ export function createBoardOutbox(
         if (!refused) deck.taken.push({ action: item.entry.action, at: Date.now() });
         await store.drop(item.entry.id);
         changed(deckId);
+        const { action } = item.entry;
+        if (action.type === 'create')
+          for (const waiter of waiters)
+            if (waiter.deckId === deckId && waiter.itemId === action.item.id) {
+              waiters.delete(waiter);
+              if (refused) waiter.reject(refused);
+              else waiter.resolve();
+            }
         for (const listener of settled) listener(deckId, refused);
       }
     } finally {
@@ -220,6 +239,11 @@ export function createBoardOutbox(
           );
           deck.items = deck.items.filter((item) => !gone.includes(item));
           for (const item of gone) void store.drop(item.entry.id);
+          for (const waiter of waiters)
+            if (waiter.deckId === deckId && waiter.itemId === action.itemId) {
+              waiters.delete(waiter);
+              waiter.reject(new Error('deleted'));
+            }
           changed(deckId);
           return;
         }
@@ -261,6 +285,15 @@ export function createBoardOutbox(
     onSettled(listener) {
       settled.add(listener);
       return () => void settled.delete(listener);
+    },
+    saved(deckId, itemId) {
+      const queued = decks
+        .get(deckId)
+        ?.items.some(
+          (item) => item.entry.action.type === 'create' && item.entry.action.item.id === itemId,
+        );
+      if (!queued) return Promise.resolve();
+      return new Promise((resolve, reject) => waiters.add({ deckId, itemId, resolve, reject }));
     },
     forget(deckId, startedAt) {
       const deck = decks.get(deckId);

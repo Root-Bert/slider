@@ -97,3 +97,10 @@ export const useOpeningVariant = (): string | null =>
  */
 export const madeByProposal = (pageId: string, proposalId: string): boolean =>
   pageId.startsWith(`ai${proposalId.slice(0, 8)}-`);
+
+/**
+ * What the AI says it does, on a variant: it works on a copy of the deck where the variant is a
+ * slide after its own („Ändert Folie 2“ for a variant of Folie 1) – here it is the variant.
+ */
+export const variantStep = (step: string | undefined): string | undefined =>
+  step?.replace(/^Ändert (Folie \d+|die Folie)$/, 'Gestaltet die Variante');

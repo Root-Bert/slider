@@ -4,6 +4,7 @@ import { spaceTaps } from '../../lib/space-taps';
 import type { SlideZoom } from '../../stage/lib/slide-zoom';
 import { useViewerData } from '../../state/viewer-data';
 import { useViewerDispatch, useViewerState } from '../../state/viewer-state';
+import { useViewerStore } from '../../state/viewer-store';
 
 /**
  * Space tapped twice: the active slide back at 100 % – and tapped twice again, back to the zoom
@@ -13,20 +14,29 @@ import { useViewerDispatch, useViewerState } from '../../state/viewer-state';
 export function useZoomToggle(enabled: boolean) {
   const editing = useEditing();
   const { slides } = useViewerData();
-  const { activeSlideId, slideZooms } = useViewerState();
+  const { activeSlideId } = useViewerState();
+  const store = useViewerStore();
   const dispatch = useViewerDispatch();
   // The zoom each slide had last, other than 100 %.
   const last = useRef(new Map<string, SlideZoom>());
   useEffect(() => {
-    for (const [slideId, zoom] of slideZooms) last.current.set(slideId, zoom);
-  }, [slideZooms]);
+    let remembered: ReadonlyMap<string, SlideZoom> | null = null;
+    const remember = () => {
+      const zooms = store.getState().slideZooms;
+      if (zooms === remembered) return;
+      remembered = zooms;
+      for (const [slideId, zoom] of zooms) last.current.set(slideId, zoom);
+    };
+    remember();
+    return store.subscribe(remember);
+  }, [store]);
   const twice = useRef(spaceTaps());
 
   const onKey = useEffectEvent((event: KeyboardEvent) => {
     if (!twice.current(event)) return;
     const slideId = activeSlideId ?? slides[0]?.id;
     if (!slideId) return;
-    if (slideZooms.has(slideId)) {
+    if (store.getState().slideZooms.has(slideId)) {
       dispatch({ type: 'slideZoomChanged', slideId, zoom: null });
       return;
     }

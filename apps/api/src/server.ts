@@ -1,22 +1,21 @@
 import { serve } from '@hono/node-server';
+import { eq } from 'drizzle-orm';
 import { openPptx } from '@slider/pptx';
 import { createApp } from './app';
 import { LiveTexts } from './realtime/live-texts';
 import { BackgroundWork } from './background-work';
 import { StripeBilling } from './billing/stripe-billing';
-import { MicrosoftTokens } from './auth/microsoft';
-import { GoogleTokens } from './auth/google';
+import { MicrosoftLogin } from './auth/microsoft';
 import { NextcloudAccounts } from './auth/nextcloud';
 import { OidcClient } from './auth/oidc';
 import { systemClock } from './clock';
 import { dataPaths, loadBootConfig } from './config';
 import { openDatabase } from './db/client';
+import { users } from './db/schema';
 import { releaseRunningImportAttempts } from './import/attempts';
 import { findInterruptedImports, importDeck } from './import/import-deck';
-import { createOfficePdf } from './import/office-pages';
 import { createOfficePool } from './import/office-pool';
 import { configurePdfJobs, stopPdfJobs, warmPdfWorker } from './import/pdf-jobs';
-import { createSlidesExtras } from './import/slides-extras';
 import {
   createLibreOfficeDocumentPdf,
   createMaterialPdf,
@@ -44,6 +43,8 @@ import {
   setUpDataKey,
 } from './services/content-encryption';
 import { upsertUser } from './services/users';
+import { retireFileConnections } from './services/retired-connections';
+import { backfillMasterColors } from './services/workspace-masters';
 import { backfillDeckFilesBytes } from './services/workspace-storage';
 import { ensurePersonalWorkspace } from './services/workspaces';
 import { createSourceAdapters } from './sources/source-adapter';
@@ -81,6 +82,11 @@ async function main(): Promise<void> {
   const owner = config.auth.devLogin ? await upsertUser(db, config.devOwner) : null;
   if (owner) {
     await ensurePersonalWorkspace(db, owner.id, clock.now());
+    // The desktop app's one person runs their own instance: admin of it (AI keys, settings)
+    // without the setup token, which only guards a server others can reach.
+    if (config.desktop) {
+      await db.update(users).set({ isInstanceAdmin: true }).where(eq(users.id, owner.id));
+    }
     log.info(`No login configured – every visitor acts as ${owner.email} (AUTH_DEV_LOGIN).`);
   }
   const oidc = config.auth.oidc ? new OidcClient(config.auth.oidc, clock) : null;
@@ -90,17 +96,9 @@ async function main(): Promise<void> {
     log.info('No SMTP configured – invitation mails are logged here instead of sent.');
   }
 
-  const microsoft = new MicrosoftTokens({
-    config: config.microsoft,
-    secret: config.secret,
-    db,
-    clock,
-    log,
-  });
+  const microsoft = new MicrosoftLogin({ config: config.microsoft, clock, log });
   if (!config.microsoft) {
-    log.info(
-      'Microsoft login is not configured (MS_CLIENT_ID/MS_CLIENT_SECRET) – OneDrive/SharePoint links need it.',
-    );
+    log.info('Microsoft login is not configured (MS_CLIENT_ID/MS_CLIENT_SECRET).');
   }
 
   const nextcloud = new NextcloudAccounts({
@@ -112,28 +110,7 @@ async function main(): Promise<void> {
     maxBytes: config.maxUploadBytes,
     webOrigin: config.webOrigin,
   });
-  const googleDrive = new GoogleTokens({
-    config: config.googleDrive,
-    secret: config.secret,
-    db,
-    clock,
-    log,
-  });
-  const sources = createSourceAdapters({
-    config,
-    tokens: microsoft,
-    log,
-    nextcloud,
-    google: googleDrive,
-  });
-  // Slide images as PowerPoint draws them (BER-94): Office for linked decks, Google's PDF for
-  // Google Slides (public ones too), LibreOffice for uploads and as fallback; without either,
-  // the in-house SVG preview.
-  const officePdf = createOfficePdf(sources, log, microsoft, {
-    microsoft: Boolean(config.microsoft),
-  });
-  // Google Slides' own slide ids and comments, which its PowerPoint export leaves out (BER-157).
-  const slidesExtras = createSlidesExtras(sources, log);
+  const sources = createSourceAdapters({ config, log, nextcloud });
   const soffice = await findSoffice({ configured: config.libreOfficePath });
   if (soffice) log.info(`Slide images of uploads are rendered by LibreOffice (${soffice}).`);
   else if (config.libreOfficePath) {
@@ -188,9 +165,7 @@ async function main(): Promise<void> {
           openPptx,
           clock,
           log,
-          officePdf,
           libreOfficePdf,
-          slidesExtras,
           renderProgress,
           liveTexts,
           // Fonts an ODP brings along become its workspace's, before it is drawn.
@@ -201,7 +176,7 @@ async function main(): Promise<void> {
             config,
             clock,
             queue,
-            rendering: { renderers: { officePdf, libreOfficePdf }, progress: renderProgress },
+            rendering: { renderers: { libreOfficePdf }, progress: renderProgress },
           }),
         },
         job,
@@ -222,15 +197,23 @@ async function main(): Promise<void> {
   scheduleRerenderBackfill({
     db,
     queue,
-    renderers: { officePdf, libreOfficePdf },
+    renderers: { libreOfficePdf },
     progress: renderProgress,
     log,
   });
 
   scheduleFileAuthorBackfill({ db, storage, openPptx, log });
+  // Google Drive and OneDrive are gone: their stored grants are revoked and deleted once.
+  retireFileConnections({ db, secret: config.secret, log }).catch((error: unknown) =>
+    log.error('Retiring the Google and Microsoft file connections failed', error),
+  );
   // Decks from before storage counted per workspace (BER-151) get measured once.
   backfillDeckFilesBytes({ db, storage, log }).catch((error: unknown) =>
     log.error('Measuring the storage of older decks failed', error),
+  );
+  // Designs uploaded before their theme's colours were read get them once (Bibliothek → Farben).
+  backfillMasterColors({ db, storage, log }).catch((error: unknown) =>
+    log.error('Reading the colours of older designs failed', error),
   );
   // What was stored before encryption at rest gets sealed once, in the background.
   backfillContentEncryption({ db, stores: [storage, media], log }).catch((error: unknown) =>
@@ -245,7 +228,6 @@ async function main(): Promise<void> {
     clock,
     log,
     config,
-    connections: microsoft,
     documentPdf,
   });
   const background = new BackgroundWork();
@@ -258,11 +240,10 @@ async function main(): Promise<void> {
     sources,
     microsoft,
     nextcloud,
-    googleDrive,
     clock,
     log,
     sync,
-    rendering: { renderers: { officePdf, libreOfficePdf }, progress: renderProgress },
+    rendering: { renderers: { libreOfficePdf }, progress: renderProgress },
     documentPdf,
     materialPdf,
     oidc,
@@ -287,11 +268,14 @@ async function main(): Promise<void> {
   // Recordings a stopped server left without their transcript.
   await resumeTranscripts(deps);
   await resumeExtractions(deps);
-  const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
-    log.info(
-      `Slider API listening on http://localhost:${info.port} (data: ${config.dataDir}, media: ${config.media.dir})`,
-    );
-  });
+  const server = serve(
+    { fetch: app.fetch, port: config.port, ...(config.host && { hostname: config.host }) },
+    (info) => {
+      log.info(
+        `Slider API listening on http://${config.host ?? 'localhost'}:${info.port} (data: ${config.dataDir}, media: ${config.media.dir})`,
+      );
+    },
+  );
 
   let shuttingDown = false;
   function shutdown(signal: string, exitCode = 0) {

@@ -85,7 +85,7 @@ function SlideBackgroundPanelView({ pageId, slideId }: { pageId: string; slideId
 
   const registry = useStageRegistry();
   useRestoreFocus();
-  // Its slide comes clear of the panel, as a thread's does (Folie 0 before it can push it under).
+  // Its slide comes clear of the panel, as a thread's does.
   useEffect(() => {
     panelRef.current?.focus({ preventScroll: true });
     registry.revealSlide(slideId, { align: 'nearest' });

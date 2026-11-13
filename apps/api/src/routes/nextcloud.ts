@@ -25,7 +25,7 @@ import { userEmail } from '../services/users';
  * Nextcloud (BER-135): connecting an account with Login Flow v2, and the file browser – Nextcloud
  * has no picker to embed, so the API lists folders, shares and search results and proxies the
  * thumbnails; the app password stays here. A picked file is imported with
- * `POST /decks/nextcloud-item`.
+ * `POST /decks/nextcloud-item`, or fetched as a deck's material (`/download/:fileId`).
  */
 
 /** Login flows per account and hour: each one makes the server call an address it was given. */
@@ -46,6 +46,9 @@ export function nextcloudRoutes(deps: AppDeps) {
     }
     await next();
   });
+
+  /** Accounts with a download in flight (`/download/:fileId`). */
+  const downloading = new Set<string>();
 
   /** Runs `run` with one of the viewer's connections; a refused app password asks to reconnect. */
   const browse = async <T>(
@@ -134,5 +137,38 @@ export function nextcloudRoutes(deps: AppDeps) {
       c.header('Cache-Control', 'private, max-age=300');
       c.header('X-Content-Type-Options', 'nosniff');
       return c.body(bytes as Uint8Array<ArrayBuffer>);
+    })
+
+    .get('/nextcloud/:connectionId/download/:fileId', viewer, async (c) => {
+      // A file picked as material for a deck: the page uploads it like one from the computer.
+      // Passed on as Nextcloud sends it, never held whole (capped); one at a time per account,
+      // until its last byte is sent or the page stops reading.
+      requireOwner(c.var.viewer);
+      const userId = c.var.viewer.author.id;
+      const fileId = c.req.param('fileId');
+      if (!/^\d+$/.test(fileId)) throw notFound();
+      if (downloading.has(userId)) {
+        c.header('Retry-After', '5');
+        throw new ApiError(429, 'rate_limited', 'Eine andere Datei wird noch geladen.');
+      }
+      downloading.add(userId);
+      const done = () => downloading.delete(userId);
+      // Also when the page goes away mid-file – whether or not the runtime cancels the body.
+      c.req.raw.signal.addEventListener('abort', done, { once: true });
+      try {
+        const { name, body } = await browse(userId, c.req.param('connectionId'), async (nc) => {
+          const found = await nc.fileById(fileId);
+          if (!found) throw notFound();
+          return { name: found.entry.name, body: await nc.downloadStream(found.entry.path, done) };
+        });
+        c.header('Content-Type', 'application/octet-stream');
+        c.header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(name)}`);
+        c.header('Cache-Control', 'private, no-store');
+        c.header('X-Content-Type-Options', 'nosniff');
+        return c.body(body);
+      } catch (error) {
+        done();
+        throw error;
+      }
     });
 }

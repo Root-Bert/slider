@@ -2,11 +2,8 @@ import type { ParsedSlide } from '@slider/pptx';
 import type { Database } from '../db/client';
 import type { DeckRow, RevisionRow, SlideRenderer } from '../db/schema';
 import type { Logger } from '../logger';
-import { isGraphRef, OFFICE_FILE_TOO_BIG, OfficePdfError } from '../sources/microsoft-graph';
-import { withDeckConnection, type ConnectionLookup } from '../sources/connections';
 import { isOdpBytes } from '@slider/odp';
 import { isPdfBytes } from '../sources/safe-fetch';
-import type { SourceAdapters } from '../sources/source-adapter';
 import { blobKeys, type BlobStorage } from '../storage/blob-storage';
 import { ConversionAborted, deckFonts, type PptxToPdf } from './libreoffice';
 import type { PoolPriority } from './office-pool';
@@ -16,110 +13,10 @@ import { drawingFonts } from '../services/workspace-fonts';
 
 type PdfRenderer = Exclude<SlideRenderer, 'svg'>;
 
-/**
- * The deck's file rendered to PDF by Office, or `null` when Office does not apply (uploads, plain
- * links, …). Throws {@link OfficePdfUnavailable} when it applies but did not work. Only ever a
- * nicer picture: callers fall back to LibreOffice and the SVG preview.
- */
-export type OfficePdf = ((deck: DeckRow, revision: RevisionRow) => Promise<Uint8Array | null>) & {
-  /**
-   * Whether Office can render this deck at all: only sources that export PDFs (Microsoft, Google
-   * Slides). Absent means every linked deck.
-   */
-  appliesTo?: (deck: Pick<DeckRow, 'source' | 'sourceRef'>) => boolean;
-};
-
-/** Office applied to the deck but gave no PDF; the message says why, for the deck card. */
-export class OfficePdfUnavailable extends Error {
-  constructor(
-    message: string,
-    /** Office's own error code, see {@link OfficePdfError}. */
-    readonly officeCode: string | null = null,
-  ) {
-    super(message);
-    this.name = 'OfficePdfUnavailable';
-  }
-}
-
-/**
- * Asks the deck's source for Office's PDF of exactly the file this revision was made from –
- * through the deck's Microsoft connection, else the first of the owner's `connections` that has
- * access (the next sync check remembers it). Google Slides decks get Google's PDF, through the
- * deck's Google connection (BER-119). `microsoft: false`: no Microsoft app on this server, so
- * OneDrive and SharePoint decks are not asked.
- */
-export function createOfficePdf(
-  sources: SourceAdapters,
-  log: Logger,
-  connections?: ConnectionLookup,
-  { microsoft = true }: { microsoft?: boolean } = {},
-): OfficePdf {
-  const appliesTo = (deck: Pick<DeckRow, 'source' | 'sourceRef'>) => {
-    if (deck.source === 'upload' || deck.sourceRef === null) return false;
-    const adapter = sources[deck.source];
-    if (!adapter.exportPdf || !(adapter.hasPdf?.(deck.sourceRef) ?? true)) return false;
-    return microsoft || deck.source === 'google';
-  };
-  const officePdf: OfficePdf = async (deck, revision) => {
-    if (deck.source === 'upload' || !deck.sourceRef || !appliesTo(deck)) return null;
-    const adapter = sources[deck.source];
-    if (!adapter.exportPdf) return null;
-    const file = { ref: deck.sourceRef, fileName: deck.fileName, sizeBytes: 0, changeToken: null };
-    const exportPdf = adapter.exportPdf.bind(adapter);
-    const sourceRef = deck.sourceRef;
-    if (deck.source === 'google') {
-      try {
-        const context = { userId: deck.ownerId, googleConnectionId: deck.googleConnectionId };
-        // Google exports the file as it is now: changed since this revision, its pages would
-        // belong to the next one.
-        if (revision.sourceChangeToken) {
-          const now = await adapter.getChangeToken(file, context);
-          if (now && now !== revision.sourceChangeToken) {
-            throw new OfficePdfUnavailable('Die Datei wurde seit dieser Version geändert.');
-          }
-        }
-        return await exportPdf(file, context);
-      } catch (error) {
-        if (error instanceof OfficePdfUnavailable) throw error;
-        log.warn(`Google PDF of deck ${deck.id} unavailable; using the preview`, error);
-        throw new OfficePdfUnavailable(
-          error instanceof Error ? error.message : 'Google liefert kein PDF.',
-        );
-      }
-    }
-    try {
-      const { value } = await withDeckConnection({ connections }, deck, async (context) => {
-        // Graph renders the file as it is now. If it changed since this revision was
-        // downloaded, its pages would belong to the next revision. (Anonymous SharePoint
-        // revisions carry an HTTP ETag, not a cTag, so they cannot be compared; the page count
-        // check still applies.)
-        if (isGraphRef(sourceRef) && revision.sourceChangeToken) {
-          const now = await adapter.getChangeToken(file, context);
-          if (now !== revision.sourceChangeToken) {
-            log.info(`Deck ${deck.id} changed since revision ${revision.id}; using the preview`);
-            throw new OfficePdfUnavailable('Die Datei wurde seit dieser Version geändert.');
-          }
-        }
-        return exportPdf(file, context);
-      });
-      return value;
-    } catch (error) {
-      if (error instanceof OfficePdfUnavailable) throw error;
-      log.warn(`Office PDF of deck ${deck.id} unavailable; using the preview`, error);
-      throw new OfficePdfUnavailable(
-        error instanceof Error ? error.message : 'Microsoft liefert kein PDF.',
-        error instanceof OfficePdfError ? error.officeCode : null,
-      );
-    }
-  };
-  officePdf.appliesTo = appliesTo;
-  return officePdf;
-}
-
 /** What a {@link renderSlidePages} call came up with. */
 export interface SlidePages {
   /**
-   * `office` / `libreoffice`: that renderer's pages are in `pages`. `svg`: a better renderer was
+   * `libreoffice` / `pdf`: that renderer's pages are in `pages`. `svg`: a better renderer was
    * tried and failed, every slide keeps its SVG preview. `null`: none was available to try.
    */
   renderer: SlideRenderer | null;
@@ -128,8 +25,6 @@ export interface SlidePages {
    * `null` where the slide keeps its SVG preview (hidden ones).
    */
   pages: (StoredPage | null)[];
-  /** Why Office was tried and not used (German, for the deck card); `null` otherwise. */
-  officeFailure: string | null;
 }
 
 /** A PDF page's images, already in blob storage under the revision's prefix. */
@@ -141,8 +36,6 @@ export interface StoredPage {
 export interface SlidePagesDeps {
   /** Where page images go the moment they are drawn. */
   storage: BlobStorage;
-  /** Office's PDF of linked decks. */
-  officePdf?: OfficePdf;
   /** LibreOffice's PDF of any PPTX; `null`/absent when LibreOffice is not installed. */
   libreOfficePdf?: PptxToPdf | null;
   log: Logger;
@@ -156,29 +49,18 @@ export interface SlidePagesDeps {
 }
 
 /**
- * Whether {@link renderSlidePages} has anything better than the SVG preview for this deck. Office
- * counts only for sources that export PDFs: a Nextcloud deck without LibreOffice stays SVG, and
- * syncs must keep its images instead of rendering them again each time.
+ * Whether {@link renderSlidePages} has anything better than the SVG preview: LibreOffice. Without
+ * it syncs keep a deck's images instead of rendering them again each time.
  */
-export const hasPdfRenderer = (
-  deps: Pick<SlidePagesDeps, 'officePdf' | 'libreOfficePdf'>,
-  deck: Pick<DeckRow, 'source' | 'sourceRef'>,
-): boolean => {
-  if (deps.libreOfficePdf) return true;
-  const { officePdf } = deps;
-  if (!officePdf) return false;
-  return officePdf.appliesTo ? officePdf.appliesTo(deck) : isLinkedDeck(deck);
-};
-
-const isLinkedDeck = (deck: Pick<DeckRow, 'source' | 'sourceRef'>) =>
-  deck.source !== 'upload' && deck.sourceRef !== null;
+export const hasPdfRenderer = (deps: Pick<SlidePagesDeps, 'libreOfficePdf'>): boolean =>
+  Boolean(deps.libreOfficePdf);
 
 /**
- * The slides' pictures as PowerPoint draws them (BER-94): Office's PDF of the linked file, else
- * LibreOffice's PDF of the revision's own PPTX, rasterised per page. Neither PDF has pages for
- * hidden slides, so pages map onto the visible slides in order. A PDF whose page count differs
- * from the visible slides cannot be mapped and is skipped. Whatever fails falls back to the next
- * renderer and finally to the SVG preview; it only throws {@link ConversionAborted} (shutdown).
+ * The slides' pictures as PowerPoint draws them (BER-94): LibreOffice's PDF of the revision's own
+ * file, rasterised per page. The PDF has no pages for hidden slides, so pages map onto the
+ * visible slides in order. A PDF whose page count differs from the visible slides cannot be
+ * mapped and is skipped. Whatever fails falls back to the SVG preview; it only throws
+ * {@link ConversionAborted} (shutdown).
  */
 export async function renderSlidePages(
   deps: SlidePagesDeps,
@@ -195,102 +77,77 @@ export async function renderSlidePages(
     onPage?: (done: number) => Promise<void>;
   } = {},
 ): Promise<SlidePages> {
-  const none = slides.map(() => null);
-  const candidates: { renderer: PdfRenderer; pdf: () => Promise<Uint8Array | null> }[] = [];
-  const { officePdf, libreOfficePdf } = deps;
-  let officeFailure: string | null = null;
-  // A review deck that came as a PDF: its own pages are the pictures – one per slide, drawn
-  // by whoever made the PDF of a converted file.
+  const preview: SlidePages = {
+    renderer: hasPdfRenderer(deps) ? 'svg' : null,
+    pages: slides.map(() => null),
+  };
+  const { libreOfficePdf } = deps;
+  let renderer: PdfRenderer;
+  let pdf: Uint8Array | null = null;
   if (isPdfBytes(pptx)) {
-    candidates.push({ renderer: revision.pdfRenderer ?? 'pdf', pdf: async () => pptx });
-  } else if (officePdf && !isOdpBytes(pptx)) {
-    // An ODP is edited in Slider: the linked file's PDF would show the cloud's version, not ours.
-    candidates.push({
-      renderer: 'office',
-      pdf: async () => {
-        try {
-          return await officePdf(deck, revision);
-        } catch (error) {
-          officeFailure = officeFailureMessage(error, pptx.length);
-          return null;
-        }
-      },
-    });
-  }
-  if (libreOfficePdf && !isPdfBytes(pptx)) {
-    candidates.push({
-      renderer: 'libreoffice',
-      pdf: async () => {
-        try {
-          if (deps.adoptFonts && isOdpBytes(pptx)) {
-            await deps
-              .adoptFonts(deck, pptx)
-              .catch((error: unknown) =>
-                deps.log.warn(`Taking the fonts deck ${deck.id} brings along failed`, error),
-              );
-          }
-          // Only the faces the deck names are read.
-          const fonts = deps.db
-            ? await (
-                await drawingFonts({ ...deps, db: deps.db }, deck.workspaceId)
-              ).faces(await deckFonts(pptx))
-            : [];
-          return await libreOfficePdf(pptx, { fonts, priority });
-        } catch (error) {
-          // Shutdown: no SVG fallback – the import or re-render resumes on the next start.
-          if (error instanceof ConversionAborted) throw error;
-          deps.log.warn(`LibreOffice could not convert deck ${deck.id}; using the preview`, error);
-          return null;
-        }
-      },
-    });
-  }
-  const visible = slides.filter((slide) => !slide.hidden).length;
-  for (const candidate of candidates) {
-    const pdf = await candidate.pdf();
-    if (!pdf) continue;
-    // Each page goes to storage as soon as it is drawn, so a long deck never holds all its
-    // images in memory; the page count is checked before the first page is drawn.
-    const pages: StoredPage[] = [];
+    // A review deck that came as a PDF: its own pages are the pictures – one per slide, drawn
+    // by whoever made the PDF of a converted file.
+    renderer = revision.pdfRenderer ?? 'pdf';
+    pdf = pptx;
+  } else if (libreOfficePdf) {
+    renderer = 'libreoffice';
     try {
-      await rasterizePdf(
-        pdf,
-        async (images) => {
-          const page = {
-            imageKey: blobKeys.slideRender(deck.id, revision.id, 'webp'),
-            thumbnailKey: blobKeys.slideRender(deck.id, revision.id, 'webp'),
-          };
-          pages.push(page);
-          await deps.storage.put(page.imageKey, images.image);
-          await deps.storage.put(page.thumbnailKey, images.thumbnail);
-          await onPage?.(pages.length);
-        },
-        { expectedPages: visible, background: priority === 'background' },
-      );
-    } catch (error) {
-      await deleteStoredPages(deps.storage, pages);
-      if (error instanceof PageCountMismatch) {
-        deps.log.warn(
-          `PDF (${candidate.renderer}) of deck ${deck.id} has ${error.pages} pages for ${visible} visible slides`,
-        );
-        if (candidate.renderer === 'office' && !isPdfBytes(pptx)) {
-          officeFailure = `Das PDF von Microsoft hat ${error.pages} Seiten für ${visible} sichtbare Folien.`;
-        }
-        continue;
+      if (deps.adoptFonts && isOdpBytes(pptx)) {
+        await deps
+          .adoptFonts(deck, pptx)
+          .catch((error: unknown) =>
+            deps.log.warn(`Taking the fonts deck ${deck.id} brings along failed`, error),
+          );
       }
-      deps.log.warn(`PDF (${candidate.renderer}) of deck ${deck.id} could not be rendered`, error);
-      if (candidate.renderer === 'office' && !isPdfBytes(pptx))
-        officeFailure = 'Das PDF von Microsoft ist nicht lesbar.';
-      continue;
+      // Only the faces the deck names are read.
+      const fonts = deps.db
+        ? await (
+            await drawingFonts({ ...deps, db: deps.db }, deck.workspaceId)
+          ).faces(await deckFonts(pptx))
+        : [];
+      pdf = await libreOfficePdf(pptx, { fonts, priority });
+    } catch (error) {
+      // Shutdown: no SVG fallback – the import or re-render resumes on the next start.
+      if (error instanceof ConversionAborted) throw error;
+      deps.log.warn(`LibreOffice could not convert deck ${deck.id}; using the preview`, error);
     }
-    let next = 0;
-    return {
-      renderer: candidate.renderer,
-      pages: slides.map((slide) => (slide.hidden ? null : (pages[next++] ?? null))),
-      officeFailure,
-    };
+  } else return preview;
+  if (!pdf) return preview;
+  const visible = slides.filter((slide) => !slide.hidden).length;
+  // Each page goes to storage as soon as it is drawn, so a long deck never holds all its
+  // images in memory; the page count is checked before the first page is drawn.
+  const pages: StoredPage[] = [];
+  try {
+    await rasterizePdf(
+      pdf,
+      async (images) => {
+        const page = {
+          imageKey: blobKeys.slideRender(deck.id, revision.id, 'webp'),
+          thumbnailKey: blobKeys.slideRender(deck.id, revision.id, 'webp'),
+        };
+        pages.push(page);
+        await deps.storage.put(page.imageKey, images.image);
+        await deps.storage.put(page.thumbnailKey, images.thumbnail);
+        await onPage?.(pages.length);
+      },
+      { expectedPages: visible, background: priority === 'background' },
+    );
+  } catch (error) {
+    await deleteStoredPages(deps.storage, pages);
+    if (error instanceof PageCountMismatch) {
+      deps.log.warn(
+        `PDF (${renderer}) of deck ${deck.id} has ${error.pages} pages for ${visible} visible slides`,
+      );
+    } else {
+      deps.log.warn(`PDF (${renderer}) of deck ${deck.id} could not be rendered`, error);
+    }
+    return preview;
   }
-  return { renderer: hasPdfRenderer(deps, deck) ? 'svg' : null, pages: none, officeFailure };
+  let next = 0;
+  return {
+    renderer,
+    pages: slides.map((slide) => (slide.hidden ? null : (pages[next++] ?? null))),
+  };
 }
 
 /** Removes the images of a PDF that was given up half-way; best effort. */
@@ -299,15 +156,6 @@ async function deleteStoredPages(storage: BlobStorage, pages: StoredPage[]): Pro
     await storage.delete(page.imageKey).catch(() => {});
     await storage.delete(page.thumbnailKey).catch(() => {});
   }
-}
-
-/** The deck card's reason for a failed Office PDF; a too-big file names its size. */
-function officeFailureMessage(error: unknown, sizeBytes: number): string {
-  if (!(error instanceof Error)) return 'Microsoft liefert kein PDF.';
-  if (error instanceof OfficePdfUnavailable && error.officeCode === OFFICE_FILE_TOO_BIG) {
-    return `${error.message.replace(/\.$/, '')} (${Math.round(sizeBytes / 1_000_000)} MB).`;
-  }
-  return error.message;
 }
 
 /** `slide_versions.renderer` of one slide of a {@link renderSlidePages} result. */

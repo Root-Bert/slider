@@ -27,6 +27,9 @@ export default tseslint.config(
       'e2e/.shots',
       'apps/api/drizzle',
       'figma-scripts',
+      // The desktop app's stage: a copy of the API and the built web app.
+      'desktop/build',
+      'desktop/generated',
       '.claude',
     ],
   },
@@ -105,6 +108,16 @@ export default tseslint.config(
   {
     files: ['apps/api/**/*.ts', 'packages/**/*.ts', '*.config.{js,ts}', 'apps/site/*.config.mjs'],
     languageOptions: { globals: globals.node },
+  },
+  // Desktop app: Electron's main process and its build scripts run on Node.
+  {
+    files: ['desktop/**/*.mjs'],
+    languageOptions: { globals: globals.node },
+  },
+  {
+    files: ['desktop/**/*.cjs'],
+    languageOptions: { globals: globals.node, sourceType: 'commonjs' },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
   },
   // Playwright: Node, plus the browser inside `page.evaluate`.
   {

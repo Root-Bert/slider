@@ -38,9 +38,14 @@ import {
 } from './ai-providers';
 import {
   assignedModel,
+  assignedRow,
+  assignedTo,
   inheritedRow,
   type AssignedModel,
   keyRows,
+  MODEL_FIELDS,
+  type ModelField,
+  perModel,
   readPolicy,
   ruleFor,
   savePolicy,
@@ -188,17 +193,20 @@ async function toDto(deps: AppDeps, place: Place): Promise<Integrations> {
       place && active && rule.inherit !== 'none'
         ? await inheritedRow(deps, policy, place, active)
         : null;
-    const inherited: InheritedIntegration | null = instance
-      ? {
-          provider: instance.provider,
-          model: instance.model,
-          // What it runs on without a pick of its own: the instance's model for it there.
-          defaultModel: assignedModel(policy, kind, place!, active!.id) ?? active!.model,
-          createModel: instance.createModel,
-          defaultCreateModel:
-            assignedModel(policy, kind, place!, active!.id, 'createModel') ?? active!.createModel,
-        }
-      : null;
+    let inherited: InheritedIntegration | null = null;
+    if (instance) {
+      // What it runs on without a pick of its own: the instance's models for it there.
+      const defaults = assignedRow(policy, place!, active!);
+      inherited = {
+        provider: instance.provider,
+        model: instance.model,
+        defaultModel: defaults.model,
+        createModel: instance.createModel,
+        defaultCreateModel: defaults.createModel,
+        quickModel: instance.quickModel,
+        defaultQuickModel: defaults.quickModel,
+      };
+    }
     return {
       kind,
       // A workspace that may not store its own: its keys rest, unseen, until it may again.
@@ -208,11 +216,10 @@ async function toDto(deps: AppDeps, place: Place): Promise<Integrations> {
         .flatMap(([workspaceId, apartRule]) => {
           const name = nameOf.get(workspaceId);
           if (name === undefined) return [];
-          const model = active ? assignedModel(policy, kind, workspaceId, active.id) : null;
-          const createModel = active
-            ? assignedModel(policy, kind, workspaceId, active.id, 'createModel')
-            : null;
-          return [{ workspaceId, name, rule: apartRule, model, createModel }];
+          const models = perModel((field) =>
+            active ? assignedModel(policy, kind, workspaceId, active.id, field) : null,
+          );
+          return [{ workspaceId, name, rule: apartRule, ...models }];
         })
         .sort((a, b) => a.name.localeCompare(b.name, 'de')),
       inherited,
@@ -240,6 +247,7 @@ const keyDto = (row: IntegrationKeyRow) => ({
   hint: row.hint,
   model: row.model,
   createModel: row.createModel,
+  quickModel: row.quickModel,
   active: row.active,
   setByName: row.setByName ?? 'Unbekannt',
   setAt: row.setAt.toISOString(),
@@ -291,8 +299,18 @@ async function activeInstanceKey(deps: AppDeps, kind: IntegrationKind) {
   return row as IntegrationKeyRow & { kind: Exclude<IntegrationKind, 'photos'> };
 }
 
-/** Only the AI creates decks: a model for that only there. */
-const CREATE_AI_ONLY = 'Ein Modell zum Erstellen von Präsentationen gibt es nur für die KI.';
+/** Models asked for, per field: a name, `null` none of its own, left out as it is. */
+type ModelInput = Partial<Record<ModelField, string | null>>;
+
+/** Only the AI creates decks and runs quick requests: a model for those only there. */
+function onlyAiModels(kind: IntegrationKind, input: ModelInput): void {
+  if (input.createModel !== undefined && kind !== 'ai') {
+    throw badRequest('Ein Modell zum Erstellen von Präsentationen gibt es nur für die KI.');
+  }
+  if (input.quickModel !== undefined && kind !== 'ai') {
+    throw badRequest('Ein Modell für schnelle Aufträge gibt es nur für die KI.');
+  }
+}
 
 /**
  * A model picked anew beside the one it falls back to: left out (`undefined`) as it was, `null`
@@ -306,10 +324,31 @@ const picked = (
   next === undefined ? before : next === null || next === fallback ? undefined : next;
 
 /**
+ * The models `row` runs on in a workspace once `input` is {@link picked} over `kept` (what was set
+ * for this key there) and `fallback` (what applies without) – each checked with the key's
+ * service; `null` when none of its own is left.
+ */
+async function pickModels(
+  deps: AppDeps,
+  row: IntegrationKeyRow & { kind: Exclude<IntegrationKind, 'photos'> },
+  input: ModelInput,
+  kept: Omit<AssignedModel, 'keyId'> | undefined,
+  fallback: Pick<IntegrationKeyRow, ModelField>,
+): Promise<AssignedModel | null> {
+  const next = perModel((field) => picked(input[field], kept?.[field], fallback[field]));
+  for (const field of MODEL_FIELDS) {
+    const name = next[field];
+    if (name && name !== row.model) await requireOffered(deps, row, name);
+  }
+  // The fallback is none set: a later change of it applies there too.
+  return assignedTo(row.id, next);
+}
+
+/**
  * The rule of a kind for all workspaces (`workspaceId` `null`), or for one apart – `null` gives
  * it back to the rule for all. For one apart, `model` sets the model of the instance's active
  * key there (`null`: the key's own; left out: as it is), `createModel` (AI) the one it creates
- * decks on there, alike. The instance's only.
+ * decks on there, `quickModel` (AI) the one of quick requests, alike. The instance's only.
  */
 export async function setIntegrationPolicy(
   deps: AppDeps,
@@ -318,8 +357,10 @@ export async function setIntegrationPolicy(
   rule: IntegrationRule | null,
   model?: string | null,
   createModel?: string | null,
+  quickModel?: string | null,
 ): Promise<Integrations> {
-  if (createModel !== undefined && kind !== 'ai') throw badRequest(CREATE_AI_ONLY);
+  const input: ModelInput = { model, createModel, quickModel };
+  onlyAiModels(kind, input);
   if (workspaceId) {
     const [found] = await deps.db
       .select({ id: workspaces.id })
@@ -333,26 +374,17 @@ export async function setIntegrationPolicy(
       ? { ...rule, inherit: 'all' as const }
       : rule;
   let assigned: AssignedModel | null | undefined;
-  if ((model !== undefined || createModel !== undefined) && workspaceId && stored) {
+  if (MODEL_FIELDS.some((field) => input[field] !== undefined) && workspaceId && stored) {
     const row = await activeInstanceKey(deps, kind);
     const before = (await readPolicy(deps))[kind].models[workspaceId];
-    const kept = before?.keyId === row.id ? before : undefined;
-    const next = {
-      model: picked(model, kept?.model, row.model),
-      createModel: picked(createModel, kept?.createModel, row.createModel),
-    };
-    for (const name of [next.model, next.createModel]) {
-      if (name && name !== row.model) await requireOffered(deps, row, name);
-    }
-    // The key's own model is none set: a later change of it applies there too.
-    assigned =
-      next.model || next.createModel
-        ? {
-            keyId: row.id,
-            ...(next.model && { model: next.model }),
-            ...(next.createModel && { createModel: next.createModel }),
-          }
-        : null;
+    // Without a pick: the key's own.
+    assigned = await pickModels(
+      deps,
+      row,
+      input,
+      before?.keyId === row.id ? before : undefined,
+      row,
+    );
   }
   await savePolicy(deps, kind, workspaceId, stored, assigned);
   return toDto(deps, null);
@@ -391,39 +423,21 @@ export async function setInheritedModel(
   input: SetInheritedModelInput,
 ): Promise<Integrations> {
   const row = await pickableKey(deps, viewer, workspaceId, kind);
-  if (input.createModel !== undefined && kind !== 'ai') throw badRequest(CREATE_AI_ONLY);
+  onlyAiModels(kind, input);
   const policy = await readPolicy(deps);
   const [found] = await deps.db
     .select({ models: workspaces.integrationModels })
     .from(workspaces)
     .where(eq(workspaces.id, workspaceId));
   const before = found?.models[kind];
-  const kept = before?.keyId === row.id ? before : undefined;
   // Without a pick: the model the instance set for this workspace, else the key's own.
-  const next = {
-    model: picked(
-      input.model,
-      kept?.model,
-      assignedModel(policy, kind, workspaceId, row.id) ?? row.model,
-    ),
-    createModel: picked(
-      input.createModel,
-      kept?.createModel,
-      assignedModel(policy, kind, workspaceId, row.id, 'createModel') ?? row.createModel,
-    ),
-  };
-  for (const name of [next.model, next.createModel]) {
-    if (name && name !== row.model) await requireOffered(deps, row, name);
-  }
-  // The instance's model is no pick: a later change of it applies here too.
-  const pick =
-    next.model || next.createModel
-      ? {
-          keyId: row.id,
-          ...(next.model && { model: next.model }),
-          ...(next.createModel && { createModel: next.createModel }),
-        }
-      : null;
+  const pick = await pickModels(
+    deps,
+    row,
+    input,
+    before?.keyId === row.id ? before : undefined,
+    assignedRow(policy, workspaceId, row),
+  );
   await deps.db
     .update(workspaces)
     .set({
@@ -516,23 +530,24 @@ export async function updateIntegrationKey(
   if (input.model !== undefined && row.kind === 'photos') {
     throw badRequest('Fotodienste haben kein Modell.');
   }
-  if (input.createModel !== undefined && row.kind !== 'ai') throw badRequest(CREATE_AI_ONLY);
-  const model = input.model !== undefined && input.model !== row.model ? input.model : null;
-  // `null` none of its own: decks are created on `model`.
-  const createModel =
-    input.createModel !== undefined && input.createModel !== row.createModel
-      ? input.createModel
-      : undefined;
+  onlyAiModels(row.kind, input);
+  // The models changed – `null` (AI) none of its own: decks are created on `model`, quick
+  // requests run on the provider's fast model. (`model` is never `null`: the input has none.)
+  const changed = Object.fromEntries(
+    MODEL_FIELDS.flatMap((field) => {
+      const next = input[field];
+      return next !== undefined && next !== row[field] ? [[field, next]] : [];
+    }),
+  ) as Partial<Pick<IntegrationKeyRow, ModelField>>;
   if (
-    model !== null ||
-    createModel !== undefined ||
+    Object.keys(changed).length > 0 ||
     (row.error && (input.recheck || input.active || input.model !== undefined))
   ) {
     if (row.kind === 'photos') {
       await checkPhotoKey(deps, row.provider as PhotoProvider, row.apiKey);
     } else {
       const models = await checkedModels(deps, row.kind, connectionOf(row));
-      for (const name of [model, createModel]) {
+      for (const name of Object.values(changed)) {
         if (name && !models.some((offered) => offered.id === name)) {
           throw badRequest(
             `Dieses Modell bietet ${providerName(connectionOf(row))} mit dem Key nicht an.`,
@@ -543,11 +558,7 @@ export async function updateIntegrationKey(
     // It answered: the key works again – unless it was removed while the service was asked.
     const updated = await deps.db
       .update(integrationKeys)
-      .set({
-        ...(model !== null ? { model } : {}),
-        ...(createModel !== undefined ? { createModel } : {}),
-        error: null,
-      })
+      .set({ ...changed, error: null })
       .where(eq(integrationKeys.id, keyId))
       .returning({ id: integrationKeys.id });
     if (updated.length === 0) throw keyGone();

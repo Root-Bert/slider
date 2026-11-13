@@ -286,14 +286,23 @@ function FormatBadge({ children }: { children: ReactNode }) {
   );
 }
 
-/** Pill looks of the card's buttons: primary once the card is pointed at or focused. */
-const pill = 'flex h-8 items-center gap-1.5 rounded-control px-3 text-sm font-medium';
+/** The card's two buttons, „Herunterladen“ and „Senden“: the same pill, one height. */
+const pill =
+  'flex h-8 items-center gap-1.5 rounded-control px-3 text-sm font-medium outline-none transition-[background-color,color,box-shadow] duration-200';
+/** A pill at rest – primary only while pointed at or focused itself, never with the card. */
+const pillIdle = cn(
+  'cursor-pointer bg-surface-2 text-fg ring-1 ring-hairline',
+  'hover:bg-primary hover:text-on-primary hover:shadow-glow hover:ring-transparent',
+  'focus-visible:bg-primary focus-visible:text-on-primary focus-visible:shadow-glow focus-visible:ring-transparent',
+);
+const pillLit = 'bg-primary text-on-primary shadow-glow ring-transparent';
 
 /**
- * One way out, as a featured card (`BlankDeckCard`'s look): a click anywhere on it downloads, its
- * „Herunterladen“ pill turns into the primary button on hover; beside it „Senden“ opens a small
- * form in the card. While busy the pill stays focusable (`aria-disabled`): a disabled button
- * would drop the focus.
+ * One way out, as a featured card (`BlankDeckCard`'s look): the card glows under the pointer and
+ * a click anywhere on it downloads; its two pills light up only when pointed at themselves –
+ * „Herunterladen“, and „Senden“, which opens a small form in the card (lit while open). While
+ * busy „Herunterladen“ stays lit and focusable (`aria-disabled`): a disabled button would drop
+ * the focus.
  */
 function ExportCard({
   title,
@@ -381,14 +390,7 @@ function ExportCard({
               aria-disabled={busy || undefined}
               className={cn(
                 pill,
-                'outline-none transition-[background-color,color,box-shadow] duration-200',
-                busy
-                  ? 'cursor-progress bg-primary text-on-primary shadow-glow'
-                  : cn(
-                      'cursor-pointer bg-surface-2 text-fg ring-1 ring-hairline',
-                      'group-hover:bg-primary group-hover:text-on-primary group-hover:shadow-glow group-hover:ring-transparent',
-                      'focus-visible:bg-primary focus-visible:text-on-primary focus-visible:shadow-glow focus-visible:ring-transparent',
-                    ),
+                busy ? cn(pillLit, 'cursor-progress') : cn(pillIdle, 'group/download'),
               )}
             >
               {busy ? (
@@ -397,22 +399,23 @@ function ExportCard({
                 <Icon
                   name="download"
                   size={18}
-                  className="transition-transform duration-300 ease-overshoot group-hover:translate-y-0.5"
+                  className="transition-transform duration-300 ease-overshoot group-hover/download:translate-y-0.5"
                 />
               )}
               {busy ? busyLabel : 'Herunterladen'}
             </button>
             {send && !busy && (
-              <IconButton
-                icon="send"
-                label="Senden"
+              <button
+                type="button"
+                aria-label="Senden"
                 title="Per Mail senden"
-                size="sm"
-                expanded={send.open}
-                className="bg-surface-2 ring-1 ring-hairline"
+                aria-expanded={send.open}
                 aria-controls={send.open ? formId : undefined}
                 onClick={send.onToggle}
-              />
+                className={cn(pill, send.open ? cn(pillLit, 'cursor-pointer') : pillIdle)}
+              >
+                <Icon name="send" size={18} />
+              </button>
             )}
           </div>
         </div>

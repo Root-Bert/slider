@@ -5,6 +5,7 @@ import {
   PROVIDER_BASE_URLS,
   PROVIDER_LABELS,
   SERVER_PROVIDER,
+  defaultQuickModel,
   type AiFeature,
   type ModelProvider,
 } from '@slider/shared';
@@ -36,6 +37,8 @@ export interface AiConnection {
   /** The service's own address, up to `/v1` or the like: for `custom`, or one changed. */
   baseUrl: string | null;
   model: string;
+  /** AI: the model of quick requests (`runToolCall`); unset: {@link defaultQuickModel}. */
+  quickModel?: string | null;
   /**
    * The instance's key: only its address may be internal (`AI_ALLOW_INTERNAL_URLS`) – a
    * workspace's admins must not make the server reach into its own network.
@@ -806,6 +809,11 @@ export interface TurnRequest {
    * price), at standard speed where the key may not or its fast quota is used up.
    */
   fast?: boolean;
+  /**
+   * Told each piece of the answer's text as it comes (Anthropic streams it; the others tell it
+   * once, whole) – for someone watching it being written.
+   */
+  onText?: (text: string) => void;
 }
 
 /** The tokens of an Anthropic answer, for the usage. */
@@ -1057,6 +1065,8 @@ async function anthropicTurnAt(
     stream.on('streamEvent', (event) => {
       if (firstTokenAt === null && event.type === 'content_block_start') firstTokenAt = Date.now();
     });
+    const { onText } = request;
+    if (onText) stream.on('text', (text) => onText(text));
   }
   const timingOf = (message: Anthropic.Beta.BetaMessage | undefined): TurnTiming => ({
     ms: Date.now() - startedAt,
@@ -1278,6 +1288,7 @@ async function openAiTurn(
   const unreadable: string[] = [];
   if (answer.content?.trim()) {
     content.push({ type: 'text', text: answer.content, citations: null } as Block);
+    request.onText?.(answer.content);
   }
   for (const call of answer.tool_calls ?? []) {
     if (!call.function?.name) continue;
@@ -1298,11 +1309,6 @@ async function openAiTurn(
 
 // ── One quick decision ───────────────────────────────────────────────────
 
-/**
- * The model quick decisions run on with an Anthropic key (speaking to the AI decides what a
- * piece of speech is while the person goes on): fast, and good enough to follow a thought.
- */
-export const QUICK_ANTHROPIC_MODEL = 'claude-haiku-5-5';
 /** A quick decision may take this long. */
 const QUICK_TIMEOUT_MS = 45_000;
 
@@ -1317,10 +1323,15 @@ export interface ToolCallRequest {
   feature?: AiFeature;
 }
 
+/** The model a connection's quick requests run on. */
+export const quickModelOf = (connection: AiConnection): string =>
+  connection.quickModel || defaultQuickModel(connection.provider, connection.model);
+
 /**
- * One answer that is a call of `tool`: its input, or `null` when the model gave none. Anthropic
- * keys run on {@link QUICK_ANTHROPIC_MODEL} (the key's own model when that one is refused); the
- * others on the key's model, as OpenAI's chat API with the tool required.
+ * One answer that is a call of `tool`: its input, or `null` when the model gave none. On the
+ * key's model for quick requests – unset, Haiku for an Anthropic key, any other key's own model;
+ * an Anthropic key that is refused the quick one falls back to its own. Others as OpenAI's chat
+ * API with the tool required.
  */
 export async function runToolCall(
   deps: Pick<AppDeps, 'config' | 'aiFetch' | 'anthropic'>,
@@ -1352,12 +1363,13 @@ export async function runToolCall(
       const call = message.content.find((block) => block.type === 'tool_use');
       return call?.type === 'tool_use' ? call.input : null;
     };
+    const quick = quickModelOf(connection);
     try {
-      return await ask(QUICK_ANTHROPIC_MODEL);
+      return await ask(quick);
     } catch (error) {
       // A key without the quick model (an older account, a gateway with a list of its own).
       const status = error instanceof Anthropic.APIError ? error.status : undefined;
-      if ((status === 404 || status === 400) && connection.model !== QUICK_ANTHROPIC_MODEL) {
+      if ((status === 404 || status === 400) && connection.model !== quick) {
         return ask(connection.model);
       }
       throw error;
@@ -1371,7 +1383,7 @@ export async function runToolCall(
     {
       method: 'POST',
       body: {
-        model: connection.model,
+        model: quickModelOf(connection),
         messages: [
           { role: 'system', content: request.system },
           { role: 'user', content: request.user },

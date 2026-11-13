@@ -5,9 +5,7 @@ import {
   domainJoinAllowed,
   updateMeInputSchema,
   type DisconnectNextcloudResult,
-  type GoogleConnection,
   type MeResponse,
-  type MicrosoftConnection,
   type NextcloudConnection,
   type SuccessorChoice,
   type Viewer,
@@ -22,12 +20,6 @@ import { readJson } from '../http/validate';
 import { deleteAccount, successorChoices } from '../services/account-deletion';
 import { exportAccount } from '../services/account-export';
 import { updateViewerColor, updateViewerName } from '../services/users';
-import {
-  disconnectMicrosoft,
-  listMicrosoftConnections,
-  microsoftConnectionSummary,
-} from '../services/microsoft-connections';
-import { disconnectGoogle, listGoogleConnections } from '../services/google-connections';
 import { disconnectNextcloud, listNextcloudConnections } from '../services/nextcloud-connections';
 import { requireOwner } from '../auth/access';
 import { ApiError, badRequest, notFound } from '../http/errors';
@@ -47,12 +39,11 @@ async function meResponse(
   const instanceClaimed = !(await gate.mustClaim(c));
   const [user] = await deps.db.select().from(users).where(eq(users.id, viewer.author.id));
   if (!user) return { viewer, instanceClaimed };
-  const [workspaces, pendingInvites, domainWorkspace, mayFound, microsoft] = await Promise.all([
+  const [workspaces, pendingInvites, domainWorkspace, mayFound] = await Promise.all([
     listWorkspaces(deps, user.id),
     pendingInvitesFor(deps.db, user, deps.clock.now()),
     domainWorkspaceFor(deps, user),
     canCreateWorkspace(deps.db, deps.config, user.id),
-    microsoftConnectionSummary(deps.db, user.id),
   ]);
   return {
     viewer,
@@ -62,8 +53,6 @@ async function meResponse(
       email: user.email,
       color: user.color,
       isInstanceAdmin: user.isInstanceAdmin,
-      microsoftConnected: microsoft.usable > 0,
-      microsoftConnections: microsoft.total,
     },
     workspaces,
     pendingInvites,
@@ -143,21 +132,6 @@ export function meRoutes(deps: AppDeps, gate: InstanceGate) {
         await endSession(c, deps);
         return c.body(null, 204);
       })
-      /** The Microsoft accounts connected for OneDrive/SharePoint – only the viewer's own. */
-      .get('/me/microsoft', viewerMiddleware(deps), async (c) => {
-        requireOwner(c.var.viewer);
-        return c.json<MicrosoftConnection[]>(
-          await listMicrosoftConnections(deps.db, c.var.viewer.author.id),
-        );
-      })
-      .delete('/me/microsoft/:id', viewerMiddleware(deps), async (c) => {
-        requireOwner(c.var.viewer);
-        const removed = await disconnectMicrosoft(deps, c.var.viewer.author.id, [
-          c.req.param('id'),
-        ]);
-        if (removed === 0) throw notFound('Dieses Microsoft-Konto ist nicht verbunden.');
-        return c.body(null, 204);
-      })
       /** The Nextcloud accounts connected for file access (BER-135) – only the viewer's own. */
       .get('/me/nextcloud', viewerMiddleware(deps), async (c) => {
         requireOwner(c.var.viewer);
@@ -171,20 +145,6 @@ export function meRoutes(deps: AppDeps, gate: InstanceGate) {
         const result = await disconnectNextcloud(deps, c.var.viewer.author.id, c.req.param('id'));
         if (!result) throw notFound('Dieses Nextcloud-Konto ist nicht verbunden.');
         return c.json<DisconnectNextcloudResult>(result);
-      })
-      /** The Google accounts connected for Google Drive (BER-119) – only the viewer's own. */
-      .get('/me/google', viewerMiddleware(deps), async (c) => {
-        requireOwner(c.var.viewer);
-        return c.json<GoogleConnection[]>(
-          await listGoogleConnections(deps.db, c.var.viewer.author.id),
-        );
-      })
-      /** Revokes the grant at Google too (best effort). */
-      .delete('/me/google/:id', viewerMiddleware(deps), async (c) => {
-        requireOwner(c.var.viewer);
-        const removed = await disconnectGoogle(deps, c.var.viewer.author.id, c.req.param('id'));
-        if (!removed) throw notFound('Dieses Google-Konto ist nicht verbunden.');
-        return c.body(null, 204);
       })
   );
 }

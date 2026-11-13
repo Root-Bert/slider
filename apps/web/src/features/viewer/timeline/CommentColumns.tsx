@@ -29,6 +29,7 @@ import { CommentBubble } from '../comments/CommentBubble';
 import { CommentCard, type CardEmphasis } from '../comments/CommentCard';
 import { CompactCard } from '../comments/CompactCard';
 import { useTimeline } from './timeline-context';
+import { useTimelineRange, type TimelineWindow } from './timeline-window';
 
 /** Clicking a bubble grows the slides until the column is this wide (full cards). */
 const BUBBLE_TARGET_W = 300;
@@ -39,7 +40,7 @@ const NARROW_PAD = 16;
 
 interface CommentColumnsProps {
   layout: TrackLayout;
-  range: { first: number; last: number };
+  window: TimelineWindow;
   narrow: boolean;
 }
 
@@ -50,7 +51,8 @@ interface CommentColumnsProps {
  * ⊕ divider. All columns share one grid cell, so the area is as tall as the tallest column
  * without measuring; columns never overlap, `columnSpans` keeps them apart.
  */
-export function CommentColumns({ layout, range, narrow }: CommentColumnsProps) {
+export function CommentColumns({ layout, window, narrow }: CommentColumnsProps) {
+  const range = useTimelineRange(window);
   const { slides } = useViewerData();
   const { bySlide, byGap } = useCommentThreads();
 

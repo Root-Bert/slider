@@ -1,7 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import type { BackgroundWork } from './background-work';
-import type { GoogleTokens } from './auth/google';
-import type { MicrosoftTokens } from './auth/microsoft';
+import type { MicrosoftLogin } from './auth/microsoft';
 import type { NextcloudAccounts } from './auth/nextcloud';
 import type { OidcClient } from './auth/oidc';
 import type { WebAuthn } from './auth/passkeys';
@@ -34,12 +33,10 @@ export interface AppDeps {
   media: BlobStorage;
   queue: JobQueue<ImportJob>;
   sources: SourceAdapters;
-  /** Microsoft sign-in tokens per user (BER-92). */
-  microsoft: MicrosoftTokens;
+  /** "Weiter mit Microsoft" (BER-129). */
+  microsoft: MicrosoftLogin;
   /** Connected Nextcloud accounts and their login flows (BER-135). */
   nextcloud: NextcloudAccounts;
-  /** Connected Google accounts for Google Drive (BER-119); no tokens without `config.googleDrive`. */
-  googleDrive: GoogleTokens;
   clock: Clock;
   log: Logger;
   /** Presence, live cursors and live comments (BER-104); `createApp` makes one when absent. */
@@ -89,6 +86,8 @@ export interface AppDeps {
    * (`ai-providers`) and the photo services of stored keys; `fetch` when absent.
    */
   aiFetch?: (input: string, init?: RequestInit) => Promise<Response>;
+  /** How the desktop app reaches its Slider server (BER-201); `fetch` when absent. */
+  cloudFetch?: (input: string, init?: RequestInit) => Promise<Response>;
   /** Unsplash; absent → the real one with `config.unsplash` (tests inject a fake). */
   stockPhotos?: StockPhotoSource;
   /** rembg; absent → the real one with `config.rembg` (tests inject a fake). */

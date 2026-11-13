@@ -16,14 +16,15 @@ import { asksInWords } from '../lib/comment-selectors';
  */
 export function useAskAiShortcut() {
   const { deck, threadById } = useViewerData();
-  const { focusedThreadId, draft } = useViewerState();
+  const { focusedThreadId, draft, materialOpen } = useViewerState();
   const ai = useAskAi();
   const proposalsOf = useCommentProposals(deck.id);
   const toast = useViewerToast();
 
   const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
     if (event.defaultPrevented || event.key !== 'Enter' || !isModKey(event)) return;
-    if (draft || isTypingTarget(event.target)) return;
+    // On the material page the presentation (and its selected thread) is asleep.
+    if (materialOpen || draft || isTypingTarget(event.target)) return;
     if (event.target instanceof Element && event.target.closest('dialog')) return;
     const thread = focusedThreadId ? threadById.get(focusedThreadId) : undefined;
     if (!thread) return;

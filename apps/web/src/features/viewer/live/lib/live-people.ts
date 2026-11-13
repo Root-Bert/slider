@@ -8,6 +8,8 @@ export interface LivePerson {
   author: Author;
   /** The slide they have active (their latest tab), `null` before it is known. */
   activeSlideId: string | null;
+  /** On the material page (their latest tab) rather than on that slide. */
+  onMaterial: boolean;
 }
 
 /**
@@ -26,6 +28,7 @@ export function useLivePeople(): LivePerson[] {
       people.set(peer.author.id, {
         author: withColorOverride(peer.author, overrides),
         activeSlideId: peer.activeSlideId,
+        onMaterial: peer.onMaterial,
       });
     }
     return [...people.values()];
@@ -37,6 +40,7 @@ export function useLivePeople(): LivePerson[] {
 const peopleKey = ({ peers }: LiveSnapshot) =>
   [...peers.values()]
     .map(
-      (peer) => `${peer.connectionId}:${peer.author.id}:${peer.author.color}:${peer.activeSlideId}`,
+      (peer) =>
+        `${peer.connectionId}:${peer.author.id}:${peer.author.color}:${peer.activeSlideId}:${peer.onMaterial}`,
     )
     .join('|');

@@ -79,7 +79,8 @@ export function useDeckUpload(workspaceId: string, onUploaded: (deck: Deck) => v
     setState({ status: 'idle' });
   };
 
-  return { state, start: (file: File) => void start(file), cancel };
+  // `run`: the same, to wait for – files dropped together go one after another.
+  return { state, start: (file: File) => void start(file), run: start, cancel };
 }
 
 function formDataOf(file: File, workspaceId: string): FormData {

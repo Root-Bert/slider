@@ -10,6 +10,9 @@ export const en = {
     pricingTitle: 'Pricing',
     pricingDescription:
       'Priced per workspace, never per seat: free for small teams, €79 a month for up to 100 people, €249 with AI included, free when you host it yourself.',
+    downloadTitle: 'Download',
+    downloadDescription:
+      'Slider as an app for Mac and Linux: works offline, your presentations stay on your computer, the AI runs with your own keys.',
   },
   nav: {
     home: 'Home',
@@ -28,7 +31,8 @@ export const en = {
     askMark: 'this slide?',
     doneLead: 'That is how',
     doneMark: 'Slider works.',
-    doneSub: 'Everyone says what they think right on the slide. You turn it into the better version. In the browser, open source and hosted in the EU.',
+    doneSub:
+      'Everyone says what they think right on the slide. You turn it into the better version. In the browser, open source and hosted in the EU.',
     you: 'You',
     where: 'Click the slide to pick a spot.',
     send: 'Send',
@@ -56,7 +60,11 @@ export const en = {
           { by: 'Lara', text: 'Phew, that is a lot of text.' },
           { by: 'Paul', text: 'And where is the dog?!' },
         ],
-        examples: ['Way too much text.', 'The dog needs to be bigger!', 'What are you actually asking for?'],
+        examples: [
+          'Way too much text.',
+          'The dog needs to be bigger!',
+          'What are you actually asking for?',
+        ],
         chips: ['Too much text', 'Bigger dog!', 'I’m in'],
         statement: 'Let’s get an office dog.',
         reasons: ['Less stress', 'More breaks', 'Try it for 3 months'],
@@ -67,7 +75,11 @@ export const en = {
           { by: 'Ingrid', text: 'Which three?' },
           { by: 'Marcel', text: 'All I see is bubbles.' },
         ],
-        examples: ['What am I supposed to see here?', 'Put the recommendation on top.', 'Too many colours.'],
+        examples: [
+          'What am I supposed to see here?',
+          'Put the recommendation on top.',
+          'Too many colours.',
+        ],
         chips: ['Too busy', 'Recommendation first', 'Convinced'],
         statement: 'Three products bring 80 % of the value.',
         reasons: ['One message', 'Only three bubbles', 'Recommendation on top'],
@@ -78,7 +90,11 @@ export const en = {
           { by: 'Benni', text: 'What is the point?' },
           { by: 'Anna', text: 'The formulas are tiny.' },
         ],
-        examples: ['Picture first, then the formula.', 'What should I remember?', 'Bigger text, please.'],
+        examples: [
+          'Picture first, then the formula.',
+          'What should I remember?',
+          'Bigger text, please.',
+        ],
         chips: ['Formulas too small', 'The point?', 'Clearly explained'],
         statement: 'More public spending raises interest rates.',
         reasons: ['One sentence', 'Big graph', 'Formula after'],
@@ -89,7 +105,11 @@ export const en = {
           { by: 'Albert', text: 'What is the message?' },
           { by: 'Gesa', text: 'Nobody reads that table.' },
         ],
-        examples: ['Too much going on on the right.', 'Just tell me the number.', 'Where does the +22 come from?'],
+        examples: [
+          'Too much going on on the right.',
+          'Just tell me the number.',
+          'Where does the +22 come from?',
+        ],
         chips: ['Too many numbers', 'The message?', 'Looks good'],
         statement: 'Prices beat the energy costs.',
         reasons: ['One number', 'Big bridge', 'Table in the appendix'],
@@ -139,12 +159,36 @@ export const en = {
     next: 'Next slide',
     prev: 'Previous slide',
     cards: [
-      { by: 'Carolin', q: 'Do I need to install anything?', a: 'No. Slider runs in the browser. Send a link and everyone is in.' },
-      { by: 'Anna', q: 'Can I bring my PowerPoint?', a: 'Yes. Open PowerPoint and ODF files, comment, edit and download them again.' },
-      { by: 'Benni', q: 'What does the AI do, anyway?', a: 'It reads every comment and suggests the next version. You decide.' },
-      { by: 'Thomas', q: 'What does it cost?', a: 'Nothing for small teams. After that one fixed price per workspace, never per head.' },
-      { by: 'Gesa', q: 'Where does my data live?', a: 'In the EU, with no trackers and no ads. Or on your own server: Slider is open source.' },
-      { by: 'Robert', q: 'And what do you think?', a: 'Click anywhere on this page and say it. Everyone here right now sees it.' },
+      {
+        by: 'Carolin',
+        q: 'Do I need to install anything?',
+        a: 'No. Slider runs in the browser. Send a link and everyone is in.',
+      },
+      {
+        by: 'Anna',
+        q: 'Can I bring my PowerPoint?',
+        a: 'Yes. Open PowerPoint and ODF files, comment, edit and download them again.',
+      },
+      {
+        by: 'Benni',
+        q: 'What does the AI do, anyway?',
+        a: 'It reads every comment and suggests the next version. You decide.',
+      },
+      {
+        by: 'Thomas',
+        q: 'What does it cost?',
+        a: 'Nothing for small teams. After that one fixed price per workspace, never per head.',
+      },
+      {
+        by: 'Gesa',
+        q: 'Where does my data live?',
+        a: 'In the EU, with no trackers and no ads. Or on your own server: Slider is open source.',
+      },
+      {
+        by: 'Robert',
+        q: 'And what do you think?',
+        a: 'Click anywhere on this page and say it. Everyone here right now sees it.',
+      },
     ],
   },
   /** Photo credits: „Foto von X auf Unsplash“. */
@@ -191,11 +235,7 @@ export const en = {
         pitch: 'One flat price. With 100 people that is just €0.79 per person.',
         note: 'Start with Free today, upgrading comes soon.',
         lead: 'Everything in Free, plus:',
-        features: [
-          'Up to 100 people',
-          '100 GB storage',
-          'Invoices for your accounting',
-        ],
+        features: ['Up to 100 people', '100 GB storage', 'Invoices for your accounting'],
       },
       ai: {
         pitch: 'AI built in. No own key, no tokens to manage, we run it for you.',
@@ -225,6 +265,27 @@ export const en = {
     selfBody: 'Host Slider yourself for free, without limits. One docker compose up.',
     selfButton: 'View on GitHub',
     license: 'Open source under the EUPL-1.2. Need support or a commercial license?',
+  },
+  /** The desktop app's download page (not linked until a release carries the files). */
+  download: {
+    title: 'Slider on your computer.',
+    sub: 'The same Slider as in the browser, as an app. It works offline, your presentations stay on this computer and the AI runs with your own keys.',
+    cardTitle: 'Download Slider',
+    cardBody:
+      'The app keeps itself up to date. Signed in, it syncs your workspaces with the server.',
+    macTitle: 'Mac',
+    macButton: 'Download for Mac',
+    macNote:
+      'For Macs with an Apple chip (M1 or newer) on macOS 12 or newer, checked by Apple. LibreOffice, which Slider uses to read and write presentation files, is loaded on first start if your Mac doesn’t have it.',
+    linuxTitle: 'Linux',
+    linuxButton: 'Download for Linux',
+    debButton: 'Download for Ubuntu and Debian',
+    linuxNote:
+      'The first file runs on any Linux, the second installs Slider like other programs. Install LibreOffice with your package manager, for example “sudo apt install libreoffice”.',
+    armNote: 'A computer with an ARM chip?',
+    armLink: 'Both are there for it too.',
+    browser: 'Rather in the browser?',
+    browserButton: 'Open Slider',
   },
   live: {
     comment: 'Comment',

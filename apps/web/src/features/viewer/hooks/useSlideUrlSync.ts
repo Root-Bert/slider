@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import { useSearchParams } from 'react-router';
 
 export const SLIDE_PARAM = 'slide';
+/** `?material`: the deck opens on its material page (kept while it is shown). */
+export const MATERIAL_PARAM = 'material';
 
 /**
  * How long (ms) the active slide has to stay before the URL follows. A sweep across the deck
@@ -31,4 +33,22 @@ export function useSlideUrlSync(activeSlideId: string | null) {
     );
     return () => clearTimeout(timer);
   }, [activeSlideId, current, setSearchParams]);
+}
+
+/** Mirrors the material page into `?material` without adding history entries. */
+export function useMaterialUrlSync(materialOpen: boolean) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const shown = searchParams.has(MATERIAL_PARAM);
+
+  useEffect(() => {
+    if (materialOpen === shown) return;
+    setSearchParams(
+      (params) => {
+        if (materialOpen) params.set(MATERIAL_PARAM, '');
+        else params.delete(MATERIAL_PARAM);
+        return params;
+      },
+      { replace: true, preventScrollReset: true },
+    );
+  }, [materialOpen, shown, setSearchParams]);
 }

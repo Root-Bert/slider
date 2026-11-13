@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { OdpDocument } from '@slider/odp';
 import type { Author, LiveEvent, LiveParagraph } from '@slider/shared';
+import { livePresenceInputSchema } from '@slider/shared';
 import {
   fromBase64,
   liveTextOf,
@@ -78,6 +79,14 @@ function setup(graceMs = 30_000) {
 
 describe('texts typed in together', () => {
   it('keeps a text a while after the last one left and lets connections and editors leave apart', async () => {
+    {
+      // Presence says who is on the material page; left out, they are on the slides.
+      const { hub, heard, a } = setup();
+      const bare = { activeSlideId: null, cursor: null, focusedThreadId: null };
+      expect(livePresenceInputSchema.parse(bare).onMaterial).toBe(false);
+      hub.update(a, livePresenceInputSchema.parse({ ...bare, onMaterial: true }));
+      expect(heard.at(-1)).toMatchObject({ type: 'peer', peer: { onMaterial: true } });
+    }
     {
       const { texts, a, join } = setup(20);
       const first = await join(a);

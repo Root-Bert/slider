@@ -1,12 +1,10 @@
-import type { Deck, DeckSource } from '@slider/shared';
+import type { Deck } from '@slider/shared';
 import { pluralize } from '@/lib/format';
 import { useDeleteDecks, type BulkResult } from '@/lib/api';
 import { ConfirmDialog } from '@/ui';
 
 /** Titles listed in the dialog when several decks are deleted; the rest as "und N weitere". */
 const LISTED_TITLES = 5;
-
-const MICROSOFT_SOURCES: readonly DeckSource[] = ['onedrive', 'sharepoint'];
 
 /**
  * What happens to the PowerPoint files, by where the decks came from: an upload's file is the
@@ -27,10 +25,9 @@ function fileCopy(decks: readonly Deck[]): { removed: string[]; kept: string | n
   if (linked.length === 0) return { removed, kept: null };
 
   const places = [
-    linked.some((deck) => MICROSOFT_SOURCES.includes(deck.source)) && 'in OneDrive/SharePoint',
     linked.some((deck) => deck.source === 'nextcloud') && 'in Nextcloud',
-    linked.some((deck) => deck.source === 'google') && 'in Google Drive',
-    linked.some((deck) => deck.source === 'url') && 'unter dem Link',
+    // Decks once linked from OneDrive, SharePoint or Google Drive read as any other link.
+    linked.some((deck) => deck.source !== 'nextcloud') && 'unter dem Link',
   ].filter((place) => place !== false);
   const where = places.join(' bzw. ');
   const kept =
@@ -44,10 +41,13 @@ function fileCopy(decks: readonly Deck[]): { removed: string[]; kept: string | n
 
 export function DeleteDeckDialog({
   decks,
+  filesStay = false,
   onClose,
   onDeleted,
 }: {
   decks: readonly Deck[];
+  /** In the desktop app: a deck is a file on this computer – that file stays (BER-201). */
+  filesStay?: boolean;
   onClose: () => void;
   onDeleted: (result: BulkResult<unknown>) => void;
 }) {
@@ -87,6 +87,7 @@ export function DeleteDeckDialog({
             ))}
           </ul>
           {copy.kept && <span>{copy.kept}</span>}
+          {filesStay && <span>Die Datei auf diesem Computer bleibt.</span>}
         </div>
       }
       confirmLabel="Endgültig löschen"

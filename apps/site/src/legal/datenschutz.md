@@ -1,6 +1,6 @@
 # Datenschutzerklärung
 
-Diese Erklärung gilt für die Website unter bertro.dev/slider. Für die App unter slider.bertro.dev gilt die Datenschutzerklärung, die dort verlinkt ist.
+Diese Erklärung gilt für die Website unter bertro.dev/slider und für die Desktop App von Slider (Mac und Linux). Für die App unter slider.bertro.dev gilt die Datenschutzerklärung, die dort verlinkt ist.
 
 ## Verantwortlicher
 
@@ -33,7 +33,18 @@ Rechtsgrundlage ist unser berechtigtes Interesse an einer sicheren und erreichba
 
 ## Links zu anderen Diensten
 
-Die Website verlinkt auf die App (slider.bertro.dev) und auf den Quellcode bei GitHub. Erst wenn du einem Link folgst, verbindet sich dein Browser mit diesem Dienst; dort gilt dessen Datenschutzerklärung (für GitHub: GitHub, Inc., USA, [docs.github.com/site-policy/privacy-policies](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement)).
+Die Website verlinkt auf die App (slider.bertro.dev) und auf den Quellcode bei GitHub; auch die Desktop App lädst du von GitHub. Erst wenn du einem Link folgst, verbindet sich dein Browser mit diesem Dienst; dort gilt dessen Datenschutzerklärung (für GitHub: GitHub, Inc., USA, [docs.github.com/site-policy/privacy-policies](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement)).
+
+## Desktop App
+
+Die Desktop App läuft auf deinem Computer. Deine Präsentationen, Kommentare und Einstellungen speichert sie dort, wir bekommen davon nichts. Ins Internet verbindet sie sich nur in diesen Fällen:
+
+- **Updates:** Beim Start und danach alle sechs Stunden fragt die App bei GitHub (GitHub, Inc., USA) nach einer neuen Version und lädt sie von dort. GitHub verarbeitet dabei deine IP-Adresse und die Version der App. Rechtsgrundlage ist unser berechtigtes Interesse, die App sicher und aktuell zu halten (Art. 6 Abs. 1 lit. f DSGVO). GitHub ist unter dem EU-US Data Privacy Framework zertifiziert (Art. 45 DSGVO).
+- **LibreOffice:** Fehlt LibreOffice auf deinem Mac, fragt die App, ob sie es laden soll. Sagst du ja, lädt sie es von den Servern der Document Foundation (Berlin), die dabei deine IP-Adresse sehen. Unter Linux lädt die App nichts, LibreOffice installierst du dort selbst.
+- **Anmeldung bei Slider:** Meldest du dich in der App an, gleicht sie deine Workspaces und Präsentationen mit dem Slider Server ab, bei dem du dich anmeldest. Für slider.bertro.dev gilt die Datenschutzerklärung dort, für einen anderen Server die seines Betreibers.
+- **KI und andere Dienste mit eigenem Schlüssel:** Nutzt du die KI, Sprache zu Text, die Bilderzeugung oder die Fotosuche, schickt die App deine Anfrage mit den nötigen Inhalten direkt an den Anbieter, dessen Schlüssel du eingetragen hast. Dafür gilt dessen Datenschutzerklärung.
+
+Die App sendet keine Nutzungsdaten oder Absturzberichte an uns.
 
 ## E-Mail
 
@@ -55,4 +66,4 @@ Außerdem kannst du dich bei einer Datenschutz-Aufsichtsbehörde beschweren, etw
 
 Wir passen diese Erklärung an, wenn sich die Website ändert. Es gilt die Fassung, die hier steht.
 
-Stand: Oktober 2026
+Stand: November 2026

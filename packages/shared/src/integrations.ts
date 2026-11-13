@@ -137,6 +137,17 @@ export function providerAddress(provider: IntegrationProvider): 'required' | 'op
   return PROVIDER_BASE_URLS[provider] ? 'optional' : 'none';
 }
 
+/**
+ * The AI's quick requests – what is said in the voice mode turned into comments and plain
+ * changes, plain changes asked in a comment, a long thread's summary – run on a fast model of
+ * the same key: an Anthropic key on Haiku unless another is set, any other on its own model.
+ */
+export const QUICK_ANTHROPIC_MODEL = 'claude-haiku-5-5';
+
+/** The model quick requests run on where none is set for them (`quickModel` `null`). */
+export const defaultQuickModel = (provider: IntegrationProvider, model: string): string =>
+  provider === 'anthropic' ? QUICK_ANTHROPIC_MODEL : model;
+
 /** One stored key; per kind and place, the active one is used. */
 export const integrationKeySchema = z.object({
   id: z.string(),
@@ -150,6 +161,8 @@ export const integrationKeySchema = z.object({
   model: z.string(),
   /** AI: the model a deck is created on („Präsentation erstellen“); `null`: `model`. */
   createModel: z.string().nullable(),
+  /** AI: the model of quick requests; `null`: {@link defaultQuickModel}. */
+  quickModel: z.string().nullable(),
   active: z.boolean(),
   setByName: z.string(),
   setAt: z.iso.datetime(),
@@ -189,6 +202,8 @@ export const integrationExceptionSchema = z.object({
   model: z.string().nullable(),
   /** AI: the model a deck is created on there; `null`: the key's own. */
   createModel: z.string().nullable(),
+  /** AI: the model of quick requests there; `null`: the key's own. */
+  quickModel: z.string().nullable(),
 });
 export type IntegrationException = z.infer<typeof integrationExceptionSchema>;
 
@@ -203,6 +218,10 @@ export const inheritedIntegrationSchema = z.object({
   createModel: z.string().nullable(),
   /** AI: the instance's model to create decks on; `null`: the model it runs on. */
   defaultCreateModel: z.string().nullable(),
+  /** AI: the model of quick requests here; `null`: {@link defaultQuickModel} of `model`. */
+  quickModel: z.string().nullable(),
+  /** AI: the instance's model of quick requests; `null`: {@link defaultQuickModel}. */
+  defaultQuickModel: z.string().nullable(),
 });
 export type InheritedIntegration = z.infer<typeof inheritedIntegrationSchema>;
 
@@ -251,9 +270,11 @@ export const updateIntegrationPolicyInputSchema = z
     model: z.string().trim().min(1).max(200).nullable().optional(),
     /** A workspace apart (AI): the model it creates decks on there; `null` the key's own. */
     createModel: z.string().trim().min(1).max(200).nullable().optional(),
+    /** A workspace apart (AI): the model of quick requests there; `null` the key's own. */
+    quickModel: z.string().trim().min(1).max(200).nullable().optional(),
   })
   .superRefine((input, context) => {
-    for (const field of ['model', 'createModel'] as const) {
+    for (const field of ['model', 'createModel', 'quickModel'] as const) {
       if (input[field] !== undefined && !input.workspaceId) {
         context.addIssue({
           code: 'custom',
@@ -284,8 +305,14 @@ export const setInheritedModelInputSchema = z
   .object({
     model: z.string().trim().min(1).max(200).nullable().optional(),
     createModel: z.string().trim().min(1).max(200).nullable().optional(),
+    quickModel: z.string().trim().min(1).max(200).nullable().optional(),
   })
-  .refine((input) => input.model !== undefined || input.createModel !== undefined);
+  .refine(
+    (input) =>
+      input.model !== undefined ||
+      input.createModel !== undefined ||
+      input.quickModel !== undefined,
+  );
 export type SetInheritedModelInput = z.infer<typeof setInheritedModelInputSchema>;
 
 /** `GET …/integrations/keys/:keyId/models` – what the key may run on, newest first. */
@@ -346,6 +373,8 @@ export const updateIntegrationKeyInputSchema = z
     model: z.string().trim().min(1).max(200).optional(),
     /** AI: the model a deck is created on; `null`: `model`. */
     createModel: z.string().trim().min(1).max(200).nullable().optional(),
+    /** AI: the model of quick requests; `null`: {@link defaultQuickModel}. */
+    quickModel: z.string().trim().min(1).max(200).nullable().optional(),
     /** A refused key asked again – e.g. once the account was topped up. */
     recheck: z.literal(true).optional(),
   })
@@ -354,6 +383,7 @@ export const updateIntegrationKeyInputSchema = z
       input.active !== undefined ||
       input.model !== undefined ||
       input.createModel !== undefined ||
+      input.quickModel !== undefined ||
       input.recheck !== undefined,
   );
 export type UpdateIntegrationKeyInput = z.infer<typeof updateIntegrationKeyInputSchema>;

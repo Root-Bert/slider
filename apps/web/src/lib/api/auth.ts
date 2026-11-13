@@ -3,7 +3,6 @@ import type {
   EmailLoginResult,
   LoginIdentity,
   LoginResult,
-  MicrosoftConnection,
   NextcloudLoginStart,
   NextcloudSignInPoll,
   Passkey,
@@ -56,7 +55,7 @@ export const useIdentities = () =>
     queryFn: () => api.get<LoginIdentity[]>('/me/identities'),
   });
 
-/** Only while another login remains; the Microsoft file access stays connected. */
+/** Only while another login remains. */
 export function useUnlinkIdentity() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -98,29 +97,6 @@ export function useDeletePasskey() {
   return useMutation({
     mutationFn: (id: string) => api.delete(`/passkeys/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: workspaceKeys.passkeys }),
-  });
-}
-
-// ── Account: Microsoft accounts for OneDrive and SharePoint ─────────────────
-
-export const useMicrosoftConnections = (enabled = true) =>
-  useQuery({
-    queryKey: workspaceKeys.microsoft,
-    queryFn: () => api.get<MicrosoftConnection[]>('/me/microsoft'),
-    enabled,
-  });
-
-/** Reviews that synced through it stop updating until an account with access takes over. */
-export function useDisconnectMicrosoft() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => api.delete(`/me/microsoft/${encodeURIComponent(id)}`),
-    onSuccess: () =>
-      Promise.all([
-        queryClient.invalidateQueries({ queryKey: workspaceKeys.microsoft }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.me }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.decks }),
-      ]),
   });
 }
 

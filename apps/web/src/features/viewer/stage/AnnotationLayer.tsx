@@ -318,7 +318,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
           isDrawing(root) && (root.anchor.type !== 'rect' || isImplicitFrame(root));
         // One's own plain box moves and resizes – one of several boxes stays with its element.
         const editableBox = canEdit(root) && !isImplicitFrame(root) && mark.more.length === 0;
-        // One's own plain box carries its badge on its corner: dragging the badge resizes it.
+        // One's own plain box carries its badge on its corner: dragging the badge moves it.
         const ownBox = root.anchor.type === 'rect' && editableBox && !composing;
         // The AI at work: it reads the marked area; a bare pin has none, so its dot shows it.
         const aiScan = aiWorking.has(mark.thread.id) && area.w > 0 && area.h > 0;
@@ -360,7 +360,7 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                   }
                 : undefined
             }
-            className={inFrame ? 'cursor-nwse-resize' : undefined}
+            className={inFrame ? 'cursor-pointer' : undefined}
           />
         );
         const badgeInFrame = ownBox && root.strokes.length === 0;
@@ -369,6 +369,11 @@ export const AnnotationLayer = memo(function AnnotationLayer({
           root.anchor.type === 'rect' && root.anchor.shapeRef
             ? anchoredShape(root.anchor, slide.shapes)
             : null;
+        // On the element's own box (as box mode puts it): it goes with that. Moved or pulled off
+        // it – while dragged too – it is a box placed freely, though it still names the element.
+        const onElement =
+          boundTo !== null &&
+          rectsMatch(mark.rect, clampRect(outlineOf(boundTo)?.bbox ?? boundTo.bbox));
         return (
           <div
             key={mark.thread.id}
@@ -384,9 +389,9 @@ export const AnnotationLayer = memo(function AnnotationLayer({
                   rect={mark.rect}
                   color={accentColor(root.author.color)}
                   // Placed freely: its line runs out around its corners, as an element's does.
-                  // Bound to an element's box: it goes with that, no corners to pull.
-                  elementEdge={!root.anchor.shapeRef}
-                  handles={!root.anchor.shapeRef && mark.state === 'emphasized'}
+                  // On an element's box: it goes with that, no corners to pull.
+                  elementEdge={!onElement}
+                  handles={!onElement && mark.state === 'emphasized'}
                   rotation={boundTo?.rotation}
                   tilt={boundTo?.tilt}
                   emphasized={mark.state === 'emphasized'}

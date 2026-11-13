@@ -54,8 +54,47 @@ function vadAssets(): Plugin {
   };
 }
 
+/** Where the spell check finds its dictionaries (`SPELL_BASE` in `viewer/spelling`). */
+const SPELL_BASE = '/spell/';
+
+/**
+ * The Hunspell dictionaries the spell check of the guides view loads at run time – German
+ * (igerman98, GPL-2.0 or GPL-3.0: shipped as it is, its licence beside it) and English: served
+ * from the packages while developing, copied into the build under `/spell/`.
+ */
+function spellAssets(): Plugin {
+  const require = createRequire(import.meta.url);
+  const dir = (name: string) => path.dirname(require.resolve(name));
+  const files: Record<string, string> = {
+    'de.aff': path.join(dir('dictionary-de'), 'index.aff'),
+    'de.dic': path.join(dir('dictionary-de'), 'index.dic'),
+    'de.license.txt': path.join(dir('dictionary-de'), 'license'),
+    'en.aff': path.join(dir('dictionary-en'), 'index.aff'),
+    'en.dic': path.join(dir('dictionary-en'), 'index.dic'),
+    'en.license.txt': path.join(dir('dictionary-en'), 'license'),
+  };
+  return {
+    name: 'slider-spell-assets',
+    configureServer(server) {
+      server.middlewares.use((request, response, next) => {
+        const url = request.url?.split('?')[0] ?? '';
+        if (!url.startsWith(SPELL_BASE)) return next();
+        const source = files[url.slice(SPELL_BASE.length)];
+        if (!source) return next();
+        response.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        response.end(readFileSync(source));
+      });
+    },
+    generateBundle() {
+      for (const [name, source] of Object.entries(files)) {
+        this.emitFile({ type: 'asset', fileName: `spell/${name}`, source: readFileSync(source) });
+      }
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss(), vadAssets()],
+  plugins: [react(), tailwindcss(), vadAssets(), spellAssets()],
   resolve: {
     alias: { '@': new URL('./src', import.meta.url).pathname },
   },
@@ -64,6 +103,8 @@ export default defineConfig({
     proxy: {
       '/api': apiTarget,
       '/files': apiTarget,
+      // AI apps find how to sign in at the origin's root (MCP, OAuth).
+      '/.well-known': apiTarget,
     },
   },
 });

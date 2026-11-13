@@ -956,6 +956,30 @@ describe('editing an ODP deck', () => {
     expect(placeholder!.bbox.h).toBeCloseTo(box.h, 3);
     expect(uploadedPicture?.kind).toBe('image');
     expect(uploadedPicture!.bbox.w).toBeCloseTo(width, 3);
+    expect(uploadedPicture!.symbol).toBeUndefined();
+
+    // A symbol put into the placeholder: which and its colour go into the file with it (its
+    // description) and come back with the element; one not readable is refused.
+    const symbol = { id: 'phosphor/house', label: 'House', color: '#1a73e8' };
+    const uploadSymbol = (given: string) => {
+      const body = new FormData();
+      body.append('file', new File([png], 'symbol.png'));
+      body.append('symbol', given);
+      return ctx.request(`/api/decks/${deckId}/edit/images`, { method: 'POST', body });
+    };
+    expect((await uploadSymbol('{"id":"house"}')).status).toBe(400);
+    const symbolImage = uploadedEditImageSchema.parse(
+      await (await uploadSymbol(JSON.stringify(symbol))).json(),
+    );
+    const symbolled = await edit(ctx, deckId, {
+      operations: [
+        { type: 'replaceImage', elementId: 'sl-placeholder', imageId: symbolImage.imageId },
+      ],
+    });
+    const symbolFrame = deckEditStateSchema
+      .parse(await symbolled.json())
+      .slides[1]!.elements.find((item) => item.id === 'sl-placeholder');
+    expect(symbolFrame?.symbol).toEqual(symbol);
 
     // Editor pictures go after 7 days and are no longer counted.
     // The edits grew the deck's file since: measured anew, as the sweep does – once the edited
@@ -965,12 +989,12 @@ describe('editing an ODP deck', () => {
     const withPicture = await used();
     ctx.clock.advance(6 * DAY_MS);
     await sweepOldEditImages(ctx.deps);
-    expect(await listed()).toBe(2);
+    expect(await listed()).toBe(4);
     ctx.clock.advance(2 * DAY_MS);
     await sweepOldEditImages(ctx.deps);
     expect(await listed()).toBe(0);
-    // The uploaded picture and its cut-out copy.
-    expect(await used()).toBe(withPicture - 2 * png.byteLength);
+    // The uploaded picture, its cut-out copy and the symbol with what it is.
+    expect(await used()).toBe(withPicture - 3 * png.byteLength - JSON.stringify(symbol).length);
     // Nothing left to look at: the next runs pass the deck by.
     const [row] = await ctx.deps.db
       .select({ since: decks.editImagesSince })

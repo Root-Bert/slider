@@ -87,7 +87,7 @@ interface EditableFrameProps {
   edgesOnly?: boolean;
   title?: string;
   className?: string;
-  /** The comment's badge, on the top-left corner: dragging it resizes from there. */
+  /** The comment's badge, on the top-left corner: dragging it moves the box, no resizing there. */
   badge?: ReactNode;
   children?: ReactNode;
 }
@@ -270,12 +270,16 @@ export function EditableFrame({
         />
       )}
       {badge && (
-        // Centred on the box's outer corner, where the badge sat on its own.
+        // Centred on the box's outer corner, where the badge sat on its own. No handle: a press
+        // on it goes on to the box, so a drag moves the box and a click opens the thread.
         <span
           role="presentation"
-          title="Ziehen zum Ändern der Größe"
-          {...edit.cornerProps('nw')}
-          className="pointer-events-auto absolute -top-3.5 -left-3.5 z-(--z-raised) size-6 cursor-nwse-resize touch-none"
+          // The click that ends a drag is no click on the badge either: where it lands on the badge
+          // (Safari, Firefox – Chrome gives it to the capturing frame) it must not open the thread.
+          onClickCapture={(event) => {
+            if (edit.wasDragged()) event.stopPropagation();
+          }}
+          className="pointer-events-auto absolute -top-3.5 -left-3.5 z-(--z-raised) size-6 cursor-pointer touch-none"
         >
           {badge}
         </span>

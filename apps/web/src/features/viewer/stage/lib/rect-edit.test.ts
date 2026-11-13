@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   axisLocked,
   boxLines,
+  caughtBoxes,
+  caughtGaps,
   caughtLines,
   drawnRect,
   fittedToText,
@@ -16,7 +18,6 @@ import {
   snappedToText,
   snappedTurn,
   turnedCorner,
-  joinLines,
   withSlideLines,
 } from './rect-edit';
 
@@ -278,12 +279,52 @@ describe('snappedToLines', () => {
       { x: 0.41, y: 0.29, w: 0.18, h: 0.1 },
       start,
       'move',
-      joinLines({ x: [], y: [] }, other),
+      other,
       tolerance,
     );
     expect(docked.rect.x + docked.rect.w).toBeCloseTo(0.6);
     expect(docked.rect.y).toBeCloseTo(0.3);
     expect(caughtLines(docked.rect, other)).toEqual({ x: [0.6], y: [0.3, 0.35, 0.4] });
+    // The element it docked at framed, the turned one (not on a caught line) not.
+    expect(caughtBoxes(docked.rect, other)).toEqual([other.boxes![0]]);
+    // Equal gaps (Figma's spacing): two boxes 0.1 apart in a row – a third carries the gap on, and
+    // between two it is centred; the gaps of that size are drawn, the boxes framed.
+    const row = boxLines(
+      [{ bbox: { x: 0.1, y: 0.6, w: 0.1, h: 0.1 } }, { bbox: { x: 0.3, y: 0.6, w: 0.1, h: 0.1 } }],
+      1,
+    );
+    const free = { x: [], y: [], boxes: row.boxes };
+    const next = snappedToLines(
+      { x: 0.51, y: 0.62, w: 0.1, h: 0.1 },
+      start,
+      'move',
+      free,
+      tolerance,
+    );
+    expect(next.rect.x).toBeCloseTo(0.5);
+    expect(caughtGaps(next.rect, free).map((gap) => [gap.axis, gap.start, gap.end])).toEqual([
+      ['x', 0.2, 0.3],
+      ['x', 0.4, expect.closeTo(0.5)],
+    ]);
+    expect(caughtBoxes(next.rect, free)).toHaveLength(2);
+    // Its gaps worked out already: the same boxes.
+    expect(caughtBoxes(next.rect, free, caughtGaps(next.rect, free))).toEqual(
+      caughtBoxes(next.rect, free),
+    );
+    const wide = boxLines(
+      [{ bbox: { x: 0.1, y: 0.6, w: 0.1, h: 0.1 } }, { bbox: { x: 0.6, y: 0.6, w: 0.1, h: 0.1 } }],
+      1,
+    );
+    const between = snappedToLines(
+      { x: 0.36, y: 0.6, w: 0.1, h: 0.1 },
+      start,
+      'move',
+      { x: [], y: [], boxes: wide.boxes },
+      tolerance,
+    );
+    expect(between.rect.x).toBeCloseTo(0.35);
+    // Not beside them (another row): no gaps.
+    expect(caughtGaps({ x: 0.5, y: 0.1, w: 0.1, h: 0.1 }, free)).toEqual([]);
     // Far from every line: as it is.
     const box = { x: 0.4, y: 0.1, w: 0.2, h: 0.2 };
     expect(snappedToLines(box, start, 'move', lines, tolerance)).toEqual({
@@ -352,7 +393,7 @@ describe('snappedToLines', () => {
     );
     expect(right.rect.x + right.rect.w).toBeCloseTo(1);
 
-    // A new box drawn (the frame tool): its press and its moving corner caught as a resized
+    // A new box drawn (⇧ and drag): its press and its moving corner caught as a resized
     // side is, each way on its own – free (no lines), as the pointer goes.
     expect(snappedPoint({ x: 0.013, y: 0.4 }, slide, tolerance)).toEqual({
       point: { x: 0, y: 0.4 },

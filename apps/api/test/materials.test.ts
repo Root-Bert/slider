@@ -1,10 +1,12 @@
+import type Anthropic from '@anthropic-ai/sdk';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { boardSchema, materialSchema, type Board } from '@slider/shared';
+import { eq } from 'drizzle-orm';
+import { boardSchema, materialSchema, type Board, type MaterialQuestion } from '@slider/shared';
 import { utils, write } from 'xlsx';
-import { workspaceMembers } from '../src/db/schema';
+import { workspaceMembers, workspaces } from '../src/db/schema';
 import { LiveHub } from '../src/realtime/live-hub';
 import { materialsBrief } from '../src/services/ai-context';
 import { runMaterialTool } from '../src/services/material-tools';
@@ -18,13 +20,53 @@ import {
 } from './helpers';
 import { makeSlidesPdf } from './pdf';
 
+/** The AI's answers, scripted in order: each a message or a function of the request. */
+type Scripted =
+  | Record<string, unknown>
+  | ((body: { messages: unknown[] }) => Record<string, unknown> | Promise<Record<string, unknown>>);
+let answers: Scripted[] = [];
+const fakeAnthropic = () =>
+  ({
+    models: {
+      retrieve: async (model: string) => ({ id: model, max_tokens: 64_000 }),
+      list: async function* () {
+        await Promise.resolve();
+        yield { id: 'claude-sonnet-5-5', display_name: 'Claude Sonnet 5.5' };
+      },
+    },
+    beta: {
+      messages: {
+        stream: (body: { messages: unknown[] }) => ({
+          finalMessage: async () => {
+            const next = answers.shift();
+            if (!next) throw new Error('no scripted answer left');
+            return typeof next === 'function' ? next(body) : next;
+          },
+          abort: () => undefined,
+        }),
+      },
+    },
+  }) as unknown as Anthropic;
+const aiMessage = (content: unknown[], stop: string) => ({
+  id: `msg_${crypto.randomUUID()}`,
+  type: 'message',
+  role: 'assistant',
+  model: 'claude-sonnet-5-5',
+  content,
+  stop_reason: stop,
+  stop_sequence: null,
+  usage: { input_tokens: 10, output_tokens: 10 },
+});
+
 let ctx: TestContext;
 let deck: DeckFixture;
 let live: LiveHub;
 beforeEach(async () => {
   live = new LiveHub();
+  answers = [];
   ctx = await createTestContext({
     live,
+    anthropic: fakeAnthropic,
     config: { dataDir: await mkdtemp(path.join(tmpdir(), 'slider-materials-')) },
   });
   deck = await createReadyDeck(ctx, { slideCount: 2 });
@@ -112,7 +154,7 @@ function workbook(): Uint8Array {
   return new Uint8Array(write(book, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer);
 }
 
-describe('the material board (Folie 0)', () => {
+describe('the material page', () => {
   it('puts down, moves and deletes files, notes and links – rights as comments, told live, never in the deck', async () => {
     const changed = vi.spyOn(live, 'boardChanged');
     const reviewer = await member('Rita', 'reviewer');
@@ -472,5 +514,364 @@ describe('the material board (Folie 0)', () => {
     ).toBe(true);
     expect(await tool('read_sheet', { material: 'Fehlt.xlsx' })).toMatchObject({ isError: true });
     expect(await tool('view_slide', {})).toBeNull();
+
+    // „Fragen“: a note on the board asked with ⌘↵ – refused without an AI key; with one the AI
+    // reads the page and answers from it, its source named – streamed, kept under the note for
+    // everyone, written anew when asked again, gone with „Antwort löschen“ or the note.
+    const questions = `/api/decks/${deck.deckId}/material-questions`;
+    const note = async (text: string) => {
+      const id = crypto.randomUUID();
+      await ctx.request(items, {
+        method: 'POST',
+        json: { id, kind: 'box', text, x: 600, y: 0, w: 200, h: 120 },
+      });
+      return id;
+    };
+    const market = await note('Wie stark wächst der Markt?');
+    const ask = (noteId: string, question: string, cookie?: string) =>
+      ctx.request(questions, {
+        method: 'POST',
+        cookie,
+        json: { id: crypto.randomUUID(), noteId, question },
+      });
+    expect((await ask(market, 'Wie stark wächst der Markt?')).status).toBe(409);
+    expect((await ask(folderId, 'Was liegt hier?')).status).toBe(404);
+    await ctx.request(`/api/workspaces/${ctx.workspaceId}/integrations/keys`, {
+      method: 'POST',
+      json: { kind: 'ai', provider: 'anthropic', apiKey: 'sk-ant-api03-good-AbCdEfGhIjKlMnOpQrSt' },
+    });
+    answers.push(
+      aiMessage(
+        [
+          {
+            type: 'tool_use',
+            id: 'toolu_1',
+            name: 'read_material',
+            input: { material: report.id, from: 2 },
+          },
+        ],
+        'tool_use',
+      ),
+      (body) => {
+        expect(JSON.stringify(body.messages.at(-1))).toContain('12 Prozent');
+        return aiMessage(
+          [{ type: 'text', text: `Um **12 Prozent** [[${report.id}#2]].`, citations: null }],
+          'end_turn',
+        );
+      },
+    );
+    const asked = await ask(market, 'Wie stark wächst der Markt?');
+    expect(asked.headers.get('content-type')).toContain('text/event-stream');
+    const events = (await asked.text())
+      .split('\n')
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => JSON.parse(line.slice(5)) as { type: string; [key: string]: unknown });
+    expect(events.map((event) => event.type)).toEqual(['reading', 'text', 'done']);
+    expect(events[0]).toEqual({ type: 'reading', label: 'Liest „Studie.pdf“ ab Seite 2' });
+    expect(events[2]).toMatchObject({
+      question: { state: 'done', answer: `Um **12 Prozent** [[${report.id}#2]].` },
+    });
+    expect(await (await ctx.request(questions)).json()).toMatchObject([
+      { noteId: market, question: 'Wie stark wächst der Markt?', state: 'done' },
+    ]);
+    // Asked again (the note typed into): the one answer under it is written anew.
+    answers.push(
+      aiMessage([{ type: 'text', text: 'Um 14 Prozent.', citations: null }], 'end_turn'),
+    );
+    await (await ask(market, 'Und 2024?')).text();
+    const [again] = (await (await ctx.request(questions)).json()) as MaterialQuestion[];
+    expect(again).toMatchObject({
+      noteId: market,
+      question: 'Und 2024?',
+      answer: 'Um 14 Prozent.',
+    });
+    // Three at once per person – a fourth sent together with them waits all the same.
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const slow = async () => {
+      await gate;
+      return aiMessage([{ type: 'text', text: 'Ja.', citations: null }], 'end_turn');
+    };
+    answers.push(slow, slow, slow);
+    const burst = await Promise.all(
+      await Promise.all(['A?', 'B?', 'C?', 'D?'].map(async (each) => ask(await note(each), each))),
+    );
+    expect(burst.map((res) => res.status).sort()).toEqual([200, 200, 200, 429]);
+    release();
+    await Promise.all(burst.map((res) => res.text()));
+    // Betrachter see the answers under the notes, like the notes, but ask the AI nothing.
+    const reader = await member('Lea', 'viewer');
+    const seen = (await (await ctx.request(questions, { cookie: reader })).json()) as {
+      id: string;
+      noteId: string;
+    }[];
+    expect(seen).toHaveLength(4);
+    expect((await ask(market, 'Und 2025?', reader)).status).toBe(403);
+    expect(
+      (
+        await ctx.request(`/api/material-questions/${again!.id}`, {
+          method: 'DELETE',
+          cookie: reader,
+        })
+      ).status,
+    ).toBe(403);
+    // „Antwort löschen“: the note stays; a note deleted takes its answer along.
+    expect(
+      (await ctx.request(`/api/material-questions/${again!.id}`, { method: 'DELETE' })).status,
+    ).toBe(204);
+    expect(
+      (await ctx.request(`/api/material-questions/${again!.id}`, { method: 'DELETE' })).status,
+    ).toBe(404);
+    const other = seen.find((each) => each.noteId !== market)!;
+    expect(
+      (await ctx.request(`/api/decks/${deck.deckId}/board/${other.noteId}`, { method: 'DELETE' }))
+        .status,
+    ).toBe(204);
+    expect(
+      ((await (await ctx.request(questions)).json()) as { id: string }[]).map((each) => each.id),
+    ).not.toContain(other.id);
+    expect((await board()).items.some((each) => each.id === market)).toBe(true);
+  });
+
+  it('lets AI apps in over MCP – OAuth with PKCE or a token, held to a workspace, never the cookie', async () => {
+    const origin = ctx.deps.config.webOrigin;
+    const rpc = async (token: string | null, method: string, params: object = {}) => {
+      const res = await ctx.request('/api/mcp', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json, text/event-stream',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        json: { jsonrpc: '2.0', id: 1, method, params },
+      });
+      const body =
+        res.status === 200
+          ? ((await res.json()) as {
+              result: {
+                tools?: { name: string }[];
+                content?: { text?: string }[];
+                isError?: boolean;
+              };
+            })
+          : null;
+      return { status: res.status, res, body };
+    };
+    const call = async (token: string, name: string, args: object = {}) => {
+      const { body } = await rpc(token, 'tools/call', { name, arguments: args });
+      return {
+        text: (body?.result.content ?? []).map((part) => part.text ?? '').join('\n'),
+        error: !!body?.result.isError,
+      };
+    };
+
+    // Without a token (the session cookie goes along, as from a page): 401 with where to sign in.
+    const bare = await rpc(null, 'tools/list');
+    expect(bare.status).toBe(401);
+    expect(bare.res.headers.get('www-authenticate')).toBe(
+      `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource/api/mcp"`,
+    );
+    expect((await rpc('slider_at_nope', 'tools/list')).status).toBe(401);
+    const resource = await (
+      await ctx.request('/.well-known/oauth-protected-resource/api/mcp')
+    ).json();
+    expect(resource).toMatchObject({
+      resource: `${origin}/api/mcp`,
+      authorization_servers: [origin],
+    });
+    const server = await (await ctx.request('/.well-known/oauth-authorization-server')).json();
+    expect(server).toMatchObject({
+      token_endpoint: `${origin}/api/oauth/token`,
+      code_challenge_methods_supported: ['S256'],
+    });
+
+    // OAuth: registration, consent on /verbinden (for one workspace), code with PKCE, tokens.
+    const redirect = 'https://claude.ai/api/mcp/auth_callback';
+    const registered = await ctx.request('/api/oauth/register', {
+      method: 'POST',
+      json: { client_name: 'Claude', redirect_uris: [redirect] },
+    });
+    expect(registered.status).toBe(201);
+    const { client_id } = (await registered.json()) as { client_id: string };
+    const verifier = 'v'.repeat(64);
+    const challenge = Buffer.from(
+      await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)),
+    ).toString('base64url');
+    const authorize = await ctx.request(
+      `/api/oauth/authorize?${new URLSearchParams({ response_type: 'code', client_id, redirect_uri: redirect, code_challenge: challenge, code_challenge_method: 'S256', state: 's1' })}`,
+      { redirect: 'manual' },
+    );
+    expect(authorize.status).toBe(302);
+    const request = new URL(authorize.headers.get('location')!, origin).searchParams.get(
+      'anfrage',
+    )!;
+    expect(
+      (
+        await ctx.request(
+          `/api/oauth/authorize?${new URLSearchParams({ response_type: 'code', client_id, redirect_uri: 'https://evil.example/cb', code_challenge: challenge, code_challenge_method: 'S256' })}`,
+          { redirect: 'manual' },
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      await (
+        await ctx.request('/api/connections/request', { method: 'POST', json: { request } })
+      ).json(),
+    ).toMatchObject({ clientName: 'Claude' });
+    const approved = await ctx.request('/api/connections/approve', {
+      method: 'POST',
+      json: { request, workspaceId: ctx.workspaceId },
+    });
+    const back = new URL(((await approved.json()) as { redirectUrl: string }).redirectUrl);
+    expect([back.origin + back.pathname, back.searchParams.get('state')]).toEqual([redirect, 's1']);
+    const token = (fields: Record<string, string>) =>
+      ctx.request('/api/oauth/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(fields),
+      });
+    const code = back.searchParams.get('code')!;
+    const exchange = { grant_type: 'authorization_code', code, redirect_uri: redirect, client_id };
+    // The request named its redirect, so must the swap (RFC 6749 4.1.3) – the code stays good.
+    const { redirect_uri: _named, ...unnamed } = exchange;
+    expect((await token({ ...unnamed, code_verifier: verifier })).status).toBe(400);
+    const granted = await token({ ...exchange, code_verifier: verifier });
+    expect(granted.status).toBe(200);
+    const tokens = (await granted.json()) as { access_token: string; refresh_token: string };
+    expect(tokens.access_token).toMatch(/^slider_at_/);
+    expect((await token({ ...exchange, code_verifier: verifier })).status).toBe(400);
+
+    // The tools: a note on the board under the person's name, found again by search and fetch.
+    const { body: listed } = await rpc(tokens.access_token, 'tools/list');
+    const names = (listed?.result.tools ?? []).map((tool) => tool.name);
+    expect(names).toEqual(expect.arrayContaining(['search', 'fetch', 'add_note', 'edit_slides']));
+    // Files come from the app – the server fetches no address for it (the page has none either).
+    expect(
+      await call(tokens.access_token, 'add_file', {
+        presentation: deck.deckId,
+        name: 'Studie.pdf',
+        url: 'http://127.0.0.1:8787/api/health',
+      }),
+    ).toEqual({
+      text: expect.stringContaining('Give exactly one of text or base64.'),
+      error: true,
+    });
+    const noted = await call(tokens.access_token, 'add_note', {
+      presentation: deck.deckId,
+      text: '## Marktanteil\n\nNord: **12 Prozent**',
+    });
+    expect(noted.text).toMatch(/^Put on the board as sticker /);
+    const sticker = (await board()).items.find((item) => item.text.startsWith('## Marktanteil'));
+    expect(sticker).toMatchObject({ kind: 'box', author: { id: ctx.ownerId } });
+    const found = JSON.parse(
+      (await call(tokens.access_token, 'search', { query: 'marktanteil' })).text,
+    );
+    expect(found.results[0]).toMatchObject({
+      id: `note:${sticker!.id}`,
+      title: 'Note: Marktanteil',
+    });
+    expect(
+      JSON.parse((await call(tokens.access_token, 'fetch', { id: found.results[0].id })).text),
+    ).toMatchObject({ text: '## Marktanteil\n\nNord: **12 Prozent**' });
+    // A blocked workspace (BER-167) is out of reach for apps too – lists and search included.
+    const block = (blockedAt: Date | null) =>
+      ctx.deps.db.update(workspaces).set({ blockedAt }).where(eq(workspaces.id, ctx.workspaceId));
+    await block(new Date());
+    expect(await call(tokens.access_token, 'list_presentations')).toEqual({
+      text: 'No presentations.',
+      error: false,
+    });
+    expect(
+      JSON.parse((await call(tokens.access_token, 'search', { query: 'marktanteil' })).text),
+    ).toEqual({ results: [] });
+    await block(null);
+    expect(
+      await call(tokens.access_token, 'get_presentation', { presentation: 'Gibt es nicht' }),
+    ).toMatchObject({ error: true });
+    // The AI's window is the page's: used up there, edit_slides waits too.
+    for (let i = 0; i < 20; i += 1)
+      await ctx.request(`/api/decks/${deck.deckId}/ai/proposals`, { method: 'POST', json: {} });
+    expect(
+      await call(tokens.access_token, 'edit_slides', {
+        presentation: deck.deckId,
+        slide: 1,
+        instruction: 'Kürzer',
+      }),
+    ).toMatchObject({ error: true, text: expect.stringMatching(/^Too many AI requests/) });
+
+    // Refresh tokens rotate, for their own app only.
+    const refresh = (refresh_token: string, fields: Record<string, string> = { client_id }) =>
+      token({ grant_type: 'refresh_token', refresh_token, ...fields });
+    expect((await refresh(tokens.refresh_token, {})).status).toBe(400);
+    expect((await refresh(tokens.refresh_token, { client_id: 'slider_client_x' })).status).toBe(
+      400,
+    );
+    const refreshed = await refresh(tokens.refresh_token);
+    expect(refreshed.status).toBe(200);
+    const fresh = (await refreshed.json()) as { access_token: string; refresh_token: string };
+    expect((await rpc(fresh.access_token, 'tools/list')).status).toBe(200);
+
+    // A token held to another workspace sees nothing of this one.
+    const other = { id: crypto.randomUUID() };
+    await ctx.deps.db.insert(workspaces).values({ id: other.id, name: 'Andere', slug: 'andere' });
+    await ctx.deps.db
+      .insert(workspaceMembers)
+      .values({ workspaceId: other.id, userId: ctx.ownerId, role: 'admin' });
+    const made = await ctx.request('/api/connections/tokens', {
+      method: 'POST',
+      json: { name: 'Claude Code', workspaceId: other.id },
+    });
+    expect(made.status).toBe(201);
+    const held = ((await made.json()) as { token: string }).token;
+    expect(held).toMatch(/^slider_pat_/);
+    expect(await call(held, 'list_presentations')).toEqual({
+      text: 'No presentations.',
+      error: false,
+    });
+    expect(await call(held, 'get_presentation', { presentation: deck.deckId })).toMatchObject({
+      error: true,
+    });
+    // Nor by its title: no answer tells that a deck of that name is somewhere else.
+    const { title } = (await (await ctx.request(`/api/decks/${deck.deckId}`)).json()) as {
+      title: string;
+    };
+    expect(await call(held, 'get_presentation', { presentation: title })).toEqual({
+      text: `No presentation "${title}" – list_presentations finds it.`,
+      error: true,
+    });
+    expect(JSON.parse((await call(held, 'search', { query: 'marktanteil' })).text)).toEqual({
+      results: [],
+    });
+    // Searching decrypts every deck's text: the page's window counts the apps' searches too.
+    for (let i = 0; i < 60; i += 1) await ctx.request('/api/decks/search?q=x');
+    expect(await call(held, 'search', { query: 'marktanteil' })).toMatchObject({
+      error: true,
+      text: expect.stringMatching(/^Too many searches/),
+    });
+
+    // „Entfernen“ on /konto ends an app's access at once.
+    const connections = (await (await ctx.request('/api/connections')).json()) as {
+      connections: { id: string; name: string; kind: string }[];
+    };
+    expect(connections.connections.map((each) => [each.name, each.kind]).sort()).toEqual([
+      ['Claude Code', 'token'],
+      ['Claude', 'oauth'],
+    ]);
+    const byHand = connections.connections.find((each) => each.kind === 'token')!;
+    expect((await ctx.request(`/api/connections/${byHand.id}`, { method: 'DELETE' })).status).toBe(
+      204,
+    );
+    expect((await rpc(held, 'tools/list')).status).toBe(401);
+    // A replaced refresh token given again right after its renewal – the app asking twice:
+    // refused, the connection stays.
+    expect((await refresh(tokens.refresh_token)).status).toBe(400);
+    expect((await rpc(fresh.access_token, 'tools/list')).status).toBe(200);
+    // Later – someone else has it: the connection ends.
+    ctx.clock.advance(2 * 60_000);
+    expect((await refresh(tokens.refresh_token)).status).toBe(400);
+    expect((await rpc(fresh.access_token, 'tools/list')).status).toBe(401);
+    expect((await refresh(fresh.refresh_token)).status).toBe(400);
+    expect(
+      ((await (await ctx.request('/api/connections')).json()) as { connections: [] }).connections,
+    ).toEqual([]);
   });
 });

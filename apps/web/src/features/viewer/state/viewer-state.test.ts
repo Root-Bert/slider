@@ -43,6 +43,19 @@ describe('viewerReducer', () => {
     const moved = run({ type: 'splitChanged', split: 0.3 });
     expect(viewerReducer(moved, { type: 'splitChanged', split: null }).split).toBeNull();
     expect(viewerReducer(moved, { type: 'splitChanged', split: 0.3 })).toBe(moved);
+
+    // The material page: beside the presentation, its board's panel apart from the deck's panels.
+    expect(initial.materialOpen).toBe(false);
+    expect(createInitialState({ activeSlideId: null, materialOpen: true }).materialOpen).toBe(true);
+    const thread = run({ type: 'threadFocused', threadId: 't1', openPanel: true });
+    const onMaterial = viewerReducer(thread, { type: 'materialSet', open: true });
+    const picked = viewerReducer(onMaterial, { type: 'boardPanelSet', open: true });
+    expect(picked.boardPanelOpen).toBe(true);
+    expect(thread.threadPanelOpen).toBe(true);
+    expect(picked.threadPanelOpen).toBe(true);
+    const back = viewerReducer(picked, { type: 'materialSet', open: false });
+    expect(back.materialOpen).toBe(false);
+    expect(back.boardPanelOpen).toBe(false);
   });
 
   it('keeps every slide’s own zoom and drops them all when the frame shape toggles', () => {
@@ -52,6 +65,20 @@ describe('viewerReducer', () => {
       { type: 'slideZoomChanged', slideId: 's2', zoom: zoom('s2') },
     );
     expect([...both.slideZooms.keys()]).toEqual(['s1', 's2']);
+    // Reaching a zoom/pan limit again must not invalidate the viewer context.
+    expect(viewerReducer(both, { type: 'slideZoomChanged', slideId: 's1', zoom: zoom('s1') })).toBe(
+      both,
+    );
+    expect(viewerReducer(initial, { type: 'slideZoomChanged', slideId: 's1', zoom: null })).toBe(
+      initial,
+    );
+    const panned = viewerReducer(both, {
+      type: 'slideZoomChanged',
+      slideId: 's1',
+      zoom: { ...zoom('s1'), x: 0.2 },
+    });
+    expect(panned.slideZooms.get('s1')?.x).toBe(0.2);
+    expect(panned.slideZooms.get('s2')).toBe(both.slideZooms.get('s2'));
     const one = viewerReducer(both, { type: 'slideZoomChanged', slideId: 's1', zoom: null });
     expect([...one.slideZooms.keys()]).toEqual(['s2']);
 

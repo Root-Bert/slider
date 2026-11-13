@@ -56,7 +56,7 @@ import { kindBrief } from './kinds';
 /*
  * A new deck built by the AI from the prompt on Folie 1 (see docs/do-not-break.md, „A new deck is
  * built from the prompt“). The run works like a comment request – the same deck copy,
- * tools and writes (`ai-proposals.ts`) – only longer: it reads the material on Folie 0 through
+ * tools and writes (`ai-proposals.ts`) – only longer: it reads the material page through
  * the material tools, writes an outline (shown at once), then builds the slides one after
  * another; each one goes in as a step of the AI when it is done, so the people see the deck grow
  * through the live stream. Stopped, failed or past its limit, the slides built stay.
@@ -78,7 +78,7 @@ const CLEAR_TOOL_RESULTS = {
   exclude: ['write_outline'],
 };
 const EFFORT = 'high' as const;
-/** How long it waits for files on Folie 0 still being read, and how often it looks. */
+/** How long it waits for material files still being read, and how often it looks. */
 const MATERIAL_WAIT_MS = 3 * 60_000;
 const MATERIAL_POLL_MS = 2_000;
 const BUILD_EFFORT = 'medium' as const;
@@ -126,7 +126,7 @@ const OUTLINE_TOOL: Anthropic.Beta.BetaTool = {
 
 const outlineInput = z.object({ slides: z.array(outlineSlideSchema).min(1).max(40) });
 
-const CREATE_SYSTEM = `You build a new presentation in Slider from what the people asked for on its first slide: a description, the kind of deck, the number of slides – and the material they put on the deck's board (Folie 0, before slide 1; never part of the deck). The deck is an OpenDocument presentation (ODP); you work on it with the same tools as when people ask you to change a slide.
+const CREATE_SYSTEM = `You build a new presentation in Slider from what the people asked for on its first slide: a description, the kind of deck, the number of slides – and the material they put on its own page „Material“ beside the slides (never part of the deck). The deck is an OpenDocument presentation (ODP); you work on it with the same tools as when people ask you to change a slide.
 
 How the run goes:
 1. Read the material that matters for the deck – list_materials, read_material, read_sheet, search_materials, view_material – and look at the layouts the deck offers (your first message shows them). Ask for several looks in one answer: they run at the same time.
@@ -426,7 +426,7 @@ async function build(
       OUTLINE_TOOL,
     ];
     const system = CREATE_SYSTEM + (stock ? STOCK_SYSTEM : '') + (generate ? GENERATE_SYSTEM : '');
-    // Files on Folie 0 still being read: it waits for their text (a while at most).
+    // Material files still being read: it waits for their text (a while at most).
     for (let waited = 0; waited < MATERIAL_WAIT_MS; waited += MATERIAL_POLL_MS) {
       const [reading] = await deps.db
         .select({ n: count() })
@@ -460,7 +460,7 @@ async function build(
             type: 'text',
             text:
               materials ??
-              'Nothing lies on the board (Folie 0): build the deck from the description alone.',
+              'The presentation has no material yet: build the deck from the description alone.',
           },
           {
             type: 'text',

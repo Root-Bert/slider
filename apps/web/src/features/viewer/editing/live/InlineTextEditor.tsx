@@ -597,7 +597,7 @@ export function InlineTextEditor({
         data-live-text=""
         contentEditable
         suppressContentEditableWarning
-        spellCheck={false}
+        spellCheck
         role="textbox"
         aria-multiline
         aria-label="Text der Folie"

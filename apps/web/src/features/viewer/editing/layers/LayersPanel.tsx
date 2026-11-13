@@ -203,7 +203,6 @@ function LayersPanelView({ slideId }: { slideId: string }) {
           const partsShown = !!element.children && (opened.has(id) || holding(element));
           const at = order.indexOf(id);
           const isPicked = pickedIds.includes(id);
-          const held = editing.isHeld(slideId, id);
           // A picked row moves with all picked; another alone.
           const together = isPicked ? pickedIds : [id];
           const moving = dragged !== null && !dragged.ids.includes(id);
@@ -229,19 +228,9 @@ function LayersPanelView({ slideId }: { slideId: string }) {
               }
               onUp={() => layers.move(together, 'up')}
               onDown={() => layers.move(together, 'down')}
-              held={held}
-              // Held still by „Hinzufügen“ (not locked in the file): as a double click on it on
-              // the slide – Bearbeiten, with it picked. Else not while a step is under way, as the
-              // format panel's lock.
+              // Not while a step is under way, as the format panel's lock.
               onLock={
-                held
-                  ? () => {
-                      editing.setActive(true);
-                      editing.select({ slideId, elementId: id });
-                    }
-                  : editing.busy
-                    ? undefined
-                    : () => void editing.apply(lockOperations([element]))
+                editing.busy ? undefined : () => void editing.apply(lockOperations([element]))
               }
             />,
             partsShown && (
@@ -330,7 +319,6 @@ function PartRows({
         onPick={() => onPick(group, part.id)}
         onUp={() => onMove(group, part.id, 'up')}
         onDown={() => onMove(group, part.id, 'down')}
-        held={false}
         onLock={busy ? undefined : () => onLock(part)}
       />,
       open && (
@@ -372,7 +360,6 @@ function LayerRow({
   onPick,
   onUp,
   onDown,
-  held,
   onLock,
 }: {
   element: EditableElement;
@@ -397,8 +384,6 @@ function LayerRow({
   onPick: (add: boolean) => void;
   onUp: () => void;
   onDown: () => void;
-  /** Held still by „Hinzufügen“ only, not locked in the file (`Editing.isHeld`). */
-  held: boolean;
   /** Its lock: locked, the slide neither picks nor moves it (`EditLayer`); none while busy. */
   onLock: (() => void) | undefined;
 }) {
@@ -499,9 +484,9 @@ function LayerRow({
         )}
       >
         <IconButton
-          {...(held ? HELD_BUTTON : lockButton(!!element.locked))}
+          {...lockButton(!!element.locked)}
           size="sm"
-          active={!!element.locked && !held}
+          active={!!element.locked}
           disabled={!onLock}
           onClick={onLock}
         />
@@ -511,13 +496,6 @@ function LayerRow({
 }
 
 const NONE: readonly string[] = [];
-
-/** The lock of an element held still by „Hinzufügen“: shown, not lit as a lock in the file is. */
-const HELD_BUTTON = {
-  icon: 'lock' as const,
-  label: 'Bearbeiten',
-  title: 'Im Modus Hinzufügen fest – Klick: Bearbeiten, mit diesem Element gewählt',
-};
 
 /** A layer's picture fit into its square thumbnail, in its own proportions. */
 function thumbnailBox(box: Pick<Rect, 'w' | 'h'>, aspect: number): CSSProperties {

@@ -29,7 +29,8 @@ const INPUT_LABEL = 'In dieser Präsentation suchen';
  */
 export function FindBar({ slot = null }: { slot?: HTMLElement | null }) {
   const { slides, slideIndex, threads } = useViewerData();
-  const sidePanelOpen = isSidePanelOpen(useViewerState());
+  const viewerState = useViewerState();
+  const sidePanelOpen = isSidePanelOpen(viewerState);
   const registry = useStageRegistry();
   const jump = useFindJump();
   // `closing`: still shown while it morphs back into the split handle.
@@ -56,7 +57,9 @@ export function FindBar({ slot = null }: { slot?: HTMLElement | null }) {
   const onWindowKeyDown = useEffectEvent((event: globalThis.KeyboardEvent) => {
     if (event.key.toLowerCase() !== 'f' || !isModKey(event) || event.altKey || event.shiftKey)
       return;
-    // Modal dialogs (share, delete confirmation) keep the browser's own find.
+    // Modal dialogs (share, delete confirmation) and the material page, where the presentation is
+    // asleep, keep the browser's own find.
+    if (viewerState.materialOpen) return;
     if (event.target instanceof Element && event.target.closest('dialog')) return;
     event.preventDefault();
     if (phase === 'open') {

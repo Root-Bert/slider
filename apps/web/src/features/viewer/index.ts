@@ -5,6 +5,7 @@
 export {
   buildThreads,
   commentPreview,
+  doneByAi,
   isBareDrawing,
   isRemovedInSource,
   type Thread,

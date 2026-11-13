@@ -335,7 +335,7 @@ export function demoDecks(now: Date): DeckSeed[] {
   return [
     {
       title: 'Q4 Strategie',
-      source: 'onedrive',
+      source: 'nextcloud',
       slides: [1, 2, 3, 4, 1, 2, 4, 3, 1, 2, 3, 4],
       revisionNumber: 1,
       importState: ready,
@@ -344,7 +344,7 @@ export function demoDecks(now: Date): DeckSeed[] {
     },
     {
       title: 'Board Meeting November',
-      source: 'onedrive',
+      source: 'nextcloud',
       slides: cycleSlides(12, 3),
       revisionNumber: 3,
       importState: ready,
@@ -353,7 +353,7 @@ export function demoDecks(now: Date): DeckSeed[] {
     },
     {
       title: 'Kampagne Frühjahr',
-      source: 'onedrive',
+      source: 'nextcloud',
       slides: cycleSlides(9, 4),
       revisionNumber: 1,
       importState: ready,
@@ -362,7 +362,7 @@ export function demoDecks(now: Date): DeckSeed[] {
     },
     {
       title: 'Q3 Review',
-      source: 'sharepoint',
+      source: 'url',
       slides: cycleSlides(31, 2),
       revisionNumber: 1,
       importState: ready,
@@ -371,7 +371,7 @@ export function demoDecks(now: Date): DeckSeed[] {
     },
     {
       title: 'Onboarding Vertrieb',
-      source: 'onedrive',
+      source: 'nextcloud',
       slides: cycleSlides(15, 1),
       revisionNumber: 1,
       importState: ready,

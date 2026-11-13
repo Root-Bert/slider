@@ -38,6 +38,8 @@ export default defineConfig({
     baseURL: WEB_ORIGIN,
     locale: 'de-DE',
     timezoneId: 'Europe/Berlin',
+    // The app follows the system's theme; the tests look at the dark one, as always.
+    colorScheme: 'dark',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },

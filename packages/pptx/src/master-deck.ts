@@ -1,4 +1,5 @@
 import { Archive, REL, relsPathOf } from './archive';
+import { readColorScheme, type ColorScheme } from './colors';
 import { PptxError } from './types';
 import { attr, child, children, descendants, intAttr, path, type XmlElement } from './xml';
 
@@ -34,6 +35,8 @@ export interface MasterDeck {
   /** The same with one slide per layout instead of its own slides, in `layouts`' order. */
   deck: Uint8Array;
   layouts: MasterLayout[];
+  /** The first master's theme colours (`dk1`, `lt1`, `accent1`, … → `#rrggbb`), in file order. */
+  colors: ColorScheme;
   /** Slide size in EMU. */
   size: { cx: number; cy: number };
 }
@@ -146,6 +149,7 @@ export async function masterDeck(data: Uint8Array | ArrayBuffer): Promise<Master
   }
 
   const layouts: (MasterLayout & { path: string; xml: XmlElement })[] = [];
+  let colors: ColorScheme | null = null;
   const masterRels = await archive.relationshipsOfType(PRESENTATION, REL.slideMaster);
   for (const masterId of children(child(presentation, 'p:sldMasterIdLst'), 'p:sldMasterId')) {
     const masterPath = masterRels.find((rel) => rel.id === attr(masterId, 'r:id'))?.target;
@@ -154,6 +158,8 @@ export async function masterDeck(data: Uint8Array | ArrayBuffer): Promise<Master
     const [themeRel] = await archive.relationshipsOfType(masterPath, REL.theme);
     const theme = themeRel ? await archive.readXml(themeRel.target) : null;
     const masterName = attr(theme, 'name')?.trim() || null;
+    // The first master whose theme has colours: a theme-less one reads as none, not as found.
+    if (!colors?.size) colors = readColorScheme(theme);
     const layoutRels = await archive.relationshipsOfType(masterPath, REL.slideLayout);
     for (const layoutId of children(child(master, 'p:sldLayoutIdLst'), 'p:sldLayoutId')) {
       const layoutPath = layoutRels.find((rel) => rel.id === attr(layoutId, 'r:id'))?.target;
@@ -233,6 +239,7 @@ export async function masterDeck(data: Uint8Array | ArrayBuffer): Promise<Master
     template,
     deck,
     layouts: layouts.map(({ master, name }) => ({ master, name })),
+    colors: colors ?? new Map(),
     size: { cx, cy },
   };
 }

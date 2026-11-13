@@ -2,7 +2,9 @@ import { eq, sql } from 'drizzle-orm';
 import type { OdpImage } from '@slider/odp';
 import {
   imageCreditSchema,
+  imageSymbolSchema,
   type ImageCredit,
+  type ImageSymbol,
   type SlideOperation,
   type UploadedEditImage,
   type Viewer,
@@ -44,19 +46,24 @@ export async function uploadEditImage(
   viewer: Viewer,
   deckId: string,
   bytes: Uint8Array,
+  symbol?: ImageSymbol,
 ): Promise<UploadedEditImage> {
   const { deck } = await editTarget(deps, viewer, deckId);
   if (bytes.byteLength > MAX_EDIT_IMAGE_BYTES) throw badRequest('Das Bild ist größer als 20 MB.');
-  const { imageId, width, height } = await storeEditImage(deps, deck.id, bytes);
+  const { imageId, width, height } = await storeEditImage(deps, deck.id, bytes, undefined, symbol);
   return { imageId, width, height };
 }
 
-/** Keeps a picture for `replaceImage` – with a stock photo's credit, which goes into the file with it. */
+/**
+ * Keeps a picture for `replaceImage` – with a stock photo's credit, or which symbol it is, which
+ * go into the file with it.
+ */
 export async function storeEditImage(
   deps: AppDeps,
   deckId: string,
   bytes: Uint8Array,
   credit?: ImageCredit,
+  symbol?: ImageSymbol,
 ): Promise<UploadedEditImage & { mediaType: string }> {
   const kind = imageKind(bytes);
   const size = kind ? imageSize(bytes) : null;
@@ -67,6 +74,12 @@ export async function storeEditImage(
     files.push([
       blobKeys.editImage(deckId, `${imageId}.credit.json`),
       new TextEncoder().encode(JSON.stringify(credit)),
+    ]);
+  }
+  if (symbol) {
+    files.push([
+      blobKeys.editImage(deckId, `${imageId}.symbol.json`),
+      new TextEncoder().encode(JSON.stringify(symbol)),
     ]);
   }
   const addBytes = files.reduce((total, [, file]) => total + file.byteLength, 0);
@@ -112,7 +125,7 @@ export async function storeEditImage(
   };
 }
 
-/** An edit picture of the deck with its credit, or `null` when it is gone. */
+/** An edit picture of the deck with its credit or symbol, or `null` when it is gone. */
 export async function loadEditImage(
   deps: AppDeps,
   deckId: string,
@@ -121,9 +134,10 @@ export async function loadEditImage(
   // An id no upload gives names no picture of the deck: as gone – the operation naming it is
   // left out like one whose picture went, not the whole edit refused.
   if (!EDIT_IMAGE_ID.test(imageId)) return null;
-  const [bytes, sidecar] = await Promise.all([
+  const [bytes, sidecar, symbol] = await Promise.all([
     deps.storage.get(blobKeys.editImage(deckId, imageId)),
     deps.storage.get(blobKeys.editImage(deckId, `${imageId}.credit.json`)),
+    deps.storage.get(blobKeys.editImage(deckId, `${imageId}.symbol.json`)),
   ]);
   const kind = bytes && imageKind(bytes);
   const size = bytes && imageSize(bytes);
@@ -132,15 +146,19 @@ export async function loadEditImage(
     bytes,
     mediaType: EDIT_IMAGE_TYPES[kind]!.mediaType,
     ...size,
-    credit: creditOf(sidecar),
+    credit: sidecarOf(sidecar, imageCreditSchema),
+    symbol: sidecarOf(symbol, imageSymbolSchema),
   };
 }
 
-/** A stock photo's credit as kept beside it; one that cannot be read is no credit. */
-function creditOf(sidecar: Uint8Array | null): ImageCredit | null {
+/** A credit or symbol as kept beside its picture; one that cannot be read is none. */
+function sidecarOf<T>(
+  sidecar: Uint8Array | null,
+  schema: { safeParse: (value: unknown) => { data?: T | undefined } },
+): T | null {
   if (!sidecar) return null;
   try {
-    return imageCreditSchema.safeParse(JSON.parse(new TextDecoder().decode(sidecar))).data ?? null;
+    return schema.safeParse(JSON.parse(new TextDecoder().decode(sidecar))).data ?? null;
   } catch {
     return null;
   }

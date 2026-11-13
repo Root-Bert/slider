@@ -12,7 +12,6 @@ export * from './realtime';
 export * from './theme';
 export * from './storage';
 export * from './nextcloud';
-export * from './google';
 export * from './deck-access';
 export * from './instance-admin';
 export * from './ai-usage';
@@ -30,6 +29,10 @@ export * from './zip-entry';
 export * from './voice';
 export * from './site-live';
 export * from './materials';
+export * from './material-questions';
+export * from './markdown-rich';
+export * from './app-connections';
 export * from './deck-creation';
 
 export * from './show-runs';
+export * from './desktop';

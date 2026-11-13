@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Deck } from '@slider/shared';
-import { useDeckStatus, useInvalidateSlideImages, useRerenderDeck, useUpdateDeck } from '@/lib/api';
+import {
+  useDeckStatus,
+  useDesktopDeck,
+  useInvalidateSlideImages,
+  useKeepOnComputer,
+  useRefreshDesktopState,
+  useRerenderDeck,
+  useUpdateDeck,
+} from '@/lib/api';
+import { desktopBridge, revealLabel, savableAsFile } from '@/lib/desktop-bridge';
+import { saveDeckAsFile, webFilesSupported } from '@/lib/web-files';
 import { ContextMenu, Menu, type IconButtonVariant, type MenuAction, type ShowToast } from '@/ui';
 import { formatFileSize } from '@/lib/format';
 import { useShowRun } from '@/features/viewer';
@@ -115,6 +125,13 @@ export function DeckActions({
   const pins = usePinnedDecks(deck.workspaceId);
   const pinned = pins.isPinned(deck.id);
   const archived = deck.archivedAt !== null;
+  // The desktop app (BER-201), on this computer's pages and the server's alike: one of the
+  // account's decks brought here leaves this computer when signing out unless kept – decks made
+  // here always stay, no item for them; a deck can be a file here.
+  const bridge = desktopBridge();
+  const here = useDesktopDeck(deck.id);
+  const keepOnComputer = useKeepOnComputer();
+  const refreshDesktop = useRefreshDesktopState();
 
   const toggleArchived = () =>
     update.mutate(
@@ -136,6 +153,67 @@ export function DeckActions({
         disabled: pins.full,
         title: pins.full ? pins.limitMessage() : undefined,
       };
+
+  const keepAction: MenuAction[] =
+    here.kept !== undefined
+      ? [
+          {
+            label: here.kept
+              ? 'Nicht mehr auf diesem Computer behalten'
+              : 'Auf diesem Computer behalten',
+            icon: 'offlinePin',
+            onSelect: () => {
+              const keep = !here.kept;
+              keepOnComputer.mutate(
+                { deckId: deck.id, keep },
+                { onError: (error) => onNotify(error.message, 'danger') },
+              );
+              onNotify(
+                keep
+                  ? `„${deck.title}“ bleibt auf diesem Computer`
+                  : `„${deck.title}“ verschwindet beim Abmelden von diesem Computer`,
+              );
+            },
+          },
+        ]
+      : [];
+
+  // A file on this computer: shown in the Finder. An ODP of one's own: saved as a file, which it
+  // is from then on (every step written to it) – in the browser too, where it can (`web-files.ts`).
+  const savedAsFile = (saved: boolean) => {
+    if (!saved) return;
+    void refreshDesktop();
+    onNotify(`„${deck.title}“ ist jetzt eine Datei auf diesem Computer`);
+  };
+  const saveAsAction: MenuAction = {
+    label: 'Als Datei sichern …',
+    icon: 'download',
+    onSelect: () =>
+      void (bridge ? bridge.saveAs(deck.id, deck.title) : saveDeckAsFile(deck.id, deck.title)).then(
+        savedAsFile,
+        (error: unknown) => {
+          if (error instanceof Error) onNotify(error.message, 'danger');
+        },
+      ),
+  };
+  const mayBeFile = deck.permissions.canManage && savableAsFile(deck.fileName);
+  const fileActions: MenuAction[] = !bridge
+    ? mayBeFile && webFilesSupported()
+      ? [saveAsAction]
+      : []
+    : here.file
+      ? here.file.missing
+        ? []
+        : [
+            {
+              label: revealLabel(here.platform),
+              icon: 'folder',
+              onSelect: () => void bridge.reveal(deck.id),
+            },
+          ]
+      : mayBeFile
+        ? [saveAsAction]
+        : [];
 
   // Anyone who may comment has the slides drawn again (BER-165), with the owner's access.
   const rerenderAction: MenuAction[] =
@@ -176,8 +254,8 @@ export function DeckActions({
     { label: 'Löschen', icon: 'delete', tone: 'danger', onSelect: () => setDeleting(true) },
   ];
   const actions = deck.permissions.canManage
-    ? [pinAction, ...manageActions]
-    : [pinAction, ...rerenderAction, ...runAction];
+    ? [pinAction, ...keepAction, ...fileActions, ...manageActions]
+    : [pinAction, ...keepAction, ...fileActions, ...rerenderAction, ...runAction];
 
   return (
     <>
@@ -250,6 +328,7 @@ export function DeckActions({
       {deleting && (
         <DeleteDeckDialog
           decks={[deck]}
+          filesStay={here.file !== null}
           onClose={() => setDeleting(false)}
           onDeleted={() => {
             pins.unpin(deck.id);

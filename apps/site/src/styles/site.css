@@ -15,7 +15,6 @@
  * colours on pins and avatars), so what you see here is what you get in Slider.
  */
 @theme {
-
   /* Headline scale: Inter, heavy, tight tracking. */
   --text-hero: 112px;
   --text-headline: 72px;

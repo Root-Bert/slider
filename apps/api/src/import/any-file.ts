@@ -16,9 +16,7 @@ import { markPdfMaker } from './pdf-maker';
 
 /*
  * Any file picked in a cloud as a review deck: a PowerPoint or a PDF stays what it is, everything
- * else becomes a PDF – pictures as one page each, Word, Excel and text through LibreOffice. The
- * sources hand over what Office or Google render themselves already as PDF (Graph `format=pdf`,
- * Google Docs exports), so this only sees files no provider turned into a deck.
+ * else becomes a PDF – pictures as one page each, Word, Excel and text through LibreOffice.
  */
 
 export const UNSUPPORTED_FILE_MESSAGE =

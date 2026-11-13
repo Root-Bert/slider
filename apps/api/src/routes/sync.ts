@@ -11,6 +11,7 @@ import { badRequest, fileTooLarge, forbidden } from '../http/errors';
 import { deckUploadSlot, importLimit } from '../http/import-limit';
 import { hasPdfRenderer } from '../import/office-pages';
 import { isSyncEnabled } from '../services/deck-sync';
+import { currentRevision, readFile } from '../services/edits/target';
 import {
   getDeckStatus,
   getRevisionDiff,
@@ -100,7 +101,7 @@ export function syncRoutes(deps: AppDeps) {
           }
         }
         const rendering = deps.rendering;
-        if (!rendering || !hasPdfRenderer(rendering.renderers, deck)) {
+        if (!rendering || !hasPdfRenderer(rendering.renderers)) {
           throw badRequest(
             isSyncEnabled(deck)
               ? 'Folienbilder von PowerPoint gibt es nur mit Microsoft-Anmeldung oder installiertem LibreOffice.'
@@ -119,6 +120,25 @@ export function syncRoutes(deps: AppDeps) {
           kind: 'rerender',
         });
         return c.json({ status: 'queued', renderedAt } satisfies RerenderResult, 202);
+      })
+
+      /**
+       * The deck's file as it is now – the current revision with every edit step in it, of any
+       * kind (ODP, PowerPoint, PDF). For whoever may change it: the desktop app keeps its copy
+       * from it (BER-201).
+       */
+      .get('/decks/:deckId/file', viewer, async (c) => {
+        const deck = await requireDeckAccess(deps, c.var.viewer, c.req.param('deckId'), 'own');
+        const revision = await currentRevision(deps.db, deck);
+        if (deck.importState.status !== 'ready' || !revision?.pptxKey) {
+          throw badRequest('Die Präsentation wird gerade noch importiert.');
+        }
+        const bytes = await readFile(deps, revision.pptxKey);
+        return c.body(bytes as Uint8Array<ArrayBuffer>, 200, {
+          'Content-Type': 'application/octet-stream',
+          'Cache-Control': 'private, no-store',
+          'X-Slider-Revision': revision.id,
+        });
       })
 
       .get('/decks/:deckId/revisions', viewer, async (c) => {

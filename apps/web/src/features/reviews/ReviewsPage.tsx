@@ -2,10 +2,13 @@ import { useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 're
 import { useNavigate } from 'react-router';
 import type { Deck, DeckFolder } from '@slider/shared';
 import { routes } from '@/lib/routes';
+import { desktopBridge } from '@/lib/desktop-bridge';
+import { keepPickedFile, pickPresentations, webFilesSupported } from '@/lib/web-files';
 import { isContentQuery, useDeckSearch, useDecks, useFolders } from '@/lib/api';
 import { useCollectionSelection } from '@/lib/collection-selection';
 import { isOnControl } from '@/lib/marquee-select';
 import { useAccount } from '@/features/auth';
+import { UploadProgressCard, useDeckUpload } from '@/features/onboarding';
 import {
   canCreateDecks,
   deckState,
@@ -18,6 +21,7 @@ import {
 import { selectionStyle } from '@/lib/accent';
 import {
   Button,
+  cn,
   ContextMenu,
   Icon,
   PageHeader,
@@ -25,6 +29,7 @@ import {
   TextLink,
   Toast,
   useDebounced,
+  useFileDrop,
   useToast,
   type MenuAction,
 } from '@/ui';
@@ -152,6 +157,47 @@ export function Component() {
   const goToNew =
     mayCreate && !blocked ? () => void navigate(routes.newReview(workspace.id)) : undefined;
 
+  // Files dragged from the desktop onto the page become new presentations, as „Neue Präsentation“
+  // makes them: one opens, several go up one after another and the page stays; in an open folder
+  // they land in it.
+  const droppedCount = useRef(0);
+  // „Öffnen …“ in the browser: the file going up now, with its handle – an ODP stays that file.
+  const picked = useRef<Awaited<ReturnType<typeof pickPresentations>>[number] | null>(null);
+  const upload = useDeckUpload(workspace.id, (deck) => {
+    if (picked.current) void keepPickedFile(deck.id, picked.current.handle, picked.current.file);
+    if (openFolder) moveDecks.mutate({ deckIds: [deck.id], folderId: openFolder.id });
+    if (droppedCount.current === 1) void navigate(routes.deck(deck.id), { viewTransition: true });
+  });
+  const uploadFailed = upload.state.status === 'error' ? upload.state.message : null;
+  useEffect(() => {
+    if (uploadFailed) showToast(uploadFailed, 'danger');
+  }, [uploadFailed, showToast]);
+  const dropFiles = async (files: File[]) => {
+    if (files.length === 0 || upload.state.status === 'uploading') return;
+    if (!mayCreate || blocked) {
+      showToast(blocked ?? 'Du kannst hier keine Präsentationen anlegen.', 'danger');
+      return;
+    }
+    droppedCount.current = files.length;
+    for (const file of files) await upload.run(file);
+    if (files.length > 1) showToast(`${files.length} Präsentationen hochgeladen`);
+  };
+  const openPicked = async () => {
+    const files = await pickPresentations().catch((error: unknown) => {
+      if (error instanceof Error) showToast(error.message, 'danger');
+      return [];
+    });
+    if (files.length === 0 || upload.state.status === 'uploading') return;
+    droppedCount.current = files.length;
+    for (const each of files) {
+      picked.current = each;
+      await upload.run(each.file);
+    }
+    picked.current = null;
+    if (files.length > 1) showToast(`${files.length} Präsentationen hochgeladen`);
+  };
+  const { dragOver, handlers: dropHandlers } = useFileDrop((files) => void dropFiles(files));
+
   // Right click on empty space (not on a deck – its own menu has run – nor a control).
   const pageMenu = useDeckContextMenu();
   const onPageContextMenu = (event: MouseEvent) => {
@@ -159,6 +205,7 @@ export function Component() {
     if (isOnControl(event.target)) return;
     pageMenu.onContextMenu(event);
   };
+  const bridge = desktopBridge();
   const pageActions: MenuAction[] = [
     ...(mayCreate
       ? [
@@ -174,6 +221,19 @@ export function Component() {
             disabled: Boolean(blocked),
             title: blocked ?? undefined,
           } satisfies MenuAction,
+          // A file on this computer opens as a presentation – an ODP stays that file (BER-201):
+          // in the desktop app through its bridge, in a browser that can through its own access.
+          ...(bridge || webFilesSupported()
+            ? [
+                {
+                  label: 'Öffnen …',
+                  icon: 'description',
+                  onSelect: () => void (bridge ? bridge.openFiles() : openPicked()),
+                  disabled: !bridge && Boolean(blocked),
+                  title: (!bridge && blocked) || undefined,
+                } satisfies MenuAction,
+              ]
+            : []),
         ]
       : []),
     {
@@ -210,6 +270,7 @@ export function Component() {
       style={selectionStyle(user.color)}
       onContextMenu={onPageContextMenu}
       onMouseDown={selection.onMouseDown}
+      {...dropHandlers}
     >
       <title>{`Präsentationen | ${workspace.name} | Slider`}</title>
 
@@ -277,20 +338,23 @@ export function Component() {
             view={view}
             onViewChange={setView}
             action={
-              mayCreate && (
-                <Button
-                  variant="secondary"
-                  size="toolbar"
-                  icon="add"
-                  aria-label="Neue Präsentation"
-                  disabled={Boolean(blocked)}
-                  title={blocked ?? undefined}
-                  aria-describedby={blocked ? limitNoticeId : undefined}
-                  onClick={goToNew}
-                >
-                  <span className="max-sm:hidden">Neue Präsentation</span>
-                </Button>
-              )
+              mayCreate
+                ? (iconOnly) => (
+                    <Button
+                      variant="secondary"
+                      size="toolbar"
+                      icon="add"
+                      aria-label="Neue Präsentation"
+                      disabled={Boolean(blocked)}
+                      title={blocked ?? (iconOnly ? 'Neue Präsentation' : undefined)}
+                      aria-describedby={blocked ? limitNoticeId : undefined}
+                      onClick={goToNew}
+                      className={iconOnly ? 'w-10 px-0' : undefined}
+                    >
+                      {!iconOnly && 'Neue Präsentation'}
+                    </Button>
+                  )
+                : undefined
             }
           />
         )}
@@ -368,6 +432,29 @@ export function Component() {
           )}
         </section>
       </main>
+
+      {/* Over the whole page while files are dragged over it, as on „Bibliothek“. */}
+      <div
+        aria-hidden
+        className={cn(
+          'pointer-events-none fixed inset-3 z-(--z-panel) flex items-center justify-center rounded-panel border-2 border-dashed border-fg transition-opacity duration-200',
+          dragOver ? 'opacity-100' : 'opacity-0',
+        )}
+      >
+        <span className="drop-glow absolute inset-0 rounded-panel" />
+        <span className="glass relative rounded-chip px-4 py-2 text-body font-medium text-fg">
+          Loslassen für eine neue Präsentation
+        </span>
+      </div>
+      {upload.state.status === 'uploading' && (
+        <div className="fixed inset-x-4 bottom-6 z-(--z-panel) mx-auto max-w-[480px]">
+          <UploadProgressCard
+            file={upload.state.file}
+            progress={upload.state.progress}
+            onCancel={upload.cancel}
+          />
+        </div>
+      )}
 
       {pageMenu.contextAt && (
         <ContextMenu

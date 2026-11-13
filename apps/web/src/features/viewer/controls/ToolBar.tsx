@@ -21,6 +21,7 @@ import {
   useViewerState,
 } from '../state/viewer-state';
 import { VIEW_ONLY_HINT } from '../comments/lib/view-only';
+import { useMisspellings } from '../spelling/useMisspellings';
 import { useLayoutGuides, useTemplate } from '../template/useTemplate';
 
 /** The drawing tools, right next to the pointer. Boxes are the pointer's (drag). */
@@ -31,29 +32,27 @@ const PEN_TOOLS: { tool: Tool; icon: IconName; label: string }[] = [
   { tool: 'eraser', icon: 'eraser', label: 'Radierer' },
 ];
 
-/**
- * Reviewing (comments and drawings), editing the slides, or adding to them – editing with what is
- * there held still – the tools after the switch follow it.
- */
-type Mode = 'review' | 'edit' | 'add';
+/** Reviewing (comments and drawings) or editing the slides – the tools after the switch follow it. */
+type Mode = 'review' | 'edit';
 
 const MODES = [
   { value: 'review', label: 'Besprechen', icon: 'chatBubble', title: 'Besprechen (R)' },
-  { value: 'edit', label: 'Bearbeiten', icon: 'editor', title: 'Bearbeiten (E)' },
   {
-    value: 'add',
-    label: 'Hinzufügen',
-    icon: 'editorAdd',
-    title: 'Hinzufügen (A) – Bestehendes bleibt, wo es ist',
+    value: 'edit',
+    label: 'Bearbeiten',
+    icon: 'editor',
+    title: 'Bearbeiten (E) – ⇧ und ziehen fügt auch über anderen Boxen hinzu',
   },
 ] as const;
 
 /**
  * Tool bar at the left of the controls row (Figma D1), a compact pill as tall as the filter pill.
- * Far left the switch between reviewing and editing, the two main modes. Then the tools of the mode: reviewing – pointer (pins, boxes and text on the slide), freehand,
- * arrow, marker, eraser; editing – undo and redo (picking and drawing a frame need no tool). Then how the slides are shown, in either mode: the PowerPoint boxes
- * comments attach to, the layers in 3D, the guides, the slides hidden in PowerPoint and the change
- * markers of the latest version.
+ * Far left the switch between reviewing and editing, the two main modes. Then the tools of the
+ * mode: reviewing – pointer (pins, boxes and text on the slide), freehand, arrow, marker, eraser;
+ * editing – undo and redo (picking and drawing a frame need no tool; a symbol goes into a picture
+ * frame's „Symbole“). Then how the slides are shown, in either mode: the PowerPoint boxes comments
+ * attach to, the layers in 3D, the guides, the slides hidden in PowerPoint and the change markers
+ * of the latest version.
  */
 export function ToolBar({ className }: { className?: string }) {
   const { canComment } = useViewerData();
@@ -90,7 +89,7 @@ function ToolButtons() {
   const state = useViewerState();
   const { showGuides, showLayoutGrid, showHiddenSlides, showChanges } = state;
   const { hiddenSlideCount } = useViewerData();
-  const guidesCrossed = useGuidesCrossed();
+  const { crossed: guidesCrossed, misspelt } = useGuidesCrossed();
   const { revisionNumber, badges } = useRevisionData();
   // Only when the latest version actually added, changed or moved slides.
   const hasChanges = revisionNumber > 1 && badges.size > 0;
@@ -98,7 +97,7 @@ function ToolButtons() {
   const boxes = isBoxModeActive(state);
   const dispatch = useViewerDispatch();
   const editing = useEditing();
-  const mode: Mode = !editing.active ? 'review' : editing.adding ? 'add' : 'edit';
+  const mode: Mode = editing.active ? 'edit' : 'review';
   // A template being designed opens in editing: designing is editing.
   const isTemplate = useTemplate().template !== null;
   const { setActive } = editing;
@@ -112,22 +111,20 @@ function ToolButtons() {
       // A click keeps the focus off the button, so Tab goes on stepping through the tools.
       onMouseDown={(event) => event.preventDefault()}
     >
-      {/* The modes, always first: the tools after them follow the mode. */}
+      {/* The two modes, always first: the tools after them follow the mode. */}
       {editing.available && (
         <>
           <SegmentedControl
-            label="Modus (R Besprechen, E Bearbeiten, A Hinzufügen)"
+            label="Modus (R Besprechen, E Bearbeiten)"
             segments={MODES}
             iconOnly
             value={mode}
-            onChange={(next) =>
-              next === 'add' ? editing.setAdding() : editing.setActive(next === 'edit')
-            }
+            onChange={(next) => editing.setActive(next === 'edit')}
           />
           <ToolbarDivider />
         </>
       )}
-      {mode === 'review' ? <ReviewTools /> : <EditTools />}
+      {mode === 'edit' ? <EditTools /> : <ReviewTools />}
       <ToolbarDivider />
       {/* How the slides are shown – the same in either mode. */}
       <div role="group" aria-label="Ansicht" className="flex items-center gap-1">
@@ -162,13 +159,15 @@ function ToolButtons() {
           title={
             guidesCrossed
               ? 'Hilfslinien (G) – eine Box ragt über die Hilfslinien'
-              : 'Hilfslinien (G)'
+              : misspelt
+                ? 'Hilfslinien (G) – ein Wort ist falsch geschrieben'
+                : 'Hilfslinien (G)'
           }
           aria-keyshortcuts="G"
           size="sm"
-          // Lit, softly pulsing, while a box on this slide sticks out over the guides – also
-          // with the guides hidden.
-          className={guidesCrossed ? 'guide-alert' : undefined}
+          // Lit, softly pulsing, while a box on this slide sticks out over the guides or has a
+          // misspelt word – also with the guides hidden (the words: once the view was shown).
+          className={guidesCrossed || misspelt ? 'guide-alert' : undefined}
           active={showGuides}
           aria-pressed={showGuides}
           onClick={() => dispatch({ type: 'showGuidesToggled' })}
@@ -215,18 +214,21 @@ function ToolButtons() {
 
 /**
  * Whether a box on the slide shown sticks out over its guides (`GuideLayer` outlines them) – the
- * template's layout guides while one is designed, as there.
+ * template's layout guides while one is designed, as there – and whether one has a misspelt word,
+ * known once the guides view loaded its dictionaries (`useMisspellings`).
  */
-function useGuidesCrossed(): boolean {
+function useGuidesCrossed(): { crossed: boolean; misspelt: boolean } {
   const { slides, slideIndex } = useViewerData();
   const { activeSlideId } = useViewerState();
   const slide = activeSlideId ? slides[slideIndex.get(activeSlideId) ?? -1] : undefined;
   const layoutGuides = useLayoutGuides(activeSlideId ?? '')?.guides;
   const guides = layoutGuides ?? slide?.guides;
-  return useMemo(
+  const misspelt = useMisspellings(slide?.shapes, false).length > 0;
+  const crossed = useMemo(
     () => !!slide && !!guides && guideOverflows(slide.shapes, guides).length > 0,
     [slide, guides],
   );
+  return { crossed, misspelt };
 }
 
 /** Reviewing: comment on the slide, or draw on it. */
@@ -261,8 +263,9 @@ function ReviewTools() {
 }
 
 /**
- * Editing: undo and redo – picking needs no tool (dragging on the free slide draws a frame for a
- * new text, shape, line or picture); designing a template, setting its guides (Tab switches).
+ * Editing: „Symbol einfügen“, undo and redo – picking needs no tool (dragging on the free slide
+ * draws a frame for a new text, shape, line or picture); designing a template, setting its guides
+ * (Tab switches).
  */
 function EditTools() {
   const editing = useEditing();

@@ -134,11 +134,6 @@ export interface CommentAuthor {
   initials: string | null;
   userId?: string;
   providerId?: string;
-  /**
-   * The Google account's address, set only by Slider for comments read through Drive's comment
-   * API (BER-157) – never read from a file, so a file's `authors.xml` cannot claim one.
-   */
-  googleAccount?: string;
 }
 
 export interface ParsedReply {
