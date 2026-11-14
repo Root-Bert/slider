@@ -288,7 +288,7 @@ export const CommentCard = memo(function CommentCard({
  * rounded tick at avatar height into the item, the trunk continuing to the next item. The trunk
  * runs at x=26 of the card, items start at x=44.
  */
-function ThreadBranch({ children }: { children: ReactNode }) {
+export function ThreadBranch({ children }: { children: ReactNode }) {
   // SVG rather than CSS borders: a 1.5px border snaps to 1px on standard-density screens.
   return (
     <li className="group/branch relative w-64 max-w-full scroll-mb-6 animate-fade-in">

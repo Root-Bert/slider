@@ -46,6 +46,7 @@ import {
 import { useStore } from '@xyflow/react';
 import { useEffect, useRef, useState } from 'react';
 import { cn, IconButton, Toolbar, ToolbarDivider, type IconName } from '@/ui';
+import type { NoteEnd } from './NoteComposer';
 import { RICH_THEME as THEME } from './rich-theme';
 
 /*
@@ -102,6 +103,7 @@ export function RichStickerEditor({
   onDone,
   onAsk,
   onCancel,
+  endRef,
 }: {
   rich: Record<string, unknown> | null;
   text: string;
@@ -111,6 +113,8 @@ export function RichStickerEditor({
   /** ⌘↵: taken as with ↵, then handed to the AI (as a comment is). */
   onAsk?: (value: RichValue) => void;
   onCancel: () => void;
+  /** Set to end it as its keys do – by its composer's buttons (`NoteComposer`). */
+  endRef?: { current: (how: NoteEnd) => void };
 }) {
   const [config] = useState(() => ({
     namespace: 'sticker',
@@ -147,7 +151,7 @@ export function RichStickerEditor({
       <ListPlugin />
       <LinkPlugin />
       <MarkdownShortcutPlugin transformers={TRANSFORMERS} />
-      <Keys onDone={onDone} onAsk={onAsk} onCancel={onCancel} />
+      <Keys onDone={onDone} onAsk={onAsk} onCancel={onCancel} endRef={endRef} />
       <FormatBar />
     </LexicalComposer>
   );
@@ -170,21 +174,25 @@ function Keys({
   onDone,
   onAsk,
   onCancel,
+  endRef,
 }: {
   onDone: (value: RichValue) => void;
   onAsk: ((value: RichValue) => void) | undefined;
   onCancel: () => void;
+  /** Ends it from outside (its composer's buttons). */
+  endRef: { current: (how: NoteEnd) => void } | undefined;
 }) {
   const [editor] = useLexicalComposerContext();
   const ended = useRef(false);
   useEffect(() => {
-    const end = (how: 'done' | 'ask' | 'cancel') => {
+    const end = (how: NoteEnd) => {
       if (ended.current) return;
       ended.current = true;
       if (how === 'cancel') onCancel();
       else if (how === 'ask') onAsk?.(valueOf(editor.getEditorState()));
       else onDone(valueOf(editor.getEditorState()));
     };
+    if (endRef) endRef.current = end;
     // In the box at once, its caret at the end – React Flow shows a new node a frame late.
     let tries = 10;
     const focus = () => {
@@ -247,7 +255,7 @@ function Keys({
         COMMAND_PRIORITY_HIGH,
       ),
     );
-  }, [editor, onDone, onAsk, onCancel]);
+  }, [editor, onDone, onAsk, onCancel, endRef]);
   return null;
 }
 

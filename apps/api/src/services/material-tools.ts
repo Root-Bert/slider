@@ -187,6 +187,10 @@ async function listMaterials(deps: AppDeps, deckId: string): Promise<string> {
       );
       continue;
     }
+    if (item.kind === 'question') {
+      lines.push(`- question to the AI by ${item.author.name}: ${item.text.slice(0, 2000)}`);
+      continue;
+    }
     // A note on a file is listed with that file.
     if (item.boundIds.some((id) => files.has(id))) continue;
     if (item.kind === 'link') {

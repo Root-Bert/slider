@@ -28,6 +28,7 @@ import { desktopFilesRoutes } from './routes/desktop-files';
 import { desktopLoginRoutes } from './routes/desktop-login';
 import { billingRoutes } from './routes/billing';
 import { materialsRoutes } from './routes/materials';
+import { materialChatRoutes } from './routes/material-chat';
 import { materialQuestionsRoutes } from './routes/material-questions';
 import { deckCreationRoutes } from './routes/deck-creation';
 import { commentsRoutes } from './routes/comments';
@@ -133,6 +134,7 @@ export function createApp(appDeps: AppDeps) {
     .route('/', commentsRoutes(deps))
     .route('/', materialsRoutes(deps))
     .route('/', materialQuestionsRoutes(deps))
+    .route('/', materialChatRoutes(deps))
     .route('/', appConnectionsRoutes(deps))
     .route('/', deckCreationRoutes(deps))
     .route('/', showRunRoutes(deps))

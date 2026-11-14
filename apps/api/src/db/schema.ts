@@ -18,6 +18,7 @@ import { sql } from 'drizzle-orm';
 import type {
   ShowRun,
   AppConnectionKind,
+  MaterialQuestionKind,
   MaterialQuestionState,
   AccentColor,
   AiFeature,
@@ -1459,10 +1460,11 @@ export const deckBoardItems = pgTable(
 );
 
 /**
- * „Fragen“ on the material page: a note on the board asked with ⌘↵ – its text the question – and
- * the AI's answer under it (Markdown with citations of the board's files). One per note, gone
- * with it; seen by everyone who sees the board, like the note. Encrypted like every content
- * (BER-149).
+ * A note's thread on the material page, as a comment's on a slide: the note itself asked with ⌘↵
+ * (`note` – its text the question, at most one, first) and the replies written under it (`reply`
+ * – a person's text, the AI asked or not), each with the AI's answer if it was asked (Markdown
+ * with citations of the board's files). Gone with the note; seen by everyone who sees the board,
+ * like the note. Encrypted like every content (BER-149).
  */
 export const materialQuestions = pgTable(
   'material_questions',
@@ -1477,15 +1479,20 @@ export const materialQuestions = pgTable(
       .references(() => deckBoardItems.id, { onDelete: 'cascade' }),
     /** Who asked; `null` once their account is gone – the answer stays with the note. */
     userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    /** `note`: the note asked; `reply`: a reply under it. */
+    kind: text('kind').$type<MaterialQuestionKind>().notNull().default('note'),
+    /** Who wrote a reply, as it is shown (`null` for the note asked – the note's author shows). */
+    author: jsonb('author').$type<Author>(),
     question: encryptedText('material_questions', 'question').notNull(),
     answer: encryptedText('material_questions', 'answer').notNull(),
-    state: text('state').$type<MaterialQuestionState>().notNull(),
+    /** `null`: a reply the AI was not asked about. */
+    state: text('state').$type<MaterialQuestionState>(),
     error: text('error'),
     createdAt: createdAt(),
     updatedAt: timestamptz('updated_at').notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex('material_questions_note_idx').on(t.noteId),
+    index('material_questions_note_idx').on(t.noteId, t.createdAt),
     index('material_questions_deck_idx').on(t.deckId, t.createdAt),
   ],
 );

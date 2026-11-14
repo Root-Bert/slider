@@ -32,11 +32,14 @@ export const MIN_CREATED_SLIDES = 5;
 export const MAX_CREATED_SLIDES = 30;
 export const MAX_CREATION_PROMPT_LENGTH = 8_000;
 
-/** `POST /decks/:id/creation`: build the deck. `templateId` `null`: Slider's own look. */
+/**
+ * `POST /decks/:id/creation`: build the deck. `templateId` `null`: Slider's own look; `pages`
+ * `null`: „KI wählt“ – as many slides as the content needs, within the bounds.
+ */
 export const startDeckCreationInputSchema = z.object({
   description: z.string().trim().min(1).max(MAX_CREATION_PROMPT_LENGTH),
   kind: deckKindSchema,
-  pages: z.number().int().min(MIN_CREATED_SLIDES).max(MAX_CREATED_SLIDES),
+  pages: z.number().int().min(MIN_CREATED_SLIDES).max(MAX_CREATED_SLIDES).nullable(),
   templateId: z.string().max(100).nullable(),
 });
 export type StartDeckCreationInput = z.infer<typeof startDeckCreationInputSchema>;

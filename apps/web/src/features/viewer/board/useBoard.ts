@@ -148,6 +148,8 @@ export interface BoardActions {
     boundIds: string[],
     rich?: Record<string, unknown> | null,
   ): string;
+  /** A question to the AI: where, its text. */
+  addQuestion(frame: BoardFrame, text: string): string;
   /** What a frame holds now. */
   setBound(itemId: string, boundIds: string[]): void;
   /** A note's or frame's colour; `null`: its author's. */
@@ -458,6 +460,7 @@ export function useBoard(): BoardActions {
       create('note', frame, text, null, boundIds, rich),
     addBox: (frame, text, boundIds, rich = null) =>
       create('box', frame, text, null, boundIds, rich),
+    addQuestion: (frame, text) => create('question', frame, text, null, [], null),
     setBound: (itemId, boundIds) => enqueue({ type: 'update', itemId, input: { boundIds } }),
     setColor: (itemId, color) => enqueue({ type: 'update', itemId, input: { color } }),
     addLink: (at, url) =>

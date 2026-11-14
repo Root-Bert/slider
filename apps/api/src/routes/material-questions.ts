@@ -22,10 +22,11 @@ export const MATERIAL_ANSWER_EVENT = 'answer';
  * „Fragen“ on the material page (`services/material-questions.ts`) – notes asked with ⌘↵, their
  * answers under them for everyone who sees the board:
  * - `GET /decks/:deckId/material-questions` → `MaterialQuestion[]`;
- * - `POST /decks/:deckId/material-questions` `{ id, noteId, question }` → `text/event-stream` of
- *   `MaterialAnswerEvent`s (event `answer`) until it is done; the stream closed, it stops;
+ * - `POST /decks/:deckId/material-questions` `{ id, noteId, question, kind?, ask?, replaces? }` →
+ *   `text/event-stream` of `MaterialAnswerEvent`s (event `answer`) until it is done (a reply not
+ *   asked about: at once); the stream closed, it stops;
  * - `POST /material-questions/:id/stop` → 204 („Stoppen“);
- * - `DELETE /material-questions/:id` → 204 („Antwort löschen“).
+ * - `DELETE /material-questions/:id` → 204 („Antwort löschen“; `?part=all`: a reply with it).
  */
 export function materialQuestionsRoutes(deps: AppDeps) {
   const viewer = viewerMiddleware(deps);
@@ -36,12 +37,13 @@ export function materialQuestionsRoutes(deps: AppDeps) {
       c.json(await listMaterialQuestions(deps, c.var.viewer, c.req.param('deckId'))),
     )
     .post('/decks/:deckId/material-questions', viewer, async (c) => {
-      assertWithinLimit(
-        c,
-        asks.hit(c.var.viewer.author.id),
-        'Zu viele Fragen auf einmal. Bitte warte einen Moment.',
-      );
       const input = await readJson(c, askMaterialInputSchema);
+      if (input.ask || input.kind === 'note')
+        assertWithinLimit(
+          c,
+          asks.hit(c.var.viewer.author.id),
+          'Zu viele Fragen auf einmal. Bitte warte einen Moment.',
+        );
       // Refusals (no key, no access) answer with their status before the stream starts.
       const ask = await startMaterialQuestion(deps, c.var.viewer, c.req.param('deckId'), input);
       return streamSSE(c, async (stream) => {
@@ -66,7 +68,8 @@ export function materialQuestionsRoutes(deps: AppDeps) {
       return c.body(null, 204);
     })
     .delete('/material-questions/:questionId', viewer, async (c) => {
-      if (!(await deleteMaterialQuestion(deps, c.var.viewer, c.req.param('questionId'))))
+      const part = c.req.query('part') === 'all' ? 'all' : 'answer';
+      if (!(await deleteMaterialQuestion(deps, c.var.viewer, c.req.param('questionId'), part)))
         throw notFound('Diese Antwort gibt es nicht (mehr).');
       return c.body(null, 204);
     });

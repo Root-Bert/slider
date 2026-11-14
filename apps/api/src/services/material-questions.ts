@@ -1,5 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, ne } from 'drizzle-orm';
 import type {
   AskMaterialInput,
   MaterialAnswerEvent,
@@ -47,7 +47,8 @@ How to answer:
 - Write in the language of the question (usually German), plainly and to the point: start with the answer itself, no preamble, no repeating the question, no closing offers. Short paragraphs; lists where there are several points; **bold** for the key figures. No tables – a list instead. Headings (##) only for long answers with several parts.
 - Do not say what you are about to do before calling tools – just call them, then write the answer.
 - A note beside a file or round several things asks about those first: the message names them.
-- The note may be an instruction rather than a question („Fasse zusammen …“): do it, from the material.`;
+- The note may be an instruction rather than a question („Fasse zusammen …“): do it, from the material.
+- Under the note people reply, as in a comment's thread – each reply named with who wrote it. When the last message is a reply, answer that reply with the note and the thread so far in mind: a follow-up builds on your earlier answers instead of repeating them.`;
 
 /** Answers being written, by question id: stopped when their asker goes. */
 const running = new Map<string, { userId: string; controller: AbortController }>();
@@ -56,6 +57,8 @@ export const toQuestionDto = (row: MaterialQuestionRow): MaterialQuestion => ({
   id: row.id,
   deckId: row.deckId,
   noteId: row.noteId,
+  kind: row.kind,
+  author: row.author ?? null,
   question: row.question,
   answer: row.answer,
   state: row.state,
@@ -63,7 +66,7 @@ export const toQuestionDto = (row: MaterialQuestionRow): MaterialQuestion => ({
   createdAt: row.createdAt.toISOString(),
 });
 
-/** The answers under a deck's notes, oldest first – everyone's, like the notes. */
+/** The threads under a deck's notes, oldest first – everyone's, like the notes. */
 export async function listMaterialQuestions(
   deps: AppDeps,
   viewer: Viewer,
@@ -79,26 +82,42 @@ export async function listMaterialQuestions(
 }
 
 /**
- * „Antwort löschen“ under a note – by whoever may ask (the note stays; an answer being written
- * stops). `false` when there is none under that id.
+ * „Antwort löschen“ under a note – by whoever may ask: the AI's answer goes (a reply stays,
+ * not asked any more; the note asked goes with it); `part` `all`: a reply with its answer, by
+ * whoever wrote it, as a comment's reply. An answer being written stops. `false` when there is
+ * none under that id.
  */
 export async function deleteMaterialQuestion(
   deps: AppDeps,
   viewer: Viewer,
   questionId: string,
+  part: 'answer' | 'all' = 'answer',
 ): Promise<boolean> {
   const [row] = await deps.db
-    .select({ deckId: materialQuestions.deckId })
+    .select({
+      deckId: materialQuestions.deckId,
+      kind: materialQuestions.kind,
+      userId: materialQuestions.userId,
+    })
     .from(materialQuestions)
     .where(eq(materialQuestions.id, questionId));
   if (!row) return false;
   const { permissions } = await deckAccess(deps, viewer, row.deckId, 'view');
   if (!permissions.canComment) throw forbidden(VIEWER_REFUSAL);
-  const gone = await deps.db
-    .delete(materialQuestions)
-    .where(eq(materialQuestions.id, questionId))
-    .returning({ id: materialQuestions.id });
+  if (part === 'all' && row.kind === 'reply' && row.userId !== viewer.author.id)
+    throw forbidden('Nur wer die Antwort geschrieben hat, kann sie löschen.');
   running.get(questionId)?.controller.abort();
+  const gone =
+    row.kind === 'reply' && part === 'answer'
+      ? await deps.db
+          .update(materialQuestions)
+          .set({ answer: '', state: null, error: null, updatedAt: deps.clock.now() })
+          .where(eq(materialQuestions.id, questionId))
+          .returning({ id: materialQuestions.id })
+      : await deps.db
+          .delete(materialQuestions)
+          .where(eq(materialQuestions.id, questionId))
+          .returning({ id: materialQuestions.id });
   if (gone.length > 0) deps.live?.boardChanged(row.deckId);
   return gone.length > 0;
 }
@@ -109,8 +128,8 @@ const VIEWER_REFUSAL =
 /** What an answer runs with, checked before it starts streaming. */
 export interface MaterialAsk {
   deck: DeckRow;
-  connection: AiConnection;
-  keyId: string;
+  /** `null`: a reply the AI is not asked about – kept, nothing to write. */
+  ai: { connection: AiConnection; keyId: string } | null;
   row: MaterialQuestionRow;
   /** Its place among the person's answers being written, taken when it was asked. */
   controller: AbortController;
@@ -118,9 +137,10 @@ export interface MaterialAsk {
 
 /**
  * Checks a question can be answered – the deck commented on (like every AI request: not for
- * Betrachter), a key for the AI, not too many at once – and keeps it as `answering`. Throws (a
- * status the page shows) when it cannot. Its place among the running ones is taken here, before
- * anything is awaited after the count, so questions sent at once cannot all slip past it.
+ * Betrachter), a key for the AI, not too many at once – and keeps it as `answering` (a reply not
+ * asked about only needs the comment rights). Throws (a status the page shows) when it cannot.
+ * Its place among the running ones is taken here, before anything is awaited after the count, so
+ * questions sent at once cannot all slip past it.
  */
 export async function startMaterialQuestion(
   deps: AppDeps,
@@ -134,36 +154,59 @@ export async function startMaterialQuestion(
     .select({ kind: deckBoardItems.kind })
     .from(deckBoardItems)
     .where(and(eq(deckBoardItems.id, input.noteId), eq(deckBoardItems.deckId, deckId)));
-  if (!note || (note.kind !== 'note' && note.kind !== 'box'))
+  if (!note || (note.kind !== 'note' && note.kind !== 'box' && note.kind !== 'question'))
     throw notFound('Diese Notiz gibt es nicht (mehr).');
-  const found = await workspaceAiConnection(deps, deck.workspaceId);
-  if (!found.connection) throw new ApiError(409, 'ai_not_configured', found.error);
+  const thread = await deps.db
+    .select()
+    .from(materialQuestions)
+    .where(eq(materialQuestions.noteId, input.noteId))
+    .orderBy(asc(materialQuestions.createdAt), asc(materialQuestions.id));
+  // „Nochmal fragen“ writes an entry again in its place – as it was: a reply stays its writer's.
+  const replaced = input.replaces ? thread.find((each) => each.id === input.replaces) : undefined;
+  if (input.replaces && !replaced) throw notFound('Diese Antwort gibt es nicht (mehr).');
+  // Asked from the note itself, its earlier answer goes and the new one takes its place, first.
+  const earlier =
+    replaced ?? (input.kind === 'note' ? thread.find((each) => each.kind === 'note') : undefined);
+  const kind = replaced?.kind ?? input.kind;
+  const asking = input.ask || kind === 'note';
+  let ai: MaterialAsk['ai'] = null;
+  if (asking) {
+    const found = await workspaceAiConnection(deps, deck.workspaceId);
+    if (!found.connection) throw new ApiError(409, 'ai_not_configured', found.error);
+    ai = {
+      connection: { ...found.connection, meter: meterAs(found.connection) },
+      keyId: found.keyId,
+    };
+  }
   const mine = [...running.values()].filter((each) => each.userId === viewer.author.id);
-  if (mine.length >= MAX_RUNNING_PER_USER)
+  if (asking && mine.length >= MAX_RUNNING_PER_USER)
     throw new ApiError(429, 'rate_limited', 'Warte, bis die anderen Antworten fertig sind.');
   if (running.has(input.id)) throw badRequest('Diese Frage gibt es schon.');
   const controller = new AbortController();
-  running.set(input.id, { userId: viewer.author.id, controller });
+  if (asking) running.set(input.id, { userId: viewer.author.id, controller });
   try {
     const now = deps.clock.now();
-    // One answer per note: asked again, the earlier one goes (stopped if still being written).
+    const first = thread[0]?.createdAt;
+    const createdAt =
+      earlier?.createdAt ?? (kind === 'note' && first ? new Date(first.getTime() - 1) : now);
     const row = await deps.db.transaction(async (tx) => {
-      const earlier = await tx
-        .delete(materialQuestions)
-        .where(eq(materialQuestions.noteId, input.noteId))
-        .returning({ id: materialQuestions.id });
-      for (const each of earlier) running.get(each.id)?.controller.abort();
+      if (earlier) {
+        await tx.delete(materialQuestions).where(eq(materialQuestions.id, earlier.id));
+        running.get(earlier.id)?.controller.abort();
+      }
       const [inserted] = await tx
         .insert(materialQuestions)
         .values({
           id: input.id,
           deckId,
           noteId: input.noteId,
-          userId: viewer.author.id,
+          userId: replaced?.userId ?? viewer.author.id,
+          kind,
+          author: kind === 'reply' ? (replaced?.author ?? viewer.author) : null,
           question: input.question,
           answer: '',
-          state: 'answering',
-          createdAt: now,
+          state: asking ? 'answering' : null,
+          createdAt,
           updatedAt: now,
         })
         .onConflictDoNothing()
@@ -172,13 +215,7 @@ export async function startMaterialQuestion(
     });
     if (!row) throw badRequest('Diese Frage gibt es schon.');
     deps.live?.boardChanged(deckId);
-    return {
-      deck,
-      connection: { ...found.connection, meter: meterAs(found.connection) },
-      keyId: found.keyId,
-      row,
-      controller,
-    };
+    return { deck, ai, row, controller };
   } catch (error) {
     running.delete(input.id);
     throw error;
@@ -209,7 +246,10 @@ export async function answerMaterialQuestion(
   send: (event: MaterialAnswerEvent) => void,
   signal: AbortSignal,
 ): Promise<void> {
-  const { deck, connection, row, controller } = ask;
+  const { deck, ai, row, controller } = ask;
+  // A reply not asked about: kept already.
+  if (!ai) return send({ type: 'done', question: toQuestionDto(row) });
+  const { connection } = ai;
   const stop = () => controller.abort();
   signal.addEventListener('abort', stop, { once: true });
   let answer = '';
@@ -292,7 +332,7 @@ export async function answerMaterialQuestion(
       state = 'failed';
       error = failureMessage(caught, connection);
       const problem = keyProblem(caught, connection);
-      if (problem && refusesKey(caught)) await markKeyRefused(deps, ask.keyId, problem);
+      if (problem && refusesKey(caught)) await markKeyRefused(deps, ai.keyId, problem);
       if (!(caught instanceof ApiError) && !problem)
         deps.log.warn(`Material question failed: ${String(caught)}`);
     }
@@ -312,32 +352,62 @@ export async function answerMaterialQuestion(
   send({ type: 'done', question: toQuestionDto(kept) });
 }
 
-/** The board, what the note is on (a file beside it, things round it), then the note's text. */
+/**
+ * The board, what the note is on (a file beside it, things round it), the note's text, then its
+ * thread so far – the replies (who wrote them) and the AI's answers – up to the entry answered.
+ */
 async function conversation(deps: AppDeps, ask: MaterialAsk): Promise<Message[]> {
-  const [brief, [note], names] = await Promise.all([
+  const { row } = ask;
+  const [brief, [note], names, thread] = await Promise.all([
     materialsBrief(deps, ask.deck.id),
     deps.db
-      .select({ boundIds: deckBoardItems.boundIds })
+      .select({
+        boundIds: deckBoardItems.boundIds,
+        text: deckBoardItems.text,
+        author: deckBoardItems.author,
+      })
       .from(deckBoardItems)
-      .where(eq(deckBoardItems.id, ask.row.noteId)),
+      .where(eq(deckBoardItems.id, row.noteId)),
     boardNames(deps, ask.deck.id),
+    deps.db
+      .select()
+      .from(materialQuestions)
+      .where(and(eq(materialQuestions.noteId, row.noteId), ne(materialQuestions.id, row.id)))
+      .orderBy(asc(materialQuestions.createdAt), asc(materialQuestions.id)),
   ]);
   const on = (note?.boundIds ?? []).flatMap((id) => {
     const name = names.get(id);
     return name ? [`„${name}“ (${id})`] : [];
   });
-  return [
-    {
-      role: 'user',
-      content: [
-        { type: 'text', text: brief ?? "The deck's board is empty – there is no material yet." },
-        ...(on.length > 0
-          ? [{ type: 'text' as const, text: `The note is on: ${on.join(', ')}.` }]
-          : []),
-        { type: 'text', text: ask.row.question },
-      ],
-    },
-  ];
+  const before = thread.filter((each) => each.createdAt <= row.createdAt);
+  // The note as asked (the note asked now: as typed), else as it is.
+  const asked = row.kind === 'note' ? row : before.find((each) => each.kind === 'note');
+  const noteText = asked?.question ?? note?.text ?? '';
+  const messages: Message[] = [];
+  const say = (role: 'user' | 'assistant', text: string) => {
+    const last = messages.at(-1);
+    if (last?.role === role && Array.isArray(last.content))
+      last.content.push({ type: 'text', text });
+    else messages.push({ role, content: [{ type: 'text', text }] });
+  };
+  say('user', brief ?? "The deck's board is empty – there is no material yet.");
+  if (on.length > 0) say('user', `The note is on: ${on.join(', ')}.`);
+  say(
+    'user',
+    before.length > 0 || row.kind === 'reply'
+      ? `The note${note ? ` by ${note.author.name}` : ''}: ${noteText}`
+      : noteText,
+  );
+  const reply = (each: MaterialQuestionRow) =>
+    `Reply by ${each.author?.name ?? 'someone'}: ${each.question}`;
+  for (const each of before) {
+    if (each.kind === 'reply') say('user', reply(each));
+    if (each.answer.trim()) say('assistant', each.answer);
+  }
+  if (row.kind === 'reply') say('user', reply(row));
+  // Ends with the people: an answer last (asked again from the note) asks for the note's anew.
+  if (messages.at(-1)?.role === 'assistant') say('user', noteText);
+  return messages;
 }
 
 /** The names of a deck's files, links and folders by id – what a note can be on. */

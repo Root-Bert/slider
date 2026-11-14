@@ -36,7 +36,7 @@ import {
 const COPY_LABELS = { idle: 'Kopieren', copied: 'Kopiert ✓', failed: 'Nicht kopiert' } as const;
 
 /** A read-only line to copy: the MCP address, a token, a command. */
-function CopyField({
+export function CopyField({
   label,
   value,
   icon,
@@ -96,33 +96,7 @@ export function AppConnectionsSection({ onNotify }: { onNotify: ShowToast }) {
           <div className="flex flex-col gap-2">
             <h3 className="text-xs text-fg-subtle">Adresse für KI-Apps</h3>
             <CopyField label="MCP-Adresse" icon="link" value={data!.mcpUrl} />
-            <ul className="flex list-disc flex-col gap-1 pl-5 text-xs text-fg-muted">
-              {data!.oauth ? (
-                <>
-                  <li>
-                    <strong className="font-medium text-fg">Claude und ChatGPT:</strong> in den
-                    Einstellungen unter „Konnektoren“ einen eigenen Konnektor mit dieser Adresse
-                    hinzufügen. Slider fragt dann, ob die App darf.
-                  </li>
-                  <li>
-                    <strong className="font-medium text-fg">Claude Code:</strong>{' '}
-                    <code className="font-mono">
-                      claude mcp add --transport http slider {data!.mcpUrl}
-                    </code>
-                    , dann <code className="font-mono">/mcp</code> zum Anmelden.
-                  </li>
-                  <li>Apps ohne Anmeldung bekommen ein Token.</li>
-                </>
-              ) : (
-                <li>
-                  Erstelle ein Token und gib es der App mit – Claude Code etwa so:{' '}
-                  <code className="font-mono">
-                    claude mcp add --transport http slider {data!.mcpUrl} --header "Authorization:
-                    Bearer …"
-                  </code>
-                </li>
-              )}
-            </ul>
+            <McpSteps mcpUrl={data!.mcpUrl} oauth={data!.oauth} />
           </div>
 
           {created && (
@@ -173,6 +147,39 @@ export function AppConnectionsSection({ onNotify }: { onNotify: ShowToast }) {
         />
       )}
     </Section>
+  );
+}
+
+/**
+ * How to add the MCP address to Claude, ChatGPT and Claude Code – here and in the material page's
+ * „Mit KI-Apps verbinden“ (`ConnectAppsPanel`).
+ */
+export function McpSteps({ mcpUrl, oauth }: { mcpUrl: string; oauth: boolean }) {
+  return (
+    <ul className="flex list-disc flex-col gap-1 pl-5 text-xs text-fg-muted">
+      {oauth ? (
+        <>
+          <li>
+            <strong className="font-medium text-fg">Claude und ChatGPT:</strong> in den
+            Einstellungen unter „Konnektoren“ einen eigenen Konnektor mit dieser Adresse hinzufügen.
+            Slider fragt dann, ob die App darf.
+          </li>
+          <li>
+            <strong className="font-medium text-fg">Claude Code:</strong>{' '}
+            <code className="font-mono">claude mcp add --transport http slider {mcpUrl}</code>, dann{' '}
+            <code className="font-mono">/mcp</code> zum Anmelden.
+          </li>
+          <li>Apps ohne Anmeldung bekommen ein Token.</li>
+        </>
+      ) : (
+        <li>
+          Erstelle ein Token und gib es der App mit – Claude Code etwa so:{' '}
+          <code className="font-mono">
+            claude mcp add --transport http slider {mcpUrl} --header "Authorization: Bearer …"
+          </code>
+        </li>
+      )}
+    </ul>
   );
 }
 

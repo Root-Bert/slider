@@ -789,7 +789,8 @@ type Block = Anthropic.Beta.BetaContentBlock;
 
 export interface TurnRequest {
   system: string;
-  tools: Anthropic.Beta.BetaTool[];
+  /** Anthropic's own tools (web search) only reach Anthropic; the others get the custom ones. */
+  tools: Anthropic.Beta.BetaToolUnion[];
   messages: Message[];
   /** Anthropic only: how many tokens the whole task may take. */
   taskBudgetTokens: number;
@@ -844,8 +845,11 @@ function chatTokens(usage: z.infer<typeof chatUsageSchema>) {
 }
 
 export interface TurnResult {
-  /** `tool_use`: it called tools; `max_tokens`: cut off; `refusal`: it declined. */
-  stop: 'end_turn' | 'tool_use' | 'max_tokens' | 'refusal';
+  /**
+   * `tool_use`: it called tools; `max_tokens`: cut off; `refusal`: it declined; `pause_turn`:
+   * Anthropic paused a long turn of its own tools (web search) – sent again as it is, it goes on.
+   */
+  stop: 'end_turn' | 'tool_use' | 'max_tokens' | 'refusal' | 'pause_turn';
   /** Its answer, to go back into the conversation as the assistant's turn. */
   content: Block[];
   /** Ids of its tool calls whose input came as broken JSON – refused, for it to send again. */
@@ -1109,9 +1113,11 @@ async function anthropicTurnAt(
       ? 'refusal'
       : message.stop_reason === 'max_tokens'
         ? 'max_tokens'
-        : message.content.some((block) => block.type === 'tool_use')
-          ? 'tool_use'
-          : 'end_turn';
+        : message.stop_reason === 'pause_turn'
+          ? 'pause_turn'
+          : message.content.some((block) => block.type === 'tool_use')
+            ? 'tool_use'
+            : 'end_turn';
   return { stop, content: message.content, timing: timingOf(message) };
 }
 

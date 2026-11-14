@@ -15,6 +15,7 @@ export * from './integrations';
 export * from './keys';
 export * from './legal';
 export * from './material-questions';
+export * from './material-chat';
 export * from './app-connections';
 export * from './me';
 export * from './nextcloud';

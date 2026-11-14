@@ -154,16 +154,16 @@ describe('the board outbox', () => {
     ];
     const narrow = reflow({ x: 0, y: 0, w: 240, h: 100 }, two);
     expect(narrow.frames.map(({ id, x, y }) => [id, x, y])).toEqual([
-      ['a', 16, 44],
-      ['b', 16, 160],
+      ['a', 16, 16],
+      ['b', 16, 132],
     ]);
-    expect([narrow.minW, narrow.minH]).toEqual([232, 276]);
+    expect([narrow.minW, narrow.minH]).toEqual([232, 248]);
     // A frame holds what lies mostly or by its centre in it; notes' cards cover no other card.
     expect(liesIn({ x: 90, y: 0, w: 100, h: 100 }, { x: 0, y: 0, w: 150, h: 150 })).toBe(true);
     expect(liesIn({ x: 120, y: 0, w: 100, h: 100 }, { x: 0, y: 0, w: 150, h: 150 })).toBe(false);
     expect(
       besidePlace({ x: 0, y: 0, w: 100, h: 100 }, 1, [{ x: 112, y: 0, w: 100, h: 100 }]),
-    ).toEqual({ x: -252, y: 0 });
+    ).toEqual({ x: -300, y: 0 });
     // A folder's files: none hidden or of the system's own.
     expect(
       ['Ordner/a.pdf', 'Ordner/.DS_Store', 'Ordner/__MACOSX/b.pdf', 'Ordner/Thumbs.db'].map(

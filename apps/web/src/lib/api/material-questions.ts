@@ -1,9 +1,14 @@
-import { API_PREFIX, type MaterialAnswerEvent, type MaterialQuestion } from '@slider/shared';
+import {
+  API_PREFIX,
+  type AskMaterialInput,
+  type MaterialAnswerEvent,
+  type MaterialQuestion,
+} from '@slider/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, proxyError, unreachableError, ApiError } from '../api-client';
 import { queryKeys } from './keys';
 
-/** The AI's answers to the material page's notes asked with ⌘↵ – everyone sees them under the note. */
+/** The threads under the material page's notes – the AI's answers and the replies – everyone's. */
 export const useMaterialQuestions = (deckId: string, enabled = true) =>
   useQuery({
     queryKey: queryKeys.materialQuestions(deckId),
@@ -17,19 +22,36 @@ export const useMaterialQuestions = (deckId: string, enabled = true) =>
  * Refusals (no AI key, no access) throw before anything streams; `signal` aborting closes the
  * stream, which stops the answer on the server.
  */
-export async function askMaterial(
+export const askMaterial = (
   deckId: string,
-  input: { id: string; noteId: string; question: string },
+  input: Partial<AskMaterialInput> & Pick<AskMaterialInput, 'id' | 'noteId' | 'question'>,
   onEvent: (event: MaterialAnswerEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> =>
+  postEventStream(
+    `/decks/${encodeURIComponent(deckId)}/material-questions`,
+    input,
+    onEvent,
+    signal,
+  );
+
+/**
+ * POSTs `body` and reads the `text/event-stream` answer, one JSON per event, until it ends.
+ * Refusals throw (as `ApiError`) before anything streams; `signal` aborting closes the stream.
+ */
+export async function postEventStream<E>(
+  path: string,
+  body: unknown,
+  onEvent: (event: E) => void,
   signal?: AbortSignal,
 ): Promise<void> {
   let response: Response;
   try {
-    response = await fetch(`${API_PREFIX}/decks/${encodeURIComponent(deckId)}/material-questions`, {
+    response = await fetch(`${API_PREFIX}${path}`, {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-      body: JSON.stringify(input),
+      body: JSON.stringify(body),
       signal,
     });
   } catch (error) {
@@ -63,7 +85,7 @@ export async function askMaterial(
           .filter((line) => line.startsWith('data:'))
           .map((line) => line.slice(5).replace(/^ /, ''))
           .join('\n');
-        if (data) onEvent(JSON.parse(data) as MaterialAnswerEvent);
+        if (data) onEvent(JSON.parse(data) as E);
       }
     }
   } catch (error) {
@@ -76,16 +98,25 @@ export async function askMaterial(
 export const stopMaterialAnswer = (questionId: string) =>
   api.post<void>(`/material-questions/${encodeURIComponent(questionId)}/stop`);
 
-/** „Antwort löschen“: a note's answer goes, the note stays. */
+/**
+ * „Antwort löschen“: the AI's answer goes, the note stays (a reply too, not asked any more);
+ * `all`: a reply with its answer, by its writer.
+ */
 export function useDeleteMaterialAnswer(deckId: string) {
   const queryClient = useQueryClient();
   const key = queryKeys.materialQuestions(deckId);
   return useMutation({
-    mutationFn: (questionId: string) =>
-      api.delete(`/material-questions/${encodeURIComponent(questionId)}`),
-    onMutate: (questionId) =>
+    mutationFn: ({ entry, part }: { entry: MaterialQuestion; part: 'answer' | 'all' }) =>
+      api.delete(
+        `/material-questions/${encodeURIComponent(entry.id)}${part === 'all' ? '?part=all' : ''}`,
+      ),
+    onMutate: ({ entry, part }) =>
       queryClient.setQueryData<MaterialQuestion[]>(key, (all = []) =>
-        all.filter((each) => each.id !== questionId),
+        entry.kind === 'reply' && part === 'answer'
+          ? all.map((each) =>
+              each.id === entry.id ? { ...each, answer: '', state: null, error: null } : each,
+            )
+          : all.filter((each) => each.id !== entry.id),
       ),
     onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
   });

@@ -27,13 +27,6 @@ import type { FolderUpload } from './useBoard';
  * every change goes through `useBoard`.
  */
 
-/**
- * A sticker's text on the board: the slide sticker's (`TEXT_CLASS`) at a fixed size – left-aligned,
- * from the top, as it is typed into a box drawn first.
- */
-export const STICKER_TEXT =
-  'whitespace-pre-wrap break-words px-[0.35em] py-[0.15em] text-base leading-[1.25] font-semibold';
-
 export type BoardEntry = Material | BoardItem;
 
 /** A note's or box's colour: its own, else its author's. */
@@ -54,13 +47,14 @@ export const isUploading = (item: BoardEntry) => 'progress' in item;
 
 /** Room between a thing and its notes' cards. */
 export const NOTE_GAP = 12;
-/** A note's card (`w-60`) and about how tall one is, to keep them off other cards. */
-export const NOTE_CARD_W = 240;
+/** A note's card (`w-72`, a comment's) and about how tall one is, to keep them off other cards. */
+export const NOTE_CARD_W = 288;
 const NOTE_CARD_H = 84;
 /**
  * Boxes holding things under them; free boxes and notes over files and links. What is being
  * dragged lies over everything (`lift`: a box, `+1` what it carries or a thing, `+2` notes beside
- * it) – never under a box's glass on its way, its place in the stack again on release.
+ * it) – never under a box's glass on its way, its place in the stack again on release. A note
+ * whose thread is open lies over every other card (`open`), its replies never under them.
  */
 const Z = { holder: -1, thing: 0, note: 10, open: 15, draft: 20, lift: 30 } as const;
 
@@ -72,10 +66,10 @@ export const isThing = (item: BoardEntry) =>
 export const isBox = (item: BoardEntry): item is BoardItem =>
   !isMaterial(item) && item.kind === 'box';
 
-/** Room in a box round what it holds, and above them for its text. */
+/** Room in a box round what it holds – its note's card stands over it, not in it. */
 export const BOX_PAD = 16;
-export const BOX_TOP = 44;
-const BOX_GAP = 16;
+export const BOX_TOP = BOX_PAD;
+export const BOX_GAP = 16;
 
 /**
  * What a box holds laid out anew for its width (resized): in their order (rows, then left to
@@ -197,6 +191,7 @@ export function boardNodes(
     targets = new Set(),
     openFolder = null,
     lifted = new Set(),
+    threads = new Set(),
   }: {
     /** Picked – or, while a box is drawn, what it takes in. */
     selected: ReadonlySet<string>;
@@ -213,6 +208,8 @@ export function boardNodes(
     openFolder?: string | null;
     /** Being dragged, a box's things with it: over everything meanwhile. */
     lifted?: ReadonlySet<string>;
+    /** Notes whose thread is open: over the other cards. */
+    threads?: ReadonlySet<string>;
   },
 ): BoardNode[] {
   const frameOf = (item: BoardEntry): BoardFrame => live.get(item.id) ?? item;
@@ -223,12 +220,19 @@ export function boardNodes(
   const byId = new Map<string, BoardEntry>(things.map((each) => [each.id, each]));
   const nodes: BoardNode[] = [];
   for (const item of board.items) {
-    if (item.kind !== 'box') continue;
+    // A question to the AI lies over things as a free note does.
+    if (item.kind !== 'box' && item.kind !== 'question') continue;
     nodes.push({
       id: item.id,
       type: 'item',
       ...sized(frameOf(item)),
-      zIndex: lifted.has(item.id) ? Z.lift : item.boundIds.length > 0 ? Z.holder : Z.note,
+      zIndex: lifted.has(item.id)
+        ? Z.lift
+        : item.boundIds.length > 0
+          ? Z.holder
+          : threads.has(item.id)
+            ? Z.open
+            : Z.note,
       data: { role: 'item', item, target: targets.has(item.id) },
       selected: selected.has(item.id),
       draggable: canMove && editing !== item.id,
@@ -246,7 +250,9 @@ export function boardNodes(
     });
   }
   const cards = things.map(frameOf);
-  for (const [id, notes] of notesBeside(board.items)) {
+  // A note being written on a thing: in its column already, where its card will stand.
+  const besides = notesBeside(draft?.kind === 'note' ? [...board.items, draft] : board.items);
+  for (const [id, notes] of besides) {
     const owner = byId.get(id);
     if (!owner) continue;
     const frame = frameOf(owner);
@@ -260,13 +266,17 @@ export function boardNodes(
       type: 'item',
       // A column as wide as a card; its height is its cards' (laid out by them, over the board).
       ...sized({ ...place, w: NOTE_CARD_W, h: 8 }),
-      zIndex: lifted.has(id) ? Z.lift + 2 : Z.note,
+      zIndex: lifted.has(id)
+        ? Z.lift + 2
+        : notes.some((note) => threads.has(note.id))
+          ? Z.open
+          : Z.note,
       data: { role: 'notes', item: owner, notes },
       selectable: false,
       draggable: false,
     });
   }
-  if (draft)
+  if (draft && draft.kind !== 'note')
     nodes.push({
       id: draft.id,
       type: 'item',
@@ -335,9 +345,11 @@ export interface BoardNodeContext {
   ) => void;
   /** Typing dropped (Esc): a new one goes, one's own stays as it was. */
   onNoteCancel: (item: BoardItem) => void;
-  /** The AI's answer under a note, once asked. */
-  answerOf: (noteId: string) => NoteAnswerValue | undefined;
-  /** What the answer card under a note offers. */
+  /** Deleted at once (a question's „Löschen“ in its composer, confirmed by its second click). */
+  remove: (item: BoardItem) => void;
+  /** A note's thread: the AI's answers and the replies, in order. */
+  threadOf: (noteId: string) => readonly NoteAnswerValue[];
+  /** What a note's thread offers. */
   answers: NoteAnswerActions;
   onResize: (id: string, frame: ResizeParams) => void;
   onResizeEnd: (id: string, frame: ResizeParams) => void;

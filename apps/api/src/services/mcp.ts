@@ -762,7 +762,7 @@ async function searchEverything(
       if (item.kind === 'folder') continue;
       const match = matchOf(`${item.text} ${item.url ?? ''}`, words);
       if (!match) continue;
-      const label = item.kind === 'link' ? 'Link' : 'Note';
+      const label = item.kind === 'link' ? 'Link' : item.kind === 'question' ? 'Question' : 'Note';
       results.push({
         score: match.score,
         id: `note:${item.id}`,
@@ -1123,6 +1123,10 @@ async function listMaterialsTool(
     else if (item.kind === 'folder')
       lines.push(
         `- folder ${item.id}: „${item.text}“ with ${on.join(', ') || 'nothing'} (by ${item.author.name})`,
+      );
+    else if (item.kind === 'question')
+      lines.push(
+        `- question to the AI ${item.id} (by ${item.author.name}${yours(item.author)}): ${body}`,
       );
     else if (item.kind === 'note')
       lines.push(

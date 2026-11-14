@@ -88,8 +88,9 @@ export function CreatePrompt({
   const setDescription = (update: (now: string) => string) =>
     setDraft((now) => ({ ...now, description: update(now.description) }));
   const kind = draft.kind ?? DEFAULT_DECK_KIND;
-  // The kind's suggestion until a number is typed.
-  const shownPages = draft.pages ?? pagesOf(kind);
+  // The kind's suggestion until a number is typed; „KI wählt“: as many as the content needs.
+  const byAi = draft.pages === 'ai';
+  const shownPages = typeof draft.pages === 'number' ? draft.pages : pagesOf(kind);
   // The deck's own template first; one removed meanwhile falls back to none.
   const wanted = draft.templateId ?? templateId ?? '';
   const masterId = masters.some((master) => master.id === wanted) ? wanted : '';
@@ -128,7 +129,7 @@ export function CreatePrompt({
       {
         description: description.trim(),
         kind,
-        pages: shownPages,
+        pages: byAi ? null : shownPages,
         templateId: masterId || null,
       },
       {
@@ -297,19 +298,33 @@ export function CreatePrompt({
               />
             )}
 
-            <label className="flex items-center gap-2 text-xs font-medium text-fg-muted">
-              Seitenzahl
-              <NumberField
-                label="Seitenzahl"
-                value={shownPages}
-                onChange={(value) => change({ pages: Math.round(value) })}
-                min={MIN_CREATED_SLIDES}
-                max={MAX_CREATED_SLIDES}
-                step={1}
-                decimals={0}
-                size="md"
-              />
-            </label>
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-2 text-xs font-medium text-fg-muted">
+                Seitenzahl
+                {!byAi && (
+                  <NumberField
+                    label="Seitenzahl"
+                    value={shownPages}
+                    onChange={(value) => change({ pages: Math.round(value) })}
+                    min={MIN_CREATED_SLIDES}
+                    max={MAX_CREATED_SLIDES}
+                    step={1}
+                    decimals={0}
+                    size="md"
+                  />
+                )}
+              </label>
+              <Button
+                size="sm"
+                variant={byAi ? 'secondary' : 'ghost'}
+                icon="autoAwesome"
+                aria-pressed={byAi}
+                title={`Die KI wählt ${MIN_CREATED_SLIDES}–${MAX_CREATED_SLIDES} Folien, so viele der Inhalt braucht`}
+                onClick={() => change({ pages: byAi ? null : 'ai' })}
+              >
+                KI wählt
+              </Button>
+            </div>
           </div>
         </div>
       </div>

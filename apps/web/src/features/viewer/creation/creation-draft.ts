@@ -16,8 +16,8 @@ import { readJson, writeJson, writeString } from '@/lib/storage';
 export interface CreationDraft {
   description: string;
   kind: DeckKind | null;
-  /** `null`: the kind's suggestion. */
-  pages: number | null;
+  /** `null`: the kind's suggestion; `ai`: „KI wählt“. */
+  pages: number | 'ai' | null;
   /** `null`: not picked – the deck's own template. */
   templateId: string | null;
 }
@@ -28,10 +28,11 @@ function parseDraft(value: unknown): CreationDraft {
   if (typeof raw !== 'object' || raw === null || typeof raw.description !== 'string')
     throw new Error('no draft');
   const pages =
-    typeof raw.pages === 'number' &&
-    Number.isInteger(raw.pages) &&
-    raw.pages >= MIN_CREATED_SLIDES &&
-    raw.pages <= MAX_CREATED_SLIDES
+    raw.pages === 'ai' ||
+    (typeof raw.pages === 'number' &&
+      Number.isInteger(raw.pages) &&
+      raw.pages >= MIN_CREATED_SLIDES &&
+      raw.pages <= MAX_CREATED_SLIDES)
       ? raw.pages
       : null;
   const kind = deckKindSchema.safeParse(raw.kind);

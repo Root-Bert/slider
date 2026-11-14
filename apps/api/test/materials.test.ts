@@ -515,19 +515,37 @@ describe('the material page', () => {
     expect(await tool('read_sheet', { material: 'Fehlt.xlsx' })).toMatchObject({ isError: true });
     expect(await tool('view_slide', {})).toBeNull();
 
-    // „Fragen“: a note on the board asked with ⌘↵ – refused without an AI key; with one the AI
-    // reads the page and answers from it, its source named – streamed, kept under the note for
-    // everyone, written anew when asked again, gone with „Antwort löschen“ or the note.
+    // „Fragen“: a question put down as a comment (or a note asked with ⌘↵) – refused without an
+    // AI key; with one the AI reads the page and answers from it, its source named – streamed,
+    // kept under it for everyone, written anew when asked again, gone with „Antwort löschen“ or it.
     const questions = `/api/decks/${deck.deckId}/material-questions`;
-    const note = async (text: string) => {
+    const note = async (text: string, kind: 'box' | 'question' = 'box') => {
       const id = crypto.randomUUID();
       await ctx.request(items, {
         method: 'POST',
-        json: { id, kind: 'box', text, x: 600, y: 0, w: 200, h: 120 },
+        json: { id, kind, text, x: 600, y: 0, w: 200, h: 120 },
       });
       return id;
     };
-    const market = await note('Wie stark wächst der Markt?');
+    const market = await note('Wie stark wächst der Markt?', 'question');
+    // A question hangs on nothing.
+    expect(
+      (
+        await ctx.request(items, {
+          method: 'POST',
+          json: {
+            id: crypto.randomUUID(),
+            kind: 'question',
+            text: 'Und?',
+            boundIds: [folderId],
+            x: 0,
+            y: 0,
+            w: 320,
+            h: 140,
+          },
+        })
+      ).status,
+    ).toBe(400);
     const ask = (noteId: string, question: string, cookie?: string) =>
       ctx.request(questions, {
         method: 'POST',
@@ -585,6 +603,55 @@ describe('the material page', () => {
       question: 'Und 2024?',
       answer: 'Um 14 Prozent.',
     });
+    // Its thread, as a comment's: a reply not asked about is kept at once; one asked is answered
+    // with the note and the thread so far in mind; „Antwort löschen“ under a reply keeps it, its
+    // writer deletes it.
+    const reply = async (question: string, asking: boolean) =>
+      (
+        await (
+          await ctx.request(questions, {
+            method: 'POST',
+            json: { id: crypto.randomUUID(), noteId: market, question, kind: 'reply', ask: asking },
+          })
+        ).text()
+      )
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => JSON.parse(line.slice(5)) as { type: string; question?: MaterialQuestion });
+    const thanks = await reply('Danke!', false);
+    expect(thanks).toMatchObject([
+      {
+        type: 'done',
+        question: { kind: 'reply', state: null, author: { name: expect.any(String) } },
+      },
+    ]);
+    answers.push((body) => {
+      const said = JSON.stringify(body.messages);
+      expect(said).toContain('Um 14 Prozent.');
+      expect(said).toMatch(/Reply by [^:]+: Danke![\s\S]*Reply by [^:]+: Und 2025\?/);
+      expect((body.messages.at(-1) as { role?: string } | undefined)?.role).toBe('user');
+      return aiMessage([{ type: 'text', text: 'Dazu steht nichts.', citations: null }], 'end_turn');
+    });
+    const followUp = await reply('Und 2025?', true);
+    expect(followUp.at(-1)?.question).toMatchObject({
+      state: 'done',
+      answer: 'Dazu steht nichts.',
+    });
+    const thread = (await (await ctx.request(questions)).json()) as MaterialQuestion[];
+    expect(thread.map((each) => [each.kind, each.question])).toEqual([
+      ['note', 'Und 2024?'],
+      ['reply', 'Danke!'],
+      ['reply', 'Und 2025?'],
+    ]);
+    const followUpId = followUp.at(-1)!.question!.id;
+    await ctx.request(`/api/material-questions/${followUpId}`, { method: 'DELETE' });
+    expect(
+      ((await (await ctx.request(questions)).json()) as MaterialQuestion[]).at(-1),
+    ).toMatchObject({ id: followUpId, state: null, answer: '' });
+    for (const id of [followUpId, thanks[0]!.question!.id])
+      expect(
+        (await ctx.request(`/api/material-questions/${id}?part=all`, { method: 'DELETE' })).status,
+      ).toBe(204);
     // Three at once per person – a fourth sent together with them waits all the same.
     let release = () => {};
     const gate = new Promise<void>((resolve) => (release = resolve));

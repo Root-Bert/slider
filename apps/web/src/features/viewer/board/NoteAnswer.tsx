@@ -3,24 +3,33 @@ import { Fragment, useMemo, type ReactNode } from 'react';
 import { formatDateTime, formatRelativeTime } from '@/lib/format';
 import { Avatar, cn, Icon, IconButton } from '@/ui';
 import { useViewerToast } from '../state/viewer-toast';
-import type { NoteAnswerValue } from './note-answers';
+import { withoutSources, type NoteAnswerValue } from './note-answers';
 import { RichText } from './rich-text';
 
 /* The AI's answer under a note on the material page – asking and its stream: `note-answers.ts`. */
 
-/** What the answer card under a note needs from the board. */
+/** What a note's thread needs from the board (`NoteThread`, `NoteAnswer`). */
 export interface NoteAnswerActions {
   ai: Parameters<typeof Avatar>[0]['author'];
+  /** Who looks (whose replies are their own). */
+  me: string;
   /** The deck's files by id: an answer's sources. */
   byId: ReadonlyMap<string, Material>;
-  /** May ask again and delete (comment rights). */
+  /** May reply, ask again and delete (comment rights). */
   canComment: boolean;
-  streaming: (noteId: string) => boolean;
+  /** Written in this tab (by entry): „Stoppen“. */
+  streaming: (entryId: string) => boolean;
   stop: (answer: NoteAnswerValue) => void;
-  /** „Nochmal fragen“: the note's text as it is now. */
+  /** „Nochmal fragen“: the note's text as it is now, or the reply's. */
   retry: (answer: NoteAnswerValue) => void;
   /** „Antwort löschen“ (after asking). */
   remove: (answer: NoteAnswerValue) => void;
+  /** A reply put down under a note, handed to the AI too (`ask`) or not. */
+  reply: (noteId: string, text: string, ask: boolean) => void;
+  /** ✨ on a reply not asked about: handed to the AI now. */
+  askReply: (reply: NoteAnswerValue) => void;
+  /** A reply deleted by its writer. */
+  removeReply: (reply: NoteAnswerValue) => void;
   /** A source chip: the file, opened at its page. */
   openSource: (material: Material, page: number | null) => void;
 }
@@ -48,30 +57,27 @@ export function NoteAnswer({
   const stop = (event: { stopPropagation: () => void }) => event.stopPropagation();
   return (
     <article
-      data-note-answer={answer.noteId}
+      data-note-answer={answer.id}
       aria-label={`Antwort von ${ai.name}`}
       // Read and clicked, not dragged, panned or zoomed by the board; its text may be selected.
+      // A reply in a comment's thread (`ThreadMessage`): its glass, its author line.
       className={cn(
-        'nodrag nopan nowheel pointer-events-auto flex cursor-auto flex-col gap-1.5 rounded-control p-3 select-text',
+        'nodrag nopan nowheel glass pointer-events-auto flex cursor-auto flex-col gap-2 rounded-panel px-3.5 py-3 select-text',
         className,
       )}
-      style={{
-        backgroundColor: 'var(--color-glass-solid)',
-        boxShadow: 'inset 0 0 0 1px var(--color-hairline-strong), var(--shadow-mark)',
-      }}
       onClick={stop}
       onDoubleClick={stop}
       onPointerDown={stop}
       onContextMenu={stop}
     >
-      <header className="flex min-w-0 shrink-0 items-center gap-1.5">
-        <Avatar author={ai} size={20} />
-        <span className="min-w-0 truncate text-caption font-medium text-fg">{ai.name}</span>
+      <header className="flex min-w-0 shrink-0 items-center gap-2">
+        <Avatar author={ai} size={24} />
+        <span className="min-w-0 truncate text-xs font-medium text-fg">{ai.name}</span>
         {!writing && (
           <time
             dateTime={answer.createdAt}
             title={formatDateTime(answer.createdAt)}
-            className="ml-auto shrink-0 text-caption text-fg-subtle"
+            className="min-w-0 shrink-[4] truncate text-caption text-fg-subtle"
           >
             {formatRelativeTime(answer.createdAt)}
           </time>
@@ -97,7 +103,7 @@ export function NoteAnswer({
               {answer.reading ?? (rich ? 'Schreibt …' : 'Denkt nach …')}
             </span>
           </p>
-          {actions.streaming(answer.noteId) && (
+          {actions.streaming(answer.id) && (
             <IconButton
               icon="stop"
               label="Stoppen"
@@ -147,7 +153,7 @@ export function NoteAnswer({
 }
 
 /** A run of the answer's text with its sources (`[[id#page]]`) as chips that open the file. */
-function WithSources({
+export function WithSources({
   text,
   byId,
   onOpen,
@@ -177,7 +183,7 @@ function WithSources({
       >
         <Icon name="description" size={12} className="shrink-0" />
         <span className="max-w-40 truncate">{material.name}</span>
-        {pageLabel && <span className="shrink-0">· {pageLabel}</span>}
+        {pageLabel && <span className="shrink-0">| {pageLabel}</span>}
       </button>,
     );
   }
@@ -190,19 +196,4 @@ function WithSources({
       ))}
     </>
   );
-}
-
-/** The answer for the clipboard: its sources as the file's name (and page) in words. */
-function withoutSources(answer: string, byId: ReadonlyMap<string, Material>): string {
-  return answer
-    .replace(new RegExp(`\\s*${MATERIAL_CITATION.source}`, 'g'), (_, id: string, page?: string) => {
-      const material = byId.get(id);
-      if (!material) return '';
-      const where =
-        page && material.pages
-          ? `, ${material.kind === 'presentation' ? 'Folie' : 'S.'} ${page}`
-          : '';
-      return ` (${material.name}${where})`;
-    })
-    .trim();
 }

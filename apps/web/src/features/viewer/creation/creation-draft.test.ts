@@ -25,6 +25,9 @@ describe('Folie 1 prompt', () => {
     // Another deck has its own; a reload reads it back.
     expect(loadCreationDraft('d2')).toEqual(EMPTY_CREATION_DRAFT);
     expect(loadCreationDraft('d1')).toEqual(draft);
+    // „KI wählt“ is kept as well.
+    saveCreationDraft('d1', { ...draft, pages: 'ai' });
+    expect(loadCreationDraft('d1').pages).toBe('ai');
     // Broken or foreign storage falls back, never throws.
     localStorage.setItem('slider.creationDraft.d3', '{"description":1');
     expect(loadCreationDraft('d3')).toEqual(EMPTY_CREATION_DRAFT);

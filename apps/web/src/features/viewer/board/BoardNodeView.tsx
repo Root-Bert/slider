@@ -1,5 +1,6 @@
 import {
   formatFileSize,
+  MAX_BOARD_NOTE_LENGTH,
   type AccentColor,
   type AuthorColor,
   type BoardItem,
@@ -8,7 +9,6 @@ import {
 } from '@slider/shared';
 import { NodeResizeControl, useStore, type ControlPosition, type NodeProps } from '@xyflow/react';
 import {
-  Fragment,
   lazy,
   memo,
   Suspense,
@@ -18,9 +18,8 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { accentAlpha, accentColor } from '@/lib/accent';
-import { formatDateTime, formatRelativeTime } from '@/lib/format';
-import { Avatar, cn, ColorSwatches, Icon, ProgressBar, type IconName } from '@/ui';
+import { accentColor } from '@/lib/accent';
+import { cn, ColorSwatches, Icon, ProgressBar, type IconName } from '@/ui';
 import { FrameOutline } from '../stage/FrameOutline';
 import { useNearHandles } from '../stage/hooks/useNearHandles';
 import type { FrameHandle } from '../stage/lib/frame-outline';
@@ -33,10 +32,10 @@ import {
   isMaterial,
   isUploading,
   noteColor,
-  STICKER_TEXT,
   type BoardNode,
 } from './board-nodes';
-import { NoteAnswer } from './NoteAnswer';
+import { NoteCardLook, NoteComposer, type NoteEnd } from './NoteComposer';
+import { NoteThread } from './NoteThread';
 import { notePlaceholder } from './note-answers';
 import type { RichValue } from './RichSticker';
 import { RichText } from './rich-text';
@@ -129,9 +128,13 @@ export const BoardNodeView = memo(function BoardNodeView({
     leaving.current = setTimeout(() => setHovered(false), 250);
   };
   useEffect(() => () => void (leaving.current && clearTimeout(leaving.current)), []);
-  const lit = selected || (box !== null && hovered);
+  const question = item.kind === 'question';
+  // A question, or a box holding nothing: a note on its own, as a comment's card.
+  const card = question || (box !== null && box.boundIds.length === 0);
+  const lit = selected || (box !== null && !card && hovered);
   const resizable =
     data.role !== 'notes' &&
+    !card &&
     !isUploading(item) &&
     (box ? lit && board.mayMove : selected && board.resizable(id));
   const grips = useRef<Partial<Record<FrameHandle, HTMLSpanElement | null>>>({});
@@ -140,12 +143,9 @@ export const BoardNodeView = memo(function BoardNodeView({
 
   if (data.role === 'notes')
     return (
-      <div className="flex w-60 flex-col gap-2" data-notes-of={item.id}>
+      <div className="flex w-72 flex-col gap-2" data-notes-of={item.id}>
         {data.notes.map((note) => (
-          <Fragment key={note.id}>
-            <NoteCard item={note} />
-            <AnswerUnder item={note} className="ml-4" />
-          </Fragment>
+          <NoteCard key={note.id} item={note} />
         ))}
       </div>
     );
@@ -172,15 +172,18 @@ export const BoardNodeView = memo(function BoardNodeView({
         <FolderCard folder={item} />
       ) : item.kind === 'link' ? (
         <LinkCard item={item} />
+      ) : card ? (
+        // Lit too while something dragged would go into it.
+        <CommentNote item={item} selected={selected || target} />
       ) : (
-        <Sticker item={item} lit={lit || target} />
+        <FrameSurface item={item} lit={lit || target} />
       )}
-      {!isMaterial(item) && (item.kind === 'note' || item.kind === 'box') && (
-        // Hanging under the note as a reply under a comment, at least as wide as a note's card.
-        <AnswerUnder
-          item={item}
-          className="absolute top-full left-0 mt-2 w-[max(100%,15rem)] max-w-[max(100%,24rem)]"
-        />
+      {box && !card && (box.text || box.rich || board.editing === box.id) && (
+        // Its note over its top left corner, as a section's name over it: written there in a
+        // comment's composer, then a comment's card with the AI's answer under it.
+        <div className="absolute bottom-full left-0 mb-3 w-72">
+          <CommentNote item={box} selected={selected} />
+        </div>
       )}
       {mark && (
         // Marked as a comment's element on a slide.
@@ -190,24 +193,22 @@ export const BoardNodeView = memo(function BoardNodeView({
           color={accentColor(mark)}
         />
       )}
-      {(box ? lit || target : selected) && board.editing !== item.id && (
-        // As a comment's own box on a slide (`EditableFrame`): its line on its edge, the corners
-        // opening as the pointer nears them, lit (a halo) under the pointer and when picked.
-        <FrameOutline
-          width={width}
-          height={height}
-          scale={zoom}
-          color={color}
-          corners={resizable ? ALL_CORNERS : []}
-          near={near}
-          dome={false}
-          // Lit too while something dragged would join it: a drop target.
-          halo={lit || target}
-        />
-      )}
-      {selected && box && board.editing !== box.id && board.mayEdit(box) && (
-        <ColorBar item={box} zoom={zoom} />
-      )}
+      {(box ? lit || target || board.editing === box.id : selected && board.editing !== item.id) &&
+        !card && (
+          // As a comment's own box on a slide (`EditableFrame`): its line on its edge, the corners
+          // opening as the pointer nears them, lit (a halo) under the pointer and when picked.
+          <FrameOutline
+            width={width}
+            height={height}
+            scale={zoom}
+            color={color}
+            corners={resizable ? ALL_CORNERS : []}
+            near={near}
+            dome={false}
+            // Lit too while something dragged would join it: a drop target.
+            halo={lit || target}
+          />
+        )}
       {resizable &&
         GRIPS.map(({ corner, position }) => (
           <NodeResizeControl
@@ -234,73 +235,18 @@ export const BoardNodeView = memo(function BoardNodeView({
 });
 
 /**
- * A picked note's or frame's colours, in a small glass bar over it as the editor's format bar
- * (the comment colours, `ColorSwatches`) – as large on screen at any zoom.
+ * A box round several things, as a comment's box on a slide: a quiet surface in its note's colour
+ * under what it holds (`textSurface`), its edge the line of its colour while lit. Its note stands
+ * over it (`CommentNote`).
  */
-function ColorBar({ item, zoom }: { item: BoardItem; zoom: number }) {
-  const board = useContext(BoardNodeContext)!;
-  return (
-    <div
-      // Right over its text at the top left, what its colour is about.
-      className="nodrag nopan glass-elevated pointer-events-auto absolute bottom-full left-0 mb-2 origin-bottom-left rounded-panel p-1"
-      style={{ transform: `scale(${1 / zoom})` }}
-      onDoubleClick={(event) => event.stopPropagation()}
-    >
-      <ColorSwatches
-        variant="dot"
-        label="Farbe"
-        value={(item.color ?? item.author.color) as AccentColor}
-        onChange={(color) => board.setColor(item, color)}
-        ringOffset="glass-solid"
-      />
-    </div>
-  );
-}
-
-/**
- * A note on its own: a sticker, as a comment's text on a slide (`TextMark`): its surface and edge
- * (`textSurface`, `textShadow`), lifted under the pointer and when picked – its rich text typed
- * right in it (`RichStickerEditor`).
- */
-function Sticker({ item, lit }: { item: BoardItem; lit: boolean }) {
-  const board = useContext(BoardNodeContext)!;
+function FrameSurface({ item, lit }: { item: BoardItem; lit: boolean }) {
   const color = noteColor(item);
-  const typing = board.editing === item.id;
   return (
     <div
-      data-sticker={item.id}
-      className={cn(
-        'pointer-events-auto size-full overflow-hidden rounded-[0.25em]',
-        STICKER_TEXT,
-        'whitespace-normal',
-      )}
-      style={{
-        ...textSurface(color),
-        // Its edge is the line of its brackets while lit, as a slide's sticker's.
-        boxShadow: textShadow(color, false, lit || typing),
-      }}
-    >
-      {typing ? (
-        <Suspense
-          fallback={
-            <p className="whitespace-pre-wrap opacity-50">{item.text || notePlaceholder()}</p>
-          }
-        >
-          <RichStickerEditor
-            rich={item.rich}
-            text={item.text}
-            placeholder={notePlaceholder()}
-            onDone={(value: RichValue) => board.onNoteDone(item, value)}
-            onAsk={(value: RichValue) => board.onNoteAsk(item, value)}
-            onCancel={() => board.onNoteCancel(item)}
-          />
-        </Suspense>
-      ) : item.rich ? (
-        <RichText rich={item.rich} />
-      ) : (
-        <p className="whitespace-pre-wrap">{item.text}</p>
-      )}
-    </div>
+      data-frame={item.id}
+      className="pointer-events-auto size-full rounded-[0.25em]"
+      style={{ ...textSurface(color), boxShadow: textShadow(color, false, lit) }}
+    />
   );
 }
 
@@ -545,76 +491,237 @@ function LinkCard({ item }: { item: BoardItem }) {
 }
 
 /**
- * A note beside its thing, as a comment card is: its author's avatar and name over the text, on a
- * quiet surface tinted with its colour and edged with it. A click picks it (its panel), a double
- * click types its text again right here, its right click offers Bearbeiten and Löschen.
+ * A note beside its thing, as a comment's card (`NoteCardLook`): a click picks it (its colours under
+ * it), a double click writes it again in a comment's composer right here, its right click offers
+ * Bearbeiten and Löschen. The AI's answer hangs under it as a comment's reply.
  */
 function NoteCard({ item }: { item: BoardItem }) {
   const board = useContext(BoardNodeContext)!;
-  const color = noteColor(item);
-  const accent = accentColor(color);
   const picked = board.isPicked(item.id);
+  const editing = board.editing === item.id;
   return (
-    <article
-      data-note-card={item.id}
-      className={cn(
-        // Its column node takes no pointer of its own (neither picked nor dragged): the card does.
-        'nodrag pointer-events-auto relative flex cursor-pointer flex-col gap-1.5 rounded-control p-3',
-        picked && 'outline-2 outline-offset-2 outline-(--selection)',
-      )}
-      style={{
-        backgroundColor: `color-mix(in srgb, ${accent} 8%, var(--color-glass-solid))`,
-        boxShadow: `inset 0 0 0 1px ${accentAlpha(color, 45)}, var(--shadow-mark)`,
-      }}
-      onClick={(event) => {
-        event.stopPropagation();
-        board.pick(item.id, event.shiftKey || event.metaKey || event.ctrlKey);
-      }}
-      onDoubleClick={(event) => {
-        event.stopPropagation();
-        board.edit(item);
-      }}
-      onContextMenu={(event) => board.onContextMenu(item, event)}
-    >
-      <header className="flex min-w-0 shrink-0 items-center gap-1.5">
-        <Avatar author={item.author} size={20} />
-        <span
-          title={item.author.name}
-          className="min-w-0 truncate text-caption font-medium text-fg"
-        >
-          {item.author.name}
-        </span>
-        <time
-          dateTime={item.createdAt}
-          title={formatDateTime(item.createdAt)}
-          className="ml-auto shrink-0 text-caption text-fg-subtle"
-        >
-          {formatRelativeTime(item.createdAt)}
-        </time>
-      </header>
-      {board.editing === item.id ? (
-        <TextEditor
-          initial={item.text}
-          rows={2}
-          className="field-sizing-content min-h-5 w-full text-body leading-4.5 text-fg"
-          onDone={(text) => board.onNoteDone(item, { text, plain: text, rich: null })}
-          onAsk={(text) => board.onNoteAsk(item, { text, plain: text, rich: null })}
-          onCancel={() => board.onNoteCancel(item)}
-        />
-      ) : (
-        <p className="text-body leading-4.5 break-words whitespace-pre-wrap text-fg">{item.text}</p>
-      )}
-      {picked && board.editing !== item.id && board.mayEdit(item) && <CardColors item={item} />}
-    </article>
+    <NoteThread
+      noteId={item.id}
+      color={noteColor(item)}
+      question={false}
+      entries={board.threadOf(item.id)}
+      actions={board.answers}
+      canReply={board.answers.canComment && !editing && !!item.text}
+      card={(fold) =>
+        editing ? (
+          <TextComposer item={item} />
+        ) : (
+          <NoteCardLook
+            data-note-card={item.id}
+            author={item.author}
+            color={noteColor(item)}
+            createdAt={item.createdAt}
+            selected={picked}
+            trailing={fold.trailing}
+            footer={fold.footer}
+            // Its column node takes no pointer of its own (neither picked nor dragged): the card does.
+            className="nodrag pointer-events-auto relative cursor-pointer"
+            onClick={(event) => {
+              event.stopPropagation();
+              board.pick(item.id, event.shiftKey || event.metaKey || event.ctrlKey);
+            }}
+            onDoubleClick={(event) => {
+              event.stopPropagation();
+              board.edit(item);
+            }}
+            onContextMenu={(event) => board.onContextMenu(item, event)}
+          >
+            <p className="text-body leading-4.5 break-words whitespace-pre-wrap text-fg">
+              {item.text}
+            </p>
+            {picked && board.mayEdit(item) && <CardColors item={item} />}
+          </NoteCardLook>
+        )
+      }
+    />
   );
 }
 
-/** The AI's answer under a note, once asked (⌘↵). */
-function AnswerUnder({ item, className }: { item: BoardItem; className?: string }) {
+/**
+ * A note on its own (a box holding nothing) or a question to the AI, as a comment on a slide:
+ * written in a comment's composer, then a comment's card with the AI's answer under it as its
+ * reply, on the thread's line in its colour. A double click (one's own) writes it again – a
+ * question sent is asked anew; its right click offers the same.
+ */
+function CommentNote({ item, selected }: { item: BoardItem; selected: boolean }) {
   const board = useContext(BoardNodeContext)!;
-  const answer = board.answerOf(item.id);
-  if (!answer) return null;
-  return <NoteAnswer answer={answer} actions={board.answers} className={className} />;
+  const question = item.kind === 'question';
+  // Written again, its answer stays under it as a comment's replies do; a draft left while
+  // another is typed stays a composer – never an empty card.
+  const composing = board.editing === item.id || (!item.text && !item.rich);
+  return (
+    <div
+      data-question={question ? item.id : undefined}
+      data-note={question ? undefined : item.id}
+      className="pointer-events-auto flex w-full flex-col"
+      onContextMenu={composing ? undefined : (event) => board.onContextMenu(item, event)}
+    >
+      <NoteThread
+        noteId={item.id}
+        color={noteColor(item)}
+        question={question}
+        entries={board.threadOf(item.id)}
+        actions={board.answers}
+        canReply={board.answers.canComment && !composing}
+        card={(fold) =>
+          composing ? (
+            question ? (
+              <QuestionComposer item={item} />
+            ) : (
+              <BoxComposer item={item} />
+            )
+          ) : (
+            <NoteCardLook
+              author={item.author}
+              color={noteColor(item)}
+              createdAt={item.createdAt}
+              selected={selected}
+              trailing={fold.trailing}
+              footer={fold.footer}
+              className="relative"
+            >
+              {item.rich ? (
+                <div className="text-body leading-4.5 break-words text-fg">
+                  <RichText rich={item.rich} />
+                </div>
+              ) : (
+                <p className="text-body leading-4.5 break-words whitespace-pre-wrap text-fg">
+                  {item.text}
+                </p>
+              )}
+              {selected && !question && board.mayEdit(item) && <CardColors item={item} />}
+            </NoteCardLook>
+          )
+        }
+      />
+    </div>
+  );
+}
+
+/** A question being written: ↵ sends it (asks the AI), ⇧↵ a new line, Esc drops it. */
+function QuestionComposer({ item }: { item: BoardItem }) {
+  const board = useContext(BoardNodeContext)!;
+  const [text, setText] = useState(item.text);
+  const send = () => {
+    const question = text.trim();
+    if (question) board.onNoteAsk(item, { text: question, plain: question, rich: null });
+  };
+  return (
+    <NoteComposer
+      author={item.author}
+      color={noteColor(item)}
+      createdAt={item.createdAt}
+      fresh={!item.text}
+      label="Frage an die KI"
+      deleteLabel="Frage löschen"
+      sendTitle="Fragt die KI – Esc verwirft"
+      canSend={text.trim() !== ''}
+      onSend={send}
+      onCancel={() => board.onNoteCancel(item)}
+      onDelete={() => board.remove(item)}
+    >
+      <textarea
+        ref={focusHere}
+        value={text}
+        rows={1}
+        aria-label="Frage"
+        placeholder="Was willst du wissen?"
+        maxLength={MAX_BOARD_NOTE_LENGTH}
+        spellCheck
+        className="field-sizing-content block max-h-48 min-h-5 w-full resize-none bg-transparent text-body leading-5 text-fg outline-none placeholder:text-fg-subtle"
+        onChange={(event) => setText(event.target.value)}
+        onFocus={(event) => event.currentTarget.setSelectionRange(text.length, text.length)}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
+          event.preventDefault();
+          send();
+        }}
+      />
+    </NoteComposer>
+  );
+}
+
+/** What a note's composer says, a box's and a card's alike. */
+const NOTE_COMPOSER = {
+  label: 'Notiz',
+  deleteLabel: 'Notiz löschen',
+  sendTitle: 'Legt die Notiz aufs Board – Esc verwirft',
+} as const;
+
+/**
+ * A box's note being written – its rich text (`RichStickerEditor`, its format bar over the
+ * composer): ↵ or „Senden“ puts it down, ⌘↵ or ✨ asks the AI too, Esc or „Abbrechen“ drops it.
+ */
+function BoxComposer({ item }: { item: BoardItem }) {
+  const board = useContext(BoardNodeContext)!;
+  const end = useRef<(how: NoteEnd) => void>(() => {});
+  return (
+    <NoteComposer
+      {...NOTE_COMPOSER}
+      author={item.author}
+      color={noteColor(item)}
+      createdAt={item.createdAt}
+      // Saved ones always have a text: an emptied one is deleted.
+      fresh={!item.text && !item.rich}
+      onSend={() => end.current('done')}
+      onAsk={() => end.current('ask')}
+      onCancel={() => end.current('cancel')}
+      onDelete={() => board.remove(item)}
+    >
+      <Suspense
+        fallback={
+          <p className="min-h-5 text-body leading-5 whitespace-pre-wrap text-fg-subtle">
+            {item.text || notePlaceholder()}
+          </p>
+        }
+      >
+        <RichStickerEditor
+          rich={item.rich}
+          text={item.text}
+          placeholder={notePlaceholder()}
+          className="max-h-64 min-h-5 w-full text-body leading-5 text-fg"
+          onDone={(value: RichValue) => board.onNoteDone(item, value)}
+          onAsk={(value: RichValue) => board.onNoteAsk(item, value)}
+          onCancel={() => board.onNoteCancel(item)}
+          endRef={end}
+        />
+      </Suspense>
+    </NoteComposer>
+  );
+}
+
+/** A note beside a thing being written – plain text (`TextEditor`), as a box's is otherwise. */
+function TextComposer({ item }: { item: BoardItem }) {
+  const board = useContext(BoardNodeContext)!;
+  const end = useRef<(how: NoteEnd) => void>(() => {});
+  return (
+    <NoteComposer
+      {...NOTE_COMPOSER}
+      author={item.author}
+      color={noteColor(item)}
+      createdAt={item.createdAt}
+      fresh={!item.text}
+      onSend={() => end.current('done')}
+      onAsk={() => end.current('ask')}
+      onCancel={() => end.current('cancel')}
+      onDelete={() => board.remove(item)}
+    >
+      <TextEditor
+        initial={item.text}
+        rows={1}
+        className="field-sizing-content max-h-48 min-h-5 w-full text-body leading-5 text-fg placeholder:text-fg-subtle"
+        onDone={(text) => board.onNoteDone(item, { text, plain: text, rich: null })}
+        onAsk={(text) => board.onNoteAsk(item, { text, plain: text, rich: null })}
+        onCancel={() => board.onNoteCancel(item)}
+        endRef={end}
+      />
+    </NoteComposer>
+  );
 }
 
 /** A picked card's colours, under it. */
@@ -638,9 +745,9 @@ function CardColors({ item }: { item: BoardItem }) {
 }
 
 /**
- * Typing a note's or frame's text right where it shows, as in a sticker on a slide: ↵ takes it, ⇧↵
- * a new line, ⌘↵ takes it and asks the AI (`onAsk`), Esc drops it; left with text (a click
- * elsewhere) it is taken too, left empty it goes (a new one at once, one's own after asking).
+ * Typing a note's text in its composer: ↵ takes it, ⇧↵ a new line, ⌘↵ takes it and asks the AI
+ * (`onAsk`), Esc drops it; left with text (a click elsewhere, not into its composer) it is taken
+ * too, left empty it goes (a new one at once, one's own after asking).
  */
 function TextEditor({
   initial,
@@ -649,6 +756,7 @@ function TextEditor({
   onDone,
   onAsk,
   onCancel,
+  endRef,
 }: {
   initial: string;
   className: string;
@@ -656,16 +764,21 @@ function TextEditor({
   onDone: (text: string) => void;
   onAsk?: (text: string) => void;
   onCancel: () => void;
+  /** Set to end it as its keys do – by its composer's buttons (`NoteComposer`). */
+  endRef: { current: (how: NoteEnd) => void };
 }) {
   const [text, setText] = useState(initial);
   const ended = useRef(false);
-  const end = (how: 'done' | 'ask' | 'cancel') => {
+  const end = (how: NoteEnd) => {
     if (ended.current) return;
     ended.current = true;
     if (how === 'cancel' || (!text.trim() && !initial)) onCancel();
     else if (how === 'ask' && onAsk) onAsk(text.trim());
     else onDone(text.trim());
   };
+  useEffect(() => {
+    endRef.current = end;
+  });
   return (
     <textarea
       ref={focusHere}
@@ -683,7 +796,15 @@ function TextEditor({
       style={{ caretColor: 'currentColor' }}
       onChange={(event) => setText(event.target.value)}
       onFocus={(event) => event.currentTarget.setSelectionRange(text.length, text.length)}
-      onBlur={() => end('done')}
+      onBlur={(event) => {
+        // Into its composer's buttons: still typing.
+        if (
+          event.relatedTarget instanceof Element &&
+          event.relatedTarget.closest('[data-sticker-bar]')
+        )
+          return;
+        end('done');
+      }}
       onKeyDown={(event) => {
         event.stopPropagation();
         if (event.key === 'Escape') {

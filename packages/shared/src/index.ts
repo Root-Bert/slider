@@ -30,6 +30,7 @@ export * from './voice';
 export * from './site-live';
 export * from './materials';
 export * from './material-questions';
+export * from './material-chat';
 export * from './markdown-rich';
 export * from './app-connections';
 export * from './deck-creation';

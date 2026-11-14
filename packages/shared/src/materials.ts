@@ -81,9 +81,10 @@ export type Material = z.infer<typeof materialSchema>;
  * (`boundIds`, kept as they are moved in and out), or none; `note`: a text beside one thing
  * (`boundIds` that one: a file, link or folder), no box of its own; `link`: a web address as a
  * card; `folder`: a folder put down (`text` its name, `boundIds` the files in it, shown only when
- * it is opened – a file taken out keeps its `folderId`).
+ * it is opened – a file taken out keeps its `folderId`); `question`: a question to the AI, shown as
+ * a comment with the AI's answer under it (`text` the question, on nothing).
  */
-export const BOARD_ITEM_KINDS = ['box', 'note', 'link', 'folder'] as const;
+export const BOARD_ITEM_KINDS = ['box', 'note', 'link', 'folder', 'question'] as const;
 export type BoardItemKind = (typeof BOARD_ITEM_KINDS)[number];
 
 /** Longest note on the board. */
@@ -154,6 +155,9 @@ export const createBoardItemInputSchema = boardFrameSchema
   })
   .refine((input) => input.boundIds.length === 0 || input.kind !== 'link', {
     message: 'Ein Link hält nichts.',
+  })
+  .refine((input) => input.boundIds.length === 0 || input.kind !== 'question', {
+    message: 'Eine Frage hängt an nichts.',
   })
   .refine((input) => input.kind !== 'note' || input.boundIds.length === 1, {
     message: 'Eine Notiz steht neben genau einem Ding.',

@@ -1,6 +1,6 @@
 import { formatFileSize, type AccentColor, type BoardItem, type Material } from '@slider/shared';
 import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent } from 'react';
-import { createPortal } from 'react-dom';
+import { onMaterialPage } from './material-page';
 import { accentColor } from '@/lib/accent';
 import { formatDateTime, formatRelativeTime } from '@/lib/format';
 import {
@@ -54,13 +54,8 @@ export interface BoardPanelProps {
   onDelete: (item: BoardEntry) => void;
 }
 
-/**
- * Rendered on the material page, at the place of the presentation's side panels: the same
- * surface, backdrop and text colour – never inside the board's transformed, clipped box.
- */
 export function BoardPanel(props: BoardPanelProps) {
-  const host = document.querySelector<HTMLElement>('[data-material-page]') ?? document.body;
-  return createPortal(<BoardPanelView key={props.item.id} {...props} />, host);
+  return onMaterialPage(<BoardPanelView key={props.item.id} {...props} />);
 }
 
 function BoardPanelView({

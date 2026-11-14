@@ -51,9 +51,12 @@ import {
 import { useViewerData } from '../state/viewer-data';
 import { useViewerDispatch, useViewerState } from '../state/viewer-state';
 import {
+  BOX_GAP,
+  BOX_PAD,
   BoardNodeContext,
   boardNodes,
   holding,
+  NOTE_CARD_W,
   reflow,
   inFolders,
   isMaterial,
@@ -68,18 +71,20 @@ import {
 import { BoardNodeView } from './BoardNodeView';
 import { RectFrame } from '../stage/RectFrame';
 import { BoardPanel } from './BoardPanel';
-import { askKeys, useNoteAnswers, type NoteAnswerValue } from './note-answers';
+import { ConnectAppsPanel } from './ConnectAppsPanel';
+import { MaterialChat } from './MaterialChat';
+import { askKeys, useNoteAnswers, useOpenThreads, type NoteAnswerValue } from './note-answers';
 import { droppedItems } from './folder-files';
 import { useBoard, useFolderUploads } from './useBoard';
 
 /*
  * „Material“: the deck's board, a page of its own beside the presentation – a free surface like a moodboard where
  * files, links and notes lie (`useBoard`), shown with React Flow. A drag on the empty surface draws
- * a box as on a slide in Besprechen and the caret goes into it, as into a sticker on a slide: what
- * is typed is the note. Round one thing (a file mostly inside it, or begun on a picked file's
- * preview) the note hangs on it – the box goes, the thing is marked, the note's card stands
- * beside it; round several it hangs on all, its box drawn round them; on empty space it stays a
- * sticker. A click picks (⌘ adds) and opens its side panel, a drag on something moves it, ⌘ and a
+ * a box as on a slide in Besprechen and the note is written in a comment's composer. Round one
+ * thing (a file mostly inside it, or begun on a picked file's preview) the note hangs on it – the
+ * box goes, the thing is marked, the note is written and kept as a comment's card in the column
+ * beside it; round several it hangs on all, its box drawn round them and its card over the box's
+ * top left corner; on empty space it is a comment's card of its own. A click picks (⌘ adds) and opens its side panel, a drag on something moves it, ⌘ and a
  * drag on the surface pick with a box; ⇧ and a drag, the wheel and two fingers move the surface,
  * ⌘ and the wheel or a pinch zoom. Files, pictures, links and text come in by dropping, pasting
  * (⌘V, at the pointer) or „Material hinzufügen“. React Flow only shows it: what is picked and
@@ -95,8 +100,12 @@ const NO_FRAMES: ReadonlyMap<string, BoardFrame> = new Map();
 const NO_IDS: ReadonlySet<string> = new Set();
 /** Room kept around everything shown whole, more under the controls on top. */
 const FIT_PAD = { top: 72, right: 48, bottom: 48, left: 48 };
-/** A note's card beside its box (`w-60` and its gap). */
-const NOTE_CARD_ROOM = 252;
+/** A note's card beside its file (`w-72` and its gap). */
+const NOTE_CARD_ROOM = 300;
+/** A note without a thread (kept, so its card is not drawn anew). */
+const NO_THREAD: readonly NoteAnswerValue[] = [];
+/** A box's note's card over it (about a card's height and its gap). */
+const BOX_CARD_ROOM = 96;
 const px = (n: number) => `${n}px` as const;
 
 /**
@@ -122,8 +131,10 @@ const asUrl = (text: string): string | null => {
 const DRAW_SLOP = 5;
 /** A pasted text's note: its box at the pointer. */
 const PASTED_BOX = { w: 160, h: 80 };
-/** „Fragen“: a note to write the question in, at the middle of what is in view. */
-const QUESTION_BOX = { w: 240, h: 96 };
+/** „Fragen“: a question to the AI, written as a comment, at the middle of what is in view. */
+const QUESTION_BOX = { w: 320, h: 140 };
+/** Between a box's note's card and the box under it (`mb-3` in `BoardNodeView`). */
+const NOTE_ROOM = 12;
 /**
  * Below which width of the controls' row (its content, px) each part gives way – measured with
  * every button there (`canComment`), a few px to spare: labels first, then the zoom, then the
@@ -132,19 +143,17 @@ const QUESTION_BOX = { w: 240, h: 96 };
 const GIVE_WAY = {
   plain: {
     nextcloud: '',
-    ask: '@max-[654px]:hidden',
-    add: '@max-[604px]:hidden',
-    leave: '@max-[474px]:hidden',
-    zoom: '@max-[390px]:hidden',
-    material: '@max-[256px]:hidden',
+    add: '@max-[554px]:hidden',
+    leave: '@max-[424px]:hidden',
+    zoom: '@max-[340px]:hidden',
+    material: '@max-[206px]:hidden',
   },
   nextcloud: {
-    nextcloud: '@max-[768px]:hidden',
-    ask: '@max-[700px]:hidden',
-    add: '@max-[650px]:hidden',
-    leave: '@max-[520px]:hidden',
-    zoom: '@max-[436px]:hidden',
-    material: '@max-[302px]:hidden',
+    nextcloud: '@max-[718px]:hidden',
+    add: '@max-[600px]:hidden',
+    leave: '@max-[470px]:hidden',
+    zoom: '@max-[386px]:hidden',
+    material: '@max-[252px]:hidden',
   },
 } as const;
 /** How much of a thing must lie in a box drawn (or of the box on it) for the note to hang on it. */
@@ -174,20 +183,9 @@ function takenIn(
   return { held: [], beside: under?.id ?? null };
 }
 
-/** A note or box: what may be asked (its text the question). */
+/** A note, box or question: what may be asked (its text the question). */
 const isNote = (item: BoardEntry): item is BoardItem =>
-  !isMaterial(item) && (item.kind === 'note' || item.kind === 'box');
-
-/** Where a new note lies free: from `start`, past whatever it would cover, to the right. */
-function freeSpot(start: BoardFrame, things: readonly BoardFrame[]): { x: number; y: number } {
-  const spot = { ...start };
-  for (let step = 0; step < 50; step++) {
-    const covered = things.filter((thing) => overlap(spot, thing) > 0);
-    if (covered.length === 0) break;
-    spot.x = Math.max(...covered.map((thing) => thing.x + thing.w)) + 24;
-  }
-  return { x: spot.x, y: spot.y };
-}
+  !isMaterial(item) && (item.kind === 'note' || item.kind === 'box' || item.kind === 'question');
 
 const clampZoom = (zoom: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
 
@@ -212,7 +210,7 @@ export const MaterialBoard = memo(function MaterialBoard(props: {
 });
 
 function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void }) {
-  const { canComment, canManage, viewer, aiAuthor } = useViewerData();
+  const { deck, canComment, canManage, viewer, aiAuthor } = useViewerData();
   const {
     board,
     loading,
@@ -220,6 +218,7 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
     addFolder,
     addNote,
     addBox,
+    addQuestion,
     addLink,
     updateText,
     setBound,
@@ -299,8 +298,20 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
   } | null>(null);
   /** A folder to be deleted: asked whether its files go too. */
   const [deletingFolder, setDeletingFolder] = useState<BoardItem | null>(null);
-  // Boxes: holding what lies in them.
-  const frames = useMemo(() => board.items.filter((item) => item.kind === 'box'), [board.items]);
+  // Boxes holding things: holding what lies in them. One holding nothing is a note on its own (a
+  // comment's card): what is dropped on its card it takes in, laid out in a box under the card.
+  const frames = useMemo(
+    () => board.items.filter((item) => item.kind === 'box' && item.boundIds.length > 0),
+    [board.items],
+  );
+  const lone = useMemo(
+    () =>
+      board.items.filter(
+        (item) => item.kind === 'box' && item.boundIds.length === 0 && (item.text || item.rich),
+      ),
+    [board.items],
+  );
+  const threads = useOpenThreads();
   const nodes = useMemo(
     () =>
       boardNodes(board, {
@@ -312,10 +323,27 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
         targets,
         openFolder,
         lifted,
+        threads,
       }),
-    [board, selected, covering, live, canComment, editing, draft, targets, openFolder, lifted],
+    [
+      board,
+      selected,
+      covering,
+      live,
+      canComment,
+      editing,
+      draft,
+      targets,
+      openFolder,
+      lifted,
+      threads,
+    ],
   );
-  const beside = useMemo(() => notesBeside(board.items), [board.items]);
+  // A note being written on a file marks it already.
+  const beside = useMemo(
+    () => notesBeside(draft?.kind === 'note' ? [...board.items, draft] : board.items),
+    [board.items, draft],
+  );
   const own = (item: BoardEntry) => item.author.id === viewer.author.id;
   const mayDelete = (item: BoardEntry) => canManage || (canComment && own(item));
 
@@ -334,7 +362,8 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
   const fitOptions = () => ({
     maxZoom: 1,
     padding: {
-      top: px(FIT_PAD.top),
+      // A box's note stands over it, outside the nodes React Flow fits.
+      top: px(FIT_PAD.top + (frames.length > 0 ? BOX_CARD_ROOM : 0)),
       left: px(FIT_PAD.left),
       // Notes' cards stand beside their boxes and files, outside the nodes React Flow fits.
       right: px(FIT_PAD.right + NOTE_CARD_ROOM + stage.w - w),
@@ -445,6 +474,14 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
           if (!carried.has(id) && !frame.boundIds.includes(id) && things.some((t) => t.id === id))
             if (liesIn(at, frame)) lit.add(frame.id);
       }
+      // …and the notes on their own whose card they would go into.
+      const loose = [...now].filter(([id]) => !carried.has(id) && things.some((t) => t.id === id));
+      if (loose.length > 0)
+        for (const note of lone) {
+          if (now.has(note.id)) continue;
+          const card = cardFrame(note);
+          if (loose.some(([, at]) => liesIn(at, card))) lit.add(note.id);
+        }
       // Drawn before the pointer's event is over: left to React's own time, the thing showed
       // where the pointer was a frame before every other frame – a judder.
       flushSync(() => {
@@ -452,6 +489,57 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
         if (now.size !== lifted.size) setLifted(new Set(now.keys()));
         if ([...lit].join() !== [...targets].join()) setTargets(lit);
       });
+    }
+  };
+
+  // Cards' heights measured once per drag (not on every pointer move): emptied when it settles.
+  const cardHeights = useRef(new Map<string, number>());
+  /** A note's card on its own as it is laid out (as tall as its text and thread), on the board. */
+  const cardFrame = (note: BoardItem): BoardFrame => {
+    const at = live.get(note.id) ?? note;
+    let h = cardHeights.current.get(note.id);
+    if (h === undefined) {
+      const shown = rootRef.current?.querySelector(`[data-note="${note.id}"]`);
+      h = shown ? shown.getBoundingClientRect().height / flow.getZoom() : at.h;
+      cardHeights.current.set(note.id, h);
+    }
+    return { x: at.x, y: at.y, w: at.w, h };
+  };
+
+  /**
+   * Notes on their own taking in what was dropped on their card (`moved`: where things went): each
+   * becomes a box under its card – the card stays where it is, over the box's top left corner as a
+   * box's note stands – with what it took in laid out in a row in it. Into `out`: the new frames.
+   */
+  const takeIntoNotes = (moved: ReadonlyMap<string, BoardFrame>, out: Map<string, BoardFrame>) => {
+    // Carried by a box, or dropped in one (`regroup` binds it there): not a note's as well.
+    const claimed = new Set(frames.filter((f) => moved.has(f.id)).flatMap((f) => f.boundIds));
+    for (const [id, at] of moved)
+      if (frames.some((f) => !moved.has(f.id) && f.id !== id && liesIn(at, f))) claimed.add(id);
+    for (const note of lone) {
+      if (moved.has(note.id)) continue;
+      const card = cardFrame(note);
+      const held = things.flatMap((thing) => {
+        const at = moved.get(thing.id);
+        return at && !claimed.has(thing.id) && liesIn(at, card) ? [{ id: thing.id, ...at }] : [];
+      });
+      if (held.length === 0) continue;
+      for (const each of held) claimed.add(each.id);
+      const row =
+        held.reduce((sum, each) => sum + each.w, 0) + (held.length - 1) * BOX_GAP + 2 * BOX_PAD;
+      const box = {
+        x: card.x,
+        y: card.y + card.h + NOTE_ROOM,
+        w: Math.max(NOTE_CARD_W, row),
+        h: 0,
+      };
+      const laid = reflow(box, held);
+      out.set(note.id, { ...box, w: Math.max(box.w, laid.minW), h: laid.minH });
+      for (const { id, ...at } of laid.frames) out.set(id, at);
+      setBound(
+        note.id,
+        held.map((each) => each.id),
+      );
     }
   };
 
@@ -464,6 +552,7 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
       );
     });
     if (moved.length > 0) move(moved);
+    cardHeights.current.clear();
     setLive(NO_FRAMES);
     setTargets(new Set());
     setLifted(NO_IDS);
@@ -554,7 +643,9 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
       const frame = { x: item.x, y: item.y, w: item.w, h: item.h };
       return item.kind === 'note'
         ? addNote(frame, plain, item.boundIds)
-        : addBox(frame, text, item.boundIds, rich);
+        : item.kind === 'question'
+          ? addQuestion(frame, plain)
+          : addBox(frame, text, item.boundIds, rich);
     }
     // Emptied: deleted once it is confirmed, as a comment is.
     if (!plain) {
@@ -632,18 +723,26 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
       const id = takeNote(item, value);
       if (id) answers.ask(id, item.kind === 'note' ? value.plain : value.text);
     },
-    answerOf: (noteId) => answers.byNote.get(noteId),
+    threadOf: (noteId) => answers.byNote.get(noteId) ?? NO_THREAD,
     answers: {
       ai: aiAuthor,
+      me: viewer.author.id,
       byId: fileById,
       canComment,
       streaming: answers.streaming,
       stop: answers.stop,
       retry: (answer) => {
+        if (answer.kind === 'reply') {
+          answers.ask(answer.noteId, answer.question, { replaces: answer });
+          return;
+        }
         const note = board.items.find((each) => each.id === answer.noteId);
         if (note?.text.trim()) answers.ask(note.id, note.text);
       },
       remove: setDeletingAnswer,
+      reply: (noteId, text, ask) => answers.ask(noteId, text, { kind: 'reply', ask }),
+      askReply: (reply) => answers.ask(reply.noteId, reply.question, { replaces: reply }),
+      removeReply: answers.removeReply,
       openSource: (material, page) => {
         if (!material.url) return;
         const at = page && material.kind === 'pdf' ? `#page=${page}` : '';
@@ -653,6 +752,11 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
     onNoteCancel: (item) => {
       setEditing(null);
       if (item.id === draft?.id) setDraft(null);
+    },
+    remove: (item) => {
+      setEditing(null);
+      setSelected(new Set());
+      remove([item.id]);
     },
     // Drawn in the move's own task: left pending, React Flow's observer (its store updated at once)
     // rendered it inside the observer round – the card resized again there, „ResizeObserver loop
@@ -734,39 +838,13 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
       color: null,
       rich: null,
       ...rect,
+      // Holding nothing: a comment's card where it was begun, as wide as a question's.
+      ...(!beside && held.length === 0 && { w: QUESTION_BOX.w, h: QUESTION_BOX.h }),
       createdAt: new Date().toISOString(),
     };
     setSelected(new Set());
     setDraft(note);
     setEditing(note.id);
-  };
-  /** „Fragen“: a note in the middle of what is in view, typed in at once – ⌘↵ asks the AI. */
-  const startQuestion = () => {
-    const start = { ...middle(), ...QUESTION_BOX };
-    const at = freeSpot(start, items);
-    const note: BoardItem = {
-      id: crypto.randomUUID(),
-      deckId: '',
-      author: viewer.author,
-      kind: 'box',
-      text: '',
-      url: null,
-      boundIds: [],
-      color: null,
-      rich: null,
-      ...at,
-      ...QUESTION_BOX,
-      createdAt: new Date().toISOString(),
-    };
-    setSelected(new Set());
-    setDraft(note);
-    setEditing(note.id);
-    // Moved aside to lie free: the board follows it.
-    if (at.x !== start.x)
-      void flow.setCenter(at.x + QUESTION_BOX.w / 2, at.y + QUESTION_BOX.h / 2, {
-        zoom,
-        duration: 300,
-      });
   };
   /** A box drawn from `a` to `b` (screen points) in board units; `null` while it is a click. */
   const boardRect = (a: { x: number; y: number }, b: { x: number; y: number }) => {
@@ -884,17 +962,27 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
     !(editing && picked.id === editing)
       ? picked
       : undefined;
+  // The AI's chat (✨) or how KI-Apps connect („Material“) – in the same place; picking a thing
+  // shows its panel instead.
+  const [sideView, setSideView] = useState<'chat' | 'apps' | null>(null);
+  const side = panelItem ? null : sideView;
+  if (panelItem && sideView) setSideView(null);
+  const toggleSide = (view: 'chat' | 'apps') => {
+    setSelected(new Set());
+    setSideView((now) => (now === view ? null : view));
+  };
   // One of the deck's side panels, floating over the board as over the slides: open while one
-  // thing is picked (gone with it).
+  // thing is picked (gone with it), or the chat or the apps' panel.
   useEffect(() => {
-    dispatch({ type: 'boardPanelSet', open: !!panelItem });
-  }, [dispatch, panelItem]);
+    dispatch({ type: 'boardPanelSet', open: !!panelItem || side !== null });
+  }, [dispatch, panelItem, side]);
   useEffect(() => () => dispatch({ type: 'boardPanelSet', open: false }), [dispatch]);
   // Closed elsewhere (Esc, leaving the material page): what was picked is let go.
   const [panelShown, setPanelShown] = useState(false);
   if (viewerState.boardPanelOpen !== panelShown) {
     setPanelShown(viewerState.boardPanelOpen);
     if (panelShown && panelItem) setSelected(new Set());
+    if (panelShown && side) setSideView(null);
   }
   const names = useMemo(
     () =>
@@ -931,9 +1019,12 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
           dropping && 'ring-hairline-strong',
         )}
         style={selectionStyle(viewer.author.color)}
-        // React Flow's pane takes the press for itself: the board gets the focus for its keys.
+        // React Flow's pane takes the press for itself: the board gets the focus for its keys – not
+        // from a note being typed by its own bars (format bar, „Senden“ beside it).
         onPointerDownCapture={(event) => {
-          if (!isTextTarget(event.target)) rootRef.current?.focus({ preventScroll: true });
+          const target = event.target instanceof Element ? event.target : null;
+          if (!isTextTarget(event.target) && !target?.closest('[data-sticker-bar]'))
+            rootRef.current?.focus({ preventScroll: true });
         }}
         onPointerDown={startDrawing}
         onPointerMove={(event) => {
@@ -1003,6 +1094,7 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
                       grown = holding(grown, at);
                   if (grown !== box) out.set(box.id, grown);
                 }
+                takeIntoNotes(moved, out);
                 regroup(moved);
                 settle([...out].map(([id, frame]) => ({ id, ...frame })));
               }}
@@ -1044,7 +1136,7 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
               panOnDrag={[1]}
               panActivationKeyCode="Shift"
               panOnScroll
-              panOnScrollMode={PanOnScrollMode.Vertical}
+              panOnScrollMode={PanOnScrollMode.Free}
               zoomOnScroll={false}
               zoomOnPinch
               zoomOnDoubleClick={false}
@@ -1122,13 +1214,25 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
           className={cn(
             'pointer-events-none absolute inset-x-0 top-0 z-(--z-raised) @container flex items-center gap-2 p-3',
             // The side panel floats over the board's right: the controls stay left of it.
-            panelItem && 'md:pr-[412px]',
+            (panelItem || side) && 'md:pr-[412px]',
           )}
         >
-          <GlassPanel className="pointer-events-auto flex h-10 shrink-0 items-center gap-1.5 px-3.5 text-body font-medium text-fg">
-            <Icon name="attachFile" size={18} />
-            <span className={giveWay.material}>Material</span>
-            {fileCount > 0 && <span className="text-fg-subtle">{fileCount}</span>}
+          {/* „Material“: how Claude, ChatGPT … reach it over MCP. */}
+          <GlassPanel className="pointer-events-auto flex h-10 shrink-0 items-center">
+            <button
+              type="button"
+              aria-expanded={side === 'apps'}
+              title="Mit KI-Apps verbinden"
+              onClick={() => toggleSide('apps')}
+              className={cn(
+                'flex h-full items-center gap-1.5 rounded-[inherit] px-3.5 text-body font-medium text-fg hover:bg-hover',
+                side === 'apps' && 'bg-hover',
+              )}
+            >
+              <Icon name="attachFile" size={18} />
+              <span className={giveWay.material}>Material</span>
+              {fileCount > 0 && <span className="text-fg-subtle">{fileCount}</span>}
+            </button>
           </GlassPanel>
           {/* One pill like the presentation's controls: every part 40 high. */}
           <Toolbar role={false} className="pointer-events-auto ml-auto shrink-0">
@@ -1152,17 +1256,15 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
             </span>
             {/* Asking spends the workspace's AI: not for Betrachter, as no other AI is. */}
             {canComment && (
-              <Button
-                size="sm"
-                variant="ghost"
+              <IconButton
                 icon="autoAwesome"
-                className="rounded-control"
-                aria-label="Frage an die KI"
-                title={`Frage an die KI – in eine Notiz geschrieben, ${askKeys()} fragt`}
-                onClick={startQuestion}
-              >
-                <span className={giveWay.ask}>Fragen</span>
-              </Button>
+                label="KI"
+                title="KI – fragt das Material, recherchiert, legt Ergebnisse aufs Board"
+                size="sm"
+                active={side === 'chat'}
+                aria-expanded={side === 'chat'}
+                onClick={() => toggleSide('chat')}
+              />
             )}
             {canComment && (
               <>
@@ -1218,9 +1320,9 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
           </Toolbar>
         </div>
 
-        {!loading && items.length === 0 && (
+        {!loading && items.length === 0 && !draft && (
           // Under the controls, never behind them: a low board drops the icon, then the second
-          // line, then the hint itself.
+          // line, then the hint itself. Gone as the first note or question is written.
           <div className="pointer-events-none absolute inset-x-0 top-14 bottom-0 z-(--z-raised) [container-type:size]">
             <div className="flex size-full flex-col items-center justify-center gap-2 overflow-hidden px-6 pb-3 text-center [@container(max-height:6rem)]:hidden [@container(max-width:16rem)]:hidden">
               <Icon
@@ -1242,6 +1344,16 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
           </div>
         )}
       </div>
+      {side === 'chat' && (
+        <MaterialChat
+          deckId={deck.id}
+          ai={aiAuthor}
+          byId={fileById}
+          openSource={context.answers.openSource}
+          onClose={() => setSideView(null)}
+        />
+      )}
+      {side === 'apps' && <ConnectAppsPanel onClose={() => setSideView(null)} />}
       {panelItem && (
         <BoardPanel
           item={panelItem}
@@ -1276,7 +1388,14 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
         open={deletingAnswer !== null}
         onClose={() => setDeletingAnswer(null)}
         title="Antwort löschen?"
-        description={`Die Notiz bleibt – mit ${askKeys()} lässt sie sich wieder fragen.`}
+        description={
+          deletingAnswer?.kind === 'reply'
+            ? `Die Antwort von ${deletingAnswer.author?.name ?? 'dir'} bleibt – ✨ fragt die KI wieder.`
+            : items.find((item) => item.id === deletingAnswer?.noteId && !isMaterial(item))
+                  ?.kind === 'question'
+              ? 'Die Frage bleibt – „KI nochmal fragen“ fragt sie wieder.'
+              : `Die Notiz bleibt – mit ${askKeys()} lässt sie sich wieder fragen.`
+        }
         confirmLabel="Löschen"
         confirmIcon="delete"
         onConfirm={() => {
@@ -1328,7 +1447,7 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
       <ConfirmDialog
         open={emptied !== null}
         onClose={() => setEmptied(null)}
-        title="Notiz löschen?"
+        title={emptied?.kind === 'question' ? 'Frage löschen?' : 'Notiz löschen?'}
         description="Das lässt sich nicht rückgängig machen."
         confirmLabel="Löschen"
         confirmIcon="delete"
@@ -1340,14 +1459,22 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
       {menuAt &&
         createPortal(
           <ContextMenu
-            label={'Aktionen für diese Notiz'}
+            label={
+              menuAt.item.kind === 'question'
+                ? 'Aktionen für diese Frage'
+                : 'Aktionen für diese Notiz'
+            }
             at={menuAt}
             onClose={() => setMenuAt(null)}
             actions={[
               ...(askable(menuAt.item)
                 ? [
                     {
-                      label: answers.byNote.has(menuAt.item.id) ? 'KI nochmal fragen' : 'KI fragen',
+                      label: answers.byNote
+                        .get(menuAt.item.id)
+                        ?.some((entry) => entry.kind === 'note')
+                        ? 'KI nochmal fragen'
+                        : 'KI fragen',
                       icon: 'autoAwesome' as const,
                       onSelect: () => answers.ask(menuAt.item.id, menuAt.item.text),
                     },
@@ -1360,7 +1487,8 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
                       icon: 'edit' as const,
                       onSelect: () => setEditing(menuAt.item.id),
                     },
-                    ...ACCENT_COLORS.map((color) => ({
+                    // A question is a comment: in its author's colour, as comments are.
+                    ...(menuAt.item.kind === 'question' ? [] : ACCENT_COLORS).map((color) => ({
                       label: ACCENT_COLOR_NAMES[color],
                       icon: (
                         <span

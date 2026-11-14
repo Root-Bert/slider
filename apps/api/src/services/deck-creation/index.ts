@@ -2,6 +2,9 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { and, count, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import {
+  DECK_KINDS,
+  MAX_CREATED_SLIDES,
+  MIN_CREATED_SLIDES,
   outlineSlideSchema,
   type DeckCreation,
   type OutlineSlide,
@@ -52,6 +55,18 @@ import { photoSource } from '../stock-photos';
 import { deckBytesFromMaster } from '../workspace-masters';
 import { touchDeck } from '../decks';
 import { kindBrief } from './kinds';
+
+/** How many slides the outline gets: as asked, or („KI wählt“) as many as the content needs. */
+const slidesWanted = (input: StartDeckCreationInput) =>
+  input.pages
+    ? `${input.pages} slides`
+    : `as many slides as the content needs (${MIN_CREATED_SLIDES}–${MAX_CREATED_SLIDES})`;
+
+/** The slide count for the brief. */
+const slidesBrief = (input: StartDeckCreationInput) =>
+  input.pages
+    ? `It has ${input.pages} slides (the title slide included).`
+    : `Choose how many slides it has, the title slide included: as many as the content and the material need – ${MIN_CREATED_SLIDES} to ${MAX_CREATED_SLIDES}, for this kind usually about ${DECK_KINDS.find((each) => each.id === input.kind)?.pages ?? 10}. Fewer strong slides beat padding.`;
 
 /*
  * A new deck built by the AI from the prompt on Folie 1 (see docs/do-not-break.md, „A new deck is
@@ -130,7 +145,7 @@ const CREATE_SYSTEM = `You build a new presentation in Slider from what the peop
 
 How the run goes:
 1. Read the material that matters for the deck – list_materials, read_material, read_sheet, search_materials, view_material – and look at the layouts the deck offers (your first message shows them). Ask for several looks in one answer: they run at the same time.
-2. Call write_outline with exactly as many slides as asked: title, key message and kind of slide for each. It is shown to the people at once.
+2. Call write_outline with exactly as many slides as asked (or, left to you, as many as the content needs): title, key message and kind of slide for each. It is shown to the people at once.
 3. Then you are asked for the slides one after another. Build only the slide asked for, then stop with one short sentence; the next is asked for after that. Each slide is shown to the people as soon as you stop.
 
 Building a slide:
@@ -446,7 +461,7 @@ async function build(
         content: [
           {
             type: 'text',
-            text: `What the deck is to be about, in the words of ${viewer.author.name}:\n${input.description}\n\n${kindBrief(input.kind)}\n\nIt has ${input.pages} slides (the title slide included). The page is ${size.width} × ${size.height} cm.`,
+            text: `What the deck is to be about, in the words of ${viewer.author.name}:\n${input.description}\n\n${kindBrief(input.kind)}\n\n${slidesBrief(input)} The page is ${size.width} × ${size.height} cm.`,
           },
           { type: 'text', text: `The design brief:\n${deck.brief()}` },
           ...(Array.isArray(layouts) ? layouts : [{ type: 'text' as const, text: layouts }]),
@@ -464,7 +479,7 @@ async function build(
           },
           {
             type: 'text',
-            text: `First read what you need, then call write_outline with ${input.pages} slides.`,
+            text: `First read what you need, then call write_outline with ${slidesWanted(input)}.`,
           },
         ] as Anthropic.Beta.BetaContentBlockParam[],
       },
@@ -553,19 +568,23 @@ async function build(
       if (await stopped(deps, deckId, signal)) return;
       const { message, calls } = await turn();
       if (calls.length === 0) {
-        tell(`Call write_outline now, with ${input.pages} slides.`);
+        tell(`Call write_outline now, with ${slidesWanted(input)}.`);
         continue;
       }
       const results = await answer(message, calls, (slides) => {
         if (outline) return 'The outline is written already.';
-        outline = slides.slice(0, input.pages + 2);
+        if (!input.pages && slides.length < MIN_CREATED_SLIDES)
+          return `Too few slides: write the outline again with ${MIN_CREATED_SLIDES} to ${MAX_CREATED_SLIDES}.`;
+        outline = slides.slice(0, input.pages ? input.pages + 2 : MAX_CREATED_SLIDES);
         return 'Outline saved and shown to the people.';
       });
       messages.push({ role: 'user', content: results });
     }
     const plan = outline as OutlineSlide[] | null;
     if (!plan) throw new ApiError(500, 'internal', 'Die KI hat keine Gliederung geschrieben.');
-    if (!(await update(deps, deckId, { outline: plan }, true))) return;
+    // „KI wählt“: its outline says how many.
+    if (!(await update(deps, deckId, { outline: plan, pages: input.pages ?? plan.length }, true)))
+      return;
     deps.log.info(
       `Deck creation ${deckId.slice(0, 8)}: outline of ${plan.length} slides in ${((Date.now() - startedAt) / 1000).toFixed(1)} s`,
     );
