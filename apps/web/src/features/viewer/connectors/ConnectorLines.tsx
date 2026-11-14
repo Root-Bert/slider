@@ -10,7 +10,7 @@ import {
   type ConnectorRoute,
 } from './hooks/useConnectorLayout';
 import {
-  connectorAnchor,
+  connectorAnchors,
   connectorExits,
   fadesDone,
   gapKey,
@@ -67,17 +67,16 @@ export const ConnectorLines = memo(function ConnectorLines({
         slide.shapes,
         slide.aspectRatio,
       );
-      const marks = threads.map((thread) => {
+      const roots = threads.map((thread) => {
         byId.set(thread.id, thread);
-        const root =
-          preview?.threadId === thread.id
-            ? {
-                ...thread.root,
-                anchor: { type: 'rect' as const, rect: preview.rect, shapeRef: null },
-              }
-            : thread.root;
-        return connectorAnchor(root, slide.shapes);
+        return preview?.threadId === thread.id
+          ? {
+              ...thread.root,
+              anchor: { type: 'rect' as const, rect: preview.rect, shapeRef: null },
+            }
+          : thread.root;
       });
+      const marks = connectorAnchors(roots, slide.shapes, slide.aspectRatio);
       const exits = connectorExits(marks, slide.aspectRatio);
       threads.forEach((thread, markIndex) => {
         const mark = marks[markIndex];

@@ -165,6 +165,10 @@ Decrypt the deck's blob (`EncryptedBlobStorage` + `.data/data-key`), then from `
   wrong verifier spends the code too. Access `slider_at_` 1 h, refresh `slider_rt_` rotates (old
   one dead) and dies after 180 days unused, tokens from /konto `slider_pat_` never expire. Only
   SHA-256 hashes are stored; „Entfernen“ ends access at once.
+- The connector's icon: before connecting, the app only has the site (`/api/mcp` is 401 without a
+  token) – `/favicon.ico` (light mark, PNG inside, made from `favicon.svg`; renderers outside
+  browsers ignore its `<style>`) is what such fetchers find; once connected, `serverInfo.icons`
+  (`favicon.svg`, `icon-192.png`, absolute on `webOrigin`).
 - Discovery lives at the origin's root (`/.well-known/oauth-protected-resource/api/mcp`,
   `oauth-authorization-server`, `openid-configuration`); issuer = `webOrigin`. Vite proxies
   `/.well-known` in dev; a reverse proxy in front of the API must pass it too. Desktop: no OAuth

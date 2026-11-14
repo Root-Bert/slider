@@ -1,12 +1,16 @@
 import type { MeResponse, UpdateMeInput } from '@slider/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '../api-client';
+import { api, pageIsFor } from '../api-client';
 import { queryKeys } from './keys';
 
 export const useMe = () =>
   useQuery({
     queryKey: queryKeys.me,
-    queryFn: () => api.get<MeResponse>('/me'),
+    queryFn: async () => {
+      const me = await api.get<MeResponse>('/me');
+      pageIsFor(me.user?.id ?? null);
+      return me;
+    },
     staleTime: Infinity,
     // Back in the tab: pick up a role change, a removal or a session ended elsewhere (the
     // 401 then goes to the login, see `app/query-client.ts`).

@@ -190,7 +190,7 @@ function TablePoster({ family, near }: PosterProps) {
           {family.family}
         </span>
         <Meta>
-          {SOURCE_LABELS[family.source]} · {pluralize(family.faces.length, 'Schnitt', 'Schnitte')}
+          {SOURCE_LABELS[family.source]} | {pluralize(family.faces.length, 'Schnitt', 'Schnitte')}
         </Meta>
       </span>
       {GLYPHS.slice(8).map((glyph, i) => (

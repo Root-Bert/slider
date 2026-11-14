@@ -354,10 +354,30 @@ export interface ConnectorAnchor {
 /** Radius of a pin (PowerPoint ones too: their "P" badge sits beside the dot), in px. */
 const PIN_RADIUS = 7;
 
+/** On the slide's bottom edge at `x`: where the line of a comment on the whole slide leaves. */
+const slideAnchorAt = (x: number): ConnectorAnchor => {
+  const point = { x, y: 1 };
+  return {
+    left: x,
+    right: x,
+    start: { left: point, right: point },
+    bottom: point,
+    inset: { left: 0, right: 0, bottom: 0 },
+  };
+};
+/** Placed by `connectorAnchors`, away from the other lines leaving downwards. */
+const SLIDE_ANCHOR = slideAnchorAt(0.5);
+/** How far (in slide widths, about a tenth) such a line keeps from other drops, where it can. */
+const SLIDE_SPOT_ROOM = 0.08;
+/** Where along the bottom edge such a line may leave: the middle first, then outwards. */
+const SLIDE_SPOTS = Array.from({ length: 19 }, (_, index) => (index + 1) / 20).sort(
+  (a, b) => Math.abs(a - 0.5) - Math.abs(b - 0.5),
+);
+
 /**
  * Start of the connector line for a comment: the edge of its pin, the middle of its frame's
- * left / right edge, or – for drawings – the drawing's outermost point (an arrow's tail, a
- * circle's side). `null` for gap comments and slide-level comments without a drawing.
+ * left / right edge, for drawings the drawing's outermost point (an arrow's tail, a circle's
+ * side), for a comment on the whole slide the middle of its bottom edge. `null` for gap comments.
  */
 export function connectorAnchor(
   comment: Pick<Comment, 'anchor' | 'strokes' | 'source'>,
@@ -408,6 +428,8 @@ export function connectorAnchor(
         inset: { left: left.pad, right: right.pad, bottom: bottom.pad },
       };
   }
+  // About the slide as a whole: the line leaves the middle of its bottom edge.
+  if (anchor.type === 'slide') return SLIDE_ANCHOR;
   if (anchor.type !== 'point') return null;
   const rect = anchorRect(comment, shapes)!;
   const point = { x: rect.x, y: rect.y };
@@ -448,6 +470,33 @@ export function connectorExits(
 }
 
 /**
+ * `connectorAnchor` of each comment on one slide, the lines of comments on the whole slide
+ * spread along its bottom edge where no other line drops – two drops at one spot read as one.
+ */
+export function connectorAnchors(
+  comments: readonly Pick<Comment, 'anchor' | 'strokes' | 'source'>[],
+  shapes: readonly Shape[],
+  aspectRatio?: number,
+): (ConnectorAnchor | null)[] {
+  const anchors = comments.map((comment) => connectorAnchor(comment, shapes));
+  if (!anchors.includes(SLIDE_ANCHOR)) return anchors;
+  const exits = connectorExits(anchors, aspectRatio);
+  const taken = anchors.flatMap((anchor, index) =>
+    anchor && anchor !== SLIDE_ANCHOR && exits[index] === 'down' ? [anchor.bottom.x] : [],
+  );
+  const room = (x: number) => Math.min(...taken.map((other) => Math.abs(other - x)));
+  return anchors.map((anchor) => {
+    if (anchor !== SLIDE_ANCHOR) return anchor;
+    // The spot nearest the middle clear of every drop, else the one farthest from them.
+    const x =
+      SLIDE_SPOTS.find((spot) => room(spot) >= SLIDE_SPOT_ROOM) ??
+      SLIDE_SPOTS.reduce((best, spot) => (room(spot) > room(best) ? spot : best));
+    taken.push(x);
+    return slideAnchorAt(x);
+  });
+}
+
+/**
  * Card order for the active slide (B1): clockwise around the slide – lines leaving to the left
  * from top to bottom, lines leaving downwards from left to right, then lines leaving to the right
  * from bottom to top, then comments without a line. Lanes and cards then follow the same order
@@ -458,7 +507,11 @@ export function sortThreadsClockwise(
   shapes: readonly Shape[],
   aspectRatio?: number,
 ): Thread[] {
-  const anchors = threads.map((thread) => connectorAnchor(thread.root, shapes));
+  const anchors = connectorAnchors(
+    threads.map((thread) => thread.root),
+    shapes,
+    aspectRatio,
+  );
   const exits = connectorExits(anchors, aspectRatio);
   const keyed = threads.map((thread, index) => {
     const anchor = anchors[index];

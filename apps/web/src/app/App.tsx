@@ -1,12 +1,15 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from 'react-router/dom';
 import { installEditOutbox } from '@/features/viewer';
+import { followAccountSwitches } from '@/lib/api';
 import { createQueryClient } from './query-client';
 import { router } from './router';
 
 const queryClient = createQueryClient();
 // The editor's unsent edits go out whichever page is open – also those a closed tab left.
 installEditOutbox(queryClient);
+// Another tab switched accounts or signed out: this one follows.
+followAccountSwitches();
 
 export function App() {
   return (

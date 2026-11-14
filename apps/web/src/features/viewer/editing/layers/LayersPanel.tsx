@@ -141,7 +141,7 @@ function LayersPanelView({ slideId }: { slideId: string }) {
         <div className="flex items-center gap-2">
           <Icon name="layers" size={20} className="shrink-0 text-fg-muted" />
           <h2 id={titleId} className="min-w-0 flex-1 truncate text-base font-semibold text-fg">
-            Ebenen · Folie {number}
+            Ebenen | Folie {number}
           </h2>
           <IconButton
             icon="close"

@@ -110,6 +110,19 @@ export type StartEmailLoginInput = z.infer<typeof startEmailLoginInputSchema>;
 export const confirmEmailLoginInputSchema = z.object({ token: z.string().min(1).max(200) });
 export type ConfirmEmailLoginInput = z.infer<typeof confirmEmailLoginInputSchema>;
 
+/**
+ * `POST /auth/email/code`: the code from the login mail, typed in the browser that asked for it –
+ * for when the link opens in another one (the desktop app's mail opens the system browser).
+ */
+export const emailLoginCodeInputSchema = z.object({
+  code: z
+    .string()
+    .max(20)
+    .transform((code) => code.replace(/\s/g, ''))
+    .pipe(z.string().regex(/^\d{6}$/, 'Der Code hat sechs Ziffern.')),
+});
+export type EmailLoginCodeInput = z.input<typeof emailLoginCodeInputSchema>;
+
 /** Signed in (session cookie set) – `newAccount`: the link just created it. */
 export const emailLoginResultSchema = loginResultSchema.extend({ newAccount: z.boolean() });
 export type EmailLoginResult = z.infer<typeof emailLoginResultSchema>;
@@ -169,6 +182,24 @@ export const meUserSchema = z.object({
   isInstanceAdmin: z.boolean(),
 });
 export type MeUser = z.infer<typeof meUserSchema>;
+
+/**
+ * Another account signed in on this browser (`GET /auth/accounts`): switched to without signing
+ * in again, with its workspaces – the workspace switcher lists them under it.
+ */
+export interface SignedInAccount {
+  user: Pick<MeUser, 'id' | 'name' | 'email' | 'color'>;
+  workspaces: Pick<Workspace, 'id' | 'name' | 'logoUrl' | 'role'>[];
+}
+
+export const switchAccountInputSchema = z.object({ userId: z.string().min(1) });
+/**
+ * `POST /auth/accounts/logout`: signs one account of this browser out – `userId` another one
+ * signed in here, without it the one in use (the next then takes over).
+ */
+export const signOutAccountInputSchema = z.object({ userId: z.string().min(1).optional() });
+export type SignOutAccountInput = z.infer<typeof signOutAccountInputSchema>;
+export type SwitchAccountInput = z.infer<typeof switchAccountInputSchema>;
 
 // ── Plans (BER-130, BER-152) ────────────────────────────────────────────────
 

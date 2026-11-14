@@ -92,6 +92,8 @@ export const workspaceKeys = {
   /** „KI-Apps“: AI apps let into the account over MCP. */
   appConnections: ['account', 'app-connections'] as const,
   identities: ['account', 'identities'] as const,
+  /** The other accounts signed in on this browser (`GET /auth/accounts`). */
+  otherAccounts: ['account', 'others'] as const,
   /** Nextcloud accounts connected for files (`GET /me/nextcloud`, BER-135). */
   nextcloud: ['account', 'nextcloud'] as const,
   nextcloudSettings: ['nextcloud', 'settings'] as const,

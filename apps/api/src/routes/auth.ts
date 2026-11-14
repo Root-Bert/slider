@@ -4,10 +4,13 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import {
   confirmEmailLoginInputSchema,
+  emailLoginCodeInputSchema,
   confirmNextcloudSignUpInputSchema,
   discoverSsoInputSchema,
   startEmailLoginInputSchema,
   startNextcloudSignInInputSchema,
+  signOutAccountInputSchema,
+  switchAccountInputSchema,
   type AuthProviders,
   type EmailLoginResult,
   type LoginError,
@@ -15,6 +18,7 @@ import {
   type LoginResult,
   type NextcloudLoginStart,
   type NextcloudSignInPoll,
+  type SignedInAccount,
   type SsoLogin,
 } from '@slider/shared';
 import { emailVerifiedFalse, type IdTokenClaims } from '../auth/id-token';
@@ -34,8 +38,15 @@ import {
   nextcloudAuthorizeUrl,
   type NextcloudUser,
 } from '../auth/nextcloud-login';
-import { endSession, startSession } from '../auth/session';
-import { optionalViewerMiddleware, type OptionalViewerEnv } from '../auth/viewer';
+import {
+  endAllSessions,
+  endOtherAccount,
+  endSession,
+  otherAccounts,
+  startSession,
+  switchAccount,
+} from '../auth/session';
+import { optionalViewerMiddleware, viewerMiddleware, type OptionalViewerEnv } from '../auth/viewer';
 import { workspaceSsoClient } from '../auth/workspace-sso';
 import type { AppDeps } from '../deps';
 import { ApiError, notFound } from '../http/errors';
@@ -54,6 +65,7 @@ import {
 import {
   EMAIL_LOGIN_TTL_MS,
   emailIdentity,
+  redeemEmailCode,
   redeemEmailLogin,
   sendEmailLogin,
 } from '../services/email-login';
@@ -69,6 +81,7 @@ import {
   findSsoForWorkspace,
   getRole,
   joinByDomain,
+  listWorkspaces,
 } from '../services/workspaces';
 
 /**
@@ -116,6 +129,13 @@ export const EMAIL_LOGIN_COOKIE = 'slider_email_login';
 const EMAIL_LOGIN_MAILS_PER_ADDRESS = 5;
 /** Login links per client address and hour; a company behind one NAT signs in now and then. */
 const EMAIL_LOGIN_MAILS_PER_CLIENT = 30;
+/**
+ * Login codes typed per address and hour (`/auth/email/code`), whichever browser asked: past
+ * them the open links of the browser trying are used up.
+ */
+const EMAIL_LOGIN_CODES_PER_ADDRESS = 10;
+/** Login codes typed per client address and hour; a company behind one NAT signs in now and then. */
+const EMAIL_LOGIN_CODES_PER_CLIENT = 60;
 const COOKIE_MAX_AGE = 10 * 60;
 /** Where a return path falls back to: the import page. */
 const DEFAULT_RETURN_TO = '/neu';
@@ -361,6 +381,26 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
   };
   const emailLoginAddressLimit = hourly(EMAIL_LOGIN_MAILS_PER_ADDRESS);
   const emailLoginClientLimit = hourly(EMAIL_LOGIN_MAILS_PER_CLIENT);
+  /** Codes typed per address and hour: a guess hits one in a million. */
+  const emailCodeLimit = hourly(EMAIL_LOGIN_CODES_PER_ADDRESS);
+  const emailCodeClientLimit = hourly(EMAIL_LOGIN_CODES_PER_CLIENT);
+
+  /** A mailed link used (by itself or its code): signs in, or creates the account. */
+  const signInByMail = async (
+    c: Context,
+    link: { email: string; inviteToken: string | null; returnTo: string },
+  ) => {
+    const target = safeReturnTo(link.returnTo, DEFAULT_LOGIN_RETURN_TO);
+    const signIn = await signInWithIdentity(deps, emailIdentity(link.email, link.inviteToken));
+    if (!signIn.ok) {
+      return c.json<EmailLoginResult>({
+        redirectTo: loginErrorPath(signIn.error, target),
+        newAccount: false,
+      });
+    }
+    await startSession(c, deps, signIn.user.id);
+    return c.json<EmailLoginResult>({ redirectTo: target, newAccount: signIn.created });
+  };
 
   return (
     new Hono<OptionalViewerEnv>()
@@ -413,7 +453,44 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
       })
 
       .post('/auth/logout', async (c) => {
-        await endSession(c, deps);
+        await endAllSessions(c, deps);
+        return c.body(null, 204);
+      })
+
+      // ── More accounts on one browser ─────────────────────────────────────
+      .get('/auth/accounts', viewerMiddleware(deps), async (c) => {
+        const accounts = await otherAccounts(c, deps);
+        return c.json<SignedInAccount[]>(
+          await Promise.all(
+            accounts.map(async (user) => ({
+              user: { id: user.id, name: user.name, email: user.email, color: user.color },
+              workspaces: (await listWorkspaces(deps, user.id)).map(
+                ({ id, name, logoUrl, role }) => ({ id, name, logoUrl, role }),
+              ),
+            })),
+          ),
+        );
+      })
+
+      // „Abmelden“ of the account in use only: another one signed in here takes over.
+      // `viewer`: a page loaded for another account than the browser is on (`account_changed`)
+      // must not sign that one out.
+      .post('/auth/accounts/logout', viewer, async (c) => {
+        const { userId } = await readJson(c, signOutAccountInputSchema, undefined, {
+          allowEmpty: true,
+        });
+        if (!userId) await endSession(c, deps);
+        else if (!(await endOtherAccount(c, deps, userId))) {
+          throw notFound('Dieses Konto ist hier nicht mehr angemeldet.');
+        }
+        return c.body(null, 204);
+      })
+
+      .post('/auth/accounts/switch', viewerMiddleware(deps), async (c) => {
+        const { userId } = await readJson(c, switchAccountInputSchema);
+        if (!(await switchAccount(c, deps, userId))) {
+          throw notFound('Dieses Konto ist hier nicht mehr angemeldet. Bitte melde dich neu an.');
+        }
         return c.body(null, 204);
       })
 
@@ -848,16 +925,22 @@ export function authRoutes(deps: AppDeps, gate: InstanceGate) {
           token,
           await readSignedCookie(c, config, EMAIL_LOGIN_COOKIE),
         );
-        const target = safeReturnTo(link.returnTo, DEFAULT_LOGIN_RETURN_TO);
-        const signIn = await signInWithIdentity(deps, emailIdentity(link.email, link.inviteToken));
-        if (!signIn.ok) {
-          return c.json<EmailLoginResult>({
-            redirectTo: loginErrorPath(signIn.error, target),
-            newAccount: false,
-          });
-        }
-        await startSession(c, deps, signIn.user.id);
-        return c.json<EmailLoginResult>({ redirectTo: target, newAccount: signIn.created });
+        return signInByMail(c, link);
+      })
+
+      // The mail's code, typed where the link was asked for (it opened in another browser).
+      .post('/auth/email/code', async (c) => {
+        const { code } = await readJson(c, emailLoginCodeInputSchema);
+        const browser = await readSignedCookie(c, config, EMAIL_LOGIN_COOKIE);
+        assertWithinLimit(
+          c,
+          emailCodeClientLimit.hit(clientAddress(c)),
+          'Zu viele Versuche. Bitte warte etwas und fordere dann einen neuen Link an.',
+        );
+        return signInByMail(
+          c,
+          await redeemEmailCode(deps, code, browser, (email) => emailCodeLimit.hit(email).allowed),
+        );
       })
   );
 }

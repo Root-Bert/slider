@@ -73,6 +73,7 @@ import type { DomainWorkspace, MeLimits, MeUser, PendingInvite, Workspace } from
  * | POST   | /auth/nextcloud/confirm                | ConfirmNextcloudSignUpInput | LoginResult (sets cookie) |
  * | POST   | /auth/email/start                      | StartEmailLoginInput       | 204 (mails a login link) |
  * | POST   | /auth/email/confirm                    | ConfirmEmailLoginInput     | EmailLoginResult (sets cookie) |
+ * | POST   | /auth/email/code                       | EmailLoginCodeInput        | EmailLoginResult (sets cookie) |
  * | POST   | /auth/passkey/options                  |                            | WebAuthn request options |
  * | POST   | /auth/passkey/verify                   | VerifyPasskeyLoginInput    | LoginResult (sets cookie) |
  * | GET    | /me/nextcloud                          |                            | NextcloudConnection[] |
@@ -83,7 +84,10 @@ import type { DomainWorkspace, MeLimits, MeUser, PendingInvite, Workspace } from
  * | POST   | /passkeys/register/verify              | VerifyPasskeyRegistrationInput | Passkey (201)     |
  * | PATCH  | /passkeys/:id                          | RenamePasskeyInput         | Passkey               |
  * | DELETE | /passkeys/:id                          |                            | 204                   |
- * | POST   | /auth/logout                           |                            | 204 (clears session)  |
+ * | POST   | /auth/logout                           |                            | 204 (signs every account on this browser out) |
+ * | GET    | /auth/accounts                         |                            | SignedInAccount[] (the others on this browser) |
+ * | POST   | /auth/accounts/switch                  | SwitchAccountInput         | 204 (sets cookie)     |
+ * | POST   | /auth/accounts/logout                  | –                          | 204 (the account in use; the next takes over) |
  * | GET    | /workspaces                            |                            | Workspace[]           |
  * | POST   | /workspaces                            | CreateWorkspaceInput       | Workspace (201)       |
  * | GET    | /workspaces/:id                        |                            | Workspace             |
@@ -120,11 +124,21 @@ import type { DomainWorkspace, MeLimits, MeUser, PendingInvite, Workspace } from
 
 export const API_PREFIX = '/api';
 
+/**
+ * The account a page was loaded for (its user id), sent with its requests. A browser holds
+ * several accounts and one is in use: switched in another tab, or handed over when a session
+ * ended, a page still open would write as the wrong one – the server answers `account_changed`
+ * (409) instead, and the page starts over.
+ */
+export const ACCOUNT_HEADER = 'x-slider-account';
+
 export const ERROR_CODES = [
   'bad_request',
   'not_found',
   'forbidden',
   'unauthorized',
+  /** The browser is on another account than the page asking (`ACCOUNT_HEADER`). */
+  'account_changed',
   'unsupported_link',
   /** The Microsoft login is not set up on this server. */
   'microsoft_not_configured',

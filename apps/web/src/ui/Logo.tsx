@@ -9,10 +9,12 @@ const LETTER_SPREAD = 5;
 /**
  * The mark's colours: `brand` the theme's orange ones; `mono` the brand guide's monochrome icon
  * (greys per theme – the app's own header); `onOrange` the Dock tile's colours for the mark on
- * Slider orange – the AI's avatar, its white comment box edged in orange (the tile's double edge,
- * as thin as it reads this small). They override the logo tokens the parts are painted with.
+ * Slider orange (the website), its white comment box edged in orange (the tile's double edge, as
+ * thin as it reads this small); `onGrey` the same in the monochrome icon's greys, on
+ * `bg-logo-grey` – the AI's avatar in the app. They override the logo tokens the parts are
+ * painted with.
  */
-export type LogoTone = 'brand' | 'mono' | 'onOrange';
+export type LogoTone = 'brand' | 'mono' | 'onOrange' | 'onGrey';
 const TONES: Record<LogoTone, CSSProperties | undefined> = {
   brand: undefined,
   mono: {
@@ -27,6 +29,13 @@ const TONES: Record<LogoTone, CSSProperties | undefined> = {
     '--color-logo-lines': '#e3583d',
     '--color-logo': '#ffffff',
     '--color-logo-outline': '#e3583d',
+  } as CSSProperties,
+  onGrey: {
+    '--color-logo-back': '#a3a3a3',
+    '--color-logo-front': '#7a7a7a',
+    '--color-logo-lines': 'var(--color-logo-grey)',
+    '--color-logo': '#ffffff',
+    '--color-logo-outline': 'var(--color-logo-grey)',
   } as CSSProperties,
 };
 

@@ -7,7 +7,7 @@ import {
   type PublicKeyCredentialRequestOptionsJSON,
 } from '@simplewebauthn/browser';
 import type { LoginResult, Passkey } from '@slider/shared';
-import { api, ApiError } from './api-client';
+import { accountKey, api, ApiError } from './api-client';
 import { readString, writeString } from './storage';
 
 /** Passkeys (WebAuthn) in the browser: sign in, register, and what to say when it fails. */
@@ -57,8 +57,8 @@ export function passkeyErrorMessage(error: unknown): string {
   return 'Der Passkey konnte nicht verwendet werden. Bitte versuche es erneut.';
 }
 
-/** Hint "Schneller anmelden: Passkey hinzufügen" – dismissed per browser. */
+/** Hint "Schneller anmelden: Passkey hinzufügen" – dismissed per browser and account. */
 const HINT_KEY = 'slider.passkeyHintDismissed';
-export const passkeyHintDismissed = (): boolean => readString(HINT_KEY) === '1';
+export const passkeyHintDismissed = (): boolean => readString(accountKey(HINT_KEY)) === '1';
 /** Private mode & co.: the hint simply comes back next time. */
-export const dismissPasskeyHint = (): void => writeString(HINT_KEY, '1');
+export const dismissPasskeyHint = (): void => writeString(accountKey(HINT_KEY), '1');

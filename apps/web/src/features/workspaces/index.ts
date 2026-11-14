@@ -1,6 +1,7 @@
 /** Public API of the workspaces feature. Route pages stay out, so they keep their own lazy chunks. */
 export { AccountMenu } from './components/AccountMenu';
 export { OnlineMembers } from './components/OnlineMembers';
+export { OtherAccounts } from './components/OtherAccounts';
 export { PlanBadge } from './components/PlanUsage';
 export { UsageOverview } from './components/UsageOverview';
 export { WorkspaceMark } from './components/WorkspaceMark';

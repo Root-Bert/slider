@@ -106,7 +106,7 @@ export function SlideTransitionPicker({
     >
       <header className="flex items-center gap-3">
         <h2 className="pl-1 text-sm font-medium text-fg">
-          Übergang{number !== null && ` · Folie ${number}`}
+          Übergang{number !== null && ` | Folie ${number}`}
         </h2>
         {current === null && (
           <span className="text-caption text-fg-faint">Eigener Übergang aus der Datei</span>

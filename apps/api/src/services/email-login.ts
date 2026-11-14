@@ -1,9 +1,10 @@
+import { createHmac } from 'node:crypto';
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import { loginPath } from '../auth/login-paths';
 import { hashToken, newSecretToken } from '../auth/session';
 import { loginLinks, userIdentities, type IdentityProvider } from '../db/schema';
 import type { AppDeps } from '../deps';
-import { ApiError, forbidden, notFound } from '../http/errors';
+import { ApiError, badRequest, forbidden, notFound } from '../http/errors';
 import { inviteMail } from '../mail/mailer';
 import {
   findUserByEmail,
@@ -24,6 +25,10 @@ import { sendMail } from './data-requests';
  * cookie's key is stored with it): someone who types a stranger's address can't use the link
  * the stranger then opens. Only hashes of the token are kept (`login_links`); the hourly
  * retention sweep removes old rows.
+ *
+ * The mail also carries a six-digit code for when the link opens in another browser – asked for
+ * in the desktop app, the mail opens the system browser. The code is typed where the link was
+ * asked for and works only there, bound like the link (`redeemEmailCode`).
  */
 
 /** How long a mailed link works. */
@@ -63,6 +68,15 @@ const PROVIDER_NAMES: Record<IdentityProvider, string | null> = {
   // An account with this login gets a link, never this mail.
   email: null,
 };
+
+/**
+ * The code of a link: six digits from the server's secret and the token's hash – nothing more to
+ * store, and the hash alone (a database dump) does not give it.
+ */
+export function emailLoginCode(secret: string, tokenHash: string): string {
+  const digest = createHmac('sha256', secret).update(`email-login-code:${tokenHash}`).digest();
+  return String(digest.readUInt32BE(0) % 1_000_000).padStart(6, '0');
+}
 
 const USED_MESSAGE =
   'Diesen Link hast du schon benutzt. Fordere auf der Anmeldeseite einen neuen an, falls du nicht mehr angemeldet bist.';
@@ -119,9 +133,11 @@ export async function sendEmailLogin(
   }
 
   const token = newSecretToken();
+  const tokenHash = hashToken(token);
+  const code = emailLoginCode(deps.config.secret, tokenHash);
   const now = deps.clock.now();
   await deps.db.insert(loginLinks).values({
-    tokenHash: hashToken(token),
+    tokenHash,
     email,
     browserHash: hashToken(input.browser),
     inviteToken: input.inviteToken,
@@ -140,8 +156,13 @@ export async function sendEmailLogin(
         : 'Mit diesem Link erstellst du dein Slider-Konto, ganz ohne Passwort. Danach kannst du einen Passkey anlegen und dich künftig damit anmelden.',
       button: known ? 'Anmelden' : 'Konto erstellen',
       url: url(`/anmelden/${token}`),
+      code: {
+        label:
+          'Öffnet sich der Link in einem anderen Browser, etwa aus der Slider-App heraus? Dann gib dort, wo du ihn angefordert hast, diesen Code ein:',
+        value: code,
+      },
       outro:
-        'Öffne den Link im selben Browser, in dem du ihn angefordert hast. Er gilt 15 Minuten und nur einmal. Du warst das nicht? Dann ignoriere diese Mail.',
+        'Link und Code gelten 15 Minuten, nur einmal und nur dort, wo du sie angefordert hast. Du warst das nicht? Dann ignoriere diese Mail.',
     }),
   );
 }
@@ -190,6 +211,62 @@ export async function redeemEmailLogin(
   if (link.usedAt) throw new ApiError(410, 'link_expired', USED_MESSAGE);
   // Another browser: the link stays unused and still works in the right one.
   throw forbidden(
-    'Öffne den Link bitte im selben Browser, in dem du ihn angefordert hast. Nur dort meldet er dich an.',
+    'Angefordert hast du den Link woanders, etwa in der Slider-App. Gib dort den Code aus der Mail ein, oder öffne den Link in dem Browser, in dem du ihn angefordert hast.',
   );
+}
+
+/**
+ * Uses a mailed link by its code, typed in the browser that asked for it (`browser`, its signed
+ * cookie's key) – what `redeemEmailLogin` gives, or why not. Only that browser's links count, so a
+ * code is no use anywhere else; the route limits the tries.
+ */
+export async function redeemEmailCode(
+  deps: AppDeps,
+  code: string,
+  browser: string | undefined,
+  /** Counts a try at the links of `email`; `false`: too many – they are used up. */
+  mayTry: (email: string) => boolean,
+): Promise<{ email: string; inviteToken: string | null; returnTo: string }> {
+  const now = deps.clock.now();
+  const open = browser
+    ? and(
+        eq(loginLinks.browserHash, hashToken(browser)),
+        isNull(loginLinks.usedAt),
+        gt(loginLinks.expiresAt, now),
+      )
+    : undefined;
+  const links = open
+    ? await deps.db
+        .select({ tokenHash: loginLinks.tokenHash, email: loginLinks.email })
+        .from(loginLinks)
+        .where(open)
+    : [];
+  // Guessing: a fresh browser key per mail asked for would give ten tries each – so the tries
+  // count per address, and past them this browser's links are gone (the link in the mail too).
+  if (open && [...new Set(links.map((link) => link.email))].some((email) => !mayTry(email))) {
+    await deps.db.update(loginLinks).set({ usedAt: now }).where(open);
+    throw new ApiError(
+      429,
+      'rate_limited',
+      'Zu viele falsche Codes. Fordere bitte einen neuen Link an.',
+    );
+  }
+  const match = links.find((link) => emailLoginCode(deps.config.secret, link.tokenHash) === code);
+  if (!match) {
+    throw badRequest(
+      'Der Code stimmt nicht oder ist abgelaufen. Schau in die neueste Mail oder fordere einen neuen an.',
+    );
+  }
+  // Unused still – in one step, so a double submit signs in once.
+  const [used] = await deps.db
+    .update(loginLinks)
+    .set({ usedAt: now })
+    .where(and(eq(loginLinks.tokenHash, match.tokenHash), isNull(loginLinks.usedAt)))
+    .returning({
+      email: loginLinks.email,
+      inviteToken: loginLinks.inviteToken,
+      returnTo: loginLinks.returnTo,
+    });
+  if (!used) throw new ApiError(410, 'link_expired', USED_MESSAGE);
+  return used;
 }

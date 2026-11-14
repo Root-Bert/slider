@@ -5,7 +5,7 @@ import {
   type MaterialQuestion,
 } from '@slider/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, proxyError, unreachableError, ApiError } from '../api-client';
+import { accountHeader, api, proxyError, unreachableError, ApiError } from '../api-client';
 import { queryKeys } from './keys';
 
 /** The threads under the material page's notes – the AI's answers and the replies – everyone's. */
@@ -50,7 +50,11 @@ export async function postEventStream<E>(
     response = await fetch(`${API_PREFIX}${path}`, {
       method: 'POST',
       credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        ...accountHeader(),
+      },
       body: JSON.stringify(body),
       signal,
     });

@@ -6,12 +6,13 @@ import type {
   NextcloudLoginStart,
   NextcloudSignInPoll,
   Passkey,
+  SignedInAccount,
   SsoLogin,
   StartEmailLoginInput,
   StartNextcloudSignInInput,
 } from '@slider/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '../api-client';
+import { api, leavingAccount, onAccountChanged } from '../api-client';
 import { forgetOffline } from '../offline';
 import { registerPasskey } from '../passkeys';
 import { queryKeys, workspaceKeys } from './keys';
@@ -46,6 +47,10 @@ export const startEmailLogin = (input: StartEmailLoginInput) =>
 /** The link from the login mail: signs in, or creates the account. */
 export const confirmEmailLogin = (token: string) =>
   api.post<EmailLoginResult>('/auth/email/confirm', { token });
+
+/** The code from the login mail, typed in this browser – where its link was asked for. */
+export const confirmEmailCode = (code: string) =>
+  api.post<EmailLoginResult>('/auth/email/code', { code });
 
 // ── Account: connected logins and passkeys ──────────────────────────────────
 
@@ -100,6 +105,94 @@ export function useDeletePasskey() {
   });
 }
 
+// ── More accounts on one browser ────────────────────────────────────────────
+
+/** The other accounts signed in on this browser, each with its workspaces. */
+export const useOtherAccounts = (enabled = true) =>
+  useQuery({
+    queryKey: workspaceKeys.otherAccounts,
+    queryFn: () => api.get<SignedInAccount[]>('/auth/accounts'),
+    enabled,
+  });
+
+/**
+ * Tabs of this browser hear here that another tab changed the account. One object per tab: what
+ * it posts reaches the other tabs, never itself.
+ */
+let accountChannel: BroadcastChannel | null | undefined;
+const channel = () =>
+  (accountChannel ??=
+    typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('slider-account'));
+
+/**
+ * Switches this browser to another account signed in here. What the browser kept of the one in
+ * use for offline goes first – its queued edits must not go out under the other account; every
+ * other tab starts over (`followAccountSwitches`). The caller then loads the new account's page.
+ */
+export function useSwitchAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (userId: string) => {
+      // Requests on their way come back `account_changed`: this page is leaving anyway.
+      leavingAccount(true);
+      try {
+        await api.post<void>('/auth/accounts/switch', { userId });
+      } catch (error) {
+        leavingAccount(false);
+        throw error;
+      }
+      // Only once switched: a switch refused keeps what the browser holds for this account.
+      await forgetOffline();
+      announceAccountChange();
+    },
+    // Signed out there meanwhile: no longer offered.
+    onError: () => queryClient.invalidateQueries({ queryKey: workspaceKeys.otherAccounts }),
+  });
+}
+
+/**
+ * Signs the account in use out, here only: the next one signed in on this browser takes over
+ * (none left: the login). As switching – what the browser kept of it goes first.
+ */
+export function useSignOutAccount() {
+  return useMutation({
+    mutationFn: async () => {
+      leavingAccount(true);
+      try {
+        await api.post<void>('/auth/accounts/logout');
+      } catch (error) {
+        leavingAccount(false);
+        throw error;
+      }
+      await forgetOffline();
+      announceAccountChange();
+    },
+  });
+}
+
+/** Signs another account signed in on this browser out; the one in use stays as it is. */
+export function useSignOutOtherAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => api.post<void>('/auth/accounts/logout', { userId }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: workspaceKeys.otherAccounts }),
+  });
+}
+
+/** Tells the other tabs that this browser's account changed. */
+export function announceAccountChange(): void {
+  channel()?.postMessage('changed');
+}
+
+/** Another tab changed the account: this one starts over on the start page, in the new one. */
+export function followAccountSwitches(): void {
+  const listening = channel();
+  if (listening) listening.onmessage = () => window.location.assign('/');
+  // Signed in as another account on a fresh page (no switch announced it): the tabs still open
+  // for the first one start over too.
+  onAccountChanged(announceAccountChange);
+}
+
 /**
  * Signs out; what the browser kept of the account for offline goes with it. The caller then loads
  * the login page fresh, which also drops every cached response.
@@ -109,5 +202,6 @@ export const useLogout = () =>
     mutationFn: async () => {
       await api.post<void>('/auth/logout');
       await forgetOffline();
+      announceAccountChange();
     },
   });

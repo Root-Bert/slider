@@ -10,6 +10,9 @@ import { fileURLToPath } from 'node:url';
 
 const electron = createRequire(import.meta.url)('electron');
 
+/** Made anew when Electron changes – or how the clone is made (`+icon`). */
+const stampOf = (version) => `${version}+icon`;
+
 function sliderApp() {
   const dist = fileURLToPath(new URL('../node_modules/electron/dist/', import.meta.url));
   const source = `${dist}Electron.app`;
@@ -17,7 +20,7 @@ function sliderApp() {
   const app = `${dir}Slider.app`;
   const version = readFileSync(`${dist}version`, 'utf8').trim();
   const stamp = `${dir}version`;
-  if (!existsSync(app) || !existsSync(stamp) || readFileSync(stamp, 'utf8') !== version) {
+  if (!existsSync(app) || !existsSync(stamp) || readFileSync(stamp, 'utf8') !== stampOf(version)) {
     rmSync(dir, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true });
     execFileSync('cp', ['-cR', source, app]);
@@ -25,11 +28,33 @@ function sliderApp() {
     for (const key of ['CFBundleName', 'CFBundleDisplayName']) {
       execFileSync('plutil', ['-replace', key, '-string', 'Slider', plist]);
     }
+    // The bundle's own icon too: Mission Control and the app switcher show that one, not the
+    // Dock icon the app sets while running.
+    const iconset = `${dir}Slider.iconset`;
+    mkdirSync(iconset, { recursive: true });
+    const icon = fileURLToPath(new URL('../icon.png', import.meta.url));
+    for (const size of [16, 32, 128, 256, 512]) {
+      for (const scale of [1, 2]) {
+        const name = `icon_${size}x${size}${scale === 2 ? '@2x' : ''}.png`;
+        const px = String(size * scale);
+        execFileSync('sips', ['-z', px, px, icon, '--out', `${iconset}/${name}`], {
+          stdio: 'ignore',
+        });
+      }
+    }
+    execFileSync('iconutil', [
+      '-c',
+      'icns',
+      iconset,
+      '-o',
+      `${app}/Contents/Resources/electron.icns`,
+    ]);
+    rmSync(iconset, { recursive: true, force: true });
     // LaunchServices learns the name when the bundle is registered.
     const lsregister =
       '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister';
     if (existsSync(lsregister)) execFileSync(lsregister, ['-f', app]);
-    writeFileSync(stamp, version);
+    writeFileSync(stamp, stampOf(version));
   }
   return `${app}/Contents/MacOS/Electron`;
 }

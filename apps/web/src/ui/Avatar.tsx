@@ -26,7 +26,7 @@ interface AvatarProps {
  * UI kit "Avatar": circle with a pastel presence ring around a DiceBear avatar seeded by the
  * name, so everyone has one (PowerPoint authors too). A deleted account shows a plain person
  * icon instead – no avatar that could still point to who it was (BER-145); the AI the app icon's
- * mark on a Slider orange circle (as the website's `AiMark`).
+ * mark in the monochrome icon's greys on a grey circle (the website's `AiMark` wears the orange).
  */
 export function Avatar({
   author,
@@ -47,8 +47,8 @@ export function Avatar({
       title={nativeTitle ? author.name : undefined}
     >
       {author.type === 'ai' ? (
-        <span className="flex size-full items-center justify-center rounded-full bg-logo">
-          <LogoMark width={Math.round(size * 0.66)} tone="onOrange" />
+        <span className="flex size-full items-center justify-center rounded-full bg-logo-grey">
+          <LogoMark width={Math.round(size * 0.66)} tone="onGrey" />
         </span>
       ) : author.type === 'deleted' ? (
         <span

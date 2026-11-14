@@ -89,7 +89,7 @@ function Swatch({
   size: 'sm' | 'lg';
   onCopy: (color: TemplateColor) => void;
 }) {
-  const title = color.name ? `${color.name} · ${hexName(color.color)}` : hexName(color.color);
+  const title = color.name ? `${color.name} | ${hexName(color.color)}` : hexName(color.color);
   const dot = (
     <span
       aria-hidden

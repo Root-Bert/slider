@@ -176,7 +176,6 @@ function ClaimInstance({ initialToken }: { initialToken: string | null }) {
  */
 function AdminOnly() {
   const user = useMe().data?.user;
-  const logout = useLogout();
   if (!user) {
     return (
       <Notice tone="warning">
@@ -195,21 +194,11 @@ function AdminOnly() {
           <Button
             size="sm"
             variant="secondary"
-            loading={logout.isPending}
-            onClick={() =>
-              logout.mutate(undefined, {
-                // A full page load: everything cached belongs to the account signed out.
-                onSuccess: () => window.location.assign(routes.login(SETUP_PATH)),
-              })
-            }
+            // One more account on this browser: the one signed in stays.
+            onClick={() => window.location.assign(routes.addAccount(SETUP_PATH))}
           >
             Mit anderem Konto anmelden
           </Button>
-          {logout.error && (
-            <ErrorText role="alert" size="xs">
-              Abmelden hat nicht geklappt. Bitte erneut versuchen.
-            </ErrorText>
-          )}
         </div>
       }
     >

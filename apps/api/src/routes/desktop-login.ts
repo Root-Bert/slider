@@ -8,7 +8,7 @@ import {
   type DesktopCode,
   type DesktopToken,
 } from '@slider/shared';
-import { createSession, endSessionToken } from '../auth/session';
+import { createSession, DESKTOP_USER_AGENT, endSessionToken } from '../auth/session';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import { users } from '../db/schema';
 import type { AppDeps } from '../deps';
@@ -99,7 +99,7 @@ export function desktopLoginRoutes(deps: AppDeps) {
       taken.set(claims.n, claims.e);
       const [user] = await deps.db.select().from(users).where(eq(users.id, claims.u));
       if (!user) throw invalidCode();
-      const { token } = await createSession(deps, user.id, 'Slider Desktop');
+      const { token } = await createSession(deps, user.id, DESKTOP_USER_AGENT);
       return c.json<DesktopToken>({
         token,
         account: {

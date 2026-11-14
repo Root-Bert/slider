@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { CloudSync } from '@slider/shared';
 import { useNavigate } from 'react-router';
 import { editsUnsentBeforeSignOut } from '@/features/viewer';
+import { takeAccountNotice } from '@/lib/api-client';
 import { routes } from '@/lib/routes';
 import { desktopBridge } from '@/lib/desktop-bridge';
 import { forgetOffline } from '@/lib/offline';
@@ -10,9 +11,11 @@ import {
   useAuthProviders,
   useCloudSignOut,
   useCloudStatus,
-  useCloudSyncNow,
+  useDesktopState,
   useLogout,
   useMe,
+  useOtherAccounts,
+  useSignOutOtherAccount,
   usePasskeys,
   useStartCloudSignIn,
 } from '@/lib/api';
@@ -30,7 +33,10 @@ import {
   type Segment,
   SegmentedControl,
   Spinner,
+  Toast,
+  useToast,
 } from '@/ui';
+import { MAX_OTHER_ACCOUNTS, useAccountSwitch } from '../hooks/useAccountSwitch';
 import { HeaderPopover } from './HeaderPopover';
 
 const THEMES: readonly Segment<ThemePreference>[] = [
@@ -65,7 +71,6 @@ export function AccountMenu() {
   const cloudAccount = cloud.data?.account ?? null;
   const startCloud = useStartCloudSignIn();
   const cloudSignOut = useCloudSignOut();
-  const syncNow = useCloudSyncNow();
   const [confirmCloudSignOut, setConfirmCloudSignOut] = useState(false);
   const navigate = useNavigate();
   const [hintWanted, setHintWanted] = useState(
@@ -76,6 +81,24 @@ export function AccountMenu() {
   // Waiting for edits on their way before signing out, and how many were left unsent (to confirm).
   const [checking, setChecking] = useState(false);
   const [unsent, setUnsent] = useState<number | null>(null);
+  // More accounts on this browser – and in the desktop app's server pages, as in Figma (not on
+  // this computer's own pages: they are the app's one account).
+  const accountsShown = Boolean(me?.user) && !desktop;
+  const desktopState = useDesktopState();
+  /** The app's account, when the pages are on another one: only its decks are kept offline. */
+  const offlineAccount =
+    bridge && desktopState?.account && desktopState.account.email !== me?.user?.email
+      ? desktopState.account
+      : null;
+  const others = useOtherAccounts(accountsShown).data ?? [];
+  const accounts = useAccountSwitch();
+  const signOutOther = useSignOutOtherAccount();
+  // On another account than this browser was on before: said once, whoever changed it.
+  const [toast, showToast] = useToast();
+  const email = me?.user?.email;
+  useEffect(() => {
+    if (email && takeAccountNotice()) showToast(`Angemeldet als ${email}`);
+  }, [email, showToast]);
   if (!me) return null;
   const user = me.user;
   if (!user) return <Avatar author={me.viewer.author} size={32} />;
@@ -158,6 +181,77 @@ export function AccountMenu() {
                 />
               </div>
             )}
+            {accountsShown && (
+              <>
+                <MenuDivider />
+                {others.map((other) => (
+                  // As a workspace's row: its own button over the right edge – here „Abmelden“.
+                  <div key={other.user.id} className="group relative">
+                    <MenuItem
+                      icon={
+                        <Avatar
+                          author={{ ...other.user, type: 'owner' }}
+                          size={20}
+                          nativeTitle={false}
+                        />
+                      }
+                      title={`Zu ${other.user.name} wechseln`}
+                      disabled={accounts.busy}
+                      dimDisabled={false}
+                      className="pr-10 group-hover:bg-hover"
+                      onClick={() => accounts.switchTo(other.user.id)}
+                    >
+                      <span className="flex min-w-0 flex-col">
+                        <span className="truncate">{other.user.name}</span>
+                        <span className="truncate text-xs text-fg-subtle">{other.user.email}</span>
+                      </span>
+                    </MenuItem>
+                    {/* Not the desktop app's own account: that goes with its copies („Von allen
+                        Konten abmelden“). */}
+                    {other.user.email !== desktopState?.account?.email && (
+                      <IconButton
+                        icon="logout"
+                        label={`${other.user.email} abmelden`}
+                        variant="subtle"
+                        size="compact"
+                        className="absolute top-1/2 right-1 -translate-y-1/2"
+                        disabled={signOutOther.isPending}
+                        onClick={() => signOutOther.mutate(other.user.id)}
+                      />
+                    )}
+                  </div>
+                ))}
+                {bridge && !bridge.addAccount ? null : others.length < MAX_OTHER_ACCOUNTS ? (
+                  <MenuItem
+                    icon="personAdd"
+                    disabled={accounts.busy}
+                    onClick={() => {
+                      // In the desktop app the browser comes to the front for it.
+                      if (bridge) close();
+                      accounts.addAccount();
+                    }}
+                  >
+                    Weiteres Konto hinzufügen
+                  </MenuItem>
+                ) : (
+                  // One more would push the oldest out unseen.
+                  <p className="px-3 py-1.5 text-xs text-fg-subtle">
+                    Mehr als fünf Konten gehen hier nicht. Melde zuerst eins ab.
+                  </p>
+                )}
+                {(accounts.error ?? signOutOther.error?.message) && (
+                  <ErrorText role="alert" size="xs" className="px-3 pt-0.5 pb-1.5">
+                    {accounts.error ?? signOutOther.error?.message}
+                  </ErrorText>
+                )}
+                {offlineAccount && (
+                  <p className="px-3 pt-0.5 pb-1.5 text-xs text-fg-subtle">
+                    Offline verfügbar: nur Präsentationen von{' '}
+                    {offlineAccount.email ?? offlineAccount.name}
+                  </p>
+                )}
+              </>
+            )}
             <MenuDivider />
             <MenuItem
               icon="person"
@@ -226,23 +320,11 @@ export function AccountMenu() {
                 <MenuDivider />
                 {cloudAccount ? (
                   <>
-                    <MenuItem
-                      icon={
-                        syncNow.isPending || cloud.data?.sync?.state === 'syncing' ? (
-                          <Spinner size={18} />
-                        ) : (
-                          <Icon name="sync" size={18} className="text-fg-subtle" />
-                        )
-                      }
-                      onClick={() => syncNow.mutate()}
-                    >
-                      <span className="flex min-w-0 flex-col">
-                        <span>Jetzt synchronisieren</span>
-                        <span className="truncate text-xs text-fg-subtle">
-                          {syncLine(cloud.data?.sync ?? null)}
-                        </span>
-                      </span>
-                    </MenuItem>
+                    {syncTrouble(cloud.data?.sync ?? null) && (
+                      <p className="px-3 pt-0.5 pb-1.5 text-xs text-fg-subtle">
+                        {syncTrouble(cloud.data?.sync ?? null)}
+                      </p>
+                    )}
                     <MenuItem
                       icon="logout"
                       onClick={() => {
@@ -279,6 +361,13 @@ export function AccountMenu() {
             {!desktop && (
               <>
                 <MenuDivider />
+                {/* Only this account; the next one signed in here takes over. In the desktop app
+                    its own account goes with its copies – „Von allen Konten abmelden“ there. */}
+                {others.length > 0 && (!bridge || offlineAccount) && (
+                  <MenuItem icon="logout" disabled={accounts.busy} onClick={accounts.signOut}>
+                    Abmelden
+                  </MenuItem>
+                )}
                 <MenuItem
                   icon={
                     checking || (logout.isPending && unsent === null) ? (
@@ -301,7 +390,8 @@ export function AccountMenu() {
                       .finally(() => setChecking(false));
                   }}
                 >
-                  Abmelden
+                  {/* Every account on this browser goes: a shared computer is left clean. */}
+                  {others.length > 0 ? 'Von allen Konten abmelden' : 'Abmelden'}
                 </MenuItem>
                 {logout.isError && (
                   <ErrorText role="alert" size="xs" className="px-3 pt-0.5 pb-1.5">
@@ -334,8 +424,12 @@ export function AccountMenu() {
       )}
       {confirmBridgeSignOut && bridge && (
         <ConfirmDialog
-          title="Abmelden?"
-          description={`Die Präsentationen des Kontos verschwinden von diesem Computer und bleiben auf ${window.location.host}. Was hier erstellt oder auf diesem Computer behalten wurde, bleibt hier.${
+          title={others.length > 0 ? 'Von allen Konten abmelden?' : 'Abmelden?'}
+          description={`${
+            others.length > 0 ? 'Alle Konten in dieser App werden abgemeldet. ' : ''
+          }Die Präsentationen ${
+            desktopState?.account?.email ? `von ${desktopState.account.email}` : 'des Kontos'
+          } verschwinden von diesem Computer und bleiben auf ${window.location.host}. Was hier erstellt oder auf diesem Computer behalten wurde, bleibt hier.${
             bridgeUnsent === 0
               ? ''
               : bridgeUnsent === 1
@@ -365,6 +459,8 @@ export function AccountMenu() {
           }}
         />
       )}
+      {accounts.dialog}
+      <Toast toast={toast} />
       {unsent !== null && (
         <ConfirmDialog
           title="Trotzdem abmelden?"
@@ -387,16 +483,12 @@ export function AccountMenu() {
   );
 }
 
-/** Under „Jetzt synchronisieren“: how bringing this machine and the account together goes. */
-function syncLine(sync: CloudSync | null): string {
-  if (!sync) return '';
-  if (sync.state === 'syncing') return 'Wird synchronisiert';
-  if (sync.state === 'offline') return 'Offline, Änderungen warten';
-  if (sync.state === 'error') return sync.message ?? 'Hat nicht geklappt';
-  if (!sync.at) return 'Wird gleich synchronisiert';
-  const time = new Date(sync.at).toLocaleTimeString('de-DE', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-  return `Synchronisiert um ${time}`;
+/**
+ * When bringing this machine and the account together is held up – offline, or refused. Else
+ * nothing: it runs by itself every few seconds, online the pages are the server's anyway.
+ */
+function syncTrouble(sync: CloudSync | null): string | null {
+  if (sync?.state === 'offline') return 'Offline, Änderungen warten';
+  if (sync?.state === 'error') return sync.message ?? 'Synchronisieren hat nicht geklappt';
+  return null;
 }

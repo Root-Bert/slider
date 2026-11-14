@@ -51,15 +51,6 @@ export const useCloudStatus = (enabled: boolean) => {
   return query;
 };
 
-/** „Jetzt synchronisieren“: a pass now. */
-export const useCloudSyncNow = () => {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: () => api.post<CloudStatus>('/desktop/cloud/sync'),
-    onSuccess: (status) => client.setQueryData(cloudKey, status),
-  });
-};
-
 /**
  * „Anmelden“: opens the server's sign-in page in the system browser – the one signed in to last,
  * or `server`, a self-hosted one („Anderer Server“, like Bitwarden).

@@ -1,26 +1,23 @@
 import {
+  Fragment,
+  memo,
   useEffect,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
   type Ref,
 } from 'react';
 import { isModKey } from '@/lib/keyboard';
 import { cn } from '@/ui';
-import { iconDataUrl, type LibraryIcon } from './icon-library';
+import type { IconKind, LibraryIcon } from './icon-library';
 
-const masks = new WeakMap<LibraryIcon, string>();
-/** The icon's shape as a CSS mask's URL (black on clear), made once per icon. */
-function maskOf(icon: LibraryIcon): string {
-  let mask = masks.get(icon);
-  if (!mask) {
-    mask = `url("${iconDataUrl(icon)}")`;
-    masks.set(icon, mask);
-  }
-  return mask;
-}
-
-/** An icon drawn in `color` – the text's colour when none is given, so it follows the theme. */
+/**
+ * An icon drawn in `color` – the text's colour when none is given, so it follows the theme. Inline
+ * SVG, not a CSS mask of a `data:` URL: each of those is an SVG document of its own the browser
+ * parses and draws, and a page of them made scrolling stutter. The sets' bodies are only paths and
+ * circles (`scripts/icon-sets.ts` refuses anything else that could run or load).
+ */
 function IconGlyph({
   icon,
   color,
@@ -30,28 +27,22 @@ function IconGlyph({
   color?: string;
   className?: string;
 }) {
-  const mask = maskOf(icon);
   return (
-    <span
+    <svg
       aria-hidden
+      viewBox={icon.viewBox}
+      fill={color ?? 'currentColor'}
+      color={color ?? 'currentColor'}
       className={cn('block', className)}
-      style={{
-        maskImage: mask,
-        WebkitMaskImage: mask,
-        maskSize: 'contain',
-        WebkitMaskSize: 'contain',
-        maskRepeat: 'no-repeat',
-        WebkitMaskRepeat: 'no-repeat',
-        maskPosition: 'center',
-        WebkitMaskPosition: 'center',
-        backgroundColor: color ?? 'currentColor',
-      }}
+      dangerouslySetInnerHTML={{ __html: icon.body }}
     />
   );
 }
 
-/** Shown at first and added each time the end scrolls into view. */
-const PAGE = 120;
+/** Shown at first and added each time the end comes near – small, so adding one never stutters. */
+const PAGE = 60;
+/** How far below the view the end already adds the next page. */
+const AHEAD = '800px';
 
 /**
  * Icons as a grid of buttons, a page at a time – more as its end comes into view. The arrows walk
@@ -67,6 +58,7 @@ export function IconGrid({
   disabled = false,
   title,
   layout = 'tiles',
+  heading,
   className,
   ref,
 }: {
@@ -80,6 +72,8 @@ export function IconGrid({
   title?: string;
   /** Glyphs alone (a panel), each with its name under it (cards) or beside it (rows). */
   layout?: 'tiles' | 'cards' | 'rows';
+  /** Above the first icon of each kind, the width of the grid – `icons` grouped by kind. */
+  heading?: (kind: IconKind) => ReactNode;
   className?: string;
   ref?: Ref<HTMLDivElement>;
 }) {
@@ -95,9 +89,12 @@ export function IconGrid({
   useEffect(() => {
     const end = endRef.current;
     if (!end || count >= icons.length) return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) setShown({ icons, count: count + PAGE });
-    });
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) setShown({ icons, count: count + PAGE });
+      },
+      { rootMargin: `0px 0px ${AHEAD} 0px` },
+    );
     observer.observe(end);
     return () => observer.disconnect();
   }, [icons, count]);
@@ -138,58 +135,33 @@ export function IconGrid({
         else if (ref) ref.current = node;
       }}
       onKeyDown={onKeyDown}
+      // Handled here, not on each button: the cells stay as they are while pages are added.
+      onClick={(event) => {
+        const icon = icons[indexOf(event.target)];
+        if (icon) onPick(icon);
+      }}
+      onFocus={(event) => {
+        const index = indexOf(event.target);
+        if (index >= 0) setCursor({ icons, index });
+      }}
       style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
       className={cn('grid content-start', layout === 'cards' ? 'gap-2' : 'gap-1', className)}
     >
       {visible.map((icon, index) => (
-        <button
-          key={icon.id}
-          type="button"
-          data-icon={icon.id}
-          tabIndex={index === current ? 0 : -1}
-          disabled={disabled}
-          title={title ? `${icon.label} – ${title}` : icon.label}
-          aria-label={icon.label}
-          onFocus={() => setCursor({ icons, index })}
-          onClick={() => onPick(icon)}
-          className={cn(
-            'flex min-w-0 items-center rounded-control-sm text-fg transition-colors hover:bg-hover focus-visible:bg-selected focus-visible:outline-2 focus-visible:outline-border-focus disabled:opacity-50',
-            layout === 'tiles' && 'aspect-square justify-center',
-            layout === 'cards' && 'flex-col gap-2 px-1 pt-4 pb-2.5',
-            layout === 'rows' && 'gap-3 px-3 py-2 text-left',
+        <Fragment key={icon.id}>
+          {heading && visible[index - 1]?.kind !== icon.kind && (
+            <div style={{ gridColumn: '1 / -1' }}>{heading(icon.kind)}</div>
           )}
-        >
-          {layout === 'tiles' ? (
-            <IconGlyph
-              icon={icon}
-              color={color}
-              className={icon.kind === 'pictograms' ? 'size-[72%]' : 'size-[58%]'}
-            />
-          ) : (
-            <IconGlyph
-              icon={icon}
-              color={color}
-              className={cn(
-                'shrink-0',
-                layout === 'cards'
-                  ? icon.kind === 'pictograms'
-                    ? 'size-12'
-                    : 'size-9 my-1.5'
-                  : 'size-6',
-              )}
-            />
-          )}
-          {layout !== 'tiles' && (
-            <span
-              className={cn(
-                'min-w-0 truncate text-xs',
-                layout === 'cards' ? 'w-full text-center text-fg-muted' : 'flex-1 text-sm',
-              )}
-            >
-              {icon.label}
-            </span>
-          )}
-        </button>
+          <IconCell
+            icon={icon}
+            index={index}
+            tabbable={index === current}
+            disabled={disabled}
+            title={title}
+            layout={layout}
+            color={color}
+          />
+        </Fragment>
       ))}
       {count < icons.length && (
         <div ref={endRef} aria-hidden className="h-px" style={{ gridColumn: '1 / -1' }} />
@@ -197,6 +169,78 @@ export function IconGrid({
     </div>
   );
 }
+
+/** The cell's index in the grid, of the button `target` is in; `-1` for none. */
+const indexOf = (target: EventTarget) => {
+  const button = (target as Element).closest?.<HTMLButtonElement>('button[data-index]');
+  return button && !button.disabled ? Number(button.dataset.index) : -1;
+};
+
+/** One icon's button – kept as it is while later pages are added (`memo`, plain props). */
+const IconCell = memo(function IconCell({
+  icon,
+  index,
+  tabbable,
+  disabled,
+  title,
+  layout,
+  color,
+}: {
+  icon: LibraryIcon;
+  index: number;
+  tabbable: boolean;
+  disabled: boolean;
+  title?: string;
+  layout: 'tiles' | 'cards' | 'rows';
+  color?: string;
+}) {
+  return (
+    <button
+      type="button"
+      data-icon={icon.id}
+      data-index={index}
+      tabIndex={tabbable ? 0 : -1}
+      disabled={disabled}
+      title={title ? `${icon.label} – ${title}` : icon.label}
+      aria-label={icon.label}
+      className={cn(
+        'flex min-w-0 items-center rounded-control-sm text-fg transition-colors hover:bg-hover focus-visible:bg-selected focus-visible:outline-2 focus-visible:outline-border-focus disabled:opacity-50',
+        layout === 'tiles' && 'aspect-square justify-center',
+        layout === 'cards' && 'flex-col gap-2 px-1 pt-4 pb-2.5',
+        layout === 'rows' && 'gap-3 px-3 py-2 text-left',
+      )}
+    >
+      <IconGlyph
+        icon={icon}
+        color={color}
+        className={
+          layout === 'tiles'
+            ? icon.kind === 'pictograms'
+              ? 'size-[72%]'
+              : 'size-[58%]'
+            : cn(
+                'shrink-0',
+                layout === 'cards'
+                  ? icon.kind === 'pictograms'
+                    ? 'size-12'
+                    : 'size-9 my-1.5'
+                  : 'size-6',
+              )
+        }
+      />
+      {layout !== 'tiles' && (
+        <span
+          className={cn(
+            'min-w-0 truncate text-xs',
+            layout === 'cards' ? 'w-full text-center text-fg-muted' : 'flex-1 text-sm',
+          )}
+        >
+          {icon.label}
+        </span>
+      )}
+    </button>
+  );
+});
 
 /** A grid's buttons while the sets load. */
 export function IconGridSkeleton({ columns, rows = 4 }: { columns: number; rows?: number }) {

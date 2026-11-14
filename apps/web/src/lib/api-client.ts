@@ -1,5 +1,12 @@
-import { API_PREFIX, type ApiError as ApiErrorBody, type ErrorCode } from '@slider/shared';
+import {
+  ACCOUNT_HEADER,
+  API_PREFIX,
+  type ApiError as ApiErrorBody,
+  type ErrorCode,
+} from '@slider/shared';
+import { forgetOffline } from './offline';
 import { routes } from './routes';
+import { readString, writeString } from './storage';
 
 /** Error thrown for every non-2xx API response. `code` is stable; `message` is user-facing German copy. */
 export class ApiError extends Error {
@@ -111,6 +118,89 @@ export interface ApiAnswer<T> {
   fromStore: boolean;
 }
 
+/**
+ * The account this page was loaded for (`ACCOUNT_HEADER`): sent with every request, so nothing
+ * goes out as another account the browser was switched to meanwhile (another tab, a session that
+ * ended and handed over). `null`: nobody signed in, or not known yet.
+ */
+let pageAccount: string | null = null;
+let startingOver = false;
+
+/**
+ * Tells what `/me` answered. Another account than the page was loaded for: the page starts over
+ * – what the browser kept of the first one (edits not sent) goes, it must not go out as this one.
+ */
+export function pageIsFor(userId: string | null): void {
+  if (pageAccount !== null && userId !== null && userId !== pageAccount) return startOver();
+  if (userId !== null && pageAccount === null) {
+    // Loaded as another account than this browser was last on (signed in anew, a session that
+    // ended and handed over): what it kept was the other one's, and its other tabs start over.
+    const last = readString(LAST_ACCOUNT_KEY);
+    if (last !== null && last !== userId) {
+      void forgetOffline();
+      accountChanged.forEach((tell) => tell());
+      // Said once on this page (`takeAccountNotice`): switched, signed in to one more, or
+      // handed over when a session ended – never unnoticed.
+      writeString(ACCOUNT_NOTICE_KEY, '1', 'session');
+    }
+    writeString(LAST_ACCOUNT_KEY, userId);
+  }
+  pageAccount = userId;
+}
+
+const ACCOUNT_NOTICE_KEY = 'slider.accountChanged';
+/** Whether this tab just came to be on another account – asked once, then forgotten. */
+export function takeAccountNotice(): boolean {
+  const pending = readString(ACCOUNT_NOTICE_KEY, 'session') === '1';
+  if (pending) writeString(ACCOUNT_NOTICE_KEY, null, 'session');
+  return pending;
+}
+
+/** Called when this page finds the browser on another account than it was last on. */
+const accountChanged = new Set<() => void>();
+export function onAccountChanged(tell: () => void): void {
+  accountChanged.add(tell);
+}
+
+/**
+ * This page just signed in (a code typed, on „Weiteres Konto hinzufügen“): who it is for is
+ * asked anew, its next requests go as whoever is signed in now.
+ */
+export function signedInAnew(): void {
+  pageAccount = null;
+}
+
+/** `ACCOUNT_HEADER` for requests made without `apiRequest` (uploads, streams, live posts). */
+export const accountHeader = (): Record<string, string> =>
+  pageAccount ? { [ACCOUNT_HEADER]: pageAccount } : {};
+
+/** The account this browser was last on – what it keeps for offline is that one's. */
+const LAST_ACCOUNT_KEY = 'slider-last-account';
+
+/**
+ * A storage key of this browser's account: what is remembered per person (the workspace last
+ * open, a hint dismissed) is not the next account's on the same browser.
+ */
+export const accountKey = (key: string): string => {
+  const account = pageAccount ?? readString(LAST_ACCOUNT_KEY);
+  return account ? `${key}:${account}` : key;
+};
+
+/** The page changes the account itself (switching): requests on their way must not start it over. */
+export function leavingAccount(leaving: boolean): void {
+  startingOver = leaving;
+}
+
+function startOver(): void {
+  if (startingOver) return;
+  startingOver = true;
+  void forgetOffline().finally(() => window.location.assign('/'));
+}
+
+/** GET `/me` asks who is signed in: it goes without the account, the answer says it. */
+const asksWho = (path: string, method: string | undefined) =>
+  path === '/me' && (method === undefined || method === 'GET');
+
 /** `apiRequest`, telling an answer the service worker gave from its store from the server's. */
 export async function apiRequestAnswer<T>(
   path: string,
@@ -126,6 +216,7 @@ export async function apiRequestAnswer<T>(
       headers: {
         Accept: 'application/json',
         ...(isJson && { 'Content-Type': 'application/json' }),
+        ...(pageAccount && !asksWho(path, init.method) && { [ACCOUNT_HEADER]: pageAccount }),
         ...headers,
       },
       body: isJson ? JSON.stringify(body) : body,
@@ -134,7 +225,11 @@ export async function apiRequestAnswer<T>(
     throw unreachableError();
   }
 
-  if (!response.ok) throw await toApiError(response);
+  if (!response.ok) {
+    const error = await toApiError(response);
+    if (error.code === 'account_changed') startOver();
+    throw error;
+  }
   const fromStore = response.headers.get(STORED_ANSWER_HEADER) === '1';
   if (response.status === 204) return { data: undefined as T, fromStore };
   try {
@@ -222,6 +317,7 @@ export function uploadWithProgress<T>(
     checkPath(path);
     const xhr = new XMLHttpRequest();
     xhr.open(method, `${API_PREFIX}${path}`);
+    for (const [name, value] of Object.entries(accountHeader())) xhr.setRequestHeader(name, value);
     xhr.responseType = 'json';
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) onProgress(event.loaded / event.total);
@@ -232,6 +328,7 @@ export function uploadWithProgress<T>(
         return resolve(xhr.response as T);
       }
       const body = xhr.response as Partial<ApiErrorBody> | null;
+      if (body?.error?.code === 'account_changed') startOver();
       reject(body?.error ? fromBody(xhr.status, body.error) : proxyError(xhr.status));
     };
     xhr.onerror = () => reject(unreachableError());

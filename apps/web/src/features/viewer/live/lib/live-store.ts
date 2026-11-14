@@ -1,3 +1,4 @@
+import { accountHeader } from '@/lib/api-client';
 import {
   API_PREFIX,
   LIVE_EVENT,
@@ -422,7 +423,7 @@ function flush(connection: Connection) {
   connection.lastPost = performance.now();
   fetch(`${API_PREFIX}/live/${encodeURIComponent(connectionId)}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...accountHeader() },
     body: JSON.stringify(presence),
   })
     .then((response) => {

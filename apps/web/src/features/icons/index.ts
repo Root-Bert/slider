@@ -6,5 +6,6 @@ export {
   iconPng,
   searchIcons,
   type IconFilter,
+  type IconKind,
   type LibraryIcon,
 } from './icon-library';

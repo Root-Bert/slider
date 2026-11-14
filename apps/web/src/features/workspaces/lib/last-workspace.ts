@@ -1,12 +1,15 @@
 import type { Workspace } from '@slider/shared';
+import { accountKey } from '@/lib/api-client';
 import { readString, writeString } from '@/lib/storage';
 
+/** Per account: with several signed in on one browser each comes back to its own. */
 const STORAGE_KEY = 'slider.lastWorkspace';
 
-export const readLastWorkspaceId = (): string | null => readString(STORAGE_KEY);
+export const readLastWorkspaceId = (): string | null => readString(accountKey(STORAGE_KEY));
 
 /** Storage unavailable (private mode) – `/` then opens the first workspace. */
-export const rememberWorkspace = (workspaceId: string) => writeString(STORAGE_KEY, workspaceId);
+export const rememberWorkspace = (workspaceId: string) =>
+  writeString(accountKey(STORAGE_KEY), workspaceId);
 
 /**
  * The workspace `/` opens: the last used one if the account still belongs to it, else the first.

@@ -236,8 +236,19 @@ export function appConnectionsRoutes(deps: AppDeps) {
           viewer: userViewer(found.user),
           workspaceId: found.connection.workspaceId,
         };
+        // The mark the app shows for the connector once connected (MCP `icons`); before that it
+        // only has the site's favicon.
         const server = new Server(
-          { name: 'slider', title: 'Slider', version: '1.0.0', websiteUrl: issuerOf(deps) },
+          {
+            name: 'slider',
+            title: 'Slider',
+            version: '1.0.0',
+            websiteUrl: issuerOf(deps),
+            icons: [
+              { src: `${issuerOf(deps)}/favicon.svg`, mimeType: 'image/svg+xml', sizes: ['any'] },
+              { src: `${issuerOf(deps)}/icon-192.png`, mimeType: 'image/png', sizes: ['192x192'] },
+            ],
+          },
           { capabilities: { tools: {} }, instructions: MCP_INSTRUCTIONS },
         );
         server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: MCP_TOOLS }));

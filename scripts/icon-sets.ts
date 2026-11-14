@@ -46,9 +46,12 @@ function unpack(spec: string): string {
 function compact(body: string): string {
   const out = body
     .replace(/<\?xml[^>]*>|<!--[\s\S]*?-->|<title>[\s\S]*?<\/title>/g, '')
-    // A number right after another („-1.5399.001“: the second point starts it) keeps a space
-    // before it once rounded – „0“ there would run into the one before („-1.540“).
-    .replace(/-?\d*\.\d{3,}/g, (n, at: number, all: string) => {
+    // Every number taken from the left as SVG reads it – a second point starts the next one
+    // („-.75.0004“ is „-.75“ and „.0004“, not „75.0004“) – and long fractions rounded. One right
+    // after another keeps a space before it once rounded – „0“ there would run into the one
+    // before („-1.540“).
+    .replace(/-?(?:\d+(?:\.\d*)?|\.\d+)/g, (n, at: number, all: string) => {
+      if (!/\.\d{3,}/.test(n)) return n;
       const rounded = String(Number(Number(n).toFixed(2)));
       return /[\d.]/.test(all[at - 1] ?? '') && !rounded.startsWith('-') ? ` ${rounded}` : rounded;
     })

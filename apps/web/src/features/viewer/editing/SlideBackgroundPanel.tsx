@@ -146,7 +146,7 @@ function SlideBackgroundPanelView({ pageId, slideId }: { pageId: string; slideId
         <div className="flex items-center gap-2">
           <Icon name="formatColorFill" size={20} className="shrink-0 text-fg-muted" />
           <h2 id={titleId} className="min-w-0 flex-1 truncate text-base font-semibold text-fg">
-            Hintergrund · Folie {number}
+            Hintergrund | Folie {number}
           </h2>
           <IconButton
             icon="close"

@@ -108,6 +108,7 @@ interface Shift {
 }
 
 const NO_SHIFT: Shift = { dx: 0, dy: 0 };
+const WHOLE_SLIDE = { x: 0, y: 0, w: 1, h: 1 };
 /** Pointer travel (px) before a press on a drawing counts as a drag, not a click. */
 const DRAG_THRESHOLD = 3;
 
@@ -191,6 +192,13 @@ export const AnnotationLayer = memo(function AnnotationLayer({
   }, [threads, slide.shapes, emphasisId, preview, draft?.commentId]);
 
   const emphasized = marks.find((mark) => mark.state === 'emphasized');
+  // A comment on the whole slide, without a drawing: hovered, the slide is its mark.
+  const wholeSlide = threads.find(
+    (thread) =>
+      thread.id === emphasisId &&
+      thread.root.anchor.type === 'slide' &&
+      thread.root.strokes.length === 0,
+  );
   // Outlined as the box under the pointer is: whole, where it lies now.
   const outlineOf = (shape: Shape | null) =>
     shape && (slideBoxes?.find((box) => box.id === shape.id) ?? shape);
@@ -250,6 +258,13 @@ export const AnnotationLayer = memo(function AnnotationLayer({
             color={accentColor(emphasized.thread.root.author.color)}
           />
         ))}
+      {wholeSlide && !composing && (
+        <RectFrame
+          rect={WHOLE_SLIDE}
+          color={accentColor(wholeSlide.root.author.color)}
+          className="rounded-panel"
+        />
+      )}
       {draftShapes.map((shape) => (
         <ShapeOutline
           key={shape.id}

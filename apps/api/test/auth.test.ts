@@ -17,7 +17,7 @@ import {
   type MeResponse,
 } from '@slider/shared';
 import { z } from 'zod';
-import { SESSION_MAX_AGE_MS } from '../src/auth/session';
+import { createSession, DESKTOP_USER_AGENT, SESSION_MAX_AGE_MS } from '../src/auth/session';
 import { signInWithIdentity } from '../src/services/accounts';
 import type { Config, OidcConfig } from '../src/config';
 import { encryptToken } from '../src/auth/token-crypto';
@@ -314,10 +314,9 @@ describe('sessions', () => {
     ctx.clock.advance(2 * DAY_MS);
     const renewed = await ctx.request('/api/me', { cookie });
     expect(renewed.status).toBe(200);
-    const header = renewed.headers.getSetCookie().find((h) => h.startsWith('slider_session='));
-    expect(header).toMatch(/HttpOnly/i);
-    expect(header).toMatch(/SameSite=Lax/i);
-    expect(header).toMatch(/Max-Age=2592000/);
+    // Renewed on the server only: the cookie is set once and lives as long as a session ever
+    // can – an answer on its way never puts its account back over one switched to meanwhile.
+    expect(sessionCookieFrom(renewed)).toBeNull();
     const [after] = await ctx.deps.db.select().from(sessions).where(eq(sessions.userId, user.id));
     expect(after!.expiresAt.getTime()).toBeGreaterThan(row!.expiresAt.getTime());
     expect(sessionCookieFrom(await ctx.request('/api/me', { cookie }))).toBeNull();
@@ -806,16 +805,11 @@ describe('sessions', () => {
     const { user, cookie } = await signedInUser(ctx, { name: 'R', email: 'robert@example.org' });
     const [created] = await ctx.deps.db.select().from(sessions).where(eq(sessions.userId, user.id));
     const deadline = created!.createdAt.getTime() + SESSION_MAX_AGE_MS;
-    // Used every few days: it slides, but never past its 90 days, the cookie neither.
+    // Used every few days: it slides, but never past its 90 days.
     for (let day = 5; day < 90; day += 5) {
       ctx.clock.advance(5 * DAY_MS);
-      // Read before the request: the test clock keeps running while it is answered.
-      const before = ctx.clock.now().getTime();
       const res = await ctx.request('/api/me', { cookie });
       expect(res.status).toBe(200);
-      const header = res.headers.getSetCookie().find((h) => h.startsWith('slider_session='));
-      const maxAge = Number(/Max-Age=(\d+)/.exec(header ?? '')?.[1]);
-      expect(maxAge * 1000).toBeLessThanOrEqual(deadline - before);
       const [row] = await ctx.deps.db.select().from(sessions).where(eq(sessions.userId, user.id));
       expect(row!.expiresAt.getTime()).toBeLessThanOrEqual(deadline);
     }
@@ -884,9 +878,106 @@ describe('OIDC login', () => {
     // Their own one; on the limited test instance a second (private) one may follow.
     expect(body.limits).toEqual({ canCreateWorkspace: true, domainJoin: true });
 
-    // The same identity signs into the same account again.
-    const again = await redirectLogin('oidc', idp);
+    // The same identity signs into the same account again – over its own session, which ends:
+    // nothing signed in here outlives its place in the cookie. Not the desktop app's: its token
+    // is only copied into its pages' cookie, signing in there must not end it.
+    const again = await redirectLogin('oidc', idp, { cookie: cookie ?? '' });
     expect((await me(sessionCookieFrom(again) ?? '')).body.user?.id).toBe(body.user?.id);
+    expect((await me(cookie ?? '')).status).toBe(401);
+    const app = await createSession(ctx.deps, body.user?.id ?? '', DESKTOP_USER_AGENT);
+    const appCookie = `slider_session=${app.token}`;
+    await redirectLogin('oidc', idp, { cookie: appCookie });
+    expect((await me(appCookie)).body.user?.id).toBe(body.user?.id);
+
+    // Signed in as Lena, signing in to Anna's account keeps Lena's on this browser: switched
+    // to and back without signing in again; „Abmelden“ signs both out.
+    const lena = await signedInUser(ctx, { name: 'Lena', email: 'lena@firma.de' });
+    const both = await redirectLogin('oidc', idp, { cookie: lena.cookie });
+    const cookies = (res: Response, before = '') =>
+      [sessionCookieFrom(res), cookiePair(res, 'slider_accounts') || before]
+        .filter(Boolean)
+        .join('; ');
+    const asAnna = cookies(both);
+    expect((await me(asAnna)).body.user?.id).toBe(body.user?.id);
+    const others = await ctx.request('/api/auth/accounts', { cookie: asAnna });
+    expect(await others.json()).toEqual([
+      { user: expect.objectContaining({ id: lena.user.id, name: 'Lena' }), workspaces: [] },
+    ]);
+    const switched = await ctx.request('/api/auth/accounts/switch', {
+      method: 'POST',
+      cookie: asAnna,
+      json: { userId: lena.user.id },
+    });
+    expect(switched.status).toBe(204);
+    const asLena = cookies(switched);
+    expect((await me(asLena)).body.user?.id).toBe(lena.user.id);
+    // A page still open for Anna (another tab) neither reads nor writes as Lena: it is told to
+    // start over. A page for Lena goes on.
+    const forAnna = await ctx.request('/api/workspaces', {
+      cookie: asLena,
+      headers: { 'x-slider-account': body.user?.id ?? '' },
+    });
+    expect(forAnna.status).toBe(409);
+    expect(await forAnna.json()).toMatchObject({ error: { code: 'account_changed' } });
+    expect(
+      (
+        await ctx.request('/api/workspaces', {
+          cookie: asLena,
+          headers: { 'x-slider-account': lena.user.id },
+        })
+      ).status,
+    ).toBe(200);
+    // A session that ended hands over to the other account only on a fresh load, never under a
+    // page loaded for the first one.
+    const gone = `slider_session=gone; ${cookiePair(switched, 'slider_accounts')}`;
+    expect(
+      (
+        await ctx.request('/api/workspaces', {
+          cookie: gone,
+          headers: { 'x-slider-account': lena.user.id },
+        })
+      ).status,
+    ).toBe(401);
+    expect((await me(gone)).body.user?.id).toBe(body.user?.id);
+    expect(
+      (await (await ctx.request('/api/auth/accounts', { cookie: asLena })).json()) as unknown[],
+    ).toEqual([expect.objectContaining({ user: expect.objectContaining({ id: body.user?.id }) })]);
+    expect(
+      (
+        await ctx.request('/api/auth/accounts/switch', {
+          method: 'POST',
+          cookie: asLena,
+          json: { userId: 'someone-else' },
+        })
+      ).status,
+    ).toBe(404);
+    // „Abmelden“ of the account in use only: its session ends, the other one takes over.
+    const mia = await signedInUser(ctx, { name: 'Mia', email: 'mia@firma.de' });
+    const annaToken = (sessionCookieFrom(both) ?? '').split('=')[1] ?? '';
+    const one = await ctx.request('/api/auth/accounts/logout', {
+      method: 'POST',
+      cookie: `${mia.cookie}; slider_accounts=${annaToken}`,
+    });
+    expect(one.status).toBe(204);
+    expect((await me(mia.cookie)).status).toBe(401);
+    // … and of another one signed in here: it goes, the one in use stays.
+    const noa = await signedInUser(ctx, { name: 'Noa', email: 'noa@firma.de' });
+    const noaToken = noa.cookie.split('=')[1] ?? '';
+    const other = await ctx.request('/api/auth/accounts/logout', {
+      method: 'POST',
+      cookie: `${sessionCookieFrom(both)}; slider_accounts=${noaToken}`,
+      json: { userId: noa.user.id },
+    });
+    expect(other.status).toBe(204);
+    expect((await me(noa.cookie)).status).toBe(401);
+    expect(sessionCookieFrom(one)).toBe(sessionCookieFrom(both));
+    expect((await me(asAnna)).body.user?.id).toBe(body.user?.id);
+
+    expect((await ctx.request('/api/auth/logout', { method: 'POST', cookie: asLena })).status).toBe(
+      204,
+    );
+    expect((await me(asLena)).status).toBe(401);
+    expect((await me(asAnna)).status).toBe(401);
   });
 
   it('rejects forged, foreign, replayed or expired logins and missing or unverified e-mails', async () => {

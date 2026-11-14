@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { ACCOUNT_EXPORT_URL, useDeleteAccount, useDeletionChoices, useLogout } from '@/lib/api';
+import { ACCOUNT_EXPORT_URL, useDeleteAccount, useDeletionChoices } from '@/lib/api';
 import { routes } from '@/lib/routes';
 import { ApiError } from '@/lib/api-client';
 import { DELETION_RULES } from '../deletion-rules';
@@ -54,7 +54,6 @@ function DeleteOwnAccountDialog({ email, onClose }: { email: string; onClose: ()
   const [successors, setSuccessors] = useState<Record<string, string>>({});
   const choices = useDeletionChoices();
   const remove = useDeleteAccount();
-  const logout = useLogout();
   // The session is older than a fresh sign-in: sign out and back in, then delete.
   const reauth = remove.error instanceof ApiError && remove.error.code === 'reauth_required';
   const matches = typed.trim().toLowerCase() === email.toLowerCase();
@@ -102,13 +101,8 @@ function DeleteOwnAccountDialog({ email, onClose }: { email: string; onClose: ()
             variant="secondary"
             size="sm"
             className="self-start"
-            loading={logout.isPending}
-            onClick={() =>
-              logout.mutate(undefined, {
-                // A full page load: everything cached belongs to the account signed out.
-                onSuccess: () => window.location.assign(routes.login(routes.account())),
-              })
-            }
+            // Signing in again gives a fresh session; the other accounts here stay.
+            onClick={() => window.location.assign(routes.addAccount(routes.account()))}
           >
             Neu anmelden
           </Button>

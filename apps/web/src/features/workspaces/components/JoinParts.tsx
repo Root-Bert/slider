@@ -3,11 +3,13 @@ import { useNavigate } from 'react-router';
 import type { InviteState, JoinPreview } from '@slider/shared';
 import { routes } from '@/lib/routes';
 import { ApiError } from '@/lib/api-client';
-import { useAuthProviders, useJoinWorkspace, useLogout } from '@/lib/api';
+import { useAuthProviders, useJoinWorkspace, useMe, useOtherAccounts } from '@/lib/api';
 import { CenteredCard } from '@/shell/layouts/CenteredLayout';
 import { Badge, Button, Icon, Notice, Spinner, TextLink } from '@/ui';
 import { LoginOptions } from '@/features/auth';
+import { useAccountSwitch } from '../hooks/useAccountSwitch';
 import { ROLE_HINTS, ROLE_LABELS } from '../lib/roles';
+import { OtherAccounts } from './OtherAccounts';
 import { WorkspaceMark } from './WorkspaceMark';
 
 /** Id of the join card's heading (`CenteredCard`), kept stable. */
@@ -27,7 +29,7 @@ const CLOSED_COPY: Record<Exclude<InviteState, 'valid'>, { title: string; messag
   used: {
     title: 'Einladung schon angenommen',
     message:
-      'Diese Einladung wurde bereits verwendet. Bist du schon Mitglied, findest du ihn bei den Präsentationen.',
+      'Diese Einladung wurde bereits verwendet. Bist du schon Mitglied, findest du den Workspace bei den Präsentationen.',
   },
 };
 
@@ -97,7 +99,11 @@ export function Invitation({
           </p>
         )}
       </div>
-      {signedIn ? <JoinButton token={token} auto /> : <SignInToJoin token={token} />}
+      {signedIn ? (
+        <JoinButton token={token} email={preview.email} auto />
+      ) : (
+        <SignInToJoin token={token} />
+      )}
     </CenteredCard>
   );
 }
@@ -107,29 +113,41 @@ export function Invitation({
  * comes back from signing in through it, lands in the workspace without a question; the
  * button stays for errors (wrong account, workspace full).
  */
-export function JoinButton({ token, auto = false }: { token: string; auto?: boolean }) {
+export function JoinButton({
+  token,
+  email = null,
+  auto = false,
+}: {
+  token: string;
+  /** The address the invitation is for; `null`: whoever has the link. */
+  email?: string | null;
+  auto?: boolean;
+}) {
   const join = useJoinWorkspace(token);
-  const logout = useLogout();
   const navigate = useNavigate();
+  const user = useMe().data?.user;
+  const others = useOtherAccounts(Boolean(user));
+  const accounts = useAccountSwitch();
   const joinNow = () =>
     join.mutate(undefined, {
       onSuccess: ({ workspace, deckId }) =>
         void navigate(deckId ? routes.deck(deckId) : routes.workspace(workspace.id)),
     });
+  // Several accounts on this browser, and the invitation is not for the one in use: which one
+  // joins is asked, never guessed.
+  const several = (others.data?.length ?? 0) > 0;
+  const forThisAccount = email !== null && email.toLowerCase() === user?.email.toLowerCase();
+  const asks = several && !forThisAccount;
   const started = useRef(false);
   useEffect(() => {
     // Once per page: after a failed join the button is there to try again.
-    if (!auto || started.current) return;
+    if (!auto || started.current || others.isPending || asks) return;
     started.current = true;
     joinNow();
   });
   const full = join.error instanceof ApiError && join.error.code === 'plan_limit';
   const wrongAccount = join.error instanceof ApiError && join.error.status === 403 && !full;
-
-  const switchAccount = () =>
-    logout.mutate(undefined, {
-      onSuccess: () => window.location.assign(routes.login(routes.join(token))),
-    });
+  const here = routes.join(token);
 
   return (
     <div className="flex w-full flex-col items-center gap-3">
@@ -152,15 +170,27 @@ export function JoinButton({ token, auto = false }: { token: string; auto?: bool
           </Notice>
         )
       )}
-      {wrongAccount ? (
-        <Button size="lg" className="w-full" loading={logout.isPending} onClick={switchAccount}>
-          Mit anderem Konto anmelden
-        </Button>
-      ) : (
+      {!wrongAccount && (
         <Button size="lg" className="w-full" loading={join.isPending} onClick={joinNow}>
-          {full ? 'Erneut versuchen' : 'Beitreten'}
+          {full ? 'Erneut versuchen' : asks && user ? `Als ${user.email} beitreten` : 'Beitreten'}
         </Button>
       )}
+      {/* The other accounts signed in here – for an invitation by address only its own. */}
+      {(asks || wrongAccount) && (
+        <OtherAccounts to={here} only={email} label={(other) => `Als ${other} beitreten`} />
+      )}
+      {wrongAccount && (
+        <Button
+          size="lg"
+          variant="secondary"
+          className="w-full"
+          disabled={accounts.busy}
+          onClick={() => accounts.addAccount(here)}
+        >
+          Mit anderem Konto anmelden
+        </Button>
+      )}
+      {accounts.dialog}
       {full && <ReviewsLink />}
     </div>
   );

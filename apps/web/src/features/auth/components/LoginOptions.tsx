@@ -167,7 +167,9 @@ function ProviderButton({
       className={cn('gap-2.5', primary ? 'w-full' : BESIDE)}
       onClick={() => {
         setLeaving(true);
-        window.location.assign(providerLoginUrl(provider.loginUrl, returnTo));
+        // A login, also while signed in (one more account): never linking it to the one in use.
+        const login = `${provider.loginUrl}${provider.loginUrl.includes('?') ? '&' : '?'}intent=login`;
+        window.location.assign(providerLoginUrl(login, returnTo));
       }}
     >
       {!leaving &&

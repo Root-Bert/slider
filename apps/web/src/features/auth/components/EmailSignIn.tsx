@@ -1,16 +1,20 @@
 import { useState, type FormEvent } from 'react';
-import { discoverSso, startEmailLogin } from '@/lib/api';
-import { ApiError } from '@/lib/api-client';
+import { createPortal } from 'react-dom';
+import { confirmEmailCode, discoverSso, startEmailLogin } from '@/lib/api';
+import { ApiError, signedInAnew } from '@/lib/api-client';
 import { useOnPageRestore } from '@/lib/page-restore';
 import { Button, ErrorText, Icon, Notice, TextField } from '@/ui';
+import { loadPage } from '../lib/load-page';
 import { providerLoginUrl } from '../lib/return-to';
+import { EmailWelcome } from './EmailWelcome';
 
 /**
  * The address field of the login page. With login links (`links`, BER-168) it is always there –
  * "Mit E-Mail fortfahren", an account by mail, no password. With only company logins (`sso`,
  * BER-162) it opens from "Mit Firmen-Login anmelden". With company logins on the instance it
  * first looks for the address's and goes there; any other address gets the link – or, without
- * links, the reason there is none.
+ * links, the reason there is none. Sent, it takes the mail's code too: the link only works in
+ * this browser, and asked for in the desktop app the mail opens it in the system browser.
  */
 export function EmailSignIn({
   returnTo,
@@ -26,6 +30,10 @@ export function EmailSignIn({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<string | null>(null);
+  const [code, setCode] = useState('');
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [welcome, setWelcome] = useState<string | null>(null);
   // Back from the company's provider with the browser's back button: not busy any more.
   useOnPageRestore(() => setBusy(false));
 
@@ -52,13 +60,62 @@ export function EmailSignIn({
     setBusy(false);
   };
 
+  const signInByCode = async (event: FormEvent) => {
+    event.preventDefault();
+    setChecking(true);
+    setCodeError(null);
+    try {
+      const result = await confirmEmailCode(code);
+      // On „Weiteres Konto hinzufügen“ the page was another account's until now.
+      signedInAnew();
+      if (result.newAccount) setWelcome(result.redirectTo);
+      else loadPage(result.redirectTo);
+    } catch (caught) {
+      setCodeError(caught instanceof Error ? caught.message : 'Das hat nicht geklappt.');
+      setChecking(false);
+    }
+  };
+
+  // A new account: its name and a passkey, as after the link – over the login page.
+  if (welcome) {
+    return createPortal(
+      <div className="fixed inset-0 z-50 overflow-auto">
+        <EmailWelcome redirectTo={welcome} />
+      </div>,
+      document.body,
+    );
+  }
+
   if (sent) {
     return (
       <div className="flex w-full animate-pop-in flex-col gap-3">
         <Notice tone="success" title="Schau in dein Postfach">
-          Wir haben eine Mail an <strong className="text-fg">{sent}</strong> geschickt. Öffne den
-          Link darin in diesem Browser, er gilt 15 Minuten.
+          Wir haben eine Mail an <strong className="text-fg">{sent}</strong> geschickt. Klick auf
+          den Link darin oder gib hier den Code aus der Mail ein. Beides gilt 15 Minuten.
         </Notice>
+        <form onSubmit={signInByCode} className="flex items-start gap-2 text-left">
+          <TextField
+            aria-label="Code aus der Mail"
+            placeholder="Code aus der Mail"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={7}
+            size="lg"
+            className="flex-1"
+            value={code}
+            onChange={(event) => setCode(event.target.value)}
+            disabled={checking}
+            error={codeError}
+          />
+          <Button
+            type="submit"
+            size="lg"
+            loading={checking}
+            disabled={code.replace(/\s/g, '').length !== 6}
+          >
+            Anmelden
+          </Button>
+        </form>
         <div className="flex items-center justify-center gap-2">
           <Button variant="ghost" size="sm" loading={busy} onClick={() => void send(sent, false)}>
             Nicht angekommen? Erneut senden

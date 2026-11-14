@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('sliderDesktop', {
   keep: (deckId, keep) => ipcRenderer.invoke('desktop:keep', deckId, keep),
   /** „Abmelden“: this computer signs out of the server. */
   signOut: () => ipcRenderer.invoke('desktop:signOut'),
+  /** „Weiteres Konto hinzufügen“ on the server's pages: the browser signs in, the pages get it. */
+  addAccount: () => ipcRenderer.invoke('desktop:addAccount'),
   /** What the presentation offers in the tab bar, top right (`null`: nothing). */
   deckBar: (offer) => ipcRenderer.send('tabs:deckBar', offer),
 });

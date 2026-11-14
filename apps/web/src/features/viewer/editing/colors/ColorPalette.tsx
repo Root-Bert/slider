@@ -310,7 +310,7 @@ export function ColorPalette({
   };
   const withAlpha = opacity !== undefined && onOpacity !== undefined;
   const swatch = ({ color, name }: TemplateColor) => {
-    const title = name ? `${name} · ${hexName(color)}` : hexName(color);
+    const title = name ? `${name} | ${hexName(color)}` : hexName(color);
     return (
       <button
         key={color + name}

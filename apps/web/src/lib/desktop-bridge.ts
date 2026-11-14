@@ -31,6 +31,11 @@ export interface DesktopBridge {
   keep(deckId: string, keep: boolean): Promise<boolean>;
   signOut(): Promise<boolean>;
   /**
+   * „Weiteres Konto hinzufügen“ on the server's pages: the browser signs in and hands the
+   * account to the app's pages, which then load anew as it. Missing in older apps.
+   */
+  addAccount?(): Promise<boolean>;
+  /**
    * What the presentation offers in the app's tab bar, top right (Präsentieren,
    * Referentenansicht, Exportieren, ✕); `null`: nothing. A click there arrives as
    * `DESKTOP_BAR_EVENT` on `window`, within a user gesture. Missing in older apps.

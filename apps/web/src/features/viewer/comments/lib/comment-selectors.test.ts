@@ -2,7 +2,14 @@ import type { LiveParagraph } from '@slider/shared';
 import { describe, expect, it } from 'vitest';
 import { fixWord } from '../../spelling/fix-word';
 import { misspeltAt, misspelledWords } from '../../spelling/words';
-import { countByStatus, doneByAi, isBareSticker, type Thread } from './comment-selectors';
+import {
+  connectorAnchors,
+  connectorExits,
+  countByStatus,
+  doneByAi,
+  isBareSticker,
+  type Thread,
+} from './comment-selectors';
 
 describe('threads', () => {
   it('sort into the filter by status', () => {
@@ -24,6 +31,26 @@ describe('threads', () => {
     expect(isBareSticker(sticker('Hallo '))).toBe(true);
     expect(isBareSticker(sticker('Dazu noch was'))).toBe(false);
     expect(isBareSticker(sticker('Hallo', [{}]))).toBe(false);
+
+    // A comment on the whole slide has its line too (BER-203): down from the bottom edge, near
+    // the middle but clear of a frame's drop there; a second one keeps clear of both.
+    const onSlide: Parameters<typeof connectorAnchors>[0][number] = {
+      anchor: { type: 'slide' },
+      strokes: [],
+      source: 'app',
+    };
+    const frame: typeof onSlide = {
+      anchor: { type: 'rect', rect: { x: 0.1, y: 0.2, w: 0.8, h: 0.75 }, shapeRef: null },
+      strokes: [],
+      source: 'app',
+    };
+    const anchors = connectorAnchors([onSlide, frame, onSlide], [], 16 / 9);
+    expect(connectorExits(anchors, 16 / 9)).toEqual(['down', 'down', 'down']);
+    expect(anchors.map((anchor) => anchor!.bottom)).toEqual([
+      { x: 0.4, y: 1 },
+      { x: 0.5, y: 0.95 },
+      { x: 0.6, y: 1 },
+    ]);
 
     // The guides view's spell check: hyphenated words are known by their parts; numbers,
     // abbreviations and addresses are no words; each misspelt word is named once.

@@ -240,8 +240,10 @@ export function createTabWindow({
       });
       contents.on('did-finish-load', () => refreshTitle(tab));
       contents.on('page-title-updated', () => refreshTitle(tab));
-      // A new page offers its buttons anew.
-      contents.on('did-navigate', () => {
+      // A new page offers its buttons anew. Loaded anew away from the presentation (the account
+      // was switched, the session ended): the tab goes, home shows where things are now.
+      contents.on('did-navigate', (_event, next) => {
+        if (isOwn(next) && !deckIdOf(next)) return closeTab(tab);
         tab.bar = null;
         if (tab === active) send();
       });
@@ -472,6 +474,16 @@ export function createTabWindow({
       }
       send();
       save();
+    },
+    /**
+     * ⌘[: a page back – only off a page that is not Slider's (a login provider's, signing in
+     * another account), where nothing of Slider's leads back.
+     */
+    back() {
+      const contents = active?.view.webContents;
+      if (!contents || isOwn(contents.getURL())) return;
+      if (contents.navigationHistory.canGoBack()) contents.navigationHistory.goBack();
+      else if (origin) contents.loadURL(origin);
     },
     /** ⌘W: closes the presentation tab; on home, the window. */
     closeActive() {

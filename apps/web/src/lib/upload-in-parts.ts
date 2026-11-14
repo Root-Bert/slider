@@ -1,6 +1,6 @@
 import { DetailedError, Upload } from 'tus-js-client';
 import { API_PREFIX, DECK_TUS_PATH, DECK_UPLOAD_PART_BYTES } from '@slider/shared';
-import { ApiError, apiErrorFromText, apiRequest } from './api-client';
+import { accountHeader, ApiError, apiErrorFromText, apiRequest } from './api-client';
 
 /** Waits between tries of a part that did not get through (connection gone, server restarted). */
 const RETRY_DELAYS_MS = [0, 1000, 3000, 5000, 10_000];
@@ -74,6 +74,8 @@ export async function sendInParts(
       endpoint: `${API_PREFIX}${DECK_TUS_PATH}`,
       chunkSize: DECK_UPLOAD_PART_BYTES,
       retryDelays: RETRY_DELAYS_MS,
+      // Never as another account the browser was switched to meanwhile.
+      headers: accountHeader(),
       metadata: { filename: file.name, ...target },
       // The same file into another workspace (or as another deck's version) is another upload.
       fingerprint: async () =>

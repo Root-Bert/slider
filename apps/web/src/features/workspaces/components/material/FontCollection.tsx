@@ -54,7 +54,7 @@ const SOURCE_LABELS: Record<FontFamily['source'], string> = {
   workspace: 'Workspace',
 };
 
-/** "Normal, Fett · für Calibri, Calibri Light", "Normal · aus „Quartalsbericht“" */
+/** "Normal, Fett | für Calibri, Calibri Light", "Normal | aus „Quartalsbericht“" */
 const facesLine = (family: FontFamily) =>
   [
     family.faces.map(faceLabel).join(', '),
@@ -62,7 +62,7 @@ const facesLine = (family: FontFamily) =>
     family.takenFrom && `aus „${family.takenFrom}“`,
   ]
     .filter(Boolean)
-    .join(' · ');
+    .join(' | ');
 
 const PANGRAM = 'Franz jagt im komplett verwahrlosten Taxi quer durch Bayern';
 

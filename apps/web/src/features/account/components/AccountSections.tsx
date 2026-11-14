@@ -156,7 +156,7 @@ export function CloudLoginSection() {
             subtitle={
               account
                 ? account.email
-                  ? `${account.email} · ${host}`
+                  ? `${account.email} | ${host}`
                   : host
                 : 'Nicht angemeldet. Im Browser mit Microsoft, Google, Nextcloud oder Passkey.'
             }

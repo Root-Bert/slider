@@ -199,6 +199,8 @@ export function inviteMail(input: {
   /** Without one, the mail has no button – `url` then only names the instance (legal links). */
   button?: string;
   url: string;
+  /** A one-time code under the button, with what it is for. */
+  code?: { label: string; value: string };
   outro: string;
   /** Files the mail brings along (a deck sent from „Exportieren“). */
   files?: MailAttachment[];
@@ -216,7 +218,7 @@ export function inviteMail(input: {
   return {
     to: input.to,
     subject: input.subject,
-    text: `${input.intro}\n\n${input.quote ? `${input.quote}\n\n` : ''}${input.button ? `${input.button}: ${input.url}\n\n` : ''}${input.outro}\n\n– Slider\n${input.legalLinks ? `Impressum: ${origin}/impressum | Datenschutz: ${origin}/datenschutz\n` : ''}`,
+    text: `${input.intro}\n\n${input.quote ? `${input.quote}\n\n` : ''}${input.button ? `${input.button}: ${input.url}\n\n` : ''}${input.code ? `${input.code.label} ${input.code.value}\n\n` : ''}${input.outro}\n\n– Slider\n${input.legalLinks ? `Impressum: ${origin}/impressum | Datenschutz: ${origin}/datenschutz\n` : ''}`,
     attachments: [logo, ...(input.files ?? [])],
     html: `<!doctype html>
 <html lang="de">
@@ -254,6 +256,11 @@ ${
 <a href="${url}" style="display:inline-block;padding:13px 20px;font-size:14px;line-height:18px;font-weight:500;color:${C.onPrimary};text-decoration:none;border-radius:12px;">${escapeHtml(input.button)}</a>
 </td>
 </tr></table>\n`
+        : ''
+    }${
+      input.code
+        ? `<p style="margin:32px 0 0;font-size:12px;line-height:18px;color:${C.subtle};">${escapeHtml(input.code.label)}</p>
+<p style="margin:8px 0 0;font-size:28px;line-height:36px;font-weight:600;letter-spacing:0.2em;color:${C.fg};font-variant-numeric:tabular-nums;">${escapeHtml(input.code.value)}</p>\n`
         : ''
     }<p style="margin:36px 0 0;font-size:12px;line-height:18px;color:${C.subtle};">${escapeHtml(input.outro)}</p>
 ${

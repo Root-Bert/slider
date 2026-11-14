@@ -1,3 +1,4 @@
+import { accountHeader } from '@/lib/api-client';
 import {
   API_PREFIX,
   LIVE_TEXT_VERSION,
@@ -90,7 +91,7 @@ const post = (path: string, body: unknown, keepalive = false) => {
   const json = JSON.stringify(body);
   return fetch(`${API_PREFIX}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...accountHeader() },
     credentials: 'same-origin',
     body: json,
     keepalive: keepalive && json.length < KEEPALIVE_BYTES,

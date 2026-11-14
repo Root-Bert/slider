@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
-import type { Viewer } from '@slider/shared';
+import { ACCOUNT_HEADER, type Viewer } from '@slider/shared';
 import { ownerAuthor } from '../authors';
 import { users, type UserRow } from '../db/schema';
 import type { AppDeps } from '../deps';
@@ -42,7 +42,19 @@ export async function resolveViewer(
   options?: LoadSessionOptions,
 ): Promise<Viewer | null> {
   const user = await loadSessionUser(c, deps, options);
-  if (user) return userViewer(user);
+  if (user) {
+    // A page loaded for another account of this browser (switched in another tab since): it
+    // must not read or write as this one.
+    const expected = c.req.header(ACCOUNT_HEADER);
+    if (expected && expected !== user.id) {
+      throw new ApiError(
+        409,
+        'account_changed',
+        'In diesem Browser ist jetzt ein anderes Konto aktiv. Die Seite wird neu geladen.',
+      );
+    }
+    return userViewer(user);
+  }
   if (deps.config.auth.devLogin && deps.ownerId) return loadOwnerViewer(deps, deps.ownerId);
   return null;
 }

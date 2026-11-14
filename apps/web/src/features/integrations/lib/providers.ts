@@ -123,7 +123,7 @@ export const WORKSPACE_INTEGRATIONS_NAV = [AI_NAME_SECTION, ...INTEGRATIONS_NAV]
 
 /** „Anthropic · claude-sonnet-5-5“ – what applies from the instance (or the server). */
 export const describeInherited = (inherited: InheritedIntegration) =>
-  [PROVIDER_LABELS[inherited.provider], inherited.model].filter(Boolean).join(' · ');
+  [PROVIDER_LABELS[inherited.provider], inherited.model].filter(Boolean).join(' | ');
 
 /** „Key der Instanz, Modell frei, eigene Keys erlaubt“ – a rule in words, for toasts. */
 export const ruleSummary = (kind: IntegrationKind, rule: IntegrationRule) =>

@@ -264,7 +264,7 @@ export function LeaveSection({ workspace, userId }: { workspace: Workspace; user
               (unter {usageLink}), dann kannst du ihn verlassen.
             </>
           ) : mustHandOver ? (
-            'Du verlierst den Zugriff auf die Präsentationen dieses Workspace. Als einziger Admin übergibst du ihn beim Verlassen an ein anderes Mitglied – danach kannst du einen neuen eigenen gründen.'
+            'Du verlierst den Zugriff auf die Präsentationen dieses Workspace. Als einziger Admin übergibst du ihn beim Verlassen an ein anderes Mitglied.'
           ) : (
             'Du verlierst den Zugriff auf die Präsentationen dieses Workspace. Deine Kommentare bleiben hier; was mit deinen Präsentationen passiert, zeigt der nächste Schritt.'
           )}

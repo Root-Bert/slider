@@ -338,10 +338,6 @@ export function iconSvg(icon: LibraryIcon, color: string, size?: number): string
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${icon.viewBox}"${box} fill="${color}" color="${color}">${icon.body}</svg>`;
 }
 
-/** The icon as a `data:` URL – for a CSS mask (`IconGlyph`) or a download's link. */
-export const iconDataUrl = (icon: LibraryIcon, color = '#000') =>
-  `data:image/svg+xml,${encodeURIComponent(iconSvg(icon, color))}`;
-
 /** Pixels on the longer side of an icon put on a slide: sharp up to the slide's width. */
 export const ICON_PX = 1024;
 

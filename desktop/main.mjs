@@ -5,8 +5,15 @@
 // live in the macOS keychain (safeStorage), not next to the data.
 import { app, Menu, dialog, ipcMain, nativeTheme, safeStorage, session, shell } from 'electron';
 import { execFileSync, spawn } from 'node:child_process';
-import { createHmac, randomBytes } from 'node:crypto';
-import { createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
+import {
+  appendFileSync,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -291,10 +298,95 @@ ipcMain.handle('desktop:reveal', async (event, deckId) => {
   );
 });
 
+// ── One more account on the server's pages (like Figma): signed in in the browser ─────────────
+
+/** state → the PKCE verifier of a „Weiteres Konto hinzufügen“ under way, and its server. */
+const adding = new Map();
+const ADDING_TTL_MS = 15 * 60_000;
+/** As the server keeps them (apps/api/src/auth/session.ts): the others, and for how long. */
+const MAX_OTHER_ACCOUNTS = 4;
+const SESSION_MAX_AGE_S = 90 * 24 * 60 * 60;
+
+/**
+ * „Weiteres Konto hinzufügen“ on the server's pages: the browser signs in (logins like Google's
+ * refuse an app's own window, and the browser knows the person's accounts) and hands a one-time
+ * code back through `slider://auth`, as signing the app in does – only that the session goes to
+ * the pages' cookies, beside the accounts already there, not to this computer's sync.
+ */
+ipcMain.handle('desktop:addAccount', (event) => {
+  if (!fromOwnPage(event) || !fromServerPage(event)) return false;
+  const now = Date.now();
+  for (const [state, entry] of adding) if (entry.expires < now) adding.delete(state);
+  const verifier = randomBytes(32).toString('base64url');
+  const state = randomBytes(16).toString('base64url');
+  adding.set(state, { verifier, server: cloudOrigin, expires: now + ADDING_TTL_MS });
+  const challenge = createHash('sha256').update(verifier).digest('base64url');
+  const query = new URLSearchParams({ challenge, state, add: '1' });
+  openExternal(`${cloudOrigin}/desktop-anmelden?${query.toString()}`);
+  return true;
+});
+
+/** The browser's code for an account to add: its session becomes the pages', the others wait. */
+async function addAccount({ verifier, server }, code) {
+  if (server !== cloudOrigin) throw new Error('Die App ist inzwischen woanders angemeldet.');
+  const response = await fetch(`${server}/api/auth/desktop/token`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ code, verifier }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const answer = await response.json().catch(() => null);
+  if (!response.ok || typeof answer?.token !== 'string') {
+    throw new Error(answer?.error?.message ?? 'Das hat nicht geklappt.');
+  }
+  // In line with reading the session (`syncCloud`): it must not put the app's token over the
+  // account just added.
+  syncing = syncing.then(async () => {
+    const secure = server.startsWith('https://');
+    const prefix = secure ? '__Host-' : '';
+    const cookies = session.defaultSession.cookies;
+    const valueOf = async (name) => (await cookies.get({ url: server, name }))[0]?.value ?? '';
+    const others = [
+      await valueOf(`${prefix}slider_session`),
+      ...(await valueOf(`${prefix}slider_accounts`)).split('.'),
+    ]
+      .filter((token) => token && token !== answer.token)
+      .slice(0, MAX_OTHER_ACCOUNTS);
+    const cookie = (name, value) => ({
+      url: server,
+      name: `${prefix}${name}`,
+      value,
+      path: '/',
+      secure,
+      httpOnly: true,
+      sameSite: 'lax',
+      expirationDate: Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_S,
+    });
+    await cookies.set(cookie('slider_session', answer.token));
+    if (others.length > 0) await cookies.set(cookie('slider_accounts', others.join('.')));
+  });
+  await syncing;
+  logLive('account added to the pages');
+  // Every page anew, as the new account: presentation tabs close, home shows its workspaces.
+  for (const contents of [...(tabsWindow?.contents() ?? [])]) void contents.loadURL(server);
+}
+
 /** „Abmelden“ on the server's pages: this computer signs out (and ends its session there). */
 ipcMain.handle('desktop:signOut', async (event) => {
   if (!fromOwnPage(event) || !origin) return false;
+  const server = cloudOrigin;
   const response = await callApi('/desktop/cloud', { method: 'DELETE' });
+  // The other accounts signed in on the pages end on the server too, not only in the cookie
+  // (`syncCloud` drops that): with the pages' cookies, as their „Abmelden“ in a browser.
+  if (response.ok && server) {
+    await session.defaultSession
+      .fetch(`${server}/api/auth/logout`, {
+        method: 'POST',
+        headers: { origin: server },
+        signal: AbortSignal.timeout(5000),
+      })
+      .catch(() => {});
+  }
   // Signed out: `syncCloud` finds the session gone and the tabs leave the server (`leaveServer`).
   await syncCloud();
   return response.ok;
@@ -343,10 +435,32 @@ function toPageOrigin(url) {
       : url;
 }
 
+/** Why the tabs show the server's pages or this computer's: `logs/live.log`. */
+function logLive(message) {
+  try {
+    mkdirSync(logDir, { recursive: true });
+    appendFileSync(path.join(logDir, 'live.log'), `${new Date().toISOString()} ${message}\n`);
+  } catch {
+    // A log that can't be written changes nothing.
+  }
+}
+
+let lastMiss = null;
 const serverAnswers = createReachability(async () => {
   if (!cloudOrigin) return false;
-  const response = await fetch(`${cloudOrigin}/api/health`, { signal: AbortSignal.timeout(4000) });
-  return response.ok;
+  try {
+    const response = await fetch(`${cloudOrigin}/api/health`, {
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!response.ok) throw new Error(`health ${response.status}`);
+    lastMiss = null;
+    return true;
+  } catch (error) {
+    const why = error.cause?.code ?? error.message;
+    if (why !== lastMiss) logLive(`${cloudOrigin} does not answer: ${why}`);
+    lastMiss = why;
+    return false;
+  }
 });
 
 let following = null;
@@ -356,13 +470,17 @@ function followConnection() {
     try {
       const up = cloudOrigin !== null && (await serverAnswers());
       if (up === live || !tabsWindow) return;
+      logLive(`${up ? 'online' : 'offline'} (server ${cloudOrigin ?? 'none'})`);
       if (up) {
-        await askApi('/desktop/cloud/sync', {}).catch(() => {});
+        await askApi('/desktop/cloud/sync', {}).catch((error) =>
+          logLive(`sync before going live failed: ${error.message}`),
+        );
         await syncCloud();
-        if (!cloudOrigin) return;
+        if (!cloudOrigin) return logLive('signed out meanwhile, staying here');
       }
       const leaving = live ? cloudOrigin : origin;
       live = up;
+      logLive(`tabs move to ${live ? cloudOrigin : origin}`);
       tabsWindow.moveTo(live ? cloudOrigin : origin, (url) =>
         new URL(url).origin === leaving ? toPageOrigin(url) : url,
       );
@@ -384,9 +502,19 @@ async function followLink(link) {
   const code = url.searchParams.get('code');
   const state = url.searchParams.get('state');
   if (!code || !state) return;
+  const add = adding.get(state);
+  if (add) {
+    adding.delete(state);
+    try {
+      await addAccount(add, code);
+    } catch (error) {
+      dialog.showErrorBox('Konto hinzufügen hat nicht geklappt', error.message);
+    }
+    return toFront();
+  }
   try {
     await askApi('/desktop/cloud/finish', { code, state }, 'Die Anmeldung hat nicht geklappt.');
-    await syncCloud();
+    await syncCloud({ force: true });
     // Signed in: the first pass brought the account's decks; the tabs move to the server's pages.
     await followConnection();
   } catch (error) {
@@ -424,15 +552,31 @@ async function letPagesIn(local, secret) {
  * signed in – or gone, once signed out. Asked at start, after signing in and when the window
  * comes to the front (signing out happens in the page).
  */
-async function syncCloud() {
+/** The token this app last put into its pages' cookie. */
+let pagesToken = null;
+
+/**
+ * `force`: just signed in here – the pages take the app's session whatever they had. Otherwise
+ * the pages' own sign-in wins, as in a browser: switched to another account there (several
+ * accounts, like Figma), they stay on it; only none, or this app's previous token, is replaced.
+ */
+function syncCloud(options) {
+  // One after another: an answer from before signing in must not come in after the one from
+  // after it and take the session away again.
+  syncing = syncing.then(() => readCloud(options)).catch(() => {});
+  return syncing;
+}
+let syncing = Promise.resolve();
+
+async function readCloud({ force = false } = {}) {
   if (!origin || !apiSecret) return;
   let answer;
   try {
     const response = await callApi('/desktop/cloud/session');
-    if (!response.ok) return;
+    if (!response.ok) return logLive(`session not read: ${response.status}`);
     answer = await response.json();
-  } catch {
-    return;
+  } catch (error) {
+    return logLive(`session not read: ${error.message}`);
   }
   const { server, token } = answer;
   const before = { server: cloudOrigin, ids };
@@ -443,13 +587,40 @@ async function syncCloud() {
   const cookies = session.defaultSession.cookies;
   if (token) {
     cloudOrigin = new URL(server).origin;
-    await cookies
-      .set({ url: server, name, value: token, path: '/', secure, httpOnly: true, sameSite: 'lax' })
-      .catch(() => {});
+    const [current] = await cookies.get({ url: server, name }).catch(() => []);
+    if (force || !current || current.value === pagesToken) {
+      await cookies
+        .set({
+          url: server,
+          name,
+          value: token,
+          path: '/',
+          secure,
+          httpOnly: true,
+          sameSite: 'lax',
+        })
+        .catch(() => {});
+      // The pages lost their session (ended there, the cookie dropped) and stand at the login:
+      // back in as the app's account, they load anew instead of asking to sign in in a tab.
+      if (!current && live) {
+        for (const contents of tabsWindow?.contents() ?? []) {
+          if (contents.getURL().startsWith(`${cloudOrigin}/login`)) {
+            void contents.loadURL(cloudOrigin);
+          }
+        }
+      }
+    }
+    pagesToken = token;
   } else {
     cloudOrigin = null;
+    pagesToken = null;
+    // The other accounts signed in on the pages go too: the computer is left clean.
     await cookies.remove(server, name).catch(() => {});
-    if (before.server) leaveServer(before);
+    await cookies.remove(server, `${secure ? '__Host-' : ''}slider_accounts`).catch(() => {});
+    if (before.server) {
+      logLive('session gone, tabs leave the server');
+      leaveServer(before);
+    }
   }
 }
 
@@ -672,6 +843,8 @@ function setMenu() {
           { role: 'minimize' },
           { role: 'zoom' },
           { type: 'separator' },
+          // No shortcut: ⌘[ is the editor's. Only off a login provider's page (`back`).
+          { label: 'Zurück zu Slider', click: () => tabsWindow?.back() },
           {
             label: 'Tab schließen',
             accelerator: 'CmdOrCtrl+W',
@@ -843,6 +1016,7 @@ app.whenReady().then(async () => {
     // Before the tabs of last time come back: some may be on the server.
     await syncCloud();
     live = cloudOrigin !== null && (await serverAnswers());
+    logLive(`start: ${live ? `live on ${cloudOrigin}` : `here (server ${cloudOrigin ?? 'none'})`}`);
     if (live) {
       await askApi('/desktop/cloud/sync', {}).catch(() => {});
       // The pass brought decks made offline up: their server ids, for the tabs of last time.
@@ -853,7 +1027,9 @@ app.whenReady().then(async () => {
     if (!tabsWindow) openWindow();
     await startTabs();
     ready = true;
-    setInterval(() => void followConnection(), 10_000);
+    // The session is read anew each time: signed in or out meanwhile, the tabs follow within
+    // seconds even where no focus or link told so.
+    setInterval(() => void syncCloud().then(followConnection), 10_000);
     for (const link of linksWaiting.splice(0)) void followLink(link);
     void openFiles(filesWaiting.splice(0));
     startUpdates({ logDir, window: () => mainWindow });

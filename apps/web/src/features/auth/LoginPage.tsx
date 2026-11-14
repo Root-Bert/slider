@@ -1,7 +1,7 @@
 import { Navigate, useSearchParams } from 'react-router';
 import { useAuthProviders, useMe } from '@/lib/api';
 import { CenteredLayout } from '@/shell/layouts/CenteredLayout';
-import { Spinner } from '@/ui';
+import { Spinner, TextLink } from '@/ui';
 import { ConfirmMailBanner, LoginErrorBanner, SignupHint } from './components/LoginBits';
 import { LoginHero } from './components/LoginHero';
 import { LoginOptions } from './components/LoginOptions';
@@ -25,8 +25,15 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const me = useMe();
   const providers = useAuthProviders();
 
+  // „Weiteres Konto hinzufügen“ (`?add=1`): signed in, one more account on this browser.
+  // The server's way back after a login refused or to confirm by mail carries no `add`: signed in
+  // and sent here with something to say is still adding – else the reason would never show.
+  const confirming = searchParams.get('confirm') === 'nextcloud';
+  const adding =
+    Boolean(me.data?.user) &&
+    (searchParams.get('add') === '1' || isLoginError(errorCode) || confirming);
   // Already signed in (or the dev login is on): straight on.
-  if (me.data?.user) return <Navigate to={returnTo} replace />;
+  if (me.data?.user && !adding) return <Navigate to={returnTo} replace />;
 
   const joining = returnTo.startsWith('/join/');
 
@@ -36,7 +43,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
     >
       <div className="mx-auto flex w-full max-w-[420px] flex-col gap-6">
         {isLoginError(errorCode) && <LoginErrorBanner code={errorCode} />}
-        {searchParams.get('confirm') === 'nextcloud' && <ConfirmMailBanner />}
+        {confirming && <ConfirmMailBanner />}
         <section
           aria-labelledby="login-title"
           className="flex flex-col items-center gap-8 text-center"
@@ -47,12 +54,14 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
               id="login-title"
               className="text-2xl leading-8 font-semibold tracking-tight text-fg"
             >
-              Get your ideas across.
+              {adding ? 'Weiteres Konto hinzufügen' : 'Get your ideas across.'}
             </h1>
             <p className="text-sm leading-5 text-fg-subtle">
-              {joining
-                ? 'Melde dich an, um der Einladung zu folgen.'
-                : 'Melde dich bei deinem Slider-Konto an.'}
+              {adding
+                ? 'Melde dich mit einem anderen Slider-Konto an. Gewechselt wird dann über dein Bild oben rechts.'
+                : joining
+                  ? 'Melde dich an, um der Einladung zu folgen.'
+                  : 'Melde dich bei deinem Slider-Konto an.'}
             </p>
           </div>
           {providers.isPending ? (
@@ -63,8 +72,14 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
             <LoginOptions config={providers.data} returnTo={returnTo} />
           )}
         </section>
-        {providers.data && (
-          <SignupHint signup={providers.data.signup} mode={mode} returnTo={returnTo} />
+        {adding ? (
+          <TextLink to={returnTo} variant="inline" className="self-center text-sm">
+            Abbrechen
+          </TextLink>
+        ) : (
+          providers.data && (
+            <SignupHint signup={providers.data.signup} mode={mode} returnTo={returnTo} />
+          )
         )}
       </div>
     </CenteredLayout>

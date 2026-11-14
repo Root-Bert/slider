@@ -865,6 +865,21 @@ describe('the material page', () => {
     const tokens = (await granted.json()) as { access_token: string; refresh_token: string };
     expect(tokens.access_token).toMatch(/^slider_at_/);
     expect((await token({ ...exchange, code_verifier: verifier })).status).toBe(400);
+    // The app shows Slider's mark for the connector (MCP `icons`, absolute, on the site).
+    const hello = await rpc(tokens.access_token, 'initialize', {
+      protocolVersion: '2025-11-25',
+      capabilities: {},
+      clientInfo: { name: 'test', version: '1' },
+    });
+    expect(hello.body?.result).toMatchObject({
+      serverInfo: {
+        title: 'Slider',
+        icons: [
+          { src: `${origin}/favicon.svg`, mimeType: 'image/svg+xml' },
+          { src: `${origin}/icon-192.png`, mimeType: 'image/png', sizes: ['192x192'] },
+        ],
+      },
+    });
 
     // The tools: a note on the board under the person's name, found again by search and fetch.
     const { body: listed } = await rpc(tokens.access_token, 'tools/list');

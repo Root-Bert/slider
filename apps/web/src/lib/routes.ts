@@ -42,6 +42,9 @@ export const routes = {
   /** Workspace invitation link (BER-129). */
   join: (token: string) => `/join/${token}`,
   login: (returnTo?: string | null) => loginPath(returnTo),
+  /** The login page while signed in: one more account on this browser, to switch between. */
+  addAccount: (returnTo?: string) =>
+    `/login?add=1${returnTo ? `&returnTo=${encodeURIComponent(returnTo)}` : ''}`,
   /** "Konto & Anmeldung": connected logins and passkeys. */
   account: () => '/konto',
   /** "Einstellungen": your colour and how decks open – kept apart from the account. */
