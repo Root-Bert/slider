@@ -19,6 +19,7 @@ import {
   type DeckSource,
   type DeckTemplate,
   type TemplateColor,
+  type UpdateDeckInput,
 } from '@slider/shared';
 import { openToViewer, permissionsFor, type DeckViewerAccess } from '../auth/access';
 import { displayAuthor, ownerAuthor } from '../authors';
@@ -44,6 +45,7 @@ import { pdfMakerOf } from '../import/pdf-maker';
 import { blobKeys, fileUrl } from '../storage/blob-storage';
 import { deckBlobs, deleteBlobs } from './blob-deletions';
 import { toDeckSync } from './deck-sync';
+import { findFolder } from './folders';
 import { isOpenComment } from './open-comments';
 import { assertDeckSlot, assertStorageFor } from './plans';
 import { rolesOf } from './workspaces/roles';
@@ -346,6 +348,36 @@ export async function listWorkspaceDecks(
 /** Records activity on a deck so the overview sorts it to the top. */
 export async function touchDeck(db: Executor, deckId: string, now: Date): Promise<void> {
   await db.update(decks).set({ updatedAt: now }).where(eq(decks.id, deckId));
+}
+
+/**
+ * Renames, archives (or brings back), moves into a folder of its workspace (`null`: out of any)
+ * or sets its own colours – the caller checked the right to manage it. A template's name in the
+ * library follows with `scheduleTemplateSave`, the caller's.
+ */
+export async function updateDeck(
+  deps: Pick<AppDeps, 'db' | 'clock'>,
+  deck: DeckRow,
+  input: UpdateDeckInput,
+): Promise<DeckRow> {
+  // Only into a folder of the deck's own workspace.
+  if (input.folderId) await findFolder(deps.db, deck.workspaceId, input.folderId);
+  const now = deps.clock.now();
+  const [updated] = await deps.db
+    .update(decks)
+    .set({
+      ...(input.title !== undefined ? { title: input.title } : {}),
+      ...(input.archived !== undefined
+        ? { archivedAt: input.archived ? (deck.archivedAt ?? now) : null }
+        : {}),
+      ...(input.folderId !== undefined ? { folderId: input.folderId } : {}),
+      ...(input.customColors !== undefined ? { customColors: input.customColors } : {}),
+      updatedAt: now,
+    })
+    .where(eq(decks.id, deck.id))
+    .returning();
+  if (!updated) throw new Error(`Deck ${deck.id} vanished during update`);
+  return updated;
 }
 
 export interface NewDeckFile {

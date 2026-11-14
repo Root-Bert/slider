@@ -51,7 +51,9 @@ export const planLimit = (message: string) => new ApiError(403, 'plan_limit', me
 export const ssoAvailable = (config: Pick<Config, 'limited'>, plan: string) =>
   !config.limited || plan === 'paid';
 
-export const OWN_WORKSPACE_LIMIT_MESSAGE = 'Du hast bereits einen eigenen Workspace.';
+/** Workspaces one account may found on a limited instance: one for a team, one for oneself. */
+export const MAX_OWN_WORKSPACES = 2;
+export const OWN_WORKSPACE_LIMIT_MESSAGE = `Du hast bereits ${MAX_OWN_WORKSPACES} eigene Workspaces.`;
 export const workspaceFullMessage = () =>
   'Dieser Workspace ist voll. Bitte die Person, die dich eingeladen hat, einen Platz freizumachen.';
 export const seatsFullMessage = (max: number) =>
@@ -318,9 +320,10 @@ export async function assertSeatForJoin(
 }
 
 /**
- * Whether the user still may found a workspace – only limited on a limited instance (the
- * demo); self-hosted, anyone may found as many as they like. "Own" means founded by the user
- * (`createdBy`), whoever owns it now: handing it over doesn't free the slot, only deleting it does.
+ * Whether the user still may found a workspace – on a limited instance (the demo) up to
+ * {@link MAX_OWN_WORKSPACES}, say a team's and a private one; self-hosted, anyone may found as
+ * many as they like. "Own" means founded by the user (`createdBy`), whoever owns it now: handing
+ * one over doesn't free its slot, only deleting it does.
  */
 export async function canCreateWorkspace(
   db: Executor,
@@ -332,5 +335,5 @@ export async function canCreateWorkspace(
     .select({ count: count() })
     .from(workspaces)
     .where(eq(workspaces.createdBy, userId));
-  return (row?.count ?? 0) === 0;
+  return (row?.count ?? 0) < MAX_OWN_WORKSPACES;
 }

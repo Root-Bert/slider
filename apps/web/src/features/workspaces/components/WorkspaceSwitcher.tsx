@@ -177,15 +177,12 @@ function NewWorkspaceFlyout({
           Eigenen erstellen
         </MenuItem>
       ) : (
-        // One own workspace per account (BER-130) – handing it over frees the slot.
+        // Two own workspaces per account (BER-130) – handing one over doesn't free its slot.
         <div className="flex items-start gap-2.5 px-2.5 py-1.5 text-body text-fg-subtle">
           <Icon name="add" size={18} className="shrink-0 opacity-50" />
           <span className="flex flex-col gap-0.5">
             <span>Eigenen erstellen</span>
-            <span className="text-xs leading-4">
-              Du hast bereits einen eigenen. Übergib ihn an jemand anderen, um einen neuen zu
-              gründen.
-            </span>
+            <span className="text-xs leading-4">Du hast bereits zwei eigene gegründet.</span>
           </span>
         </div>
       )}

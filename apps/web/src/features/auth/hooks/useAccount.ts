@@ -14,7 +14,7 @@ export function useAccount() {
     pendingInvites: data.pendingInvites ?? [],
     /** The company workspace of the viewer's e-mail domain, not joined yet (BER-148). */
     domainWorkspace: data.domainWorkspace ?? null,
-    /** One self-founded workspace per account (BER-130); older servers send no limits. */
+    /** Two self-founded workspaces per account (BER-130); older servers send no limits. */
     canCreateWorkspace: data.limits?.canCreateWorkspace ?? true,
     /** Workspaces can be opened to a company domain (`SIGNUP` is not `invite`, BER-148). */
     domainJoin: data.limits?.domainJoin ?? false,

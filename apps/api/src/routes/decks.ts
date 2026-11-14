@@ -48,10 +48,10 @@ import {
   listDeckPeople,
   listWorkspaceDecks,
   toDeckDto,
+  updateDeck,
 } from '../services/decks';
 import { getDeckAccess, updateDeckAccess } from '../services/deck-access';
 import { searchDecks } from '../services/deck-search';
-import { findFolder } from '../services/folders';
 import { assertDeckSlot } from '../services/plans';
 import { listSlides } from '../services/slides';
 import { requireRole, resolveUploadWorkspace } from '../services/workspaces';
@@ -470,23 +470,7 @@ export function decksRoutes(deps: AppDeps) {
       .patch('/decks/:deckId', viewer, async (c) => {
         const deck = await requireDeckAccess(deps, c.var.viewer, c.req.param('deckId'), 'own');
         const input = await readJson(c, updateDeckInputSchema);
-        // Only into a folder of the deck's own workspace.
-        if (input.folderId) await findFolder(deps.db, deck.workspaceId, input.folderId);
-        const now = deps.clock.now();
-        const [updated] = await deps.db
-          .update(decks)
-          .set({
-            ...(input.title !== undefined ? { title: input.title } : {}),
-            ...(input.archived !== undefined
-              ? { archivedAt: input.archived ? (deck.archivedAt ?? now) : null }
-              : {}),
-            ...(input.folderId !== undefined ? { folderId: input.folderId } : {}),
-            ...(input.customColors !== undefined ? { customColors: input.customColors } : {}),
-            updatedAt: now,
-          })
-          .where(eq(decks.id, deck.id))
-          .returning();
-        if (!updated) throw new Error(`Deck ${deck.id} vanished during update`);
+        const updated = await updateDeck(deps, deck, input);
         // A template's name is its name in the library too.
         if (updated.isTemplate && input.title !== undefined) scheduleTemplateSave(deps, deck.id);
         return c.json(await existingDeckDto(deps, c.var.viewer, updated));

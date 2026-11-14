@@ -1,6 +1,13 @@
-import { MAX_MATERIAL_CHAT_MESSAGE, markdownToRich, type Material } from '@slider/shared';
+import {
+  MAX_MATERIAL_CHAT_MESSAGE,
+  markdownToRich,
+  type Material,
+  type MaterialChatSummary,
+} from '@slider/shared';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { AutosizeTextarea, Icon, IconButton, useFocusLoop, type Avatar } from '@/ui';
+import { useDeleteMaterialChat, useMaterialChats } from '@/lib/api';
+import { formatRelativeTime } from '@/lib/format';
+import { AutosizeTextarea, ConfirmDialog, Icon, IconButton, useFocusLoop, type Avatar } from '@/ui';
 import { SidePanel, SidePanelHeader } from '../components/SidePanel';
 import { useRestoreFocus } from '../hooks/useRestoreFocus';
 import { useViewerToast } from '../state/viewer-toast';
@@ -12,14 +19,15 @@ import { RichText } from './rich-text';
 
 /*
  * The AI on the material page (✨ in its controls): a chat in the deck's side panel, as with
- * Claude or ChatGPT – it reads the material, searches the web and puts what it finds on the
- * board. The chat itself: `material-chat.ts`; the AI's side: `services/material-chat.ts`.
+ * Claude or ChatGPT – it reads the material, answers, writes, and puts what it makes on the
+ * board. Each person's chats are kept: an empty chat lists the earlier ones. The chat itself:
+ * `material-chat.ts`; the AI's side: `services/material-chat.ts`.
  */
 
 /** Ways in while the chat is empty – each sent as it reads. */
 const STARTERS = [
   'Fasse das Material zusammen',
-  'Recherchiere aktuelle Zahlen zum Thema und leg die Quellen aufs Board',
+  'Welche Fragen lässt das Material offen?',
   'Schreib eine Gliederung für die Präsentation als Notiz',
 ];
 
@@ -80,9 +88,17 @@ function MaterialChatView({ deckId, ai, byId, openSource, onClose }: MaterialCha
       </SidePanelHeader>
 
       {chat.entries.length === 0 ? (
-        <div className="flex min-h-0 flex-1 flex-col justify-end gap-3 overflow-y-auto px-5 py-4">
-          <p className="text-body text-fg-muted">
-            Frag die KI zum Material: Sie liest die Dateien, recherchiert im Web und legt Ergebnisse
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
+          <EarlierChats
+            deckId={deckId}
+            onOpen={(chatId) => {
+              pinned.current = true;
+              void chat.openChat(chatId);
+            }}
+            onDeleted={() => toast('Chat gelöscht')}
+          />
+          <p className="mt-auto text-body text-fg-muted">
+            Frag die KI zum Material oder lass sie etwas schreiben. Ergebnisse legt sie auf Wunsch
             als Notizen, Links oder Dateien aufs Board.
           </p>
           <div className="flex flex-col items-start gap-1.5">
@@ -173,6 +189,67 @@ function MaterialChatView({ deckId, ai, byId, openSource, onClose }: MaterialCha
         </div>
       </form>
     </SidePanel>
+  );
+}
+
+/** One's earlier chats on the deck, latest first – opened with a click, deleted after asking. */
+function EarlierChats({
+  deckId,
+  onOpen,
+  onDeleted,
+}: {
+  deckId: string;
+  onOpen: (chatId: string) => void;
+  onDeleted: () => void;
+}) {
+  const { data: chats = [] } = useMaterialChats(deckId);
+  const remove = useDeleteMaterialChat(deckId);
+  const [deleting, setDeleting] = useState<MaterialChatSummary | null>(null);
+  if (chats.length === 0) return null;
+  return (
+    <section aria-label="Frühere Chats" className="flex flex-col gap-1">
+      <h3 className="px-2 text-caption font-medium text-fg-subtle">Frühere Chats</h3>
+      <ul className="flex flex-col">
+        {chats.map((each) => (
+          <li key={each.id} className="group flex items-center rounded-control hover:bg-hover">
+            <button
+              type="button"
+              onClick={() => onOpen(each.id)}
+              className="flex min-w-0 flex-1 items-baseline gap-2 px-2 py-1.5 text-left"
+            >
+              <span className="min-w-0 flex-1 truncate text-body text-fg">{each.title}</span>
+              <span className="shrink-0 text-caption text-fg-subtle">
+                {formatRelativeTime(each.updatedAt)}
+              </span>
+            </button>
+            <IconButton
+              icon="delete"
+              label="Chat löschen"
+              size="sm"
+              className="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
+              onClick={() => setDeleting(each)}
+            />
+          </li>
+        ))}
+      </ul>
+      <ConfirmDialog
+        open={deleting !== null}
+        onClose={() => setDeleting(null)}
+        title="Chat löschen?"
+        description={
+          deleting
+            ? `„${deleting.title}“ mit allen Nachrichten wird gelöscht. Was die KI aufs Board gelegt hat, bleibt.`
+            : undefined
+        }
+        confirmLabel="Löschen"
+        confirmIcon="delete"
+        onConfirm={() => {
+          if (!deleting) return;
+          remove.mutate(deleting.id, { onSuccess: onDeleted });
+          setDeleting(null);
+        }}
+      />
+    </section>
   );
 }
 

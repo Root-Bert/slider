@@ -177,6 +177,13 @@ Decrypt the deck's blob (`EncryptedBlobStorage` + `.data/data-key`), then from `
 - `edit_slides` = a comment on the slide + `createProposal`, as ⌘↵ in a thread; `editTarget` is
   checked first so a refusal (not ODP, no LibreOffice, still being read) leaves no comment. Waits
   ≤ 2 min. `create_presentation` waits ≤ 30 s for the blank deck to be read, build/edit ≤ 90 s.
+- Managing over MCP goes through the page's own services: `resolve_comment` = `updateComment`
+  status (on the thread's root), `undo_edit` = `revertProposal`/`reapplyProposal` (ids as
+  `edit …` in `list_comments`), `update_presentation` = `updateDeck` (a folder name not there is
+  created), `set_access` = `updateDeckAccess` (people by name, address or id),
+  `download_presentation` = `exportedFile` (ODP decks only, as on the page; attached as an MCP
+  `resource` ≤ 10 MB plus the `/api/…/edit/…` link; PDFs share `aiLimits().pdfs` with the page).
+  Templates being designed are refused by the manage tools.
 - Sticker size for notes: measured 20 px lines, ~40 characters a line (36 in lists) at width 360.
 - Tried with a real Claude loop (scratch e2e, key from `.env`): it finds decks by title, uses
   search → fetch → `add_note` with `attach_to`, and relays refusals in plain words.

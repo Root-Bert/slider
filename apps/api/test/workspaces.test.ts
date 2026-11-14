@@ -67,8 +67,20 @@ describe('workspaces', () => {
     expect(me.workspaces).toEqual([
       expect.objectContaining({ id: ctx.workspaceId, name: 'Mein Workspace', role: 'admin' }),
     ]);
-    // One self-founded workspace per account (BER-130).
-    expect(me.limits).toEqual({ canCreateWorkspace: false, domainJoin: false });
+    // Two self-founded workspaces per account (BER-130): a team's and a private one.
+    expect(me.limits).toEqual({ canCreateWorkspace: true, domainJoin: false });
+    const found = (name: string, cookie?: string) =>
+      ctx.request('/api/workspaces', { method: 'POST', json: { name }, cookie });
+    expect((await found('Privat')).status).toBe(201);
+    expect(((await (await ctx.request('/api/me')).json()) as MeResponse).limits).toEqual({
+      canCreateWorkspace: false,
+      domainJoin: false,
+    });
+    const third = await found('Noch einer');
+    expect(third.status).toBe(403);
+    expect(await third.json()).toMatchObject({
+      error: { code: 'plan_limit', message: 'Du hast bereits 2 eigene Workspaces.' },
+    });
 
     const anna = await signedInUser(ctx, { name: 'Anna', email: 'anna@firma.de' });
     const res = await ctx.request('/api/workspaces', {

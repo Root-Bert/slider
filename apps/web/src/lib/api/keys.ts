@@ -19,6 +19,8 @@ export const queryKeys = {
   board: (deckId: string) => ['decks', deckId, 'board'] as const,
   /** One's own questions about the deck's material („Fragen“ on the material page). */
   materialQuestions: (deckId: string) => ['decks', deckId, 'material-questions'] as const,
+  /** One's own chats with the AI on the material page (✨). */
+  materialChats: (deckId: string) => ['decks', deckId, 'material-chats'] as const,
   /** A deck built by the AI from the prompt on Folie 1: the prompt, the outline, the progress. */
   creation: (deckId: string) => ['decks', deckId, 'creation'] as const,
   people: (deckId: string) => ['decks', deckId, 'people'] as const,

@@ -729,6 +729,13 @@
       "when": 1794583191575,
       "tag": "0103_material_question_threads",
       "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1794650648775,
+      "tag": "0104_material_chats",
+      "breakpoints": true
     }
   ]
 }

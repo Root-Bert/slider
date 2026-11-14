@@ -32,8 +32,11 @@ on:
 permissions:
   contents: read
 
+# By event too: called from publish.yml, `github` is the caller's (event `release`, the tag's ref),
+# so the run the tag's own push starts here would share the group and cancel the release's checks
+# (v1.6.1).
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

@@ -114,8 +114,8 @@ export function editsRoutes(deps: AppDeps) {
     await next();
   });
 
-  // A PDF is the whole deck drawn by LibreOffice, which only draws a few files at once.
-  const pdfWindow = fixedWindow({ limit: 5, windowMs: 60_000, clock: deps.clock });
+  // A PDF is the whole deck drawn by LibreOffice – one budget with the KI-Apps' downloads.
+  const pdfWindow = aiLimits(deps).pdfs;
   const pdfRequests = createMiddleware<ViewerEnv>(async (c, next) => {
     assertWithinLimit(
       c,

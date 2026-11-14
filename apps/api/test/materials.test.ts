@@ -4,7 +4,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { boardSchema, materialSchema, type Board, type MaterialQuestion } from '@slider/shared';
+import {
+  boardSchema,
+  materialSchema,
+  type Board,
+  type MaterialChatDto,
+  type MaterialQuestion,
+} from '@slider/shared';
 import { utils, write } from 'xlsx';
 import { workspaceMembers, workspaces } from '../src/db/schema';
 import { LiveHub } from '../src/realtime/live-hub';
@@ -698,6 +704,54 @@ describe('the material page', () => {
       ((await (await ctx.request(questions)).json()) as { id: string }[]).map((each) => each.id),
     ).not.toContain(other.id);
     expect((await board()).items.some((each) => each.id === market)).toBe(true);
+
+    // The AI's chat (✨): each person's own, kept – the message at once, the answer as it ended –
+    // the next message goes on with the chat so far; Betrachter ask nothing; deleted, it is gone.
+    ctx.clock.advance(61_000);
+    const chats = `/api/decks/${deck.deckId}/material-chats`;
+    const say = (text: string, chatId: string | null, cookie?: string) =>
+      ctx.request(`/api/decks/${deck.deckId}/material-chat`, {
+        method: 'POST',
+        cookie,
+        json: { chatId, text },
+      });
+    const heard = async (res: Response) =>
+      (await res.text())
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => JSON.parse(line.slice(5)) as { type: string; [key: string]: unknown });
+    answers.push(
+      aiMessage(
+        [{ type: 'text', text: 'Der Markt wächst um 12 Prozent.', citations: null }],
+        'end_turn',
+      ),
+    );
+    const first = await heard(await say('Wie wächst der Markt?\nKurz bitte', null));
+    expect(first.map((event) => event.type)).toEqual(['chat', 'text', 'done']);
+    expect(first[0]).toMatchObject({ title: 'Wie wächst der Markt?' });
+    const chatId = first[0]!.id as string;
+    answers.push((body) => {
+      expect(JSON.stringify(body.messages)).toMatch(
+        /Wie wächst der Markt\?[\s\S]*12 Prozent[\s\S]*Und 2025\?/,
+      );
+      return aiMessage([{ type: 'text', text: 'Dazu steht nichts.', citations: null }], 'end_turn');
+    });
+    await (await say('Und 2025?', chatId)).text();
+    expect(await (await ctx.request(chats)).json()).toMatchObject([
+      { id: chatId, title: 'Wie wächst der Markt?' },
+    ]);
+    const kept = (await (await ctx.request(`${chats}/${chatId}`)).json()) as MaterialChatDto;
+    expect(kept.messages.map((each) => [each.role, each.text, each.state])).toEqual([
+      ['user', 'Wie wächst der Markt?\nKurz bitte', null],
+      ['assistant', 'Der Markt wächst um 12 Prozent.', 'done'],
+      ['user', 'Und 2025?', null],
+      ['assistant', 'Dazu steht nichts.', 'done'],
+    ]);
+    expect((await ctx.request(`${chats}/${chatId}`, { cookie: reader })).status).toBe(404);
+    expect(await (await ctx.request(chats, { cookie: reader })).json()).toEqual([]);
+    expect((await say('Hallo', null, reader)).status).toBe(403);
+    expect((await ctx.request(`${chats}/${chatId}`, { method: 'DELETE' })).status).toBe(204);
+    expect((await ctx.request(`${chats}/${chatId}`)).status).toBe(404);
   });
 
   it('lets AI apps in over MCP – OAuth with PKCE or a token, held to a workspace, never the cookie', async () => {
@@ -716,7 +770,10 @@ describe('the material page', () => {
           ? ((await res.json()) as {
               result: {
                 tools?: { name: string }[];
-                content?: { text?: string }[];
+                content?: {
+                  text?: string;
+                  resource?: { uri: string; mimeType: string; blob: string };
+                }[];
                 isError?: boolean;
               };
             })
@@ -725,9 +782,11 @@ describe('the material page', () => {
     };
     const call = async (token: string, name: string, args: object = {}) => {
       const { body } = await rpc(token, 'tools/call', { name, arguments: args });
+      const files = (body?.result.content ?? []).flatMap((part) => part.resource ?? []);
       return {
         text: (body?.result.content ?? []).map((part) => part.text ?? '').join('\n'),
         error: !!body?.result.isError,
+        ...(files.length > 0 ? { files } : {}),
       };
     };
 
@@ -854,6 +913,76 @@ describe('the material page', () => {
     expect(
       await call(tokens.access_token, 'get_presentation', { presentation: 'Gibt es nicht' }),
     ).toMatchObject({ error: true });
+    // Reviewing and ticking off: a comment written, marked done, open again.
+    const at = { presentation: deck.deckId };
+    const commented = await call(tokens.access_token, 'add_comment', {
+      ...at,
+      slide: 1,
+      text: 'Zu viel Text',
+    });
+    const commentId = /^Comment (\S+) written/.exec(commented.text)![1]!;
+    expect(
+      (await call(tokens.access_token, 'resolve_comment', { ...at, comment: commentId })).text,
+    ).toMatch(/is done/);
+    expect((await call(tokens.access_token, 'list_comments', at)).text).not.toContain(
+      'Zu viel Text',
+    );
+    expect((await call(tokens.access_token, 'list_comments', { ...at, done: true })).text).toMatch(
+      /\(done\): Zu viel Text/,
+    );
+    await call(tokens.access_token, 'resolve_comment', { ...at, comment: commentId, done: false });
+    expect((await call(tokens.access_token, 'list_comments', at)).text).toContain('Zu viel Text');
+    expect(await call(tokens.access_token, 'undo_edit', { ...at, edit: 'nope' })).toMatchObject({
+      error: true,
+      text: expect.stringMatching(/^No change "nope"/),
+    });
+    // Managing: renamed into a new folder, found there again; access restricted and opened.
+    expect(
+      (
+        await call(tokens.access_token, 'update_presentation', {
+          ...at,
+          title: 'Quartal',
+          folder: 'Kunden',
+          archived: true,
+        })
+      ).text,
+    ).toMatch(/^„Quartal“: renamed „Quartal“, in folder „Kunden“ \(new\), archived\./);
+    expect(
+      (await call(tokens.access_token, 'update_presentation', { ...at, folder: 'kunden' })).text,
+    ).toMatch(/in folder „Kunden“\. /);
+    expect((await call(tokens.access_token, 'list_workspaces')).text).toMatch(
+      /- folder \S+: „Kunden“/,
+    );
+    expect(
+      await call(tokens.access_token, 'update_presentation', { ...at, folder: 'x'.repeat(81) }),
+    ).toMatchObject({ error: true, text: expect.stringMatching(/at most 80 characters/) });
+    expect(
+      await call(tokens.access_token, 'update_presentation', {
+        ...at,
+        folder: crypto.randomUUID(),
+      }),
+    ).toMatchObject({ error: true, text: expect.stringMatching(/^No folder /) });
+    await call(tokens.access_token, 'update_presentation', { ...at, archived: false, folder: '' });
+    expect(
+      await call(tokens.access_token, 'set_access', {
+        ...at,
+        restricted: true,
+        people: ['Niemand'],
+      }),
+    ).toMatchObject({ error: true, text: expect.stringMatching(/is not in the workspace/) });
+    expect(
+      (await call(tokens.access_token, 'set_access', { ...at, restricted: true, people: [] })).text,
+    ).toMatch(/^Only nobody else open „Quartal“/);
+    expect(
+      (await call(tokens.access_token, 'set_access', { ...at, restricted: false })).text,
+    ).toMatch(/^Everyone in the workspace opens/);
+    expect(
+      await call(tokens.access_token, 'download_presentation', { ...at, format: 'png' }),
+    ).toMatchObject({ error: true, text: 'A picture is of one slide – give `slide`.' });
+    // Only what Slider can export – a deck it does not edit says why, as the page does.
+    expect(
+      await call(tokens.access_token, 'download_presentation', { ...at, format: 'odp' }),
+    ).toMatchObject({ error: true, text: expect.stringMatching(/nur bei ODP/) });
     // The AI's window is the page's: used up there, edit_slides waits too.
     for (let i = 0; i < 20; i += 1)
       await ctx.request(`/api/decks/${deck.deckId}/ai/proposals`, { method: 'POST', json: {} });

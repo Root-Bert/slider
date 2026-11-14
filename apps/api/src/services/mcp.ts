@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { blankOdp } from '@slider/odp';
 import {
+  API_PREFIX,
   BOARD_NOTE,
   DECK_KINDS,
   DECK_SEARCH_MIN_LENGTH,
@@ -10,6 +11,7 @@ import {
   MIN_CREATED_SLIDES,
   boardUrlSchema,
   createCommentInputSchema,
+  deckFolderInputSchema,
   deckKindSchema,
   markdownToRich,
   searchFold,
@@ -20,6 +22,7 @@ import {
   type DeckSearchHit,
   type Slide,
   type Viewer,
+  type WorkspaceMember,
 } from '@slider/shared';
 import { z } from 'zod';
 import { openToViewer, requireDeckAccess, type DeckViewerAccess } from '../auth/access';
@@ -36,12 +39,15 @@ import {
 import type { AppDeps } from '../deps';
 import { aiLimits } from '../http/ai-limits';
 import { ApiError } from '../http/errors';
-import { createProposal, listProposals } from './ai-proposals';
-import { createComment, listComments } from './comments';
+import { createProposal, listProposals, reapplyProposal, revertProposal } from './ai-proposals';
+import { createComment, listComments, updateComment } from './comments';
+import { getDeckAccess, updateDeckAccess } from './deck-access';
+import { exportedFile } from './edits/export';
 import { blocker, currentRevision, editTarget } from './edits/target';
 import { getCreation, offerCreation, startCreation } from './deck-creation';
 import { searchDecks } from './deck-search';
-import { createDeckFromFile, listWorkspaceDecks, toDeckDto } from './decks';
+import { createDeckFromFile, deleteDeck, listWorkspaceDecks, toDeckDto, updateDeck } from './decks';
+import { createFolder, listFolders } from './folders';
 import {
   addMaterial,
   createBoardItem,
@@ -59,15 +65,17 @@ import {
 import { listSlides } from './slides';
 import { deckFileFromMaster, listWorkspaceMasters } from './workspace-masters';
 import { listWorkspaces, resolveUploadWorkspace } from './workspaces';
+import { listMembers } from './workspaces/members';
 import { rolesOf } from './workspaces/roles';
 
 /*
  * Slider's MCP server (`routes/mcp.ts`): the tools an AI app (Claude, ChatGPT, Claude Code …)
  * uses for its person, with their rights – find and read presentations, look at slides, read
  * comments and the material on a deck's board, put research there (notes as stickers, links,
- * files), comment, and start a new deck that Slider's own AI builds from its board. A connection
- * held to one workspace sees only that one. Texts for the AI in English, what people see on the
- * board in the language the app writes.
+ * files), comment and tick comments off, have Slider's AI change slides (and undo it), manage a
+ * deck (rename, archive, folder, access, download, delete), and start a new deck that Slider's
+ * own AI builds from its board. A connection held to one workspace sees only that one. Texts
+ * for the AI in English, what people see on the board in the language the app writes.
  */
 
 /** Who is calling: the person, and the workspace the connection is held to (`null`: all). */
@@ -77,7 +85,10 @@ export interface McpCaller {
 }
 
 export type McpContent =
-  { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };
+  | { type: 'text'; text: string }
+  | { type: 'image'; data: string; mimeType: string }
+  /** A file handed over (download_presentation): its bytes, base64. */
+  | { type: 'resource'; resource: { uri: string; mimeType: string; blob: string } };
 
 export interface McpToolResult {
   content: McpContent[];
@@ -103,7 +114,10 @@ How to work with it:
 - Find: search looks through everything at once (presentations, their comments, the files and notes on all boards) and fetch reads a hit; list_presentations lists presentations (by title or text on slides and in comments), then get_presentation for its slides' text and what lies on its board. view_slide shows a slide as it looks; list_comments reads the feedback.
 - Research: list_materials, search_materials, read_material, read_sheet and view_material read the board's files.
 - Contribute: add_note puts a sticker on the board (Markdown; one finding or summary per note, with its sources), add_link a web address, add_file a file (text you wrote, or its bytes as base64 – download it yourself first). add_comment comments on a slide. Place several notes one by one; they are laid out next to what is there. Everything shows at once to everyone on the deck, under the person's name – write in the deck's language, as the person would.
-- Change slides: edit_slides has Slider's own AI edit the real slides (it works like a person asking it in a comment; anyone can undo it). Look at the result with view_slide.
+- Change slides: edit_slides has Slider's own AI edit the real slides (it works like a person asking it in a comment; anyone can undo it). Look at the result with view_slide; undo_edit takes a change back.
+- Review: read the slides (get_presentation, view_slide), then add_comment one comment per point, on its slide.
+- Carry out feedback: list_comments, then for each open comment edit_slides with what it asks, check it with view_slide, and resolve_comment it once done. Answer with add_comment (reply_to) where something stays open or you need the person.
+- Manage: update_presentation renames, archives or moves it into a folder; set_access says who may open it; download_presentation hands over the file (PDF, the presentation file, a slide as a picture); delete_presentation deletes it for everyone – only when the person asked for exactly that.
 - New presentation: create_presentation makes an empty one; put material on its board; then build_presentation has Slider's AI build the slides from the board and a description (it takes a few minutes; get_presentation shows how far it is).
 Presentations, slides, materials and board items are named by their ids; links to open them in Slider come with the answers – give them to the person.`;
 
@@ -261,10 +275,29 @@ export const MCP_TOOLS: McpTool[] = [
     annotations: { openWorldHint: false },
   },
   {
+    name: 'resolve_comment',
+    title: 'Mark a comment done',
+    description:
+      "Marks a comment's thread done – as the person ticks it off in Slider – or open again (`done`: false). Do it once its feedback is carried out (e.g. after edit_slides). A thread whose change Slider's AI made from that very thread is done already.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...presentationProperty,
+        comment: {
+          type: 'string',
+          description: 'The id of a comment of the thread (list_comments).',
+        },
+        done: { type: 'boolean', description: 'Default true.' },
+      },
+      required: ['presentation', 'comment'],
+    },
+    annotations: { idempotentHint: true, openWorldHint: false },
+  },
+  {
     name: 'edit_slides',
     title: 'Have Slider’s AI change slides',
     description:
-      "Has Slider's own AI change the presentation's real slides, as a person asks it in a comment: `instruction` says what (rewrite or shorten text, restructure a slide, add a chart or picture, add, split, reorder or delete slides …), starting at slide `slide`. It is written as a comment under the person's name; the change lands at once, and anyone can undo it in that comment's thread. Waits up to two minutes and returns what the AI did – look at the result with view_slide. Be specific (numbers, wording, which slides); one request per call. Needs the right to edit and the workspace's AI key.",
+      "Has Slider's own AI change the presentation's real slides, as a person asks it in a comment: `instruction` says what (rewrite or shorten text, restructure a slide, add a chart or picture, add, split, reorder or delete slides …), starting at slide `slide`. It is written as a comment under the person's name; the change lands at once, and anyone can undo it in that comment's thread. Waits up to two minutes and returns what the AI did – look at the result with view_slide. Be specific (numbers, wording, which slides); one request per call. When it carries out someone's comment, mark that comment done with resolve_comment afterwards. Needs the right to edit and the workspace's AI key.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -277,6 +310,22 @@ export const MCP_TOOLS: McpTool[] = [
         instruction: { type: 'string', minLength: 1, maxLength: 4000 },
       },
       required: ['presentation', 'slide', 'instruction'],
+    },
+    annotations: { destructiveHint: false, openWorldHint: false },
+  },
+  {
+    name: 'undo_edit',
+    title: 'Undo a change of Slider’s AI',
+    description:
+      "Takes back a change Slider's AI made to the slides – one of edit_slides, or one asked for in a comment in Slider; `edit`: its id, as edit_slides and list_comments name it. `redo`: true puts a change taken back in again. Its thread opens again when it is taken back. Needs the right to edit.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...presentationProperty,
+        edit: { type: 'string', description: 'The id of the change (edit …).' },
+        redo: { type: 'boolean', description: 'Put it in again (default false: take it back).' },
+      },
+      required: ['presentation', 'edit'],
     },
     annotations: { destructiveHint: false, openWorldHint: false },
   },
@@ -400,6 +449,67 @@ export const MCP_TOOLS: McpTool[] = [
     },
     annotations: { openWorldHint: false },
   },
+  {
+    name: 'update_presentation',
+    title: 'Rename, archive or file a presentation',
+    description:
+      'Renames a presentation (`title`), archives it or brings it back (`archived`), or moves it into a folder of its workspace (`folder`: its id or name – a name not there yet makes that folder; "" takes it out of any). Folders: list_workspaces. Needs the right to manage it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...presentationProperty,
+        title: { type: 'string', maxLength: 200 },
+        archived: { type: 'boolean' },
+        folder: { type: 'string', maxLength: 80 },
+      },
+      required: ['presentation'],
+    },
+    annotations: { idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'set_access',
+    title: 'Who may open a presentation',
+    description:
+      "Who may open a presentation. Without `restricted` and `people` it only tells. `restricted`: true – only the people in `people` open it, besides its owner and the workspace's admins; false – everyone in the workspace. `people`: names, email addresses or ids of members of its workspace; it replaces the list (kept while not restricted). Answers who has access and who is in the workspace. Needs the right to manage it.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...presentationProperty,
+        restricted: { type: 'boolean' },
+        people: { type: 'array', items: { type: 'string' }, maxItems: 100 },
+      },
+      required: ['presentation'],
+    },
+    annotations: { idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: 'download_presentation',
+    title: 'Download a presentation',
+    description:
+      'Hands over a presentation as a file, as it is now: `format` pdf (default; with `slide` only that slide), odp (the presentation file itself – PowerPoint, Keynote and LibreOffice open it) or png (one `slide` as a picture). The file comes attached (up to 10 MB), with a link the person opens in a browser where they are signed in to Slider. Needs the right to edit.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...presentationProperty,
+        format: { type: 'string', enum: ['pdf', 'odp', 'png'] },
+        slide: { type: 'integer', minimum: 1, description: 'Only this slide (pdf, png).' },
+      },
+      required: ['presentation'],
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: 'delete_presentation',
+    title: 'Delete a presentation',
+    description:
+      'Deletes a presentation for everyone – its slides, comments and board. Cannot be undone; archive it with update_presentation instead unless the person asked to delete exactly this one. Needs the right to manage it.',
+    inputSchema: {
+      type: 'object',
+      properties: presentationProperty,
+      required: ['presentation'],
+    },
+    annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  },
 ];
 
 const TOOL_NAMES = new Set(MCP_TOOLS.map((tool) => tool.name));
@@ -522,9 +632,13 @@ async function listWorkspacesTool(deps: AppDeps, caller: McpCaller): Promise<Mcp
       const templates = masters
         .filter((master) => !master.draftDeckId)
         .map((master) => `  - template ${master.id}: „${master.name}“ (${master.format})`);
+      const folders = (
+        await listFolders(deps.db, caller.viewer.author.id, workspace.id).catch(() => [])
+      ).map((folder) => `  - folder ${folder.id}: „${folder.name}“`);
       return [
         `- ${workspace.name} (id ${workspace.id}) – role ${workspace.role}${workspace.locked ? ', locked (read only)' : ''}`,
         ...templates,
+        ...folders,
       ].join('\n');
     }),
   );
@@ -1054,7 +1168,9 @@ async function listCommentsTool(
   const answers = (comment: Comment, indent: string) =>
     proposals
       .filter((proposal) => proposal.commentId === comment.id)
-      .map((proposal) => `${indent}  - Slider's AI ${proposalLine(proposal)}`);
+      .map(
+        (proposal) => `${indent}  - Slider's AI (edit ${proposal.id}) ${proposalLine(proposal)}`,
+      );
   const numberOf = new Map(slides.map((slide, index) => [slide.id, index + 1]));
   const only = input.slide ? (await slideAt(deps, deck, input.slide)).id : null;
   const roots = all.filter(
@@ -1449,6 +1565,68 @@ async function addComment(
   );
 }
 
+const resolveInput = z.object({
+  comment: z.string().min(1).max(100),
+  done: z.boolean().optional(),
+});
+
+async function resolveComment(
+  deps: AppDeps,
+  caller: McpCaller,
+  args: Record<string, unknown>,
+): Promise<McpToolResult> {
+  const deck = await findDeck(deps, caller, args.presentation, 'comment');
+  const input = resolveInput.parse(args);
+  const found = (await listComments(deps, caller.viewer, deck.id)).find(
+    (comment) => comment.id === input.comment,
+  );
+  if (!found) throw new ToolError(`No comment "${input.comment}" – list_comments names them.`);
+  // Done or open is the thread's: its first comment carries it, as in Slider.
+  const done = input.done ?? true;
+  const root = await updateComment(deps, caller.viewer, found.parentId ?? found.id, {
+    status: done ? 'done' : 'open',
+  });
+  return text(
+    `Thread ${root.id} is ${done ? 'done' : 'open again'}: ${deckLink(deps, deck.id, root.slideId ? `?slide=${encodeURIComponent(root.slideId)}` : '')}`,
+  );
+}
+
+const undoInput = z.object({ edit: z.string().min(1).max(100), redo: z.boolean().optional() });
+
+async function undoEdit(
+  deps: AppDeps,
+  caller: McpCaller,
+  args: Record<string, unknown>,
+): Promise<McpToolResult> {
+  const deck = await findDeck(deps, caller, args.presentation, 'own');
+  const input = undoInput.parse(args);
+  const proposal = (await listProposals(deps, caller.viewer, deck.id)).find(
+    (each) => each.id === input.edit,
+  );
+  if (!proposal)
+    throw new ToolError(`No change "${input.edit}" of Slider's AI – list_comments names them.`);
+  if (input.redo) {
+    if (proposal.status !== 'reverted')
+      throw new ToolError(
+        proposal.status === 'applied'
+          ? 'That change is in the slides already.'
+          : `That change cannot be put in – Slider's AI ${proposalLine(proposal)}.`,
+      );
+    await reapplyProposal(deps, caller.viewer, deck.id, proposal.id);
+  } else {
+    if (proposal.status !== 'applied')
+      throw new ToolError(
+        proposal.status === 'reverted'
+          ? 'That change was taken back already.'
+          : `There is nothing to take back – Slider's AI ${proposalLine(proposal)}.`,
+      );
+    await revertProposal(deps, caller.viewer, deck.id, proposal.id);
+  }
+  return text(
+    `${input.redo ? 'Put the change in again' : 'Took the change back; its thread is open again'}. Check it with view_slide: ${deckLink(deps, deck.id)}`,
+  );
+}
+
 /** How long a tool waits for a deck's file to be read (a new one takes a few seconds). */
 const IMPORT_WAIT_MS = 90_000;
 
@@ -1543,7 +1721,7 @@ async function editSlides(
         : now.asks
           ? ' Ask the person, then call edit_slides again with the answer in the instruction.'
           : '';
-  const said = `Slider's AI ${proposalLine(now)}`;
+  const said = `Slider's AI (edit ${started.id}) ${proposalLine(now)}`;
   return {
     content: [{ type: 'text', text: `${said}${/[.!?…]$/.test(said) ? '' : '.'}${next}\n${link}` }],
     isError: now.status === 'failed' || undefined,
@@ -1626,6 +1804,184 @@ async function buildPresentation(
   );
 }
 
+// ── Managing a presentation ───────────────────────────────────────────────
+
+/** A presentation to manage – not a template being designed, which has its own page. */
+async function deckToManage(deps: AppDeps, caller: McpCaller, wanted: unknown) {
+  const deck = await findDeck(deps, caller, wanted, 'own');
+  if (deck.isTemplate)
+    throw new ToolError('That is a template being designed – the person manages it in Slider.');
+  return deck;
+}
+
+const updatePresentationInput = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  archived: z.boolean().optional(),
+  folder: z.string().trim().max(100).optional(),
+});
+
+async function updatePresentation(
+  deps: AppDeps,
+  caller: McpCaller,
+  args: Record<string, unknown>,
+): Promise<McpToolResult> {
+  const deck = await deckToManage(deps, caller, args.presentation);
+  const input = updatePresentationInput.parse(args);
+  if (input.title === undefined && input.archived === undefined && input.folder === undefined)
+    throw new ToolError('Say what to change: `title`, `archived` or `folder`.');
+  const said: string[] = [];
+  let folderId: string | null | undefined;
+  if (input.folder === '') {
+    folderId = null;
+    said.push('out of its folder');
+  } else if (input.folder !== undefined) {
+    const userId = caller.viewer.author.id;
+    const wanted = input.folder;
+    const folders = await listFolders(deps.db, userId, deck.workspaceId);
+    const found =
+      folders.find((folder) => folder.id === wanted) ??
+      folders.find((folder) => searchFold(folder.name) === searchFold(wanted));
+    const newName = () => {
+      // An id that matches nothing is a folder gone, not the name for a new one.
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(wanted))
+        throw new ToolError(`No folder ${wanted} – see list_workspaces, or give a name.`);
+      const named = deckFolderInputSchema.safeParse({ name: wanted });
+      if (!named.success)
+        throw new ToolError('No such folder, and a new folder’s name is at most 80 characters.');
+      return named.data.name;
+    };
+    const folder =
+      found ?? (await createFolder(deps.db, userId, deck.workspaceId, newName(), deps.clock.now()));
+    folderId = folder.id;
+    said.push(`in folder „${folder.name}“${found ? '' : ' (new)'}`);
+  }
+  if (input.title !== undefined) said.unshift(`renamed „${input.title}“`);
+  if (input.archived !== undefined) said.push(input.archived ? 'archived' : 'not archived');
+  const updated = await updateDeck(deps, deck, {
+    title: input.title,
+    archived: input.archived,
+    folderId,
+  });
+  return text(`„${updated.title}“: ${said.join(', ')}. ${deckLink(deps, deck.id)}`);
+}
+
+const accessInput = z.object({
+  restricted: z.boolean().optional(),
+  people: z.array(z.string().trim().min(1).max(200)).max(100).optional(),
+});
+
+/** The member a name, address or id means – exactly one, else the app is told whom it could mean. */
+function memberNamed(members: WorkspaceMember[], wanted: string): WorkspaceMember {
+  const key = searchFold(wanted);
+  const byId = members.filter(
+    (member) => member.userId === wanted || searchFold(member.email) === key,
+  );
+  const found =
+    byId.length > 0 ? byId : members.filter((member) => searchFold(member.name) === key);
+  if (found.length === 1) return found[0]!;
+  throw new ToolError(
+    found.length > 1
+      ? `${found.length} members are called "${wanted}" – name them by id: ${found.map((member) => `${member.name} (${member.userId})`).join(', ')}.`
+      : `"${wanted}" is not in the workspace. Its members: ${members.map((member) => member.name).join(', ')}.`,
+  );
+}
+
+async function setAccess(
+  deps: AppDeps,
+  caller: McpCaller,
+  args: Record<string, unknown>,
+): Promise<McpToolResult> {
+  const deck = await deckToManage(deps, caller, args.presentation);
+  const input = accessInput.parse(args);
+  const members = await listMembers(deps.db, caller.viewer.author.id, deck.workspaceId);
+  let access = await getDeckAccess(deps.db, deck);
+  if (input.restricted !== undefined || input.people) {
+    access = await updateDeckAccess(deps, deck, {
+      restricted: input.restricted ?? access.restricted,
+      userIds: input.people
+        ? input.people.map((wanted) => memberNamed(members, wanted).userId)
+        : access.userIds,
+    });
+  }
+  const nameOf = new Map(members.map((member) => [member.userId, member.name]));
+  const listed = access.userIds.map((id) => nameOf.get(id) ?? id).join(', ');
+  const who = access.restricted
+    ? `Only ${listed || 'nobody else'} open „${deck.title}“, besides its owner and the workspace's admins.`
+    : `Everyone in the workspace opens „${deck.title}“.${listed ? ` (Kept for when it is restricted again: ${listed}.)` : ''}`;
+  return text(
+    `${who}\nIn the workspace: ${members.map((member) => `${member.name} (${member.role})`).join(', ')}.`,
+  );
+}
+
+const downloadInput = z.object({
+  format: z.enum(['pdf', 'odp', 'png']).optional(),
+  slide: z.number().int().min(1).optional(),
+});
+/** Up to this a file comes attached; beyond it the link only. */
+const MAX_ATTACHED_BYTES = 10 * 1024 * 1024;
+
+async function downloadPresentation(
+  deps: AppDeps,
+  caller: McpCaller,
+  args: Record<string, unknown>,
+): Promise<McpToolResult> {
+  const input = downloadInput.parse(args);
+  if (input.format === 'png' && !input.slide)
+    throw new ToolError('A picture is of one slide – give `slide`.');
+  if (input.format === 'odp' && input.slide)
+    throw new ToolError(
+      'The file is the whole presentation – leave out `slide`, or take pdf or png.',
+    );
+  const deck = await whenRead(deps, await findDeck(deps, caller, args.presentation, 'own'));
+  const slide = input.slide ? await slideAt(deps, deck, input.slide) : null;
+  const format =
+    input.format === 'odp'
+      ? 'file'
+      : input.format === 'png'
+        ? 'slidePng'
+        : slide
+          ? 'slidePdf'
+          : 'pdf';
+  if (format !== 'file')
+    withinLimit(aiLimits(deps).pdfs.hit(caller.viewer.author.id), 'PDFs and pictures');
+  const file = await exportedFile(deps, caller.viewer, deck.id, format, slide?.id);
+  const path =
+    format === 'file'
+      ? 'file'
+      : format === 'pdf'
+        ? 'pdf'
+        : `slides/${encodeURIComponent(slide!.id)}/${format === 'slidePdf' ? 'pdf' : 'png'}`;
+  const link = `${deps.config.webOrigin}${API_PREFIX}/decks/${deck.id}/edit/${path}`;
+  const size = `${Math.max(1, Math.round(file.bytes.byteLength / 1024))} KB`;
+  const attached = file.bytes.byteLength <= MAX_ATTACHED_BYTES;
+  const content: McpContent[] = [
+    {
+      type: 'text',
+      text: `${file.fileName} (${size})${attached ? ' is attached' : ' is too big to attach'}. The person downloads it in a browser where they are signed in to Slider: ${link}`,
+    },
+  ];
+  if (attached)
+    content.push({
+      type: 'resource',
+      resource: {
+        uri: link,
+        mimeType: file.contentType,
+        blob: Buffer.from(file.bytes).toString('base64'),
+      },
+    });
+  return { content };
+}
+
+async function deletePresentation(
+  deps: AppDeps,
+  caller: McpCaller,
+  args: Record<string, unknown>,
+): Promise<McpToolResult> {
+  const deck = await deckToManage(deps, caller, args.presentation);
+  await deleteDeck(deps, deck.id);
+  return text(`Deleted „${deck.title}“.`);
+}
+
 // ── Dispatch ───────────────────────────────────────────────────────────────
 
 /** Runs a tool for the caller; mistakes and refusals come back as the tool's error. */
@@ -1655,8 +2011,12 @@ export async function runMcpTool(
         return await listCommentsTool(deps, caller, args);
       case 'add_comment':
         return await addComment(deps, caller, args);
+      case 'resolve_comment':
+        return await resolveComment(deps, caller, args);
       case 'edit_slides':
         return await editSlides(deps, caller, args);
+      case 'undo_edit':
+        return await undoEdit(deps, caller, args);
       case 'list_materials':
         return await listMaterialsTool(deps, caller, args);
       case 'add_note':
@@ -1673,6 +2033,14 @@ export async function runMcpTool(
         return await createPresentation(deps, caller, args);
       case 'build_presentation':
         return await buildPresentation(deps, caller, args);
+      case 'update_presentation':
+        return await updatePresentation(deps, caller, args);
+      case 'set_access':
+        return await setAccess(deps, caller, args);
+      case 'download_presentation':
+        return await downloadPresentation(deps, caller, args);
+      case 'delete_presentation':
+        return await deletePresentation(deps, caller, args);
       default:
         return await materialTool(deps, caller, name, args);
     }

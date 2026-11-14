@@ -881,8 +881,8 @@ describe('OIDC login', () => {
     expect(body.workspaces).toEqual([
       expect.objectContaining({ name: 'Firma', role: 'admin', audiencePending: true }),
     ]);
-    // It is their own one on the limited test instance.
-    expect(body.limits).toEqual({ canCreateWorkspace: false, domainJoin: true });
+    // Their own one; on the limited test instance a second (private) one may follow.
+    expect(body.limits).toEqual({ canCreateWorkspace: true, domainJoin: true });
 
     // The same identity signs into the same account again.
     const again = await redirectLogin('oidc', idp);

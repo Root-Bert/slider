@@ -295,7 +295,10 @@ export type BillingTransferAcceptResult = z.infer<typeof billingTransferAcceptRe
 
 /** `GET /me` → `limits`. */
 export const meLimitsSchema = z.object({
-  /** Every account may found one workspace of its own (joining others is unlimited). */
+  /**
+   * Every account may found two workspaces of its own – a team's and a private one (joining
+   * others is unlimited).
+   */
   canCreateWorkspace: z.boolean(),
   /** Workspaces can be opened to a company domain on this instance (`SIGNUP` is not `invite`). */
   domainJoin: z.boolean(),

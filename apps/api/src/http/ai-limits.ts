@@ -18,6 +18,8 @@ function createWindows(deps: AppDeps) {
     materialQuestions: perMinute(10),
     // Every search reads and decrypts the text of all decks: typing pauses ask, a loop does not.
     searches: perMinute(SEARCHES_PER_MINUTE),
+    // A PDF or slide picture is drawn by LibreOffice, which only draws a few files at once.
+    pdfs: perMinute(5),
     // Everything a KI-App asks over MCP, whatever the tool.
     mcpCalls: perMinute(120),
   };

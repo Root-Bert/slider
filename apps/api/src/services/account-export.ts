@@ -10,6 +10,8 @@ import {
   deckEdits,
   decks,
   googleConnections,
+  materialChatMessages,
+  materialChats,
   materialQuestions,
   media,
   nextcloudConnections,
@@ -33,7 +35,8 @@ import { inviteEntries, invitesTo } from './data-requests';
  * workspace they are still in,
  * `kommentare.json` (what they wrote, in any deck), `reaktionen.json` (their 👍 / 👎 / egal),
  * `ki-auftraege.json` (what they asked the AI), `fragen.json` (their questions about material
- * and the answers), `bearbeitungen.json` (their edit steps) and `aufnahmen/` (their recordings).
+ * and the answers), `ki-chats.json` (their chats with the AI on material pages),
+ * `bearbeitungen.json` (their edit steps) and `aufnahmen/` (their recordings).
  * Secrets are left out: tokens, passkey keys, session hashes.
  */
 export async function exportAccount(
@@ -61,6 +64,8 @@ export async function exportAccount(
     edited,
     apps,
     questions,
+    chats,
+    chatMessages,
   ] = await Promise.all([
     db.select().from(userIdentities).where(eq(userIdentities.userId, userId)),
     db.select().from(passkeys).where(eq(passkeys.userId, userId)),
@@ -118,6 +123,18 @@ export async function exportAccount(
       .innerJoin(decks, eq(decks.id, materialQuestions.deckId))
       .where(eq(materialQuestions.userId, userId))
       .orderBy(asc(materialQuestions.createdAt)),
+    db
+      .select({ chat: materialChats, deckTitle: decks.title })
+      .from(materialChats)
+      .innerJoin(decks, eq(decks.id, materialChats.deckId))
+      .where(eq(materialChats.userId, userId))
+      .orderBy(asc(materialChats.createdAt)),
+    db
+      .select({ message: materialChatMessages })
+      .from(materialChatMessages)
+      .innerJoin(materialChats, eq(materialChats.id, materialChatMessages.chatId))
+      .where(eq(materialChats.userId, userId))
+      .orderBy(asc(materialChatMessages.seq)),
   ]);
 
   const zip = new JSZip();
@@ -301,6 +318,29 @@ export async function exportAccount(
       })),
     ),
   );
+  const messagesOf = new Map<string, (typeof chatMessages)[number]['message'][]>();
+  for (const { message } of chatMessages) {
+    const list = messagesOf.get(message.chatId);
+    if (list) list.push(message);
+    else messagesOf.set(message.chatId, [message]);
+  }
+  zip.file(
+    'ki-chats.json',
+    json(
+      chats.map(({ chat, deckTitle }) => ({
+        id: chat.id,
+        deck: { id: chat.deckId, title: deckTitle },
+        title: chat.title,
+        createdAt: chat.createdAt.toISOString(),
+        messages: (messagesOf.get(chat.id) ?? []).map((message) => ({
+          role: message.role === 'user' ? 'du' : 'KI',
+          text: message.text,
+          state: message.state,
+          createdAt: message.createdAt.toISOString(),
+        })),
+      })),
+    ),
+  );
   zip.file(
     'bearbeitungen.json',
     json(
@@ -337,6 +377,7 @@ aufnahmen.json        Sprach- und Videoaufnahmen sowie Bilder zu deinen Kommenta
 einladungen.json      Einladungen in Workspaces an deine Adresse
 ki-auftraege.json     Was du die KI an Präsentationen hast ändern lassen
 fragen.json           Deine Notizen, die du der KI übergeben hast (⌘↵), und ihre Antworten
+ki-chats.json         Deine Chats mit der KI auf den Materialseiten
 bearbeitungen.json    Deine Bearbeitungsschritte in Präsentationen
 
 Zugangsdaten (Tokens, Passkey-Schlüssel) sind aus Sicherheitsgründen nicht enthalten.

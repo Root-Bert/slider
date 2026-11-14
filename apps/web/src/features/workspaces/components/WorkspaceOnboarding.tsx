@@ -102,7 +102,7 @@ export function WorkspaceOnboarding() {
         description={
           canCreateWorkspace
             ? 'Du bist Admin und kannst danach dein Team einladen. Neue Workspaces starten im Free-Plan.'
-            : 'Du hast bereits einen eigenen Workspace. Übergib ihn an jemand anderen, um einen neuen zu gründen – weiteren trittst du per Einladung bei.'
+            : 'Du hast bereits zwei eigene Workspaces gegründet – weiteren trittst du per Einladung bei.'
         }
       >
         {canCreateWorkspace && (

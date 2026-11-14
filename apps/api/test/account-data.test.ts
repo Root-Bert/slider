@@ -7,6 +7,8 @@ import {
   comments,
   decks,
   deletedPptxComments,
+  materialChatMessages,
+  materialChats,
   materialQuestions,
   media,
   revisions,
@@ -175,6 +177,24 @@ describe('data export (BER-145)', () => {
       answer: 'Um **12 Prozent**.',
       state: 'done',
     });
+    const chatId = crypto.randomUUID();
+    await ctx.deps.db.insert(materialChats).values({
+      id: chatId,
+      deckId: other.deckId,
+      userId: person.user.id,
+      title: 'Wer sind die Wettbewerber?',
+    });
+    await ctx.deps.db.insert(materialChatMessages).values([
+      { id: crypto.randomUUID(), chatId, seq: 1, role: 'user', text: 'Wer sind die Wettbewerber?' },
+      {
+        id: crypto.randomUUID(),
+        chatId,
+        seq: 2,
+        role: 'assistant',
+        text: 'Vor allem zwei.',
+        state: 'done',
+      },
+    ]);
 
     const res = await ctx.request('/api/me/export', { cookie: person.cookie });
     expect(res.status).toBe(200);
@@ -203,6 +223,16 @@ describe('data export (BER-145)', () => {
         deck: { id: other.deckId, title: 'Roberts Deck' },
         question: 'Wie stark wächst der Markt?',
         answer: 'Um **12 Prozent**.',
+      }),
+    ]);
+    expect(await read('ki-chats.json')).toEqual([
+      expect.objectContaining({
+        deck: { id: other.deckId, title: 'Roberts Deck' },
+        title: 'Wer sind die Wettbewerber?',
+        messages: [
+          expect.objectContaining({ role: 'du', text: 'Wer sind die Wettbewerber?' }),
+          expect.objectContaining({ role: 'KI', text: 'Vor allem zwei.', state: 'done' }),
+        ],
       }),
     ]);
     const deckList = (await read('praesentationen.json')) as {

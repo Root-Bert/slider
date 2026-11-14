@@ -18,6 +18,7 @@ import { sql } from 'drizzle-orm';
 import type {
   ShowRun,
   AppConnectionKind,
+  MaterialChatAnswerState,
   MaterialQuestionKind,
   MaterialQuestionState,
   AccentColor,
@@ -1497,6 +1498,50 @@ export const materialQuestions = pgTable(
   ],
 );
 export type MaterialQuestionRow = typeof materialQuestions.$inferSelect;
+
+/**
+ * A person's chat with the AI on the material page (✨, `services/material-chat.ts`): theirs
+ * only, kept until they delete it, gone with the deck or their account. Encrypted like every
+ * content (BER-149).
+ */
+export const materialChats = pgTable(
+  'material_chats',
+  {
+    id: text('id').primaryKey(),
+    deckId: text('deck_id')
+      .notNull()
+      .references(() => decks.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** The start of its first message. */
+    title: encryptedText('material_chats', 'title').notNull(),
+    createdAt: createdAt(),
+    /** Its latest message: the list sorts by it. */
+    updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('material_chats_deck_user_idx').on(t.deckId, t.userId, t.updatedAt)],
+);
+export type MaterialChatRow = typeof materialChats.$inferSelect;
+
+/** A chat's messages in order (`seq`): the person's and the AI's answers, as they ended. */
+export const materialChatMessages = pgTable(
+  'material_chat_messages',
+  {
+    id: text('id').primaryKey(),
+    chatId: text('chat_id')
+      .notNull()
+      .references(() => materialChats.id, { onDelete: 'cascade' }),
+    seq: integer('seq').notNull(),
+    role: text('role').$type<'user' | 'assistant'>().notNull(),
+    text: encryptedText('material_chat_messages', 'text').notNull(),
+    /** How the AI's answer ended; `null` for the person's message. */
+    state: text('state').$type<MaterialChatAnswerState>(),
+    error: text('error'),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex('material_chat_messages_chat_seq_idx').on(t.chatId, t.seq)],
+);
 
 /**
  * The text of a file on the board, in pieces of a few thousand characters (a PDF page, a part of

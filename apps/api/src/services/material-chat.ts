@@ -1,23 +1,40 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import type { MaterialChatEvent, MaterialChatInput, Viewer } from '@slider/shared';
-import { deckAccess } from '../auth/access';
-import type { DeckRow } from '../db/schema';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import {
+  MAX_MATERIAL_CHAT_MESSAGES,
+  MAX_MATERIAL_CHAT_TEXT,
+  MAX_MATERIAL_CHAT_TITLE,
+  type MaterialChatAnswerState,
+  type MaterialChatDto,
+  type MaterialChatEvent,
+  type MaterialChatInput,
+  type MaterialChatSummary,
+  type Viewer,
+} from '@slider/shared';
+import { deckAccess, requireDeckAccess } from '../auth/access';
+import {
+  materialChatMessages,
+  materialChats,
+  type DeckRow,
+  type MaterialChatRow,
+} from '../db/schema';
 import type { AppDeps } from '../deps';
-import { ApiError, forbidden } from '../http/errors';
+import { ApiError, forbidden, notFound } from '../http/errors';
 import { materialsBrief } from './ai-context';
 import { failureMessage, keyProblem, refusesKey, runTurn, type AiConnection } from './ai-providers';
 import { markKeyRefused, workspaceAiConnection } from './integration-keys';
 import { MATERIAL_TOOLS, materialsOf, runMaterialTool } from './material-tools';
 import { readingLabel } from './material-questions';
-import { MCP_TOOLS, runMcpTool } from './mcp';
+import { MCP_TOOLS, runMcpTool, type McpContent } from './mcp';
 
 /*
  * The AI on the material page (`material-chat.ts` in shared): one person's chat in a side panel,
  * the way Claude or ChatGPT work with Slider over MCP – the same tools, here without connecting
  * anything. It reads the deck's material (the material tools), searches the web where the
  * workspace's AI is Anthropic's (its own web search), and puts what comes out on the board with
- * the MCP board tools (notes, links, text files – everyone's, told live). The chat itself is
- * kept in the person's tab: the page sends it along each time.
+ * the MCP board tools (notes, links, text files – everyone's, told live). The chats are the
+ * person's own, kept per deck (`material_chats`): each message and each answer as it ended –
+ * stopped or failed too – so the page only sends the new message.
  */
 
 type Message = Anthropic.Beta.BetaMessageParam;
@@ -85,7 +102,42 @@ export interface MaterialChat {
   connection: AiConnection;
   keyId: string;
   controller: AbortController;
-  input: MaterialChatInput;
+  chat: MaterialChatRow;
+  /** The chat so far, ending with the new message. */
+  history: { role: 'user' | 'assistant'; text: string }[];
+}
+
+/**
+ * The next place in a chat, taken when the message is written – not when its answer began: a
+ * message sent meanwhile (another tab, the chat reopened) takes the place before it.
+ */
+const nextSeq = (chatId: string) =>
+  sql<number>`(select coalesce(max(${materialChatMessages.seq}), 0) + 1 from ${materialChatMessages} where ${materialChatMessages.chatId} = ${chatId})`;
+
+const chatNotFound = () => notFound('Diesen Chat gibt es nicht (mehr).');
+
+/** One of the person's own chats on the deck. */
+async function ownChat(deps: AppDeps, viewer: Viewer, deckId: string, chatId: string) {
+  const [chat] = await deps.db
+    .select()
+    .from(materialChats)
+    .where(
+      and(
+        eq(materialChats.id, chatId),
+        eq(materialChats.deckId, deckId),
+        eq(materialChats.userId, viewer.author.id),
+      ),
+    );
+  if (!chat) throw chatNotFound();
+  return chat;
+}
+
+/** A new chat's title: its first message's first line, cut at a word. */
+function titleOf(text: string): string {
+  const line = text.trim().split('\n')[0]!.replace(/\s+/g, ' ');
+  if (line.length <= MAX_MATERIAL_CHAT_TITLE) return line;
+  const cut = line.slice(0, MAX_MATERIAL_CHAT_TITLE - 1);
+  return `${cut.slice(0, cut.lastIndexOf(' ') > 40 ? cut.lastIndexOf(' ') : cut.length)}…`;
 }
 
 /**
@@ -106,8 +158,75 @@ export async function startMaterialChat(
   const mine = [...running.values()].filter((id) => id === viewer.author.id);
   if (mine.length >= MAX_RUNNING_PER_USER)
     throw new ApiError(429, 'rate_limited', 'Warte, bis die anderen Antworten fertig sind.');
+  // Its place taken before anything is awaited: sent many at once, only the allowed ones run.
   const controller = new AbortController();
   running.set(controller, viewer.author.id);
+  try {
+    return await keepMessage(deps, viewer, deck, input, found, controller);
+  } catch (error) {
+    running.delete(controller);
+    throw error;
+  }
+}
+
+/** Keeps the person's message – in their chat or a new one – and what the answer runs with. */
+async function keepMessage(
+  deps: AppDeps,
+  viewer: Viewer,
+  deck: DeckRow,
+  input: MaterialChatInput,
+  found: { connection: AiConnection; keyId: string },
+  controller: AbortController,
+): Promise<MaterialChat> {
+  const now = deps.clock.now();
+  const existing = input.chatId ? await ownChat(deps, viewer, deck.id, input.chatId) : null;
+  const before = existing
+    ? await deps.db
+        .select({ role: materialChatMessages.role, text: materialChatMessages.text })
+        .from(materialChatMessages)
+        .where(eq(materialChatMessages.chatId, existing.id))
+        .orderBy(asc(materialChatMessages.seq))
+    : [];
+  // The message is kept at once – whatever becomes of the answer; a new chat only with it.
+  const chat = await deps.db.transaction(async (tx) => {
+    let row: MaterialChatRow | undefined = existing ?? undefined;
+    if (row) {
+      // The chat's row, locked: a message or answer written at once waits for this place.
+      const [locked] = await tx
+        .select({ id: materialChats.id })
+        .from(materialChats)
+        .where(eq(materialChats.id, row.id))
+        .for('update');
+      if (!locked) throw chatNotFound();
+    } else {
+      [row] = await tx
+        .insert(materialChats)
+        .values({
+          id: crypto.randomUUID(),
+          deckId: deck.id,
+          userId: viewer.author.id,
+          title: titleOf(input.text),
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
+      if (!row) throw new Error('Material chat insert returned nothing');
+    }
+    await tx.insert(materialChatMessages).values({
+      id: crypto.randomUUID(),
+      chatId: row.id,
+      seq: nextSeq(row.id),
+      role: 'user',
+      text: input.text,
+      createdAt: now,
+    });
+    await tx.update(materialChats).set({ updatedAt: now }).where(eq(materialChats.id, row.id));
+    return row;
+  });
+  const history = [...before, { role: 'user' as const, text: input.text }]
+    .filter((each) => each.text.trim())
+    .slice(-MAX_MATERIAL_CHAT_MESSAGES)
+    .map((each) => ({ role: each.role, text: each.text.slice(0, MAX_MATERIAL_CHAT_TEXT) }));
   const { meter } = found.connection;
   return {
     deck,
@@ -118,8 +237,70 @@ export async function startMaterialChat(
     },
     keyId: found.keyId,
     controller,
-    input,
+    chat,
+    history,
   };
+}
+
+/** The person's chats on the deck, latest first. */
+export async function listMaterialChats(
+  deps: AppDeps,
+  viewer: Viewer,
+  deckId: string,
+): Promise<MaterialChatSummary[]> {
+  const deck = await requireDeckAccess(deps, viewer, deckId, 'view');
+  const rows = await deps.db
+    .select()
+    .from(materialChats)
+    .where(and(eq(materialChats.deckId, deck.id), eq(materialChats.userId, viewer.author.id)))
+    .orderBy(desc(materialChats.updatedAt))
+    .limit(100);
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    updatedAt: row.updatedAt.toISOString(),
+  }));
+}
+
+/** One of the person's chats with its messages. */
+export async function getMaterialChat(
+  deps: AppDeps,
+  viewer: Viewer,
+  deckId: string,
+  chatId: string,
+): Promise<MaterialChatDto> {
+  const deck = await requireDeckAccess(deps, viewer, deckId, 'view');
+  const chat = await ownChat(deps, viewer, deck.id, chatId);
+  const messages = await deps.db
+    .select()
+    .from(materialChatMessages)
+    .where(eq(materialChatMessages.chatId, chat.id))
+    .orderBy(asc(materialChatMessages.seq));
+  return {
+    id: chat.id,
+    title: chat.title,
+    updatedAt: chat.updatedAt.toISOString(),
+    messages: messages.map((row) => ({
+      id: row.id,
+      role: row.role,
+      text: row.text,
+      state: row.state,
+      error: row.error,
+      createdAt: row.createdAt.toISOString(),
+    })),
+  };
+}
+
+/** Deletes one of the person's chats; an answer still being written for it stops being kept. */
+export async function deleteMaterialChat(
+  deps: AppDeps,
+  viewer: Viewer,
+  deckId: string,
+  chatId: string,
+): Promise<void> {
+  const deck = await requireDeckAccess(deps, viewer, deckId, 'view');
+  const chat = await ownChat(deps, viewer, deck.id, chatId);
+  await deps.db.delete(materialChats).where(eq(materialChats.id, chat.id));
 }
 
 /** What the AI does now, for the person: what it reads, searches or puts on the board. */
@@ -147,20 +328,29 @@ function doingLabel(
 }
 
 /**
- * Writes the answer, telling `send` its words as they come and what the AI does; `signal`: the
- * person went (closed the stream) or stopped it.
+ * Writes the answer, telling `emit` its words as they come and what the AI does, and keeps it as
+ * it ended; `signal`: the person went (closed the stream) or stopped it.
  */
 export async function answerMaterialChat(
   deps: AppDeps,
   chat: MaterialChat,
-  send: (event: MaterialChatEvent) => void,
+  emit: (event: MaterialChatEvent) => void,
   signal: AbortSignal,
 ): Promise<void> {
   const { deck, viewer, connection, controller } = chat;
   const stop = () => controller.abort();
   signal.addEventListener('abort', stop, { once: true });
-  let state: 'done' | 'failed' | 'stopped' = 'done';
+  let state: MaterialChatAnswerState = 'done';
   let wrote = false;
+  // What the person saw, kept as the answer when it ends.
+  let answer = '';
+  let failure: string | null = null;
+  const send = (event: MaterialChatEvent) => {
+    if (event.type === 'text') answer += event.text;
+    else if (event.type === 'error') failure = event.message;
+    emit(event);
+  };
+  send({ type: 'chat', id: chat.chat.id, title: chat.chat.title });
   try {
     const web = connection.provider === 'anthropic' && connection.baseUrl === null;
     const tools = [...MATERIAL_TOOLS, ...BOARD_TOOLS, ...(web ? [WEB_SEARCH] : [])];
@@ -177,7 +367,7 @@ export async function answerMaterialChat(
       else messages.push({ role, content: [{ type: 'text', text }] });
     };
     say('user', brief ?? "The deck's board is empty – there is no material yet.");
-    for (const each of chat.input.messages) if (each.text.trim()) say(each.role, each.text);
+    for (const each of chat.history) say(each.role, each.text);
     let streamed = false;
     for (let turn = 0; ; turn += 1) {
       let turnText = '';
@@ -253,18 +443,24 @@ export async function answerMaterialChat(
           results.push({
             type: 'tool_result',
             tool_use_id: block.id,
-            content: ran.content.map((part) =>
-              part.type === 'text'
-                ? { type: 'text' as const, text: part.text }
-                : {
-                    type: 'image' as const,
-                    source: {
-                      type: 'base64' as const,
-                      media_type: part.mimeType as 'image/png',
-                      data: part.data,
+            // The board tools answer in text and pictures – no file is handed over here.
+            content: ran.content
+              .filter(
+                (part): part is Exclude<McpContent, { type: 'resource' }> =>
+                  part.type !== 'resource',
+              )
+              .map((part) =>
+                part.type === 'text'
+                  ? { type: 'text' as const, text: part.text }
+                  : {
+                      type: 'image' as const,
+                      source: {
+                        type: 'base64' as const,
+                        media_type: part.mimeType as 'image/png',
+                        data: part.data,
+                      },
                     },
-                  },
-            ),
+              ),
             is_error: ran.isError ?? false,
           });
           continue;
@@ -300,5 +496,42 @@ export async function answerMaterialChat(
     running.delete(controller);
     signal.removeEventListener('abort', stop);
   }
+  await keepAnswer(deps, chat, { text: answer, state, error: failure });
   send({ type: 'done', state });
+}
+
+/** Keeps the answer as it ended – unless the chat was deleted meanwhile. */
+async function keepAnswer(
+  deps: AppDeps,
+  chat: MaterialChat,
+  answer: { text: string; state: MaterialChatAnswerState; error: string | null },
+) {
+  const now = deps.clock.now();
+  try {
+    await deps.db.transaction(async (tx) => {
+      // The chat's row, locked: a message written at once waits for this place, not takes it.
+      const [still] = await tx
+        .select({ id: materialChats.id })
+        .from(materialChats)
+        .where(eq(materialChats.id, chat.chat.id))
+        .for('update');
+      if (!still) return;
+      await tx.insert(materialChatMessages).values({
+        id: crypto.randomUUID(),
+        chatId: chat.chat.id,
+        seq: nextSeq(chat.chat.id),
+        role: 'assistant',
+        text: answer.text,
+        state: answer.state,
+        error: answer.error,
+        createdAt: now,
+      });
+      await tx
+        .update(materialChats)
+        .set({ updatedAt: now })
+        .where(eq(materialChats.id, chat.chat.id));
+    });
+  } catch (error) {
+    deps.log.warn(`Material chat answer not kept: ${String(error)}`);
+  }
 }

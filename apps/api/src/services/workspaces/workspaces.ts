@@ -77,9 +77,8 @@ async function insertWithFreeSlug(
 }
 
 /**
- * Founds a workspace for `userId` (BER-130: on a limited instance one per account, as long
- * as it exists). Joining
- * others by invitation is unlimited.
+ * Founds a workspace for `userId` (BER-130: on a limited instance two per account – a team's
+ * and a private one – as long as they exist). Joining others by invitation is unlimited.
  */
 export async function foundWorkspace(
   deps: Pick<AppDeps, 'db' | 'clock' | 'config'>,
@@ -87,7 +86,7 @@ export async function foundWorkspace(
   name: string,
 ): Promise<WorkspaceRow> {
   return deps.db.transaction(async (tx) => {
-    // The account's row, locked: two requests at once must not both found the one allowed.
+    // The account's row, locked: two requests at once must not both take the last slot.
     await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for('update');
     if (!(await canCreateWorkspace(tx, deps.config, userId)))
       throw planLimit(OWN_WORKSPACE_LIMIT_MESSAGE);
