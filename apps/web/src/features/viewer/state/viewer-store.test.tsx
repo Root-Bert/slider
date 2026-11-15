@@ -33,7 +33,7 @@ it('draws only the moved slide during zoom and resets views when frames or revis
       thumbnailUrl: null,
       participants: [],
       import: { status: 'ready' },
-      permissions: { canManage: true, canComment: true },
+      permissions: { canManage: true, canEdit: true, canComment: true },
     },
     slides,
     [],

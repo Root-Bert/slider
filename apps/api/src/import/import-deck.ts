@@ -18,13 +18,15 @@ import {
   renderSlidePages,
   slideRenderer,
   storeSlideRender,
+  type SlidePages,
   type SlidePagesDeps,
 } from './office-pages';
+import { isPdfBytes } from '../sources/safe-fetch';
 import { isPdfPage, openDeckFile } from './pdf-deck';
 import { PdfTimedOut } from './pdf-jobs';
 import type { OpenPptx, PptxDocument } from './pptx';
 import { upsertPptxComments, type ImportedSlide } from './pptx-comments';
-import type { ImportJob } from './queue';
+import type { ImportJob, JobQueue } from './queue';
 import type { RenderProgress } from './render-progress';
 import { rerenderJob } from './rerender';
 
@@ -42,6 +44,11 @@ export interface ImportDeps {
   adoptFonts?: SlidePagesDeps['adoptFonts'];
   /** Texts typed in together: a synced revision is written into them. */
   liveTexts?: LiveTexts;
+  /**
+   * With it, a first import opens the deck on its SVG previews and queues LibreOffice's pictures
+   * as a `fresh` re-render; without it, they are drawn before the deck is ready.
+   */
+  queue?: JobQueue<ImportJob>;
 }
 
 const PPTX_ERROR_MESSAGES: Record<PptxError['code'], string> = {
@@ -200,18 +207,24 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
   };
   await progress(0);
   const parsedSlides = planned.map(({ parsed }) => parsed);
+  // A deck LibreOffice would draw opens at once on its SVG previews; LibreOffice's pictures
+  // follow (`fresh` re-render, below). A PDF's own pages need no LibreOffice: drawn right here.
+  const later = deps.queue !== undefined && hasPdfRenderer(deps) && !isPdfBytes(bytes);
   // The SVGs' hashes (what slide matching compares, BER-108) are worked out meanwhile: the PDF
   // is drawn by LibreOffice and the PDF worker, not on this thread.
   const hashing = { stopped: false };
-  const hashes = hasPdfRenderer(deps) ? renderHashes(document, parsedSlides, hashing) : null;
+  const hashes =
+    hasPdfRenderer(deps) && !later ? renderHashes(document, parsedSlides, hashing) : null;
   hashes?.catch(() => {});
-  const rendered = await renderSlidePages(deps, deck, revision, bytes, parsedSlides, {
-    onPage: (done) => progress(Math.min(done, total - 1)),
-  }).catch((error: unknown) => {
-    // The import stops here: no SVG of the slides left is needed any more.
-    hashing.stopped = true;
-    throw error;
-  });
+  const rendered: SlidePages = later
+    ? { renderer: null, pages: parsedSlides.map(() => null) }
+    : await renderSlidePages(deps, deck, revision, bytes, parsedSlides, {
+        onPage: (done) => progress(Math.min(done, total - 1)),
+      }).catch((error: unknown) => {
+        // The import stops here: no SVG of the slides left is needed any more.
+        hashing.stopped = true;
+        throw error;
+      });
   const known = await hashes;
   for (const [done, slide] of planned.entries()) {
     await progress(done);
@@ -252,6 +265,10 @@ async function runImport(deps: ImportDeps, { deckId, revisionId }: ImportJob): P
     deps.log.warn(`Could not look for the design of deck ${deckId}`, error),
   );
   await setImportState(deps, deckId, { status: 'ready' }, { touch: true });
+  if (later && deps.queue && total > 0) {
+    deps.renderProgress?.queued(deckId);
+    deps.queue.enqueue({ deckId, revisionId, kind: 'rerender', fresh: true });
+  }
 }
 
 /** Each slide's render hash, one SVG at a time – they inline their pictures, so can be large. */

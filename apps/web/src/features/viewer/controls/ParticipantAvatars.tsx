@@ -112,15 +112,26 @@ export function ParticipantAvatars() {
   );
 }
 
-/** The AI's avatar: a click filters like anyone's; speaking to it is in its menu. */
+/**
+ * The AI's avatar: a click opens its chat (as ✨ on the material page) for those who may ask it;
+ * filtering by it and speaking to it are in its menu.
+ */
 function AiAvatarButton({ author, working }: { author: Author; working: boolean }) {
   const voice = useVoice();
+  const { canComment } = useViewerData();
+  const { aiChatOpen } = useViewerState();
+  const dispatch = useViewerDispatch();
   const speaking = voice.status !== 'off' && voice.status !== 'ended';
   return (
     <AvatarColorPicker
       author={author}
       live={working}
       voice={{ active: speaking, toggle: voice.toggle }}
+      chat={
+        canComment
+          ? { open: aiChatOpen, toggle: () => dispatch({ type: 'aiChatSet', open: !aiChatOpen }) }
+          : undefined
+      }
     />
   );
 }
@@ -166,6 +177,8 @@ interface AvatarColorPickerProps {
   className?: string;
   /** The AI's avatar: its menu starts (or sends) speaking to it. */
   voice?: { active: boolean; toggle: () => void };
+  /** The AI's avatar: a click opens its chat; filtering by it moves into its menu. */
+  chat?: { open: boolean; toggle: () => void };
 }
 
 function AvatarColorPicker({
@@ -176,6 +189,7 @@ function AvatarColorPicker({
   liveOnMaterial = false,
   className,
   voice,
+  chat,
 }: AvatarColorPickerProps) {
   const { slideIndex } = useViewerData();
   const { personFilter } = useViewerState();
@@ -187,6 +201,7 @@ function AvatarColorPicker({
   const liveIndex = liveSlideId === null ? undefined : slideIndex.get(liveSlideId);
   const updateMe = useUpdateMe();
   const overrides = useColorOverrides();
+  const toggleFilter = () => dispatch({ type: 'personFilterToggled', authorId: author.id });
   // Opened by a right click, Shift+F10 / the menu key or a long press; a plain click filters, so
   // the trigger takes no `triggerProps`.
   const { open, setOpen, close, wrapperRef, triggerRef, panelRef } = usePopover();
@@ -246,11 +261,14 @@ function AvatarColorPicker({
           ref={triggerRef}
           type="button"
           aria-label={
-            self
-              ? 'Kommentare zeigen, in denen du erwähnt wirst'
-              : `Nur Kommentare von ${author.name}`
+            chat
+              ? `Mit ${author.name} chatten`
+              : self
+                ? 'Kommentare zeigen, in denen du erwähnt wirst'
+                : `Nur Kommentare von ${author.name}`
           }
-          aria-pressed={filtered}
+          aria-pressed={chat ? undefined : filtered}
+          aria-expanded={chat?.open}
           aria-keyshortcuts={hasPicker ? 'Shift+F10' : undefined}
           onClick={() => {
             // The click that ends a long press: the picker is open, no filter.
@@ -258,7 +276,8 @@ function AvatarColorPicker({
               press.current = null;
               return;
             }
-            dispatch({ type: 'personFilterToggled', authorId: author.id });
+            if (chat) chat.toggle();
+            else toggleFilter();
           }}
           onContextMenu={(event) => {
             if (!hasPicker) return;
@@ -352,6 +371,21 @@ function AvatarColorPicker({
               disabled={self && updateMe.isPending}
               className="gap-2"
             />
+          )}
+          {chat && (
+            <Button
+              variant="soft"
+              size="xs"
+              weight="normal"
+              icon="filterList"
+              onClick={() => {
+                toggleFilter();
+                close();
+              }}
+              className="self-start"
+            >
+              {filtered ? 'Alle Kommentare zeigen' : `Nur Kommentare von ${author.name}`}
+            </Button>
           )}
           {voice && (
             <Button

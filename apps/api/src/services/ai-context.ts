@@ -3,6 +3,7 @@ import { asc, eq } from 'drizzle-orm';
 import type { OdpMasterPage, OdpSlide } from '@slider/odp';
 import {
   freeFontName,
+  layoutGridOf,
   layoutGuidesOf,
   type EditableElement,
   type FillLayer,
@@ -59,7 +60,12 @@ export function uniqueGuides(guides: Iterable<Guide>): Guide[] {
 export async function deckDesign(
   deps: AppDeps,
   target: EditTarget,
-  file: { pageIds: readonly (string | null)[]; guides: () => Promise<Guide[]> },
+  file: {
+    pageIds: readonly (string | null)[];
+    guides: () => Promise<Guide[]>;
+    /** Each slide's grid as it shows: its own, else its layout's (from the file). */
+    grids?: readonly (LayoutGrid | null)[];
+  },
 ): Promise<DeckDesign> {
   const { deck } = target;
   let template: string | null = null;
@@ -69,8 +75,11 @@ export async function deckDesign(
   if (deck.isTemplate && deck.templateDesign) {
     template = 'this deck itself – a template being designed, each slide a layout';
     palette = deck.templateDesign.colors ?? [];
-    grid = deck.templateDesign.grid ?? null;
     const design = deck.templateDesign;
+    grid =
+      commonGrid(file.pageIds.map((pageId) => layoutGridOf(design, pageId) ?? null)) ??
+      design.grid ??
+      null;
     guides = uniqueGuides(file.pageIds.flatMap((pageId) => layoutGuidesOf(design, pageId)));
   } else if (deck.masterId) {
     const [row] = await deps.db
@@ -85,7 +94,7 @@ export async function deckDesign(
     if (row) {
       template = row.name;
       palette = row.colors;
-      grid = row.design?.grid ?? null;
+      grid = commonGrid(file.grids ?? []) ?? row.design?.grid ?? null;
       // Shared by its layouts (a template from before each had its own); else its file's.
       guides = row.design?.guides ?? [];
     }
@@ -103,6 +112,20 @@ export async function deckDesign(
     guides: guides.length > 0 ? guides : own,
     workspaceFonts: [...new Set(fonts.map((font) => font.family))].sort(),
   };
+}
+
+/** The grid most slides show – the AI hears of one for the whole deck. */
+function commonGrid(grids: readonly (LayoutGrid | null)[]): LayoutGrid | null {
+  const counted = new Map<string, { grid: LayoutGrid; count: number }>();
+  for (const grid of grids) {
+    if (!grid) continue;
+    const key = JSON.stringify(grid);
+    const seen = counted.get(key);
+    counted.set(key, { grid, count: (seen?.count ?? 0) + 1 });
+  }
+  let best: { grid: LayoutGrid; count: number } | undefined;
+  for (const entry of counted.values()) if (!best || entry.count > best.count) best = entry;
+  return best?.grid ?? null;
 }
 
 // ── Measuring ────────────────────────────────────────────────────────────

@@ -23,6 +23,7 @@ export * from './revisions';
 export * from './search';
 export * from './session';
 export * from './slides';
+export * from './spelling';
 export * from './status';
 export * from './storage';
 export * from './workspaces';

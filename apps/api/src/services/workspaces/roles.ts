@@ -33,17 +33,22 @@ export const workspaceBlocked = () =>
   );
 
 /**
- * What a member may do with a deck: viewers only look, reviewers also comment, members also
- * manage the decks they created, admins manage every deck.
+ * What a member may do with a deck: viewers only look, reviewers also comment; members also edit
+ * every deck they may open (by hand and with the AI) and manage the decks they created; admins
+ * manage every deck. A template (the workspace's library) only those who manage it edit.
  */
 export function deckPermissions(
   role: WorkspaceRole | null,
-  deckOwnerId: string,
+  deck: { ownerId: string; isTemplate: boolean },
   userId: string,
 ): DeckPermissions {
-  if (!role) return { canManage: false, canComment: false };
-  const canManage = atLeast(role, 'admin') || (role === 'member' && deckOwnerId === userId);
-  return { canManage, canComment: atLeast(role, 'reviewer') };
+  if (!role) return { canManage: false, canEdit: false, canComment: false };
+  const canManage = atLeast(role, 'admin') || (role === 'member' && deck.ownerId === userId);
+  return {
+    canManage,
+    canEdit: deck.isTemplate ? canManage : atLeast(role, 'member'),
+    canComment: atLeast(role, 'reviewer'),
+  };
 }
 
 /** The member's role, also in a blocked workspace; `null` for non-members. */

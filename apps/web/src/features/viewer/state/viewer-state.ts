@@ -28,7 +28,7 @@ export const isBoxModeActive = (state: Pick<ViewerState, 'boxMode' | 'boxModeFli
 
 /**
  * One of the presentation's right side panels is open: a thread, deleted slides, layers, a
- * background, layout, sharing (the board's panel is on the material page).
+ * background, layout, sharing, the AI's chat (the board's panel is on the material page).
  */
 export const isSidePanelOpen = (
   state: Pick<
@@ -39,6 +39,7 @@ export const isSidePanelOpen = (
     | 'backgroundPanelPageId'
     | 'layoutGridPanelOpen'
     | 'sharePanelOpen'
+    | 'aiChatOpen'
   >,
 ) =>
   state.threadPanelOpen ||
@@ -46,7 +47,8 @@ export const isSidePanelOpen = (
   state.layersPanelOpen ||
   state.backgroundPanelPageId !== null ||
   state.layoutGridPanelOpen ||
-  state.sharePanelOpen;
+  state.sharePanelOpen ||
+  state.aiChatOpen;
 
 export function useViewerState(): ViewerControls {
   const state = useContext(ViewerStateContext);

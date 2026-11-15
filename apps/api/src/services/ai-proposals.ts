@@ -1711,6 +1711,7 @@ export class DeckCopy {
         (await deckDesign(deps, target, {
           pageIds: base.pageIds(),
           guides: async () => uniqueGuides((await base.slideGuides()).flat()),
+          grids: base.slides().map((slide) => slide.grid ?? slide.layoutGrid),
         })),
     );
   }

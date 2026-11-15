@@ -16,6 +16,8 @@ import type {
   DeckEditState,
   DeckLayouts,
   DeckNotes,
+  WriteNotesInput,
+  WrittenNotes,
   GenerateEditImageInput,
   ImageSymbol,
   RevertEditInput,
@@ -341,6 +343,17 @@ export function useCreateProposal(deckId: string) {
         proposal,
         ...(list ?? []).filter((item) => item.id !== proposal.id),
       ]),
+  });
+}
+
+/**
+ * The AI writes speaker notes for the slides without any – returned, not put in: the caller
+ * applies them as one step of its own (⌘Z takes them back).
+ */
+export function useWriteNotes(deckId: string) {
+  return useMutation({
+    mutationFn: (input: WriteNotesInput = {}) =>
+      api.post<WrittenNotes>(`/decks/${deckId}/notes/write`, input),
   });
 }
 

@@ -1,10 +1,11 @@
 import { notesText } from '@slider/shared';
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { useAiProposals, useResolveProposal } from '@/lib/api';
 import { Avatar, cn, Icon, IconButton, Spinner, usePopover } from '@/ui';
 import { AiProposalCard } from '../comments/AiProposalCard';
 import { Divider } from '../editing/StyleControls';
 import { useEditing } from '../editing/editing-context';
+import { useAiNotes } from '../editing/hooks/useAiNotes';
 import { useAskAi } from '../editing/hooks/useAskAi';
 import { useViewerData } from '../state/viewer-data';
 import { useViewerToast } from '../state/viewer-toast';
@@ -19,6 +20,7 @@ import {
   variantStep,
 } from './lib/variant-requests';
 import { notesFromDom, notesFromText, notesToHtml } from './lib/notes-html';
+import { SwapImage } from '../stage/SwapImage';
 
 /** Notes are saved this long after the last key – and when the field is left. */
 const NOTES_SAVE_MS = 700;
@@ -406,19 +408,24 @@ function notesFormatting(): Record<string, boolean> {
 }
 
 /**
- * The notes track under one slide: its speaker notes, as big as the slide, typed right there –
+ * The notes track under one slide, laid out as the presenter view shows it: the slide and the
+ * next one side by side (paged down to the notes, one still sees what one speaks to), its speaker
+ * notes under both, as wide as when presenting, typed right there –
  * bold, italic, underlined, struck through, in lists (the buttons under it, the slide text's
  * shortcuts). Saved shortly after the last key and when the field is left; what someone else
  * saves meanwhile shows while it is not being typed in.
  */
 export const SlideNotes = memo(function SlideNotes({
   slideId,
+  imageUrl,
   index,
   x,
   w,
   h,
 }: {
   slideId: string;
+  /** The slide's picture, shown over its notes. */
+  imageUrl: string;
   index: number;
   x: number;
   w: number;
@@ -428,7 +435,7 @@ export const SlideNotes = memo(function SlideNotes({
   const own = editing.state?.slides.find((item) => item.slideId === slideId);
   const plain = own?.notes ?? '';
   const rich = own?.notesRich;
-  const saved = useMemo(() => rich ?? notesFromText(plain), [rich, plain]);
+  const saved = rich ?? notesFromText(plain);
   const pageId = own?.pageId;
   const field = useRef<HTMLDivElement>(null);
   const focused = useRef(false);
@@ -437,14 +444,19 @@ export const SlideNotes = memo(function SlideNotes({
   const timer = useRef<number | null>(null);
   const [empty, setEmpty] = useState(saved.length === 0);
   const [formatting, setFormatting] = useState<Record<string, boolean>>({});
+  const ai = useAiNotes();
+  /** Typable: a slide of the file, the AI not writing its notes. */
+  const typable = !!pageId && !ai.pending;
 
   // What the deck has, while it is not being typed in.
+  // Keyed by what the deck holds, not `saved` (a new array each render for plain notes).
   useEffect(() => {
     const node = field.current;
     if (!node || focused.current || dirty.current) return;
-    node.innerHTML = notesToHtml(saved);
-    setEmpty(saved.length === 0);
-  }, [saved]);
+    const notes = rich ?? notesFromText(plain);
+    node.innerHTML = notesToHtml(notes);
+    setEmpty(notes.length === 0);
+  }, [rich, plain]);
 
   const save = () => {
     if (timer.current !== null) window.clearTimeout(timer.current);
@@ -500,110 +512,149 @@ export const SlideNotes = memo(function SlideNotes({
       className="absolute top-0 flex flex-col overflow-hidden rounded-panel border border-hairline bg-surface-1 transition-colors focus-within:border-border-focus"
       style={{ left: x, width: w, height: h }}
     >
-      <div
-        ref={field}
-        role="textbox"
-        aria-multiline
-        aria-label={`Notizen zu Folie ${index + 1}`}
-        aria-disabled={!pageId || undefined}
-        contentEditable={!!pageId}
-        suppressContentEditableWarning
-        spellCheck
-        data-placeholder="Notizen für den Vortrag …"
-        onFocus={() => {
-          focused.current = true;
-          setFormatting(notesFormatting());
-        }}
-        onInput={changed}
-        onPaste={(event) => {
-          // Its text only: formatting from elsewhere would show here and not in the file.
-          event.preventDefault();
-          document.execCommand('insertText', false, event.clipboardData.getData('text/plain'));
-        }}
-        onBlur={() => {
-          focused.current = false;
-          setFormatting({});
-          if (dirty.current) save();
-        }}
-        onKeyDown={(event) => {
-          // Esc leaves the field as it is (saved), as everywhere in the editor.
-          if (event.key === 'Escape') {
+      {/* The slide small, its formatting beside it; the notes under both, as wide – written,
+          they break where they will when presenting. */}
+      <div className="flex shrink-0 border-b border-hairline">
+        <div className="relative w-1/2 bg-placeholder" style={{ aspectRatio: `${w} / ${h}` }}>
+          <SwapImage
+            src={imageUrl}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            draggable={false}
+            className="object-contain"
+          />
+        </div>
+        <div
+          role="toolbar"
+          aria-label="Notizen formatieren"
+          className="flex w-1/2 flex-wrap content-end items-center gap-1 border-l border-hairline p-3"
+          // A click on a button keeps the text's selection.
+          onMouseDown={(event) => event.preventDefault()}
+        >
+          {NOTES_LOOKS.map((item) => (
+            <IconButton
+              key={item.command}
+              icon={item.icon}
+              label={item.label}
+              size="compact"
+              disabled={!pageId}
+              active={!!formatting[item.command]}
+              onClick={() => run(item.command)}
+            />
+          ))}
+          <Divider />
+          {NOTES_LISTS.map((item) => (
+            <IconButton
+              key={item.command}
+              icon={item.icon}
+              label={item.label}
+              size="compact"
+              disabled={!pageId}
+              active={!!formatting[item.command]}
+              onClick={() => run(item.command)}
+            />
+          ))}
+          <IconButton
+            icon="formatIndentDecrease"
+            label="Ebene höher (⇧⇥)"
+            size="compact"
+            disabled={!pageId || !inList}
+            onClick={() => run('outdent')}
+          />
+          <IconButton
+            icon="formatIndentIncrease"
+            label="Ebene tiefer (⇥)"
+            size="compact"
+            disabled={!pageId || !inList}
+            onClick={() => run('indent')}
+          />
+          {/* The AI writes this slide's notes, replacing what is there (⌘Z takes them back). */}
+          <span className="ml-auto">
+            {ai.pending ? (
+              <span role="status" className="grid size-7 place-items-center">
+                <Spinner size="sm" label="Die KI schreibt Notizen" />
+              </span>
+            ) : (
+              <IconButton
+                icon="autoAwesome"
+                label="Notizen schreiben"
+                title={ai.reason ?? 'Notizen für diese Folie mit der KI schreiben'}
+                size="compact"
+                disabled={!pageId || ai.reason !== null}
+                onClick={() => {
+                  // Left first: what was typed is saved, and the field shows what the AI writes.
+                  field.current?.blur();
+                  if (pageId) ai.run(pageId);
+                }}
+              />
+            )}
+          </span>
+        </div>
+      </div>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div
+          ref={field}
+          role="textbox"
+          aria-multiline
+          aria-label={`Notizen zu Folie ${index + 1}`}
+          aria-disabled={!typable || undefined}
+          aria-busy={ai.pending || undefined}
+          contentEditable={typable}
+          suppressContentEditableWarning
+          spellCheck
+          data-placeholder="Notizen für den Vortrag …"
+          onFocus={() => {
+            focused.current = true;
+            setFormatting(notesFormatting());
+          }}
+          onInput={changed}
+          onPaste={(event) => {
+            // Its text only: formatting from elsewhere would show here and not in the file.
+            event.preventDefault();
+            document.execCommand('insertText', false, event.clipboardData.getData('text/plain'));
+          }}
+          onBlur={() => {
+            focused.current = false;
+            setFormatting({});
+            if (dirty.current) save();
+          }}
+          onKeyDown={(event) => {
+            // Esc leaves the field as it is (saved), as everywhere in the editor.
+            if (event.key === 'Escape') {
+              event.stopPropagation();
+              event.currentTarget.blur();
+              return;
+            }
+            const mod = event.metaKey || event.ctrlKey;
+            const key = event.key.toLowerCase();
+            const command: NotesCommand | null =
+              mod && event.shiftKey && key === 'x'
+                ? 'strikeThrough'
+                : mod && event.shiftKey && (key === '8' || event.code === 'Digit8')
+                  ? 'insertUnorderedList'
+                  : mod && event.shiftKey && (key === '7' || event.code === 'Digit7')
+                    ? 'insertOrderedList'
+                    : mod && !event.shiftKey && (key === 'b' || key === 'i' || key === 'u')
+                      ? ({ b: 'bold', i: 'italic', u: 'underline' } as const)[key]
+                      : // In a list, ⇥ and ⇧⇥ change its level (as on the slide).
+                        event.key === 'Tab' && inList
+                        ? event.shiftKey
+                          ? 'outdent'
+                          : 'indent'
+                        : null;
+            if (!command) return;
+            event.preventDefault();
             event.stopPropagation();
-            event.currentTarget.blur();
-            return;
-          }
-          const mod = event.metaKey || event.ctrlKey;
-          const key = event.key.toLowerCase();
-          const command: NotesCommand | null =
-            mod && event.shiftKey && key === 'x'
-              ? 'strikeThrough'
-              : mod && event.shiftKey && (key === '8' || event.code === 'Digit8')
-                ? 'insertUnorderedList'
-                : mod && event.shiftKey && (key === '7' || event.code === 'Digit7')
-                  ? 'insertOrderedList'
-                  : mod && !event.shiftKey && (key === 'b' || key === 'i' || key === 'u')
-                    ? ({ b: 'bold', i: 'italic', u: 'underline' } as const)[key]
-                    : // In a list, ⇥ and ⇧⇥ change its level (as on the slide).
-                      event.key === 'Tab' && inList
-                      ? event.shiftKey
-                        ? 'outdent'
-                        : 'indent'
-                      : null;
-          if (!command) return;
-          event.preventDefault();
-          event.stopPropagation();
-          run(command);
-        }}
-        className={cn(
-          'min-h-0 flex-1 overflow-y-auto px-5 py-4 text-base leading-relaxed whitespace-pre-wrap text-fg outline-none',
-          '[&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6 [&_ul_ul]:list-[circle]',
-          empty &&
-            'before:pointer-events-none before:absolute before:text-fg-faint before:content-[attr(data-placeholder)]',
-        )}
-      />
-      <div
-        role="toolbar"
-        aria-label="Notizen formatieren"
-        className="flex shrink-0 items-center gap-1 border-t border-hairline px-3 py-1.5"
-        // A click on a button keeps the text's selection.
-        onMouseDown={(event) => event.preventDefault()}
-      >
-        {NOTES_LOOKS.map((item) => (
-          <IconButton
-            key={item.command}
-            icon={item.icon}
-            label={item.label}
-            size="compact"
-            disabled={!pageId}
-            active={!!formatting[item.command]}
-            onClick={() => run(item.command)}
-          />
-        ))}
-        <Divider />
-        {NOTES_LISTS.map((item) => (
-          <IconButton
-            key={item.command}
-            icon={item.icon}
-            label={item.label}
-            size="compact"
-            disabled={!pageId}
-            active={!!formatting[item.command]}
-            onClick={() => run(item.command)}
-          />
-        ))}
-        <IconButton
-          icon="formatIndentDecrease"
-          label="Ebene höher (⇧⇥)"
-          size="compact"
-          disabled={!pageId || !inList}
-          onClick={() => run('outdent')}
-        />
-        <IconButton
-          icon="formatIndentIncrease"
-          label="Ebene tiefer (⇥)"
-          size="compact"
-          disabled={!pageId || !inList}
-          onClick={() => run('indent')}
+            run(command);
+          }}
+          className={cn(
+            'min-h-0 flex-1 overflow-y-auto px-5 py-4 text-base leading-relaxed whitespace-pre-wrap text-fg outline-none',
+            ai.pending && 'text-fg-faint',
+            '[&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6 [&_ul_ul]:list-[circle]',
+            empty &&
+              'before:pointer-events-none before:absolute before:text-fg-faint before:content-[attr(data-placeholder)]',
+          )}
         />
       </div>
     </div>

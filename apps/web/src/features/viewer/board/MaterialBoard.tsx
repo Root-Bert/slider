@@ -73,6 +73,7 @@ import { RectFrame } from '../stage/RectFrame';
 import { BoardPanel } from './BoardPanel';
 import { ConnectAppsPanel } from './ConnectAppsPanel';
 import { MaterialChat } from './MaterialChat';
+import { openSource } from './material-chat';
 import { askKeys, useNoteAnswers, useOpenThreads, type NoteAnswerValue } from './note-answers';
 import { droppedItems } from './folder-files';
 import { useBoard, useFolderUploads } from './useBoard';
@@ -743,11 +744,7 @@ function Board({ w, h, onLeave }: { w: number; h: number; onLeave: () => void })
       reply: (noteId, text, ask) => answers.ask(noteId, text, { kind: 'reply', ask }),
       askReply: (reply) => answers.ask(reply.noteId, reply.question, { replaces: reply }),
       removeReply: answers.removeReply,
-      openSource: (material, page) => {
-        if (!material.url) return;
-        const at = page && material.kind === 'pdf' ? `#page=${page}` : '';
-        window.open(`${material.url}${at}`, '_blank', 'noopener');
-      },
+      openSource,
     },
     onNoteCancel: (item) => {
       setEditing(null);

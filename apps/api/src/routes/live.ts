@@ -67,7 +67,7 @@ export function liveRoutes(
             if (current?.author.id !== author.id) return false;
             await requireDeckAccess(deps, current, deck.id, 'view');
             if (texts.typesIn(key)) {
-              await requireDeckAccess(deps, current, deck.id, 'own').catch((error: unknown) => {
+              await requireDeckAccess(deps, current, deck.id, 'edit').catch((error: unknown) => {
                 if (!(error instanceof ApiError)) throw error;
                 texts.leaveAll(key);
               });
@@ -143,7 +143,7 @@ export function liveRoutes(
         const elementId = c.req.param('elementId');
         const connection = hub.connectionOf(key);
         if (!connection || connection.author.id !== c.var.viewer.author.id) throw gone();
-        await requireDeckAccess(deps, c.var.viewer, connection.deckId, 'own');
+        await requireDeckAccess(deps, c.var.viewer, connection.deckId, 'edit');
         const input = await readJson(c, liveTextJoinInputSchema);
         const joined = await texts.join(
           key,

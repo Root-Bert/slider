@@ -16,6 +16,7 @@ import {
 import { deband } from '../src/import/deband';
 import { backfillFileAuthors } from '../src/import/file-author-backfill';
 import { findInterruptedImports, importDeck } from '../src/import/import-deck';
+import { findRerenderCandidates } from '../src/import/rerender';
 import { ConversionAborted, type PptxToPdf } from '../src/import/libreoffice';
 import type { OpenPptx } from '../src/import/pptx';
 import { toAnchor, upsertPptxComments } from '../src/import/pptx-comments';
@@ -315,20 +316,22 @@ describe('file author backfill', () => {
 });
 
 describe('shutdown during rendering', () => {
-  it('leaves the import to resume instead of finishing with SVG previews', async () => {
+  it('opens on the previews and leaves LibreOffice’s pictures to the next start', async () => {
     let aborting = true;
     const libreOfficePdf: PptxToPdf = async () => {
       if (aborting) throw new ConversionAborted();
       return makePdf(3);
     };
     ctx = await createTestContext({ openPptx: stubPptx({}, 3), libreOfficePdf });
+    // Ready on its SVG previews at once; LibreOffice's pictures were a job of their own.
     const cut = await upload(ctx);
-    expect(cut.import.status).toBe('running');
+    expect(cut.import.status).toBe('ready');
     const rows = await ctx.deps.db
       .select({ renderer: slideVersions.renderer })
       .from(slideVersions)
       .where(eq(slideVersions.revisionId, cut.currentRevisionId ?? ''));
-    expect(rows.some((row) => row.renderer === 'svg')).toBe(false);
+    // Cut off by the shutdown: still untried, not „tried and only SVG“.
+    expect(rows.map((row) => row.renderer)).toEqual([null, null, null]);
     // A shutdown is no crash: it does not count towards giving up.
     const [revision] = await ctx.deps.db
       .select()
@@ -336,10 +339,11 @@ describe('shutdown during rendering', () => {
       .where(eq(revisions.id, cut.currentRevisionId ?? ''));
     expect(revision?.importAttempts).toBe(0);
 
-    // Next start: picked up again and rendered properly.
+    // Next start: nothing to import again, the pictures are drawn by the re-render backfill.
     aborting = false;
-    const jobs = await findInterruptedImports(ctx.deps.db);
-    expect(jobs).toEqual([{ deckId: cut.id, revisionId: cut.currentRevisionId, kind: 'initial' }]);
+    expect(await findInterruptedImports(ctx.deps.db)).toEqual([]);
+    const jobs = await findRerenderCandidates(ctx.deps.db, { libreOfficePdf });
+    expect(jobs).toEqual([{ deckId: cut.id, revisionId: cut.currentRevisionId, kind: 'rerender' }]);
     for (const job of jobs) ctx.deps.queue.enqueue(job);
     await ctx.deps.queue.idle();
     const after = await ctx.deps.db

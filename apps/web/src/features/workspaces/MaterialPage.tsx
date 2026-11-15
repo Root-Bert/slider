@@ -1,16 +1,18 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
-import { searchFold, type WorkspaceMaster } from '@slider/shared';
+import { searchFold, type SpellingWord, type WorkspaceMaster } from '@slider/shared';
 import {
   useCreateBlankDeck,
+  useRemoveSpellingWord,
   useRemoveWorkspaceFontFamily,
   useRemoveWorkspaceMaster,
   useWorkspaceFonts,
   useWorkspaceMasters,
+  useWorkspaceWords,
 } from '@/lib/api';
 import { useNavigate, useSearchParams } from 'react-router';
 import { selectionStyle } from '@/lib/accent';
 import { pluralize } from '@/lib/format';
-import { OPEN_ON_BOARD, routes } from '@/lib/routes';
+import { routes } from '@/lib/routes';
 import { useCollectionSelection } from '@/lib/collection-selection';
 import { isOnControl } from '@/lib/marquee-select';
 import { readString, writeString } from '@/lib/storage';
@@ -38,6 +40,7 @@ import { IconCollection, IconCollectionSkeleton } from './components/material/Ic
 import { FontSpecimens } from './components/material/FontSpecimens';
 import { MasterCollection, MasterCollectionSkeleton } from './components/material/MasterCollection';
 import { MasterSpecimens } from './components/material/MasterSpecimens';
+import { WordCollection, WordCollectionSkeleton } from './components/material/WordCollection';
 import {
   MaterialToolbar,
   type FontSource,
@@ -94,6 +97,7 @@ const SECTION_LABELS: Record<MaterialKind, string> = {
   colors: 'Farben',
   fonts: 'Schriften',
   icons: 'Symbole',
+  words: 'Wörter',
 };
 
 /** `?filter=` of each kind – „Schriften“ with all fonts. */
@@ -102,6 +106,7 @@ const KIND_PARAMS: Record<MaterialKind, string> = {
   colors: 'farben',
   fonts: 'schriften',
   icons: 'icons',
+  words: 'woerter',
 };
 /** `?filter=` of „Schriften“ by whose fonts it shows – an upload leads to the workspace's. */
 const SOURCE_PARAMS: Record<FontSource, string> = {
@@ -161,6 +166,10 @@ export function Component() {
   // A presentation built on a design: its first layout, straight into the editor.
   const createDeck = useCreateBlankDeck(workspace.id);
   const navigate = useNavigate();
+  // The words its spell check takes as right („Passt so“ in a deck): members and admins delete.
+  const words = useWorkspaceWords(workspace.id);
+  const removeWord = useRemoveSpellingWord(workspace.id);
+  const [removingWord, setRemovingWord] = useState<SpellingWord | null>(null);
   useWorkspaceFontFaces(fonts.data);
   // Slider's fonts as the editor draws them; a face downloads once a card on screen shows it.
   useEffect(() => registerOfficeFonts(), []);
@@ -242,6 +251,7 @@ export function Component() {
       ),
     )
     .toSorted(COLOR_SORTERS[sort]);
+  const visibleWords = (words.data ?? []).filter((word) => matches([word.word]));
   const visible =
     kind !== 'fonts'
       ? []
@@ -267,10 +277,10 @@ export function Component() {
   const pageRef = useRef<HTMLDivElement>(null);
   const selection = useCollectionSelection(
     pageRef,
-    // Colours belong to their design, icons to Slider: nothing to select.
+    // Colours belong to their design, icons to Slider, words are one click each: nothing to select.
     kind === 'masters'
       ? visibleMasters.map((master) => master.id)
-      : kind === 'colors' || kind === 'icons'
+      : kind === 'colors' || kind === 'icons' || kind === 'words'
         ? []
         : visible.map(familyKey),
   );
@@ -462,6 +472,7 @@ export function Component() {
               masters: masters.data?.length ?? 0,
               colors: new Set(colored.flatMap((master) => master.colors!.map((c) => c.color))).size,
               icons: icons.data?.icons.length,
+              words: words.data?.length,
             }}
             query={query}
             onQueryChange={setQuery}
@@ -551,12 +562,45 @@ export function Component() {
           aria-busy={
             kind === 'icons'
               ? icons.isPending
-              : kind === 'fonts'
-                ? showsOwn && fonts.isPending
-                : masters.isPending
+              : kind === 'words'
+                ? words.isPending
+                : kind === 'fonts'
+                  ? showsOwn && fonts.isPending
+                  : masters.isPending
           }
         >
-          {kind === 'icons' ? (
+          {kind === 'words' ? (
+            words.isPending ? (
+              <WordCollectionSkeleton />
+            ) : words.isError ? (
+              <EmptyState
+                title="Wörter konnten nicht geladen werden"
+                message={words.error.message}
+                action={
+                  <Button variant="secondary" icon="refresh" onClick={() => void words.refetch()}>
+                    Erneut versuchen
+                  </Button>
+                }
+              />
+            ) : words.data.length === 0 ? (
+              <EmptyState
+                title="Noch keine Wörter"
+                message="Markiert die Rechtschreibprüfung ein Wort, das stimmt: Rechtsklick darauf und „Passt so“. Es steht dann hier und gilt für alle Präsentationen im Workspace."
+              />
+            ) : visibleWords.length === 0 ? (
+              <EmptyState
+                title={`Keine Treffer für „${query.trim()}“`}
+                message="Versuche einen anderen Suchbegriff."
+              />
+            ) : (
+              <WordCollection
+                words={visibleWords}
+                view={view}
+                onRemove={editable ? setRemovingWord : null}
+                onNotify={showToast}
+              />
+            )
+          ) : kind === 'icons' ? (
             icons.isPending ? (
               <IconCollectionSkeleton />
             ) : icons.isError ? (
@@ -672,11 +716,7 @@ export function Component() {
                         icon: 'add',
                         onSelect: () =>
                           createDeck.mutate(master.id, {
-                            onSuccess: (deck) =>
-                              void navigate(routes.deck(deck.id), {
-                                viewTransition: true,
-                                state: OPEN_ON_BOARD,
-                              }),
+                            onSuccess: (deck) => void navigate(routes.deck(deck.id)),
                             onError: (error) => showToast(error.message, 'danger'),
                           }),
                       }
@@ -689,10 +729,7 @@ export function Component() {
                         {
                           label: 'Bearbeiten',
                           icon: 'slideMaster',
-                          onSelect: () =>
-                            void navigate(routes.deck(master.draftDeckId!), {
-                              viewTransition: true,
-                            }),
+                          onSelect: () => void navigate(routes.deck(master.draftDeckId!)),
                         } satisfies MenuAction,
                       ]
                     : []),
@@ -824,6 +861,21 @@ export function Component() {
         pending={removePending}
         error={removeError ?? undefined}
         onConfirm={() => void confirmRemoveMasters()}
+      />
+      <ConfirmDialog
+        open={removingWord !== null}
+        onClose={() => setRemovingWord(null)}
+        title={`„${removingWord?.word ?? ''}“ löschen?`}
+        description="Die Rechtschreibprüfung markiert es dann wieder, in allen Präsentationen des Workspaces."
+        confirmLabel="Löschen"
+        confirmIcon="delete"
+        onConfirm={() => {
+          if (!removingWord) return;
+          const { word } = removingWord;
+          setRemovingWord(null);
+          showToast(`„${word}“ gelöscht`);
+          removeWord.mutate(word, { onError: (error) => showToast(error.message, 'danger') });
+        }}
       />
       <Toast toast={toast} />
     </div>

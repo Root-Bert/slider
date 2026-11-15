@@ -12,13 +12,13 @@ import { useEditing } from '../editing-context';
  * (another format, no key, no right to edit) the comment is sent all the same and a toast says why.
  */
 export function useAskAi() {
-  const { deck, canManage } = useViewerData();
+  const { deck, canEdit } = useViewerData();
   const { state, offline } = useEditing();
   const create = useCreateProposal(deck.id);
   const toast = useViewerToast();
 
-  const reason = !canManage
-    ? 'Die KI bitten kann nur, wer die Präsentation verwaltet.'
+  const reason = !canEdit
+    ? 'Die KI bitten kann nur, wer die Präsentation bearbeiten darf.'
     : offline
       ? `Die KI ist offline nicht da. ${OFFLINE_HINT}`
       : !state

@@ -17,7 +17,7 @@ export function useSnapLines(slideId: string): SnapLines {
   const layout = useLayoutGuides(slideId);
   const slideGuides = slides.find((slide) => slide.id === slideId)?.guides;
   const guides = layout ? layout.guides : showGuides ? slideGuides : undefined;
-  const grid = useLayoutGridLines();
+  const grid = useLayoutGridLines(slideId);
   return useMemo(() => {
     if (!guides?.length) return withSlideLines(grid);
     const at = (orientation: 'vertical' | 'horizontal') =>

@@ -217,12 +217,19 @@ function inverseOne(
         ? [{ type: 'setLocked', elementId: operation.elementId, locked: was.locked === true }]
         : null;
     }
+    case 'setFlow': {
+      const was = element(operation.elementId);
+      return was
+        ? [{ type: 'setFlow', elementId: operation.elementId, flow: was.flow ?? null }]
+        : null;
+    }
     case 'addSlide':
     case 'duplicateSlide':
     case 'addVariant':
       return [{ type: 'deleteSlide', pageId: operation.newPageId }];
     case 'setSlideHidden':
     case 'setSlideTransition':
+    case 'setSlideGrid':
     case 'setSlideBackground':
     case 'setSlideNotes':
     case 'moveSlide': {
@@ -239,6 +246,8 @@ function inverseOne(
           return slide.transition === null
             ? null
             : [{ type: 'setSlideTransition', pageId, transition: slide.transition }];
+        case 'setSlideGrid':
+          return [{ type: 'setSlideGrid', pageId, grid: slide.grid }];
         case 'setSlideBackground':
           if (!slide.ownBackground) return [{ type: 'setSlideBackground', pageId, color: null }];
           return needsServer(slide.backgroundFills)
@@ -311,6 +320,24 @@ export function renamed(
 }
 
 /** The elements an edit changes – what is compared before it is taken back or done again. */
+/**
+ * The slide property a slide's own step sets, as `type:pageId` – someone else setting the same
+ * since keeps it theirs on undo – or null for any other operation.
+ */
+export function slidePartOf(operation: SlideOperation): string | null {
+  switch (operation.type) {
+    case 'setSlideHidden':
+    case 'setSlideTransition':
+    case 'setSlideGrid':
+    case 'setSlideBackground':
+    case 'setSlideNotes':
+    case 'moveSlide':
+      return `${operation.type}:${operation.pageId}`;
+    default:
+      return null;
+  }
+}
+
 export function touchedElements(operations: readonly SlideOperation[]): string[] {
   const ids = new Set<string>();
   for (const operation of operations) {

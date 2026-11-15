@@ -4,11 +4,13 @@ import {
   distributeMoves,
   encloses,
   growBoxes,
+  sameSizeBoxes,
   scaledFrames,
   shownRect,
   turnedFrames,
   SLIDE_RECT,
 } from './group-layout';
+import { flowed, flowMoves, inferredFlow } from './flow';
 
 const ASPECT = 16 / 9;
 const close = (value: number | undefined, expected: number) =>
@@ -70,6 +72,105 @@ it('lines up, spreads and encloses elements picked together as they show', () =>
   close(pair.get('b')!.y, 0.3);
   expect(growBoxes([a, { ...b, rotation: 30 }], 'x', lines)).toBeNull();
   expect(growBoxes([{ id: 'full', bbox: SLIDE_RECT }], 'x', lines)).toBeNull();
+  // Same size: as wide as the widest (a, 0.2), each keeping its left edge and its height; a
+  // already is, so it stays out; alike already: nothing.
+  const wide = sameSizeBoxes(members, 'x')!;
+  expect(wide.has('a')).toBe(false);
+  close(wide.get('b')!.w, 0.2);
+  close(wide.get('b')!.x, 0.4);
+  close(wide.get('b')!.h, 0.2);
+  close(sameSizeBoxes(members, 'y')!.get('a')!.h, 0.2);
+  expect(sameSizeBoxes([b, c], 'x')).toBeNull();
+
+  // A flow (Figma's auto layout) on a 16 × 9 cm slide: in a row in their order across, 1.6 cm
+  // (0.1 of the width) apart from the first one's left, lined up at the top of the box round them.
+  const page = { width: 16, height: 9 };
+  const rects = members.map(({ id, bbox }) => ({ id, rect: bbox }));
+  const row = flowMoves(rects, { direction: 'row', gap: 1.6, align: 'start' }, page);
+  expect(row.has('a')).toBe(false);
+  close(row.get('b')!.dx, 0.1 + 0.2 + 0.1 - 0.4);
+  close(row.get('b')!.dy, -0.2);
+  close(row.get('c')!.dx, 0.6 - 0.8);
+  // A column lined up at the right, 0.9 cm (0.1 of the height) apart: a, then c, then b by middle.
+  const column = flowMoves(rects, { direction: 'column', gap: 0.9, align: 'end' }, page);
+  close(column.get('a')!.dx, 0.9 - 0.2 - 0.1);
+  close(column.get('c')!.dy, 0.3 - 0.2);
+  close(column.get('b')!.dy, 0.5 - 0.3);
+  // As they stand: spread more across – a row, their mean gap in cm (0.1 and 0.3 of 16 cm → 3.2).
+  expect(inferredFlow([a.bbox, b.bbox, c.bbox], page)).toEqual({
+    direction: 'row',
+    gap: 3.2,
+    align: 'start',
+  });
+  expect(inferredFlow([a.bbox, b.bbox], page, 'column').direction).toBe('column');
+  // An edit of one of a flow's elements takes the `setBox`es that lay it out again along; the
+  // rest of the slide does not.
+  const element = (id: string, bbox: (typeof a)['bbox']) =>
+    ({ id, kind: 'shape', bbox, rotation: 0, movable: true, resizable: true }) as never;
+  const flowGroup = {
+    id: 'g',
+    kind: 'group',
+    bbox: { x: 0.1, y: 0.1, w: 0.8, h: 0.4 },
+    rotation: 0,
+    flow: { direction: 'row', gap: 1.6, align: 'start' },
+    children: [element('a', a.bbox), element('b', b.bbox), element('c', c.bbox)],
+  } as never;
+  const context = {
+    element: () => undefined,
+    groupOf: (id: string) => (['a', 'b', 'c'].includes(id) ? flowGroup : undefined),
+    heightOf: () => null,
+    pageSize: page,
+  };
+  const grown = flowed(
+    [{ type: 'setBox', elementId: 'a', box: { ...a.bbox, w: 0.3 } }],
+    context,
+    page.width / page.height,
+  );
+  expect(grown.map((operation) => 'elementId' in operation && operation.elementId)).toEqual([
+    'a',
+    'b',
+    'c',
+  ]);
+  const pushed = grown[1]!;
+  close(pushed.type === 'setBox' ? pushed.box.x : NaN, 0.1 + 0.3 + 0.1);
+  expect(
+    flowed([{ type: 'setLocked', elementId: 'x', locked: true }], context, 16 / 9),
+  ).toHaveLength(1);
+  // Spread over the length („Automatisch“): first and last stay at the ends of the box round them
+  // (0.1 … 0.9), the gaps equal ((0.8 − 0.4) / 2 = 0.2: b at 0.5, c at 0.8 already).
+  const spread2 = flowMoves(rects, { direction: 'row', gap: 'auto', align: 'start' }, page);
+  close(spread2.get('b')!.dx, 0.5 - 0.4);
+  expect(spread2.get('c')?.dx ?? 0).toBeCloseTo(0, 6);
+  // In a frame of its own (Figma's fixed size): from its start, lined up in it.
+  const framed = flowMoves(
+    rects,
+    { direction: 'row', gap: 0, align: 'end', frame: { x: 0, y: 0, w: 1, h: 1 } },
+    page,
+  );
+  close(framed.get('a')!.dx, -0.1);
+  close(framed.get('a')!.dy, 0.9 - 0.1);
+  // Middles alike along the flow: their order across decides (a row made a column keeps it).
+  const level = [
+    { id: 'p', rect: { x: 0.5, y: 0.1, w: 0.1, h: 0.1 } },
+    { id: 'q', rect: { x: 0.1, y: 0.1, w: 0.1, h: 0.1 } },
+  ];
+  close(flowMoves(level, { direction: 'column', gap: 0, align: 'start' }, page).get('p')!.dy, 0.1);
+  // The flow group's own box sized: the area it flows in, laid out there at once.
+  const sized = flowed(
+    [{ type: 'setBox', elementId: 'g', box: { x: 0, y: 0, w: 1, h: 0.5 } }],
+    { ...context, element: (id: string) => (id === 'g' ? flowGroup : undefined) },
+    16 / 9,
+  );
+  expect(sized[0]).toMatchObject({ type: 'setFlow', flow: { frame: { x: 0, w: 1 } } });
+  expect(sized.length).toBeGreaterThan(1);
+  // Only moved – its size off by the file's rounding at most –, it moves with its parts, no frame.
+  const nudged = flowed(
+    [{ type: 'setBox', elementId: 'g', box: { x: 0.2, y: 0.2, w: 0.80002, h: 0.39998 } }],
+    { ...context, element: (id: string) => (id === 'g' ? flowGroup : undefined) },
+    16 / 9,
+  );
+  expect(nudged).toHaveLength(1);
+  expect(nudged[0]!.type).toBe('setBox');
 
   // Scaled with the box round them (0.1…0.5 × 0.1…0.5 → twice as wide): each keeps its place in
   // the box, its size goes with it – a group of the file only follows with its centre; turned a

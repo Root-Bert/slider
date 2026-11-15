@@ -41,7 +41,7 @@ import { elementTransform } from './tilt/tilt-math';
 import { useAlonePictures, useTiltElement } from './tilt/useTilt';
 import { useViewerToast } from '../state/viewer-toast';
 import { useSnapLines } from '../template/useSnapLines';
-import { canMove } from './live/model';
+import { canFrame, canMove } from './live/model';
 import { pictureFit } from './picture-fit';
 import { fillToCrop, useCropFill } from './fills/useCropFill';
 import { PictureFitLayer } from './PictureFitLayer';
@@ -106,6 +106,11 @@ function EditLayerView({ slideId, color, boxes, onHover }: EditLayerProps) {
   // from its picture alone.
   const handled = (element: EditableElement) =>
     element.resizable &&
+    !element.locked &&
+    (picked?.id === element.id || (boxes && hovered === element.id));
+  // A flow group's corners (the area its parts flow in): shown as an element's, never a tilt.
+  const framed = (element: EditableElement) =>
+    canFrame(element) &&
     !element.locked &&
     (picked?.id === element.id || (boxes && hovered === element.id));
   // The element whose turning handle the pointer came onto: a tilt (⇧) may follow.
@@ -237,9 +242,21 @@ function EditLayerView({ slideId, color, boxes, onHover }: EditLayerProps) {
         : null;
 
   // Moved or turned before it was picked, it stays unpicked: a drag is no click.
-  const commit = (element: EditableElement, rect: Rect, done: () => void, flip?: ElementFlip) => {
-    // Groups only move: their size stays.
-    const box = element.resizable ? rect : { ...rect, w: element.bbox.w, h: element.bbox.h };
+  const commit = (
+    element: EditableElement,
+    rect: Rect,
+    done: () => void,
+    flip?: ElementFlip,
+    from?: Rect,
+  ) => {
+    // Groups only move: their size stays – a flow group's sets the area its parts flow in, once
+    // its corners changed it (moved only, it stays as large as its parts: its box as the file has
+    // it, not as shown with texts grown).
+    const sized = !from || Math.abs(rect.w - from.w) > 1e-3 || Math.abs(rect.h - from.h) > 1e-3;
+    const box =
+      element.resizable || (canFrame(element) && sized)
+        ? rect
+        : { ...rect, w: element.bbox.w, h: element.bbox.h };
     void editing
       .apply([{ type: 'setBox', elementId: element.id, box, ...(flip && { flip }) }])
       .finally(done);
@@ -389,14 +406,14 @@ function EditLayerView({ slideId, color, boxes, onHover }: EditLayerProps) {
         const frameProps = {
           rect,
           color,
-          handles: element.resizable,
+          handles: element.resizable || canFrame(element),
           elementEdge: true,
           offSlide: true,
           emphasized: true,
           rotation: element.rotation,
           outline: element.outline,
           onCommit: (next: Rect, done: () => void, flip?: ElementFlip) =>
-            commit(element, next, done, flip),
+            commit(element, next, done, flip, rect),
           // Groups do not turn.
           onRotate: element.resizable
             ? (rotation: number, done: () => void) => turn(element, rect, rotation, done)
@@ -519,7 +536,7 @@ function EditLayerView({ slideId, color, boxes, onHover }: EditLayerProps) {
               <EditableFrame
                 key="frame"
                 {...frameProps}
-                handles={handled(element)}
+                handles={handled(element) || framed(element)}
                 emphasized={isPicked}
                 outlined={isPicked}
                 // Tilted from its picture alone, asked for once its turning handle is aimed at.

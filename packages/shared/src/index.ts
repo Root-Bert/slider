@@ -34,6 +34,7 @@ export * from './material-chat';
 export * from './markdown-rich';
 export * from './app-connections';
 export * from './deck-creation';
+export * from './spelling';
 
 export * from './show-runs';
 export * from './desktop';

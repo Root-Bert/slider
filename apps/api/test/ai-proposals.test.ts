@@ -9,6 +9,7 @@ import {
   deckEditStateSchema,
   deckSchema,
   slideSchema,
+  writtenNotesSchema,
   type AiProposal,
   type Author,
   type DeckEditState,
@@ -1743,6 +1744,40 @@ describe('AI proposals', { timeout: 60_000 }, () => {
     after = await slides();
     expect(after[1]).toMatchObject({ id: original[1]!.id, hidden: false });
     expect(after[2]).toMatchObject({ title: 'Agenda', hidden: true, variantOf: original[1]!.id });
+
+    // „Notizen schreiben“: notes for the slides without any, variants left out – returned, the
+    // deck untouched (the editor puts them in as its own step).
+    const before = deckEditStateSchema.parse(
+      await (await ctx.request(`/api/decks/${deckId}/edit`)).json(),
+    );
+    const shown = before.slides.filter((slide) => slide.variantOf === null);
+    const missing = shown.filter((slide) => !slide.notes.trim());
+    expect(missing.length).toBeGreaterThan(0);
+    anthropic.quick.push({
+      slides: [
+        ...missing.map((slide) => ({
+          slide: shown.indexOf(slide) + 1,
+          notes: `Notiz zu ${slide.name}`,
+        })),
+        { slide: 99, notes: 'keine Folie' },
+      ],
+    });
+    const notesRes = await ctx.request(`/api/decks/${deckId}/notes/write`, {
+      method: 'POST',
+      json: {},
+    });
+    expect(notesRes.status).toBe(200);
+    const written = writtenNotesSchema.parse(await notesRes.json());
+    expect(written.notes.map((item) => item.pageId).sort()).toEqual(
+      missing.map((slide) => slide.pageId).sort(),
+    );
+    expect(written.notes[0]!.text).toMatch(/^Notiz zu /);
+    const notesAsk = anthropic.quickRequests.at(-1)!;
+    expect(notesAsk.tool_choice).toMatchObject({ name: 'speaker_notes' });
+    expect(JSON.stringify(notesAsk.messages)).toContain('(write its notes)');
+    expect(
+      deckEditStateSchema.parse(await (await ctx.request(`/api/decks/${deckId}/edit`)).json()).seq,
+    ).toBe(before.seq);
   });
 
   it('leaves a comment of its own, asks back in the thread, and stops when asked', async () => {

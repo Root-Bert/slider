@@ -112,7 +112,7 @@ const revert = (context: TestContext, deckId: string, seq: number) =>
   context.request(`/api/decks/${deckId}/edit/revert`, { method: 'POST', json: { seq } });
 
 describe('editing an ODP deck', () => {
-  it('shows its slides with their elements and live texts, editable by who manages it – ODP decks only; exports one slide and mails exports', async () => {
+  it('shows its slides with their elements and live texts, editable by every member – ODP decks only; exports one slide and mails exports', async () => {
     const calls: Calls = [];
     const mailer = new RecordingMailer();
     const { ctx, deckId } = await odpDeck({ calls, mailer });
@@ -1208,23 +1208,32 @@ describe('editing an ODP deck', () => {
       notes: 'Langsam.\nPause.',
       notesRich: noted.slides[2]!.notesRich,
     });
+    // Reviewers only look and comment; every member edits every deck, not only their own.
     expect(
       (await ctx.request(`/api/decks/${deckId}/edit`, { cookie: reviewer.cookie })).status,
     ).toBe(403);
-    // Changing them stays with edit rights.
+    const colleague = await signedInUser(ctx, { name: 'Mia', email: 'mia@example.org' });
+    await ctx.deps.db
+      .insert(workspaceMembers)
+      .values({ workspaceId: ctx.workspaceId, userId: colleague.user.id, role: 'member' });
+    const colleagueState = await ctx.request(`/api/decks/${deckId}/edit`, {
+      cookie: colleague.cookie,
+    });
+    expect(colleagueState.status).toBe(200);
+    expect(((await colleagueState.json()) as { editable: boolean }).editable).toBe(true);
+    const stranger = await signedInUser(ctx, { name: 'Tom', email: 'tom@example.org' });
+    expect(
+      (await ctx.request(`/api/decks/${deckId}/notes`, { cookie: stranger.cookie })).status,
+    ).toBe(404);
     const refused = await ctx.request(`/api/decks/${deckId}/edit/operations`, {
       method: 'POST',
       json: {
         operations: [{ type: 'setSlideNotes', pageId: pages[2]!, text: 'Nein' }],
         baseSeq: noted.seq,
       },
-      cookie: reviewer.cookie,
+      cookie: stranger.cookie,
     });
-    expect(refused.status).toBe(403);
-    const stranger = await signedInUser(ctx, { name: 'Tom', email: 'tom@example.org' });
-    expect(
-      (await ctx.request(`/api/decks/${deckId}/notes`, { cookie: stranger.cookie })).status,
-    ).toBe(404);
+    expect(refused.status).toBe(404);
     // Taking its slide's place: the slide becomes the variant, comments stay with each.
     const swapped = applyEditResultSchema.parse(
       await (

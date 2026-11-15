@@ -20,7 +20,7 @@ export async function getEditState(
   viewer: Viewer,
   deckId: string,
 ): Promise<DeckEditState> {
-  const deck = await requireDeckAccess(deps, viewer, deckId, 'own');
+  const deck = await requireDeckAccess(deps, viewer, deckId, 'edit');
   const revision = await currentRevision(deps.db, deck);
   const reason = blocker(deps, deck, revision);
   if (reason || !revision) {
@@ -78,6 +78,8 @@ export async function getEditState(
               notes: slide.notes,
               ...(slide.notesRich && { notesRich: slide.notesRich }),
               variantOf: slide.variantOf,
+              grid: slide.grid,
+              layoutGrid: slide.layoutGrid,
               elements: slide.elements,
             },
           ]

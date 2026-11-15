@@ -96,6 +96,27 @@ function Composed({
   useEffect(() => {
     if (draftKey !== undefined && draftDone) backgroundPreviews.clear(slideId, draftKey);
   }, [slideId, draftKey, draftDone]);
+  // Settled – no draft, the background as LibreOffice drew it for this step – LibreOffice's slide
+  // without its elements lies over the browser's ground: see-through master shapes blended by the
+  // browser are blended in the screen's colour space (Display P3: bluer), LibreOffice's in sRGB,
+  // as in Prüfen.
+  const [drawnFrom, setDrawnFrom] = useState<{ url: string; fills: readonly FillLayer[] }>();
+  if (
+    drawsGround &&
+    !draft &&
+    parts.seq === editing.state?.seq &&
+    drawnFrom?.url !== parts.background
+  ) {
+    setDrawnFrom({ url: parts.background, fills: own });
+  }
+  // Decoded on the side: the slide never waits for it, the browser's ground shows till then.
+  const groundDecoded = useDecodedOne(drawsGround ? parts.background : null);
+  const settledGround =
+    drawsGround &&
+    !draft &&
+    drawnFrom?.url === parts.background &&
+    sameFills(drawnFrom.fills, ground) &&
+    groundDecoded;
   const pictures = [
     drawsGround ? masterShapes?.url : parts.background,
     // The master's ground decoded ahead: „Wie im Master“ shows it in the same frame.
@@ -188,6 +209,7 @@ function Composed({
                 }}
               />
             )}
+            {settledGround && <SwapImage src={parts.background} alt="" draggable={false} />}
           </>
         ) : (
           <SwapImage src={parts.background} alt="" draggable={false} />
@@ -447,24 +469,10 @@ function useSettledLayer(
     null,
   );
   const url = layer?.url ?? null;
-  const ready = !url || decodedLayers.has(url);
   // Decoded: rendered anew to take it (`shown` may be `null` already – setting it again would not
   // render, and the memoised item gets no new props: its first picture never showed).
-  const [, decodedOne] = useState(0);
-  useEffect(() => {
-    if (!url || ready) return;
-    let cancelled = false;
-    const image = new Image();
-    image.src = url;
-    const done = () => {
-      decodedLayers.add(url);
-      if (!cancelled) decodedOne((n) => n + 1);
-    };
-    image.decode().then(done, done);
-    return () => {
-      cancelled = true;
-    };
-  }, [url, ready]);
+  const decoded = useDecodedOne(url);
+  const ready = !url || decoded;
   if (layer && ready) {
     if (shown?.layer !== layer) setShown({ layer, from });
     return { layer, from };
@@ -516,6 +524,27 @@ function useDecoded(urls: readonly string[]): boolean {
   const [seen, setSeen] = useState(false);
   if (decoded === key && !seen) setSeen(true);
   return seen || decoded === key;
+}
+
+/** Whether `url` has been decoded – decoding it if not, rendered anew once it is. */
+function useDecodedOne(url: string | null): boolean {
+  const ready = !url || decodedLayers.has(url);
+  const [, decodedOne] = useState(0);
+  useEffect(() => {
+    if (!url || ready) return;
+    let cancelled = false;
+    const image = new Image();
+    image.src = url;
+    const done = () => {
+      decodedLayers.add(url);
+      if (!cancelled) decodedOne((n) => n + 1);
+    };
+    image.decode().then(done, done);
+    return () => {
+      cancelled = true;
+    };
+  }, [url, ready]);
+  return !!url && ready;
 }
 
 /** The fonts the page asked for are in: text laid out before would jump once they come. */

@@ -238,6 +238,8 @@ export interface MeResponse {
    * Always `true` for the dev owner of the dev login (development without a login).
    */
   instanceClaimed: boolean;
+  /** The release the server runs (`SLIDER_VERSION`, e.g. `1.6.3`); `null` from a checkout. */
+  version?: string | null;
 }
 
 /** Longest name a person can give themselves (`PATCH /me`). */

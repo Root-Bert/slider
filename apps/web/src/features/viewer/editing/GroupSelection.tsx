@@ -5,7 +5,7 @@ import type { SnapLines } from '../stage/lib/rect-edit';
 import { ShapeOutline } from '../stage/ShapeOutline';
 import { useMoveElements } from './hooks/useMoveElements';
 import { useEditing } from './editing-context';
-import { canSize } from './live/model';
+import { canFrame, canSize } from './live/model';
 import {
   scaledFrames,
   shownRect,
@@ -74,7 +74,8 @@ export function GroupSelection({
     bbox: boxOf(element),
     rotation: element.rotation,
     tilt: element.tilt,
-    sizes: canSize(element),
+    // A flow group's corners set the area its parts flow in (`flowed`).
+    sizes: canSize(element) || canFrame(element),
     turns: canSize(element),
   }));
   /** Where each goes for the frame at `rect` turned by `rotation` – only moved: `null`. */
@@ -132,8 +133,11 @@ export function GroupSelection({
       const frame = frames.get(element.id);
       if (!frame) continue;
       const sizes = canSize(element);
-      // Groups of the file keep their size.
-      const box = sizes ? frame.rect : { ...frame.rect, w: element.bbox.w, h: element.bbox.h };
+      // Groups of the file keep their size; a flow group's sets the area its parts flow in.
+      const box =
+        sizes || canFrame(element)
+          ? frame.rect
+          : { ...frame.rect, w: element.bbox.w, h: element.bbox.h };
       operations.push({
         type: 'setBox',
         elementId: element.id,

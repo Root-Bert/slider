@@ -137,7 +137,7 @@ export const SlideFrame = memo(function SlideFrame({
   // A template being designed keeps its guides itself, each layout its own.
   const template = useViewerData().deck.template ?? null;
   const layoutGuides = useLayoutGuides(slide.id);
-  const layoutGrid = useLayoutGrid();
+  const layoutGrid = useLayoutGrid(slide.id).grid;
   // 'cached': the browser had the image already (scrolled back, remounted) – shown at once, no fade.
   const [loaded, setLoaded] = useState<false | 'fade' | 'cached'>(false);
   const label = slideLabel(index);

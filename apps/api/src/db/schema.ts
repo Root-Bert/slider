@@ -572,6 +572,33 @@ export const workspaceFonts = pgTable(
 );
 export type WorkspaceFontRow = typeof workspaceFonts.$inferSelect;
 
+/** A word an account said is right („Passt so“): the spell check no longer marks it, anywhere. */
+export const userWords = pgTable(
+  'user_words',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    word: text('word').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.word] })],
+);
+
+/** A word someone said is right in a deck of the workspace: not marked for anyone in it. */
+export const workspaceWords = pgTable(
+  'workspace_words',
+  {
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    word: text('word').notNull(),
+    addedById: text('added_by_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.workspaceId, t.word] })],
+);
+
 /** A layout of a design, as stored: its pictures in the blob store. */
 export interface WorkspaceMasterLayoutRow {
   name: string | null;

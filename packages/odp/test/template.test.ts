@@ -47,6 +47,8 @@ describe('toTemplate', () => {
   it('turns slides into layouts with placeholders and guides', async () => {
     const { document, first, second } = await designed();
     const middle = { orientation: 'vertical', position: 0.5 } as const;
+    const axis = { count: 12, gutter: 0.5, margin: 1 };
+    const grid = { columns: axis, rows: { ...axis, count: 6 } };
     document.toTemplate([
       { pageId: first, name: 'Leer', placeholders: {}, guides: [middle] },
       {
@@ -60,10 +62,12 @@ describe('toTemplate', () => {
           body3: 'outline',
         },
         guides: [middle, { orientation: 'horizontal', position: 0.25 }],
+        grid,
       },
     ]);
     const bytes = await document.toBytes();
     const reopened = await OdpDocument.open(bytes);
+
     expect(reopened.isTemplate()).toBe(true);
     const masters = reopened.masterPages();
     expect(masters.map((master) => master.displayName)).toEqual(['Leer', 'Titel und Bild']);
@@ -97,6 +101,11 @@ describe('toTemplate', () => {
     expect(onFirst).toHaveLength(1);
     expect(onSecond!.map((guide) => guide.orientation)).toEqual(['vertical', 'horizontal']);
     expect(onSecond![1]!.position).toBeCloseTo(0.25, 3);
+    // Its grid on its master page: a slide put in on it starts with it, none of its own.
+    expect(reopened.slides().map((slide) => [slide.layoutGrid, slide.grid])).toEqual([
+      [null, null],
+      [grid, null],
+    ]);
     // A template from before (its master pages carry no guides): every slide the snap lines.
     const zip = await JSZip.loadAsync(bytes);
     const styles = await zip.file('styles.xml')!.async('string');

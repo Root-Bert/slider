@@ -330,6 +330,9 @@ describe('server start', () => {
     expect(desktop.auth.devLogin).toBe(true);
     expect(desktop.host).toBe('127.0.0.1');
     expect(desktop.retention.deleteUnused).toBe(false);
+    // The release shown in the settings: from the tag, without its `v`; none from a checkout.
+    expect(desktop.version).toBeNull();
+    expect(loadConfig({ ...desktopEnv, SLIDER_VERSION: 'v1.6.3' }, () => {}).version).toBe('1.6.3');
     expect(() => loadConfig({ ...desktopEnv, HOST: '0.0.0.0' }, () => {})).toThrow(/HOST/);
     expect(() =>
       loadConfig({ ...desktopEnv, SLIDER_DESKTOP: 'false', AUTH_DEV_LOGIN: 'true' }, () => {}),

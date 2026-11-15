@@ -15,6 +15,7 @@ import {
   setCommentReactionInputSchema,
   stockOrientationSchema,
   updateAiProposalInputSchema,
+  writeNotesInputSchema,
 } from '@slider/shared';
 import { viewerMiddleware, type ViewerEnv } from '../auth/viewer';
 import type { AppDeps } from '../deps';
@@ -31,6 +32,7 @@ import {
   resolveProposal,
   revertProposal,
 } from '../services/ai-proposals';
+import { writeSpeakerNotes } from '../services/speaker-notes';
 import { setProposalReaction, withProposalReactions } from '../services/proposal-reactions';
 import { cutOutElement } from '../services/cut-outs';
 import { generateEditImage } from '../services/image-generation';
@@ -155,6 +157,13 @@ export function editsRoutes(deps: AppDeps) {
       .get('/decks/:deckId/notes', viewer, async (c) =>
         c.json(await getDeckNotes(deps, c.var.viewer, c.req.param('deckId'))),
       )
+      // The AI writes speaker notes; the editor puts them in as its own step.
+      .post('/decks/:deckId/notes/write', viewer, aiRequests, async (c) => {
+        const input = await readJson(c, writeNotesInputSchema, MAX_JSON_BODY_BYTES, {
+          allowEmpty: true,
+        });
+        return c.json(await writeSpeakerNotes(deps, c.var.viewer, c.req.param('deckId'), input));
+      })
       .get('/decks/:deckId/layouts', viewer, async (c) =>
         c.json(await getDeckLayouts(deps, c.var.viewer, c.req.param('deckId'))),
       )

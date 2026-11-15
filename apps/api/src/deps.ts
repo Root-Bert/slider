@@ -22,6 +22,7 @@ import type { SourceAdapters } from './sources/source-adapter';
 import type { CutOutSource } from './services/cut-outs';
 import type { StockPhotoSource } from './services/stock-photos';
 import type { BlobStorage } from './storage/blob-storage';
+import type { BlankDecks } from './import/ready-blank';
 import type { SyncService } from './sync/sync-service';
 
 /** Everything the HTTP layer depends on; injected so tests can build an app in memory. */
@@ -61,6 +62,8 @@ export interface AppDeps {
    * progress of background re-renders. Absent → SVG previews only.
    */
   rendering?: { renderers: SlideRenderers; progress: RenderProgress };
+  /** The blank slide drawn ahead: „Neue Präsentation“ is ready at once. Absent → imported. */
+  blankDecks?: BlankDecks;
   /** LibreOffice for Word, Excel and text files picked in a cloud; absent → none of those. */
   documentPdf?: DocumentToPdf | null;
   /**

@@ -15,6 +15,7 @@ import {
   inverseOf,
   RESTORED,
   renamed,
+  slidePartOf,
   snapshotOf,
   touchedElements,
   without,
@@ -208,6 +209,12 @@ describe('undo in the browser', () => {
       { type: 'moveElement', elementId: b.id, to: 1 },
     ]);
     expect(touchedElements([group])).toEqual(['slgroup-0001', b.id, a.id]);
+    // A slide's own step touches no element: told apart by its property and page instead.
+    expect(touchedElements([{ type: 'setSlideNotes', pageId: 'p1', notes: 'x' }] as never)).toEqual(
+      [],
+    );
+    expect(slidePartOf({ type: 'setSlideGrid', pageId: 'p1', grid: null })).toBe('setSlideGrid:p1');
+    expect(slidePartOf(group)).toBeNull();
     expect(inverseOf([{ type: 'ungroupElements', elementId: 'slgroup-0001' }], w.context())).toBe(
       null,
     );

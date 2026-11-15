@@ -18,5 +18,7 @@ export function useAccount() {
     canCreateWorkspace: data.limits?.canCreateWorkspace ?? true,
     /** Workspaces can be opened to a company domain (`SIGNUP` is not `invite`, BER-148). */
     domainJoin: data.limits?.domainJoin ?? false,
+    /** The release the server runs; `null` from a checkout or an older server. */
+    version: data.version ?? null,
   };
 }

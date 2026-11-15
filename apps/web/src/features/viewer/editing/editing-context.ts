@@ -63,7 +63,7 @@ export interface ApplyOptions {
 }
 
 export interface Editing {
-  /** The deck can be edited by this viewer (an ODP, and they manage it). */
+  /** The deck can be edited by this viewer (an ODP, and they may edit it). */
   available: boolean;
   state: DeckEditState | undefined;
   /** „Bearbeiten“ is on: the slides show their elements, clicks pick instead of commenting. */
@@ -93,6 +93,11 @@ export interface Editing {
   groupPicked: () => boolean;
   /** ⇧⌘G: the picked group taken apart, its elements picked – `false`: no group picked. */
   ungroupPicked: () => boolean;
+  /**
+   * ⇧A (Figma's auto layout): those picked together grouped as a row or a column, or the picked
+   * group laid out so – as they stand, their gap kept (`inferredFlow`); `false`: nothing to do.
+   */
+  flowPicked: () => boolean;
   /** The element last copied here (⌘C / ⌘X), as it was then – `null`: none, or copied over since. */
   clipboard: EditableElement | null;
   /** Puts the element last copied in again, as ⌘V does. */
@@ -259,6 +264,7 @@ const INACTIVE: Editing = {
   enterGroup: () => {},
   groupPicked: () => false,
   ungroupPicked: () => false,
+  flowPicked: () => false,
   clipboard: null,
   pasteCopied: () => {},
   opened: null,

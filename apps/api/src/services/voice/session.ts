@@ -296,7 +296,7 @@ export async function startVoiceSession(
     aiEditsReason =
       error instanceof ApiError && error.status !== 404 && error.status !== 403
         ? `${error.message} Deine Kommentare bleiben Kommentare.`
-        : 'Die KI ändern lassen kann nur, wer die Präsentation verwaltet – deine Kommentare bleiben Kommentare.';
+        : 'Die KI ändern lassen kann nur, wer die Präsentation bearbeiten darf. Deine Kommentare bleiben Kommentare.';
   }
 
   const now = deps.clock.now().getTime();
@@ -741,6 +741,7 @@ async function editingFor(
         pageIds: file.slides.map((slide) => slide.pageId),
         guides: async () =>
           uniqueGuides(file.layoutGuides.flatMap((guides) => guides ?? file.snapLines)),
+        grids: file.slides.map((slide) => slide.grid ?? slide.layoutGrid),
       });
       const grid = design.grid;
       session.design = {

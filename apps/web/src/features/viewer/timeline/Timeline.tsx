@@ -166,6 +166,11 @@ export function Timeline({
   // Whole pixels: the track, the header and the comment area stay on crisp edges.
   const slideH = geometry && Math.round(slideHeightAt(narrow ? null : shownSplit, geometry));
   const swipe = useTrackSwipe(stack, slideH ?? 0);
+  // Under the slides lie their notes: the tool bar's AI notes button only while they show.
+  const notesShown = swipe.track > 0;
+  useEffect(() => {
+    dispatch({ type: 'notesShownSet', shown: notesShown });
+  }, [dispatch, notesShown]);
   // „Variante erstellen“ from the right-click menu, a copy opened, the AI done with one.
   useVariantFlow(swipe.go, stack.above > 0);
   // For the dots in the gaps: memoised, so a gap only renders again when the track changes.

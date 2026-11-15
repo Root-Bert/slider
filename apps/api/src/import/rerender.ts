@@ -49,6 +49,7 @@ export async function rerenderRevision(
   deps: ImportDeps,
   deckId: string,
   revisionId?: string,
+  { fresh = false }: { fresh?: boolean } = {},
 ): Promise<RerenderOutcome> {
   const { db, storage, log } = deps;
   const [deck] = await db.select().from(decks).where(eq(decks.id, deckId));
@@ -84,9 +85,9 @@ export async function rerenderRevision(
   if (!sameSlides) return skipped('slides of the file do not match the revision');
 
   await deleteUnusedRenders(deps, deckId, id);
-  // Nobody waits for it: an upload's conversion goes first.
+  // Nobody waits for it: an upload's conversion goes first – unless the deck was just opened.
   const rendered = await renderSlidePages(deps, deck, revision, bytes, parsed, {
-    priority: 'background',
+    priority: fresh ? undefined : 'background',
   });
   if (rendered.renderer === null) return skipped('no renderer available');
   if (rendered.renderer === 'svg') {
@@ -195,7 +196,9 @@ export async function rerenderJob(deps: ImportDeps, job: ImportJob): Promise<voi
   let stopped = false;
   try {
     await beginImportAttempt(deps.db, job.revisionId);
-    const outcome = await rerenderRevision(deps, job.deckId, job.revisionId);
+    const outcome = await rerenderRevision(deps, job.deckId, job.revisionId, {
+      fresh: job.fresh,
+    });
     changed = outcome.status === 'rendered';
     if (outcome.status === 'rendered') {
       deps.log.info(

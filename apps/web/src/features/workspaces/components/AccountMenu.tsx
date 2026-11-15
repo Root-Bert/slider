@@ -48,7 +48,7 @@ const THEMES: readonly Segment<ThemePreference>[] = [
 /**
  * Header avatar with the account menu: who is signed in, "Konto & Anmeldung", "Nutzung" (plan
  * and storage of the workspaces), "Einstellungen" (its own page, kept apart from the
- * account), the theme (Hell, System, Dunkel), for the instance admin "Instanz" (dashboard and setup, BER-167), sign out – and once,
+ * account), "Wörterbuch" (the words one taught the spell check), the theme (Hell, System, Dunkel), for the instance admin "Instanz" (dashboard and setup, BER-167), sign out – and once,
  * until dismissed, a nudge to add a passkey. Signing out waits a moment for edits still on their
  * way; any left unsent would go with it, so it asks first. Logins and connections live on "Konto & Anmeldung".
  * The panel unfolds out of the avatar: it stays where it is, in the panel's top-right corner.
@@ -279,6 +279,15 @@ export function AccountMenu() {
               }}
             >
               Einstellungen
+            </MenuItem>
+            <MenuItem
+              icon="spellcheck"
+              onClick={() => {
+                close();
+                void navigate(routes.dictionary());
+              }}
+            >
+              Wörterbuch
             </MenuItem>
             <div className="px-1.5 pt-1 pb-1.5">
               <SegmentedControl

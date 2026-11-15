@@ -161,13 +161,18 @@ Parity script (from `apps/web`): `bun --tsconfig-override=tsconfig.app.json scri
   `view_material`; text extracted in background, encrypted in `material_chunks`, searched in the
   server. Where: `material-extract.ts`, `material-tools.ts`, `ai-context.ts`. Check: api
   `materials.test.ts`, `ai-proposals.test.ts`.
-- **A new deck is built from the prompt on Folie 1** – „Neue Präsentation“ opens on the material page; while
-  the deck is its blank start Folie 1 is the prompt (description kept per deck, takes live speech
+- **A new deck is built from the prompt on Folie 1** – „Neue Präsentation“ opens on Folie 1, the
+  prompt (not the material page); while the deck is its blank start Folie 1 is the prompt (description kept per deck, takes live speech
   with a strict `claim`; 8 kinds; Stil = templates; 5–30 pages; material always used); „Erstellen“
   closes at once, outline shows, each slide its own AI step, Abbrechen keeps what is built; „Leer
   anfangen“ closes for good. Where: `services/deck-creation/`, `CreatePrompt`, `creation-draft.ts`,
   `useHeardWords`, `CreationProgress`, `Timeline`. Check: api `deck-creation.test.ts`,
   `creation-draft.test.ts`.
+- **A deck opens at once** – a blank „Neue Präsentation“ is ready in its own request (the blank
+  slide drawn once at start-up, `BlankDecks`); an upload opens on its SVG previews and
+  LibreOffice's pictures follow as a `fresh` re-render (viewer reloads on `renderedAt`); no import
+  animation, an upload is a small toast (`UploadToast`). Where: `import/ready-blank.ts`,
+  `import-deck.ts` (`later`), `DeckPage`. Check: api `odp.test.ts`, `import.test.ts`; e2e `02-upload`.
 
 ## KI-Apps (MCP)
 

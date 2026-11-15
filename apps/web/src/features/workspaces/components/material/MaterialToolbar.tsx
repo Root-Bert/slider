@@ -8,9 +8,9 @@ import { ViewToolbar } from '../ViewToolbar';
 /**
  * What the page shows, in the filter's order – the workspace's templates (its slide masters),
  * their colours, the fonts (its own and Slider's), the symbols (icons and pictograms) Slider
- * brings along.
+ * brings along, the words its spell check takes as right („Passt so“).
  */
-export type MaterialKind = 'masters' | 'colors' | 'fonts' | 'icons';
+export type MaterialKind = 'masters' | 'colors' | 'fonts' | 'icons' | 'words';
 export type MaterialSort = 'name' | 'faces' | 'size';
 /** Which fonts „Schriften“ shows: both, Slider's or the workspace's own. */
 export type FontSource = 'all' | 'slider' | 'workspace';
@@ -30,7 +30,7 @@ const ICON_KIND_OPTIONS = [{ value: 'all', label: 'Alle Symbole' }, ...ICON_KIND
 /** Per design, not per file: no size to sort by. */
 const byDesign = (kind: MaterialKind) => kind === 'masters' || kind === 'colors';
 
-/** `faces`: a font's faces, a design's layouts or colours. Symbols: no sort, best first. */
+/** `faces`: a font's faces, a design's layouts or colours. Symbols: no sort, best first; words A–Z. */
 const sortOptions = (kind: MaterialKind) =>
   (
     [
@@ -45,7 +45,7 @@ const sortOptions = (kind: MaterialKind) =>
 
 /**
  * What the search's button adds to the names: a template's layouts, a font's stand-ins and origin.
- * Symbols: no button – their names and keywords always, as the editor's symbol search.
+ * Symbols: no button – their names and keywords always, as the editor's symbol search. Words: themselves.
  */
 const CONTENT_SEARCH = {
   masters: {
@@ -59,6 +59,9 @@ const CONTENT_SEARCH = {
   icons: {
     contentPlaceholder: 'Namen, Stichwörter, z. B. Idee…',
   },
+  words: {
+    contentPlaceholder: 'Wörter…',
+  },
   fonts: {
     contentLabel: 'Auch ersetzte Schriften und Herkunft durchsuchen',
     contentPlaceholder: 'Namen, ersetzte Schriften…',
@@ -68,8 +71,11 @@ const CONTENT_SEARCH = {
 interface MaterialToolbarProps {
   kind: MaterialKind;
   onKindChange: (kind: MaterialKind) => void;
-  /** `icons`: unknown until the sets are loaded (opened once). */
-  counts: Record<Exclude<MaterialKind, 'icons'>, number> & { icons?: number };
+  /** `icons`: unknown until the sets are loaded (opened once); `words` until they are there. */
+  counts: Record<Exclude<MaterialKind, 'icons' | 'words'>, number> & {
+    icons?: number;
+    words?: number;
+  };
   query: string;
   onQueryChange: (query: string) => void;
   /** Layouts, stand-ins and origins are searched too, not only the names. */
@@ -113,6 +119,7 @@ export function MaterialToolbar({
     { value: 'colors', label: 'Farben', icon: 'palette', count: counts.colors },
     { value: 'fonts', label: 'Schriften', icon: 'textFields', count: counts.fonts },
     { value: 'icons', label: 'Symbole', icon: 'shapes', count: counts.icons },
+    { value: 'words', label: 'Wörter', icon: 'spellcheck', count: counts.words },
   ];
 
   return (
@@ -132,8 +139,8 @@ export function MaterialToolbar({
           label="Bibliothek durchsuchen"
           value={query}
           onChange={onQueryChange}
-          {...(kind === 'icons'
-            ? { ...CONTENT_SEARCH.icons, content: true }
+          {...(kind === 'icons' || kind === 'words'
+            ? { ...CONTENT_SEARCH[kind], content: true }
             : { ...CONTENT_SEARCH[kind], content, onContentChange })}
         />
       }
@@ -148,7 +155,7 @@ export function MaterialToolbar({
               options={SOURCE_OPTIONS}
             />
           )}
-          {kind === 'icons' ? (
+          {kind === 'words' ? null : kind === 'icons' ? (
             <Select
               aria-label="Symbole filtern"
               size="toolbar"

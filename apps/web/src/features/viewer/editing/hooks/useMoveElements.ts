@@ -1,7 +1,7 @@
 import type { EditableElement, Rect, SlideOperation } from '@slider/shared';
 import { useEditing } from '../editing-context';
 import type { GroupMoves } from '../lib/group-layout';
-import { canMove, canSize } from '../live/model';
+import { canFrame, canMove, canSize } from '../live/model';
 
 /** Where an element shows: a box growing with its text as high as it is drawn live. */
 export function useShownBox() {
@@ -40,7 +40,7 @@ export function useSetBoxes() {
     for (const element of elements) {
       const box = boxes.get(element.id);
       // Locked, or one that only moves (a group of the file): its size stays.
-      if (!box || !canSize(element)) continue;
+      if (!box || !(canSize(element) || canFrame(element))) continue;
       operations.push({ type: 'setBox', elementId: element.id, box });
     }
     return operations.length > 0 ? editing.apply(operations) : Promise.resolve(true);

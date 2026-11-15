@@ -82,9 +82,10 @@ jobs:
           parent=
           if git fetch --depth=1 public main 2>/dev/null; then parent=$(git rev-parse FETCH_HEAD); fi
 
-          # The release's files, without this repository's local tool settings and without blog posts
-          # still marked as drafts: they go public once they are published on the website.
-          git rm -r -q --cached --ignore-unmatch .claude
+          # The release's files, without this repository's local tool settings and coding agent
+          # rules, and without blog posts still marked as drafts: they go public once they are
+          # published on the website.
+          git rm -r -q --cached --ignore-unmatch .claude CLAUDE.md AGENTS.md
           git ls-files -z apps/site/src/content/blog | while IFS= read -r -d '' post; do
             # Only the front matter: the lines between the opening and the closing "---".
             if awk 'NR == 1 { if ($0 != "---") exit; next } $0 == "---" { exit } 1' "$post" |

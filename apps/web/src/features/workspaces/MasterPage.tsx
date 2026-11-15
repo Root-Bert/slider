@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useCreateBlankDeck, useRemoveWorkspaceMaster, useWorkspaceMasters } from '@/lib/api';
-import { OPEN_ON_BOARD, routes } from '@/lib/routes';
+import { routes } from '@/lib/routes';
 import {
   Button,
   ConfirmDialog,
@@ -128,11 +128,7 @@ export function Component() {
               loading={create.isPending}
               onClick={() =>
                 create.mutate(master.id, {
-                  onSuccess: (deck) =>
-                    void navigate(routes.deck(deck.id), {
-                      viewTransition: true,
-                      state: OPEN_ON_BOARD,
-                    }),
+                  onSuccess: (deck) => void navigate(routes.deck(deck.id)),
                   onError: (error) => showToast(error.message, 'danger'),
                 })
               }

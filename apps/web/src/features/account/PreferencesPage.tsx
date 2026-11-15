@@ -10,7 +10,7 @@ import { ColorPicker, WorkSection } from './components/PreferenceSections';
  * the instance's own pages (`/instanz`, `/einrichtung`), reached by the account menu.
  */
 export function Component() {
-  const { user } = useAccount();
+  const { user, version } = useAccount();
   const [toast, showToast] = useToast();
 
   return (
@@ -26,6 +26,10 @@ export function Component() {
       </Section>
 
       <WorkSection />
+
+      <Section title="Version">
+        <p className="text-sm text-fg">{version ? `Slider ${version}` : 'Entwicklungsversion'}</p>
+      </Section>
     </SettingsLayout>
   );
 }

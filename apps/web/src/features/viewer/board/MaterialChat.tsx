@@ -43,7 +43,8 @@ export interface MaterialChatProps {
 export const MaterialChat = (props: MaterialChatProps) =>
   onMaterialPage(<MaterialChatView {...props} />);
 
-function MaterialChatView({ deckId, ai, byId, openSource, onClose }: MaterialChatProps) {
+/** The chat itself, wherever it shows: on the material page (`MaterialChat`) or over the slides. */
+export function MaterialChatView({ deckId, ai, byId, openSource, onClose }: MaterialChatProps) {
   const toast = useViewerToast();
   const panelRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLOListElement>(null);
@@ -165,6 +166,12 @@ function MaterialChatView({ deckId, ai, byId, openSource, onClose }: MaterialCha
               onChange={(event) => setBody(event.target.value)}
               onKeyDown={(event) => {
                 event.stopPropagation();
+                // Esc closes the chat from its field too (the page's keys never see it here).
+                if (event.key === 'Escape' && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  onClose();
+                  return;
+                }
                 if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing)
                   return;
                 event.preventDefault();

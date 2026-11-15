@@ -196,6 +196,23 @@ describe('data export (BER-145)', () => {
       },
     ]);
 
+    // The spell check's own words: the account's go into the export, the workspace's stay there.
+    const words = (path: string, init: { method?: string; json?: unknown } = {}) =>
+      ctx.request(path, { cookie: person.cookie, ...init });
+    const teach = (path: string, word: string) => words(path, { method: 'POST', json: { word } });
+    expect((await teach('/api/me/words', 'Slider-Deck')).status).toBe(200);
+    expect(await (await teach('/api/me/words', 'Slider-Deck')).json()).toEqual([
+      { word: 'Slider-Deck', createdAt: expect.any(String), addedBy: null },
+    ]);
+    expect((await teach('/api/me/words', 'zwei Wörter')).status).toBe(400);
+    const teamWords = `/api/workspaces/${ctx.workspaceId}/words`;
+    expect(await (await teach(teamWords, 'Quartalsziel')).json()).toEqual([
+      expect.objectContaining({ word: 'Quartalsziel', addedBy: 'Anna Schmidt' }),
+    ]);
+    expect(
+      await (await words(`${teamWords}?word=Quartalsziel`, { method: 'DELETE' })).json(),
+    ).toEqual([]);
+
     const res = await ctx.request('/api/me/export', { cookie: person.cookie });
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('application/zip');
@@ -205,6 +222,9 @@ describe('data export (BER-145)', () => {
     const zip = await JSZip.loadAsync(await res.arrayBuffer());
     const read = async (name: string) => JSON.parse((await zip.file(name)?.async('string')) ?? '');
     const account = await read('konto.json');
+    expect(await read('woerterbuch.json')).toEqual([
+      { word: 'Slider-Deck', createdAt: expect.any(String) },
+    ]);
     expect(account.profile).toMatchObject({ name: 'Anna Schmidt', email: 'anna@firma.de' });
     expect(account.workspaces).toEqual([
       expect.objectContaining({ id: ctx.workspaceId, role: 'member' }),

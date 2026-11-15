@@ -37,8 +37,9 @@ async function meResponse(
   viewer: Viewer,
 ): Promise<MeResponse> {
   const instanceClaimed = !(await gate.mustClaim(c));
+  const version = deps.config.version ?? null;
   const [user] = await deps.db.select().from(users).where(eq(users.id, viewer.author.id));
-  if (!user) return { viewer, instanceClaimed };
+  if (!user) return { viewer, instanceClaimed, version };
   const [workspaces, pendingInvites, domainWorkspace, mayFound] = await Promise.all([
     listWorkspaces(deps, user.id),
     pendingInvitesFor(deps.db, user, deps.clock.now()),
@@ -62,6 +63,7 @@ async function meResponse(
       domainJoin: domainJoinAllowed(deps.config.auth.signup),
     },
     instanceClaimed,
+    version,
   };
 }
 

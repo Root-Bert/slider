@@ -19,6 +19,7 @@ import {
   revisions,
   sessions,
   userIdentities,
+  userWords,
   users,
   workspaceMembers,
   workspaces,
@@ -36,7 +37,8 @@ import { inviteEntries, invitesTo } from './data-requests';
  * `kommentare.json` (what they wrote, in any deck), `reaktionen.json` (their 👍 / 👎 / egal),
  * `ki-auftraege.json` (what they asked the AI), `fragen.json` (their questions about material
  * and the answers), `ki-chats.json` (their chats with the AI on material pages),
- * `bearbeitungen.json` (their edit steps) and `aufnahmen/` (their recordings).
+ * `bearbeitungen.json` (their edit steps), `woerterbuch.json` (their own spelling words) and
+ * `aufnahmen/` (their recordings).
  * Secrets are left out: tokens, passkey keys, session hashes.
  */
 export async function exportAccount(
@@ -354,6 +356,16 @@ export async function exportAccount(
     ),
   );
 
+  const words = await db
+    .select()
+    .from(userWords)
+    .where(eq(userWords.userId, userId))
+    .orderBy(asc(userWords.word));
+  zip.file(
+    'woerterbuch.json',
+    json(words.map((row) => ({ word: row.word, createdAt: row.createdAt.toISOString() }))),
+  );
+
   const bytes = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
   return { fileName: `slider-daten-${now.toISOString().slice(0, 10)}.zip`, bytes };
 }
@@ -379,6 +391,7 @@ ki-auftraege.json     Was du die KI an Präsentationen hast ändern lassen
 fragen.json           Deine Notizen, die du der KI übergeben hast (⌘↵), und ihre Antworten
 ki-chats.json         Deine Chats mit der KI auf den Materialseiten
 bearbeitungen.json    Deine Bearbeitungsschritte in Präsentationen
+woerterbuch.json      Wörter, die du der Rechtschreibprüfung beigebracht hast
 
 Zugangsdaten (Tokens, Passkey-Schlüssel) sind aus Sicherheitsgründen nicht enthalten.
 `;

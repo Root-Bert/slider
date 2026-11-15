@@ -126,6 +126,11 @@ export interface ImportJob {
    * `rerender`: new slide images for a finished revision, e.g. by Office or LibreOffice (BER-94).
    */
   kind?: 'initial' | 'sync' | 'rerender';
+  /**
+   * A `rerender` right after the first import, which opened the deck with its SVG previews:
+   * someone is looking at it, so it is drawn before other re-renders and not as background work.
+   */
+  fresh?: boolean;
 }
 
 /**
@@ -133,7 +138,7 @@ export interface ImportJob {
  * decks follow (viewers keep the current one meanwhile), background re-renders come last.
  */
 export const importJobPriority = (job: ImportJob): number =>
-  job.kind === 'rerender' ? 2 : job.kind === 'sync' ? 1 : 0;
+  job.kind === 'rerender' ? (job.fresh ? 1 : 2) : job.kind === 'sync' ? 1 : 0;
 
 /** A first import never waits for syncs or re-renders already running (`QueueOptions.urgent`). */
 export const isUrgentImportJob = (job: ImportJob): boolean => (job.kind ?? 'initial') === 'initial';

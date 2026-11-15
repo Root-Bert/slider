@@ -6,6 +6,8 @@ import { queryKeys } from './keys';
 import { isGoneError } from './status';
 
 const IMPORT_POLL_MS = 1000;
+/** The deck page waits for its import: a short one (uploads open on their previews) shows at once. */
+const DECK_IMPORT_POLL_MS = 300;
 const IMPORT_STALLED_AFTER_MS = 120_000;
 const IMPORT_STALLED_POLL_MS = 3000;
 const isImporting = (deck: Deck | undefined) =>
@@ -67,7 +69,7 @@ export function useDeck(deckId: string) {
       return importPollInterval(
         stall,
         importing ? JSON.stringify(deck?.import) : null,
-        IMPORT_POLL_MS,
+        DECK_IMPORT_POLL_MS,
       );
     },
   });

@@ -10,8 +10,11 @@ import {
   workspaceBlocked,
 } from '../services/workspaces/roles';
 
-/** `view` ⊂ `comment` ⊂ `own` (= manage: rename, delete, share, new versions). */
-export type DeckRight = 'view' | 'comment' | 'own';
+/**
+ * `view` ⊂ `comment` ⊂ `edit` (the slides, by hand and with the AI: members on every deck they may
+ * open, a template only who manages it) ⊂ `own` (= manage: rename, delete, share, new versions).
+ */
+export type DeckRight = 'view' | 'comment' | 'edit' | 'own';
 
 export const VIEWER_COMMENT_MESSAGE =
   'Als Betrachter kannst du nur ansehen. Zum Kommentieren braucht es eine andere Rolle im Workspace.';
@@ -31,10 +34,10 @@ export async function viewerAccess(db: Executor, viewer: Viewer): Promise<DeckVi
 
 export function permissionsFor(
   access: DeckViewerAccess | undefined,
-  deck: Pick<DeckRow, 'workspaceId' | 'ownerId'>,
+  deck: Pick<DeckRow, 'workspaceId' | 'ownerId' | 'isTemplate'>,
 ): DeckPermissions {
-  if (!access) return { canManage: false, canComment: false };
-  return deckPermissions(access.roles.get(deck.workspaceId) ?? null, deck.ownerId, access.userId);
+  if (!access) return { canManage: false, canEdit: false, canComment: false };
+  return deckPermissions(access.roles.get(deck.workspaceId) ?? null, deck, access.userId);
 }
 
 /**
@@ -97,9 +100,16 @@ export async function deckAccess(
   if (member.blocked) throw workspaceBlocked();
   const { role } = member;
   if (!(await passesRestriction(db, deck, viewer.author.id, role))) throw deckNotFound();
-  const permissions = deckPermissions(role, deck.ownerId, viewer.author.id);
+  const permissions = deckPermissions(role, deck, viewer.author.id);
   if (right === 'own' && !permissions.canManage) {
     throw forbidden('Das dürfen nur die Person, die die Präsentation angelegt hat, und Admins.');
+  }
+  if (right === 'edit' && !permissions.canEdit) {
+    throw forbidden(
+      deck.isTemplate
+        ? 'Eine Vorlage bearbeiten nur die Person, die sie angelegt hat, und Admins.'
+        : 'Bearbeiten können Mitglieder und Admins des Workspace.',
+    );
   }
   if (right === 'comment' && !permissions.canComment) throw forbidden(VIEWER_COMMENT_MESSAGE);
   return { deck, permissions };

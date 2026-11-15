@@ -102,7 +102,7 @@ export type ImportState = z.infer<typeof importStateSchema>;
 /**
  * Role in a workspace, strongest first. `viewer` only looks (people a deck was shared with);
  * `reviewer` views and comments; `member` also creates
- * decks and manages its own; `admin` may do everything: every deck, members, invites, renaming
+ * decks, edits every deck it may open (also with the AI) and manages its own; `admin` may do everything: every deck, members, invites, renaming
  * and deleting the workspace. Who founded it (its creator) is no role but a fact – see
  * `WorkspaceMember.isCreator`.
  */
@@ -114,6 +114,11 @@ export type WorkspaceRole = z.infer<typeof workspaceRoleSchema>;
 export const deckPermissionsSchema = z.object({
   /** Rename, archive, delete, share (review links), new versions, sync, delete any comment. */
   canManage: z.boolean(),
+  /**
+   * Edit the slides – by hand in the editor and by asking the AI. Members and admins, on every
+   * deck they may open; a template only who manages it.
+   */
+  canEdit: z.boolean(),
   /** Write comments and replies, resolve threads. */
   canComment: z.boolean(),
 });
@@ -217,8 +222,13 @@ export const deckTemplateSchema = z.object({
   guides: z.array(guideSchema).max(TEMPLATE_MAX_GUIDES),
   /** Each layout's own guides, by page id; missing in templates from before. */
   layoutGuides: templateMap(z.array(guideSchema).max(TEMPLATE_MAX_GUIDES)).optional(),
-  /** Its layout grid; missing in templates begun before there was one. */
+  /**
+   * The layout grid of the layouts without their own in `layoutGrids` ({@link layoutGridOf});
+   * missing in templates begun before there was one.
+   */
   grid: layoutGridSchema.optional(),
+  /** Each layout's own grid, by page id – a slide made from it starts with it. */
+  layoutGrids: templateMap(layoutGridSchema).optional(),
   /** Its colours – the only ones decks made from it offer; missing in templates from before. */
   colors: templateColorsSchema.optional(),
   /** The template in the library it was saved as; `null` = not yet. */
@@ -227,6 +237,14 @@ export const deckTemplateSchema = z.object({
   savedAt: z.iso.datetime().nullable(),
 });
 export type DeckTemplate = z.infer<typeof deckTemplateSchema>;
+
+/** The grid of a template's layout (by its page id): its own, else the template's; none set: `undefined`. */
+export function layoutGridOf(
+  template: Pick<DeckTemplate, 'grid' | 'layoutGrids'>,
+  pageId: string | null,
+): LayoutGrid | undefined {
+  return (pageId === null ? undefined : template.layoutGrids?.[pageId]) ?? template.grid;
+}
 
 /** The guides of a template's layout (by its page id): its own, else the template's shared ones. */
 export function layoutGuidesOf(
@@ -262,20 +280,33 @@ export function withLayoutGuides(
  * guides of its own already (back by undo) keeps them. `null`: nothing changes.
  */
 export function withAddedLayouts(
-  template: Pick<DeckTemplate, 'guides' | 'layoutGuides'>,
+  template: Pick<DeckTemplate, 'guides' | 'layoutGuides' | 'layoutGrids'>,
   kept: readonly string[],
   added: ReadonlyMap<string, string | null>,
-): Pick<DeckTemplate, 'guides' | 'layoutGuides'> | null {
+): Partial<Pick<DeckTemplate, 'guides' | 'layoutGuides' | 'layoutGrids'>> | null {
+  const change: Partial<Pick<DeckTemplate, 'guides' | 'layoutGuides' | 'layoutGrids'>> = {};
   const missing = [...added].filter(([pageId]) => !template.layoutGuides?.[pageId]);
   const shared = template.guides.length > 0;
   // Without shared guides a new layout has none anyway.
-  if (!missing.some(([, copyOf]) => shared || copyOf !== null)) return null;
-  const layoutGuides: Record<string, Guide[]> = { ...template.layoutGuides };
-  if (shared) for (const id of kept) layoutGuides[id] ??= template.guides;
-  for (const [pageId, copyOf] of missing) {
-    layoutGuides[pageId] = copyOf === null ? [] : (layoutGuides[copyOf] ?? template.guides);
+  if (missing.some(([, copyOf]) => shared || copyOf !== null)) {
+    const layoutGuides: Record<string, Guide[]> = { ...template.layoutGuides };
+    if (shared) for (const id of kept) layoutGuides[id] ??= template.guides;
+    for (const [pageId, copyOf] of missing) {
+      layoutGuides[pageId] = copyOf === null ? [] : (layoutGuides[copyOf] ?? template.guides);
+    }
+    Object.assign(change, { guides: [], layoutGuides });
   }
-  return { guides: [], layoutGuides };
+  // A copy takes its layout's own grid along.
+  const grids = [...added].filter(
+    ([pageId, copyOf]) =>
+      copyOf !== null && !template.layoutGrids?.[pageId] && template.layoutGrids?.[copyOf],
+  );
+  if (grids.length > 0) {
+    const layoutGrids = { ...template.layoutGrids };
+    for (const [pageId, copyOf] of grids) layoutGrids[pageId] = layoutGrids[copyOf!]!;
+    change.layoutGrids = layoutGrids;
+  }
+  return Object.keys(change).length > 0 ? change : null;
 }
 
 /** `PATCH /decks/:id/template`: what changes of a template being designed. */
@@ -286,6 +317,7 @@ export const updateDeckTemplateInputSchema = deckTemplateSchema
     guides: true,
     layoutGuides: true,
     grid: true,
+    layoutGrids: true,
     colors: true,
   })
   .partial();

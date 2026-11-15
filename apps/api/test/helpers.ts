@@ -39,6 +39,7 @@ import type { AppDeps, InstanceControl } from '../src/deps';
 import { importDeck } from '../src/import/import-deck';
 import type { DocumentToPdf, PptxToPdf } from '../src/import/libreoffice';
 import type { OpenPptx } from '../src/import/pptx';
+import { BlankDecks } from '../src/import/ready-blank';
 import {
   importJobKey,
   importJobPriority,
@@ -302,7 +303,7 @@ export async function createTestContext(
   const renderers = { libreOfficePdf: options.libreOfficePdf };
   const renderProgress = new RenderProgress();
   const config = testConfig(options.config);
-  const queue = new InProcessQueue<ImportJob>(
+  const queue: InProcessQueue<ImportJob> = new InProcessQueue<ImportJob>(
     (job) =>
       importDeck(
         {
@@ -313,6 +314,7 @@ export async function createTestContext(
           log: silentLogger,
           ...renderers,
           renderProgress,
+          queue,
         },
         job,
       ),
@@ -370,6 +372,7 @@ export async function createTestContext(
     log: silentLogger,
     sync,
     rendering: { renderers, progress: renderProgress },
+    blankDecks: new BlankDecks({ openPptx, clock, log: silentLogger, ...renderers }),
     documentPdf: options.documentPdf,
     oidc: config.auth.oidc ? new OidcClient(config.auth.oidc, clock, fetch) : null,
     google: config.auth.google ? new OidcClient(config.auth.google, clock, fetch) : null,

@@ -11,6 +11,7 @@ import {
   freshIds,
   renamed,
   renamedSnapshot,
+  slidePartOf,
   without,
   type Inverse,
   type Snapshot,
@@ -153,12 +154,23 @@ export function useOwnUndo(deckId: string, offline: boolean, host: UndoHost): Ow
     // Changed by someone else since, however little: left out too.
     for (const id of expected.keys()) if (host.touchedByOthers?.(id, entry.mark)) skipped.add(id);
     const planned = direction === 'undo' ? entry.back!.operations : entry.forward;
-    const left = without(planned, skipped);
+    // A slide's own property (notes, grid, background…) someone else set since: theirs too.
+    const taken = new Set(
+      planned
+        .map(slidePartOf)
+        .filter(
+          (part): part is string => part !== null && !!host.touchedByOthers?.(part, entry.mark),
+        ),
+    );
+    const left = without(planned, skipped).filter(
+      (operation) => !taken.has(slidePartOf(operation) ?? ''),
+    );
+    const slideLeft = left.some((operation) => slidePartOf(operation) !== null);
     setStacks((current) => ({
       ...current,
       [direction]: current[direction].filter((item) => item !== entry),
     }));
-    if (left.length === 0 || skipped.size === expected.size) {
+    if (left.length === 0 || (!slideLeft && expected.size > 0 && skipped.size === expected.size)) {
       toast(REVERT_TAKEN_OVER, 'danger');
       return;
     }
@@ -169,6 +181,7 @@ export function useOwnUndo(deckId: string, offline: boolean, host: UndoHost): Ow
     setStacks((current) => ({ ...current, [other]: [...current[other], moved] }));
     rename(renames);
     if (skipped.size > 0) toast(keptMessage(skipped.size), 'danger');
+    else if (taken.size > 0) toast(revertPartlyMessage(taken.size), 'danger');
   };
 
   /** Taken back by the server – edits still on their way first, so the last one is what goes. */

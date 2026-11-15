@@ -16,6 +16,8 @@ const file = (...slides: [pageId: string, fingerprint: string, hidden?: boolean]
     transition: null,
     notes: '',
     variantOf: null,
+    grid: null,
+    layoutGrid: null,
     elements: [],
     title: pageId,
     fingerprint,

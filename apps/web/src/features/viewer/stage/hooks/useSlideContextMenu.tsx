@@ -8,7 +8,7 @@ import { richFromLive } from '../../editing/live/model';
 import { toSlidePoint } from '../../lib/geometry';
 import { useViewerDispatch } from '../../state/viewer-state';
 import { useViewerToast } from '../../state/viewer-toast';
-import { acceptWord } from '../../spelling/accepted-words';
+import { useAcceptWord } from '../../spelling/accepted-words';
 import { fixWord } from '../../spelling/fix-word';
 import { suggestionsFor } from '../../spelling/spell-checker';
 import {
@@ -46,6 +46,7 @@ export function useSlideContextMenu({ slide, boxRef, canComment, disabled }: Opt
   // The boxes hovering marks, in review and while editing alike.
   const boxes = useSlideBoxes(slide);
   const knows = useKnowsWord(false);
+  const acceptWord = useAcceptWord();
   const editing = useEditing();
   // A suggestion picked reads the text as it is then, not as it was at the right click.
   const latest = useRef({ editing, knows });

@@ -1,7 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto';
 import {
   hasShapeOutline,
+  elementFlowSchema,
   isPresetPolygon,
+  layoutGridSchema,
   nativeFill,
   notesText,
   NEW_LINES,
@@ -11,7 +13,9 @@ import {
   type EditableElementKind,
   type EditableSlide,
   type ElementFlip,
+  type ElementFlow,
   type ElementTilt,
+  type LayoutGrid,
   type ImageCredit,
   type ImageSymbol,
   type SlideOperation,
@@ -292,6 +296,8 @@ export interface OdpTemplateLayout {
   placeholders: Readonly<Record<string, OdpPlaceholderKind>>;
   /** The layout's own guides – each layout has its own. */
   guides: readonly OdpGuide[];
+  /** The grid its slides start with; none: the deck's. */
+  grid?: LayoutGrid | null;
 }
 
 /** A guide line across the page, `position` a fraction of its width or height. */
@@ -896,6 +902,37 @@ const GUIDES_MARK = 'slider:guides';
 const VARIANT_MARK = 'slider:variant-of';
 /** On an element: who it is across slides (`EditableElement.morphKey`). */
 const MORPH_KEY = 'slider:morph-key';
+/** On a group: laid out as a row or a column by Slider (`EditableElement.flow`), as JSON. */
+const FLOW_MARK = 'slider:flow';
+/**
+ * A layout grid („Layout-Ansicht“) as JSON: on a layout's master page the one its slides start
+ * with, on a `draw:page` the slide's own.
+ */
+const GRID_MARK = 'slider:grid';
+
+/** A grid as its mark has it; none (or one Slider cannot read): `null`. */
+function readGrid(node: Parameters<typeof attr>[0]): LayoutGrid | null {
+  const raw = attr(node, GRID_MARK);
+  if (!raw) return null;
+  try {
+    const parsed = layoutGridSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A group's flow as its mark has it; none (or one Slider cannot read): placed freely. */
+function readFlow(node: Parameters<typeof attr>[0]): ElementFlow | null {
+  const raw = attr(node, FLOW_MARK);
+  if (!raw) return null;
+  try {
+    const parsed = elementFlowSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
 
 export class OdpDocument {
   private dirty = { content: false, styles: false, manifest: false };
@@ -1082,6 +1119,7 @@ export class OdpDocument {
     const styles = this.styleIndex();
     const prompts = this.layoutPrompts();
     const variants = this.variantLinks();
+    const layoutGrids = this.layoutGrids();
     return this.pages().map((page, index) => {
       const pictures = this.tiltPicturesOf(page);
       const asked = prompts.get(attr(page, 'draw:master-page-name') ?? '');
@@ -1115,6 +1153,8 @@ export class OdpDocument {
         notes: notesOf(page),
         ...this.notesRichOf(page, styles),
         variantOf: variants[index] ?? null,
+        grid: readGrid(page),
+        layoutGrid: layoutGrids.get(attr(page, 'draw:master-page-name') ?? '') ?? null,
         elements,
         title: title || attr(page, 'draw:name') || `Folie ${index + 1}`,
         fingerprint: fingerprints[index] ?? '',
@@ -1199,12 +1239,14 @@ export class OdpDocument {
         : line
           ? linePaintOf(styles, node, look, frame, tilt, (name) => sliderDash(styles, name))
           : paintOf(styles, node, live, look, frame, tilt);
+    const flow = kind === 'group' ? readFlow(node) : null;
     return {
       id: attr(node, 'xml:id') ?? '',
       kind,
       name: attr(node, 'draw:name') ?? '',
       role: attr(node, 'presentation:class') ?? null,
-      bbox: {
+      // A flow in a frame of its own (Figma's fixed size): that frame, not the box round its parts.
+      bbox: flow?.frame ?? {
         x: box.x / size.width,
         y: box.y / size.height,
         w: box.w / size.width,
@@ -1225,6 +1267,7 @@ export class OdpDocument {
       ...(readLocked(styles, node) && { locked: true }),
       ...(attr(node, MORPH_KEY) && { morphKey: attr(node, MORPH_KEY) }),
       ...(kind === 'group' && groupMembers(node)),
+      ...(flow && { flow }),
       ...(kind === 'group' && {
         children: groupShapes(node).map((child) => this.describe(child, size, styles)),
       }),
@@ -1717,6 +1760,13 @@ export class OdpDocument {
         case 'setSlideTransition':
           this.setSlideTransition(this.slideIndexOf(operation.pageId), operation.transition);
           continue;
+        case 'setSlideGrid': {
+          const page = this.page(this.slideIndexOf(operation.pageId));
+          if (operation.grid) setAttr(page, GRID_MARK, JSON.stringify(operation.grid));
+          else removeAttr(page, GRID_MARK);
+          this.dirty.content = true;
+          continue;
+        }
         case 'setSlideNotes':
           this.setSlideNotes(
             this.slideIndexOf(operation.pageId),
@@ -1874,6 +1924,12 @@ export class OdpDocument {
         }
         case 'setTilt':
           this.setTilt(target, operation, size, images);
+          break;
+        case 'setFlow':
+          if (this.kindOf(target.node) !== 'group')
+            throw new OdpError('operation', 'Nur eine Gruppe hat einen Fluss.');
+          if (operation.flow) setAttr(target.node, FLOW_MARK, JSON.stringify(operation.flow));
+          else removeAttr(target.node, FLOW_MARK);
           break;
         case 'setLocked':
           writeLock(this.styleSink(), this.styleIndex(), target.node, operation.locked);
@@ -3475,6 +3531,7 @@ export class OdpDocument {
           ...(background ? { 'draw:style-name': background } : {}),
           // Written even when it has none: a layout without guides takes no snap lines.
           [GUIDES_MARK]: this.snapLinesOf(layout.guides),
+          ...(layout.grid ? { [GRID_MARK]: JSON.stringify(layout.grid) } : {}),
         },
         children,
       );
@@ -3529,6 +3586,19 @@ export class OdpDocument {
     const settings = await this.archive.readText('settings.xml');
     const value = /config:name="SnapLinesDrawing"[^>]*>([^<]*)</.exec(settings)?.[1]?.trim() ?? '';
     return this.guidesOf(value);
+  }
+
+  /** The grids of the layouts designed in Slider, by master page name (`slider:grid`). */
+  private layoutGrids(): Map<string, LayoutGrid> {
+    const styles = this.root(this.styles, 'office:document-styles');
+    const masters = styles && firstChild(styles, 'office:master-styles');
+    const byMaster = new Map<string, LayoutGrid>();
+    for (const master of masters ? childrenOf(masters) : []) {
+      const name = tagOf(master) === 'style:master-page' ? attr(master, 'style:name') : undefined;
+      const grid = readGrid(master);
+      if (name && grid) byMaster.set(name, grid);
+    }
+    return byMaster;
   }
 
   /**

@@ -3,6 +3,7 @@ import { photoProviderSchema, type PhotoProvider } from './integrations';
 import {
   commentReactionSchema,
   commentStatusSchema,
+  layoutGridSchema,
   slideTransitionSchema,
   type TemplatePlaceholderKind,
 } from './model';
@@ -508,6 +509,21 @@ export function turnedLine(
  */
 export const arrowHeadWidth = (width: number): number => 3 * Math.max(width, (0.07 * 72) / 2.54);
 
+/**
+ * A group laid out by Slider as Figma's auto layout („Fluss“): its elements in a row (`row`) or a
+ * column (`column`) in their order on the slide, `gap` cm apart (`auto`: spread over the whole
+ * length, the first at its start, the last at its end), lined up across at its start, middle or
+ * end. In `frame` (of the slide, Figma's fixed size) if given, else as large as they are; the file
+ * keeps their places (`slider:flow` on the `draw:g`), so any other program sees a plain group.
+ */
+export const elementFlowSchema = z.object({
+  direction: z.enum(['row', 'column']),
+  gap: z.union([z.number().min(0).max(100), z.literal('auto')]),
+  align: z.enum(['start', 'center', 'end']),
+  frame: elementBoxSchema.optional(),
+});
+export type ElementFlow = z.infer<typeof elementFlowSchema>;
+
 export const editableElementSchema = z.object({
   /** Stable while the deck is edited in Slider. */
   id: z.string(),
@@ -553,6 +569,8 @@ export const editableElementSchema = z.object({
    * them on the slide again). Left out: no group, or one whose elements have no ids.
    */
   members: z.array(z.string()).optional(),
+  /** A group laid out as a row or a column (`setFlow`). Left out: placed freely. */
+  flow: elementFlowSchema.optional(),
   /** A preset shape's outline (an ellipse, a star): the editor's frame follows it. Else the box. */
   outline: shapeOutlineSchema.optional(),
   /**
@@ -717,6 +735,10 @@ export const editableSlideSchema = z.object({
    * file and shows above its slide, not in the deck; `null` for every other slide.
    */
   variantOf: z.string().nullable().default(null),
+  /** Its own layout grid („Layout-Ansicht“, ⇧H); `null`: its layout's. */
+  grid: layoutGridSchema.nullable().default(null),
+  /** Its layout's grid, from a template designed in Slider; `null`: none (the deck's, else the standard one). */
+  layoutGrid: layoutGridSchema.nullable().default(null),
   elements: z.array(editableElementSchema),
 });
 export type EditableSlide = z.infer<typeof editableSlideSchema>;
@@ -936,6 +958,16 @@ export const setTiltOperationSchema = z.object({
     .nullable(),
 });
 
+/**
+ * A group laid out as a row or a column, or placed freely again (`null`) – the places of its
+ * elements are set by `setBox`es in the same edit (`EditableElement.flow`).
+ */
+export const setFlowOperationSchema = z.object({
+  type: z.literal('setFlow'),
+  elementId,
+  flow: elementFlowSchema.nullable(),
+});
+
 /** Locks an element in place on the slide, or unlocks it (`EditableElement.locked`). */
 export const setLockedOperationSchema = z.object({
   type: z.literal('setLocked'),
@@ -1028,6 +1060,13 @@ export const setSlideTransitionOperationSchema = z.object({
   transition: slideTransitionSchema,
 });
 
+/** The slide's own layout grid; `null`: back to its layout's („Auf Vorlage zurücksetzen“). */
+export const setSlideGridOperationSchema = z.object({
+  type: z.literal('setSlideGrid'),
+  pageId,
+  grid: layoutGridSchema.nullable(),
+});
+
 export const moveSlideOperationSchema = z.object({
   type: z.literal('moveSlide'),
   pageId,
@@ -1117,6 +1156,7 @@ export const slideOperationSchema = z.discriminatedUnion('type', [
   replaceImageOperationSchema,
   setTiltOperationSchema,
   setLockedOperationSchema,
+  setFlowOperationSchema,
   setCornerRadiusOperationSchema,
   setImageFitOperationSchema,
   deleteElementOperationSchema,
@@ -1127,6 +1167,7 @@ export const slideOperationSchema = z.discriminatedUnion('type', [
   setSlideHiddenOperationSchema,
   setSlideBackgroundOperationSchema,
   setSlideTransitionOperationSchema,
+  setSlideGridOperationSchema,
   moveSlideOperationSchema,
   duplicateSlideOperationSchema,
   addSlideOperationSchema,
@@ -1145,6 +1186,7 @@ export type CopyElementOperation = z.infer<typeof copyElementOperationSchema>;
 export type ReplaceImageOperation = z.infer<typeof replaceImageOperationSchema>;
 export type SetTiltOperation = z.infer<typeof setTiltOperationSchema>;
 export type SetLockedOperation = z.infer<typeof setLockedOperationSchema>;
+export type SetFlowOperation = z.infer<typeof setFlowOperationSchema>;
 export type SetCornerRadiusOperation = z.infer<typeof setCornerRadiusOperationSchema>;
 export type SetImageFitOperation = z.infer<typeof setImageFitOperationSchema>;
 export type DeleteElementOperation = z.infer<typeof deleteElementOperationSchema>;
@@ -1155,6 +1197,7 @@ export type DeleteSlideOperation = z.infer<typeof deleteSlideOperationSchema>;
 export type SetSlideHiddenOperation = z.infer<typeof setSlideHiddenOperationSchema>;
 export type SetSlideBackgroundOperation = z.infer<typeof setSlideBackgroundOperationSchema>;
 export type SetSlideTransitionOperation = z.infer<typeof setSlideTransitionOperationSchema>;
+export type SetSlideGridOperation = z.infer<typeof setSlideGridOperationSchema>;
 export type MoveSlideOperation = z.infer<typeof moveSlideOperationSchema>;
 export type DuplicateSlideOperation = z.infer<typeof duplicateSlideOperationSchema>;
 export type AddSlideOperation = z.infer<typeof addSlideOperationSchema>;
@@ -1230,6 +1273,20 @@ export const deckNotesSchema = z.object({
   ),
 });
 export type DeckNotes = z.infer<typeof deckNotesSchema>;
+
+/**
+ * `POST /decks/:id/notes/write` – the AI writes speaker notes for the slides that have none (or
+ * for `pageIds`), from what is on them and around them. It changes nothing: the editor puts them
+ * in as one step of its own (`setSlideNotes`), so ⌘Z takes them back.
+ */
+export const writeNotesInputSchema = z.object({
+  pageIds: z.array(z.string().min(1).max(200)).max(500).optional(),
+});
+export type WriteNotesInput = z.infer<typeof writeNotesInputSchema>;
+export const writtenNotesSchema = z.object({
+  notes: z.array(z.object({ pageId: z.string(), text: z.string() })),
+});
+export type WrittenNotes = z.infer<typeof writtenNotesSchema>;
 
 /**
  * What „Exportieren“ hands out: the deck's file (a template as `.otp`), its PDF, or one slide

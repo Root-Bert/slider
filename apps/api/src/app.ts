@@ -47,6 +47,7 @@ import { cspReportRoutes } from './routes/csp-report';
 import { instanceAdminRoutes } from './routes/instance-admin';
 import { legalRoutes } from './routes/legal';
 import { meRoutes } from './routes/me';
+import { spellingRoutes } from './routes/spelling';
 import { passkeysRoutes } from './routes/passkeys';
 import { setupRoutes } from './routes/setup';
 import { storageRoutes } from './routes/storage';
@@ -119,6 +120,7 @@ export function createApp(appDeps: AppDeps) {
 
   const api = new Hono()
     .route('/', meRoutes(deps, gate))
+    .route('/', spellingRoutes(deps))
     .route('/', dataRequestsRoutes(deps))
     .route('/', contactRoutes(deps))
     .route('/', siteLiveRoutes(site))

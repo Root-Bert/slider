@@ -1372,6 +1372,7 @@ describe('first logins of an unclaimed instance', () => {
       const cookie = await grantedLogin(idp);
       expect((await me(cookie)).body).toMatchObject({
         instanceClaimed: false,
+        version: null,
         user: { email: 'anna@firma.de', isInstanceAdmin: false },
       });
       await blocked(await ctx.request('/api/decks', { cookie }));

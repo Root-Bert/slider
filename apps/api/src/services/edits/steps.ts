@@ -82,7 +82,7 @@ export async function editFile(
   change: (current: Uint8Array, target: EditTarget, stale: boolean) => Promise<FileChange>,
 ): Promise<FileEdit> {
   // Outsiders are turned away before they queue behind the deck's edits; checked again inside.
-  await requireDeckAccess(deps, viewer, deckId, 'own');
+  await requireDeckAccess(deps, viewer, deckId, 'edit');
   return withDeckLock(deckId, async () => {
     const target = await editTarget(deps, viewer, deckId);
     const { revision } = target;
@@ -343,7 +343,7 @@ export async function moveAiStep(
   only: (step: DeckEditRow) => boolean,
 ): Promise<DeckEditState> {
   // Outsiders are turned away before they queue behind the deck's edits; checked again inside.
-  await requireDeckAccess(deps, viewer, deckId, 'own');
+  await requireDeckAccess(deps, viewer, deckId, 'edit');
   await withDeckLock(deckId, async () => {
     const target = await editTarget(deps, viewer, deckId);
     const { revision } = target;

@@ -129,6 +129,23 @@ export function growBoxes(
   );
 }
 
+/**
+ * All as wide (`x`) or as high (`y`) as the widest or highest of them (as PowerPoint's „Gleiche
+ * Größe“): each keeps its left or top edge, the other side stays. `null`: all alike already.
+ */
+export function sameSizeBoxes(
+  members: readonly { id: string; bbox: Rect }[],
+  axis: 'x' | 'y',
+): Map<string, Rect> | null {
+  const size = axis === 'x' ? 'w' : 'h';
+  const to = Math.max(...members.map((member) => member.bbox[size]));
+  const boxes = new Map<string, Rect>();
+  for (const { id, bbox } of members) {
+    if (Math.abs(bbox[size] - to) > 1e-6) boxes.set(id, { ...bbox, [size]: to });
+  }
+  return boxes.size > 0 ? boxes : null;
+}
+
 /** An element's box (before it is turned) and its turn, as a transform of those picked leaves it. */
 export interface GroupFrame {
   rect: Rect;

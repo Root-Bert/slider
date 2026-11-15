@@ -714,7 +714,7 @@ describe('viewers only look', () => {
     const deckRes = (await (
       await ctx.request(`/api/decks/${deck.deckId}`, { cookie: viewer })
     ).json()) as { permissions: unknown };
-    expect(deckRes.permissions).toEqual({ canManage: false, canComment: false });
+    expect(deckRes.permissions).toEqual({ canManage: false, canEdit: false, canComment: false });
   });
 });
 

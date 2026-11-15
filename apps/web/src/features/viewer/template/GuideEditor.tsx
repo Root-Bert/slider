@@ -38,7 +38,7 @@ export function GuideEditor({ slideId }: { slideId: string }) {
   const editing = useEditing();
   const layout = useLayoutGuides(slideId);
   const toast = useViewerToast();
-  const gridLines = useLayoutGridLines();
+  const gridLines = useLayoutGridLines(slideId);
   const ref = useRef<HTMLDivElement>(null);
   // Under the pointer, either way: ⇧ picks the horizontal one.
   const [hover, setHover] = useState<Record<Guide['orientation'], Guide> | null>(null);

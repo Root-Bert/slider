@@ -42,7 +42,7 @@ export function AiProposalCard({
    */
   onResolve?: (done: boolean) => void;
 }) {
-  const { deck, canManage, aiAuthor } = useViewerData();
+  const { deck, canEdit, aiAuthor } = useViewerData();
   const toast = useViewerToast();
   const move = useMoveProposal(deck.id);
   const retry = useCreateProposal(deck.id);
@@ -53,7 +53,7 @@ export function AiProposalCard({
   const cancelled = proposal.status === 'cancelled';
   /** One of the icons below shows (at the header's end). */
   const acting =
-    canManage &&
+    canEdit &&
     (proposal.status === 'running' ||
       proposal.status === 'applied' ||
       reverted ||
@@ -107,7 +107,7 @@ export function AiProposalCard({
             <ReactionPicker proposal={proposal} floating={floating} />
           </span>
         )}
-        {canManage && proposal.status === 'running' && (
+        {canEdit && proposal.status === 'running' && (
           <IconButton
             icon="stop"
             label="Auftrag abbrechen"
@@ -123,7 +123,7 @@ export function AiProposalCard({
             className="ml-auto"
           />
         )}
-        {canManage && proposal.status === 'applied' && (
+        {canEdit && proposal.status === 'applied' && (
           <IconButton
             icon="undo"
             label="Änderung zurücknehmen"
@@ -135,7 +135,7 @@ export function AiProposalCard({
             className="ml-auto"
           />
         )}
-        {canManage && (proposal.status === 'failed' || cancelled) && proposal.commentId && (
+        {canEdit && (proposal.status === 'failed' || cancelled) && proposal.commentId && (
           <IconButton
             icon="refresh"
             label="Nochmal versuchen"
@@ -152,7 +152,7 @@ export function AiProposalCard({
             className="ml-auto"
           />
         )}
-        {canManage && reverted && (
+        {canEdit && reverted && (
           <IconButton
             icon="redo"
             label="Wieder anwenden"

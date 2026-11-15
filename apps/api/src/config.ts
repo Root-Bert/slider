@@ -33,6 +33,11 @@ export interface Config {
    * default `https://slider.bertro.dev`; `null` off the desktop.
    */
   cloudUrl?: string | null;
+  /**
+   * `SLIDER_VERSION`: the release this server runs (e.g. `1.6.3`), shown in the settings. Set by
+   * the deploy (from the tag) and by the packaged desktop app; `null` from a checkout.
+   */
+  version?: string | null;
   /** Holds `db/` (PGlite) and `blobs/` (file storage). */
   dataDir: string;
   /**
@@ -286,6 +291,7 @@ const envSchema = z.object({
   HOST: z.string().min(1).optional(),
   SLIDER_DESKTOP: booleanEnv.optional(),
   SLIDER_CLOUD_URL: z.url({ protocol: /^https?$/ }).optional(),
+  SLIDER_VERSION: z.string().trim().min(1).max(40).optional(),
   DATA_DIR: z.string().min(1).default(DEFAULT_DATA_DIR),
   SLIDER_SECRET: z
     .string()
@@ -546,6 +552,7 @@ export function loadConfig(
     host,
     desktop,
     cloudUrl: desktop ? (parsed.SLIDER_CLOUD_URL ?? DEFAULT_CLOUD_URL).replace(/\/+$/, '') : null,
+    version: parsed.SLIDER_VERSION?.replace(/^v/, '') ?? null,
     dataDir,
     secret: secret ?? DEV_SECRET,
     webOrigin,

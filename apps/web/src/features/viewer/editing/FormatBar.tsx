@@ -33,13 +33,21 @@ import { StockPhotoSearch } from './photos/StockPhotoSearch';
 import { IconSearch } from './icons/IconSearch';
 import { typedAhead } from './typed-ahead';
 import { isSymbolFrame, KIND_TABS, setPickedTab, usePickedTab, type PanelTab } from './panel-tab';
-import { canMove, keepFocus, TEXT_TOOLBAR_ATTR } from './live/model';
+import { canMove, canSize, keepFocus, TEXT_TOOLBAR_ATTR } from './live/model';
 import { FillControls } from './fills/FillControls';
 import { EffectControls } from './fills/EffectControls';
-import { BorderControls, CornerControls, HeadControls, Line, TextControls } from './StyleControls';
+import {
+  BorderControls,
+  CornerControls,
+  HeadControls,
+  Line,
+  LineAngleControls,
+  TextControls,
+} from './StyleControls';
 import { useAutoZoom } from './useAutoZoom';
 import { PlaceholderControl } from '../template/PlaceholderControl';
 import { ArrangeControls } from './ArrangeControls';
+import { FlowControls } from './FlowControls';
 import { ImageFitControls } from './ImageFitControls';
 import { useShownBox } from './hooks/useMoveElements';
 import { shownRect, unionRect } from './lib/group-layout';
@@ -578,6 +586,10 @@ function FormatBarView({
           {shown === 'fill' && element.line && (
             <HeadControls element={element} heads={element.line.heads} />
           )}
+          {/* Locked in place: no turning either. */}
+          {shown === 'fill' && element.line && canSize(element) && (
+            <LineAngleControls element={element} />
+          )}
           {shown === 'fill' && element.cornerRadius !== undefined && (
             <CornerControls element={element} radius={element.cornerRadius} />
           )}
@@ -597,7 +609,10 @@ function FormatBarView({
             />
           )}
           {shown === 'arrange' && (
-            <ArrangeControls slideId={slideId} elements={group ?? [element]} />
+            <>
+              <ArrangeControls slideId={slideId} elements={group ?? [element]} />
+              <FlowControls elements={group ?? [element]} />
+            </>
           )}
           {narrow && !framePreview && tabRow}
         </div>

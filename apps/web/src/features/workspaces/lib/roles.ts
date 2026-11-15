@@ -21,7 +21,7 @@ export const ROLE_LABELS: Record<WorkspaceRole, string> = {
 export const ROLE_HINTS: Record<WorkspaceRole, string> = {
   viewer: 'Präsentationen nur ansehen – so teilst du eine Präsentation.',
   reviewer: 'Präsentationen ansehen und kommentieren.',
-  member: 'Zusätzlich eigene Präsentationen anlegen.',
+  member: 'Zusätzlich alle Präsentationen bearbeiten, auch mit der KI, und eigene anlegen.',
   admin:
     'Alles: Mitglieder, Einladungen, alle Präsentationen, den Workspace umbenennen und löschen.',
 };

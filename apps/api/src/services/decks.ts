@@ -42,6 +42,8 @@ import { sha256Hex } from '../import/common';
 import { readPolicy, ruleFor } from './integration-keys';
 import { deckFileExtension } from '../import/odp-deck';
 import { pdfMakerOf } from '../import/pdf-maker';
+import { insertReadySlides, storeReadyPictures, type ReadyImport } from '../import/ready-blank';
+import { remeasureDeck } from './workspace-storage';
 import { blobKeys, fileUrl } from '../storage/blob-storage';
 import { deckBlobs, deleteBlobs } from './blob-deletions';
 import { toDeckSync } from './deck-sync';
@@ -401,6 +403,8 @@ export interface NewDeckFile {
   masterId?: string | null;
   /** A template to design (`decks.is_template`), no review: no deck slot, its own title. */
   template?: { title: string; design?: DeckTemplate };
+  /** Read and drawn already (a blank deck, `BlankDecks`): ready at once, no import. */
+  ready?: ReadyImport;
 }
 
 /** A template just started: nothing named, marked or saved yet. */
@@ -413,7 +417,8 @@ export const EMPTY_TEMPLATE: DeckTemplate = {
 };
 
 /**
- * Stores the original, creates deck + revision 1 and queues the import. Returns at once.
+ * Stores the original, creates deck + revision 1 and queues the import – or, with `file.ready`,
+ * puts its slides in right away and the deck is ready. Returns at once.
  * Fails with `plan_limit` when the workspace has no deck slot left (BER-130).
  * `ownerId` is the creator (whose Microsoft login keeps a linked deck in sync).
  */
@@ -428,6 +433,13 @@ export async function createDeckFromFile(
   const now = deps.clock.now();
 
   await deps.storage.put(pptxKey, file.bytes);
+  const { ready } = file;
+  const pictures = ready
+    ? await storeReadyPictures(deps.storage, deckId, revisionId, ready).catch(async (error) => {
+        await deps.storage.deletePrefix(blobKeys.deckPrefix(deckId));
+        throw error;
+      })
+    : null;
   const row = await deps.db
     .transaction(async (tx) => {
       // The plan's deck and storage limits (BER-130, BER-151), checked under a lock on the
@@ -457,7 +469,7 @@ export async function createDeckFromFile(
         templateDesign: file.template ? (file.template.design ?? EMPTY_TEMPLATE) : null,
         createdAt: now,
         updatedAt: now,
-        importState: { status: 'queued' },
+        importState: ready ? { status: 'ready' } : { status: 'queued' },
       });
       await tx.insert(revisions).values({
         id: revisionId,
@@ -472,6 +484,7 @@ export async function createDeckFromFile(
         // Held until the import was measured (BER-151): the next upload's check sees it.
         reservedBytes: file.bytes.byteLength,
       });
+      if (ready && pictures) await insertReadySlides(tx, deckId, revisionId, ready, pictures);
       const [deck] = await tx
         .update(decks)
         .set({ currentRevisionId: revisionId })
@@ -485,7 +498,9 @@ export async function createDeckFromFile(
     });
   if (!row) throw new Error('Deck insert returned no row');
 
-  deps.queue.enqueue({ deckId, revisionId });
+  // Nothing to import: measured now, which ends the reservation as an import's end would.
+  if (ready) await remeasureDeck(deps, deckId);
+  else deps.queue.enqueue({ deckId, revisionId });
   return toDeckDto(deps.db, row, {
     access: { kind: 'user', userId: ownerId, roles: await rolesOf(deps.db, ownerId) },
   });

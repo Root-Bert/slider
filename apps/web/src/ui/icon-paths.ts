@@ -215,6 +215,9 @@ export const iconPaths = {
     'M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.11-.9-2-2-2H4c-1.11 0-2 .89-2 2v10c0 1.1.89 2 2 2H0v2h24v-2h-4zm-7-3.53v-2.19c-2.78 0-4.61.85-6 2.72.56-2.67 2.11-5.33 6-5.87V7l4 3.73-4 3.74z',
   search:
     'M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
+  /** Material Icons „spellcheck“: the spell check's own words. */
+  spellcheck:
+    'M12.45 16h2.09L9.43 3H7.57L2.46 16h2.09l1.12-3h5.64l1.14 3zm-6.02-5L8.5 5.48 10.57 11H6.43zm15.16.59l-8.09 8.09L9.83 16l-1.41 1.41 5.09 5.09L23 13l-1.41-1.41z',
   send: 'M2.01 21L23 12 2.01 3 2 10l15 2-15 2z',
   share:
     'M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z',
@@ -296,6 +299,13 @@ export const iconPaths = {
   /** Bars with a double arrow between: grown across or down to the next lines. */
   growWidth: 'M4 22H2V2h2v20zM22 2h-2v20h2V2zM5 12l5-5v4h4V7l5 5-5 5v-4h-4v4z',
   growHeight: 'M22 2v2H2V2h20zM2 20v2h20v-2H2zM12 5l5 5h-4v4h4l-5 5-5-5h4v-4H7z',
+  /** Two bars alike between two lines: those picked made as wide or as high as the largest. */
+  sameWidth: 'M3 3h2v18H3zM19 3h2v18h-2zM7 6h10v4H7zM7 14h10v4H7z',
+  sameHeight: 'M3 3h18v2H3zM3 19h18v2H3zM6 7h4v10H6zM14 7h4v10h-4z',
+  /** Own drawing: boxes placed freely, in a row, in a column – a group's „Fluss“. */
+  flowFree: 'M3 4h7v6H3zM14 7h7v5h-7zM6 14h7v6H6z',
+  flowRow: 'M2 7h5.5v10H2zM9.25 7h5.5v10h-5.5zM16.5 7H22v10h-5.5z',
+  flowColumn: 'M7 2h10v5.5H7zM7 9.25h10v5.5H7zM7 16.5h10V22H7z',
   /** Arrows pointing in at a bar or a square: a box fitted to its text („An Text anpassen“). */
   fitWidth: 'M11 6h2v12h-2zM3 11h4V8l3 4-3 4v-3H3zM21 11h-4V8l-3 4 3 4v-3h4z',
   fitHeight: 'M5 11h14v2H5zM11 3h2v4h3l-4 3-4-3h3zM11 21h2v-4h3l-4-3-4 3h3z',

@@ -200,7 +200,7 @@ describe('deck rights by role', () => {
     );
     expect(deck).toMatchObject({
       workspaceId: ctx.workspaceId,
-      permissions: { canManage: false, canComment: true },
+      permissions: { canManage: false, canEdit: false, canComment: true },
     });
     const comment = await ctx.request(`/api/decks/${deckId}/comments`, {
       method: 'POST',
@@ -225,7 +225,7 @@ describe('deck rights by role', () => {
     const own = deckSchema.parse(await res.json());
     expect(own).toMatchObject({
       workspaceId: ctx.workspaceId,
-      permissions: { canManage: true, canComment: true },
+      permissions: { canManage: true, canEdit: true, canComment: true },
     });
     await ctx.deps.queue.idle();
     const rename = (id: string) =>

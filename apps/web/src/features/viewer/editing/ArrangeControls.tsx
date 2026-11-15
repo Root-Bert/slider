@@ -7,13 +7,14 @@ import {
   alignMoves,
   distributeMoves,
   growBoxes,
+  sameSizeBoxes,
   SLIDE_RECT,
   type GroupAlign,
   type GroupMember,
   type GroupMoves,
 } from './lib/group-layout';
 import { Line } from './StyleControls';
-import { canSize } from './live/model';
+import { canFrame, canSize } from './live/model';
 
 const ACROSS: { how: GroupAlign; icon: IconName; label: string }[] = [
   { how: 'left', icon: 'alignLeft', label: 'Links ausrichten' },
@@ -30,7 +31,7 @@ const DOWN: { how: GroupAlign; icon: IconName; label: string }[] = [
  * The format panel's „Anordnen“: one element lined up on the slide, several picked together on
  * the box round them – and, three or more, spread evenly across or down. Grown to the next lines
  * either way (the lines a box is caught at, `useSnapLines`): one its own box, several the box
- * round them.
+ * round them. Several also made as wide or as high as the largest of them.
  */
 export function ArrangeControls({
   slideId,
@@ -55,7 +56,7 @@ export function ArrangeControls({
   const move = (moves: GroupMoves) => void moveElements(elements, moves);
   // Only what can be sized (not locked, not a group of the file); turned or tilted, it is not
   // caught at lines either (`growBoxes`).
-  const sizable = elements.every(canSize);
+  const sizable = elements.every((element) => canSize(element) || canFrame(element));
   const grown = (axis: 'x' | 'y') => {
     const boxes = sizable ? growBoxes(members, axis, snapLines) : null;
     if (!boxes) return null;
@@ -72,6 +73,8 @@ export function ArrangeControls({
       }),
     );
   };
+  const sameWidth = sizable && !alone ? sameSizeBoxes(elements, 'x') : null;
+  const sameHeight = sizable && !alone ? sameSizeBoxes(elements, 'y') : null;
   const wider = grown('x');
   const higher = grown('y');
   const button = (item: { how: GroupAlign; icon: IconName; label: string }) => (
@@ -106,6 +109,24 @@ export function ArrangeControls({
             size="compact"
             disabled={editing.busy}
             onClick={() => move(distributeMoves(members, 'y', aspect))}
+          />
+        </Line>
+      )}
+      {!alone && (
+        <Line label="Gleiche Größe">
+          <IconButton
+            icon="sameWidth"
+            label="Gleiche Breite wie das breiteste"
+            size="compact"
+            disabled={editing.busy || !sameWidth}
+            onClick={() => sameWidth && void setBoxes(elements, sameWidth)}
+          />
+          <IconButton
+            icon="sameHeight"
+            label="Gleiche Höhe wie das höchste"
+            size="compact"
+            disabled={editing.busy || !sameHeight}
+            onClick={() => sameHeight && void setBoxes(elements, sameHeight)}
           />
         </Line>
       )}

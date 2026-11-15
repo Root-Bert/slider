@@ -35,6 +35,7 @@ export function useViewerShortcuts({
     backgroundPanelPageId,
     layoutGridPanelOpen,
     sharePanelOpen,
+    aiChatOpen,
     boardPanelOpen,
     materialOpen,
   } = useViewerState();
@@ -78,6 +79,7 @@ export function useViewerShortcuts({
       else if (backgroundPanelPageId) dispatch({ type: 'backgroundPanelSet', pageId: null });
       else if (layoutGridPanelOpen) dispatch({ type: 'layoutGridPanelSet', open: false });
       else if (sharePanelOpen) dispatch({ type: 'sharePanelSet', open: false });
+      else if (aiChatOpen) dispatch({ type: 'aiChatSet', open: false });
       else if (layersOpen) dispatch({ type: 'layersSet', open: false });
       else return;
       event.preventDefault();
@@ -165,10 +167,9 @@ export function useViewerShortcuts({
         break;
       case 'h':
       case 'H':
-        // The layout view, in a template and a presentation alike; a template's grid is set in
-        // its panel (⇧H). Hidden slides keep their button and the setting in /konto.
-        if (event.shiftKey && deck.template)
-          dispatch({ type: 'layoutGridPanelSet', open: !layoutGridPanelOpen });
+        // The layout view, in a template and a presentation alike; its grid is set in its panel
+        // (⇧H). Hidden slides keep their button and the setting in /konto.
+        if (event.shiftKey) dispatch({ type: 'layoutGridPanelSet', open: !layoutGridPanelOpen });
         else dispatch({ type: 'layoutGridToggled' });
         break;
       case 'm':

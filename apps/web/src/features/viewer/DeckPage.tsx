@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useLocation, useParams, useSearchParams } from 'react-router';
-import { opensOnBoard, routes } from '@/lib/routes';
+import { routes } from '@/lib/routes';
 import { isSignedOutError } from '@/features/auth';
 import { markDeckOpened } from '@/lib/last-visits';
-import { motionMs } from '@/lib/motion';
 import { useComments, useDeck, useDeckEdit, useDeckPeople, useMe, useSlides } from '@/lib/api';
-import { ImportProgress } from './import/ImportProgress';
+import { ImportFailed } from './ImportFailed';
 import { DeckError, DeckLoading } from './DeckStates';
 import { dropPendingSlide, usePendingSlides, withPendingSlides } from './editing/pending-slides';
 import { dropRemoteSlideOps, useRemoteSlideOps, withRemoteSlides } from './editing/remote-slides';
@@ -15,9 +14,7 @@ import { blockingError } from './lib/blocking-error';
 import { useDocumentTitle } from './hooks/usePageSession';
 import { MATERIAL_PARAM, SLIDE_PARAM } from './hooks/useSlideUrlSync';
 import { RevisionProvider } from './state/RevisionProvider';
-import { loadWorkPreferences } from '@/lib/preferences/work-preferences';
-import { deckStatusCounts } from './comments/lib/comment-selectors';
-import { deriveViewerData, opensWithHiddenSlides, withoutHiddenSlides } from './state/viewer-data';
+import { deriveViewerData } from './state/viewer-data';
 import { ViewerStoreProvider } from './state/ViewerStoreProvider';
 import { Viewer } from './Viewer';
 
@@ -34,10 +31,8 @@ export function DeckRoute({ deckId }: { deckId: string }) {
   const [searchParams] = useSearchParams();
   const [initialSlideId] = useState(() => searchParams.get(SLIDE_PARAM));
   const location = useLocation();
-  // A new deck (`OPEN_ON_BOARD`) and `?material` open on the material page.
-  const [initialMaterial] = useState(
-    () => searchParams.has(MATERIAL_PARAM) || opensOnBoard(location.state),
-  );
+  // `?material` opens on the material page; a new deck on Folie 1, its prompt.
+  const [initialMaterial] = useState(() => searchParams.has(MATERIAL_PARAM));
 
   const deck = useDeck(deckId);
   const me = useMe();
@@ -96,34 +91,6 @@ export function DeckRoute({ deckId }: { deckId: string }) {
     [deck.data, shownSlides, comments.data, me.data, colorOverrides, people.data],
   );
 
-  // A deck seen importing morphs into the viewer: the import stage stays on top of the freshly
-  // mounted viewer until it has dissolved into it.
-  const importing = deck.data !== undefined && deck.data.import.status !== 'ready';
-  const [sawImport, setSawImport] = useState(false);
-  const [revealed, setRevealed] = useState(false);
-  // The import stage asks for the viewer once its placeholders have all printed.
-  const [printed, setPrinted] = useState(false);
-  if (importing && !sawImport) setSawImport(true);
-  const commentsIntro = useCommentsIntro(sawImport, revealed);
-  // The deck as the viewer will open it (hidden slides only if set to show, or linked to): the
-  // import stage settles onto exactly these slides and shows the same controls row.
-  const opening = useMemo(() => {
-    if (!data) return null;
-    const showHiddenSlides = opensWithHiddenSlides(
-      data,
-      initialSlideId,
-      loadWorkPreferences().showHiddenSlides,
-    );
-    const shown = showHiddenSlides ? data : withoutHiddenSlides(data);
-    return {
-      showHiddenSlides,
-      aspectRatios: shown.slides.map((slide) => slide.aspectRatio),
-      slides: shown.slides,
-      hiddenSlideCount: data.hiddenSlideCount,
-      counts: deckStatusCounts(shown.threads, shown.slides, shown.slideIndex),
-    };
-  }, [data, initialSlideId]);
-
   // A failed refetch keeps the viewer (and what is being written in it) up.
   const error = blockingError([deck, me, slides, comments]);
   // Signed out: sign in and come back here.
@@ -131,52 +98,21 @@ export function DeckRoute({ deckId }: { deckId: string }) {
     return <Navigate to={routes.login(location.pathname + location.search)} replace />;
   }
   if (error) return <DeckError error={error} />;
-  const showImport = deck.data && (importing || (sawImport && !revealed));
-  if (!data && !showImport) return <DeckLoading />;
-  const viewerUp = data !== null && (!showImport || printed);
+  if (deck.data?.import.status === 'failed') {
+    return <ImportFailed deck={deck.data} error={deck.data.import.error} />;
+  }
+  // Still importing (a moment: uploads open on their previews) or loading.
+  if (!data) return <DeckLoading />;
 
   return (
-    <>
-      {viewerUp && (
-        <div className="contents" data-comments-intro={commentsIntro ?? undefined}>
-          <ViewerStoreProvider
-            data={data}
-            initialSlideId={initialSlideId}
-            initialMaterial={initialMaterial}
-          >
-            <RevisionProvider>
-              <Viewer />
-            </RevisionProvider>
-          </ViewerStoreProvider>
-        </div>
-      )}
-      {showImport && (
-        <ImportProgress
-          deck={deck.data}
-          aspectRatios={viewerUp ? (opening?.aspectRatios ?? null) : null}
-          opening={viewerUp ? opening : null}
-          onPrinted={() => setPrinted(true)}
-          onRevealed={() => setRevealed(true)}
-        />
-      )}
-    </>
+    <ViewerStoreProvider
+      data={data}
+      initialSlideId={initialSlideId}
+      initialMaterial={initialMaterial}
+    >
+      <RevisionProvider>
+        <Viewer />
+      </RevisionProvider>
+    </ViewerStoreProvider>
   );
-}
-
-/** Lines drawn, then cards faded in – keep in step with `comments-draw` / `comments-in` in index.css. */
-const COMMENTS_INTRO_MS = 1600;
-
-/**
- * Comments of a deck seen importing: hidden while the import stage dissolves into the viewer,
- * then they come in – the lines are drawn from the slides to the cards, then the cards appear.
- */
-function useCommentsIntro(sawImport: boolean, revealed: boolean): 'hidden' | 'enter' | null {
-  const [done, setDone] = useState(false);
-  useEffect(() => {
-    if (!revealed) return;
-    const timer = setTimeout(() => setDone(true), motionMs(COMMENTS_INTRO_MS));
-    return () => clearTimeout(timer);
-  }, [revealed]);
-  if (!sawImport || done) return null;
-  return revealed ? 'enter' : 'hidden';
 }

@@ -45,11 +45,13 @@ export function createInitialState(options: {
     showLayoutGrid: false,
     layoutGridPanelOpen: false,
     sharePanelOpen: false,
+    aiChatOpen: false,
     materialOpen: options.materialOpen ?? false,
     boardPanelOpen: false,
     layoutGridAxis: null,
     showHiddenSlides: options.showHiddenSlides ?? false,
     showMinimap: options.showMinimap ?? true,
+    notesShown: false,
     commentsClosed: false,
     wideFrames: options.wideFrames ?? false,
   };
@@ -108,6 +110,7 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
         backgroundPanelPageId: threadPanelOpen ? null : next.backgroundPanelPageId,
         layoutGridPanelOpen: threadPanelOpen ? false : next.layoutGridPanelOpen,
         sharePanelOpen: threadPanelOpen ? false : next.sharePanelOpen,
+        aiChatOpen: threadPanelOpen ? false : next.aiChatOpen,
       };
     }
     case 'threadPanelClosed':
@@ -122,6 +125,7 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
         backgroundPanelPageId: null,
         layoutGridPanelOpen: false,
         sharePanelOpen: false,
+        aiChatOpen: false,
         editingCommentId: action.commentId,
       };
     case 'commentEditEnded':
@@ -208,6 +212,7 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
             layersPanelOpen: false,
             backgroundPanelPageId: null,
             sharePanelOpen: false,
+            aiChatOpen: false,
           };
     case 'layoutGridAxisSet':
       return next.layoutGridAxis === action.axis ? next : { ...next, layoutGridAxis: action.axis };
@@ -215,6 +220,8 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
       return { ...next, showHiddenSlides: !next.showHiddenSlides };
     case 'showMinimapToggled':
       return { ...next, showMinimap: !next.showMinimap };
+    case 'notesShownSet':
+      return next.notesShown === action.shown ? next : { ...next, notesShown: action.shown };
     case 'commentsClosedSet':
       return next.commentsClosed === action.closed
         ? next
@@ -233,6 +240,7 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
             backgroundPanelPageId: null,
             layoutGridPanelOpen: false,
             sharePanelOpen: false,
+            aiChatOpen: false,
           }
         : next.deletedPanelOpen
           ? { ...next, deletedPanelOpen: false }
@@ -250,6 +258,7 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
         ? {
             ...next,
             sharePanelOpen: true,
+            aiChatOpen: false,
             threadPanelOpen: false,
             focusedThreadId: null,
             editingCommentId: null,
@@ -259,6 +268,22 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
             layoutGridPanelOpen: false,
           }
         : { ...next, sharePanelOpen: false };
+    case 'aiChatSet':
+      if (action.open === next.aiChatOpen) return next;
+      return action.open
+        ? {
+            ...next,
+            aiChatOpen: true,
+            threadPanelOpen: false,
+            focusedThreadId: null,
+            editingCommentId: null,
+            deletedPanelOpen: false,
+            layersPanelOpen: false,
+            backgroundPanelPageId: null,
+            layoutGridPanelOpen: false,
+            sharePanelOpen: false,
+          }
+        : { ...next, aiChatOpen: false };
     case 'layersSet':
     case 'layersPanelSet': {
       // The mode on leaves the side as it is (its panel opens on asking); off, both go. The panel
@@ -279,6 +304,7 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
             backgroundPanelPageId: null,
             layoutGridPanelOpen: false,
             sharePanelOpen: false,
+            aiChatOpen: false,
           }
         : { ...next, layersOpen, layersPanelOpen };
     }
@@ -296,6 +322,7 @@ export function viewerReducer(state: ViewerState, action: ViewerAction): ViewerS
             layersPanelOpen: false,
             layoutGridPanelOpen: false,
             sharePanelOpen: false,
+            aiChatOpen: false,
           };
     case 'layoutRenameSet':
       return action.pageId === next.layoutRenamePageId

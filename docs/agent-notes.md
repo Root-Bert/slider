@@ -78,6 +78,10 @@ Rules: [`CLAUDE.md`](../CLAUDE.md); invariants: [`do-not-break.md`](do-not-break
 - WebP: q100 = lossless with napi-rs (3.7 MB) → stay at q90.
 - See-through stops: `draw:opacity` with `loext:opacity-stop`, via `draw:opacity-name`; LO runs
   colour and opacity apart (not premultiplied) → the editor paints pixel by pixel.
+- Chrome blends see-through layers in the screen's colour space (Display P3 on Macs), LibreOffice
+  in sRGB: a 70 % purple over a photo came out ~4–14 levels off. Headless parity (sRGB) can't see
+  it; check with `--force-color-profile=display-p3-d65`. So Bearbeiten lays LibreOffice's slide
+  without elements over the browser's ground once settled (`SlideCompositor` `settledGround`).
 - A slide background is never see-through: opacity on drawing-page properties ignored, alpha PNG
   drawn over white → composite picture.
 - Theme refs (`loext:fill-complex-color` etc.) sit next to a fixed hex; LO draws the hex only, refs
@@ -273,7 +277,11 @@ Unsplash can revoke the key; production approval needs screenshots of credits.
   ranges measured (`MisspeltWords`). Else (no ODP, turned text) its box is marked and the words
   named. Right click on a word: three of Hunspell's suggestions (both dictionaries, nearest first) –
   a pick is a `setRichText` (`fixWord`, the word found again by its occurrence in the text) – and
-  the word itself („…“) to keep it, kept in `localStorage` (`accepted-words.ts`).
+  the word itself („…“) to keep it (`accepted-words.ts`): into the account's dictionary
+  (`/me/words`, „Wörterbuch“ in the account menu, `/woerterbuch`) and the deck's workspace's
+  (`/workspaces/:id/words`, „Wörter“ in its Bibliothek; reviewers add, members delete). It waits in
+  `localStorage` (`slider.spelling.accepted`) until the server has it – offline, signed out; plain
+  strings there are words from before and go to the account only.
 
 ## Desktop app (`desktop/`)
 

@@ -88,6 +88,11 @@ describe('an ODP deck', () => {
       expect(res.status).toBe(201);
       const deck = deckSchema.parse(await res.json());
       expect(deck.title).toBe('Neue Präsentation');
+      // Drawn ahead (`BlankDecks`): ready at once, its slide in, nothing imported.
+      expect(deck.import.status).toBe('ready');
+      expect(deck.slideCount).toBe(1);
+      const slidesRes = await ctx.request(`/api/decks/${deck.id}/slides`);
+      expect(slidesRes.status).toBe(200);
 
       const [revision] = await ctx.deps.db
         .select()

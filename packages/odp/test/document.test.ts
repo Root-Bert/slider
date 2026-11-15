@@ -602,6 +602,38 @@ describe('operations', () => {
       const group = again.slides()[2]!.elements.find((element) => element.id === 'sl-group1')!;
       expect(group).toMatchObject({ kind: 'group', name: 'Gruppe 1', movable: true });
       expect(group.members).toEqual([title.id, hint.id]);
+      // Laid out as a row (Figma's auto layout): Slider's own mark on the `draw:g`, read back after
+      // a round trip, gone again when placed freely; only a group has one.
+      const flow = { direction: 'row', gap: 0.5, align: 'center' } as const;
+      again.apply([{ type: 'setFlow', elementId: 'sl-group1', flow }]);
+      again = await roundtrip(again);
+      const flowing = again.slides()[2]!.elements.find((element) => element.id === 'sl-group1')!;
+      expect(flowing.flow).toEqual(flow);
+      // In a frame of its own: that is its box, not the one round its parts.
+      const frame = { x: 0.05, y: 0.1, w: 0.9, h: 0.8 };
+      again.apply([
+        { type: 'setFlow', elementId: 'sl-group1', flow: { ...flow, gap: 'auto', frame } },
+      ]);
+      again = await roundtrip(again);
+      const inFrame = again.slides()[2]!.elements.find((element) => element.id === 'sl-group1')!;
+      expect(inFrame.bbox).toEqual(frame);
+      expect(inFrame.flow?.gap).toBe('auto');
+      again.apply([{ type: 'setFlow', elementId: 'sl-group1', flow: null }]);
+      expect(
+        again.slides()[2]!.elements.find((element) => element.id === 'sl-group1')!.flow,
+      ).toBeUndefined();
+      expect(() => again.apply([{ type: 'setFlow', elementId: hint.id, flow }])).toThrow(/Gruppe/);
+      // A slide's own layout grid on its `draw:page`, read back; `null` back to its layout's.
+      const pageId = again.pageIds()[2]!;
+      const grid = {
+        columns: { count: 4, gutter: 0.4, margin: 1.2 },
+        rows: { count: 0, gutter: 0, margin: 0 },
+      };
+      again.apply([{ type: 'setSlideGrid', pageId, grid }]);
+      again = await roundtrip(again);
+      expect(again.slides()[2]!.grid).toEqual(grid);
+      again.apply([{ type: 'setSlideGrid', pageId, grid: null }]);
+      expect(again.slides()[2]!.grid).toBeNull();
       expect(ids(again)).toEqual(
         before
           .filter((id) => id !== title.id && id !== hint.id)

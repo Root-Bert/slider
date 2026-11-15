@@ -73,6 +73,7 @@ jobs:
         env:
           DEPLOY_ENV: ${{ secrets.DEPLOY_ENV }}
           DEPLOY_SETTINGS: ${{ vars.DEPLOY_SETTINGS }}
+          TAG: ${{ github.event.workflow_run.head_branch || inputs.tag }}
         # COMPOSE_PROFILES named in both are joined (rembg in the secret + stt here = both).
         run: |
           profiles=$(printf '%s\n%s\n' "$DEPLOY_ENV" "$DEPLOY_SETTINGS" |
@@ -80,6 +81,8 @@ jobs:
           {
             printf '%s\n%s\n' "$DEPLOY_ENV" "$DEPLOY_SETTINGS" | grep -v '^COMPOSE_PROFILES='
             if [ -n "$profiles" ]; then printf 'COMPOSE_PROFILES=%s\n' "$profiles"; fi
+            # The release the settings show (Einstellungen → Version).
+            printf 'SLIDER_VERSION=%s\n' "${TAG#v}"
           } | ssh server 'umask 077 && cat > /opt/slider/deploy/.env'
 
       - name: Build and start

@@ -4,6 +4,7 @@ import { OdpDocument, blankOdp, isOdpBytes, type OdpDesign } from '@slider/odp';
 import { openPptx } from '@slider/pptx';
 import {
   WORKSPACE_MASTER_MAX_SETS,
+  layoutGridOf,
   layoutGuidesOf,
   layoutPlaceholders,
   type DeckLayouts,
@@ -520,7 +521,7 @@ export async function getDeckLayouts(
   viewer: Viewer,
   deckId: string,
 ): Promise<DeckLayouts> {
-  const deck = await requireDeckAccess(deps, viewer, deckId, 'own');
+  const deck = await requireDeckAccess(deps, viewer, deckId, 'edit');
   const revision = await currentRevision(deps.db, deck);
   const bytes = revision?.pptxKey ? await deps.storage.get(revision.pptxKey) : null;
   if (!bytes || !isOdpBytes(bytes)) return { aspectRatio: 16 / 9, layouts: [] };
@@ -805,6 +806,7 @@ export async function templateFile(
       design.placeholders,
     ),
     guides: layoutGuidesOf(design, pageId),
+    grid: layoutGridOf(design, pageId) ?? null,
   }));
   document.toTemplate(layouts);
   // Pictures only the slides showed (a picture frame become a placeholder) stay out of it.

@@ -528,7 +528,14 @@ it('refuses files without masters, lets viewers only look and admins remove, and
         .map((version) => version.guides.map((guide) => guide.orientation));
       expect(madeGuides).toEqual([['vertical', 'horizontal'], ['vertical'], ['vertical']]);
 
-      // A layout duplicated takes its guides along, a new one starts without.
+      // A layout duplicated takes its guides and its own grid along, a new one starts without.
+      const axis = { count: 4, gutter: 1, margin: 1 };
+      const ownGrid = { columns: axis, rows: { ...axis, count: 2 } };
+      const gridded = await ctx.request(`/api/decks/${draft.id}/template`, {
+        method: 'PATCH',
+        json: { layoutGrids: { [pageId!]: ownGrid } },
+      });
+      expect(gridded.status).toBe(200);
       const copied = await ctx.request(`/api/decks/${draft.id}/edit/operations`, {
         method: 'POST',
         json: {
@@ -543,6 +550,7 @@ it('refuses files without masters, lets viewers only look and admins remove, and
       const design = designed!.templateDesign!;
       expect(layoutGuidesOf(design, 'sl-kopie')).toEqual([vertical, horizontal]);
       expect(layoutGuidesOf(design, 'sl-neu')).toEqual([]);
+      expect(design.layoutGrids).toEqual({ [pageId!]: ownGrid, 'sl-kopie': ownGrid });
       // The AI hears of the guides of the layouts there are only (a layout gone keeps its own).
       const [draftRevision] = await ctx.deps.db
         .select()

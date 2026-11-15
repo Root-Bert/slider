@@ -8,7 +8,7 @@ import { isContentQuery, useDeckSearch, useDecks, useFolders } from '@/lib/api';
 import { useCollectionSelection } from '@/lib/collection-selection';
 import { isOnControl } from '@/lib/marquee-select';
 import { useAccount } from '@/features/auth';
-import { UploadProgressCard, useDeckUpload } from '@/features/onboarding';
+import { UploadToast, useDeckUpload } from '@/features/onboarding';
 import {
   canCreateDecks,
   deckState,
@@ -166,7 +166,7 @@ export function Component() {
   const upload = useDeckUpload(workspace.id, (deck) => {
     if (picked.current) void keepPickedFile(deck.id, picked.current.handle, picked.current.file);
     if (openFolder) moveDecks.mutate({ deckIds: [deck.id], folderId: openFolder.id });
-    if (droppedCount.current === 1) void navigate(routes.deck(deck.id), { viewTransition: true });
+    if (droppedCount.current === 1) void navigate(routes.deck(deck.id));
   });
   const uploadFailed = upload.state.status === 'error' ? upload.state.message : null;
   useEffect(() => {
@@ -447,13 +447,11 @@ export function Component() {
         </span>
       </div>
       {upload.state.status === 'uploading' && (
-        <div className="fixed inset-x-4 bottom-6 z-(--z-panel) mx-auto max-w-[480px]">
-          <UploadProgressCard
-            file={upload.state.file}
-            progress={upload.state.progress}
-            onCancel={upload.cancel}
-          />
-        </div>
+        <UploadToast
+          file={upload.state.file}
+          progress={upload.state.progress}
+          onCancel={upload.cancel}
+        />
       )}
 
       {pageMenu.contextAt && (

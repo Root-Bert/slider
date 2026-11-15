@@ -15,6 +15,7 @@ import { users } from './db/schema';
 import { releaseRunningImportAttempts } from './import/attempts';
 import { findInterruptedImports, importDeck } from './import/import-deck';
 import { createOfficePool } from './import/office-pool';
+import { BlankDecks } from './import/ready-blank';
 import { configurePdfJobs, stopPdfJobs, warmPdfWorker } from './import/pdf-jobs';
 import {
   createLibreOfficeDocumentPdf,
@@ -168,6 +169,8 @@ async function main(): Promise<void> {
           libreOfficePdf,
           renderProgress,
           liveTexts,
+          // A first import opens on SVG previews; LibreOffice's pictures follow as a job.
+          queue,
           // Fonts an ODP brings along become its workspace's, before it is drawn.
           adoptFonts: deckFontAdopter({
             db,
@@ -231,6 +234,9 @@ async function main(): Promise<void> {
     documentPdf,
   });
   const background = new BackgroundWork();
+  // Drawn once ahead: „Neue Präsentation“ opens at once.
+  const blankDecks = new BlankDecks({ openPptx, clock, log, libreOfficePdf });
+  blankDecks.warm();
   const deps: AppDeps = {
     config,
     db,
@@ -244,6 +250,7 @@ async function main(): Promise<void> {
     log,
     sync,
     rendering: { renderers: { libreOfficePdf }, progress: renderProgress },
+    blankDecks,
     documentPdf,
     materialPdf,
     oidc,

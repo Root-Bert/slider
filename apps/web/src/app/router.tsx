@@ -41,6 +41,7 @@ export const router = createBrowserRouter([
           // An AI app asks to be let in (OAuth, „KI-Apps“).
           { path: 'verbinden', lazy: () => import('@/features/account/ConnectAppPage') },
           { path: 'einstellungen', lazy: () => import('@/features/account/PreferencesPage') },
+          { path: 'woerterbuch', lazy: () => import('@/features/account/DictionaryPage') },
           { path: 'nutzung', lazy: () => import('@/features/account/UsagePage') },
           { path: 'instanz', lazy: () => import('@/features/instance/InstancePage') },
           {

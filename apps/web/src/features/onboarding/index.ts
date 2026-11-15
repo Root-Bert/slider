@@ -3,5 +3,5 @@
  * upload of a file as a new deck (dropped onto „Präsentationen“ too).
  */
 export { MasterChoice } from './components/BlankDeckCard';
-export { UploadProgressCard } from './components/UploadProgressCard';
+export { UploadToast } from './components/UploadToast';
 export { useDeckUpload } from './hooks/useDeckUpload';

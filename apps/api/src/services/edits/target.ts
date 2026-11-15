@@ -52,13 +52,13 @@ export async function currentRevision(
   return revision;
 }
 
-/** The deck to edit, for who manages it – a 409 with the reason while it cannot be edited. */
+/** The deck to edit, for whoever may open it – a 409 with the reason while it cannot be edited. */
 export async function editTarget(
   deps: AppDeps,
   viewer: Viewer,
   deckId: string,
 ): Promise<EditTarget> {
-  const deck = await requireDeckAccess(deps, viewer, deckId, 'own');
+  const deck = await requireDeckAccess(deps, viewer, deckId, 'edit');
   const revision = await currentRevision(deps.db, deck);
   const reason = blocker(deps, deck, revision);
   if (reason || !revision)

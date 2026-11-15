@@ -1,4 +1,4 @@
-import type { MaterialChatDto } from '@slider/shared';
+import type { Material, MaterialChatDto } from '@slider/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSyncExternalStore } from 'react';
 import { chatMaterial, getMaterialChat, queryKeys } from '@/lib/api';
@@ -176,4 +176,11 @@ export function useMaterialChat(deckId: string, refused: (message: string) => vo
     clear,
     openChat,
   };
+}
+
+/** An answer's source opened: the file in a tab of its own, a PDF at its page. */
+export function openSource(material: Material, page: number | null) {
+  if (!material.url) return;
+  const at = page && material.kind === 'pdf' ? `#page=${page}` : '';
+  window.open(`${material.url}${at}`, '_blank', 'noopener');
 }

@@ -154,6 +154,7 @@ export function Track({ layout, window, snap, stack, swipe }: TrackProps) {
           <SlideNotes
             key={slide.id}
             slideId={slide.id}
+            imageUrl={slide.imageUrl}
             index={index}
             x={box.x}
             w={box.w}

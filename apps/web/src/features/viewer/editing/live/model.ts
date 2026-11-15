@@ -193,6 +193,13 @@ export const canMove = (element: EditableElement): boolean => element.movable &&
 
 /** Sized on the slide by hand too. */
 export const canSize = (element: EditableElement): boolean => canMove(element) && element.resizable;
+/**
+ * A flow group (`EditableElement.flow`) is sized by its corners like Figma's auto layout frame: the
+ * area its parts flow in (`flowed` makes the `setBox` a `setFlow` with that frame). It neither
+ * turns nor tilts nor mirrors, as any group.
+ */
+export const canFrame = (element: EditableElement): boolean =>
+  canMove(element) && element.kind === 'group' && !!element.flow && !!element.children;
 
 /**
  * A new box's fill, and the border it gets once one is turned on (Rahmen) – a new box has none:
@@ -366,6 +373,13 @@ export function applyToElement(
       };
     case 'setLocked':
       return { ...element, locked: operation.locked || undefined };
+    case 'setFlow': {
+      if (!element.children) return element;
+      const { flow: _was, ...rest } = element;
+      // In a frame of its own, that is its box; else the one round its parts again.
+      const next = operation.flow ? { ...rest, flow: operation.flow } : rest;
+      return regrouped(next, element.children, aspect);
+    }
     case 'setCornerRadius':
       return element.cornerRadius === undefined
         ? element
@@ -439,7 +453,8 @@ export function regrouped(
   const y = Math.min(...ys);
   return {
     ...group,
-    bbox: { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y },
+    // A flow in a frame of its own (Figma's fixed size) keeps it, whatever its parts fill.
+    bbox: group.flow?.frame ?? { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y },
     children: [...children],
     ...(group.members && { members: children.map((child) => child.id) }),
   };

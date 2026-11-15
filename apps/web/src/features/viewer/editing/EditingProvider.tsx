@@ -51,7 +51,9 @@ import {
   type TextFit,
 } from './editing-context';
 import { useOwnUndo } from './hooks/useOwnUndo';
-import { inverseOf, snapshotOf, touchedElements, type UndoContext } from './undo-ops';
+import { inverseOf, slidePartOf, snapshotOf, touchedElements, type UndoContext } from './undo-ops';
+import { flowed, inferredFlow } from './lib/flow';
+import { shownRect } from './lib/group-layout';
 import { useSlidePicturesReady } from './hooks/useSlidePicturesReady';
 import { setWorkspaceFonts } from './live/fonts';
 import { imageBox, imageFilesOf, insertEach, readClipboard, shownImage } from './insert-image';
@@ -100,6 +102,7 @@ type Actions = Pick<
   | 'stopText'
   | 'groupPicked'
   | 'ungroupPicked'
+  | 'flowPicked'
   | 'pasteCopied'
 >;
 
@@ -235,12 +238,12 @@ const droppedMessage = (count: number) =>
  * it to show its edits before the server has them.
  */
 export function EditingProvider({ children }: { children: ReactNode }) {
-  const { deck, canManage, slides } = useViewerData();
+  const { deck, canEdit, slides } = useViewerData();
   const toast = useViewerToast();
   const updateTemplate = useUpdateTemplate();
   const queryClient = useQueryClient();
   const slidePicturesReady = useSlidePicturesReady(deck.id, slides);
-  const { data: state } = useDeckEdit(deck.id, canManage);
+  const { data: state } = useDeckEdit(deck.id, canEdit);
   // The workspace's own fonts, for live text and the font list – before anything draws.
   useMemo(() => setWorkspaceFonts(state?.fonts ?? []), [state?.fonts]);
   // The account the edits are made under: only it ever sends them (`edit-outbox.ts`).
@@ -315,7 +318,7 @@ export function EditingProvider({ children }: { children: ReactNode }) {
     othersMark: () => othersRef.current.count,
     touchedByOthers: (id, mark) => (othersRef.current.touched.get(id) ?? -1) > mark,
   });
-  const available = canManage && state?.editable === true && userId !== undefined;
+  const available = canEdit && state?.editable === true && userId !== undefined;
   // „Folie einfügen“'s layouts asked for ahead: the first time, the server draws them – not
   // while someone waits with the panel open.
   useDeckLayouts(deck.id, available);
@@ -737,9 +740,22 @@ export function EditingProvider({ children }: { children: ReactNode }) {
   };
 
   /** An own edit: shown at once, sent, and the next for ⌘Z – its way back worked out here first. */
-  const apply = (operations: SlideOperation[], options: ApplyOptions = {}) => {
+  const apply = (given: SlideOperation[], options: ApplyOptions = {}) => {
     if (!available || !userId) return Promise.resolve(false);
-    const back = inverseOf(operations, undoContext());
+    const context = undoContext();
+    const pageSize = state?.pageSize ?? PAGE_SIZE;
+    // Flows (Figma's auto layout) the edit touches laid out again in the same step.
+    const operations = flowed(
+      given,
+      {
+        element: shownElement,
+        groupOf: (elementId) => context.groupOf?.(elementId),
+        heightOf: (elementId) => heights.get(elementId) ?? null,
+        pageSize,
+      },
+      pageSize.width / pageSize.height,
+    );
+    const back = inverseOf(operations, context);
     const touched = touchedElements(operations);
     const before = snapshotOf(touched, shownElement);
     const sent = send(operations, options);
@@ -786,6 +802,12 @@ export function EditingProvider({ children }: { children: ReactNode }) {
         ...remoteMovesRef.current,
         ...moves.map((operation) => ({ seq: step.seq, operation })),
       ]);
+    }
+    // A slide's own property set (notes, grid, background…): an own undo of it leaves it theirs.
+    const parts = step.operations.map(slidePartOf).filter((part) => part !== null);
+    if (parts.length > 0) {
+      othersRef.current.count += 1;
+      for (const part of parts) othersRef.current.touched.set(part, othersRef.current.count);
     }
     if (touched.length === 0) return;
     const others = othersRef.current;
@@ -1021,6 +1043,36 @@ export function EditingProvider({ children }: { children: ReactNode }) {
       },
     ]);
     select({ slideId: currentGroup.slideId, elementId });
+    return true;
+  };
+  /** ⇧A: those picked grouped with a flow, or the picked group given one (Figma's auto layout). */
+  const flowPicked = () => {
+    const pageSize = state?.pageSize ?? PAGE_SIZE;
+    const aspect = pageSize.width / pageSize.height;
+    const rects = (elements: readonly EditableElement[]) =>
+      elements.map((element) => shownRect(element, aspect));
+    if (currentGroup && groupable.length >= 2) {
+      const elementId = newEditId();
+      void apply([
+        {
+          type: 'groupElements',
+          elementIds: groupable.map((element) => element.id),
+          newElementId: elementId,
+        },
+        { type: 'setFlow', elementId, flow: inferredFlow(rects(groupable), pageSize) },
+      ]);
+      select({ slideId: currentGroup.slideId, elementId });
+      return true;
+    }
+    const picked = selectedElement;
+    if (picked?.kind !== 'group' || !picked.children || picked.flow) return false;
+    void apply([
+      {
+        type: 'setFlow',
+        elementId: picked.id,
+        flow: inferredFlow(rects(picked.children), pageSize),
+      },
+    ]);
     return true;
   };
   /** ⇧⌘G: the picked group taken apart, its elements picked together once they are there. */
@@ -1279,6 +1331,9 @@ export function EditingProvider({ children }: { children: ReactNode }) {
       } else if (mod && !event.altKey && key === 'g' && (currentGroup || selectedElement)) {
         // ⌘G groups those picked together, ⇧⌘G takes a picked group apart – as Figma.
         handled = event.shiftKey ? ungroupPicked() : groupPicked();
+      } else if (!mod && event.shiftKey && !event.altKey && key === 'a') {
+        // ⇧A: as a row or a column (Figma's auto layout).
+        handled = flowPicked();
       } else if (mod && !event.altKey && key === 'a' && activeSlideId && !layers) {
         // Every element of the slide shown that moves – not one locked –, picked together.
         // In a group: its elements.
@@ -1421,6 +1476,7 @@ export function EditingProvider({ children }: { children: ReactNode }) {
     stopText,
     groupPicked,
     ungroupPicked,
+    flowPicked,
     pasteCopied,
   };
   const latest = useRef(actions);
@@ -1445,6 +1501,7 @@ export function EditingProvider({ children }: { children: ReactNode }) {
       startText: (next, at) => latest.current.startText(next, at),
       stopText: () => latest.current.stopText(),
       groupPicked: () => latest.current.groupPicked(),
+      flowPicked: () => latest.current.flowPicked(),
       ungroupPicked: () => latest.current.ungroupPicked(),
       pasteCopied: () => latest.current.pasteCopied(),
     }),

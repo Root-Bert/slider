@@ -35,6 +35,8 @@ export interface ViewerData {
   aiAuthor: Author;
   /** Rename, share, new versions, sync – from `deck.permissions` (BER-129). */
   canManage: boolean;
+  /** Edit the slides, by hand and with the AI – members and admins; a template only managers. */
+  canEdit: boolean;
   /** Write comments, reply and resolve; `viewer`s (a deck was shared with them) only look. */
   canComment: boolean;
   threads: Thread[];
@@ -121,6 +123,7 @@ export function deriveViewerData(
     viewer,
     aiAuthor: ai,
     canManage: deck.permissions.canManage,
+    canEdit: deck.permissions.canEdit,
     canComment: deck.permissions.canComment,
     threads,
     threadById: new Map(threads.map((thread) => [thread.id, thread])),

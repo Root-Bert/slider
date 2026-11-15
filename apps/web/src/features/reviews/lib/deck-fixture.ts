@@ -25,7 +25,7 @@ export function makeDeck(overrides: Partial<Deck> = {}): Deck {
     thumbnailUrl: null,
     participants: [],
     import: { status: 'ready' },
-    permissions: { canManage: true, canComment: true },
+    permissions: { canManage: true, canEdit: true, canComment: true },
     ...overrides,
   };
 }

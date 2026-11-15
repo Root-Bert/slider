@@ -44,6 +44,7 @@ import { LayersPanel } from './editing/layers/LayersPanel';
 import { SlideBackgroundPanel } from './editing/SlideBackgroundPanel';
 import { LayersProvider } from './editing/layers/LayersProvider';
 import { DeletedSlidesPanel } from './revisions/DeletedSlidesPanel';
+import { AiChatPanel } from './board/AiChatPanel';
 import { SyncStatus } from './revisions/SyncStatus';
 import { useViewerData } from './state/viewer-data';
 import { isSidePanelOpen, useViewerState } from './state/viewer-state';
@@ -204,6 +205,8 @@ function ViewerMain() {
                 <ThreadPanel />
                 <MediaReplyDialog />
                 <DeletedSlidesPanel />
+                {/* The AI's chat (a click on its avatar), as on the material page. */}
+                <AiChatPanel />
                 <FormatBar />
                 {/* Tilted elements changed: drawn tilted anew, picked or not. */}
                 <TiltRefreshes />

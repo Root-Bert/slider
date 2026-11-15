@@ -377,13 +377,21 @@ export function decksRoutes(deps: AppDeps) {
         requireOwner(viewer);
         const { workspaceId: requested, masterId } = await readJson(c, blankBodySchema);
         const workspaceId = await resolveUploadWorkspace(deps, viewer.author.id, requested);
+        // Without a design: drawn ahead, ready at once (`BlankDecks`) – else imported.
+        const prepared = masterId ? null : await deps.blankDecks?.next();
         const bytes = masterId
           ? await deckFileFromMaster(deps, viewer.author.id, workspaceId, masterId)
-          : await blankOdp(deps.clock.now());
+          : (prepared?.bytes ?? (await blankOdp(deps.clock.now())));
         const deck = await createDeckFromFile(
           deps,
           { ownerId: viewer.author.id, workspaceId },
-          { fileName: BLANK_DECK_FILE_NAME, bytes, source: 'upload', masterId: masterId ?? null },
+          {
+            fileName: BLANK_DECK_FILE_NAME,
+            bytes,
+            source: 'upload',
+            masterId: masterId ?? null,
+            ready: prepared?.ready,
+          },
         );
         // Folie 1 offers to build it with the AI while it is still blank.
         await offerCreation(deps.db, deck.id);
@@ -468,8 +476,17 @@ export function decksRoutes(deps: AppDeps) {
       )
 
       .patch('/decks/:deckId', viewer, async (c) => {
-        const deck = await requireDeckAccess(deps, c.var.viewer, c.req.param('deckId'), 'own');
         const input = await readJson(c, updateDeckInputSchema);
+        // The deck's own colours („Eigene“) are part of editing it; the rest is managing it.
+        const colorsOnly =
+          input.customColors !== undefined &&
+          Object.keys(input).every((key) => key === 'customColors');
+        const deck = await requireDeckAccess(
+          deps,
+          c.var.viewer,
+          c.req.param('deckId'),
+          colorsOnly ? 'edit' : 'own',
+        );
         const updated = await updateDeck(deps, deck, input);
         // A template's name is its name in the library too.
         if (updated.isTemplate && input.title !== undefined) scheduleTemplateSave(deps, deck.id);

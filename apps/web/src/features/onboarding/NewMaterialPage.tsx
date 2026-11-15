@@ -65,8 +65,7 @@ export function Component() {
               description="Lege Layouts mit Platzhaltern, Formen, Bildflächen und Hilfslinien im Editor fest."
               onCreate={() =>
                 draft.mutate(undefined, {
-                  onSuccess: (deck) =>
-                    void navigate(routes.deck(deck.id), { viewTransition: true }),
+                  onSuccess: (deck) => void navigate(routes.deck(deck.id)),
                 })
               }
               pending={draft.isPending}

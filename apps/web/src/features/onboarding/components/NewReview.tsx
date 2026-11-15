@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router';
 import type { Deck, Workspace } from '@slider/shared';
-import { OPEN_ON_BOARD, routes } from '@/lib/routes';
+import { routes } from '@/lib/routes';
 import { AppHeader } from '@/shell/AppHeader';
 import { rememberWorkspace, WorkspaceMark } from '@/features/workspaces';
 import { NextcloudBrowser } from '@/features/nextcloud';
@@ -18,7 +18,7 @@ import { LinkImportForm } from './LinkImportForm';
 import { NoAccessCard } from './NoAccessCard';
 import { PickerPanel } from './PickerPanel';
 import { UploadDropzone } from './UploadDropzone';
-import { UploadProgressCard } from './UploadProgressCard';
+import { UploadToast } from './UploadToast';
 import { useDeckUpload } from '../hooks/useDeckUpload';
 import { useLinkImport } from '../hooks/useLinkImport';
 
@@ -29,11 +29,7 @@ import { useLinkImport } from '../hooks/useLinkImport';
 export function NewReview({ workspace }: { workspace: Workspace }) {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // The page cross-fades into the deck page, where the import stage builds up (index.css).
-  const openDeck = (deck: Deck) => void navigate(routes.deck(deck.id), { viewTransition: true });
-  // A new deck opens on its material page, where its material goes before Folie 1's prompt builds it.
-  const openNewDeck = (deck: Deck) =>
-    void navigate(routes.deck(deck.id), { viewTransition: true, state: OPEN_ON_BOARD });
+  const openDeck = (deck: Deck) => void navigate(routes.deck(deck.id));
 
   const link = useLinkImport(workspace.id, openDeck);
   const upload = useDeckUpload(workspace.id, openDeck);
@@ -110,7 +106,7 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
             {!link.noAccess && !picking && (
               <div {...riseIn(0)} className={cn(riseIn(0).className, 'flex flex-col gap-8 pb-2')}>
                 <BlankDeckCard
-                  onCreate={() => blank.mutate(masterId || undefined, { onSuccess: openNewDeck })}
+                  onCreate={() => blank.mutate(masterId || undefined, { onSuccess: openDeck })}
                   pending={blank.isPending}
                   error={blank.error?.message ?? null}
                   masters={masters}
@@ -168,12 +164,6 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
               onNextcloudConnected={link.retry}
               onUploadInstead={pickFile}
             />
-          ) : upload.state.status === 'uploading' ? (
-            <UploadProgressCard
-              file={upload.state.file}
-              progress={upload.state.progress}
-              onCancel={upload.cancel}
-            />
           ) : (
             <div {...riseIn(2)}>
               <UploadDropzone
@@ -182,6 +172,14 @@ export function NewReview({ workspace }: { workspace: Workspace }) {
                 error={upload.state.status === 'error' ? upload.state.message : null}
               />
             </div>
+          )}
+
+          {upload.state.status === 'uploading' && (
+            <UploadToast
+              file={upload.state.file}
+              progress={upload.state.progress}
+              onCancel={upload.cancel}
+            />
           )}
 
           <input

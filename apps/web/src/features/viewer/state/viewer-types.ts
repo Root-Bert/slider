@@ -176,6 +176,8 @@ export interface ViewerState {
    * the thread, the deleted slides, the layers, a background or the layout grid would be.
    */
   sharePanelOpen: boolean;
+  /** The AI's chat as a side panel over the slides (a click on its avatar); the material page has its own. */
+  aiChatOpen: boolean;
   /**
    * The material page is shown: the deck's board, the whole screen beside the presentation (the
    * presentation slid out to the right). The paperclip left of the slide overview opens it, M
@@ -193,6 +195,8 @@ export interface ViewerState {
   showHiddenSlides: boolean;
   /** The minimap under the track: opens as set on /konto, the button left of the slide counter toggles it. */
   showMinimap: boolean;
+  /** The speaker notes' track is swiped into the band: the tool bar's AI notes button shows. */
+  notesShown: boolean;
   /**
    * The split handle pushed the comment area out of sight (desktop): the participants give way,
    * only the AI's avatar stays – in the controls row.
@@ -275,11 +279,13 @@ export type ViewerAction =
   | { type: 'layoutGridToggled' }
   | { type: 'layoutGridPanelSet'; open: boolean }
   | { type: 'sharePanelSet'; open: boolean }
+  | { type: 'aiChatSet'; open: boolean }
   | { type: 'boardPanelSet'; open: boolean }
   | { type: 'materialSet'; open: boolean }
   | { type: 'layoutGridAxisSet'; axis: 'columns' | 'rows' | null }
   | { type: 'showHiddenSlidesToggled' }
   | { type: 'showMinimapToggled' }
+  | { type: 'notesShownSet'; shown: boolean }
   | { type: 'commentsClosedSet'; closed: boolean }
   | { type: 'wideFramesToggled' }
   /** Comments refetched: a thread deleted meanwhile (by someone else) loses focus and panel. */

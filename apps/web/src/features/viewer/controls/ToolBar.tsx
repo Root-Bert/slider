@@ -10,6 +10,7 @@ import {
 } from '@/ui';
 import { guideOverflows } from '@slider/shared';
 import { useEffect, useMemo } from 'react';
+import { AiNotesButton } from '../editing/AiNotesButton';
 import { EditActions } from '../editing/EditActions';
 import { useEditing } from '../editing/editing-context';
 import { useRevisionData } from '../state/revision-data';
@@ -173,16 +174,21 @@ function ToolButtons() {
           onClick={() => dispatch({ type: 'showGuidesToggled' })}
         />
         {/* The layout grid, as in Figma (H) – a template's own, a presentation's from its
-            template; a template's columns and rows set in the side panel (⇧H). */}
+            template; a template's columns and rows set in the side panel (⇧H, right click). */}
         <IconButton
           icon="layoutGrid"
           label="Layout-Ansicht"
           title="Layout-Ansicht (H)"
-          aria-keyshortcuts={isTemplate ? 'H Shift+H' : 'H'}
+          aria-keyshortcuts="H Shift+H"
           size="sm"
           active={showLayoutGrid}
           aria-pressed={showLayoutGrid}
           onClick={() => dispatch({ type: 'layoutGridToggled' })}
+          // A right click opens its settings, as ⇧H.
+          onContextMenu={(event) => {
+            event.preventDefault();
+            dispatch({ type: 'layoutGridPanelSet', open: !state.layoutGridPanelOpen });
+          }}
         />
         {hiddenSlideCount > 0 && (
           <IconButton
@@ -263,13 +269,14 @@ function ReviewTools() {
 }
 
 /**
- * Editing: „Symbol einfügen“, undo and redo – picking needs no tool (dragging on the free slide
- * draws a frame for a new text, shape, line or picture); designing a template, setting its guides
- * (Tab switches).
+ * Editing: „Symbol einfügen“, undo and redo, the AI writing speaker notes – picking needs no tool
+ * (dragging on the free slide draws a frame for a new text, shape, line or picture); designing a
+ * template, setting its guides (Tab switches).
  */
 function EditTools() {
   const editing = useEditing();
   const { template } = useTemplate();
+  const { notesShown } = useViewerState();
   // In 3D, layers are picked and restacked; guides are set on the flat slide.
   const flat = !editing.layers;
   return (
@@ -308,6 +315,14 @@ function EditTools() {
         disabled={!editing.canRedo}
         onClick={editing.redo}
       />
+      {/* The AI writes the speaker notes a presentation lacks, while they show; a template has
+          none to write. */}
+      {!template && notesShown && (
+        <>
+          <ToolbarDivider />
+          <AiNotesButton />
+        </>
+      )}
     </>
   );
 }

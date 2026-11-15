@@ -31,11 +31,11 @@ export function ProposalPhotos({
   proposal: AiProposal;
   photos: NonNullable<AiProposal['photos']>;
 }) {
-  const { deck, canManage } = useViewerData();
+  const { deck, canEdit } = useViewerData();
   const toast = useViewerToast();
   const choose = useChooseProposalPhoto(deck.id);
   const { offline } = useEditing();
-  const switchable = canManage && proposal.status === 'applied' && photos.candidates.length > 1;
+  const switchable = canEdit && proposal.status === 'applied' && photos.candidates.length > 1;
   const edit = useDeckEdit(deck.id, switchable);
   const [picked, setPicked] = useState<string | null>(null);
   // The server caught up with the click.

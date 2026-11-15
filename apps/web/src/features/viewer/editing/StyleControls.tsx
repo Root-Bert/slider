@@ -1,3 +1,4 @@
+import { lineBetween, lineEnds } from '@slider/shared';
 import type {
   LineHeads,
   EditableElement,
@@ -586,6 +587,51 @@ export function HeadControls({ element, heads }: { element: EditableElement; hea
           onClick={() => item.value !== heads && style({ heads: item.value })}
         />
       ))}
+    </Line>
+  );
+}
+
+/**
+ * A line's slant in degrees as it shows – 0° to the right, counterclockwise as in Figma – set
+ * turning it round its middle, as long as it was.
+ */
+export function LineAngleControls({ element }: { element: EditableElement }) {
+  const editing = useEditing();
+  const { width, height } = editing.pageSize;
+  const { from, to } = lineEnds(element.bbox, element.flip);
+  const dx = (to.x - from.x) * width;
+  const dy = (to.y - from.y) * height;
+  const angle = ((((Math.atan2(-dy, dx) * 180) / Math.PI) % 360) + 360) % 360;
+  const turn = (degrees: number) => {
+    const half = Math.hypot(dx, dy) / 2;
+    const radians = (degrees * Math.PI) / 180;
+    const middle = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+    const along = {
+      x: (Math.cos(radians) * half) / width,
+      y: (-Math.sin(radians) * half) / height,
+    };
+    const { box, flip } = lineBetween(
+      { x: middle.x - along.x, y: middle.y - along.y },
+      { x: middle.x + along.x, y: middle.y + along.y },
+    );
+    void editing.apply([{ type: 'setBox', elementId: element.id, box, flip }], {
+      coalesce: `angle:${element.id}`,
+    });
+  };
+  return (
+    <Line label="Winkel">
+      <NumberField
+        label="Winkel"
+        title="Winkel in Grad"
+        unit="°"
+        value={Math.round(angle)}
+        onChange={turn}
+        min={0}
+        max={360}
+        step={1}
+        bigStep={15}
+        wrap={360}
+      />
     </Line>
   );
 }
